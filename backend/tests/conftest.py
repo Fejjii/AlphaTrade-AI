@@ -1,0 +1,41 @@
+"""Shared pytest fixtures.
+
+Builds an isolated app instance with explicit, safe settings so tests never
+depend on a developer's local ``.env`` or environment.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core.config import Settings
+from app.main import create_app
+
+pytest_plugins = ("tests.test_workflows",)
+
+
+@pytest.fixture
+def settings() -> Settings:
+    """Deterministic, safe settings for tests (paper mode, no real trading)."""
+    return Settings(
+        environment="local",
+        debug=True,
+        log_json=False,
+        execution_mode="paper",
+        enable_real_trading=False,
+        rate_limit_use_redis=False,
+        market_data_cache_use_redis=False,
+        access_token_denylist_use_redis=False,
+        provider_mode="mock",
+        market_data_provider="mock",
+    )
+
+
+@pytest.fixture
+def client(settings: Settings) -> Iterator[TestClient]:
+    app = create_app(settings=settings)
+    with TestClient(app) as test_client:
+        yield test_client

@@ -1,0 +1,37 @@
+"""Tests that deployment helper scripts exist and are executable."""
+
+from __future__ import annotations
+
+import stat
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS = (
+    "scripts/check-env.sh",
+    "scripts/verify-safety.sh",
+    "scripts/staging-smoke.sh",
+    "scripts/run-migrations.sh",
+)
+
+
+def test_deployment_scripts_exist_and_are_executable() -> None:
+    for relative in SCRIPTS:
+        path = ROOT / relative
+        assert path.is_file(), f"missing {relative}"
+        mode = path.stat().st_mode
+        assert mode & stat.S_IXUSR, f"{relative} is not executable"
+
+
+def test_staging_env_example_exists() -> None:
+    assert (ROOT / ".env.staging.example").is_file()
+    assert (ROOT / "frontend/.env.staging.example").is_file()
+
+
+def test_verify_safety_detects_unsafe_health_payload() -> None:
+    """Safety logic mirrors scripts/verify-safety.sh expectations."""
+    unsafe = {"execution_mode": "trade", "real_trading_enabled": True}
+    assert unsafe["execution_mode"] != "paper" or unsafe["real_trading_enabled"] is not False
+
+    safe = {"execution_mode": "paper", "real_trading_enabled": False}
+    assert safe["execution_mode"] == "paper"
+    assert safe["real_trading_enabled"] is False

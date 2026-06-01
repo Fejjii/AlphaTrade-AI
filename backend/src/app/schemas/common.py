@@ -1,0 +1,377 @@
+"""Shared enums, constrained types, and base models for all schemas.
+
+Centralizing enums and constrained scalar types keeps validation consistent at
+every system boundary and lets the persistence layer (Slice 4) reuse the exact
+same enums, avoiding string drift between API and database.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from enum import StrEnum
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints
+
+# --------------------------------------------------------------------------- #
+# Base models
+# --------------------------------------------------------------------------- #
+
+
+class StrictModel(BaseModel):
+    """Base for external request models: rejects unknown fields.
+
+    Using ``extra="forbid"`` at request boundaries prevents typos and smuggled
+    fields from silently passing through.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class ORMModel(BaseModel):
+    """Base for response models that may be built from ORM rows."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --------------------------------------------------------------------------- #
+# Constrained scalar types
+# --------------------------------------------------------------------------- #
+
+
+def _normalize_symbol(value: object) -> object:
+    """Strip and uppercase a symbol before pattern validation."""
+    if isinstance(value, str):
+        return value.strip().upper()
+    return value
+
+
+# Trading symbols: uppercase, optional quote separated by ``/`` or ``-``
+# (e.g. ``BTCUSDT``, ``BTC/USDT``, ``ETH-PERP``). Normalization runs before the
+# pattern check so lowercase input is accepted and stored uppercased.
+Symbol = Annotated[
+    str,
+    BeforeValidator(_normalize_symbol),
+    StringConstraints(min_length=2, max_length=30, pattern=r"^[A-Z0-9]+([/-][A-Z0-9]+)?$"),
+]
+
+# Confidence in [0, 1].
+Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
+
+# Leverage multiplier; capped to a sane upper bound. Hard caps are additionally
+# enforced by the deterministic risk engine (Slice 5).
+Leverage = Annotated[Decimal, Field(gt=0, le=125)]
+
+# Risk as a percentage of account equity, in [0, 100].
+RiskPercent = Annotated[Decimal, Field(ge=0, le=100)]
+
+# Strictly positive monetary/size value.
+PositiveDecimal = Annotated[Decimal, Field(gt=0)]
+
+# Non-negative monetary value (e.g. balances, fees).
+NonNegativeDecimal = Annotated[Decimal, Field(ge=0)]
+
+
+# --------------------------------------------------------------------------- #
+# Enums
+# --------------------------------------------------------------------------- #
+
+
+class Timeframe(StrEnum):
+    """Supported candle timeframes."""
+
+    M1 = "1m"
+    M3 = "3m"
+    M5 = "5m"
+    M15 = "15m"
+    M30 = "30m"
+    H1 = "1h"
+    H2 = "2h"
+    H4 = "4h"
+    H6 = "6h"
+    H12 = "12h"
+    D1 = "1d"
+    D3 = "3d"
+    W1 = "1w"
+
+
+class TradeDirection(StrEnum):
+    LONG = "long"
+    SHORT = "short"
+
+
+class OrderSide(StrEnum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderType(StrEnum):
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
+    TAKE_PROFIT = "take_profit"
+
+
+class OrderStatus(StrEnum):
+    PENDING = "pending"
+    OPEN = "open"
+    PARTIALLY_FILLED = "partially_filled"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+
+
+class PositionStatus(StrEnum):
+    OPEN = "open"
+    CLOSED = "closed"
+    LIQUIDATED = "liquidated"
+
+
+class ProposalStatus(StrEnum):
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    EXECUTED = "executed"
+    CANCELLED = "cancelled"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    MODIFIED = "modified"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+    CLOSED = "closed"
+    NEEDS_MORE_ANALYSIS = "needs_more_analysis"
+
+
+class ApprovalAction(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    MODIFY = "modify"
+    PAUSE = "pause"
+    CANCEL = "cancel"
+    CLOSE = "close"
+    NEEDS_MORE_ANALYSIS = "needs_more_analysis"
+
+
+class RiskAction(StrEnum):
+    """Deterministic risk-engine verdict. Default-deny favors ``BLOCK``."""
+
+    ALLOW = "allow"
+    WARN = "warn"
+    BLOCK = "block"
+
+
+class RiskSeverity(StrEnum):
+    INFO = "info"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RiskRuleId(StrEnum):
+    """Stable identifiers for risk rules (reconciled with PRD/Architecture)."""
+
+    MAX_LEVERAGE = "max_leverage"
+    MAX_POSITION_SIZE = "max_position_size"
+    MAX_DAILY_LOSS = "max_daily_loss"
+    MAX_WEEKLY_LOSS = "max_weekly_loss"
+    NO_STOP_LOSS = "no_stop_loss"
+    UNSUPPORTED_COIN = "unsupported_coin"
+    COUNTERTREND_REDUCED_SIZE = "countertrend_reduced_size"
+    VOLATILE_ALTCOIN_REDUCED_SIZE = "volatile_altcoin_reduced_size"
+    EXTREME_FUNDING = "extreme_funding"
+    LOW_VOLUME = "low_volume"
+    WEEKEND_CONDITION = "weekend_condition"
+    SLEEP_TEST = "sleep_test"
+    OVERTRADING = "overtrading"
+    STRONG_GREEN_DAY = "strong_green_day"
+    COOLDOWN_AFTER_LOSS = "cooldown_after_loss"
+    KILL_SWITCH = "kill_switch"
+
+
+class StrategyId(StrEnum):
+    """The seven MVP strategy modules."""
+
+    HTF_TREND_PULLBACK = "htf_trend_pullback"
+    LIQUIDITY_SWEEP_REVERSAL = "liquidity_sweep_reversal"
+    COUNTERTREND_SHORT_BUILD = "countertrend_short_build"
+    PASSIVE_LEVEL_ORDER = "passive_level_order"
+    PROFIT_PROTECTION = "profit_protection"
+    GREEN_DAY_GUARD = "green_day_guard"
+    MENTAL_CAPITAL_GUARD = "mental_capital_guard"
+
+
+class SetupCategory(StrEnum):
+    TREND = "trend"
+    REVERSAL = "reversal"
+    BREAKOUT = "breakout"
+    MEAN_REVERSION = "mean_reversion"
+    FUNDING = "funding"
+    PASSIVE = "passive"
+    PROTECTION = "protection"
+
+
+class ExecutionMode(StrEnum):
+    """Mirror of :class:`app.core.config.ExecutionMode` for schema reuse."""
+
+    PAPER = "paper"
+    READ_ONLY = "read_only"
+    TRADE = "trade"
+
+
+class UserRole(StrEnum):
+    ADMIN = "admin"
+    TRADER = "trader"
+    VIEWER = "viewer"
+
+
+class MembershipRole(StrEnum):
+    OWNER = "owner"
+    TRADER = "trader"
+    VIEWER = "viewer"
+
+
+class RiskProfile(StrEnum):
+    CONSERVATIVE = "conservative"
+    MODERATE = "moderate"
+    AGGRESSIVE = "aggressive"
+
+
+class ExchangeAccountStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    REVOKED = "revoked"
+
+
+class DocumentSourceType(StrEnum):
+    """RAG corpus source types (reconciled with Architecture §7)."""
+
+    TRADING_PLAYBOOK = "trading_playbook"
+    PRODUCT_REQUIREMENTS = "product_requirements"
+    SYSTEM_ARCHITECTURE = "system_architecture"
+    RISK_POLICY = "risk_policy"
+    STRATEGY_TEMPLATE = "strategy_template"
+    TRADE_JOURNAL = "trade_journal"
+    REVIEW_NOTE = "review_note"
+    MISTAKES_DATABASE = "mistakes_database"
+    GENERAL_NOTE = "general_note"
+
+
+class ToolRiskLevel(StrEnum):
+    READ = "read"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    SENSITIVE = "sensitive"
+
+
+class AuditEventType(StrEnum):
+    """Canonical audit event types (Slice 11 observability)."""
+
+    GUARDRAIL_BLOCK = "guardrail_block"
+    GUARDRAIL_WARNING = "guardrail_warning"
+    RISK_BLOCK = "risk_block"
+    RISK_WARNING = "risk_warning"
+    TRADE_PROPOSAL_CREATED = "trade_proposal_created"
+    APPROVAL_REQUIRED = "approval_required"
+    APPROVAL_DECISION = "approval_decision"
+    PAPER_ORDER_CREATED = "paper_order_created"
+    PAPER_ORDER_REJECTED = "paper_order_rejected"
+    POSITION_UPDATED = "position_updated"
+    JOURNAL_ENTRY_CREATED = "journal_entry_created"
+    TOOL_CALLED = "tool_called"
+    TOOL_FAILED = "tool_failed"
+    PROVIDER_FALLBACK_USED = "provider_fallback_used"
+    KILL_SWITCH_TRIGGERED = "kill_switch_triggered"
+    SIGNAL_CREATED = "signal_created"
+    PROVIDER_FAILURE = "provider_failure"
+    RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
+    AUTH_INVALID_TOKEN = "auth_invalid_token"
+    AUTH_REFRESH_REUSE = "auth_refresh_reuse"
+    AUTH_ACCESS_REVOKED = "auth_access_revoked"
+    AUTH_EMAIL_VERIFICATION_SENT = "auth_email_verification_sent"
+    AUTH_EMAIL_VERIFIED = "auth_email_verified"
+    AUTH_EMAIL_VERIFICATION_FAILED = "auth_email_verification_failed"
+    AUTH_PASSWORD_RESET_REQUESTED = "auth_password_reset_requested"
+    AUTH_PASSWORD_RESET_COMPLETED = "auth_password_reset_completed"
+    AUTH_PASSWORD_RESET_FAILED = "auth_password_reset_failed"
+    AUTH_INVITE_CREATED = "auth_invite_created"
+    AUTH_INVITE_ACCEPTED = "auth_invite_accepted"
+    AUTH_INVITE_REVOKED = "auth_invite_revoked"
+    QUOTA_WARNING = "quota_warning"
+    QUOTA_BLOCK = "quota_block"
+    QUOTA_UPDATED = "quota_updated"
+    BILLING_METADATA_MISSING = "billing_metadata_missing"
+    BILLING_CUSTOMER_CREATED = "billing_customer_created"
+    BILLING_CHECKOUT_CREATED = "billing_checkout_created"
+    BILLING_PORTAL_OPENED = "billing_portal_opened"
+    BILLING_WEBHOOK_RECEIVED = "billing_webhook_received"
+    BILLING_PLAN_CHANGED = "billing_plan_changed"
+    BILLING_USAGE_EXPORTED = "billing_usage_exported"
+    PROVIDER_USAGE_METADATA_MISSING = "provider_usage_metadata_missing"
+    # Legacy values retained for existing DB rows
+    PROPOSAL_CREATED = "proposal_created"
+    POSITION_UPDATE = "position_update"
+    JOURNAL_ENTRY = "journal_entry"
+    KILL_SWITCH = "kill_switch"
+
+
+# Backward-compatible alias used by earlier slices
+AuditAction = AuditEventType
+
+
+class ActorType(StrEnum):
+    USER = "user"
+    SYSTEM = "system"
+    AGENT = "agent"
+    TOOL = "tool"
+
+
+class AuditResult(StrEnum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    BLOCKED = "blocked"
+    WARNING = "warning"
+
+
+class AuditSeverity(StrEnum):
+    INFO = "info"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class UsageStatus(StrEnum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    PARTIAL = "partial"
+
+
+class CostSource(StrEnum):
+    """How usage cost was determined — only ``provider_reported`` is billing-grade."""
+
+    PROVIDER_REPORTED = "provider_reported"
+    TOKENIZER_ESTIMATED = "tokenizer_estimated"
+    STATIC_ESTIMATED = "static_estimated"
+    UNAVAILABLE = "unavailable"
+
+
+class SafetyVerdict(StrEnum):
+    PASS = "pass"
+    FLAG = "flag"
+    BLOCK = "block"
+
+
+class TradeResult(StrEnum):
+    WIN = "win"
+    LOSS = "loss"
+    BREAKEVEN = "breakeven"
+    OPEN = "open"

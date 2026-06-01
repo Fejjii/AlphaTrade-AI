@@ -1,0 +1,139 @@
+# AlphaTrade AI — local production simulation stack.
+# Safe defaults: paper mode, real trading disabled, mock/fallback providers.
+#
+# Start:  docker compose up --build
+# Stop:   docker compose down
+# Reset:  CONFIRM=yes ./scripts/docker-reset-db.sh
+
+name: alphatrade
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: alphatrade
+      POSTGRES_PASSWORD: alphatrade
+      POSTGRES_DB: alphatrade
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alphatrade -d alphatrade"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      APP_NAME: AlphaTrade AI
+      ENVIRONMENT: local
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      LOG_JSON: "true"
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      EXECUTION_MODE: paper
+      ENABLE_REAL_TRADING: "false"
+      OBSERVABILITY_STRICT_MODE: "false"
+      PROVIDER_MODE: mock
+      DATABASE_URL: postgresql+psycopg://alphatrade:alphatrade@postgres:5432/alphatrade
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_API_KEY: ""
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      LLM_MODEL: gpt-4o-mini
+      EMBEDDINGS_MODEL: text-embedding-3-small
+      LANGSMITH_API_KEY: ""
+      JWT_SECRET: change-me-in-production-use-long-random-value
+      ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      AUTH_REFRESH_COOKIE_ENABLED: "true"
+      AUTH_OMIT_REFRESH_FROM_BODY: "true"
+      AUTH_COOKIE_SECURE: "false"
+      AUTH_COOKIE_SAMESITE: lax
+      ACCESS_TOKEN_DENYLIST_ENABLED: "true"
+      ACCESS_TOKEN_DENYLIST_USE_REDIS: "true"
+      RATE_LIMIT_USE_REDIS: "true"
+      RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK: "true"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8000/health && curl -fsS http://127.0.0.1:8000/health/ready",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_AUTH_COOKIE_MODE: "true"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/login >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  qdrant_data:

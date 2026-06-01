@@ -1,0 +1,67 @@
+[
+  {
+    "id": "risk_policy_stop_loss",
+    "query": "What is the stop loss requirement?",
+    "expected_source_type": "risk_policy",
+    "expected_document_title": "Risk Policy",
+    "expected_chunk_ids": [],
+    "expected_answer_points": [
+      "stop loss required",
+      "capital preservation"
+    ],
+    "difficulty": "easy",
+    "notes": "Should retrieve risk policy chunks, not generate trade signals."
+  },
+  {
+    "id": "playbook_approval",
+    "query": "When is human approval required?",
+    "expected_source_type": "trading_playbook",
+    "expected_document_title": "Trading Playbook",
+    "expected_chunk_ids": [],
+    "expected_answer_points": [
+      "human approval",
+      "no autonomous execution"
+    ],
+    "difficulty": "easy",
+    "notes": "Playbook grounding for approval workflow."
+  },
+  {
+    "id": "journal_lesson_revenge",
+    "query": "What lesson applies after a revenge trade?",
+    "expected_source_type": "trade_journal",
+    "expected_document_title": "Trade Journal — Revenge Trade",
+    "expected_chunk_ids": [],
+    "expected_answer_points": [
+      "cooldown",
+      "emotional trading"
+    ],
+    "difficulty": "medium",
+    "notes": "Journal lesson retrieval for coaching."
+  },
+  {
+    "id": "strategy_tag_filter",
+    "query": "Pullback entry rules for BTC",
+    "expected_source_type": "strategy_template",
+    "expected_document_title": "HTF Trend Pullback Template",
+    "expected_chunk_ids": [],
+    "expected_answer_points": [
+      "pullback",
+      "higher timeframe trend"
+    ],
+    "difficulty": "medium",
+    "notes": "Tag-filtered retrieval for strategy-specific notes."
+  },
+  {
+    "id": "mistakes_database",
+    "query": "Common mistake when chasing green candles",
+    "expected_source_type": "mistakes_database",
+    "expected_document_title": "Mistakes Database",
+    "expected_chunk_ids": [],
+    "expected_answer_points": [
+      "FOMO",
+      "green day guard"
+    ],
+    "difficulty": "hard",
+    "notes": "Cross-document lesson retrieval."
+  }
+]

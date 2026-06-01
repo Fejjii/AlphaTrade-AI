@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AlphaTrade AI">
+  <rect width="512" height="512" rx="96" fill="#09090b"/>
+  <path d="M128 352V160l128 96 128-96v192" fill="none" stroke="#10b981" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="160" r="20" fill="#34d399"/>
+</svg>

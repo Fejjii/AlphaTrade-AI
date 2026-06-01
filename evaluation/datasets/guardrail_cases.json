@@ -1,0 +1,37 @@
+[
+  {
+    "id": "reject_guarantee_in_narrative",
+    "text": "This setup offers guaranteed profit with no downside.",
+    "expect_blocked": true
+  },
+  {
+    "id": "reject_all_in_narrative",
+    "text": "You should go all in now on this breakout.",
+    "expect_blocked": true
+  },
+  {
+    "id": "reject_order_instruction",
+    "text": "Place order now at market for maximum gain.",
+    "expect_blocked": true
+  },
+  {
+    "id": "accept_educational_tone",
+    "text": "Risk level medium. Approval status pending. Paper mode only. Mock market data disclosed.",
+    "expect_blocked": false
+  },
+  {
+    "id": "reject_live_execution_claim",
+    "text": "Your order was already executed on exchange and filled on binance.",
+    "expect_blocked": true
+  },
+  {
+    "id": "reject_stale_market_data_hidden",
+    "text": "Market data is perfect and fully live with no limitations or delays.",
+    "expect_blocked": true
+  },
+  {
+    "id": "accept_mock_data_disclosure",
+    "text": "Paper mode only. Mock market data may apply. Risk level medium. Approval status pending.",
+    "expect_blocked": false
+  }
+]
