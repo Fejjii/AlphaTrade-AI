@@ -63,15 +63,25 @@ Detailed docs: [architecture](docs/architecture.md) · [agent workflow](docs/age
 
 ## Screenshots
 
-Capture screenshots during a local or Docker demo and save under `docs/screenshots/`. See [docs/screenshots_checklist.md](docs/screenshots_checklist.md) for the recommended set.
+Paper MVP demo captures (local E2E stack, mock providers, **paper-only** execution):
 
 | Dashboard | AI Workspace | Market Monitor |
 |-----------|--------------|----------------|
-| *`docs/screenshots/dashboard.png`* | *`docs/screenshots/workspace.png`* | *`docs/screenshots/market.png`* |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![AI Workspace](docs/screenshots/ai_workspace.png) | ![Market Monitor](docs/screenshots/market_monitor.png) |
 
 | Proposal detail | Approval workflow | Paper position |
 |-----------------|-------------------|----------------|
-| *`docs/screenshots/proposal.png`* | *`docs/screenshots/approval.png`* | *`docs/screenshots/position.png`* |
+| ![Proposal detail](docs/screenshots/proposal_detail.png) | ![Approval detail](docs/screenshots/approval_detail.png) | ![Paper position](docs/screenshots/paper_position.png) |
+
+| Journal | Knowledge search | Usage & quota |
+|---------|------------------|---------------|
+| ![Journal](docs/screenshots/journal.png) | ![Knowledge search](docs/screenshots/knowledge_search.png) | ![Usage dashboard](docs/screenshots/usage_dashboard.png) |
+
+| Audit events | Provider status | Settings |
+|--------------|-----------------|----------|
+| ![Audit events](docs/screenshots/audit_events.png) | ![Provider status](docs/screenshots/provider_status.png) | ![Settings](docs/screenshots/settings.png) |
+
+Capture locally with `npm run capture:screenshots` (from `frontend/`) or follow [docs/screenshots_checklist.md](docs/screenshots_checklist.md).
 
 ## Tech stack
 

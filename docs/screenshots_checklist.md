@@ -13,17 +13,17 @@ Save files under `docs/screenshots/` using the filenames below.
 | # | Screen | Route / source | Suggested filename | What to show |
 |---|--------|----------------|-------------------|--------------|
 | 1 | **Dashboard** | `/` | `dashboard.png` | Paper mode banner, provider cards, navigation |
-| 2 | **AI Trading Workspace** | `/workspace` | `workspace.png` | Chat input, structured analysis, risk badge |
-| 3 | **Market Monitor** | `/market` | `market.png` | Ticker/OHLCV, live vs mock labels |
-| 4 | **Proposal detail** | `/proposals` (detail panel) | `proposal.png` | Entry/stop/targets, risk rules, confidence |
-| 5 | **Approval detail** | `/approvals` | `approval.png` | Pending approval, action buttons, linked proposal |
-| 6 | **Paper position** | `/positions` | `position.png` | Simulated position, P&amp;L, paper-only messaging |
+| 2 | **AI Trading Workspace** | `/workspace` | `ai_workspace.png` | Chat input, structured analysis, risk badge |
+| 3 | **Market Monitor** | `/market` | `market_monitor.png` | Ticker/OHLCV, live vs mock labels |
+| 4 | **Proposal detail** | `/proposals` (detail panel) | `proposal_detail.png` | Entry/stop/targets, risk rules, confidence |
+| 5 | **Approval detail** | `/approvals` | `approval_detail.png` | Pending approval, action buttons, linked proposal |
+| 6 | **Paper position** | `/positions` | `paper_position.png` | Simulated position, P&amp;L, paper-only messaging |
 | 7 | **Journal** | `/journal` | `journal.png` | Entry form or list with lessons/tags |
-| 8 | **Knowledge search** | `/knowledge` | `knowledge.png` | Search results, citations, source types |
-| 9 | **Usage & quota** | `/usage` | `usage.png` | Token counts, cost_source labels, quota panel |
-| 10 | **Audit events** | `/audit` | `audit.png` | Proposal → approval → paper order chain |
-| 11 | **Provider status** | `/` or API docs | `providers.png` | Exchange paper-only, LLM/embeddings status |
-| 12 | **Login or settings** | `/login` or `/settings` | `auth-settings.png` | Auth flow or email verification status |
+| 8 | **Knowledge search** | `/knowledge` | `knowledge_search.png` | Search results, citations, source types |
+| 9 | **Usage & quota** | `/usage` | `usage_dashboard.png` | Token counts, cost_source labels, quota panel |
+| 10 | **Audit events** | `/audit` | `audit_events.png` | Proposal → approval → paper order chain |
+| 11 | **Provider status** | `/` or API docs | `provider_status.png` | Exchange paper-only, LLM/embeddings status |
+| 12 | **Login or settings** | `/login` or `/settings` | `settings.png` | Auth flow or email verification status |
 
 ---
 

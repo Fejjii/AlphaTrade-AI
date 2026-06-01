@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=chromium",
+    "capture:screenshots": "playwright test --project=screenshots"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

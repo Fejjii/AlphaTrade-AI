@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
-const apiURL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const apiURL = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
 
 const e2eBackendEnv = {
   PYTHONPATH: "src",
@@ -10,10 +10,12 @@ const e2eBackendEnv = {
   PROVIDER_MODE: "mock",
   MARKET_DATA_PROVIDER: "mock",
   JOURNAL_RAG_SYNC_ENABLED: "true",
+  EMAIL_AUTO_VERIFY_LOCAL: "true",
+  ACCESS_TOKEN_DENYLIST_ENABLED: "false",
   JWT_SECRET: "e2e-test-secret-at-least-32-characters-long",
   DATABASE_URL: "sqlite+pysqlite:///./.e2e-alphatrade.db",
   LOG_JSON: "false",
-  CORS_ORIGINS: '["http://127.0.0.1:3000","http://localhost:3000"]',
+  CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000",
 };
 
 export default defineConfig({
@@ -26,7 +28,18 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: "**/capture-screenshots.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "screenshots",
+      testMatch: "**/capture-screenshots.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : [
@@ -39,7 +52,7 @@ export default defineConfig({
           timeout: 120_000,
         },
         {
-          command: "npm run dev -- --port 3000",
+          command: "npm run dev -- --port 3000 --hostname localhost",
           env: { NEXT_PUBLIC_API_URL: apiURL },
           url: baseURL,
           reuseExistingServer: false,

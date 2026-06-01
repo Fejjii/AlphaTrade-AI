@@ -69,8 +69,9 @@ export const api = {
       apiFetch<{ message: string }>("/auth/logout", {
         method: "POST",
         body: JSON.stringify(refresh_token ? { refresh_token } : {}),
+        auth: true,
       }),
-    me: () => apiFetch<MeResponse>("/auth/me"),
+    me: () => apiFetch<MeResponse>("/auth/me", { auth: true }),
     requestVerifyEmail: (body?: { email?: string }) =>
       apiFetch<MessageResponse>("/auth/verify-email/request", {
         method: "POST",

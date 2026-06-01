@@ -23,10 +23,10 @@ export default function KnowledgePage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.knowledge.ingest({
+      const result =       await api.knowledge.ingest({
         title,
         text,
-        source_type: "playbook",
+        source_type: "trading_playbook",
       });
       setMessage(`Ingested ${result.chunk_count} chunks (${result.document_id})`);
     } catch (err) {
