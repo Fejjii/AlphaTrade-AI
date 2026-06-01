@@ -84,6 +84,8 @@ Responses label `is_live`, `fallback_used`, and `is_stale`. Mock data is never p
 
 ## Recommended next slices
 
-1. **Slice 27 — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
+1. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
 2. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
 3. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)
+
+Slice 27A (post-push validation, README/demo polish) is complete in the repo docs and setup scripts.

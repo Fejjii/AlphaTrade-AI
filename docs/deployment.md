@@ -323,3 +323,12 @@ See also: [security_checklist.md](security_checklist.md), [security.md](security
 
 Compose defaults: paper mode, cookie auth, mock providers. See
 [`docker-compose.yml`](../docker-compose.yml) and [`.env.docker.example`](../.env.docker.example).
+
+## Fresh clone troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `ModuleNotFoundError: No module named 'app'` | Use `./backend/scripts/run_dev_server.sh` or `PYTHONPATH=src` |
+| `error parsing value for field "cors_origins"` | Pull latest; `CORS_ORIGINS` is comma-separated in `.env.example` |
+| Backend health OK but auth fails | Start Postgres or use `docker compose up` for the full stack |
+| Frontend cannot reach API | Set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `frontend/.env.local` |

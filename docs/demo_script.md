@@ -1,133 +1,281 @@
 # AlphaTrade AI — Demo Script
 
-Use this script for live demos, stakeholder walkthroughs, and onboarding. Focus is **workflow readiness**, not visual polish.
+Use this script for portfolio demos, interviews, stakeholder walkthroughs, and onboarding.
+Estimated time: **15–20 minutes** (Docker Compose recommended).
 
-## 1. What the app is
+> **Before you start:** Confirm the **Paper mode active** banner and **Real trading disabled** badges are visible. Never demo with `ENABLE_REAL_TRADING=true`.
 
-AlphaTrade AI is a **human-in-the-loop trading copilot** for crypto markets. It combines:
+---
 
-- Read-only market data and deterministic strategy signals
-- A deterministic risk engine (final authority)
-- Structured trade proposals with mandatory exit plans
-- Explicit human approval before any paper execution
-- Journaling and RAG-based learning from past trades
+## 1. Product vision
 
-## 2. Why it exists
+AlphaTrade AI is a **human-in-the-loop trading copilot** for crypto markets. It helps traders:
 
-Trading decisions benefit from structure, risk discipline, and review — not impulsive automation. AlphaTrade supports **analysis, planning, approval, paper simulation, and post-trade learning** without placing real exchange orders.
+- Watch markets with read-only data
+- Detect predefined strategy setups (deterministic, not LLM-generated signals)
+- Build structured trade proposals with mandatory exit plans
+- Pass every plan through a deterministic risk engine
+- Require **explicit human approval** before any paper simulation
+- Journal outcomes and feed lessons back into RAG for continuous learning
 
-## 3. Safety model
+It is **not** an auto-trading bot. It is analysis, education, risk management, and decision support.
 
-- **Default execution mode: paper**
-- **Real trading: disabled** (`enable_real_trading=false`)
-- No private exchange API keys in the MVP
-- Market data: **Binance public REST only** (read-only) or mock fallback
-- LLM is optional; structured responses are built deterministically from agent state
-- Risk `BLOCK` is final for paper execution
-- Approvals gate paper orders — rejected / needs-more-analysis / modified approvals cannot execute
+---
 
-Show the **Paper mode active** banner on the dashboard.
+## 2. Safety model
 
-## 4. Architecture overview
+Explain these invariants before showing features:
 
-- **Frontend:** Next.js PWA — dashboard, workspace, proposals, approvals, positions, journal, knowledge
-- **Backend:** FastAPI + LangGraph agent + domain services
-- **Data:** PostgreSQL (metadata), Redis (cache/rate limits), Qdrant or in-memory vectors (RAG)
-- **Providers:** mock by default; live OpenAI / Qdrant / Binance public when configured
+| Control | Value | Meaning |
+|---------|-------|---------|
+| `EXECUTION_MODE` | `paper` | Only simulated execution |
+| `ENABLE_REAL_TRADING` | `false` | Hard kill switch — no live orders |
+| Market data | Binance **public REST** or mock | Read-only; no trading API keys |
+| LLM | Optional narrative layer | Never overrides risk or approval |
+| Risk `BLOCK` | Final | Blocks paper execution even if mistakenly approved |
 
-See [architecture.md](architecture.md) and [agent_workflow.md](agent_workflow.md).
+**Show:** Dashboard paper banner, provider status (`exchange` = mock/paper-only).
 
-## 5. Live market data (read-only)
+---
 
-1. Open **Market Monitor** (`/market`)
-2. Show ticker/OHLCV with provenance: `is_live`, `fallback_used`, `provider_name`
-3. Explain: no API key, no order placement
+## 3. Login
 
-## 6. AI trading workspace
+**Docker (recommended):** http://localhost:3000 — cookie auth enabled in Compose.
 
-1. Open **Workspace** (`/workspace`)
-2. Send: *"Analyze BTC pullback on 4h"*
-3. Show structured response: summary, analysis, risk, optional proposal
-4. Note deterministic response layer (no reliance on LLM narrative for safety-critical fields)
+**Local dev:** Register at `/register`, sign in at `/login`. Bearer tokens in `sessionStorage`.
 
-## 7. Risk engine
+Talking points:
 
-1. Open a **Proposal** with risk result
-2. Show triggered rules and severity
-3. Explain: blocked proposals cannot reach paper execution even if mistakenly approved
+- JWT access (15 min) + refresh rotation
+- RBAC: OWNER / TRADER / VIEWER
+- Docker/staging uses httpOnly refresh cookies
+
+---
+
+## 4. Dashboard
+
+Route: `/`
+
+Highlight:
+
+- **Paper mode active** banner
+- Provider status cards (LLM, embeddings, Qdrant, Redis, market data, exchange, billing, email)
+- Quick links to Workspace, Market, Proposals
+- Kill switch affordance on trading pages (UI guard, not live trading)
+
+---
+
+## 5. Market Monitor (read-only)
+
+Route: `/market`
+
+1. Select symbol (e.g. BTCUSDT)
+2. Show ticker and OHLCV
+3. Point out provenance metadata: `is_live`, `fallback_used`, `provider_name`, `is_stale`
+4. Explain: **no API key required** for Binance public data; mock fallback when offline or `PROVIDER_MODE=mock`
+
+Optional: `/market/analyze` via API for indicators + strategy signals (deterministic Python, not LLM).
+
+---
+
+## 6. AI Trading Workspace
+
+Route: `/workspace`
+
+1. Send: *"Analyze BTC pullback on 4h"*
+2. Show structured response:
+   - Summary and analysis panels
+   - Risk level and triggered rules
+   - Optional trade proposal with entry/stop/targets
+   - RAG citations when context retrieved
+3. Separate **Deterministic analysis** from **Narrative explanation** (Slice 21)
+4. Note: safety-critical fields come from agent state + risk engine, not free-form LLM text
+
+---
+
+## 7. Proposal generation
+
+Route: `/proposals`
+
+1. Open the proposal created from workspace chat (or list recent)
+2. Show:
+   - Symbol, side, timeframe, setup type
+   - Entry, stop-loss, take-profit levels
+   - Risk engine result (rules, severity, allow/block)
+   - Confidence and invalidation criteria
+3. Open **Proposal detail panel** — workflow status and linked approval
+
+---
 
 ## 8. Approval workflow
 
-1. Open **Approvals** (`/approvals`)
-2. Show pending approval linked to proposal
-3. Demo actions:
+Route: `/approvals`
+
+1. Show pending approval linked to proposal
+2. Demo decision paths:
    - **Approve for paper review** → enables paper order button
    - **Reject** → execution blocked
-   - **Needs more analysis** → execution blocked
-   - **Modify** → audit trail preserved; execution blocked until re-approved
+   **Needs more analysis** → execution blocked
+   - **Modify** → audit preserved; re-approval required
+3. Emphasize: no path to real exchange orders in MVP
+
+---
 
 ## 9. Paper execution
 
-1. On approved proposal, click **Create paper order (simulated)**
+From approved proposal detail or approvals panel:
+
+1. Click **Create paper order (simulated)**
 2. Confirm messaging: no real exchange order
-3. Open **Positions** — show paper position created
-4. Optional: close paper position
+3. Show idempotency and audit event emission
 
-## 10. Journal and RAG learning loop
+---
 
-1. Open **Journal** — create entry with lessons, emotions, mistake tags
-2. Explain auto-sync to knowledge base (`trade_journal` source type) when `JOURNAL_RAG_SYNC_ENABLED=true`
-3. Open **Knowledge** — search for lesson text; show citations
-4. Future agent runs can retrieve journal lessons via RAG (rules/lessons only — not signals)
+## 10. Position view
 
-## 11. Audit and usage tracking
+Route: `/positions`
 
-1. Open **Audit** — show proposal, approval, paper order events
-2. Open **Usage** — show LLM/embedding event counts (placeholder costs)
+1. Show paper position from prior step
+2. Display entry, size, P&amp;L (simulated), status
+3. Optional: close paper position
+4. Reiterate: local simulation only
 
-## 12. Intentionally out of scope (MVP)
+---
 
-- Real exchange order execution
-- Automated trading without approval
-- LLM-generated trade signals bypassing risk
-- Billing-grade cost accounting
-- Mobile-native apps (responsive web only)
+## 11. Journal entry
 
-## 13. Future roadmap
+Route: `/journal`
 
-See [limitations_roadmap.md](limitations_roadmap.md):
+1. Create entry: lessons learned, emotions, mistake tags
+2. Link symbol/timeframe if applicable
+3. Explain redaction of secrets before any RAG ingest
 
-- Live trading adapter (still approval-gated)
-- Richer LLM narrative with eval harness
-- Advanced charting and alert delivery
-- Multi-exchange market data
+---
 
-## 14. Frontend UX polish (demo tips)
+## 12. Journal → RAG learning loop
 
-- **Paper mode active** and **Real trading disabled** badges visible on dashboard and workspace
-- Mobile bottom nav: Dashboard, Workspace, Market, Proposals, Journal + More menu
-- Dashboard provider cards show OpenAI, embeddings, Qdrant, Redis, market data status
-- Empty states guide next actions; kill switch visible on trading pages
-- No "Place real order" or live execution CTAs anywhere
+Route: `/knowledge`
 
-## Quick demo path (15 min)
+1. Search for text from the journal entry just created
+2. Show `trade_journal` source type and citations
+3. Explain agent retrieval includes journal **lessons only** — not signals or order instructions
+4. Setting: `JOURNAL_RAG_SYNC_ENABLED=true` (default)
 
-**Docker (recommended for portfolio):**
+Return to **Workspace** and note how future chats may cite past lessons.
+
+---
+
+## 13. Usage dashboard
+
+Route: `/usage`
+
+1. Show organization usage summary
+2. Highlight `cost_source` labels (static vs provider-reported)
+3. Show quota panel — soft warnings vs hard blocks
+4. Note: billing disabled by default (`BILLING_ENABLED=false`)
+
+Optional: `/billing` — plan catalog and mock checkout (no live charges).
+
+---
+
+## 14. Audit log
+
+Route: `/audit`
+
+1. Filter or scroll to recent events
+2. Show chain: `trade_proposal_created` → `approval_*` → `paper_order_created`
+3. Mention `request_id` / trace correlation with backend logs
+
+---
+
+## 15. Provider status
+
+Route: `/` (dashboard cards) or `GET /providers/status`
+
+Walk through provider kinds:
+
+- **llm / embeddings** — mock or OpenAI with fallback
+- **vector** — in-memory or Qdrant
+- **market_data** — mock or Binance public
+- **exchange** — mock, paper-only, real trading disabled
+- **billing / email** — mock by default
+
+Transparency: every provider reports `is_mock`, `fallback_used`, and detail text.
+
+---
+
+## 16. Limitations and roadmap
+
+Be explicit about MVP boundaries:
+
+- No real exchange or broker execution
+- No auto-trading without approval
+- Stripe billing scaffold only — no live payments unless explicitly configured
+- Cost estimates labeled by source — not invoice-grade unless `provider_reported`
+- Responsive web PWA — not native mobile apps
+
+Roadmap: [limitations_roadmap.md](limitations_roadmap.md)
+
+---
+
+## 17. Screenshot checklist
+
+Capture during this demo for GitHub and interviews. Full list: [screenshots_checklist.md](screenshots_checklist.md)
+
+Minimum set:
+
+1. Dashboard with paper banner
+2. AI Workspace with structured analysis
+3. Market Monitor with provenance labels
+4. Proposal detail with risk result
+5. Approval panel
+6. Paper position
+7. Journal entry
+8. Knowledge search hit
+9. Usage / quota dashboard
+10. Audit events
+11. Provider status cards
+12. Login or settings (verification status)
+
+Save files under `docs/screenshots/` using names from the checklist.
+
+---
+
+## Quick start commands
+
+**Docker (portfolio default):**
 
 ```bash
+git clone https://github.com/Fejjii/AlphaTrade-AI.git
+cd AlphaTrade-AI
 docker compose up --build
 ./scripts/docker-validate.sh
 ```
 
-Open http://localhost:3000 — cookie auth enabled by default in Compose.
-
-**Local dev:** Register → Dashboard (safety banner) → Watchlist → Workspace chat → Proposals → Approvals → Paper order → Positions → Journal → Knowledge search → Audit → Usage → Logout
-
-## Local E2E verification
+**Local dev (requires Postgres or use Docker for data stores):**
 
 ```bash
-cd frontend && npm run test:e2e
-# Backend uses SQLite via backend/scripts/run_e2e_server.sh — no Docker required
+cp .env.example .env
+cd backend && uv sync --extra dev && ./scripts/run_dev_server.sh
+# separate terminal:
+cd frontend && npm ci && npm run dev
 ```
 
-See [deployment.md](deployment.md) for full stack with Docker Compose.
+**Automated verification:**
+
+```bash
+cd backend && uv run pytest
+cd frontend && npm run test:e2e
+cd backend && uv run python ../evaluation/evaluate_agent.py
+```
+
+---
+
+## Closing talking points
+
+- Production-style architecture: guardrails, audit, quotas, RBAC, deployment validation
+- Safety-first defaults suitable for portfolio and compliance discussions
+- Clear extension path: Stripe entitlements, optional exchange adapter (still approval-gated)
+- Evaluation harness for agent, RAG, and guardrail regression
+
+Related docs: [architecture.md](architecture.md) · [agent_workflow.md](agent_workflow.md) · [security.md](security.md) · [deployment.md](deployment.md)

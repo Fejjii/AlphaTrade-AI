@@ -232,11 +232,12 @@ See [docs/security_checklist.md](security_checklist.md) for pre-deploy checklist
 cd backend
 uv sync --extra dev
 cp ../.env.example ../.env
-uv run uvicorn app.main:app --reload --port 8000
+chmod +x scripts/run_dev_server.sh
+./scripts/run_dev_server.sh
 
 # Frontend
 cd frontend
-npm install
+npm ci
 cp .env.example .env.local
 npm run dev
 

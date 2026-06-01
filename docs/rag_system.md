@@ -73,3 +73,4 @@ JOURNAL_RAG_SYNC_ENABLED=false
 - Mock embeddings are deterministic — use them for unit tests and RAG regression.
 - Integration tests with real OpenAI/Qdrant should be isolated and env-guarded.
 - Usage events record embedding provider, token estimates, and fallback status.
+- Run regression: `uv run python ../evaluation/evaluate_rag.py` from `backend/`.

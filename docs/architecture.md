@@ -119,4 +119,4 @@ flowchart LR
   API --> ProviderRegistry
 ```
 
-See also: [RAG system](rag_system.md), [Agent workflow](agent_workflow.md), [Demo script](demo_script.md), [Deployment](deployment.md), [Limitations](limitations_roadmap.md).
+See also: [RAG system](rag_system.md), [Agent workflow](agent_workflow.md), [Demo script](demo_script.md), [Screenshots checklist](screenshots_checklist.md), [Deployment](deployment.md), [Limitations](limitations_roadmap.md).

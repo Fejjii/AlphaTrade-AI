@@ -22,6 +22,24 @@ def test_cors_origins_accepts_comma_separated_string() -> None:
     assert settings.cors_origins == ["http://a.test", "http://b.test"]
 
 
+def test_cors_origins_loads_from_env_file(tmp_path, monkeypatch) -> None:
+    """Fresh-clone setup copies `.env.example`; comma-separated CORS must parse."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CORS_ORIGINS", "")
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+    class EnvFileSettings(Settings):
+        model_config = Settings.model_config | {"env_file": str(env_file)}
+
+    settings = EnvFileSettings()
+    assert settings.cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
 def test_auth_cookie_samesite_normalized() -> None:
     settings = Settings(auth_cookie_samesite="None")
     assert settings.auth_cookie_samesite == "none"

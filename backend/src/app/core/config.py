@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Environment(StrEnum):
@@ -60,9 +61,10 @@ class Settings(BaseSettings):
     # --- API ---
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
-    )
+    cors_origins: Annotated[
+        list[str],
+        NoDecode,
+    ] = Field(default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"])
     request_id_header: str = "X-Request-ID"
 
     # --- Trading safety ---

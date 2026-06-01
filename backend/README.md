@@ -20,7 +20,14 @@ cp ../.env.example ../.env    # configure environment (safe defaults)
 ## Run
 
 ```bash
-uv run uvicorn app.main:app --reload --port 8000
+chmod +x scripts/run_dev_server.sh
+./scripts/run_dev_server.sh
+```
+
+Or manually (sets `PYTHONPATH` for the `src/` layout):
+
+```bash
+PYTHONPATH=src uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Then open:

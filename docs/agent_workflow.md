@@ -84,6 +84,8 @@ After `final_response` builds `TradingAnalysisDetail`, `narrative_enhancement`:
 
 The UI shows **Deterministic analysis** and **Narrative explanation** separately so users see that the LLM did not make the trade decision.
 
+Portfolio demo path: [demo_script.md](demo_script.md) · [screenshots_checklist.md](screenshots_checklist.md)
+
 ## Safety invariants
 
 - Agent never calls exchange execution directly
