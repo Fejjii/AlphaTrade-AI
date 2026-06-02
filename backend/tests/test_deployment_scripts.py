@@ -27,6 +27,18 @@ def test_staging_env_example_exists() -> None:
     assert (ROOT / "frontend/.env.staging.example").is_file()
 
 
+def test_staging_deployment_docs_exist() -> None:
+    for relative in (
+        "docs/pre_deployment_checklist.md",
+        "docs/deployment_command_pack.md",
+        "docs/staging_deployment_worksheet.template.md",
+        "docs/staging_execution_checklist.md",
+        "render.yaml",
+        "frontend/vercel.json",
+    ):
+        assert (ROOT / relative).is_file(), f"missing {relative}"
+
+
 def test_verify_safety_detects_unsafe_health_payload() -> None:
     """Safety logic mirrors scripts/verify-safety.sh expectations."""
     unsafe = {"execution_mode": "trade", "real_trading_enabled": True}

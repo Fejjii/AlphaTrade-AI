@@ -16,6 +16,10 @@ dist/
 .env.*.local
 !.env.example
 !.env.*.example
+.env.staging
+
+# Staging worksheet with real URLs/secrets (template is committed)
+docs/staging_deployment_worksheet.local.md
 
 # Test / coverage
 .pytest_cache/

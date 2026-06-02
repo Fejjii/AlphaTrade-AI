@@ -257,6 +257,9 @@ Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + *
 
 | Doc | Purpose |
 |-----|---------|
+| [pre_deployment_checklist.md](docs/pre_deployment_checklist.md) | Local prep before cloud accounts |
+| [deployment_command_pack.md](docs/deployment_command_pack.md) | Copy-paste validation & smoke commands |
+| [staging_deployment_worksheet.template.md](docs/staging_deployment_worksheet.template.md) | URL/secret placeholders (copy to `.local.md`) |
 | [staging_execution_checklist.md](docs/staging_execution_checklist.md) | One-page manual click order |
 | [staging_live_deployment_notes.md](docs/staging_live_deployment_notes.md) | Live URLs, env tables, smoke commands |
 | [staging_deployment_runbook.md](docs/staging_deployment_runbook.md) | Full runbook + troubleshooting |

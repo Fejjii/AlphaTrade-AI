@@ -6,22 +6,46 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
+BASE_URL="${BASE_URL%/}"
+
+if [[ "$BASE_URL" == *"<"* ]]; then
+  echo "Replace placeholder in BASE_URL (see docs/deployment_command_pack.md)." >&2
+  exit 1
+fi
 
 echo "Verifying safety invariants at ${BASE_URL}..."
 
-health_json="$(curl -fsS "${BASE_URL}/health")"
+health_json=""
+if ! health_json="$(curl -fsS "${BASE_URL}/health" 2>&1)"; then
+  echo "FAIL: cannot reach ${BASE_URL}/health" >&2
+  echo "  Is the backend running? For staging: export BASE_URL=https://your-api.onrender.com" >&2
+  echo "  curl error: ${health_json}" >&2
+  exit 1
+fi
+
 python3 - <<'PY' "$health_json"
 import json
 import sys
 
 payload = json.loads(sys.argv[1])
-assert payload.get("execution_mode") == "paper", payload
-assert payload.get("real_trading_enabled") is False, payload
+mode = payload.get("execution_mode")
+real = payload.get("real_trading_enabled")
 env = payload.get("environment", "")
+if mode != "paper":
+    print(f"FAIL: execution_mode={mode!r} (expected 'paper')", file=sys.stderr)
+    sys.exit(1)
+if real is not False:
+    print(f"FAIL: real_trading_enabled={real!r} (expected false)", file=sys.stderr)
+    sys.exit(1)
 print(f"  health: execution_mode=paper, real_trading_enabled=false, environment={env}")
 PY
 
-providers_json="$(curl -fsS "${BASE_URL}/providers/status")"
+providers_json=""
+if ! providers_json="$(curl -fsS "${BASE_URL}/providers/status" 2>&1)"; then
+  echo "FAIL: cannot reach ${BASE_URL}/providers/status" >&2
+  exit 1
+fi
+
 python3 - <<'PY' "$providers_json"
 import json
 import sys
@@ -29,17 +53,26 @@ import sys
 payload = json.loads(sys.argv[1])
 providers = payload.get("providers") or []
 exchange = next((p for p in providers if p.get("kind") == "exchange"), None)
-assert exchange is not None, providers
-assert exchange.get("is_mock") is True, exchange
+if exchange is None:
+    print("FAIL: no exchange provider in /providers/status", file=sys.stderr)
+    sys.exit(1)
+if exchange.get("is_mock") is not True:
+    print(f"FAIL: exchange is not mock: {exchange}", file=sys.stderr)
+    sys.exit(1)
 detail = (exchange.get("detail") or "").lower()
-assert "real trading disabled" in detail or "paper" in detail, exchange
+if "real trading disabled" not in detail and "paper" not in detail:
+    print(f"FAIL: exchange detail missing paper-only wording: {exchange.get('detail')}", file=sys.stderr)
+    sys.exit(1)
 print("  exchange: mock/paper-only")
 
 billing = next((p for p in providers if p.get("kind") == "billing"), None)
 if billing is not None:
     name = (billing.get("name") or "").lower()
-    assert "stripe" not in name or billing.get("is_mock") is True or "mock" in name, billing
-    print(f"  billing: {billing.get('name')} (no live charges expected in staging)")
+    is_mock = billing.get("is_mock") is True
+    if "stripe" in name and not is_mock and "mock" not in name:
+        print(f"FAIL: billing looks live: {billing}", file=sys.stderr)
+        sys.exit(1)
+    print(f"  billing: {billing.get('name')} (staging expects mock/disabled — BILLING_ENABLED=false)")
 PY
 
 echo "Safety verification passed."

@@ -30,7 +30,22 @@ curl_api_cookie() {
   fi
 }
 
+BASE_URL="${BASE_URL%/}"
+
+if [[ "$BASE_URL" == *"<"* ]]; then
+  echo "Replace <BACKEND_URL> placeholder (docs/deployment_command_pack.md)." >&2
+  exit 1
+fi
+
 echo "Staging smoke — BASE_URL=${BASE_URL} COOKIE_MODE=${COOKIE_MODE}"
+
+if [[ "$COOKIE_MODE" == "true" && "$BASE_URL" != https://* ]]; then
+  echo "Note: staging cross-domain auth expects HTTPS API + AUTH_COOKIE_SAMESITE=none on Render." >&2
+fi
+
+if [[ "$COOKIE_MODE" == "true" && -z "$FRONTEND_URL" ]]; then
+  echo "Tip: set FRONTEND_URL=https://your-app.vercel.app to test CORS preflight." >&2
+fi
 
 echo "Waiting for backend..."
 attempt=0
@@ -86,7 +101,8 @@ if [[ -n "$FRONTEND_URL" ]]; then
     -H "Access-Control-Request-Method: GET" \
     -H "Access-Control-Request-Headers: Authorization,Content-Type" || true)"
   if [[ "$cors_status" != "200" && "$cors_status" != "204" ]]; then
-    echo "  WARN: OPTIONS /health returned HTTP ${cors_status} (check CORS_ORIGINS)" >&2
+    echo "  WARN: OPTIONS /health returned HTTP ${cors_status}" >&2
+    echo "        Fix: set CORS_ORIGINS=${FRONTEND_URL} on backend (exact origin, HTTPS, no trailing slash), redeploy." >&2
   else
     echo "  OK: CORS preflight HTTP ${cors_status}"
   fi
@@ -113,7 +129,8 @@ PY
 )"
   if [[ "$COOKIE_MODE" == "true" ]]; then
     if ! grep -q alphatrade_refresh "$COOKIE_JAR" 2>/dev/null; then
-      echo "  WARN: refresh cookie not set after register (cookie mode may be off on API)" >&2
+      echo "  WARN: refresh cookie not set after register." >&2
+      echo "        Fix: AUTH_REFRESH_COOKIE_ENABLED=true, AUTH_COOKIE_SECURE=true, AUTH_COOKIE_SAMESITE=none on API." >&2
     else
       echo "  OK: refresh cookie present"
     fi

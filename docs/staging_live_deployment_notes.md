@@ -3,7 +3,7 @@
 Working notes for **Slice 30** — real Vercel + Render staging.  
 **Do not commit** filled secrets or this file if you paste credentials into §0.
 
-Related: [staging_execution_checklist.md](staging_execution_checklist.md) · [staging_deployment_runbook.md](staging_deployment_runbook.md)
+Related: [pre_deployment_checklist.md](pre_deployment_checklist.md) · [deployment_command_pack.md](deployment_command_pack.md) · [staging_deployment_worksheet.template.md](staging_deployment_worksheet.template.md) · [staging_execution_checklist.md](staging_execution_checklist.md) · [staging_deployment_runbook.md](staging_deployment_runbook.md)
 
 ---
 
