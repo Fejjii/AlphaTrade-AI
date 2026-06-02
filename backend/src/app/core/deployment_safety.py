@@ -76,6 +76,15 @@ def validate_deployment_settings(settings: Settings) -> None:
 
     if not settings.cors_origins:
         errors.append("cors_origins must include the deployed frontend URL(s)")
+    else:
+        for origin in settings.cors_origins:
+            lowered = origin.lower().rstrip("/")
+            if not lowered.startswith("https://"):
+                errors.append(f"cors_origins must use HTTPS in staging/production (got: {origin})")
+            elif _url_uses_localhost(lowered):
+                errors.append(
+                    f"cors_origins must not use localhost in staging/production (got: {origin})"
+                )
 
     if not settings.rate_limit_use_redis:
         errors.append("rate_limit_use_redis must be true in staging/production")

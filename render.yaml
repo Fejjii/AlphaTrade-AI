@@ -1,0 +1,61 @@
+# Render Blueprint (optional) — AlphaTrade AI staging backend
+# Docs: docs/staging_deployment_runbook.md
+# Set secret env vars in the Render dashboard; never commit real values.
+
+services:
+  - type: web
+    name: alphatrade-api-staging
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: EXECUTION_MODE
+        value: paper
+      - key: ENABLE_REAL_TRADING
+        value: false
+      - key: PROVIDER_MODE
+        value: fallback
+      - key: BILLING_ENABLED
+        value: false
+      - key: MARKET_DATA_ENABLED
+        value: true
+      - key: DEBUG
+        value: false
+      - key: LOG_JSON
+        value: true
+      - key: AUTH_REFRESH_COOKIE_ENABLED
+        value: true
+      - key: AUTH_OMIT_REFRESH_FROM_BODY
+        value: true
+      - key: AUTH_COOKIE_SECURE
+        value: true
+      - key: AUTH_COOKIE_SAMESITE
+        value: none
+      - key: ACCESS_TOKEN_DENYLIST_ENABLED
+        value: true
+      - key: ACCESS_TOKEN_DENYLIST_USE_REDIS
+        value: true
+      - key: RATE_LIMIT_USE_REDIS
+        value: true
+      - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
+        value: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

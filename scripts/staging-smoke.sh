@@ -1,19 +1,40 @@
 #!/usr/bin/env bash
-# Staging deployment smoke test — health, auth, chat, and safety invariants.
+# Staging deployment smoke test — health, auth (bearer or cookie), chat, CORS, safety.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
+FRONTEND_URL="${FRONTEND_URL:-}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-60}"
+COOKIE_MODE="${COOKIE_MODE:-false}"
+ALLOW_DEGRADED_READY="${ALLOW_DEGRADED_READY:-false}"
+SKIP_REGISTER="${SKIP_REGISTER:-false}"
 EMAIL="${SMOKE_EMAIL:-staging-smoke-$(date +%s)@example.com}"
 PASSWORD="${SMOKE_PASSWORD:-secure-password-1}"
 ORG_NAME="${SMOKE_ORG:-Staging Smoke Org $(date +%s)}"
 
-echo "Waiting for backend at ${BASE_URL}..."
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
+curl_api() {
+  curl -fsS "$@"
+}
+
+curl_api_cookie() {
+  if [[ "$COOKIE_MODE" == "true" ]]; then
+    curl_api -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$@"
+  else
+    curl_api "$@"
+  fi
+}
+
+echo "Staging smoke — BASE_URL=${BASE_URL} COOKIE_MODE=${COOKIE_MODE}"
+
+echo "Waiting for backend..."
 attempt=0
-until curl -fsS "${BASE_URL}/health" >/dev/null 2>&1; do
+until curl_api "${BASE_URL}/health" >/dev/null 2>&1; do
   attempt=$((attempt + 1))
   if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
     echo "Backend did not become reachable within ${MAX_ATTEMPTS} attempts." >&2
@@ -22,53 +43,85 @@ until curl -fsS "${BASE_URL}/health" >/dev/null 2>&1; do
   sleep 2
 done
 
-echo "1/8 — /health"
-health_json="$(curl -fsS "${BASE_URL}/health")"
+echo "1/10 — /health"
+health_json="$(curl_api "${BASE_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys
 payload = json.loads(sys.argv[1])
 assert payload.get("execution_mode") == "paper", payload
 assert payload.get("real_trading_enabled") is False, payload
-print("  OK")
+print("  OK: paper mode, real_trading_enabled=false")
 PY
 
-echo "2/8 — /health/ready"
-ready_json="$(curl -fsS "${BASE_URL}/health/ready")"
-python3 - <<'PY' "$ready_json"
+echo "2/10 — /health/ready"
+ready_json="$(curl_api "${BASE_URL}/health/ready")"
+python3 - <<'PY' "$ready_json" "$ALLOW_DEGRADED_READY"
 import json, sys
 payload = json.loads(sys.argv[1])
-assert payload.get("ready") is True, payload
-print("  OK")
+allow_degraded = sys.argv[2].lower() in ("1", "true", "yes")
+if payload.get("ready") is True:
+    print("  OK: ready")
+elif allow_degraded:
+    print(f"  WARN: degraded readiness — {payload.get('providers_unavailable', '?')} providers unavailable")
+else:
+    assert payload.get("ready") is True, payload
 PY
 
-echo "3/8 — /providers/status"
-providers_json="$(curl -fsS "${BASE_URL}/providers/status")"
+echo "3/10 — /providers/status"
+providers_json="$(curl_api "${BASE_URL}/providers/status")"
 python3 - <<'PY' "$providers_json"
 import json, sys
 payload = json.loads(sys.argv[1])
-assert payload.get("providers"), payload
-print(f"  {len(payload['providers'])} providers")
+providers = payload.get("providers") or []
+assert providers, payload
+exchange = next((p for p in providers if p.get("kind") == "exchange"), None)
+assert exchange is not None, providers
+print(f"  OK: {len(providers)} providers; exchange={exchange.get('name')}")
 PY
 
-echo "4/8 — register"
-register_json="$(curl -fsS -X POST "${BASE_URL}/auth/register" \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
+if [[ -n "$FRONTEND_URL" ]]; then
+  echo "4/10 — CORS preflight (FRONTEND_URL=${FRONTEND_URL})"
+  cors_status="$(curl -sS -o /dev/null -w '%{http_code}' -X OPTIONS "${BASE_URL}/health" \
+    -H "Origin: ${FRONTEND_URL}" \
+    -H "Access-Control-Request-Method: GET" \
+    -H "Access-Control-Request-Headers: Authorization,Content-Type" || true)"
+  if [[ "$cors_status" != "200" && "$cors_status" != "204" ]]; then
+    echo "  WARN: OPTIONS /health returned HTTP ${cors_status} (check CORS_ORIGINS)" >&2
+  else
+    echo "  OK: CORS preflight HTTP ${cors_status}"
+  fi
+else
+  echo "4/10 — CORS preflight skipped (set FRONTEND_URL to test)"
+fi
 
-token="$(python3 - <<'PY' "$register_json"
+if [[ "$SKIP_REGISTER" == "true" ]]; then
+  echo "5/10 — register skipped (SKIP_REGISTER=true)"
+  if [[ -z "${SMOKE_ACCESS_TOKEN:-}" ]]; then
+    echo "SMOKE_ACCESS_TOKEN required when SKIP_REGISTER=true" >&2
+    exit 1
+  fi
+  login_token="$SMOKE_ACCESS_TOKEN"
+else
+  echo "5/10 — register"
+  register_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
+  login_token="$(python3 - <<'PY' "$register_json"
 import json, sys
 print(json.loads(sys.argv[1])["tokens"]["access_token"])
 PY
 )"
-refresh="$(python3 - <<'PY' "$register_json"
-import json, sys
-body = json.loads(sys.argv[1])
-print(body["tokens"].get("refresh_token") or "")
-PY
-)"
+  if [[ "$COOKIE_MODE" == "true" ]]; then
+    if ! grep -q alphatrade_refresh "$COOKIE_JAR" 2>/dev/null; then
+      echo "  WARN: refresh cookie not set after register (cookie mode may be off on API)" >&2
+    else
+      echo "  OK: refresh cookie present"
+    fi
+  fi
+fi
 
-echo "5/8 — login"
-login_json="$(curl -fsS -X POST "${BASE_URL}/auth/login" \
+echo "6/10 — login"
+login_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}")"
 login_token="$(python3 - <<'PY' "$login_json"
@@ -77,23 +130,57 @@ print(json.loads(sys.argv[1])["tokens"]["access_token"])
 PY
 )"
 
-echo "6/8 — protected chat"
-curl -fsS -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
+echo "7/10 — protected chat"
+curl_api -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
   "${BASE_URL}/chat/message" \
   -d '{"message":"Staging smoke test message"}' >/dev/null
+echo "  OK"
 
-echo "7/8 — logout"
-if [[ -n "$refresh" ]]; then
-  curl -fsS -X POST -H 'Content-Type: application/json' \
-    "${BASE_URL}/auth/logout" \
-    -d "{\"refresh_token\":\"${refresh}\"}" >/dev/null
+if [[ "$COOKIE_MODE" == "true" ]]; then
+  echo "8/10 — refresh (cookie)"
+  refresh_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/refresh" \
+    -H 'Content-Type: application/json' \
+    -d '{}')"
+  login_token="$(python3 - <<'PY' "$refresh_json"
+import json, sys
+body = json.loads(sys.argv[1])
+tokens = body.get("tokens") or body
+print(tokens["access_token"])
+PY
+)"
+  echo "  OK: rotated access token"
 else
-  curl -fsS -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
-    "${BASE_URL}/auth/logout" \
-    -d '{}' >/dev/null
+  echo "8/10 — refresh skipped (COOKIE_MODE=false)"
 fi
 
-echo "8/8 — real trading disabled invariant"
-./scripts/verify-safety.sh
+echo "9/10 — logout"
+if [[ "$COOKIE_MODE" == "true" ]]; then
+  curl_api_cookie -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
+    "${BASE_URL}/auth/logout" \
+    -d '{}' >/dev/null
+else
+  refresh="$(python3 - <<'PY' "$login_json" 2>/dev/null || true
+import json, sys
+try:
+    body = json.loads(sys.argv[1])
+    print(body["tokens"].get("refresh_token") or "")
+except Exception:
+    print("")
+PY
+)"
+  if [[ -n "$refresh" ]]; then
+    curl_api -X POST -H 'Content-Type: application/json' \
+      "${BASE_URL}/auth/logout" \
+      -d "{\"refresh_token\":\"${refresh}\"}" >/dev/null
+  else
+    curl_api -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
+      "${BASE_URL}/auth/logout" \
+      -d '{}' >/dev/null
+  fi
+fi
+echo "  OK"
+
+echo "10/10 — deployment safety invariants"
+BASE_URL="${BASE_URL}" ./scripts/verify-safety.sh
 
 echo "Staging smoke checks passed."

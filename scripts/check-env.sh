@@ -8,8 +8,13 @@ cd "$ROOT_DIR/backend"
 ENV_FILE="${ENV_FILE:-}"
 if [[ -n "$ENV_FILE" ]]; then
   if [[ ! -f "$ENV_FILE" ]]; then
-    echo "ENV_FILE not found: $ENV_FILE" >&2
-    exit 1
+    if [[ -f "$ROOT_DIR/$ENV_FILE" ]]; then
+      ENV_FILE="$ROOT_DIR/$ENV_FILE"
+    else
+      echo "ENV_FILE not found: $ENV_FILE" >&2
+      echo "Tip: copy .env.staging.example to .env.staging and fill secrets locally." >&2
+      exit 1
+    fi
   fi
   set -a
   # shellcheck disable=SC1090
@@ -39,4 +44,19 @@ posture = deployment_posture(settings)
 print("OK: environment configuration valid")
 for key, value in sorted(posture.items()):
     print(f"  {key}={value}")
+
+if settings.environment.value in ("staging", "production"):
+    checks = [
+        ("execution_mode", settings.execution_mode.value, "paper"),
+        ("enable_real_trading", settings.enable_real_trading, False),
+        ("provider_mode", settings.provider_mode, None),
+        ("billing_enabled", settings.billing_enabled, False),
+    ]
+    print("Staging/production spot checks:")
+    for name, actual, expected in checks:
+        if expected is None:
+            print(f"  {name}={actual}")
+        else:
+            status = "OK" if actual == expected else "WARN"
+            print(f"  [{status}] {name}={actual} (expected {expected})")
 PY

@@ -251,11 +251,24 @@ Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
 | **28** | Exchange adapter (still approval-gated; compliance review required) |
 | **29** | LangSmith traces + scaled LLM evaluation |
 
+## Staging Deployment
+
+Managed path: **Vercel** (frontend) + **Render** (API) + managed **Postgres** / **Redis** / **Qdrant Cloud** (or RAG fallback). Paper-only; real trading off.
+
+| Doc | Purpose |
+|-----|---------|
+| [staging_deployment_runbook.md](docs/staging_deployment_runbook.md) | Step-by-step deploy guide |
+| [staging_deployment_checklist.md](docs/staging_deployment_checklist.md) | Env vars and sign-off checklist |
+| [deployment.md](docs/deployment.md) | Architecture, monitoring, rollback |
+
+```bash
+ENV_FILE=.env.staging ./scripts/check-env.sh
+BASE_URL=https://your-api.onrender.com ./scripts/staging-smoke.sh
+```
+
 ## Deployment
 
-Managed cloud path (Vercel + Render + Qdrant Cloud): [docs/deployment.md](docs/deployment.md)
-
-Security checklist: [docs/security_checklist.md](docs/security_checklist.md)
+Full reference: [docs/deployment.md](docs/deployment.md) · Security: [docs/security_checklist.md](docs/security_checklist.md)
 
 ## Development status
 

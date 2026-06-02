@@ -1,154 +1,164 @@
 # Staging Deployment Checklist
 
-Use this checklist before deploying AlphaTrade AI to a **managed staging environment**
-(Vercel frontend + Render/Railway backend). **Paper-only execution** — real trading
-remains disabled.
+Copy this checklist when deploying to **Vercel + Render + managed data stores**.
+**Paper-only** — real trading and live Stripe remain disabled.
 
-> Do not commit filled `.env` files. Store secrets in platform env / secret stores only.
+> Store secrets in platform env UIs only. Never commit `.env.staging` or filled templates.
+
+**Runbook:** [staging_deployment_runbook.md](staging_deployment_runbook.md)
+
+---
+
+## Record your URLs (fill after deploy)
+
+| Item | Your value |
+|------|------------|
+| **Frontend URL** | `https://________________.vercel.app` |
+| **Backend URL** | `https://________________.onrender.com` |
 
 ---
 
 ## 1. Platform provisioning
 
-| Component | Recommended | Notes |
-|-----------|-------------|-------|
-| Frontend | [Vercel](https://vercel.com) | Root dir: `frontend` |
-| Backend API | [Render](https://render.com) or [Railway](https://railway.app) | Docker: `backend/Dockerfile` |
-| Postgres | Render / Railway / Neon / Supabase | Required |
-| Redis | Render / Upstash / Railway | Required for rate limits + denylist |
-| Qdrant | [Qdrant Cloud](https://cloud.qdrant.io) | RAG vectors; fallback if unreachable |
+| Component | Recommended | Status |
+|-----------|-------------|--------|
+| Frontend | Vercel (`frontend/` root) | ☐ |
+| Backend API | Render Docker (`backend/Dockerfile`) | ☐ |
+| Postgres | Render Postgres or Neon | ☐ |
+| Redis | Upstash or Render Redis | ☐ |
+| Qdrant | Qdrant Cloud (or degraded RAG fallback) | ☐ |
 
 ---
 
-## 2. Required environment variables
+## 2. Backend environment variables
 
-Copy from [`.env.staging.example`](../.env.staging.example) and
-[`frontend/.env.staging.example`](../frontend/.env.staging.example).
+Template: [`.env.staging.example`](../.env.staging.example)
 
-### Backend (Render / Railway)
+| # | Variable | Required value | ☐ |
+|---|----------|----------------|---|
+| 1 | `ENVIRONMENT` | `staging` | ☐ |
+| 2 | `EXECUTION_MODE` | `paper` | ☐ |
+| 3 | `ENABLE_REAL_TRADING` | `false` | ☐ |
+| 4 | `DATABASE_URL` | Managed Postgres (not localhost) | ☐ |
+| 5 | `REDIS_URL` | Managed Redis (not localhost) | ☐ |
+| 6 | `QDRANT_URL` | Qdrant Cloud HTTPS (not localhost) | ☐ |
+| 7 | `JWT_SECRET` | 32+ byte random (not placeholder) | ☐ |
+| 8 | `CORS_ORIGINS` | Exact frontend URL, `https://...` | ☐ |
+| 9 | `AUTH_REFRESH_COOKIE_ENABLED` | `true` | ☐ |
+| 10 | `AUTH_COOKIE_SECURE` | `true` | ☐ |
+| 11 | `AUTH_COOKIE_SAMESITE` | `none` (Vercel + separate API host) | ☐ |
+| 12 | `AUTH_OMIT_REFRESH_FROM_BODY` | `true` | ☐ |
+| 13 | `PROVIDER_MODE` | `fallback` | ☐ |
+| 14 | `BILLING_ENABLED` | `false` | ☐ |
+| 15 | `MARKET_DATA_ENABLED` | `true` | ☐ |
+| 16 | `OPENAI_API_KEY` | Optional (mock/fallback without) | ☐ |
+| 17 | `RATE_LIMIT_USE_REDIS` | `true` | ☐ |
+| 18 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `false` | ☐ |
+| 19 | `ACCESS_TOKEN_DENYLIST_ENABLED` | `true` | ☐ |
+| 20 | `ACCESS_TOKEN_DENYLIST_USE_REDIS` | `true` | ☐ |
+| 21 | `LOG_JSON` | `true` (recommended) | ☐ |
 
-| Variable | Required | Staging value |
-|----------|----------|---------------|
-| `ENVIRONMENT` | Yes | `staging` |
-| `EXECUTION_MODE` | Yes | `paper` |
-| `ENABLE_REAL_TRADING` | Yes | `false` |
-| `DATABASE_URL` | Yes | Managed Postgres URL (not localhost) |
-| `REDIS_URL` | Yes | Managed Redis URL (not localhost) |
-| `QDRANT_URL` | Yes | Hosted Qdrant URL (not localhost) |
-| `JWT_SECRET` | Yes | 32+ byte random secret |
-| `CORS_ORIGINS` | Yes | Exact Vercel URL, e.g. `https://your-app.vercel.app` |
-| `AUTH_REFRESH_COOKIE_ENABLED` | Yes | `true` |
-| `AUTH_COOKIE_SECURE` | Yes | `true` |
-| `AUTH_COOKIE_SAMESITE` | Yes | `none` (cross-domain Vercel + API) |
-| `AUTH_OMIT_REFRESH_FROM_BODY` | Yes | `true` |
-| `ACCESS_TOKEN_DENYLIST_ENABLED` | Yes | `true` |
-| `ACCESS_TOKEN_DENYLIST_USE_REDIS` | Yes | `true` |
-| `RATE_LIMIT_USE_REDIS` | Yes | `true` |
-| `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | Yes | `false` |
-| `PROVIDER_MODE` | Yes | `fallback` |
-| `BILLING_ENABLED` | Yes | `false` (until Stripe live wiring approved) |
-| `OPENAI_API_KEY` | Optional | Enables real LLM/embeddings with fallback |
-| `QDRANT_API_KEY` | Optional | If Qdrant Cloud requires API key |
-| `LOG_JSON` | Recommended | `true` |
-
-### Frontend (Vercel)
-
-| Variable | Required | Staging value |
-|----------|----------|---------------|
-| `NEXT_PUBLIC_API_URL` | Yes | HTTPS backend URL |
-| `NEXT_PUBLIC_AUTH_COOKIE_MODE` | Yes | `true` |
-| `NEXT_PUBLIC_EXECUTION_MODE` | Yes | `paper` |
-| `NEXT_PUBLIC_PROVIDER_MODE` | Recommended | `fallback` |
-
----
-
-## 3. Pre-deploy validation (local)
-
-Run from repo root after filling a **local copy** of staging env (never commit):
+Validate before deploy:
 
 ```bash
-# Validate env against deployment_safety rules
 ENV_FILE=.env.staging ./scripts/check-env.sh
+```
 
-# Full local Docker stack (production simulation)
+---
+
+## 3. Frontend environment variables (Vercel)
+
+Template: [`frontend/.env.staging.example`](../frontend/.env.staging.example)
+
+| Variable | Required value | ☐ |
+|----------|----------------|---|
+| `NEXT_PUBLIC_API_URL` | Backend HTTPS URL | ☐ |
+| `NEXT_PUBLIC_AUTH_COOKIE_MODE` | `true` | ☐ |
+| `NEXT_PUBLIC_EXECUTION_MODE` | `paper` | ☐ |
+| `NEXT_PUBLIC_PROVIDER_MODE` | `fallback` | ☐ |
+
+Redeploy frontend after changing `NEXT_PUBLIC_*` (build-time vars).
+
+---
+
+## 4. Pre-deploy (local)
+
+```bash
 docker compose up --build
 ./scripts/docker-validate.sh
 ./scripts/e2e-smoke.sh
-./scripts/staging-smoke.sh
+ENV_FILE=.env.staging ./scripts/check-env.sh
+COOKIE_MODE=true ./scripts/staging-smoke.sh
 ./scripts/verify-safety.sh
 ```
 
 ---
 
-## 4. Backend deploy steps (Render example)
+## 5. Backend deploy (Render)
 
-1. Create **Web Service** from repo; Dockerfile path `backend/Dockerfile`.
-2. Set **Release command**: `alembic upgrade head` (or use entrypoint migrations).
-3. Paste backend env vars from section 2.
-4. Health check: `/health` (liveness), optional `/health/ready` (readiness).
-5. Deploy and wait for healthy status.
+- [ ] Web Service from `backend/Dockerfile`
+- [ ] Release command: `alembic upgrade head`
+- [ ] Health check: `/health`
+- [ ] All backend env vars from §2
+- [ ] Deploy healthy
 
-### Migrations (manual / CI)
+---
+
+## 6. Frontend deploy (Vercel)
+
+- [ ] Root directory: `frontend`
+- [ ] Env vars from §3
+- [ ] Deploy successful
+- [ ] Update `CORS_ORIGINS` on backend to match Vercel URL
+- [ ] Redeploy backend if CORS changed
+
+---
+
+## 7. Post-deploy smoke
 
 ```bash
-DATABASE_URL='postgresql+psycopg://...' ./scripts/run-migrations.sh
+BASE_URL=https://YOUR-API.onrender.com ./scripts/verify-safety.sh
+FRONTEND_URL=https://YOUR-APP.vercel.app \
+COOKIE_MODE=true \
+ALLOW_DEGRADED_READY=true \
+BASE_URL=https://YOUR-API.onrender.com \
+./scripts/staging-smoke.sh
 ```
 
----
+Manual:
 
-## 5. Frontend deploy steps (Vercel)
-
-1. Import repo; root directory `frontend`.
-2. Set env vars from section 2 (Production + Preview).
-3. Deploy.
-4. Update backend `CORS_ORIGINS` to match deployed Vercel URL exactly.
-5. Redeploy backend if CORS changed.
+- [ ] Browser login → workspace chat → logout
+- [ ] Paper banner visible
+- [ ] Provider status shows paper exchange
+- [ ] No secrets in screenshots
 
 ---
 
-## 6. Post-deploy validation
-
-Replace `BASE_URL` with your staging API URL:
-
-```bash
-BASE_URL=https://your-api.onrender.com ./scripts/staging-smoke.sh
-BASE_URL=https://your-api.onrender.com ./scripts/verify-safety.sh
-```
-
-Manual browser checks:
-
-- [ ] Login → dashboard → logout (refresh cookie on API domain)
-- [ ] Paper mode banner visible
-- [ ] Provider status shows exchange paper-only
-- [ ] Chat message returns structured response
-- [ ] No secrets in browser devtools or screenshots
-
----
-
-## 7. Safety invariants (must pass)
+## 8. Safety invariants (must pass)
 
 | Check | Expected |
 |-------|----------|
 | `GET /health` → `execution_mode` | `paper` |
 | `GET /health` → `real_trading_enabled` | `false` |
 | `GET /providers/status` → exchange | mock / paper-only |
-| `BILLING_ENABLED` | `false` unless explicitly approved later |
-| Startup | No `deployment_safety` crash |
+| `BILLING_ENABLED` | `false` |
+| Startup logs | No deployment safety crash |
 
 ---
 
-## 8. Rollback
+## 9. Rollback
 
 | Layer | Action |
 |-------|--------|
-| Backend | Revert Render/Railway revision |
+| Backend | Render rollback revision |
 | Frontend | Vercel Instant Rollback |
-| Database | `alembic downgrade -1` if safe; else restore snapshot |
+| Database | Snapshot restore or safe `alembic downgrade` |
 
 ---
 
-## Related docs
+## Related
 
-- [deployment.md](deployment.md) — full architecture and troubleshooting
+- [staging_deployment_runbook.md](staging_deployment_runbook.md)
+- [deployment.md](deployment.md)
+- [railway_deployment.md](railway_deployment.md)
 - [security_checklist.md](security_checklist.md)
-- [demo_script.md](demo_script.md)

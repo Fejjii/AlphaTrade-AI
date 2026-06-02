@@ -73,6 +73,32 @@ def test_staging_rejects_trade_execution_mode() -> None:
         Settings(**{**_STAGING_BASE, "execution_mode": "trade", "enable_real_trading": True})
 
 
+def test_staging_requires_secure_cookies() -> None:
+    with pytest.raises(ValidationError, match="auth_cookie_secure"):
+        Settings(**{**_STAGING_BASE, "auth_cookie_secure": False})
+
+
+def test_staging_requires_strong_jwt_secret() -> None:
+    with pytest.raises(ValueError, match="jwt_secret must be at least"):
+        Settings(**{**_STAGING_BASE, "jwt_secret": "short"})
+
+
+def test_staging_validates_cors_origins_https() -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        Settings(**{**_STAGING_BASE, "cors_origins": "http://app.example.com"})
+
+
+def test_staging_rejects_localhost_cors_origin() -> None:
+    with pytest.raises(ValueError, match="localhost"):
+        Settings(**{**_STAGING_BASE, "cors_origins": "https://localhost:3000"})
+
+
+def test_staging_accepts_provider_fallback_mode() -> None:
+    settings = Settings(**{**_STAGING_BASE, "provider_mode": "fallback"})
+    assert settings.provider_mode == "fallback"
+    validate_deployment_settings(settings)
+
+
 def test_production_rejects_debug_mode() -> None:
     with pytest.raises(ValidationError, match="debug"):
         Settings(**{**_STAGING_BASE, "environment": "production", "debug": True})
