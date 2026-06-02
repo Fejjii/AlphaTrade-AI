@@ -41,7 +41,8 @@ export type StrategyId =
   | "passive_level_order"
   | "profit_protection"
   | "green_day_guard"
-  | "mental_capital_guard";
+  | "mental_capital_guard"
+  | "manual_review";
 export type DocumentSourceType =
   | "playbook"
   | "journal"
@@ -251,7 +252,68 @@ export interface JournalEntry {
   screenshot_refs: string[];
   linked_proposal_id?: string | null;
   linked_position_id?: string | null;
+  rag_synced?: boolean;
   created_at: string;
+}
+
+export interface SetupStatistics {
+  setup_type: StrategyId;
+  proposal_count: number;
+  paper_trade_count: number;
+  winning_paper_trades: number;
+  losing_paper_trades: number;
+  average_paper_pnl?: string | null;
+  average_risk_level?: string | null;
+  average_confidence?: number | null;
+  most_common_mistakes: string[];
+  most_common_lessons: string[];
+  last_used_at?: string | null;
+}
+
+export interface SetupAnalyticsResponse {
+  organization_id: string;
+  user_id: string;
+  setup_type_filter?: StrategyId | null;
+  date_range: { start?: string | null; end?: string | null };
+  setups: SetupStatistics[];
+}
+
+export interface TradeReviewAnalytics {
+  total_journaled_trades: number;
+  win_count: number;
+  loss_count: number;
+  average_pnl?: string | null;
+  most_frequent_setup_type?: StrategyId | null;
+  most_frequent_mistake_tag?: string | null;
+  most_frequent_emotion_tag?: string | null;
+  trades_after_daily_loss_warning: number;
+  trades_after_green_day_warning: number;
+  trades_blocked_by_risk_engine: number;
+  proposals_rejected_by_user: number;
+  proposals_needing_more_analysis: number;
+}
+
+export interface DisciplineScoreResult {
+  score: number;
+  grade: string;
+  positive_behaviors: string[];
+  negative_behaviors: string[];
+  improvement_suggestions: string[];
+}
+
+export interface RiskBehaviorAnalytics {
+  risk_blocks_count: number;
+  daily_loss_warnings: number;
+  green_day_warnings: number;
+  overtrading_warnings: number;
+  revenge_trading_warnings: number;
+  proposals_rejected: number;
+  proposals_needs_more_analysis: number;
+  paper_orders_rejected: number;
+  approval_pending_count: number;
+  approval_approved_count: number;
+  journal_completion_rate: number;
+  triggered_rules: Record<string, number>;
 }
 
 export interface PaginatedJournalEntries {

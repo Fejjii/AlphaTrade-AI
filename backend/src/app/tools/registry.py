@@ -237,10 +237,52 @@ def _indicator_execute(args: dict[str, Any], market_data_service: MarketDataServ
         return ToolOutput(tool_name="indicator", success=False, error=str(exc))
 
 
+def _analytics_summary_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.analytics import AnalyticsSummaryRequest
+    from app.services.analytics.facade import TradingAnalyticsFacade
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="analytics_summary_tool",
+            success=False,
+            error="Database session required for analytics.",
+        )
+    try:
+        org_raw = args.get("organization_id")
+        user_raw = args.get("user_id")
+        if org_raw is None or user_raw is None:
+            return ToolOutput(
+                tool_name="analytics_summary_tool",
+                success=False,
+                error="organization_id and user_id are required.",
+            )
+        request = AnalyticsSummaryRequest(
+            organization_id=_uuid.UUID(str(org_raw)),
+            user_id=_uuid.UUID(str(user_raw)),
+            start_date=args.get("start_date"),
+            end_date=args.get("end_date"),
+            setup_type=args.get("setup_type"),
+        )
+        summary = TradingAnalyticsFacade(session).summary_tool(request)
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="analytics_summary_tool",
+            success=True,
+            result=summary.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="analytics_summary_tool", success=False, error=str(exc))
+
+
 def build_default_registry(
     _settings: Settings | None = None,
     rag_service: RagService | None = None,
     market_data_service: MarketDataService | None = None,
+    db_session: Any | None = None,
 ) -> ToolRegistry:
     from app.services.rag_service import build_rag_service
 
@@ -362,6 +404,19 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda _a: _stub_execute("paper_execution"),
+        ),
+        ToolDefinition(
+            name="analytics_summary_tool",
+            description=(
+                "Summarize setup statistics, discipline score, repeated mistakes, "
+                "and improvement suggestions for the tenant."
+            ),
+            risk_level=ToolRiskLevel.READ,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _analytics_summary_execute(args, db_session),
         ),
     ]
     for tool in tools:

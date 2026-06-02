@@ -19,6 +19,7 @@ from app.schemas.common import (
     OrderType,
     ORMModel,
     PositiveDecimal,
+    StrategyId,
     StrictModel,
     Symbol,
 )
@@ -44,6 +45,7 @@ class PaperOrder(ORMModel):
     id: UUID
     organization_id: UUID
     user_id: UUID
+    strategy_id: StrategyId | None = None
     proposal_id: UUID | None = None
     approval_id: UUID | None = None
     mode: ExecutionMode = ExecutionMode.PAPER

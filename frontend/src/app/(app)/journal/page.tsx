@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { JournalEntryCard } from "@/components/JournalEntryCard";
 import { Button } from "@/components/ui/button";
@@ -8,17 +9,49 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
+import type { StrategyId } from "@/lib/api/types";
+import {
+  EMOTION_TAG_SUGGESTIONS,
+  MISTAKE_TAG_SUGGESTIONS,
+  SETUP_TYPE_OPTIONS,
+} from "@/lib/setup-types";
 
 export default function JournalPage() {
+  const searchParams = useSearchParams();
   const [symbol, setSymbol] = useState("BTCUSDT");
+  const [strategyId, setStrategyId] = useState<StrategyId | "">("");
   const [rationale, setRationale] = useState("");
   const [lessons, setLessons] = useState("");
+  const [improvementRule, setImprovementRule] = useState("");
   const [emotions, setEmotions] = useState("");
   const [mistakes, setMistakes] = useState("");
+  const [linkedProposalId, setLinkedProposalId] = useState<string | undefined>();
+  const [linkedPositionId, setLinkedPositionId] = useState<string | undefined>();
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const loader = useCallback(() => api.journal.list({ limit: 50 }), []);
   const { data, loading, error, reload } = useAsyncData(loader, []);
+
+  useEffect(() => {
+    const proposalId = searchParams.get("proposal_id");
+    const positionId = searchParams.get("position_id");
+    if (!proposalId && !positionId) return;
+    void (async () => {
+      try {
+        const prefill = await api.journal.prefill({
+          linked_proposal_id: proposalId ?? undefined,
+          linked_position_id: positionId ?? undefined,
+        });
+        setSymbol(prefill.symbol);
+        setStrategyId((prefill.strategy_id as StrategyId) ?? "");
+        setRationale(prefill.entry_rationale);
+        setLinkedProposalId(prefill.linked_proposal_id ?? undefined);
+        setLinkedPositionId(prefill.linked_position_id ?? undefined);
+      } catch {
+        /* prefill optional */
+      }
+    })();
+  }, [searchParams]);
 
   async function createEntry() {
     if (!rationale.trim()) return;
@@ -31,6 +64,10 @@ export default function JournalPage() {
         direction: "long",
         entry_rationale: rationale,
         lessons: lessons.trim() || undefined,
+        improvement_rule: improvementRule.trim() || undefined,
+        strategy_id: strategyId || undefined,
+        linked_proposal_id: linkedProposalId,
+        linked_position_id: linkedPositionId,
         emotions: emotions
           .split(",")
           .map((v) => v.trim())
@@ -42,6 +79,7 @@ export default function JournalPage() {
       });
       setRationale("");
       setLessons("");
+      setImprovementRule("");
       setEmotions("");
       setMistakes("");
       setMessage("Journal entry saved. Lessons sync to the knowledge base when enabled.");
@@ -58,7 +96,8 @@ export default function JournalPage() {
       <div>
         <h1 className="text-2xl font-semibold">Journal</h1>
         <p className="text-sm text-zinc-400">
-          Capture rationale, emotions, mistakes, and lessons. Entries can feed future RAG context.
+          Capture rationale, setup type, emotions, mistakes, lessons, and improvement rules. Use
+          ?proposal_id= or ?position_id= to prefill from a trade.
         </p>
       </div>
 
@@ -71,6 +110,22 @@ export default function JournalPage() {
               value={symbol}
               onChange={(e) => setSymbol(e.target.value.toUpperCase())}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="journal-setup">Setup type</Label>
+            <select
+              id="journal-setup"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+              value={strategyId}
+              onChange={(e) => setStrategyId(e.target.value as StrategyId | "")}
+            >
+              <option value="">Select setup…</option>
+              {SETUP_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="space-y-2">
@@ -85,14 +140,25 @@ export default function JournalPage() {
           <Label htmlFor="journal-lessons">Lessons learned</Label>
           <Textarea id="journal-lessons" value={lessons} onChange={(e) => setLessons(e.target.value)} />
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="journal-improvement">Improvement rule</Label>
+          <Textarea
+            id="journal-improvement"
+            value={improvementRule}
+            onChange={(e) => setImprovementRule(e.target.value)}
+            placeholder="e.g. No entries until 15m close confirms bias"
+          />
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="journal-emotions">Emotion tags (comma-separated)</Label>
             <Input id="journal-emotions" value={emotions} onChange={(e) => setEmotions(e.target.value)} />
+            <p className="text-xs text-zinc-500">{EMOTION_TAG_SUGGESTIONS.join(", ")}</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="journal-mistakes">Mistake tags (comma-separated)</Label>
             <Input id="journal-mistakes" value={mistakes} onChange={(e) => setMistakes(e.target.value)} />
+            <p className="text-xs text-zinc-500">{MISTAKE_TAG_SUGGESTIONS.join(", ")}</p>
           </div>
         </div>
         <Button disabled={busy || !rationale.trim()} onClick={() => void createEntry()}>

@@ -13,6 +13,7 @@ from app.schemas.common import (
     ORMModel,
     PositionStatus,
     PositiveDecimal,
+    StrategyId,
     StrictModel,
     Symbol,
     TradeDirection,
@@ -26,6 +27,8 @@ class Position(ORMModel):
     id: UUID
     organization_id: UUID
     user_id: UUID
+    strategy_id: StrategyId | None = None
+    linked_proposal_id: UUID | None = None
     symbol: Symbol
     direction: TradeDirection
     size: PositiveDecimal

@@ -83,6 +83,7 @@ class ExecutionService:
         row = Order(
             organization_id=organization_id,
             user_id=user_id,
+            strategy_id=proposal.strategy_id,
             proposal_id=request.proposal_id,
             approval_id=request.approval_id,
             mode=ExecutionMode.PAPER,
@@ -143,6 +144,8 @@ class ExecutionService:
         position = Position(
             organization_id=order.organization_id,
             user_id=order.user_id,
+            strategy_id=proposal.strategy_id,
+            linked_proposal_id=proposal.id,
             symbol=str(order.symbol),
             direction=direction,
             size=order.size,
@@ -150,7 +153,11 @@ class ExecutionService:
             leverage=proposal.leverage,
             stop_loss=proposal.stop_loss,
             take_profits=proposal.take_profits or [],
-            risk_state={"source": "paper_execution", "proposal_id": str(proposal.id)},
+            risk_state={
+                "source": "paper_execution",
+                "proposal_id": str(proposal.id),
+                "setup_type": proposal.strategy_id.value,
+            },
             status=PositionStatus.OPEN,
             opened_at=datetime.now(UTC),
         )
@@ -176,6 +183,7 @@ class ExecutionService:
             id=row.id,
             organization_id=row.organization_id,
             user_id=row.user_id,
+            strategy_id=row.strategy_id,
             proposal_id=row.proposal_id,
             approval_id=row.approval_id,
             mode=row.mode,

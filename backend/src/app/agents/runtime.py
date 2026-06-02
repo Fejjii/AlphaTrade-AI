@@ -79,7 +79,11 @@ class AgentRuntime:
             audit_service=audit,
             usage_service=usage,
         )
-        tools = tool_registry or build_default_registry(settings, rag_service=rag)
+        tools = tool_registry or build_default_registry(
+            settings,
+            rag_service=rag,
+            db_session=session,
+        )
         if market_data_service is None:
             from app.providers.factory import resolve_market_data_provider
             from app.services.indicator_service import IndicatorService

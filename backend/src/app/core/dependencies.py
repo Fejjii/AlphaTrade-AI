@@ -11,6 +11,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
+from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.execution_service import ExecutionService
@@ -147,3 +148,10 @@ ExecutionServiceDep = Annotated[ExecutionService, Depends(get_execution_service)
 PositionServiceDep = Annotated[PositionService, Depends(get_position_service)]
 JournalServiceDep = Annotated[JournalService, Depends(get_journal_service)]
 WorkflowServiceDep = Annotated[WorkflowService, Depends(get_workflow_service)]
+
+
+def get_analytics_facade(session: SessionDep) -> TradingAnalyticsFacade:
+    return TradingAnalyticsFacade(session)
+
+
+AnalyticsFacadeDep = Annotated[TradingAnalyticsFacade, Depends(get_analytics_facade)]

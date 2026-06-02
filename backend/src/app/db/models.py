@@ -370,6 +370,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id"), nullable=False
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    strategy_id: Mapped[StrategyId | None] = mapped_column(_enum(StrategyId), nullable=True)
     proposal_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("trade_proposals.id"), nullable=True
     )
@@ -393,6 +394,10 @@ class Position(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id"), nullable=False
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    strategy_id: Mapped[StrategyId | None] = mapped_column(_enum(StrategyId), nullable=True)
+    linked_proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("trade_proposals.id"), nullable=True
+    )
     symbol: Mapped[str] = mapped_column(String(30), nullable=False)
     direction: Mapped[TradeDirection] = mapped_column(_enum(TradeDirection), nullable=False)
     size: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)

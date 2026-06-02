@@ -70,6 +70,19 @@ def _evidence(agent: AgentState) -> list[str]:
         )
     if agent.retrieved_context:
         evidence.append(f"{len(agent.retrieved_context)} RAG citation(s) retrieved.")
+    analytics_tool = next(
+        (o for o in agent.tool_outputs if o.tool_name == "analytics_summary_tool"),
+        None,
+    )
+    if analytics_tool and analytics_tool.success and analytics_tool.result:
+        discipline = analytics_tool.result.get("discipline_summary") or {}
+        evidence.append(
+            f"Analytics: discipline {discipline.get('score', 'n/a')}/100 "
+            f"({discipline.get('grade', '?')})."
+        )
+        mistakes = analytics_tool.result.get("repeated_mistakes") or []
+        if mistakes:
+            evidence.append(f"Repeated mistakes: {', '.join(mistakes[:3])}.")
     if not evidence:
         evidence.append("No strategy signals or market context available for this intent.")
     return evidence
@@ -135,6 +148,27 @@ def build_trading_analysis(agent: AgentState, runtime: AgentRuntime) -> TradingA
             stop_loss_or_no_trade_reason=f"Stop loss at {proposal.exit.stop_loss}.",
             approval_status=approval_status,
             next_decision_point=next_step,
+            paper_mode_disclaimer=paper_disclaimer,
+            market_data_quality=market_quality,
+        )
+
+    analytics_tool = next(
+        (o for o in agent.tool_outputs if o.tool_name == "analytics_summary_tool"),
+        None,
+    )
+    if analytics_tool and analytics_tool.success and agent.final_answer:
+        return TradingAnalysisDetail(
+            summary=agent.final_answer,
+            setup_type=_setup_type(agent),
+            evidence=_evidence(agent),
+            risk_level=agent.risk_level,
+            confidence=agent.confidence,
+            invalidation=None,
+            stop_loss_or_no_trade_reason="No trade — analytics review only.",
+            approval_status=approval_status,
+            next_decision_point=(
+                "Apply improvement suggestions and re-check weakest setup in paper mode."
+            ),
             paper_mode_disclaimer=paper_disclaimer,
             market_data_quality=market_quality,
         )

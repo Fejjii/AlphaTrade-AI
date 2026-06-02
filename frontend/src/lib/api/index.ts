@@ -6,7 +6,11 @@ import type {
   AuthResponse,
   HealthResponse,
   IngestDocumentResponse,
+  DisciplineScoreResult,
   JournalEntry,
+  RiskBehaviorAnalytics,
+  SetupAnalyticsResponse,
+  TradeReviewAnalytics,
   MeResponse,
   MessageResponse,
   OrganizationInvitation,
@@ -216,15 +220,29 @@ export const api = {
   journal: {
     list: (params?: { limit?: number; offset?: number }) =>
       apiFetch<PaginatedJournalEntries>("/journal/entries", { query: params }),
+    prefill: (params: { linked_proposal_id?: string; linked_position_id?: string }) =>
+      apiFetch<{
+        symbol: string;
+        timeframe: string;
+        direction: string;
+        strategy_id?: string | null;
+        entry_rationale: string;
+        linked_proposal_id?: string | null;
+        linked_position_id?: string | null;
+        tags: string[];
+      }>("/journal/prefill", { query: params }),
     create: (body: {
       symbol: string;
       timeframe: string;
       direction: string;
       entry_rationale: string;
       lessons?: string;
+      improvement_rule?: string;
       emotions?: string[];
       mistakes?: string[];
       strategy_id?: string;
+      linked_proposal_id?: string;
+      linked_position_id?: string;
       organization_id?: string;
       user_id?: string;
     }) =>
@@ -234,6 +252,12 @@ export const api = {
       }),
     delete: (id: string) =>
       apiFetch<void>(`/journal/entries/${id}`, { method: "DELETE" }),
+  },
+  analytics: {
+    setups: () => apiFetch<SetupAnalyticsResponse>("/analytics/setups"),
+    tradeReview: () => apiFetch<TradeReviewAnalytics>("/analytics/trade-review"),
+    discipline: () => apiFetch<DisciplineScoreResult>("/analytics/discipline"),
+    riskBehavior: () => apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior"),
   },
   knowledge: {
     ingest: (body: {

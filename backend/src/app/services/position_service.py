@@ -117,6 +117,8 @@ def _to_schema(row: PositionModel) -> Position:
         id=row.id,
         organization_id=row.organization_id,
         user_id=row.user_id,
+        strategy_id=row.strategy_id,
+        linked_proposal_id=row.linked_proposal_id,
         symbol=row.symbol,
         direction=row.direction,
         size=row.size,

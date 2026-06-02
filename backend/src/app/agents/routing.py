@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Literal
 
+from app.agents.analytics_intent import is_analytics_message
 from app.agents.state_utils import parse_state
 from app.schemas.agent import Intent, MessageClass
 from app.schemas.common import RiskAction, SafetyVerdict
 
 RouteAfterInjection = Literal["blocked", "continue"]
 RouteAfterModeration = Literal["blocked", "continue"]
-RouteAfterIntent = Literal["trading_analysis", "general"]
+RouteAfterIntent = Literal["trading_analysis", "analytics", "general"]
 RouteAfterRisk = Literal["blocked", "approval", "tools", "respond"]
 RouteAfterApproval = Literal["tools", "respond"]
 
@@ -31,6 +32,8 @@ def route_after_moderation(state: dict) -> RouteAfterModeration:
 
 def route_after_intent(state: dict) -> RouteAfterIntent:
     agent = parse_state(state)
+    if agent.intent is Intent.REVIEW and is_analytics_message(agent.message):
+        return "analytics"
     trading_intents = {
         Intent.MONITOR,
         Intent.PLAN_TRADE,

@@ -78,6 +78,7 @@ Human-in-the-loop path:
 4. Approved proposals → paper order → paper position
 5. Audit + usage events throughout
 6. Journal entries optionally sync to RAG (`trade_journal`)
+7. **Analytics services** (Slice 31) — deterministic setup stats, trade review, discipline score, risk behavior (`GET /analytics/*`); agent uses `analytics_summary_tool`
 
 ## Account lifecycle (Slice 25)
 

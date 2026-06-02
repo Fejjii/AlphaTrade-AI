@@ -165,15 +165,77 @@ def intent_classification(state: dict, runtime: AgentRuntime) -> dict:
     return patch_state(state, {"intent": intent})
 
 
+def trading_analytics_retrieval(state: dict, runtime: AgentRuntime) -> dict:
+    """Load deterministic analytics via tool boundary (no direct DB in nodes)."""
+    agent = parse_state(state)
+    if runtime.session is None or agent.organization_id is None or agent.user_id is None:
+        return patch_state(state, {})
+
+    output = runtime.tool_registry.execute(
+        "analytics_summary_tool",
+        {
+            "organization_id": str(agent.organization_id),
+            "user_id": str(agent.user_id),
+        },
+    )
+    tool_audit = runtime.observability.emit_tool_called(
+        agent,
+        tool_name="analytics_summary_tool",
+        success=output.success,
+        latency_ms=output.latency_ms,
+    )
+    updates: dict = {
+        "tool_outputs": [*agent.tool_outputs, dump_partial(output)],
+        "audit_events": [*agent.audit_events, tool_audit],
+    }
+    if output.success and output.result:
+        review = output.result.get("trade_review") or {}
+        discipline = output.result.get("discipline_summary") or {}
+        setups = output.result.get("setup_statistics") or []
+        mistakes = output.result.get("repeated_mistakes") or []
+        summary_parts = [
+            f"Discipline score {discipline.get('score', 'n/a')} ({discipline.get('grade', '?')}).",
+            f"Journaled trades: {review.get('total_journaled_trades', 0)}.",
+        ]
+        if setups:
+            top = max(setups, key=lambda s: s.get("paper_trade_count", 0))
+            if top:
+                summary_parts.append(
+                    f"Most active setup: {top.get('setup_type')} "
+                    f"({top.get('paper_trade_count', 0)} paper trades)."
+                )
+        if mistakes:
+            summary_parts.append(f"Repeated mistakes: {', '.join(mistakes[:5])}.")
+        updates["final_answer"] = " ".join(summary_parts)
+    return patch_state(state, updates)
+
+
 def context_retrieval(state: dict, runtime: AgentRuntime) -> dict:
     """RAG via tool boundary — rules, lessons, and policy context only."""
     agent = parse_state(state)
+    from app.schemas.common import DocumentSourceType
+
+    source_types = [
+        DocumentSourceType.TRADING_PLAYBOOK,
+        DocumentSourceType.RISK_POLICY,
+        DocumentSourceType.TRADE_JOURNAL,
+        DocumentSourceType.REVIEW_NOTE,
+    ]
+    lowered = agent.message.lower()
+    if any(w in lowered for w in ("mistake", "lesson", "improve", "emotion", "journal")):
+        source_types = [
+            DocumentSourceType.TRADE_JOURNAL,
+            DocumentSourceType.MISTAKES_DATABASE,
+            DocumentSourceType.REVIEW_NOTE,
+            DocumentSourceType.TRADING_PLAYBOOK,
+        ]
     tool_input = ToolInput(
         tool_name="rag_retriever",
         arguments={
             "query": agent.message[:500],
             "organization_id": str(agent.organization_id) if agent.organization_id else None,
             "user_id": str(agent.user_id) if agent.user_id else None,
+            "source_types": [st.value for st in source_types],
         },
     )
     output = runtime.tool_registry.execute("rag_retriever", tool_input.arguments)

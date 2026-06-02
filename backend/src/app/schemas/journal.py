@@ -79,7 +79,21 @@ class JournalEntry(ORMModel):
     screenshot_refs: list[str] = Field(default_factory=list)
     linked_proposal_id: UUID | None = None
     linked_position_id: UUID | None = None
+    rag_synced: bool = False
     created_at: datetime
+
+
+class JournalEntryPrefill(StrictModel):
+    """Suggested fields when journaling from a proposal or paper position."""
+
+    symbol: Symbol
+    timeframe: Timeframe
+    direction: TradeDirection
+    strategy_id: StrategyId | None = None
+    entry_rationale: str
+    linked_proposal_id: UUID | None = None
+    linked_position_id: UUID | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class PaginatedJournalEntries(StrictModel):

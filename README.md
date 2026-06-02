@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Release** | `v0.1.0-paper-mvp` — Slices 1–26 |
+| **Release** | `v0.1.0-paper-mvp` — Slices 1–31 |
 | **Execution** | `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` |
 | **Providers** | Mock by default; optional OpenAI, Qdrant, Binance public (read-only) |
 | **Stack** | FastAPI · LangGraph · PostgreSQL · Redis · Qdrant · Next.js 15 |
@@ -24,6 +24,7 @@
 - **Read-only market data** — Binance public REST or mock fallback with provenance labels (`is_live`, `fallback_used`)
 - **RAG knowledge base** — playbooks, policies, and journal lessons (not trading signals)
 - **Journal → RAG loop** — trade reviews auto-sync to knowledge for future agent retrieval
+- **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies
 - **Billing scaffold** — Stripe placeholder + usage export (`BILLING_ENABLED=false` by default)

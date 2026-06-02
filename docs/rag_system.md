@@ -59,6 +59,9 @@ Trade journal entries can automatically sync into the knowledge base for future 
 - Stable URI: `journal://{entry_id}` for idempotent updates
 - Metadata tags: symbol, timeframe, strategy/setup type, result, emotion/mistake tags in body text
 - Secrets stripped via `sanitize_journal_text()` before ingestion
+- Lessons and **improvement rules** are indexed for retrieval; mistake tags are included in chunk text
+- Agent retrieval boosts `trade_journal` / mistakes sources when the user asks about mistakes, emotions, or improvements
+- **Analytics API summaries are not ingested** unless explicitly designed later ([trading_analytics.md](trading_analytics.md))
 
 Agent retrieval includes `TRADE_JOURNAL` in `RagService.retrieve_for_agent()`.
 

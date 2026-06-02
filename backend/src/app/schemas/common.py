@@ -197,7 +197,7 @@ class RiskRuleId(StrEnum):
 
 
 class StrategyId(StrEnum):
-    """The seven MVP strategy modules."""
+    """Trading setup types (strategy modules plus manual review)."""
 
     HTF_TREND_PULLBACK = "htf_trend_pullback"
     LIQUIDITY_SWEEP_REVERSAL = "liquidity_sweep_reversal"
@@ -206,6 +206,11 @@ class StrategyId(StrEnum):
     PROFIT_PROTECTION = "profit_protection"
     GREEN_DAY_GUARD = "green_day_guard"
     MENTAL_CAPITAL_GUARD = "mental_capital_guard"
+    MANUAL_REVIEW = "manual_review"
+
+
+# Alias used by analytics and journal UX.
+SetupType = StrategyId
 
 
 class SetupCategory(StrEnum):

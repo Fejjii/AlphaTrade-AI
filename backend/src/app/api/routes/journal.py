@@ -11,6 +11,7 @@ from app.core.dependencies import JournalServiceDep, SessionDep
 from app.schemas.journal import (
     JournalEntry,
     JournalEntryCreate,
+    JournalEntryPrefill,
     JournalEntryUpdate,
     PaginatedJournalEntries,
 )
@@ -33,6 +34,29 @@ async def create_journal_entry(
     result = journal_service.create(payload)
     session.commit()
     return result
+
+
+@router.get(
+    "/prefill",
+    response_model=JournalEntryPrefill,
+    summary="Prefill journal from proposal or position",
+)
+async def prefill_journal_entry(
+    tenant: TenantDep,
+    journal_service: JournalServiceDep,
+    linked_proposal_id: uuid.UUID | None = Query(default=None),
+    linked_position_id: uuid.UUID | None = Query(default=None),
+) -> JournalEntryPrefill:
+    if linked_proposal_id is None and linked_position_id is None:
+        from app.core.errors import ValidationAppError
+
+        raise ValidationAppError("Provide linked_proposal_id or linked_position_id.")
+    return journal_service.prefill(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        linked_proposal_id=linked_proposal_id,
+        linked_position_id=linked_position_id,
+    )
 
 
 @router.get("/entries", response_model=PaginatedJournalEntries, summary="List journal entries")

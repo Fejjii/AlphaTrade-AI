@@ -21,6 +21,7 @@ def test_registry_registers_all_mvp_tools() -> None:
         "journal_writer",
         "position_reader",
         "paper_execution",
+        "analytics_summary_tool",
     }
     assert expected <= names
 

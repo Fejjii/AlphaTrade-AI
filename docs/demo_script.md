@@ -146,13 +146,27 @@ Route: `/positions`
 
 Route: `/journal`
 
-1. Create entry: lessons learned, emotions, mistake tags
-2. Link symbol/timeframe if applicable
-3. Explain redaction of secrets before any RAG ingest
+1. Create entry: setup type, lessons, improvement rule, emotion and mistake tags
+2. Optional: open `/journal?proposal_id={id}` to prefill from a proposal
+3. Show **RAG synced** badge when ingest completed
+4. Explain redaction of secrets before any RAG ingest
 
 ---
 
-## 12. Journal → RAG learning loop
+## 12. Trading analytics
+
+Route: `/analytics`
+
+1. Setup performance cards (paper win/loss, proposals per setup)
+2. Trade review metrics (mistakes, emotions, risk blocks)
+3. Discipline score (deterministic 0–100, not LLM)
+4. Risk behavior panel (warnings, journal completion rate)
+
+In **Workspace**, ask: “What mistakes do I repeat?” — agent uses `analytics_summary_tool`.
+
+---
+
+## 13. Journal → RAG learning loop
 
 Route: `/knowledge`
 
@@ -165,7 +179,7 @@ Return to **Workspace** and note how future chats may cite past lessons.
 
 ---
 
-## 13. Usage dashboard
+## 14. Usage dashboard
 
 Route: `/usage`
 

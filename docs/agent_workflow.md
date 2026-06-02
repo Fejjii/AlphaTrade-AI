@@ -9,7 +9,10 @@ flowchart TD
   A[User message] --> B[Auth + quota]
   B --> C[Guardrails]
   C --> D[RAG retrieval]
-  D --> E[Market data tools]
+  D --> D2{Analytics intent?}
+  D2 -->|Yes| D3[analytics_summary_tool]
+  D2 -->|No| E[Market data tools]
+  D3 --> J
   E --> F[Strategy evaluation]
   F --> G[Risk engine]
   G --> H{Approval required?}
@@ -25,6 +28,7 @@ flowchart TD
 |-------|---------|
 | Guardrails | Injection, moderation, trading policy |
 | RAG | Rules, playbook, **journal lessons** — never direct signals |
+| Analytics | `analytics_summary_tool` for review questions (setups, mistakes, discipline) |
 | Market data | Read-only ticker/OHLCV via provider abstraction |
 | Strategies | Seven deterministic MVP setups |
 | Risk gate | 15 rules; `BLOCK` stops paper execution |
@@ -62,7 +66,11 @@ When `JOURNAL_RAG_SYNC_ENABLED=true` (default):
 2. Entry text ingested as `trade_journal` with symbol/timeframe/tags metadata
 3. Agent `retrieve_for_agent` includes `TRADE_JOURNAL` source type
 
-See [rag_system.md](rag_system.md).
+See [rag_system.md](rag_system.md). Analytics summaries are not auto-ingested; see [trading_analytics.md](trading_analytics.md).
+
+## Analytics questions (Slice 31)
+
+Review-style messages route to `trading_analytics_retrieval`, which calls `analytics_summary_tool` (DB session required). The deterministic reply includes discipline score, repeated mistakes, and setup activity — not LLM-scored discipline.
 
 ## API endpoints
 
