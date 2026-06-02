@@ -1,6 +1,6 @@
 # Staging Live Deployment Notes
 
-Working notes for **Slice 30** — real Vercel + Render staging.  
+Working notes for **Slice 32** — staging validation after Slice 31 analytics.  
 **Do not commit** filled secrets or this file if you paste credentials into §0.
 
 Related: [pre_deployment_checklist.md](pre_deployment_checklist.md) · [deployment_command_pack.md](deployment_command_pack.md) · [staging_deployment_worksheet.template.md](staging_deployment_worksheet.template.md) · [staging_execution_checklist.md](staging_execution_checklist.md) · [staging_deployment_runbook.md](staging_deployment_runbook.md)
@@ -108,6 +108,8 @@ Optional: [frontend/vercel.json](../frontend/vercel.json) is already present.
 
 ## 4. Exact migration command
 
+**Slice 31 analytics:** Before validating analytics endpoints in staging, apply migration **`j0k1l2m3n4o5`** (setup linkage on positions and paper orders for analytics). Without it, `/analytics/*` may fail or return incomplete data.
+
 **On Render (recommended):** Pre-Deploy Command:
 
 ```bash
@@ -181,6 +183,17 @@ COOKIE_MODE=true \
 ALLOW_DEGRADED_READY=true \
 BASE_URL=https://YOUR_BACKEND_URL \
 ./scripts/staging-smoke.sh
+
+# 4) Optional — analytics smoke (Slice 31; requires migration j0k1l2m3n4o5)
+INCLUDE_ANALYTICS=true \
+FRONTEND_URL=https://YOUR_FRONTEND_URL \
+COOKIE_MODE=true \
+ALLOW_DEGRADED_READY=true \
+BASE_URL=https://YOUR_BACKEND_URL \
+./scripts/staging-smoke.sh
+
+# Or standalone analytics smoke
+BASE_URL=https://YOUR_BACKEND_URL ./scripts/analytics-smoke.sh
 ```
 
 **Expected:** All steps print OK; safety shows `execution_mode=paper`, `real_trading_enabled=false`, exchange mock/paper-only.

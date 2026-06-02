@@ -58,7 +58,7 @@ until curl_api "${BASE_URL}/health" >/dev/null 2>&1; do
   sleep 2
 done
 
-echo "1/10 — /health"
+echo "1/12 — /health"
 health_json="$(curl_api "${BASE_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys
@@ -68,7 +68,7 @@ assert payload.get("real_trading_enabled") is False, payload
 print("  OK: paper mode, real_trading_enabled=false")
 PY
 
-echo "2/10 — /health/ready"
+echo "2/12 — /health/ready"
 ready_json="$(curl_api "${BASE_URL}/health/ready")"
 python3 - <<'PY' "$ready_json" "$ALLOW_DEGRADED_READY"
 import json, sys
@@ -82,7 +82,7 @@ else:
     assert payload.get("ready") is True, payload
 PY
 
-echo "3/10 — /providers/status"
+echo "3/12 — /providers/status"
 providers_json="$(curl_api "${BASE_URL}/providers/status")"
 python3 - <<'PY' "$providers_json"
 import json, sys
@@ -95,7 +95,7 @@ print(f"  OK: {len(providers)} providers; exchange={exchange.get('name')}")
 PY
 
 if [[ -n "$FRONTEND_URL" ]]; then
-  echo "4/10 — CORS preflight (FRONTEND_URL=${FRONTEND_URL})"
+  echo "4/12 — CORS preflight (FRONTEND_URL=${FRONTEND_URL})"
   cors_status="$(curl -sS -o /dev/null -w '%{http_code}' -X OPTIONS "${BASE_URL}/health" \
     -H "Origin: ${FRONTEND_URL}" \
     -H "Access-Control-Request-Method: GET" \
@@ -107,18 +107,18 @@ if [[ -n "$FRONTEND_URL" ]]; then
     echo "  OK: CORS preflight HTTP ${cors_status}"
   fi
 else
-  echo "4/10 — CORS preflight skipped (set FRONTEND_URL to test)"
+  echo "4/12 — CORS preflight skipped (set FRONTEND_URL to test)"
 fi
 
 if [[ "$SKIP_REGISTER" == "true" ]]; then
-  echo "5/10 — register skipped (SKIP_REGISTER=true)"
+  echo "5/12 — register skipped (SKIP_REGISTER=true)"
   if [[ -z "${SMOKE_ACCESS_TOKEN:-}" ]]; then
     echo "SMOKE_ACCESS_TOKEN required when SKIP_REGISTER=true" >&2
     exit 1
   fi
   login_token="$SMOKE_ACCESS_TOKEN"
 else
-  echo "5/10 — register"
+  echo "5/12 — register"
   register_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
@@ -137,7 +137,7 @@ PY
   fi
 fi
 
-echo "6/10 — login"
+echo "6/12 — login"
 login_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}")"
@@ -147,14 +147,14 @@ print(json.loads(sys.argv[1])["tokens"]["access_token"])
 PY
 )"
 
-echo "7/10 — protected chat"
+echo "7/12 — protected chat"
 curl_api -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
   "${BASE_URL}/chat/message" \
   -d '{"message":"Staging smoke test message"}' >/dev/null
 echo "  OK"
 
 if [[ "$COOKIE_MODE" == "true" ]]; then
-  echo "8/10 — refresh (cookie)"
+  echo "8/12 — refresh (cookie)"
   refresh_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/refresh" \
     -H 'Content-Type: application/json' \
     -d '{}')"
@@ -167,10 +167,22 @@ PY
 )"
   echo "  OK: rotated access token"
 else
-  echo "8/10 — refresh skipped (COOKIE_MODE=false)"
+  echo "8/12 — refresh skipped (COOKIE_MODE=false)"
 fi
 
-echo "9/10 — logout"
+if [[ "${INCLUDE_ANALYTICS:-false}" == "true" ]]; then
+  echo "9/12 — analytics smoke (INCLUDE_ANALYTICS=true)"
+  SKIP_REGISTER=true \
+    SMOKE_ACCESS_TOKEN="${login_token}" \
+    SKIP_SAFETY=true \
+    COOKIE_MODE="${COOKIE_MODE}" \
+    BASE_URL="${BASE_URL}" \
+    ./scripts/analytics-smoke.sh
+else
+  echo "9/12 — analytics smoke skipped (set INCLUDE_ANALYTICS=true to enable)"
+fi
+
+echo "10/12 — logout"
 if [[ "$COOKIE_MODE" == "true" ]]; then
   curl_api_cookie -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
     "${BASE_URL}/auth/logout" \
@@ -197,7 +209,8 @@ PY
 fi
 echo "  OK"
 
-echo "10/10 — deployment safety invariants"
+echo "11/12 — deployment safety invariants"
 BASE_URL="${BASE_URL}" ./scripts/verify-safety.sh
 
+echo "12/12 — staging smoke complete"
 echo "Staging smoke checks passed."

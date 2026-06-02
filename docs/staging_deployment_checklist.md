@@ -87,10 +87,13 @@ Redeploy frontend after changing `NEXT_PUBLIC_*` (build-time vars).
 docker compose up --build
 ./scripts/docker-validate.sh
 ./scripts/e2e-smoke.sh
+./scripts/analytics-smoke.sh
 ENV_FILE=.env.staging ./scripts/check-env.sh
 COOKIE_MODE=true ./scripts/staging-smoke.sh
 ./scripts/verify-safety.sh
 ```
+
+**Slice 31 analytics:** Before validating analytics in staging (or after pulling Slice 31), run `alembic upgrade head` so migration **`j0k1l2m3n4o5`** (setup linkage on positions and paper orders) is applied. Render pre-deploy command should remain `alembic upgrade head`.
 
 ---
 
@@ -118,12 +121,26 @@ COOKIE_MODE=true ./scripts/staging-smoke.sh
 
 ```bash
 BASE_URL=https://YOUR-API.onrender.com ./scripts/verify-safety.sh
+
 FRONTEND_URL=https://YOUR-APP.vercel.app \
 COOKIE_MODE=true \
 ALLOW_DEGRADED_READY=true \
 BASE_URL=https://YOUR-API.onrender.com \
 ./scripts/staging-smoke.sh
+
+# Optional — Slice 31 analytics (requires migration j0k1l2m3n4o5 applied first)
+INCLUDE_ANALYTICS=true \
+FRONTEND_URL=https://YOUR-APP.vercel.app \
+COOKIE_MODE=true \
+ALLOW_DEGRADED_READY=true \
+BASE_URL=https://YOUR-API.onrender.com \
+./scripts/staging-smoke.sh
+
+# Or run analytics smoke standalone after migration
+BASE_URL=https://YOUR-API.onrender.com ./scripts/analytics-smoke.sh
 ```
+
+**Migration reminder:** Run `alembic upgrade head` on staging Postgres before analytics smoke. Migration revision: **`j0k1l2m3n4o5`**.
 
 Manual:
 
