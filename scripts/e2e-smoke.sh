@@ -10,7 +10,7 @@ PASSWORD="${SMOKE_PASSWORD:-secure-password-1}"
 echo "Registering smoke user at ${BASE_URL}..."
 register_json="$(curl -fsS -X POST "${BASE_URL}/auth/register" \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"Smoke Org\"}")"
+  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"Smoke Org $(date +%s)\"}")"
 
 token="$(python3 - <<'PY' "$register_json"
 import json, sys
@@ -35,9 +35,15 @@ echo "Checking /proposals..."
 curl -fsS -H "Authorization: Bearer ${token}" "${BASE_URL}/proposals" >/dev/null
 
 echo "Logging out..."
-curl -fsS -X POST -H 'Content-Type: application/json' \
-  "${BASE_URL}/auth/logout" \
-  -d "{\"refresh_token\":\"${refresh}\"}" >/dev/null
+if [[ -n "$refresh" ]]; then
+  curl -fsS -X POST -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
+    "${BASE_URL}/auth/logout" \
+    -d "{\"refresh_token\":\"${refresh}\"}" >/dev/null
+else
+  curl -fsS -X POST -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
+    "${BASE_URL}/auth/logout" \
+    -d '{}' >/dev/null
+fi
 
 echo "Checking protected route without token returns 401..."
 status="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/proposals")"

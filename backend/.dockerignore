@@ -8,6 +8,5 @@ __pycache__
 .coverage
 htmlcov
 tests
-README.md
 .env
 .env.*

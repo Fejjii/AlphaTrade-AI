@@ -24,7 +24,7 @@ test.describe("AlphaTrade MVP API workflow", () => {
     expect(providerBody.providers?.length).toBeGreaterThan(0);
 
     const register = await request.post(`${API_URL}/auth/register`, {
-      data: { email, password, organization_name: "E2E Org" },
+      data: { email, password, organization_name: `E2E Org ${Date.now()}` },
     });
     expect(register.status()).toBe(201);
     const auth = await register.json();
@@ -101,9 +101,10 @@ test.describe("AlphaTrade MVP API workflow", () => {
     const audit = await request.get(`${API_URL}/audit/events`, { headers });
     expect(audit.ok()).toBeTruthy();
 
+    const refreshToken = auth.tokens.refresh_token as string | undefined;
     const logout = await request.post(`${API_URL}/auth/logout`, {
       headers,
-      data: { refresh_token: auth.tokens.refresh_token },
+      data: refreshToken ? { refresh_token: refreshToken } : {},
     });
     expect(logout.ok()).toBeTruthy();
 

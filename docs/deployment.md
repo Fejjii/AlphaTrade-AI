@@ -306,7 +306,8 @@ docker compose up --build
 ./scripts/docker-validate.sh
 ```
 
-See also: [security_checklist.md](security_checklist.md), [security.md](security.md),
+See also: [staging_deployment_checklist.md](staging_deployment_checklist.md),
+[security_checklist.md](security_checklist.md), [security.md](security.md),
 [observability.md](observability.md).
 
 ## Docker Compose reference (local)

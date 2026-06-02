@@ -12,6 +12,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY alembic.ini ./
+COPY README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
@@ -32,6 +33,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY --from=builder --chown=alphatrade:alphatrade /app/.venv /app/.venv
 COPY --chown=alphatrade:alphatrade alembic.ini ./
+COPY --chown=alphatrade:alphatrade prompts ./prompts
 COPY --chown=alphatrade:alphatrade src ./src
 COPY --chown=alphatrade:alphatrade docker/entrypoint.sh /app/docker/entrypoint.sh
 

@@ -7,7 +7,7 @@ autogeneration and clean cross-database (PostgreSQL/SQLite) migrations.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, MetaData, Uuid, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -34,14 +34,18 @@ class UUIDPrimaryKeyMixin:
 
 
 class TimestampMixin:
-    """``created_at``/``updated_at`` managed by the database."""
+    """``created_at``/``updated_at`` managed by the database with ORM fallbacks."""
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        onupdate=func.now(),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )

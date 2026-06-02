@@ -9,7 +9,7 @@ BASE_URL="${BASE_URL:-http://localhost:8000}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-60}"
 EMAIL="${SMOKE_EMAIL:-staging-smoke-$(date +%s)@example.com}"
 PASSWORD="${SMOKE_PASSWORD:-secure-password-1}"
-ORG_NAME="${SMOKE_ORG:-Staging Smoke Org}"
+ORG_NAME="${SMOKE_ORG:-Staging Smoke Org $(date +%s)}"
 
 echo "Waiting for backend at ${BASE_URL}..."
 attempt=0
