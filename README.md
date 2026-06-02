@@ -204,6 +204,20 @@ uv run python ../evaluation/evaluate_guardrails.py
 
 Full script: [docs/demo_script.md](docs/demo_script.md)
 
+## Portfolio and Interview Resources
+
+Packaging for CV, GitHub, LinkedIn, and technical interviews (no product features):
+
+| Document | Purpose |
+|----------|---------|
+| [interview_package.md](docs/interview_package.md) | Full system overview — architecture, AI, risk, safety, roadmap |
+| [interview_pitch.md](docs/interview_pitch.md) | 30s / 60s / 2m pitches, demo script, expected Q&A |
+| [cv_project_entry.md](docs/cv_project_entry.md) | Resume bullets, stack line, role keywords |
+| [linkedin_project_post.md](docs/linkedin_project_post.md) | Short, medium, and technical LinkedIn posts |
+| [technical_qa.md](docs/technical_qa.md) | Stack and design decisions (FastAPI, LangGraph, RAG, etc.) |
+
+Live demo: [docs/demo_script.md](docs/demo_script.md) · Screenshots: [docs/screenshots_checklist.md](docs/screenshots_checklist.md)
+
 ## Environment variables
 
 | Variable | Default | Purpose |
