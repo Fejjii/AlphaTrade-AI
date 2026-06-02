@@ -169,6 +169,19 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, value: object) -> object:
+        """Accept Render/Heroku-style ``postgres://`` URLs for managed Postgres."""
+        if not isinstance(value, str):
+            return value
+        url = value.strip()
+        if url.startswith("postgres://"):
+            return "postgresql+psycopg://" + url[len("postgres://") :]
+        if url.startswith("postgresql://") and "+psycopg" not in url:
+            return "postgresql+psycopg://" + url[len("postgresql://") :]
+        return url
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_cors_origins(cls, value: object) -> object:

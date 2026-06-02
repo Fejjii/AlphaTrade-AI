@@ -253,18 +253,24 @@ Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
 
 ## Staging Deployment
 
-Managed path: **Vercel** (frontend) + **Render** (API) + managed **Postgres** / **Redis** / **Qdrant Cloud** (or RAG fallback). Paper-only; real trading off.
+Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + **Upstash Redis** + optional **Qdrant Cloud**. Paper-only; real trading off.
 
 | Doc | Purpose |
 |-----|---------|
-| [staging_deployment_runbook.md](docs/staging_deployment_runbook.md) | Step-by-step deploy guide |
-| [staging_deployment_checklist.md](docs/staging_deployment_checklist.md) | Env vars and sign-off checklist |
+| [staging_execution_checklist.md](docs/staging_execution_checklist.md) | One-page manual click order |
+| [staging_live_deployment_notes.md](docs/staging_live_deployment_notes.md) | Live URLs, env tables, smoke commands |
+| [staging_deployment_runbook.md](docs/staging_deployment_runbook.md) | Full runbook + troubleshooting |
+| [staging_deployment_checklist.md](docs/staging_deployment_checklist.md) | Env sign-off checklist |
 | [deployment.md](docs/deployment.md) | Architecture, monitoring, rollback |
 
 ```bash
 ENV_FILE=.env.staging ./scripts/check-env.sh
-BASE_URL=https://your-api.onrender.com ./scripts/staging-smoke.sh
+BASE_URL=https://YOUR_BACKEND_URL ./scripts/verify-safety.sh
+FRONTEND_URL=https://YOUR_FRONTEND_URL COOKIE_MODE=true ALLOW_DEGRADED_READY=true \
+  BASE_URL=https://YOUR_BACKEND_URL ./scripts/staging-smoke.sh
 ```
+
+After deploy, add your public URLs to the README table above or pin them in release notes.
 
 ## Deployment
 

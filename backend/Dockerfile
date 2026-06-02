@@ -44,6 +44,6 @@ USER alphatrade
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
-    CMD curl -fsS "http://127.0.0.1:${API_PORT:-8000}/health" || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-${API_PORT:-8000}}/health" || exit 1
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]

@@ -15,7 +15,7 @@ execution, **fallback/mock providers**, and **no live Stripe or exchange orders*
 
 **Why Render over Railway for this repo:** The backend already ships a production `Dockerfile` and entrypoint migrations—Render’s Docker web service + `preDeployCommand` maps cleanly without monorepo plugin guesswork. Railway remains a valid alternative (see [railway_deployment.md](railway_deployment.md)).
 
-**First staging without Qdrant Cloud:** You still need a **non-localhost** `QDRANT_URL` for `ENVIRONMENT=staging` startup validation. Create a free Qdrant Cloud cluster (recommended) or accept `/health/ready` as **degraded** when vectors are unavailable (`ALLOW_DEGRADED_READY=true` in smoke tests).
+**First staging without Qdrant Cloud:** Leave `QDRANT_URL` **empty** on staging — the app uses in-memory vector fallback. Production still requires hosted Qdrant. Use `ALLOW_DEGRADED_READY=true` in smoke tests if optional providers are down.
 
 ---
 

@@ -69,9 +69,11 @@ def validate_deployment_settings(settings: Settings) -> None:
     elif _url_uses_localhost(settings.redis_url):
         errors.append("redis_url must point to managed Redis (not localhost)")
 
-    if not settings.qdrant_url.strip():
-        errors.append("qdrant_url is required in staging/production")
-    elif _url_uses_localhost(settings.qdrant_url):
+    qdrant = settings.qdrant_url.strip()
+    if not qdrant:
+        if settings.environment is Environment.PRODUCTION:
+            errors.append("qdrant_url is required in production")
+    elif _url_uses_localhost(qdrant):
         errors.append("qdrant_url must point to hosted Qdrant (not localhost)")
 
     if not settings.cors_origins:
@@ -113,4 +115,5 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "log_json": settings.log_json,
         "debug": settings.debug,
         "openai_configured": bool(settings.openai_api_key.strip()),
+        "qdrant_configured": bool(settings.qdrant_url.strip()),
     }

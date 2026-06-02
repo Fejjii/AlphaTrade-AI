@@ -5,7 +5,7 @@ Copy this checklist when deploying to **Vercel + Render + managed data stores**.
 
 > Store secrets in platform env UIs only. Never commit `.env.staging` or filled templates.
 
-**Runbook:** [staging_deployment_runbook.md](staging_deployment_runbook.md)
+**Quick start:** [staging_execution_checklist.md](staging_execution_checklist.md) · **Live notes:** [staging_live_deployment_notes.md](staging_live_deployment_notes.md) · **Runbook:** [staging_deployment_runbook.md](staging_deployment_runbook.md)
 
 ---
 
@@ -41,7 +41,7 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 3 | `ENABLE_REAL_TRADING` | `false` | ☐ |
 | 4 | `DATABASE_URL` | Managed Postgres (not localhost) | ☐ |
 | 5 | `REDIS_URL` | Managed Redis (not localhost) | ☐ |
-| 6 | `QDRANT_URL` | Qdrant Cloud HTTPS (not localhost) | ☐ |
+| 6 | `QDRANT_URL` | Qdrant Cloud HTTPS, **or empty** for in-memory RAG (staging only) | ☐ |
 | 7 | `JWT_SECRET` | 32+ byte random (not placeholder) | ☐ |
 | 8 | `CORS_ORIGINS` | Exact frontend URL, `https://...` | ☐ |
 | 9 | `AUTH_REFRESH_COOKIE_ENABLED` | `true` | ☐ |

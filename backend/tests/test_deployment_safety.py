@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import Environment, Settings
 from app.core.deployment_safety import deployment_posture, validate_deployment_settings
 
 _STAGING_BASE = {
@@ -97,6 +97,25 @@ def test_staging_accepts_provider_fallback_mode() -> None:
     settings = Settings(**{**_STAGING_BASE, "provider_mode": "fallback"})
     assert settings.provider_mode == "fallback"
     validate_deployment_settings(settings)
+
+
+def test_staging_allows_empty_qdrant_for_in_memory_fallback() -> None:
+    settings = Settings(**{**_STAGING_BASE, "qdrant_url": ""})
+    validate_deployment_settings(settings)
+    assert deployment_posture(settings)["qdrant_configured"] is False
+
+
+def test_production_requires_qdrant_url() -> None:
+    with pytest.raises(ValidationError, match="qdrant_url"):
+        Settings(**{**_PRODUCTION_BASE, "qdrant_url": ""})
+
+
+def test_normalizes_render_postgres_database_url() -> None:
+    settings = Settings(
+        database_url="postgres://user:pass@dpg.example.com:5432/alphatrade",
+        environment=Environment.LOCAL,
+    )
+    assert settings.database_url.startswith("postgresql+psycopg://")
 
 
 def test_production_rejects_debug_mode() -> None:
