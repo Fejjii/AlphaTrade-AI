@@ -5,6 +5,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+# shellcheck source=scripts/smoke-auth-helpers.sh
+source "${ROOT_DIR}/scripts/smoke-auth-helpers.sh"
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-60}"
@@ -73,19 +75,11 @@ else
   register_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
-  login_token="$(python3 - <<'PY' "$register_json"
-import json, sys
-print(json.loads(sys.argv[1])["tokens"]["access_token"])
-PY
-)"
-  login_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/login" \
-    -H 'Content-Type: application/json' \
-    -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}")"
-  login_token="$(python3 - <<'PY' "$login_json"
-import json, sys
-print(json.loads(sys.argv[1])["tokens"]["access_token"])
-PY
-)"
+  if ! smoke_login_after_register "$register_json"; then
+    echo "FAIL: register/login step failed." >&2
+    exit 1
+  fi
+  login_token="$SMOKE_ACCESS_TOKEN"
 fi
 
 auth_header=(-H "Authorization: Bearer ${login_token}")

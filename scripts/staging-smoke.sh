@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+# shellcheck source=scripts/smoke-auth-helpers.sh
+source "${ROOT_DIR}/scripts/smoke-auth-helpers.sh"
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 FRONTEND_URL="${FRONTEND_URL:-}"
@@ -122,11 +124,6 @@ else
   register_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
-  login_token="$(python3 - <<'PY' "$register_json"
-import json, sys
-print(json.loads(sys.argv[1])["tokens"]["access_token"])
-PY
-)"
   if [[ "$COOKIE_MODE" == "true" ]]; then
     if ! grep -q alphatrade_refresh "$COOKIE_JAR" 2>/dev/null; then
       echo "  WARN: refresh cookie not set after register." >&2
@@ -138,14 +135,15 @@ PY
 fi
 
 echo "6/12 — login"
-login_json="$(curl_api_cookie -X POST "${BASE_URL}/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}")"
-login_token="$(python3 - <<'PY' "$login_json"
-import json, sys
-print(json.loads(sys.argv[1])["tokens"]["access_token"])
-PY
-)"
+if [[ "$SKIP_REGISTER" == "true" ]]; then
+  echo "  skipped (SKIP_REGISTER=true)"
+else
+  if ! smoke_login_after_register "$register_json"; then
+    echo "FAIL: login step failed." >&2
+    exit 1
+  fi
+  login_token="$SMOKE_ACCESS_TOKEN"
+fi
 
 echo "7/12 — protected chat"
 curl_api -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \
@@ -188,7 +186,7 @@ if [[ "$COOKIE_MODE" == "true" ]]; then
     "${BASE_URL}/auth/logout" \
     -d '{}' >/dev/null
 else
-  refresh="$(python3 - <<'PY' "$login_json" 2>/dev/null || true
+  refresh="$(python3 - <<'PY' "${SMOKE_SESSION_JSON:-$register_json}" 2>/dev/null || true
 import json, sys
 try:
     body = json.loads(sys.argv[1])

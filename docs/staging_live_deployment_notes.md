@@ -200,6 +200,8 @@ BASE_URL=https://YOUR_BACKEND_URL ./scripts/analytics-smoke.sh
 
 **If Qdrant is down:** keep `ALLOW_DEGRADED_READY=true` (readiness may be degraded; app still runs).
 
+**If smoke fails at login with 401 after register:** staging defaults require verified email (`REQUIRE_EMAIL_VERIFIED` unset → true). Smoke scripts accept this and continue with the register session; login 401 with "Email address is not verified" is expected. For browser demo login after register, set `REQUIRE_EMAIL_VERIFIED=false` on staging only or verify via email link.
+
 ---
 
 ## 8. Known failure cases and fixes

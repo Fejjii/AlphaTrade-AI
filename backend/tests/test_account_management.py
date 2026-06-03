@@ -109,6 +109,78 @@ def _extract_token_from_mock_email(settings: Settings, template: str) -> str:
     return match.group(1)
 
 
+def test_login_blocked_when_email_unverified_when_required(
+    account_client: AccountClientFixture,
+) -> None:
+    """When email verification is required, login fails until confirm."""
+    client, _ = account_client
+    get_settings.cache_clear()
+    settings = Settings(
+        environment="local",
+        log_json=False,
+        execution_mode="paper",
+        enable_real_trading=False,
+        database_url="sqlite+pysqlite:///:memory:",
+        jwt_secret="test-secret-key-for-account-slice-32b-min",
+        require_email_verified=True,
+        email_send_enabled=True,
+        email_provider="mock",
+        access_token_denylist_use_redis=False,
+        rate_limit_use_redis=False,
+    )
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn: object, _record: object) -> None:
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def _override_session() -> Iterator[Session]:
+        with session_factory() as session:
+            yield session
+
+    app = create_app(settings=settings)
+    app.dependency_overrides[get_session] = _override_session
+    with TestClient(app) as verify_client:
+        _register(verify_client, email="staging-smoke@example.com")
+        login = verify_client.post(
+            "/auth/login",
+            json={"email": "staging-smoke@example.com", "password": "secure-password-1"},
+        )
+        assert login.status_code == 401
+        assert "not verified" in login.json()["error"]["message"].lower()
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def test_must_verify_email_true_for_staging_environment() -> None:
+    settings = Settings(
+        environment="staging",
+        log_json=False,
+        execution_mode="paper",
+        enable_real_trading=False,
+        database_url="postgresql+psycopg://user:pass@db.example.com:5432/alphatrade",
+        redis_url="redis://:pass@redis.example.com:6379/0",
+        qdrant_url="https://cluster.example.com",
+        jwt_secret="test-secret-key-for-account-slice-32b-min",
+        cors_origins=["https://app.example.com"],
+        auth_refresh_cookie_enabled=True,
+        auth_cookie_secure=True,
+        rate_limit_use_redis=True,
+    )
+    assert settings.must_verify_email is True
+
+
 def test_register_creates_verification_token(
     account_client: AccountClientFixture,
     account_settings: Settings,
