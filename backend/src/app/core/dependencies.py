@@ -36,6 +36,9 @@ from app.services.rag_service import RagService, build_rag_service
 from app.services.risk_service import RiskService
 from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_service import StrategyService
+from app.services.strategy_testability_service import StrategyTestabilityService
+from app.services.structure_from_text_service import StructureFromTextService
+from app.services.structured_rules_service import StructuredRulesService
 from app.services.usage_service import UsageService
 from app.services.workflow_service import WorkflowService
 from app.strategies.registry import StrategyRegistry, get_strategy_registry
@@ -196,6 +199,18 @@ def get_human_vs_system_service(session: SessionDep) -> HumanVsSystemService:
     return HumanVsSystemService(session)
 
 
+def get_strategy_testability_service(session: SessionDep) -> StrategyTestabilityService:
+    return StrategyTestabilityService(session)
+
+
+def get_structured_rules_service(session: SessionDep) -> StructuredRulesService:
+    return StructuredRulesService(session)
+
+
+def get_structure_from_text_service() -> StructureFromTextService:
+    return StructureFromTextService()
+
+
 def get_backtest_service(session: SessionDep, settings: SettingsDep) -> BacktestService:
     return BacktestService(session, settings)
 
@@ -222,6 +237,13 @@ PreTradeAnalysisServiceDep = Annotated[
     PreTradeAnalysisService, Depends(get_pretrade_analysis_service)
 ]
 HumanVsSystemServiceDep = Annotated[HumanVsSystemService, Depends(get_human_vs_system_service)]
+StrategyTestabilityServiceDep = Annotated[
+    StrategyTestabilityService, Depends(get_strategy_testability_service)
+]
+StructuredRulesServiceDep = Annotated[StructuredRulesService, Depends(get_structured_rules_service)]
+StructureFromTextServiceDep = Annotated[
+    StructureFromTextService, Depends(get_structure_from_text_service)
+]
 BacktestServiceDep = Annotated[BacktestService, Depends(get_backtest_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]
 HistoricalCandleServiceDep = Annotated[

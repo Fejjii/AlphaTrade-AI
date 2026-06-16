@@ -1,43 +1,42 @@
-# Human vs System (Slice 33–34)
+# Human vs System v3 (Slice 36)
 
-Compares actual trade behavior (journal / proposal linkage) to the system plan. Slice 34 adds structured **delta fields** for UI and agent tooling; several comparisons remain placeholders until the backtest engine lands (Slice 35+).
+Compares journaled trades, linked proposals, backtest context, and system recommendations. Paper mode only — real trading remains disabled.
 
 ## API
 
-`GET /human-vs-system/{trade_id}` — trade_id may be a journal entry id or proposal id.
+- `GET /human-vs-system/{trade_id}` — journal or proposal id
+- `POST /human-vs-system/{trade_id}/analyze` — full discipline pass
+- `GET /journal/entries/{id}/discipline-analysis` — journal-focused breakdown with lesson candidates
 
-Agent routing: *"Compare my trade to the system plan"* → `human_vs_system_tool`.
+## Outputs (v3)
 
-## Comparisons
+| Output | Notes |
+|--------|-------|
+| Entry/size/leverage/stop deltas | Partial when linkage missing |
+| Early exit flag | From runner analyzer |
+| Missed runner estimate | Conservative — labeled estimate |
+| Stop loss discipline | Stop refusal analyzer |
+| Plan adherence score | 0–100 breakdown |
+| System would have done | From linked proposal |
+| Limitations | Explicit when data missing |
 
-- Entry vs suggested zone (`entry_delta_pct` when data available)
-- Exit vs system TP/stop (`exit_delta`, `stop_behavior_delta`)
-- Size vs recommended (`size_delta_pct`, `size_vs_recommended_pct`)
-- Leverage vs allowed (`leverage_delta`)
-- Stop vs invalidation
-- PnL vs rule-based simulated placeholder (`pnl_vs_simulated_placeholder`)
-- Emotion tags vs emotion-free baseline
-- Missed runner profit (`missed_runner_profit_placeholder`)
+## Runner analysis
 
-## Plan adherence score (100)
+Conservative post-exit MFE estimate (50% cap). No hindsight shaming. Confidence `low` without candle data.
 
-| Component | Points |
-|-----------|--------|
-| Entry followed plan | 20 |
-| Size respected risk | 20 |
-| Stop loss respected | 20 |
-| Profit taking followed | 15 |
-| Emotion controlled | 15 |
-| Journal completed | 10 |
+## Stop loss refusal
 
-## Slice 34 v2 limitations
+Detects actual loss above planned, missing stop, rejected loss acceptance. Avoidable loss is an estimate.
 
-| Field / behavior | Status |
-|------------------|--------|
-| Entry/size deltas | Populated when journal/proposal links exist; may be partial |
-| Exit / stop behavior | Qualitative notes; not tick-level replay |
-| PnL vs simulated | **Placeholder** — `"Rule-based simulated PnL placeholder — backtest engine not connected."` |
-| Runner profit | **Placeholder** — live runner tracking not connected |
-| Backtest-linked simulation | Future slice (depends on real backtest engine) |
+## Lesson candidates
 
-Human-vs-system is **review and coaching**, not a performance guarantee. Paper execution only; no broker fills.
+Early exits and stop violations create `lesson_candidate` rows for review — not auto-promoted to permanent rules.
+
+## Agent
+
+- Did I exit too early?
+- What would the system have done?
+- Did I respect my stop?
+- How much did I lose by not following the plan?
+
+Routes to `human_vs_system_tool`.

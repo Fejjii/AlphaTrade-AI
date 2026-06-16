@@ -378,6 +378,25 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     paper_validation_status: Mapped[PaperValidationStatus] = mapped_column(
         _enum(PaperValidationStatus), default=PaperValidationStatus.NOT_STARTED
     )
+    structured_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class LessonCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Discipline lesson awaiting review (Slice 36 — not auto-promoted to rules)."""
+
+    __tablename__ = "lesson_candidates"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journals.id"), nullable=True
+    )
+    trade_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    category: Mapped[str] = mapped_column(String(60), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="lesson_candidate", nullable=False)
 
 
 class HistoricalCandle(UUIDPrimaryKeyMixin, TimestampMixin, Base):

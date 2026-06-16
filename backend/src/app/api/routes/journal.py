@@ -7,7 +7,8 @@ import uuid
 from fastapi import APIRouter, Query
 
 from app.core.auth import TenantDep
-from app.core.dependencies import JournalServiceDep, SessionDep
+from app.core.dependencies import HumanVsSystemServiceDep, JournalServiceDep, SessionDep
+from app.schemas.human_vs_system import DisciplineAnalysis
 from app.schemas.journal import (
     JournalEntry,
     JournalEntryCreate,
@@ -112,3 +113,23 @@ async def delete_journal_entry(
     ensure_same_organization(entry.organization_id, tenant)
     journal_service.delete(journal_entry_id)
     session.commit()
+
+
+@router.get(
+    "/entries/{journal_entry_id}/discipline-analysis",
+    response_model=DisciplineAnalysis,
+    summary="Discipline analysis for journal entry",
+)
+async def journal_discipline_analysis(
+    journal_entry_id: uuid.UUID,
+    tenant: TraderDep,
+    journal_service: JournalServiceDep,
+    hvs_service: HumanVsSystemServiceDep,
+) -> DisciplineAnalysis:
+    entry = journal_service.get(journal_entry_id)
+    ensure_same_organization(entry.organization_id, tenant)
+    return hvs_service.analyze_discipline(
+        journal_entry_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )

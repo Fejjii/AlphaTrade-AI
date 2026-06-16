@@ -361,6 +361,81 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             else:
                 answer_lines.append(f"Comparison failed: {output.error}")
 
+    elif intent in {Intent.EARLY_EXIT_QUERY, Intent.STOP_DISCIPLINE_QUERY}:
+        trade_match = re.search(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            agent.message,
+            re.I,
+        )
+        if trade_match is None:
+            answer_lines.append("Provide a journal or proposal trade ID for discipline analysis.")
+        else:
+            output = _run_tool(
+                "human_vs_system_tool",
+                {
+                    "trade_id": trade_match.group(0),
+                    "organization_id": org,
+                    "user_id": user,
+                },
+            )
+            if output.success and output.result:
+                if intent is Intent.EARLY_EXIT_QUERY:
+                    runner = output.result.get("missed_runner") or {}
+                    flag = runner.get("early_exit_flag")
+                    lesson = runner.get("recommended_lesson", "No early exit lesson available.")
+                    answer_lines.append(
+                        _format_tool_answer(
+                            "human_vs_system_tool",
+                            f"Early exit flag: {flag}. {lesson}",
+                        )
+                    )
+                else:
+                    stop = output.result.get("stop_loss_analysis") or {}
+                    answer_lines.append(
+                        _format_tool_answer(
+                            "human_vs_system_tool",
+                            stop.get("lesson", "Stop discipline data unavailable."),
+                        )
+                    )
+            else:
+                answer_lines.append(f"Analysis failed: {output.error}")
+
+    elif intent is Intent.STRATEGY_TESTABILITY:
+        output = _run_tool(
+            "strategy_testability_tool",
+            {"action": "score_first", "organization_id": org, "user_id": user},
+        )
+        if output.success and output.result:
+            score = output.result.get("score")
+            band = output.result.get("band")
+            missing = output.result.get("missing_fields", [])
+            labels = ", ".join(m.get("label", "") for m in missing[:5]) or "none"
+            answer_lines.append(
+                _format_tool_answer(
+                    "strategy_testability_tool",
+                    f"Testability {score}/100 ({band}). Missing: {labels}.",
+                )
+            )
+        else:
+            answer_lines.append(f"Testability check failed: {output.error}")
+
+    elif intent is Intent.STRUCTURE_STRATEGY:
+        output = _run_tool(
+            "structure_from_text_tool",
+            {"text": agent.message, "organization_id": org, "user_id": user},
+        )
+        if output.success and output.result:
+            valid = output.result.get("validation", {}).get("valid")
+            answer_lines.append(
+                _format_tool_answer(
+                    "structure_from_text_tool",
+                    f"Draft structured rules generated (valid={valid}). "
+                    "Review in Strategy Lab before backtesting.",
+                )
+            )
+        else:
+            answer_lines.append(f"Structure draft failed: {output.error}")
+
     elif intent is Intent.STRATEGY_STATUS:
         output = _run_tool(
             "strategy_library_tool",

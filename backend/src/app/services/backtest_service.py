@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import suppress
 
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,7 @@ from app.schemas.common import (
     TradeDirection,
 )
 from app.schemas.strategy_library import StrategyCard
+from app.schemas.structured_rules import StructuredRules
 from app.services.backtest_engine_service import BacktestEngineService
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.strategy_promotion import evaluate_promotion
@@ -86,7 +88,17 @@ class BacktestService:
                 run.error_message = "Strategy version or card not found."
                 return self._to_schema(run)
 
-            result = self._engine.run(run=run, card=card, setup_type=strategy.setup_type)
+            structured: StructuredRules | None = None
+            if version and version.structured_rules:
+                with suppress(Exception):
+                    structured = StructuredRules.model_validate(version.structured_rules)
+
+            result = self._engine.run(
+                run=run,
+                card=card,
+                setup_type=strategy.setup_type,
+                structured_rules=structured,
+            )
             run.result = result.model_dump(mode="json")
             run.status = BacktestRunStatus.COMPLETED
             needs_rules = BacktestRecommendation.NEEDS_STRUCTURED_RULES

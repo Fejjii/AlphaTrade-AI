@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
+import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
 import { emptyStrategyCard } from "@/components/strategy/StrategyCardForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,10 @@ export default function StrategyDetailPage() {
   const [paperSummary, setPaperSummary] = useState<Awaited<
     ReturnType<typeof api.strategies.paperValidation>
   > | null>(null);
+  const [rulesBusy, setRulesBusy] = useState(false);
+
+  const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
+  const { data: testabilityData, reload: reloadTestability } = useAsyncData(testabilityLoader, [id]);
 
   const card = data?.latest_card;
 
@@ -126,6 +131,24 @@ export default function StrategyDetailPage() {
           ))}
         </div>
       ) : null}
+
+      <StructuredRuleEditor
+        rules={testabilityData?.structured_rules ?? null}
+        testability={testabilityData ?? null}
+        busy={rulesBusy}
+        onSave={async (rules) => {
+          setRulesBusy(true);
+          setActionError(null);
+          try {
+            await api.strategies.patchStructuredRules(id, rules);
+            await reloadTestability();
+          } catch (err) {
+            setActionError(err instanceof Error ? err.message : "Save failed");
+          } finally {
+            setRulesBusy(false);
+          }
+        }}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         <BacktestPanel

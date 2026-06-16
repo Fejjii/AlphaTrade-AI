@@ -54,6 +54,8 @@ import type {
   PaginatedBacktestRuns,
   PaginatedBacktestTrades,
   PaperValidationSummary,
+  StrategyTestability,
+  StructuredRules,
   MarketSnapshotResponse,
   OHLCVResponse,
   TickerResponse,
@@ -402,6 +404,24 @@ export const api = {
       }),
     paperValidation: (id: string) =>
       apiFetch<PaperValidationSummary>(`/strategies/${id}/paper-validation`, { auth: true }),
+    testability: (id: string) =>
+      apiFetch<StrategyTestability>(`/strategies/${id}/testability`, { auth: true }),
+    patchStructuredRules: (id: string, body: Partial<StructuredRules>) =>
+      apiFetch<StructuredRules>(`/strategies/${id}/structured-rules`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    validateStructuredRules: (id: string, body: StructuredRules) =>
+      apiFetch<{ valid: boolean; errors: string[]; warnings: string[] }>(
+        `/strategies/${id}/structured-rules/validate`,
+        { method: "POST", body: JSON.stringify(body), auth: true },
+      ),
+    structureFromText: (id: string, text: string) =>
+      apiFetch<{ draft?: StructuredRules; validation: { valid: boolean } }>(
+        `/strategies/${id}/structure-from-text`,
+        { method: "POST", body: JSON.stringify({ text }), auth: true },
+      ),
   },
   manualLevels: {
     list: (params?: { symbol?: string; exchange?: string }) =>
@@ -446,6 +466,15 @@ export const api = {
   humanVsSystem: {
     compare: (tradeId: string) =>
       apiFetch<HumanVsSystemComparison>(`/human-vs-system/${tradeId}`, { auth: true }),
+    analyze: (tradeId: string) =>
+      apiFetch<HumanVsSystemComparison>(`/human-vs-system/${tradeId}/analyze`, { auth: true }),
+  },
+  journalDiscipline: {
+    analyze: (journalId: string) =>
+      apiFetch<{ journal_entry_id: string; comparison: HumanVsSystemComparison; lessons_generated: string[] }>(
+        `/journal/entries/${journalId}/discipline-analysis`,
+        { auth: true },
+      ),
   },
 };
 

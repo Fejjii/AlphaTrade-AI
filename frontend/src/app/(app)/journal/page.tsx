@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { JournalEntryCard } from "@/components/JournalEntryCard";
+import { DisciplineAnalysisPanel } from "@/components/journal/DisciplineAnalysisPanel";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
@@ -29,6 +30,11 @@ export default function JournalPage() {
   const [linkedPositionId, setLinkedPositionId] = useState<string | undefined>();
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [disciplineId, setDisciplineId] = useState<string | null>(null);
+  const [discipline, setDiscipline] = useState<Awaited<
+    ReturnType<typeof api.journalDiscipline.analyze>
+  > | null>(null);
+  const [disciplineError, setDisciplineError] = useState<string | null>(null);
   const loader = useCallback(() => api.journal.list({ limit: 50 }), []);
   const { data, loading, error, reload } = useAsyncData(loader, []);
 
@@ -178,6 +184,30 @@ export default function JournalPage() {
           data.items.map((entry) => (
             <div key={entry.id} className="space-y-2">
               <JournalEntryCard entry={entry} />
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={async () => {
+                  setDisciplineId(entry.id);
+                  setDisciplineError(null);
+                  try {
+                    const result = await api.journalDiscipline.analyze(entry.id);
+                    setDiscipline(result);
+                  } catch (err) {
+                    setDisciplineError(err instanceof Error ? err.message : "Analysis failed");
+                    setDiscipline(null);
+                  }
+                }}
+              >
+                Discipline analysis
+              </Button>
+              {disciplineId === entry.id ? (
+                <DisciplineAnalysisPanel
+                  comparison={discipline?.comparison ?? null}
+                  error={disciplineError}
+                />
+              ) : null}
               <Button
                 variant="destructive"
                 size="sm"

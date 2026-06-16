@@ -11,6 +11,9 @@ from app.core.dependencies import (
     PaperValidationServiceDep,
     SessionDep,
     StrategyLibraryServiceDep,
+    StrategyTestabilityServiceDep,
+    StructuredRulesServiceDep,
+    StructureFromTextServiceDep,
 )
 from app.schemas.backtest import BacktestRun, BacktestRunCreate, PaginatedBacktestRuns
 from app.schemas.paper_validation import PaperValidationRun, PaperValidationSummary
@@ -23,6 +26,14 @@ from app.schemas.strategy_library import (
     UserStrategyUpdate,
     UserStrategyVersion,
     UserStrategyVersionCreate,
+)
+from app.schemas.strategy_testability import StrategyTestability
+from app.schemas.structured_rules import (
+    StructuredRules,
+    StructuredRulesPatch,
+    StructuredRulesValidation,
+    StructureFromTextRequest,
+    StructureFromTextResponse,
 )
 from app.security.rbac import TraderDep
 
@@ -238,3 +249,74 @@ async def get_paper_validation_run(
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )
+
+
+@router.get(
+    "/{strategy_id}/testability",
+    response_model=StrategyTestability,
+    summary="Strategy testability score",
+)
+async def get_strategy_testability(
+    strategy_id: uuid.UUID,
+    tenant: TraderDep,
+    service: StrategyTestabilityServiceDep,
+) -> StrategyTestability:
+    return service.score(
+        strategy_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.patch(
+    "/{strategy_id}/structured-rules",
+    response_model=StructuredRules,
+    summary="Update structured rule blocks",
+)
+async def patch_structured_rules(
+    strategy_id: uuid.UUID,
+    body: StructuredRulesPatch,
+    tenant: TraderDep,
+    service: StructuredRulesServiceDep,
+    session: SessionDep,
+) -> StructuredRules:
+    result = service.patch(
+        strategy_id,
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/{strategy_id}/structured-rules/validate",
+    response_model=StructuredRulesValidation,
+    summary="Validate structured rules",
+)
+async def validate_structured_rules(
+    strategy_id: uuid.UUID,
+    body: StructuredRules,
+    tenant: TraderDep,
+    service: StructuredRulesServiceDep,
+) -> StructuredRulesValidation:
+    _ = strategy_id
+    _ = tenant
+    return service.validate(body)
+
+
+@router.post(
+    "/{strategy_id}/structure-from-text",
+    response_model=StructureFromTextResponse,
+    summary="Draft structured rules from plain English",
+)
+async def structure_from_text(
+    strategy_id: uuid.UUID,
+    body: StructureFromTextRequest,
+    tenant: TraderDep,
+    service: StructureFromTextServiceDep,
+) -> StructureFromTextResponse:
+    _ = strategy_id
+    _ = tenant
+    return service.draft(body)

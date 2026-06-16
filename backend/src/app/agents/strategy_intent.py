@@ -11,6 +11,22 @@ def classify_strategy_workflow(message: str) -> Intent | None:
 
     if "compare" in lowered and ("trade" in lowered or "system" in lowered):
         return Intent.HUMAN_VS_SYSTEM
+    if "exit too early" in lowered or "did i exit too early" in lowered:
+        return Intent.EARLY_EXIT_QUERY
+    if "respect my stop" in lowered or "did i respect my stop" in lowered:
+        return Intent.STOP_DISCIPLINE_QUERY
+    if "system would have done" in lowered or "what would the system have done" in lowered:
+        return Intent.HUMAN_VS_SYSTEM
+    if "testable" in lowered and "strateg" in lowered:
+        return Intent.STRATEGY_TESTABILITY
+    if "more structured" in lowered or "structured rule" in lowered:
+        return Intent.STRUCTURE_STRATEGY
+    if "rule is missing" in lowered and "backtest" in lowered:
+        return Intent.STRATEGY_TESTABILITY
+    if "convert" in lowered and ("plain english" in lowered or "structured" in lowered):
+        return Intent.STRUCTURE_STRATEGY
+    if "not following the plan" in lowered or "lose by not following" in lowered:
+        return Intent.HUMAN_VS_SYSTEM
     if "manual level" in lowered or ("level" in lowered and "coin" in lowered):
         return Intent.MANUAL_LEVELS
     if "loss acceptable" in lowered or "loss acceptance" in lowered:
@@ -62,4 +78,8 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.BACKTEST_RUN,
         Intent.BACKTEST_RESULTS,
         Intent.BACKTEST_ELIGIBILITY,
+        Intent.EARLY_EXIT_QUERY,
+        Intent.STOP_DISCIPLINE_QUERY,
+        Intent.STRATEGY_TESTABILITY,
+        Intent.STRUCTURE_STRATEGY,
     }

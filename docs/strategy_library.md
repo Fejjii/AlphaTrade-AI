@@ -1,4 +1,4 @@
-# Strategy Library (Slice 33–35)
+# Strategy Library (Slice 33-36)
 
 Tenant-scoped user strategy cards with versioning, Strategy Lab UI, **backtest engine v1**, paper validation metrics, and optional RAG ingest. **Paper only** — no real exchange execution.
 
@@ -84,7 +84,19 @@ Revisions:
 1. `k1l2m3n4o5p6` — user strategies, manual levels, loss acceptance on proposals
 2. `l2m3n4o5p6q7` — backtest runs, paper validation runs, `paper_eligible` on user strategies
 3. `m3n4o5p6q7r8` — historical candles, backtest trades, paper validation metrics
+4. `n4o5p6q7r8s9` — structured rules on strategy versions, lesson candidates
 
-Head should be **`m3n4o5p6q7r8`**.
+Head should be **`n4o5p6q7r8s9`**.
+
+## Structured rules (Slice 36)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/strategies/{id}/testability` | Score 0-100 and missing fields |
+| PATCH | `/strategies/{id}/structured-rules` | Save machine-testable rule blocks |
+| POST | `/strategies/{id}/structured-rules/validate` | Deterministic validation |
+| POST | `/strategies/{id}/structure-from-text` | Keyword draft from plain English |
+
+Testability bands: 0-39 vague, 40-69 partial, 70-100 machine testable.
 
 Optional smoke: `./scripts/strategy-smoke.sh` (requires running backend).

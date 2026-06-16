@@ -54,6 +54,10 @@ class Intent(StrEnum):
     BACKTEST_RUN = "backtest_run"
     BACKTEST_RESULTS = "backtest_results"
     BACKTEST_ELIGIBILITY = "backtest_eligibility"
+    EARLY_EXIT_QUERY = "early_exit_query"
+    STOP_DISCIPLINE_QUERY = "stop_discipline_query"
+    STRATEGY_TESTABILITY = "strategy_testability"
+    STRUCTURE_STRATEGY = "structure_strategy"
     UNKNOWN = "unknown"
 
 

@@ -21,9 +21,11 @@ from app.schemas.backtest import (
 )
 from app.schemas.common import BacktestRecommendation, TradeDirection
 from app.schemas.strategy_library import StrategyCard
+from app.schemas.structured_rules import StructuredRules
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.strategy_promotion import evaluate_promotion
-from app.services.strategy_rule_adapter import ParsedStrategyRules, parse_strategy_rules
+from app.services.strategy_rule_adapter import ParsedStrategyRules
+from app.services.structured_rule_resolver import resolve_backtest_rules
 
 
 @dataclass
@@ -60,9 +62,12 @@ class BacktestEngineService:
         run: BacktestRunModel,
         card: StrategyCard,
         setup_type: object,
+        structured_rules: StructuredRules | None = None,
     ) -> BacktestResult:
         assumptions = BacktestAssumptions.model_validate(run.assumptions or {})
-        rules = parse_strategy_rules(card, setup_type)  # type: ignore[arg-type]
+        resolved = resolve_backtest_rules(card, setup_type, structured_rules)  # type: ignore[arg-type]
+        rules = resolved.rules
+        engine_source = resolved.engine_source.value
 
         if not rules.machine_readable:
             return BacktestResult(
@@ -71,6 +76,7 @@ class BacktestEngineService:
                 recommendation=BacktestRecommendation.NEEDS_STRUCTURED_RULES,
                 limitations=[rules.limitation or "Rules not machine readable."],
                 data_quality="n/a",
+                rule_engine_source=engine_source,
             )
 
         start_date = assumptions.start_date or (datetime.now(UTC) - timedelta(days=90)).date()
@@ -91,6 +97,7 @@ class BacktestEngineService:
                 recommendation=BacktestRecommendation.UNRELIABLE_DATA,
                 limitations=limitations,
                 data_quality="unreliable",
+                rule_engine_source=engine_source,
             )
 
         fee_rate = assumptions.fees_bps / Decimal("10000")
@@ -198,6 +205,7 @@ class BacktestEngineService:
             meets_success_criteria=meets,
             limitations=limitations,
             data_quality=data_quality,
+            rule_engine_source=engine_source,
         )
 
         for trade in simulated:

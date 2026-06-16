@@ -1013,17 +1013,40 @@ export interface PreTradeAnalyzeResponse {
   limitations: string[];
 }
 
+export interface RunnerAnalysis {
+  early_exit_flag?: boolean | null;
+  missed_profit_estimate?: string | null;
+  max_favorable_excursion_after_exit?: string | null;
+  max_adverse_excursion_after_exit?: string | null;
+  would_runner_have_helped?: boolean | null;
+  recommended_lesson?: string | null;
+  confidence?: string;
+  limitations?: string[];
+}
+
+export interface StopLossAnalysis {
+  stop_violation_flag?: boolean | null;
+  planned_loss?: string | null;
+  actual_loss?: string | null;
+  avoidable_loss_estimate?: string | null;
+  lesson?: string | null;
+  future_restriction_suggestion?: string | null;
+  limitations?: string[];
+}
+
 export interface HumanVsSystemComparison {
   trade_id: string;
   symbol?: string | null;
-  entry_delta_pct?: number | null;
-  exit_delta?: string | null;
-  size_delta_pct?: number | null;
-  leverage_delta?: string | null;
-  stop_behavior_delta?: string | null;
+  entry_quality_delta_pct?: number | null;
+  exit_quality_delta?: string | null;
+  size_discipline_delta_pct?: number | null;
+  leverage_discipline_delta?: string | null;
+  stop_loss_discipline_delta?: string | null;
   planned_loss_vs_actual?: string | null;
   early_exit_flag?: boolean | null;
-  missed_runner_profit_placeholder?: string | null;
+  missed_runner?: RunnerAnalysis | null;
+  emotional_mistake_classification?: string[];
+  rule_violation_cost_estimate?: string | null;
   plan_adherence_score: number;
   plan_adherence: {
     entry_followed_plan: number;
@@ -1033,7 +1056,34 @@ export interface HumanVsSystemComparison {
     emotion_controlled: number;
     journal_completed: number;
   };
+  system_would_have_done?: string | null;
+  backtest_context?: string | null;
+  stop_loss_analysis?: StopLossAnalysis | null;
+  entry_delta_pct?: number | null;
+  exit_delta?: string | null;
+  size_delta_pct?: number | null;
+  leverage_delta?: string | null;
+  stop_behavior_delta?: string | null;
+  missed_runner_profit_placeholder?: string | null;
   emotion_tags: string[];
   notes: string[];
   limitations?: string[];
+}
+
+export interface StrategyTestability {
+  strategy_id: string;
+  score: number;
+  band: string;
+  ready_for_backtest: boolean;
+  missing_fields: { field_key: string; label: string; severity?: string }[];
+  has_structured_rules: boolean;
+  structured_rules?: StructuredRules | null;
+  limitations?: string[];
+}
+
+export interface StructuredRules {
+  primary_timeframe?: string | null;
+  entry_rules: { trigger_type: string; direction?: string }[];
+  exit_rules: { rule_type: string; value?: string; r_multiple?: string }[];
+  no_trade_rules: { rule_type: string }[];
 }

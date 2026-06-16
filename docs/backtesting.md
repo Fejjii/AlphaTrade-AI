@@ -1,4 +1,4 @@
-# Backtesting (Slice 35)
+# Backtesting (Slice 35-36)
 
 Deterministic **backtest engine v1** replays stored historical OHLCV candles. Historical simulation only — **not** a profit guarantee. Real trading remains disabled.
 
@@ -42,11 +42,22 @@ Deterministic **backtest engine v1** replays stored historical OHLCV candles. Hi
 
 ## Migration
 
-Apply through head **`m3n4o5p6q7r8`** after Slice 34:
+Apply through head **`n4o5p6q7r8s9`** after Slice 35:
 
 ```bash
 cd backend && uv run alembic upgrade head
 ```
+
+## Structured rules priority (Slice 36)
+
+Backtest engine resolves rules in order:
+
+1. **structured** — saved rule blocks on strategy version
+2. **adapter** — keyword parser on text card
+3. **default_setup** — known setup type defaults
+4. **unsupported** — returns `needs_structured_rules`
+
+Result includes `rule_engine_source` in the backtest payload.
 
 ## Safety
 

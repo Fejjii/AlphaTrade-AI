@@ -480,6 +480,70 @@ def _human_vs_system_execute(args: dict[str, Any], session: Any | None) -> ToolO
         return ToolOutput(tool_name="human_vs_system_tool", success=False, error=str(exc))
 
 
+def _strategy_testability_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.strategy_testability_service import StrategyTestabilityService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="strategy_testability_tool", success=False, error="DB session required."
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        service = StrategyTestabilityService(session)
+        if args.get("strategy_id"):
+            result = service.score(
+                _uuid.UUID(str(args["strategy_id"])),
+                organization_id=org,
+                user_id=user,
+            )
+        else:
+            from app.repositories.strategy_library import UserStrategyRepository
+
+            rows, _ = UserStrategyRepository(session).list_scoped(
+                organization_id=org, user_id=user, limit=1, offset=0
+            )
+            if not rows:
+                return ToolOutput(
+                    tool_name="strategy_testability_tool",
+                    success=False,
+                    error="No strategies found.",
+                )
+            result = service.score(rows[0].id, organization_id=org, user_id=user)
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="strategy_testability_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="strategy_testability_tool", success=False, error=str(exc))
+
+
+def _structure_from_text_execute(args: dict[str, Any]) -> ToolOutput:
+    from app.schemas.structured_rules import StructureFromTextRequest
+    from app.services.structure_from_text_service import StructureFromTextService
+
+    start = time.perf_counter()
+    try:
+        result = StructureFromTextService().draft(
+            StructureFromTextRequest(text=str(args.get("text", "")))
+        )
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="structure_from_text_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="structure_from_text_tool", success=False, error=str(exc))
+
+
 def build_default_registry(
     _settings: Settings | None = None,
     rag_service: RagService | None = None,
@@ -669,6 +733,26 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda args: _human_vs_system_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="strategy_testability_tool",
+            description="Score strategy testability and list missing rule fields.",
+            risk_level=ToolRiskLevel.READ,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _strategy_testability_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="structure_from_text_tool",
+            description="Draft structured rule blocks from plain English (requires validation).",
+            risk_level=ToolRiskLevel.LOW,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=_structure_from_text_execute,
         ),
         ToolDefinition(
             name="backtest_tool",

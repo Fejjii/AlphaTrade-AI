@@ -88,6 +88,8 @@ def _evidence(agent: AgentState) -> list[str]:
         "position_sizing_tool",
         "manual_levels_tool",
         "human_vs_system_tool",
+        "strategy_testability_tool",
+        "structure_from_text_tool",
     ):
         match = next(
             (o for o in agent.tool_outputs if o.tool_name == tool_name and o.success),
@@ -191,6 +193,8 @@ def build_trading_analysis(agent: AgentState, runtime: AgentRuntime) -> TradingA
             "position_sizing_tool",
             "manual_levels_tool",
             "human_vs_system_tool",
+            "strategy_testability_tool",
+            "structure_from_text_tool",
         }
     ]
     if strategy_tools and agent.final_answer and "SOURCE OF TRUTH" in agent.final_answer:

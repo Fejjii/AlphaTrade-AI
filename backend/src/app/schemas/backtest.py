@@ -87,6 +87,7 @@ class BacktestResult(StrictModel):
     meets_success_criteria: bool = False
     limitations: list[str] = Field(default_factory=list)
     data_quality: str = "ok"
+    rule_engine_source: str = "unsupported"
     note: str = (
         "Historical simulation only — not a guarantee of future performance. "
         "Real trading remains disabled."

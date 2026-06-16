@@ -489,3 +489,85 @@ class LossAcceptanceStatus(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
+
+
+class RuleEngineSource(StrEnum):
+    """Which rule engine powered a backtest run (Slice 36)."""
+
+    STRUCTURED = "structured"
+    ADAPTER = "adapter"
+    DEFAULT_SETUP = "default_setup"
+    UNSUPPORTED = "unsupported"
+
+
+class EntryTriggerType(StrEnum):
+    """Machine-testable entry trigger types (Slice 36)."""
+
+    EMA_PULLBACK = "ema_pullback"
+    BREAKOUT = "breakout"
+    LIQUIDITY_SWEEP = "liquidity_sweep"
+    RECLAIM = "reclaim"
+    FAILED_BREAKOUT = "failed_breakout"
+    RSI_THRESHOLD = "rsi_threshold"
+    VOLUME_CONFIRMATION = "volume_confirmation"
+    TREND_ALIGNMENT = "trend_alignment"
+
+
+class RuleConditionOperator(StrEnum):
+    """Comparison operator for structured rule conditions."""
+
+    GT = "gt"
+    GTE = "gte"
+    LT = "lt"
+    LTE = "lte"
+    EQ = "eq"
+    CROSSES_ABOVE = "crosses_above"
+    CROSSES_BELOW = "crosses_below"
+
+
+class ExitRuleType(StrEnum):
+    """Machine-testable exit rule blocks."""
+
+    FIXED_STOP = "fixed_stop"
+    ATR_STOP = "atr_stop"
+    SWING_STOP = "swing_stop"
+    TP_MULTIPLE = "tp_multiple"
+    TP_PRICE_LEVELS = "tp_price_levels"
+    PARTIAL_TP = "partial_tp"
+    RUNNER_STRUCTURE_BREAK = "runner_structure_break"
+
+
+class NoTradeRuleType(StrEnum):
+    """Machine-testable no-trade filters."""
+
+    LOW_VOLUME = "low_volume"
+    HIGH_FUNDING = "high_funding"
+    WEEKEND_CHOP = "weekend_chop"
+    DAILY_LOSS_LOCK = "daily_loss_lock"
+    GREEN_DAY_PROTECTION = "green_day_protection"
+    HTF_CONFLICT = "htf_conflict"
+
+
+class TestabilityBand(StrEnum):
+    """Strategy testability score band."""
+
+    VAGUE = "vague"
+    PARTIAL = "partial"
+    MACHINE_TESTABLE = "machine_testable"
+
+
+class LessonCandidateStatus(StrEnum):
+    """Lesson candidate review lifecycle (Slice 36)."""
+
+    CANDIDATE = "lesson_candidate"
+    NEEDS_REVIEW = "needs_review"
+    ACCEPTED = "accepted_lesson"
+    REJECTED = "rejected_lesson"
+
+
+class AnalysisConfidence(StrEnum):
+    """Confidence level for discipline estimates."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
