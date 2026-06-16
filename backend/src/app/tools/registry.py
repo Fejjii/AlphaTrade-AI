@@ -278,6 +278,154 @@ def _analytics_summary_execute(args: dict[str, Any], session: Any | None) -> Too
         return ToolOutput(tool_name="analytics_summary_tool", success=False, error=str(exc))
 
 
+def _strategy_library_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.strategy_library import UserStrategyCreate
+    from app.services.strategy_library_service import StrategyLibraryService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="strategy_library_tool", success=False, error="DB session required."
+        )
+    try:
+        action = str(args.get("action", "list"))
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        service = StrategyLibraryService(session)
+        if action == "list":
+            items, total = service.list_strategies(organization_id=org, user_id=user, limit=20)
+            result = {"items": [i.model_dump(mode="json") for i in items], "total": total}
+        elif action == "get":
+            sid = _uuid.UUID(str(args["strategy_id"]))
+            result = service.get(sid, organization_id=org, user_id=user).model_dump(mode="json")
+        elif action == "create":
+            payload = UserStrategyCreate.model_validate(
+                {**args, "organization_id": org, "user_id": user}
+            )
+            result = service.create(payload).model_dump(mode="json")
+        else:
+            return ToolOutput(
+                tool_name="strategy_library_tool", success=False, error="Unknown action."
+            )
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="strategy_library_tool", success=True, result=result, latency_ms=latency
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="strategy_library_tool", success=False, error=str(exc))
+
+
+def _pretrade_analysis_execute(
+    args: dict[str, Any], session: Any | None, mds: MarketDataService
+) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.pretrade import PreTradeAnalyzeRequest
+    from app.services.pretrade_analysis_service import PreTradeAnalysisService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="pretrade_analysis_tool", success=False, error="DB session required."
+        )
+    try:
+        payload = dict(args)
+        payload["organization_id"] = _uuid.UUID(str(payload["organization_id"]))
+        payload["user_id"] = _uuid.UUID(str(payload["user_id"]))
+        request = PreTradeAnalyzeRequest.model_validate(payload)
+        result = PreTradeAnalysisService(session, mds).analyze(request)
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="pretrade_analysis_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="pretrade_analysis_tool", success=False, error=str(exc))
+
+
+def _position_sizing_execute(args: dict[str, Any]) -> ToolOutput:
+    from app.schemas.position_sizing import PositionSizingRequest
+    from app.services.position_sizing_service import PositionSizingService
+
+    start = time.perf_counter()
+    try:
+        request = PositionSizingRequest.model_validate(args.get("request", args))
+        result = PositionSizingService().calculate(request)
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="position_sizing_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="position_sizing_tool", success=False, error=str(exc))
+
+
+def _manual_levels_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.manual_level_service import ManualLevelService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="manual_levels_tool", success=False, error="DB session required."
+        )
+    try:
+        action = str(args.get("action", "list"))
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        service = ManualLevelService(session)
+        if action == "list":
+            items, total = service.list_levels(
+                organization_id=org,
+                user_id=user,
+                symbol=args.get("symbol"),
+                exchange=args.get("exchange"),
+            )
+            result = {"items": [i.model_dump(mode="json") for i in items], "total": total}
+        else:
+            lid = _uuid.UUID(str(args["level_id"]))
+            result = service.get(lid, organization_id=org, user_id=user).model_dump(mode="json")
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="manual_levels_tool", success=True, result=result, latency_ms=latency
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="manual_levels_tool", success=False, error=str(exc))
+
+
+def _human_vs_system_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.human_vs_system_service import HumanVsSystemService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="human_vs_system_tool", success=False, error="DB session required."
+        )
+    try:
+        trade_id = _uuid.UUID(str(args["trade_id"]))
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        result = HumanVsSystemService(session).compare(trade_id, organization_id=org, user_id=user)
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="human_vs_system_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="human_vs_system_tool", success=False, error=str(exc))
+
+
 def build_default_registry(
     _settings: Settings | None = None,
     rag_service: RagService | None = None,
@@ -417,6 +565,56 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda args: _analytics_summary_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="strategy_library_tool",
+            description="List, get, or create user strategy cards in the strategy library.",
+            risk_level=ToolRiskLevel.LOW,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _strategy_library_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="pretrade_analysis_tool",
+            description="Run deterministic pre-trade analysis for a symbol and setup.",
+            risk_level=ToolRiskLevel.LOW,
+            requires_approval=False,
+            provider_dependencies=("mock-market-data",),
+            has_fallback=True,
+            enabled=True,
+            execute=lambda args: _pretrade_analysis_execute(args, db_session, mds),
+        ),
+        ToolDefinition(
+            name="position_sizing_tool",
+            description="Calculate position size, risk/reward, and confidence-adjusted sizing.",
+            risk_level=ToolRiskLevel.LOW,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=_position_sizing_execute,
+        ),
+        ToolDefinition(
+            name="manual_levels_tool",
+            description="List or get manual chart levels for a symbol.",
+            risk_level=ToolRiskLevel.READ,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _manual_levels_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="human_vs_system_tool",
+            description=("Compare actual trade behavior to the system plan and adherence score."),
+            risk_level=ToolRiskLevel.READ,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _human_vs_system_execute(args, db_session),
         ),
     ]
     for tool in tools:

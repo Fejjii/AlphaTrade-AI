@@ -788,3 +788,138 @@ export interface MarketAnalyzeResponse {
   data_quality: string;
   confidence_penalty_applied: boolean;
 }
+
+export type ManualLevelType =
+  | "support"
+  | "resistance"
+  | "fibonacci"
+  | "trend_line"
+  | "vwap"
+  | "liquidity_zone"
+  | "previous_high"
+  | "previous_low"
+  | "user_note";
+
+export type PreTradeRecommendation =
+  | "no_trade"
+  | "watch"
+  | "small_probe"
+  | "normal_size"
+  | "high_conviction";
+
+export interface StrategyCard {
+  strategy_name: string;
+  market_type: string;
+  asset_universe: string[];
+  timeframes: Timeframe[];
+  entry_conditions: string[];
+  confirmation_conditions: string[];
+  invalidation: string[];
+  stop_loss: string[];
+  take_profit_plan: string[];
+  runner_plan: string[];
+  position_sizing: string[];
+  add_rules: string[];
+  no_trade_rules: string[];
+  backtest_rules: string[];
+  success_criteria: string[];
+  validation_status: string;
+}
+
+export interface UserStrategy {
+  id: string;
+  name: string;
+  setup_type: StrategyId;
+  current_version: number;
+  enabled: boolean;
+  notes?: string | null;
+  latest_card?: StrategyCard | null;
+  validation_status?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaginatedUserStrategies {
+  items: UserStrategy[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ManualChartLevel {
+  id: string;
+  symbol: string;
+  exchange: string;
+  timeframe?: Timeframe | null;
+  level_type: ManualLevelType;
+  price?: string | null;
+  price_low?: string | null;
+  price_high?: string | null;
+  label?: string | null;
+  notes?: string | null;
+  enabled: boolean;
+}
+
+export interface PaginatedManualChartLevels {
+  items: ManualChartLevel[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PositionSizingResult {
+  entry_price: string;
+  invalidation_level: string;
+  stop_loss_distance: string;
+  account_balance: string;
+  max_risk_percent: string;
+  maximum_acceptable_loss: string;
+  notional_position_size: string;
+  leverage_limit: string;
+  leverage_recommendation: string;
+  risk_reward_ratio?: number | null;
+  required_breakeven_win_rate?: number | null;
+  confidence_score: number;
+  confidence_adjusted_size: string;
+  worst_case_scenario: string;
+  final_recommendation: PreTradeRecommendation;
+  planned_loss_amount: string;
+}
+
+export interface PreTradeAnalyzeResponse {
+  symbol: string;
+  exchange: string;
+  direction_considered?: TradeDirection | null;
+  bullish_factors: string[];
+  bearish_factors: string[];
+  market_regime: string;
+  trend_alignment_score: number;
+  volume_confirmation_score: number;
+  funding_risk_score: number;
+  setup_confidence_score: number;
+  risk_reward?: number | null;
+  suggested_entry_zone?: Record<string, string> | null;
+  suggested_stop_loss?: string | null;
+  invalidation: string[];
+  tp_levels: Record<string, string>[];
+  runner_logic: string[];
+  position_size?: PositionSizingResult | null;
+  leverage_recommendation?: string | null;
+  final_recommendation: PreTradeRecommendation;
+  limitations: string[];
+}
+
+export interface HumanVsSystemComparison {
+  trade_id: string;
+  plan_adherence_score: number;
+  plan_adherence: {
+    entry_followed_plan: number;
+    size_respected_risk: number;
+    stop_loss_respected: number;
+    profit_taking_followed: number;
+    emotion_controlled: number;
+    journal_completed: number;
+  };
+  emotion_tags: string[];
+  notes: string[];
+}

@@ -43,6 +43,11 @@ def proposal_to_schema(row: TradeProposalModel) -> TradeProposal:
         status=row.status,
         approval_required=row.approval_required,
         risk_result=RiskCheckResult.model_validate(row.risk_result) if row.risk_result else None,
+        user_strategy_id=row.user_strategy_id,
+        planned_loss_amount=row.planned_loss_amount,
+        loss_acceptance_required=row.loss_acceptance_required,
+        loss_acceptance_status=row.loss_acceptance_status,
+        actual_loss_amount=row.actual_loss_amount,
         created_at=row.created_at,
     )
 

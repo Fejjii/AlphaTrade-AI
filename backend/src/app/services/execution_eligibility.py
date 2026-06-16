@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.schemas.approval import ApprovalRequest
-from app.schemas.common import ApprovalStatus, ProposalStatus, RiskAction
+from app.schemas.common import ApprovalStatus, LossAcceptanceStatus, ProposalStatus, RiskAction
 from app.schemas.proposal import TradeProposal
 from app.schemas.risk import RiskCheckResult
 
@@ -17,6 +17,15 @@ def paper_execution_eligibility(
         risk = RiskCheckResult.model_validate(proposal.risk_result)
         if risk.action is RiskAction.BLOCK:
             return False, "Blocked by risk engine."
+
+    if getattr(proposal, "loss_acceptance_required", False):
+        status = getattr(proposal, "loss_acceptance_status", LossAcceptanceStatus.NOT_REQUIRED)
+        if isinstance(status, str):
+            status = LossAcceptanceStatus(status)
+        if status is LossAcceptanceStatus.PENDING:
+            return False, "Loss acceptance required before paper execution."
+        if status is LossAcceptanceStatus.REJECTED:
+            return False, "Planned loss was not accepted — reduce size or skip."
 
     if approval is None:
         if proposal.approval_required:

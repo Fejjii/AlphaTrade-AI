@@ -380,3 +380,75 @@ class TradeResult(StrEnum):
     LOSS = "loss"
     BREAKEVEN = "breakeven"
     OPEN = "open"
+
+
+class MarketType(StrEnum):
+    """Market context for a user strategy card."""
+
+    CRYPTO_PERP = "crypto_perp"
+    CRYPTO_SPOT = "crypto_spot"
+    FOREX = "forex"
+    EQUITIES = "equities"
+    COMMODITIES = "commodities"
+
+
+class StrategyValidationStatus(StrEnum):
+    """Validation lifecycle for a user strategy card."""
+
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    VALIDATED = "validated"
+    NEEDS_REVISION = "needs_revision"
+    DEPRECATED = "deprecated"
+
+
+class BacktestStatus(StrEnum):
+    """Placeholder backtest lifecycle."""
+
+    NOT_RUN = "not_run"
+    SCHEDULED = "scheduled"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class PaperValidationStatus(StrEnum):
+    """Placeholder paper validation lifecycle."""
+
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    PASSED = "passed"
+    FAILED = "failed"
+
+
+class ManualLevelType(StrEnum):
+    """Manual chart level types (Slice 33)."""
+
+    SUPPORT = "support"
+    RESISTANCE = "resistance"
+    FIBONACCI = "fibonacci"
+    TREND_LINE = "trend_line"
+    VWAP = "vwap"
+    LIQUIDITY_ZONE = "liquidity_zone"
+    PREVIOUS_HIGH = "previous_high"
+    PREVIOUS_LOW = "previous_low"
+    USER_NOTE = "user_note"
+
+
+class PreTradeRecommendation(StrEnum):
+    """Deterministic pre-trade recommendation bands."""
+
+    NO_TRADE = "no_trade"
+    WATCH = "watch"
+    SMALL_PROBE = "small_probe"
+    NORMAL_SIZE = "normal_size"
+    HIGH_CONVICTION = "high_conviction"
+
+
+class LossAcceptanceStatus(StrEnum):
+    """Trader confirmation of planned loss."""
+
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"

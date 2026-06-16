@@ -12,9 +12,21 @@ from app.db.models import TradeProposal as TradeProposalModel
 from app.repositories.proposals import ProposalRepository
 from app.schemas.agent import AgentState, Intent
 from app.schemas.audit import AuditRecordCreate
-from app.schemas.common import ActorType, AuditEventType, ProposalStatus, SafetyVerdict
-from app.schemas.proposal import ProposalStatusUpdate, TradeProposal, TradeProposalCreate
+from app.schemas.common import (
+    ActorType,
+    AuditEventType,
+    LossAcceptanceStatus,
+    ProposalStatus,
+    SafetyVerdict,
+)
+from app.schemas.proposal import (
+    LossAcceptanceUpdate,
+    ProposalStatusUpdate,
+    TradeProposal,
+    TradeProposalCreate,
+)
 from app.services.audit_service import AuditService
+from app.services.loss_acceptance_service import LossAcceptanceService
 from app.services.mappers.proposal_mapper import exit_to_columns, proposal_to_schema
 
 
@@ -45,6 +57,10 @@ class ProposalService:
             approval_required=data.approval_required,
             risk_result=data.risk_result.model_dump(mode="json") if data.risk_result else None,
             status=status,
+            user_strategy_id=data.user_strategy_id,
+            planned_loss_amount=data.planned_loss_amount,
+            loss_acceptance_required=data.loss_acceptance_required,
+            loss_acceptance_status=data.loss_acceptance_status,
             **exit_cols,
         )
         self._repo.add(row)
@@ -124,6 +140,31 @@ class ProposalService:
             resource_id=str(row.id),
             metadata={"action": "status_update", "status": update.status.value},
         )
+        return proposal_to_schema(row)
+
+    def update_loss_acceptance(
+        self,
+        proposal_id: uuid.UUID,
+        update: LossAcceptanceUpdate,
+    ) -> TradeProposal:
+        from app.schemas.position_sizing import LossAcceptanceRequest
+
+        row = self._repo.get(proposal_id)
+        if row is None:
+            raise NotFoundError("Trade proposal not found")
+        planned = row.planned_loss_amount or update.planned_loss_amount
+        result = LossAcceptanceService().evaluate(
+            planned_loss_amount=planned,
+            request=LossAcceptanceRequest(
+                planned_loss_amount=update.planned_loss_amount,
+                accepted=update.accepted,
+            ),
+        )
+        row.loss_acceptance_status = LossAcceptanceStatus(result.status)
+        row.planned_loss_amount = planned
+        row.loss_acceptance_required = True
+        row.updated_at = datetime.now(UTC)
+        self._repo.add(row)
         return proposal_to_schema(row)
 
     def _record_audit(self, event_type: AuditEventType, **fields: object) -> None:

@@ -95,6 +95,8 @@ COOKIE_MODE=true ./scripts/staging-smoke.sh
 
 **Slice 31 analytics:** Before validating analytics in staging (or after pulling Slice 31), run `alembic upgrade head` so migration **`j0k1l2m3n4o5`** (setup linkage on positions and paper orders) is applied. Render pre-deploy command should remain `alembic upgrade head`.
 
+**Slice 33 strategy library:** Migration **`k1l2m3n4o5p6`** adds user strategies, manual levels, and loss acceptance fields on proposals.
+
 ---
 
 ## 5. Backend deploy (Render)

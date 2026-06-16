@@ -43,6 +43,13 @@ import type {
   OrganizationQuotaConfig,
   MembershipRole,
   MarketAnalyzeResponse,
+  ManualChartLevel,
+  PaginatedManualChartLevels,
+  PaginatedUserStrategies,
+  PreTradeAnalyzeResponse,
+  PositionSizingResult,
+  HumanVsSystemComparison,
+  UserStrategy,
   MarketSnapshotResponse,
   OHLCVResponse,
   TickerResponse,
@@ -340,6 +347,61 @@ export const api = {
       }),
     snapshots: (params?: { symbol?: string; exchange?: string; timeframe?: string }) =>
       apiFetch<MarketSnapshotResponse>("/market/snapshots", { query: params }),
+  },
+  strategies: {
+    list: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedUserStrategies>("/strategies", { query: params, auth: true }),
+    get: (id: string) => apiFetch<UserStrategy>(`/strategies/${id}`, { auth: true }),
+    create: (body: {
+      name: string;
+      setup_type: string;
+      card: Record<string, unknown>;
+      notes?: string;
+    }) =>
+      apiFetch<UserStrategy>("/strategies", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    modules: () => apiFetch<string[]>("/strategies/modules", { auth: false }),
+  },
+  manualLevels: {
+    list: (params?: { symbol?: string; exchange?: string }) =>
+      apiFetch<PaginatedManualChartLevels>("/manual-levels", { query: params, auth: true }),
+    create: (body: Record<string, unknown>) =>
+      apiFetch<ManualChartLevel>("/manual-levels", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    delete: (id: string) =>
+      apiFetch<void>(`/manual-levels/${id}`, { method: "DELETE", auth: true }),
+  },
+  pretrade: {
+    analyze: (body: Record<string, unknown>) =>
+      apiFetch<PreTradeAnalyzeResponse>("/pretrade/analyze", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+  },
+  risk: {
+    size: (body: Record<string, unknown>) =>
+      apiFetch<PositionSizingResult>("/risk/size", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    lossAcceptance: (body: { planned_loss_amount: string; accepted: boolean }) =>
+      apiFetch<{ can_execute_paper: boolean; recommendation: string }>("/risk/loss-acceptance", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+  },
+  humanVsSystem: {
+    compare: (tradeId: string) =>
+      apiFetch<HumanVsSystemComparison>(`/human-vs-system/${tradeId}`, { auth: true }),
   },
 };
 

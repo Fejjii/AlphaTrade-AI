@@ -29,6 +29,7 @@ flowchart TD
 | Guardrails | Injection, moderation, trading policy |
 | RAG | Rules, playbook, **journal lessons** — never direct signals |
 | Analytics | `analytics_summary_tool` for review questions (setups, mistakes, discipline) |
+| Strategy / pre-trade (Slice 33) | `strategy_library_tool`, `pretrade_analysis_tool`, `position_sizing_tool`, `manual_levels_tool`, `human_vs_system_tool` |
 | Market data | Read-only ticker/OHLCV via provider abstraction |
 | Strategies | Seven deterministic MVP setups |
 | Risk gate | 15 rules; `BLOCK` stops paper execution |

@@ -65,6 +65,7 @@ Aggregates risk warnings, blocks, approval outcomes, paper rejections, and journ
 - Win/loss and PnL reflect **paper positions** and journal labels, not exchange fills.  
 - Small sample sizes can skew averages.  
 - Historical rows before Slice 31 may lack `strategy_id` on positions/orders (backfilled from proposal linkage when available).
+- Slice 33 adds separate user strategy library analytics path; setup stats still use `StrategyId` enum on proposals/journal.
 
 ## Why deterministic
 

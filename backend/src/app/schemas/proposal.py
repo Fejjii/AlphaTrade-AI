@@ -15,6 +15,7 @@ from pydantic import Field, model_validator
 from app.schemas.common import (
     Confidence,
     Leverage,
+    LossAcceptanceStatus,
     ORMModel,
     PositiveDecimal,
     ProposalStatus,
@@ -78,6 +79,11 @@ class TradeProposal(ORMModel):
     status: ProposalStatus = ProposalStatus.DRAFT
     approval_required: bool = False
     risk_result: RiskCheckResult | None = None
+    user_strategy_id: UUID | None = None
+    planned_loss_amount: Decimal | None = None
+    loss_acceptance_required: bool = False
+    loss_acceptance_status: LossAcceptanceStatus = LossAcceptanceStatus.NOT_REQUIRED
+    actual_loss_amount: Decimal | None = None
     created_at: datetime
 
 
@@ -102,6 +108,17 @@ class TradeProposalCreate(StrictModel):
     rationale: str = Field(min_length=1, max_length=4000)
     approval_required: bool = False
     risk_result: RiskCheckResult | None = None
+    user_strategy_id: UUID | None = None
+    planned_loss_amount: Decimal | None = None
+    loss_acceptance_required: bool = False
+    loss_acceptance_status: LossAcceptanceStatus = LossAcceptanceStatus.NOT_REQUIRED
+
+
+class LossAcceptanceUpdate(StrictModel):
+    """Confirm or reject planned loss on a proposal."""
+
+    accepted: bool
+    planned_loss_amount: PositiveDecimal
 
 
 class ProposalStatusUpdate(StrictModel):

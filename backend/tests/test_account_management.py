@@ -113,7 +113,7 @@ def test_login_blocked_when_email_unverified_when_required(
     account_client: AccountClientFixture,
 ) -> None:
     """When email verification is required, login fails until confirm."""
-    client, _ = account_client
+    _client, _ = account_client
     get_settings.cache_clear()
     settings = Settings(
         environment="local",

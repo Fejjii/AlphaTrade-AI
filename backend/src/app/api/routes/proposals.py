@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query
 from app.core.auth import TenantDep
 from app.core.dependencies import ProposalServiceDep, SessionDep, WorkflowServiceDep
 from app.schemas.proposal import (
+    LossAcceptanceUpdate,
     PaginatedTradeProposals,
     ProposalStatusUpdate,
     TradeProposal,
@@ -93,5 +94,24 @@ async def update_proposal_status(
     proposal = proposal_service.get(proposal_id)
     ensure_same_organization(proposal.organization_id, tenant)
     result = proposal_service.update_status(proposal_id, body)
+    session.commit()
+    return result
+
+
+@router.patch(
+    "/{proposal_id}/loss-acceptance",
+    response_model=TradeProposal,
+    summary="Confirm or reject planned loss",
+)
+async def update_loss_acceptance(
+    proposal_id: uuid.UUID,
+    body: LossAcceptanceUpdate,
+    tenant: TraderDep,
+    proposal_service: ProposalServiceDep,
+    session: SessionDep,
+) -> TradeProposal:
+    proposal = proposal_service.get(proposal_id)
+    ensure_same_organization(proposal.organization_id, tenant)
+    result = proposal_service.update_loss_acceptance(proposal_id, body)
     session.commit()
     return result

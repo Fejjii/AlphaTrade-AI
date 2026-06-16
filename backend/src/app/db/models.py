@@ -40,14 +40,18 @@ from app.schemas.common import (
     AuditEventType,
     AuditResult,
     AuditSeverity,
+    BacktestStatus,
     CostSource,
     DocumentSourceType,
     ExchangeAccountStatus,
     ExecutionMode,
+    LossAcceptanceStatus,
+    ManualLevelType,
     MembershipRole,
     OrderSide,
     OrderStatus,
     OrderType,
+    PaperValidationStatus,
     PositionStatus,
     ProposalStatus,
     RiskAction,
@@ -56,6 +60,7 @@ from app.schemas.common import (
     RiskSeverity,
     SetupCategory,
     StrategyId,
+    StrategyValidationStatus,
     TradeDirection,
     TradeResult,
     UsageStatus,
@@ -312,6 +317,86 @@ class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     entry_high: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     approval_required: Mapped[bool] = mapped_column(Boolean, default=False)
     risk_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    user_strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    planned_loss_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    loss_acceptance_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    loss_acceptance_status: Mapped[LossAcceptanceStatus] = mapped_column(
+        _enum(LossAcceptanceStatus), default=LossAcceptanceStatus.NOT_REQUIRED
+    )
+    actual_loss_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+
+
+class UserStrategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant-scoped strategy library entry (Slice 33)."""
+
+    __tablename__ = "user_strategies"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "user_id",
+            "name",
+            name="uq_user_strategy_org_user_name",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    setup_type: Mapped[StrategyId] = mapped_column(_enum(StrategyId), nullable=False)
+    current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Versioned strategy card content."""
+
+    __tablename__ = "user_strategy_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "strategy_id",
+            "version",
+            name="uq_user_strategy_version",
+        ),
+    )
+
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    card: Mapped[dict] = mapped_column(JSON, nullable=False)
+    validation_status: Mapped[StrategyValidationStatus] = mapped_column(
+        _enum(StrategyValidationStatus), default=StrategyValidationStatus.DRAFT
+    )
+    backtest_status: Mapped[BacktestStatus] = mapped_column(
+        _enum(BacktestStatus), default=BacktestStatus.NOT_RUN
+    )
+    paper_validation_status: Mapped[PaperValidationStatus] = mapped_column(
+        _enum(PaperValidationStatus), default=PaperValidationStatus.NOT_STARTED
+    )
+
+
+class ManualChartLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """User-drawn chart levels for pre-trade analysis."""
+
+    __tablename__ = "manual_chart_levels"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    level_type: Mapped[ManualLevelType] = mapped_column(_enum(ManualLevelType), nullable=False)
+    price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    price_low: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    price_high: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class WatchlistItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):

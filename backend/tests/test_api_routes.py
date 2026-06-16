@@ -105,7 +105,7 @@ def test_risk_check_endpoint(client: TestClient) -> None:
 
 
 def test_strategies_list_and_evaluate(client: TestClient) -> None:
-    listing = client.get("/strategies")
+    listing = client.get("/strategies/modules")
     assert listing.status_code == 200
     assert len(listing.json()) == 7
 

@@ -164,6 +164,14 @@ Route: `/analytics`
 
 In **Workspace**, ask: “What mistakes do I repeat?” — agent uses `analytics_summary_tool`.
 
+## 13. Strategy library & pre-trade (Slice 33)
+
+Routes: `/strategy-lab`, `/manual-levels`, `/pre-trade`
+
+1. Open **Strategy Lab** — list user strategy cards (paper only).
+2. Open **Pre-Trade** — run deterministic analysis for BTC; review sizing and loss acceptance panel.
+3. In **Workspace**, ask: “Analyze BTC long using my strategy” or “Calculate position size for this setup.”
+
 ---
 
 ## 13. Journal → RAG learning loop

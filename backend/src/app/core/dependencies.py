@@ -15,17 +15,23 @@ from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.execution_service import ExecutionService
+from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
 from app.services.journal_rag_sync_service import JournalRagSyncService
 from app.services.journal_service import JournalService
+from app.services.loss_acceptance_service import LossAcceptanceService
+from app.services.manual_level_service import ManualLevelService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
 from app.services.position_service import PositionService
+from app.services.position_sizing_service import PositionSizingService
+from app.services.pretrade_analysis_service import PreTradeAnalysisService
 from app.services.proposal_service import ProposalService
 from app.services.quota_service import QuotaService
 from app.services.rag_service import RagService, build_rag_service
 from app.services.risk_service import RiskService
+from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_service import StrategyService
 from app.services.usage_service import UsageService
 from app.services.workflow_service import WorkflowService
@@ -155,3 +161,43 @@ def get_analytics_facade(session: SessionDep) -> TradingAnalyticsFacade:
 
 
 AnalyticsFacadeDep = Annotated[TradingAnalyticsFacade, Depends(get_analytics_facade)]
+
+
+def get_position_sizing_service() -> PositionSizingService:
+    return PositionSizingService()
+
+
+def get_loss_acceptance_service() -> LossAcceptanceService:
+    return LossAcceptanceService()
+
+
+def get_strategy_library_service(
+    session: SessionDep,
+    rag_service: RagServiceDep,
+) -> StrategyLibraryService:
+    return StrategyLibraryService(session, rag_service=rag_service)
+
+
+def get_manual_level_service(session: SessionDep) -> ManualLevelService:
+    return ManualLevelService(session)
+
+
+def get_pretrade_analysis_service(
+    session: SessionDep,
+    market_data_service: MarketDataServiceDep,
+) -> PreTradeAnalysisService:
+    return PreTradeAnalysisService(session, market_data_service)
+
+
+def get_human_vs_system_service(session: SessionDep) -> HumanVsSystemService:
+    return HumanVsSystemService(session)
+
+
+PositionSizingServiceDep = Annotated[PositionSizingService, Depends(get_position_sizing_service)]
+LossAcceptanceServiceDep = Annotated[LossAcceptanceService, Depends(get_loss_acceptance_service)]
+StrategyLibraryServiceDep = Annotated[StrategyLibraryService, Depends(get_strategy_library_service)]
+ManualLevelServiceDep = Annotated[ManualLevelService, Depends(get_manual_level_service)]
+PreTradeAnalysisServiceDep = Annotated[
+    PreTradeAnalysisService, Depends(get_pretrade_analysis_service)
+]
+HumanVsSystemServiceDep = Annotated[HumanVsSystemService, Depends(get_human_vs_system_service)]

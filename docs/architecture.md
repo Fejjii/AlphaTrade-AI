@@ -79,6 +79,7 @@ Human-in-the-loop path:
 5. Audit + usage events throughout
 6. Journal entries optionally sync to RAG (`trade_journal`)
 7. **Analytics services** (Slice 31) — deterministic setup stats, trade review, discipline score, risk behavior (`GET /analytics/*`); agent uses `analytics_summary_tool`
+8. **Strategy library & pre-trade** (Slice 33) — user strategy cards, manual levels, pre-trade analysis, position sizing v2, loss acceptance, human-vs-system groundwork; agent tools: `strategy_library_tool`, `pretrade_analysis_tool`, `position_sizing_tool`, `manual_levels_tool`, `human_vs_system_tool`
 
 ## Account lifecycle (Slice 25)
 

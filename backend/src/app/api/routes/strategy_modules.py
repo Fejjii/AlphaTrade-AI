@@ -1,4 +1,4 @@
-"""Strategy module API."""
+"""Deterministic strategy module evaluation API."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from app.schemas.common import StrategyId
 from app.schemas.strategy import StrategyEvaluateRequest, StrategyEvaluateResponse
 from app.strategies.base import StrategyEvaluationInput
 
-router = APIRouter(prefix="/strategies", tags=["strategies"])
+router = APIRouter(prefix="/strategies", tags=["strategy-modules"])
 
 
-@router.get("", summary="List registered strategy modules")
-async def list_strategies(service: StrategyServiceDep) -> list[StrategyId]:
+@router.get("/modules", summary="List registered strategy modules")
+async def list_strategy_modules(service: StrategyServiceDep) -> list[StrategyId]:
     return service.list_strategy_ids()
 
 

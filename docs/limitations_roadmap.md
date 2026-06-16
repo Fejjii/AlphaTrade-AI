@@ -1,6 +1,6 @@
 # Limitations and Roadmap
 
-## Current limitations (post Slice 31)
+## Current limitations (post Slice 33)
 
 ### Trading and execution
 
@@ -13,6 +13,7 @@
 - End-to-end proposal → approval → paper order → position is implemented and tested.
 - Journal → RAG sync is on by default; disable via `JOURNAL_RAG_SYNC_ENABLED=false`.
 - Trading analytics (Slice 31) are **paper-only** and deterministic; discipline score is not LLM-generated.
+- Strategy library & pre-trade (Slice 33) are deterministic; backtest status and human-vs-system PnL simulation are placeholders.
 - Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
 - Playwright E2E: **API workflow in CI**; full browser tour optional locally (skipped in CI).
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
