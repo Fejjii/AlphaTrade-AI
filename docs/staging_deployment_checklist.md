@@ -97,7 +97,7 @@ COOKIE_MODE=true ./scripts/staging-smoke.sh
 
 **Slice 33 strategy library:** Migration **`k1l2m3n4o5p6`** adds user strategies, manual levels, and loss acceptance fields on proposals.
 
-**Slice 34 workflow wiring:** Migration **`l2m3n4o5p6q7`** adds backtest runs, paper validation runs, and `paper_eligible` on user strategies. Run:
+**Slice 35 backtest engine:** Migration **`m3n4o5p6q7r8`** adds `historical_candles`, `backtest_trades`, and paper validation metrics columns. Run:
 
 ```bash
 cd backend && uv run alembic upgrade head
@@ -151,7 +151,7 @@ BASE_URL=https://YOUR-API.onrender.com ./scripts/analytics-smoke.sh
 BASE_URL=https://YOUR-API.onrender.com ./scripts/strategy-smoke.sh
 ```
 
-**Migration reminder:** Run `cd backend && uv run alembic upgrade head` on staging Postgres before strategy or analytics smoke. Head revisions include **`k1l2m3n4o5p6`** (strategy library) and **`l2m3n4o5p6q7`** (backtest/paper validation).
+**Migration reminder:** Run `cd backend && uv run alembic upgrade head` on staging Postgres before strategy or analytics smoke. Head revisions include **`k1l2m3n4o5p6`**, **`l2m3n4o5p6q7`**, and **`m3n4o5p6q7r8`** (historical candles + backtest trades).
 
 Manual:
 - [ ] Paper banner visible

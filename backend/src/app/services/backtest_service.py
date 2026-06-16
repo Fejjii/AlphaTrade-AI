@@ -1,4 +1,4 @@
-"""Backtest placeholder service (Slice 34 — no live execution)."""
+"""Backtest service (Slice 35 — deterministic engine v1, paper only)."""
 
 from __future__ import annotations
 
@@ -9,17 +9,28 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.errors import NotFoundError
 from app.db.models import BacktestRun as BacktestRunModel
-from app.db.models import UserStrategy as UserStrategyModel
+from app.providers.factory import resolve_market_data_provider
 from app.repositories.backtest import BacktestRunRepository
+from app.repositories.backtest_trades import BacktestTradeRepository
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
 from app.schemas.backtest import (
     BacktestAssumptions,
-    BacktestPlaceholderResult,
+    BacktestResult,
     BacktestRun,
     BacktestRunCreate,
+    BacktestTradeRecord,
+    PaginatedBacktestTrades,
 )
-from app.schemas.common import BacktestRunStatus, BacktestStatus, StrategyValidationStatus
+from app.schemas.common import (
+    BacktestRecommendation,
+    BacktestRunStatus,
+    PaperValidationStatus,
+    TradeDirection,
+)
 from app.schemas.strategy_library import StrategyCard
+from app.services.backtest_engine_service import BacktestEngineService
+from app.services.historical_candle_service import HistoricalCandleService
+from app.services.strategy_promotion import evaluate_promotion
 
 
 class BacktestService:
@@ -27,8 +38,14 @@ class BacktestService:
         self._session = session
         self._settings = settings or get_settings()
         self._runs = BacktestRunRepository(session)
+        self._trades = BacktestTradeRepository(session)
         self._strategies = UserStrategyRepository(session)
         self._versions = UserStrategyVersionRepository(session)
+        provider = resolve_market_data_provider(self._settings)
+        self._engine = BacktestEngineService(
+            session,
+            HistoricalCandleService(session, provider, self._settings),
+        )
 
     def create(
         self,
@@ -44,7 +61,11 @@ class BacktestService:
         if strategy is None:
             raise NotFoundError("Strategy not found.")
 
-        version = self._versions.latest(strategy_id)
+        version = (
+            self._versions.get_by_id(payload.strategy_version_id)
+            if payload.strategy_version_id
+            else self._versions.latest(strategy_id)
+        )
         assumptions = payload.assumptions or BacktestAssumptions()
 
         run = BacktestRunModel(
@@ -52,13 +73,41 @@ class BacktestService:
             strategy_version_id=version.id if version else None,
             organization_id=organization_id,
             user_id=user_id,
-            status=BacktestRunStatus.QUEUED,
+            status=BacktestRunStatus.RUNNING,
             assumptions=assumptions.model_dump(mode="json"),
         )
         self._runs.add(run)
+        self._session.flush()
 
-        if self._settings.provider_mode == "mock" or not self._settings.enable_real_trading:
-            self._complete_mock(run, strategy, version)
+        try:
+            card = StrategyCard.model_validate(version.card) if version else None
+            if card is None:
+                run.status = BacktestRunStatus.FAILED
+                run.error_message = "Strategy version or card not found."
+                return self._to_schema(run)
+
+            result = self._engine.run(run=run, card=card, setup_type=strategy.setup_type)
+            run.result = result.model_dump(mode="json")
+            run.status = BacktestRunStatus.COMPLETED
+            needs_rules = BacktestRecommendation.NEEDS_STRUCTURED_RULES
+            if version is not None and result.recommendation != needs_rules:
+                promotion = evaluate_promotion(
+                    metrics=result.metrics,
+                    machine_readable=(
+                        result.recommendation != BacktestRecommendation.NEEDS_STRUCTURED_RULES
+                    ),
+                    data_quality=result.data_quality,
+                    meets_success_criteria=result.meets_success_criteria,
+                )
+                version.backtest_status = promotion.backtest_status
+                if promotion.validation_status is not None:
+                    version.validation_status = promotion.validation_status
+                strategy.paper_eligible = promotion.paper_eligible
+                if promotion.paper_eligible:
+                    version.paper_validation_status = PaperValidationStatus.NOT_STARTED
+        except Exception as exc:
+            run.status = BacktestRunStatus.FAILED
+            run.error_message = str(exc)
 
         return self._to_schema(run)
 
@@ -92,35 +141,46 @@ class BacktestService:
             raise NotFoundError("Backtest run not found.")
         return self._to_schema(row)
 
-    def _complete_mock(
+    def list_trades(
         self,
-        run: BacktestRunModel,
-        strategy: UserStrategyModel,
-        version: object | None,
-    ) -> None:
-        run.status = BacktestRunStatus.COMPLETED
-        card = StrategyCard.model_validate(version.card) if version else None
-        meets = card is not None and len(card.success_criteria) > 0
-        result = BacktestPlaceholderResult(
-            win_rate=0.48,
-            profit_factor=1.35,
-            max_drawdown_pct=12.5,
-            trade_count=int(run.assumptions.get("sample_size", 100)),
-            meets_success_criteria=meets,
-        )
-        run.result = result.model_dump(mode="json")
-
-        if version is not None and meets:
-            version.backtest_status = BacktestStatus.COMPLETED
-            if version.validation_status == StrategyValidationStatus.IN_REVIEW:
-                version.validation_status = StrategyValidationStatus.VALIDATED
+        run_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> PaginatedBacktestTrades:
+        row = self._runs.get_scoped(run_id, organization_id=organization_id)
+        if row is None:
+            raise NotFoundError("Backtest run not found.")
+        rows, total = self._trades.list_for_run(run_id, limit=limit, offset=offset)
+        items = [
+            BacktestTradeRecord(
+                id=trade.id,
+                entry_time=trade.entry_time,
+                exit_time=trade.exit_time,
+                direction=TradeDirection(trade.direction),
+                entry_price=trade.entry_price,
+                exit_price=trade.exit_price,
+                stop_loss=trade.stop_loss,
+                size=trade.size,
+                fees=trade.fees,
+                slippage_cost=trade.slippage_cost,
+                gross_pnl=trade.gross_pnl,
+                net_pnl=trade.net_pnl,
+                tp_hit_status=trade.tp_hit_status,
+                exit_reason=trade.exit_reason,
+                rule_notes=trade.rule_notes,
+            )
+            for trade in rows
+        ]
+        return PaginatedBacktestTrades(items=items, total=total, limit=limit, offset=offset)
 
     @staticmethod
     def _to_schema(row: BacktestRunModel) -> BacktestRun:
         assumptions = BacktestAssumptions.model_validate(row.assumptions or {})
         result = None
         if row.result:
-            result = BacktestPlaceholderResult.model_validate(row.result)
+            result = BacktestResult.model_validate(row.result)
         return BacktestRun(
             id=row.id,
             strategy_id=row.strategy_id,

@@ -1,6 +1,6 @@
-# Strategy Library (Slice 33–34)
+# Strategy Library (Slice 33–35)
 
-Tenant-scoped user strategy cards with versioning, Strategy Lab UI, backtest/paper-validation placeholders, and optional RAG ingest. **Paper only** — no real exchange execution.
+Tenant-scoped user strategy cards with versioning, Strategy Lab UI, **backtest engine v1**, paper validation metrics, and optional RAG ingest. **Paper only** — no real exchange execution.
 
 ## Lifecycle
 
@@ -11,7 +11,7 @@ Tenant-scoped user strategy cards with versioning, Strategy Lab UI, backtest/pap
 | Validated | `validated` | Eligible for RAG ingest and paper validation tracking |
 | Archived | `archived` | Read-only historical version |
 
-Version bumps create a new `user_strategy_versions` row; the parent strategy points at the latest card. `paper_eligible` (Slice 34) flags strategies that passed placeholder paper-validation criteria — **does not enable live trading**.
+Version bumps create a new `user_strategy_versions` row; the parent strategy points at the latest card. `paper_eligible` (Slice 35) flags strategies that pass **conservative backtest promotion** — **does not enable live trading**.
 
 ## API
 
@@ -23,25 +23,30 @@ Version bumps create a new `user_strategy_versions` row; the parent strategy poi
 | PATCH | `/strategies/{id}` | Update metadata or new card version |
 | POST | `/strategies/{id}/versions` | Create explicit version |
 | GET | `/strategies/{id}/versions` | List versions |
-| POST | `/strategies/{id}/backtests` | Request backtest run (**placeholder**) |
-| GET | `/strategies/{id}/backtests` | List backtest runs |
-| POST | `/strategies/{id}/paper-validation/start` | Start paper validation (**placeholder**) |
+| POST | `/strategies/{id}/backtests` | Run backtest v1 (historical simulation) |
+| GET | `/strategies/{id}/backtests` | List backtest runs with metrics |
+| GET | `/backtests/{id}` | Backtest run detail |
+| GET | `/backtests/{id}/trades` | Simulated trades for a run |
+| POST | `/strategies/{id}/paper-validation/start` | Start / refresh paper validation metrics |
 | GET | `/strategies/{id}/paper-validation` | List paper validation runs |
+| GET | `/strategies/{id}/paper-validation/{run_id}` | Single validation run with metrics |
+| POST | `/market/history/ingest` | Ingest historical OHLCV candles |
+| GET | `/market/history/candles` | Query stored candles (debug) |
 | GET | `/strategies/modules` | List deterministic code modules (unchanged) |
 | POST | `/strategies/evaluate` | Evaluate code module (unchanged) |
 
 Manual levels: see [pre_trade_analysis.md](pre_trade_analysis.md) (`/manual-levels` CRUD).
 
-## Strategy Lab UI (Slice 34)
+## Strategy Lab UI (Slice 34–35)
 
 Frontend routes:
 
 - `/strategy-lab` — list strategies with validation status and paper eligibility
 - `/strategy-lab/new` — create strategy card (`StrategyCardForm`)
-- `/strategy-lab/[id]` — detail, version history, backtest and paper-validation panels
+- `/strategy-lab/[id]` — detail, version history, **BacktestPanel** (form, metrics, trades) and **PaperValidationPanel**
 - `/strategy-lab/[id]/edit` — edit metadata and bump card version
 
-All pages show paper-only messaging. Backtest and paper-validation actions create **placeholder records** only (Slice 35 will add the real engine).
+All pages show paper-only messaging. Backtest v1 runs deterministic candle replay; paper validation aggregates metrics from linked paper positions.
 
 ## Strategy card fields
 
@@ -49,16 +54,22 @@ All pages show paper-only messaging. Backtest and paper-validation actions creat
 
 ## Agent routing
 
-Workspace questions about strategy cards, validation status, or backtest queue route through `strategy_workflow_tools` (see [agent_workflow.md](agent_workflow.md)). Deterministic tool output is labeled **SOURCE OF TRUTH**; LLM narrative cannot override card facts.
+Workspace questions about strategy cards, validation status, backtest runs, or paper eligibility route through `strategy_workflow_tools` and `backtest_tool` (see [agent_workflow.md](agent_workflow.md)). Deterministic tool output is labeled **SOURCE OF TRUTH**; LLM narrative cannot override card facts or invent metrics.
 
 ## RAG
 
 Validated or in-review cards ingest as `STRATEGY_TEMPLATE` documents. Analytics summaries are not auto-ingested.
 
-## Backtest & paper validation (placeholders)
+## Backtest & paper validation (Slice 35)
 
-- **Backtest:** `POST /strategies/{id}/backtests` persists a `backtest_runs` row with placeholder status — no historical bar replay yet.
-- **Paper validation:** `POST /strategies/{id}/paper-validation/start` records a tracking run; does not connect to exchange or change `ENABLE_REAL_TRADING`.
+See dedicated docs:
+
+- [backtesting.md](backtesting.md) — historical candle storage, replay engine, metrics, promotion rules
+- [paper_validation.md](paper_validation.md) — paper trade aggregation, recommendations
+
+**Natural language rules:** vague card text returns `needs_structured_rules` — the engine does not fake trades. Use setup defaults (e.g. `htf_trend_pullback`) or structured tokens (`pullback`, `ema`, `breakout`, `stop`, `tp1`, etc.).
+
+**Promotion:** at most `backtested`, `paper_eligible`, or `needs_review` — never auto-promotes to live. Real trading remains disabled.
 
 ## Migration (staging)
 
@@ -72,7 +83,8 @@ Revisions:
 
 1. `k1l2m3n4o5p6` — user strategies, manual levels, loss acceptance on proposals
 2. `l2m3n4o5p6q7` — backtest runs, paper validation runs, `paper_eligible` on user strategies
+3. `m3n4o5p6q7r8` — historical candles, backtest trades, paper validation metrics
 
-Head should be **`l2m3n4o5p6q7`**.
+Head should be **`m3n4o5p6q7r8`**.
 
 Optional smoke: `./scripts/strategy-smoke.sh` (requires running backend).

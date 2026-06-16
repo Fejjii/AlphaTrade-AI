@@ -164,20 +164,22 @@ Route: `/analytics`
 
 In **Workspace**, ask: “What mistakes do I repeat?” — agent uses `analytics_summary_tool`.
 
-## 13. Strategy library & pre-trade (Slice 33–34)
+## 13. Strategy library, backtest & paper validation (Slice 33–35)
 
 Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]/edit`, `/manual-levels`, `/pre-trade`
 
 1. Open **Strategy Lab** — list user strategy cards; create via **New strategy** (`StrategyCardForm`).
-2. Open a strategy detail — bump version, request **placeholder backtest**, start **paper validation** (tracking only).
-3. Open **Manual levels** — add support/resistance for a symbol.
-4. Open **Pre-Trade** — run deterministic analysis; review sizing and **Loss acceptance** panel.
-5. In **Workspace**, ask:
-   - *"Build a strategy card for HTF pullback"*
-   - *"Analyze BTC long using my strategy"*
-   - *"Calculate position size for this setup"*
-   - *"Compare my last trade to the system plan"*
-6. Emphasize: backtest and paper validation are **placeholders**; real trading remains disabled.
+2. Open a strategy detail — run **Backtest v1** (symbol, timeframe, date range, capital, fees, slippage); review metrics, equity curve summary, and simulated trades table.
+3. If rules are vague NL, show **needs structured rules** limitation — do not expect fake trades.
+4. Start **paper validation** — metrics from linked paper positions (win rate, PnL, drawdown, recommendation).
+5. Open **Manual levels** — add support/resistance for a symbol.
+6. Open **Pre-Trade** — run deterministic analysis; review sizing and **Loss acceptance** panel.
+7. In **Workspace**, ask:
+   - *"Backtest this strategy on BTC 15m"*
+   - *"Is this strategy paper eligible?"*
+   - *"What did the backtest show?"*
+   - *"Why is this strategy not validated?"*
+8. Emphasize: backtest is **historical simulation only**; paper validation does not enable live trading.
 
 Optional API smoke: `./scripts/strategy-smoke.sh`
 

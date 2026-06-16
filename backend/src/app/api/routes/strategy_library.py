@@ -139,7 +139,7 @@ async def list_strategy_versions(
 @router.post(
     "/{strategy_id}/backtests",
     response_model=BacktestRun,
-    summary="Request strategy backtest (placeholder)",
+    summary="Run strategy backtest v1 (historical simulation)",
 )
 async def create_backtest(
     strategy_id: uuid.UUID,
@@ -183,7 +183,7 @@ async def list_backtests(
 @router.post(
     "/{strategy_id}/paper-validation/start",
     response_model=PaperValidationRun,
-    summary="Start paper validation placeholder",
+    summary="Start paper validation tracking",
 )
 async def start_paper_validation(
     strategy_id: uuid.UUID,
@@ -218,4 +218,23 @@ async def list_paper_validation(
         user_id=tenant.user_id,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/{strategy_id}/paper-validation/{run_id}",
+    response_model=PaperValidationRun,
+    summary="Get paper validation run with metrics",
+)
+async def get_paper_validation_run(
+    strategy_id: uuid.UUID,
+    run_id: uuid.UUID,
+    tenant: TraderDep,
+    service: PaperValidationServiceDep,
+) -> PaperValidationRun:
+    return service.get_run(
+        strategy_id,
+        run_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
     )

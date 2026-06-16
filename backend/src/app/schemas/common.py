@@ -428,12 +428,34 @@ class BacktestRunStatus(StrEnum):
 
 
 class PaperValidationStatus(StrEnum):
-    """Placeholder paper validation lifecycle."""
+    """Paper validation lifecycle."""
 
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     PASSED = "passed"
     FAILED = "failed"
+
+
+class BacktestRecommendation(StrEnum):
+    """Conservative strategy recommendation after backtest v1."""
+
+    NEEDS_STRUCTURED_RULES = "needs_structured_rules"
+    NEEDS_MORE_SAMPLE = "needs_more_sample_size"
+    NEEDS_REVIEW = "needs_review"
+    BACKTESTED = "backtested"
+    PAPER_ELIGIBLE = "paper_eligible"
+    RESTRICTED = "restricted"
+    UNRELIABLE_DATA = "unreliable_data"
+
+
+class PaperValidationRecommendation(StrEnum):
+    """Paper validation outcome recommendation."""
+
+    CONTINUE = "continue"
+    IMPROVE = "improve"
+    RESTRICT = "restrict"
+    RETIRE = "retire"
+    INSUFFICIENT_DATA = "insufficient_data"
 
 
 class ManualLevelType(StrEnum):

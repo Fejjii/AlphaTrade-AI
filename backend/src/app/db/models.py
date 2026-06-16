@@ -380,8 +380,37 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class HistoricalCandle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Persisted OHLCV bar for backtest replay (global market data — not tenant-scoped)."""
+
+    __tablename__ = "historical_candles"
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "exchange",
+            "timeframe",
+            "open_time",
+            name="uq_historical_candle",
+        ),
+    )
+
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    close_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    open: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    high: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    low: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    close: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    volume: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    freshness_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Placeholder backtest run record (Slice 34 — no live execution)."""
+    """Backtest run record (Slice 35 — deterministic simulation, paper only)."""
 
     __tablename__ = "backtest_runs"
 
@@ -401,8 +430,32 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class BacktestTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Simulated trade from a backtest run."""
+
+    __tablename__ = "backtest_trades"
+
+    backtest_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("backtest_runs.id"), nullable=False
+    )
+    entry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    exit_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    exit_price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    stop_loss: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    size: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    fees: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    slippage_cost: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    gross_pnl: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    net_pnl: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    tp_hit_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    exit_reason: Mapped[str] = mapped_column(String(60), nullable=False)
+    rule_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class PaperValidationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Paper validation placeholder run (Slice 34 — paper only)."""
+    """Paper validation run with metrics (Slice 35 — paper only)."""
 
     __tablename__ = "paper_validation_runs"
 
@@ -416,6 +469,9 @@ class PaperValidationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     paper_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    recommendation: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class ManualChartLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):

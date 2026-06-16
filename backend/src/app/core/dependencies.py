@@ -16,6 +16,7 @@ from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.backtest_service import BacktestService
 from app.services.execution_service import ExecutionService
+from app.services.historical_candle_service import HistoricalCandleService
 from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
 from app.services.journal_rag_sync_service import JournalRagSyncService
@@ -203,6 +204,16 @@ def get_paper_validation_service(session: SessionDep) -> PaperValidationService:
     return PaperValidationService(session)
 
 
+def get_historical_candle_service(
+    session: SessionDep,
+    settings: SettingsDep,
+    strategy_service: StrategyServiceDep,
+) -> HistoricalCandleService:
+    provider = resolve_market_data_provider(settings)
+    _ = strategy_service
+    return HistoricalCandleService(session, provider, settings)
+
+
 PositionSizingServiceDep = Annotated[PositionSizingService, Depends(get_position_sizing_service)]
 LossAcceptanceServiceDep = Annotated[LossAcceptanceService, Depends(get_loss_acceptance_service)]
 StrategyLibraryServiceDep = Annotated[StrategyLibraryService, Depends(get_strategy_library_service)]
@@ -213,3 +224,6 @@ PreTradeAnalysisServiceDep = Annotated[
 HumanVsSystemServiceDep = Annotated[HumanVsSystemService, Depends(get_human_vs_system_service)]
 BacktestServiceDep = Annotated[BacktestService, Depends(get_backtest_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]
+HistoricalCandleServiceDep = Annotated[
+    HistoricalCandleService, Depends(get_historical_candle_service)
+]

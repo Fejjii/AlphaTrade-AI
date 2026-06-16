@@ -124,16 +124,18 @@ PY
 )" >/dev/null
 echo "  OK"
 
-echo "8/9 — backtest placeholder + paper validation placeholder"
+echo "8/9 — backtest v1 + paper validation metrics"
 backtest_json="$(curl -fsS -X POST "${BASE_URL}/strategies/${STRATEGY_ID}/backtests" \
   -H "$(auth_header)" -H 'Content-Type: application/json' \
-  -d '{}')"
+  -d '{"assumptions":{"symbol":"BTCUSDT","timeframe":"15m","initial_capital":"10000","fees_bps":10,"slippage_bps":5,"risk_per_trade_pct":1}}')"
 python3 - <<'PY' "$backtest_json"
 import json, sys
 p = json.loads(sys.argv[1])
 status = (p.get("status") or "").lower()
-assert status in {"queued", "completed", "pending", "failed"}, p
-print(f"  OK: backtest status={p.get('status')}")
+assert status in {"completed", "failed"}, p
+result = p.get("result") or {}
+rec = result.get("recommendation")
+print(f"  OK: backtest status={p.get('status')} recommendation={rec}")
 PY
 curl -fsS -X POST "${BASE_URL}/strategies/${STRATEGY_ID}/paper-validation/start" \
   -H "$(auth_header)" >/dev/null

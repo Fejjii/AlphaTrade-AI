@@ -845,22 +845,95 @@ export interface UserStrategy {
   updated_at: string;
 }
 
+export interface BacktestMetrics {
+  trade_count: number;
+  win_rate: number;
+  profit_factor: number;
+  expectancy: string;
+  max_drawdown_pct: number;
+  average_win: string;
+  average_loss: string;
+  largest_win: string;
+  largest_loss: string;
+  consecutive_losses: number;
+  average_time_in_trade_bars: number;
+  total_fees: string;
+  total_slippage: string;
+  net_pnl: string;
+  return_pct: number;
+  ending_equity: string;
+  symbol: string;
+  timeframe: string;
+}
+
+export interface BacktestResult {
+  metrics: BacktestMetrics;
+  recommendation: string;
+  meets_success_criteria?: boolean;
+  limitations?: string[];
+  data_quality?: string;
+  note?: string;
+}
+
+export interface BacktestTrade {
+  entry_time: string;
+  exit_time: string;
+  direction: string;
+  entry_price: string;
+  exit_price: string;
+  net_pnl: string;
+  exit_reason: string;
+}
+
 export interface BacktestRun {
   id: string;
   strategy_id: string;
   status: string;
   assumptions: Record<string, unknown>;
-  result?: {
-    win_rate?: number;
-    profit_factor?: number;
-    max_drawdown_pct?: number;
-    trade_count?: number;
-    meets_success_criteria?: boolean;
-    note?: string;
-  } | null;
+  result?: BacktestResult | null;
   error_message?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PaginatedBacktestTrades {
+  items: BacktestTrade[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaperValidationMetrics {
+  paper_trades_count: number;
+  win_rate: number;
+  net_pnl: string;
+  profit_factor: number;
+  expectancy: string;
+  max_drawdown_pct: number;
+  plan_adherence_avg?: number | null;
+  early_exit_count?: number;
+  stop_respected_count?: number;
+}
+
+export interface PaperValidationRun {
+  id: string;
+  strategy_id: string;
+  status: string;
+  paper_eligible: boolean;
+  metrics?: PaperValidationMetrics | null;
+  recommendation?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperValidationSummary {
+  strategy_id: string;
+  paper_eligible: boolean;
+  latest_status?: string | null;
+  runs: PaperValidationRun[];
+  total: number;
+  limitation?: string;
 }
 
 export interface PaginatedBacktestRuns {
@@ -868,20 +941,6 @@ export interface PaginatedBacktestRuns {
   total: number;
   limit: number;
   offset: number;
-}
-
-export interface PaperValidationSummary {
-  strategy_id: string;
-  paper_eligible: boolean;
-  latest_status?: string | null;
-  runs: Array<{
-    id: string;
-    status: string;
-    paper_eligible: boolean;
-    notes?: string | null;
-  }>;
-  total: number;
-  limitation: string;
 }
 
 export interface PaginatedUserStrategies {

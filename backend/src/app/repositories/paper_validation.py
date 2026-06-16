@@ -35,3 +35,15 @@ class PaperValidationRunRepository(SQLAlchemyRepository[PaperValidationRun]):
         )
         total = int(self._session.scalar(count_stmt) or 0)
         return list(self._session.scalars(list_stmt).all()), total
+
+    def get_scoped(
+        self,
+        run_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+    ) -> PaperValidationRun | None:
+        stmt = select(PaperValidationRun).where(
+            PaperValidationRun.id == run_id,
+            PaperValidationRun.organization_id == organization_id,
+        )
+        return self._session.scalar(stmt)

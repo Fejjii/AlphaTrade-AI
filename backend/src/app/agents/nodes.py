@@ -415,6 +415,109 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         else:
             answer_lines.append(f"Strategy list failed: {output.error}")
 
+    elif intent is Intent.BACKTEST_RUN:
+        list_out = _run_tool(
+            "strategy_library_tool",
+            {"action": "list", "organization_id": org, "user_id": user},
+        )
+        strategy_id = None
+        if list_out.success and list_out.result:
+            items = list_out.result.get("items", [])
+            strategy_id = items[0].get("id") if items else None
+        if strategy_id is None:
+            answer_lines.append("No strategy found to backtest.")
+        else:
+            tf = timeframe.value
+            output = _run_tool(
+                "backtest_tool",
+                {
+                    "action": "run",
+                    "organization_id": org,
+                    "user_id": user,
+                    "strategy_id": strategy_id,
+                    "assumptions": {
+                        "symbol": symbol,
+                        "timeframe": tf,
+                        "exchange": "mock",
+                    },
+                },
+            )
+            if output.success and output.result:
+                res = output.result.get("result") or {}
+                metrics = res.get("metrics") or {}
+                answer_lines.append(
+                    _format_tool_answer(
+                        "backtest_tool",
+                        f"Backtest {output.result.get('status')}: "
+                        f"trades={metrics.get('trade_count')}, "
+                        f"win_rate={metrics.get('win_rate')}, "
+                        f"recommendation={res.get('recommendation')}. "
+                        "Historical simulation only — not a profit guarantee.",
+                    )
+                )
+            else:
+                answer_lines.append(f"Backtest failed: {output.error}")
+
+    elif intent in {Intent.BACKTEST_RESULTS, Intent.BACKTEST_ELIGIBILITY}:
+        list_out = _run_tool(
+            "strategy_library_tool",
+            {"action": "list", "organization_id": org, "user_id": user},
+        )
+        strategy_id = None
+        if list_out.success and list_out.result:
+            items = list_out.result.get("items", [])
+            strategy_id = items[0].get("id") if items else None
+        if strategy_id is None:
+            answer_lines.append("No strategy found.")
+        elif intent is Intent.BACKTEST_ELIGIBILITY:
+            output = _run_tool(
+                "backtest_tool",
+                {
+                    "action": "eligibility",
+                    "organization_id": org,
+                    "user_id": user,
+                    "strategy_id": strategy_id,
+                },
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "backtest_tool",
+                        f"Paper eligible: {output.result.get('paper_eligible')}. "
+                        f"Validation: {output.result.get('validation_status')}. "
+                        f"Backtest: {output.result.get('backtest_status')}.",
+                    )
+                )
+            else:
+                answer_lines.append(f"Eligibility check failed: {output.error}")
+        else:
+            output = _run_tool(
+                "backtest_tool",
+                {
+                    "action": "latest_result",
+                    "organization_id": org,
+                    "user_id": user,
+                    "strategy_id": strategy_id,
+                },
+            )
+            if output.success and output.result:
+                res = output.result.get("result") or {}
+                metrics = res.get("metrics") or {}
+                limitations = res.get("limitations") or []
+                answer_lines.append(
+                    _format_tool_answer(
+                        "backtest_tool",
+                        f"Latest backtest: trades={metrics.get('trade_count')}, "
+                        f"PF={metrics.get('profit_factor')}, "
+                        f"max_dd={metrics.get('max_drawdown_pct')}%, "
+                        f"recommendation={res.get('recommendation')}.",
+                    )
+                )
+                if limitations:
+                    answer_lines.append(f"Limitations: {'; '.join(limitations[:3])}")
+            else:
+                answer_lines.append(f"Backtest results failed: {output.error}")
+
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
 

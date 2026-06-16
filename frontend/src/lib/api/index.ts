@@ -52,6 +52,7 @@ import type {
   UserStrategy,
   BacktestRun,
   PaginatedBacktestRuns,
+  PaginatedBacktestTrades,
   PaperValidationSummary,
   MarketSnapshotResponse,
   OHLCVResponse,
@@ -392,6 +393,8 @@ export const api = {
       }),
     listBacktests: (id: string) =>
       apiFetch<PaginatedBacktestRuns>(`/strategies/${id}/backtests`, { auth: true }),
+    listBacktestTrades: (runId: string) =>
+      apiFetch<PaginatedBacktestTrades>(`/backtests/${runId}/trades`, { auth: true }),
     startPaperValidation: (id: string) =>
       apiFetch<{ id: string; status: string }>(`/strategies/${id}/paper-validation/start`, {
         method: "POST",

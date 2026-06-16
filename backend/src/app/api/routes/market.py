@@ -8,12 +8,18 @@ from fastapi import APIRouter, Query, Request
 
 from app.core.auth import TenantDep
 from app.core.dependencies import (
+    HistoricalCandleServiceDep,
     MarketDataServiceDep,
     MarketServiceDep,
     SessionDep,
     UsageServiceDep,
 )
 from app.schemas.common import Timeframe
+from app.schemas.historical_candles import (
+    HistoricalCandleList,
+    HistoricalIngestRequest,
+    HistoricalIngestResult,
+)
 from app.schemas.market import (
     MarketAnalyzeRequest,
     MarketAnalyzeResponse,
@@ -172,3 +178,42 @@ async def delete_watchlist_item(
         user_id=tenant.user_id,
     )
     session.commit()
+
+
+@router.post(
+    "/history/ingest",
+    response_model=HistoricalIngestResult,
+    summary="Ingest historical OHLCV candles for backtests",
+)
+async def ingest_historical_candles(
+    body: HistoricalIngestRequest,
+    tenant: TraderDep,
+    service: HistoricalCandleServiceDep,
+    session: SessionDep,
+) -> HistoricalIngestResult:
+    _ = tenant
+    result = service.ingest(body)
+    session.commit()
+    return result
+
+
+@router.get(
+    "/history/candles",
+    response_model=HistoricalCandleList,
+    summary="List stored historical candles (debug)",
+)
+async def list_historical_candles(
+    tenant: TenantDep,
+    service: HistoricalCandleServiceDep,
+    symbol: str = Query(default="BTCUSDT", min_length=2, max_length=30),
+    exchange: str = Query(default="binance", min_length=1, max_length=40),
+    timeframe: Timeframe = Query(default=Timeframe.H4),
+    limit: int = Query(default=200, ge=1, le=5000),
+) -> HistoricalCandleList:
+    _ = tenant
+    return service.get_candles(
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        limit=limit,
+    )

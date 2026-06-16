@@ -51,6 +51,9 @@ class Intent(StrEnum):
     MANUAL_LEVELS = "manual_levels"
     STRATEGY_STATUS = "strategy_status"
     BACKTEST_QUEUE = "backtest_queue"
+    BACKTEST_RUN = "backtest_run"
+    BACKTEST_RESULTS = "backtest_results"
+    BACKTEST_ELIGIBILITY = "backtest_eligibility"
     UNKNOWN = "unknown"
 
 

@@ -92,3 +92,6 @@ class UserStrategyVersionRepository(SQLAlchemyRepository[UserStrategyVersion]):
             .limit(1)
         )
         return self._session.scalar(stmt)
+
+    def get_by_id(self, version_id: uuid.UUID) -> UserStrategyVersion | None:
+        return self._session.get(UserStrategyVersion, version_id)

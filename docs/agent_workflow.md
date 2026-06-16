@@ -83,11 +83,14 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 | Manual levels | `manual_levels` | `manual_levels_tool` |
 | Human vs system | `human_vs_system` | `human_vs_system_tool` |
 | Validated strategies | `strategy_status` | `strategy_library_tool` |
-| Backtest next | `backtest_queue` | `strategy_library_tool` |
+| Backtest next / run backtest | `backtest_run` | `backtest_tool` |
+| Backtest results / what did backtest show | `backtest_results` | `backtest_tool` |
+| Paper eligible? / why not validated | `backtest_eligibility` | `backtest_tool` |
+| Backtest queue (legacy) | `backtest_queue` | `strategy_library_tool` |
 
-Replies label deterministic outputs as **SOURCE OF TRUTH**; narrative LLM cannot override risk, sizing, or approval facts.
+Replies label deterministic outputs as **SOURCE OF TRUTH**; narrative LLM cannot override risk, sizing, approval facts, or **invent backtest metrics**.
 
-Backtest queue intent returns placeholder status — no historical replay until Slice 35.
+Backtest intents call `backtest_tool`, which runs or reads the deterministic engine — the LLM explains results but cannot fabricate win rate, drawdown, or promotion status.
 
 ## Analytics questions (Slice 31)
 

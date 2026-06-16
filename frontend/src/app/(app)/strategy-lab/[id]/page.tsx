@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
+import { BacktestPanel } from "@/components/strategy/BacktestPanel";
+import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
 import { emptyStrategyCard } from "@/components/strategy/StrategyCardForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,11 +24,11 @@ export default function StrategyDetailPage() {
   const loader = useCallback(() => api.strategies.get(id), [id]);
   const { data, loading, error, reload } = useAsyncData(loader, [id]);
   const [versionBusy, setVersionBusy] = useState(false);
-  const [backtestBusy, setBacktestBusy] = useState(false);
   const [paperBusy, setPaperBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [backtests, setBacktests] = useState<Awaited<ReturnType<typeof api.strategies.listBacktests>> | null>(null);
-  const [paperSummary, setPaperSummary] = useState<Awaited<ReturnType<typeof api.strategies.paperValidation>> | null>(null);
+  const [paperSummary, setPaperSummary] = useState<Awaited<
+    ReturnType<typeof api.strategies.paperValidation>
+  > | null>(null);
 
   const card = data?.latest_card;
 
@@ -45,21 +47,6 @@ export default function StrategyDetailPage() {
       setActionError(err instanceof Error ? err.message : "Version failed");
     } finally {
       setVersionBusy(false);
-    }
-  }
-
-  async function runBacktest() {
-    setBacktestBusy(true);
-    setActionError(null);
-    try {
-      await api.strategies.requestBacktest(id, {});
-      const listing = await api.strategies.listBacktests(id);
-      setBacktests(listing);
-      await reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Backtest failed");
-    } finally {
-      setBacktestBusy(false);
     }
   }
 
@@ -141,34 +128,16 @@ export default function StrategyDetailPage() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Backtest (placeholder)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-300">
-            <p className="text-zinc-400">Mock deterministic results only — no live execution.</p>
-            <Button disabled={backtestBusy} onClick={() => void runBacktest()}>
-              {backtestBusy ? "Requesting…" : "Request backtest"}
-            </Button>
-            {backtests?.items.length ? (
-              <p>Latest: {backtests.items[0].status} — win rate placeholder {backtests.items[0].result?.win_rate}</p>
-            ) : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Paper validation</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-300">
-            <p className="text-zinc-400">Paper-only validation workflow — no exchange orders.</p>
-            <Button variant="secondary" disabled={paperBusy} onClick={() => void startPaperValidation()}>
-              {paperBusy ? "Starting…" : "Start paper validation"}
-            </Button>
-            {paperSummary ? (
-              <p>Runs: {paperSummary.total} · eligible: {paperSummary.paper_eligible}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+        <BacktestPanel
+          strategyId={id}
+          onRun={(assumptions) => api.strategies.requestBacktest(id, { assumptions })}
+          onLoadTrades={(runId) => api.strategies.listBacktestTrades(runId)}
+        />
+        <PaperValidationPanel
+          summary={paperSummary}
+          busy={paperBusy}
+          onStart={() => void startPaperValidation()}
+        />
       </div>
     </div>
   );

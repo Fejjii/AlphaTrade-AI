@@ -318,6 +318,59 @@ def _strategy_library_execute(args: dict[str, Any], session: Any | None) -> Tool
         return ToolOutput(tool_name="strategy_library_tool", success=False, error=str(exc))
 
 
+def _backtest_tool_execute(args: dict[str, Any], session: Any | None, settings: Any) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.backtest import BacktestAssumptions, BacktestRunCreate
+    from app.services.backtest_service import BacktestService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(tool_name="backtest_tool", success=False, error="DB session required.")
+    try:
+        action = str(args.get("action", "latest_result"))
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        service = BacktestService(session, settings)
+
+        if action == "run":
+            sid = _uuid.UUID(str(args["strategy_id"]))
+            assumptions = BacktestAssumptions.model_validate(args.get("assumptions") or {})
+            run = service.create(
+                sid,
+                BacktestRunCreate(assumptions=assumptions),
+                organization_id=org,
+                user_id=user,
+            )
+            result = run.model_dump(mode="json")
+        elif action == "latest_result":
+            sid = _uuid.UUID(str(args["strategy_id"]))
+            items, _ = service.list_for_strategy(sid, organization_id=org, user_id=user, limit=1)
+            if not items:
+                result = {"message": "No backtest runs found for this strategy."}
+            else:
+                result = items[0].model_dump(mode="json")
+        elif action == "eligibility":
+            from app.services.strategy_library_service import StrategyLibraryService
+
+            sid = _uuid.UUID(str(args["strategy_id"]))
+            strategy = StrategyLibraryService(session).get(sid, organization_id=org, user_id=user)
+            result = {
+                "strategy_id": str(sid),
+                "paper_eligible": strategy.paper_eligible,
+                "validation_status": strategy.validation_status,
+                "backtest_status": strategy.backtest_status,
+            }
+        else:
+            return ToolOutput(tool_name="backtest_tool", success=False, error="Unknown action.")
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="backtest_tool", success=True, result=result, latency_ms=latency
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="backtest_tool", success=False, error=str(exc))
+
+
 def _pretrade_analysis_execute(
     args: dict[str, Any], session: Any | None, mds: MarketDataService
 ) -> ToolOutput:
@@ -616,6 +669,18 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda args: _human_vs_system_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="backtest_tool",
+            description=(
+                "Run deterministic backtest v1, fetch latest results, or check paper eligibility."
+            ),
+            risk_level=ToolRiskLevel.LOW,
+            requires_approval=False,
+            provider_dependencies=("mock-market-data",),
+            has_fallback=True,
+            enabled=True,
+            execute=lambda args: _backtest_tool_execute(args, db_session, settings),
         ),
     ]
     for tool in tools:

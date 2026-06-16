@@ -1,4 +1,4 @@
-"""Detect strategy workflow questions for agent routing (Slice 34)."""
+"""Detect strategy workflow questions for agent routing (Slice 34-35)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,20 @@ def classify_strategy_workflow(message: str) -> Intent | None:
         return Intent.INVALIDATION_QUERY
     if "position size" in lowered or "calculate size" in lowered or "sizing" in lowered:
         return Intent.POSITION_SIZE
-    if "backtest" in lowered and ("next" in lowered or "needs" in lowered):
+    if "paper eligible" in lowered or "paper eligibility" in lowered:
+        return Intent.BACKTEST_ELIGIBILITY
+    if "backtest" in lowered and (
+        "show" in lowered or "result" in lowered or "what did" in lowered
+    ):
+        return Intent.BACKTEST_RESULTS
+    if "backtest" in lowered and ("why" in lowered and "not validated" in lowered):
+        return Intent.BACKTEST_RESULTS
+    if "backtest" in lowered and any(
+        token in lowered
+        for token in ("btc", "eth", "sol", "15m", "1h", "4h", "run", "this strategy")
+    ):
+        return Intent.BACKTEST_RUN
+    if "backtest" in lowered and ("next" in lowered or "needs" in lowered or "sample" in lowered):
         return Intent.BACKTEST_QUEUE
     if "validated" in lowered and "strateg" in lowered:
         return Intent.STRATEGY_STATUS
@@ -46,4 +59,7 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.MANUAL_LEVELS,
         Intent.STRATEGY_STATUS,
         Intent.BACKTEST_QUEUE,
+        Intent.BACKTEST_RUN,
+        Intent.BACKTEST_RESULTS,
+        Intent.BACKTEST_ELIGIBILITY,
     }
