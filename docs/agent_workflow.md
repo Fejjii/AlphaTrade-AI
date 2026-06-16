@@ -87,6 +87,8 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 
 Replies label deterministic outputs as **SOURCE OF TRUTH**; narrative LLM cannot override risk, sizing, or approval facts.
 
+Backtest queue intent returns placeholder status — no historical replay until Slice 35.
+
 ## Analytics questions (Slice 31)
 
 Review-style messages route to `trading_analytics_retrieval`, which calls `analytics_summary_tool` (DB session required). The deterministic reply includes discipline score, repeated mistakes, and setup activity — not LLM-scored discipline.

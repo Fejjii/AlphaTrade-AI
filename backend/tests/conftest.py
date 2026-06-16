@@ -13,8 +13,17 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
+from app.security.rate_limit import reset_rate_limiter
 
 pytest_plugins = ("tests.test_workflows",)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_rate_limiter() -> Iterator[None]:
+    """Reset shared in-memory rate limit state so tests do not cross-contaminate."""
+    reset_rate_limiter()
+    yield
+    reset_rate_limiter()
 
 
 @pytest.fixture

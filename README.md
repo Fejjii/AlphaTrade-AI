@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Release** | `v0.1.0-paper-mvp` — Slices 1–31 |
+| **Release** | `v0.1.0-paper-mvp` — Slices 1–34 (34B stabilization) |
 | **Execution** | `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` |
 | **Providers** | Mock by default; optional OpenAI, Qdrant, Binance public (read-only) |
 | **Stack** | FastAPI · LangGraph · PostgreSQL · Redis · Qdrant · Next.js 15 |
@@ -153,9 +153,10 @@ docker compose up --build
 Open http://localhost:3000. Smoke checks:
 
 ```bash
-chmod +x scripts/docker-validate.sh scripts/e2e-smoke.sh
+chmod +x scripts/docker-validate.sh scripts/e2e-smoke.sh scripts/strategy-smoke.sh
 ./scripts/docker-validate.sh
 ./scripts/e2e-smoke.sh
+./scripts/strategy-smoke.sh   # optional — Slice 34 strategy workflows
 ```
 
 Stop: `docker compose down`

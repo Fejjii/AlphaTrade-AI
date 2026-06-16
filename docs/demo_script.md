@@ -164,17 +164,26 @@ Route: `/analytics`
 
 In **Workspace**, ask: “What mistakes do I repeat?” — agent uses `analytics_summary_tool`.
 
-## 13. Strategy library & pre-trade (Slice 33)
+## 13. Strategy library & pre-trade (Slice 33–34)
 
-Routes: `/strategy-lab`, `/manual-levels`, `/pre-trade`
+Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]/edit`, `/manual-levels`, `/pre-trade`
 
-1. Open **Strategy Lab** — list user strategy cards (paper only).
-2. Open **Pre-Trade** — run deterministic analysis for BTC; review sizing and loss acceptance panel.
-3. In **Workspace**, ask: “Analyze BTC long using my strategy” or “Calculate position size for this setup.”
+1. Open **Strategy Lab** — list user strategy cards; create via **New strategy** (`StrategyCardForm`).
+2. Open a strategy detail — bump version, request **placeholder backtest**, start **paper validation** (tracking only).
+3. Open **Manual levels** — add support/resistance for a symbol.
+4. Open **Pre-Trade** — run deterministic analysis; review sizing and **Loss acceptance** panel.
+5. In **Workspace**, ask:
+   - *"Build a strategy card for HTF pullback"*
+   - *"Analyze BTC long using my strategy"*
+   - *"Calculate position size for this setup"*
+   - *"Compare my last trade to the system plan"*
+6. Emphasize: backtest and paper validation are **placeholders**; real trading remains disabled.
+
+Optional API smoke: `./scripts/strategy-smoke.sh`
 
 ---
 
-## 13. Journal → RAG learning loop
+## 14. Journal → RAG learning loop
 
 Route: `/knowledge`
 

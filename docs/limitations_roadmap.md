@@ -1,6 +1,6 @@
 # Limitations and Roadmap
 
-## Current limitations (post Slice 33)
+## Current limitations (post Slice 34)
 
 ### Trading and execution
 
@@ -13,7 +13,11 @@
 - End-to-end proposal → approval → paper order → position is implemented and tested.
 - Journal → RAG sync is on by default; disable via `JOURNAL_RAG_SYNC_ENABLED=false`.
 - Trading analytics (Slice 31) are **paper-only** and deterministic; discipline score is not LLM-generated.
-- Strategy library & pre-trade (Slice 33) are deterministic; backtest status and human-vs-system PnL simulation are placeholders.
+- Strategy library & pre-trade (Slice 33–34) are deterministic; Strategy Lab create/edit/version UI is wired.
+- Agent routes nine strategy-workflow intents to registered tools (Slice 34).
+- **Backtest runs are placeholders** — records persisted, no bar replay engine yet (Slice 35).
+- **Paper validation is a tracking placeholder** — does not connect to exchange; `paper_eligible` is informational only.
+- Human-vs-system v2 adds delta fields; PnL simulation and runner tracking remain placeholders.
 - Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
 - Playwright E2E: **API workflow in CI**; full browser tour optional locally (skipped in CI).
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
@@ -87,8 +91,9 @@ Responses label `is_live`, `fallback_used`, and `is_stale`. Mock data is never p
 
 ## Recommended next slices
 
-1. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
-2. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
-3. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)
+1. **Slice 35 — Backtest engine** (historical replay, metrics; still paper-only)
+2. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
+3. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
+4. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)
 
 Slice 27A (post-push validation, README/demo polish) is complete in the repo docs and setup scripts.

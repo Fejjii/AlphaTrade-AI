@@ -146,13 +146,14 @@ BASE_URL=https://YOUR-API.onrender.com \
 
 # Or run analytics smoke standalone after migration
 BASE_URL=https://YOUR-API.onrender.com ./scripts/analytics-smoke.sh
+
+# Optional — Slice 34 strategy workflows (after migrations k1l2 + l2m3n4)
+BASE_URL=https://YOUR-API.onrender.com ./scripts/strategy-smoke.sh
 ```
 
-**Migration reminder:** Run `alembic upgrade head` on staging Postgres before analytics smoke. Migration revision: **`j0k1l2m3n4o5`**.
+**Migration reminder:** Run `cd backend && uv run alembic upgrade head` on staging Postgres before strategy or analytics smoke. Head revisions include **`k1l2m3n4o5p6`** (strategy library) and **`l2m3n4o5p6q7`** (backtest/paper validation).
 
 Manual:
-
-- [ ] Browser login → workspace chat → logout
 - [ ] Paper banner visible
 - [ ] Provider status shows paper exchange
 - [ ] No secrets in screenshots

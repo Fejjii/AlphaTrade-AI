@@ -122,6 +122,57 @@ def test_refresh_endpoint_is_rate_limited(limit_client: TestClient) -> None:
     assert blocked.status_code == 429
 
 
+def test_reset_rate_limiter_clears_shared_in_memory_state(limit_client: TestClient) -> None:
+    """Regression: global limiter singleton must not leak counts across reset boundaries."""
+    for index in range(10):
+        response = limit_client.post(
+            "/auth/register",
+            json={
+                "email": f"reset-leak-{index}@example.com",
+                "password": "secure-password-1",
+                "organization_name": f"Reset Org {index}",
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    blocked = limit_client.post(
+        "/auth/register",
+        json={
+            "email": "reset-leak-overflow@example.com",
+            "password": "secure-password-1",
+            "organization_name": "Reset Org overflow",
+        },
+    )
+    assert blocked.status_code == 429
+
+    reset_rate_limiter()
+
+    recovered = limit_client.post(
+        "/auth/register",
+        json={
+            "email": "reset-leak-recovered@example.com",
+            "password": "secure-password-1",
+            "organization_name": "Reset Org recovered",
+        },
+    )
+    assert recovered.status_code == 201, recovered.text
+
+
+def test_register_succeeds_in_isolated_test_after_global_exhaustion(
+    limit_client: TestClient,
+) -> None:
+    """Regression: conftest autouse reset prevents cross-test 429 flakes in full pytest runs."""
+    response = limit_client.post(
+        "/auth/register",
+        json={
+            "email": "isolated-register@example.com",
+            "password": "secure-password-1",
+            "organization_name": "Isolated Org",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
 def test_redis_limiter_falls_back_when_redis_unavailable(limit_settings: Settings) -> None:
     settings = limit_settings.model_copy(
         update={
