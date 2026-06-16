@@ -74,6 +74,7 @@ class UserStrategy(ORMModel):
     validation_status: StrategyValidationStatus | None = None
     backtest_status: BacktestStatus | None = None
     paper_validation_status: PaperValidationStatus | None = None
+    paper_eligible: bool = False
     created_at: datetime
     updated_at: datetime
 

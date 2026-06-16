@@ -46,6 +46,18 @@ def _setup_type(agent: AgentState) -> str | None:
         return "explain"
     if agent.intent is Intent.REVIEW:
         return "review"
+    if agent.intent in {
+        Intent.STRATEGY_CARD,
+        Intent.PRE_TRADE,
+        Intent.POSITION_SIZE,
+        Intent.INVALIDATION_QUERY,
+        Intent.LOSS_ACCEPTANCE,
+        Intent.MANUAL_LEVELS,
+        Intent.HUMAN_VS_SYSTEM,
+        Intent.STRATEGY_STATUS,
+        Intent.BACKTEST_QUEUE,
+    }:
+        return agent.intent.value
     return None
 
 
@@ -70,6 +82,19 @@ def _evidence(agent: AgentState) -> list[str]:
         )
     if agent.retrieved_context:
         evidence.append(f"{len(agent.retrieved_context)} RAG citation(s) retrieved.")
+    for tool_name in (
+        "strategy_library_tool",
+        "pretrade_analysis_tool",
+        "position_sizing_tool",
+        "manual_levels_tool",
+        "human_vs_system_tool",
+    ):
+        match = next(
+            (o for o in agent.tool_outputs if o.tool_name == tool_name and o.success),
+            None,
+        )
+        if match:
+            evidence.append(f"{tool_name} executed (deterministic source of truth).")
     analytics_tool = next(
         (o for o in agent.tool_outputs if o.tool_name == "analytics_summary_tool"),
         None,
@@ -156,6 +181,34 @@ def build_trading_analysis(agent: AgentState, runtime: AgentRuntime) -> TradingA
         (o for o in agent.tool_outputs if o.tool_name == "analytics_summary_tool"),
         None,
     )
+    strategy_tools = [
+        o
+        for o in agent.tool_outputs
+        if o.tool_name
+        in {
+            "strategy_library_tool",
+            "pretrade_analysis_tool",
+            "position_sizing_tool",
+            "manual_levels_tool",
+            "human_vs_system_tool",
+        }
+    ]
+    if strategy_tools and agent.final_answer and "SOURCE OF TRUTH" in agent.final_answer:
+        summary_line = agent.final_answer.split("\n")[0]
+        summary_line = summary_line.replace("SOURCE OF TRUTH (deterministic):", "").strip()
+        return TradingAnalysisDetail(
+            summary=summary_line or agent.final_answer[:240],
+            setup_type=_setup_type(agent),
+            evidence=_evidence(agent),
+            risk_level=agent.risk_level,
+            confidence=agent.confidence,
+            invalidation=None,
+            stop_loss_or_no_trade_reason="Deterministic tool output — see summary for sizing/risk.",
+            approval_status=approval_status,
+            next_decision_point="Review labeled deterministic outputs before any paper action.",
+            paper_mode_disclaimer=paper_disclaimer,
+            market_data_quality=market_quality,
+        )
     if analytics_tool and analytics_tool.success and agent.final_answer:
         return TradingAnalysisDetail(
             summary=agent.final_answer,

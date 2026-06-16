@@ -14,6 +14,7 @@ from decimal import Decimal
 from app.agents.response_builder import build_trading_analysis, format_reply_from_analysis
 from app.agents.runtime import AgentRuntime
 from app.agents.state_utils import dump_partial, parse_state, patch_state
+from app.agents.strategy_intent import classify_strategy_workflow
 from app.guardrails.apply import build_guardrail_updates, merge_safety_verdict
 from app.guardrails.testing import FORCE_INVALID_OUTPUT
 from app.guardrails.types import GuardrailInput
@@ -148,8 +149,11 @@ def message_classification(state: dict, runtime: AgentRuntime) -> dict:
 def intent_classification(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
     lowered = agent.message.lower()
+    workflow_intent = classify_strategy_workflow(agent.message)
     if "[test_execute]" in lowered or ("execute" in lowered and "paper" in lowered):
         intent = Intent.EXECUTE
+    elif workflow_intent is not None:
+        intent = workflow_intent
     elif any(w in lowered for w in ("analyze", "plan", "setup", "pullback", "entry")):
         intent = Intent.PLAN_TRADE
     elif "watch" in lowered or "monitor" in lowered:
@@ -163,6 +167,268 @@ def intent_classification(state: dict, runtime: AgentRuntime) -> dict:
     else:
         intent = Intent.UNKNOWN
     return patch_state(state, {"intent": intent})
+
+
+_SOURCE_OF_TRUTH = "SOURCE OF TRUTH (deterministic):"
+
+
+def _format_tool_answer(tool_name: str, summary: str) -> str:
+    return f"{_SOURCE_OF_TRUTH} [{tool_name}] {summary}"
+
+
+def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
+    """Route Slice 33 tools for strategy library, pre-trade, sizing, and comparison."""
+    agent = parse_state(state)
+    if agent.organization_id is None or agent.user_id is None:
+        return patch_state(state, {"final_answer": "Authentication context is required."})
+
+    org = str(agent.organization_id)
+    user = str(agent.user_id)
+    symbol = agent.symbol or _extract_symbol(agent.message) or "BTCUSDT"
+    timeframe = agent.timeframe or Timeframe.H4
+    tool_outputs: list = list(agent.tool_outputs)
+    tool_calls: list = list(agent.tool_calls)
+    audit_events: list = list(agent.audit_events)
+    answer_lines: list[str] = []
+
+    def _run_tool(name: str, args: dict) -> ToolOutput:
+        output = runtime.tool_registry.execute(name, args)
+        tool_audit = runtime.observability.emit_tool_called(
+            agent,
+            tool_name=name,
+            success=output.success,
+            latency_ms=output.latency_ms,
+            used_fallback=output.used_fallback,
+        )
+        tool_outputs.append(dump_partial(output))
+        tool_calls.append(dump_partial(ToolInput(tool_name=name, arguments=args)))
+        audit_events.append(tool_audit)
+        return output
+
+    intent = agent.intent
+
+    if intent is Intent.STRATEGY_CARD:
+        idea = agent.message.strip()[:500] or "Workspace strategy idea"
+        output = _run_tool(
+            "strategy_library_tool",
+            {
+                "action": "create",
+                "organization_id": org,
+                "user_id": user,
+                "name": idea[:80],
+                "setup_type": StrategyId.HTF_TREND_PULLBACK.value,
+                "card": {
+                    "strategy_name": idea[:120],
+                    "entry_conditions": [idea],
+                    "invalidation": ["Close below defined invalidation level"],
+                    "stop_loss": ["Below invalidation swing"],
+                    "confirmation_conditions": ["Await confirmation per playbook"],
+                    "take_profit_plan": ["TP1 at prior resistance"],
+                    "asset_universe": [symbol],
+                    "timeframes": [timeframe.value],
+                },
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "strategy_library_tool",
+                    f"Strategy card created: {output.result.get('name', 'strategy')}.",
+                )
+            )
+        else:
+            answer_lines.append(f"Strategy card creation failed: {output.error}")
+
+    elif intent in {Intent.PRE_TRADE, Intent.INVALIDATION_QUERY}:
+        output = _run_tool(
+            "pretrade_analysis_tool",
+            {
+                "organization_id": org,
+                "user_id": user,
+                "symbol": symbol,
+                "exchange": "mock",
+                "direction": "long",
+                "timeframe": timeframe.value,
+                "account_size": "10000",
+                "max_risk_per_trade": "1",
+            },
+        )
+        if output.success and output.result:
+            rec = output.result.get("final_recommendation", "n/a")
+            stop = output.result.get("suggested_stop_loss")
+            inv = output.result.get("invalidation_summary") or output.result.get("invalidation")
+            answer_lines.append(
+                _format_tool_answer(
+                    "pretrade_analysis_tool",
+                    f"Recommendation: {rec}. Stop: {stop}. Invalidation: {inv}.",
+                )
+            )
+            if intent is Intent.INVALIDATION_QUERY and stop:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "pretrade_analysis_tool",
+                        f"Stop loss reference: {stop}.",
+                    )
+                )
+        else:
+            answer_lines.append(f"Pre-trade analysis failed: {output.error}")
+
+    elif intent in {Intent.POSITION_SIZE, Intent.LOSS_ACCEPTANCE}:
+        close = agent.market_context.close if agent.market_context else Decimal("60000")
+        invalidation = close * Decimal("0.97")
+        sizing_out = _run_tool(
+            "position_sizing_tool",
+            {
+                "request": {
+                    "entry_price": str(close),
+                    "invalidation_level": str(invalidation),
+                    "account_balance": "10000",
+                    "max_risk_percent": "1",
+                    "confidence_score": 70,
+                },
+            },
+        )
+        if sizing_out.success and sizing_out.result:
+            planned = sizing_out.result.get("planned_loss_amount")
+            stop_dist = sizing_out.result.get("stop_loss_distance")
+            max_loss = sizing_out.result.get("maximum_acceptable_loss")
+            answer_lines.append(
+                _format_tool_answer(
+                    "position_sizing_tool",
+                    f"Planned loss {planned}; stop {stop_dist}; max loss {max_loss}.",
+                )
+            )
+            if intent is Intent.LOSS_ACCEPTANCE:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "loss_acceptance",
+                        "Confirm calmly whether planned loss is acceptable before paper execution.",
+                    )
+                )
+        else:
+            answer_lines.append(f"Position sizing failed: {sizing_out.error}")
+
+    elif intent is Intent.MANUAL_LEVELS:
+        output = _run_tool(
+            "manual_levels_tool",
+            {
+                "action": "list",
+                "organization_id": org,
+                "user_id": user,
+                "symbol": symbol,
+            },
+        )
+        if output.success and output.result:
+            items = output.result.get("items", [])
+            total = output.result.get("total", 0)
+            labels = [f"{i.get('level_type')} @ {i.get('price') or 'zone'}" for i in items[:5]]
+            answer_lines.append(
+                _format_tool_answer(
+                    "manual_levels_tool",
+                    f"{total} level(s) for {symbol}: {', '.join(labels) or 'none'}.",
+                )
+            )
+        else:
+            answer_lines.append(f"Manual levels lookup failed: {output.error}")
+
+    elif intent is Intent.HUMAN_VS_SYSTEM:
+        trade_match = re.search(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            agent.message,
+            re.I,
+        )
+        if trade_match is None:
+            answer_lines.append(
+                "Provide a journal or proposal trade ID to compare human vs system plan."
+            )
+        else:
+            output = _run_tool(
+                "human_vs_system_tool",
+                {
+                    "trade_id": trade_match.group(0),
+                    "organization_id": org,
+                    "user_id": user,
+                },
+            )
+            if output.success and output.result:
+                score = output.result.get("plan_adherence_score")
+                answer_lines.append(
+                    _format_tool_answer(
+                        "human_vs_system_tool",
+                        f"Plan adherence score {score}/100.",
+                    )
+                )
+            else:
+                answer_lines.append(f"Comparison failed: {output.error}")
+
+    elif intent is Intent.STRATEGY_STATUS:
+        output = _run_tool(
+            "strategy_library_tool",
+            {"action": "list", "organization_id": org, "user_id": user},
+        )
+        if output.success and output.result:
+            items = output.result.get("items", [])
+            validated = [
+                i.get("name")
+                for i in items
+                if (i.get("validation_status") or i.get("latest_card", {}).get("validation_status"))
+                == "validated"
+            ]
+            answer_lines.append(
+                _format_tool_answer(
+                    "strategy_library_tool",
+                    f"Validated strategies: {', '.join(validated) or 'none yet'}.",
+                )
+            )
+        else:
+            answer_lines.append(f"Strategy list failed: {output.error}")
+
+    elif intent is Intent.BACKTEST_QUEUE:
+        output = _run_tool(
+            "strategy_library_tool",
+            {"action": "list", "organization_id": org, "user_id": user},
+        )
+        if output.success and output.result:
+            items = output.result.get("items", [])
+            pending = next(
+                (
+                    i
+                    for i in items
+                    if (i.get("backtest_status") or "not_run") not in {"complete", "completed"}
+                ),
+                None,
+            )
+            if pending:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "strategy_library_tool",
+                        f"Next backtest: {pending.get('name')} ({pending.get('backtest_status')}).",
+                    )
+                )
+            else:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "strategy_library_tool",
+                        "All strategies have backtest runs or none exist.",
+                    )
+                )
+        else:
+            answer_lines.append(f"Strategy list failed: {output.error}")
+
+    final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
+    final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
+
+    return patch_state(
+        state,
+        {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "tool_calls": tool_calls,
+            "tool_outputs": tool_outputs,
+            "audit_events": audit_events,
+            "final_answer": final_answer,
+        },
+    )
 
 
 def trading_analytics_retrieval(state: dict, runtime: AgentRuntime) -> dict:

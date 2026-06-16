@@ -204,6 +204,7 @@ class StrategyLibraryService:
             validation_status=version.validation_status if version else None,
             backtest_status=version.backtest_status if version else None,
             paper_validation_status=version.paper_validation_status if version else None,
+            paper_eligible=row.paper_eligible,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

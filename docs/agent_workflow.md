@@ -29,7 +29,7 @@ flowchart TD
 | Guardrails | Injection, moderation, trading policy |
 | RAG | Rules, playbook, **journal lessons** — never direct signals |
 | Analytics | `analytics_summary_tool` for review questions (setups, mistakes, discipline) |
-| Strategy / pre-trade (Slice 33) | `strategy_library_tool`, `pretrade_analysis_tool`, `position_sizing_tool`, `manual_levels_tool`, `human_vs_system_tool` |
+| Strategy / pre-trade (Slice 33–34) | `strategy_workflow_tools` node routes nine workspace intents to registered tools |
 | Market data | Read-only ticker/OHLCV via provider abstraction |
 | Strategies | Seven deterministic MVP setups |
 | Risk gate | 15 rules; `BLOCK` stops paper execution |
@@ -68,6 +68,24 @@ When `JOURNAL_RAG_SYNC_ENABLED=true` (default):
 3. Agent `retrieve_for_agent` includes `TRADE_JOURNAL` source type
 
 See [rag_system.md](rag_system.md). Analytics summaries are not auto-ingested; see [trading_analytics.md](trading_analytics.md).
+
+## Strategy workflow routing (Slice 34)
+
+Deterministic intent detection (`strategy_intent.py`) routes workspace questions before generic `PLAN_TRADE`:
+
+| User question pattern | Intent | Tool |
+|-----------------------|--------|------|
+| Build strategy card | `strategy_card` | `strategy_library_tool` |
+| Analyze with my strategy | `pre_trade` | `pretrade_analysis_tool` |
+| Position size | `position_size` | `position_sizing_tool` |
+| Invalidation / stop | `invalidation_query` | `pretrade_analysis_tool` |
+| Loss acceptable? | `loss_acceptance` | `position_sizing_tool` + acceptance guidance |
+| Manual levels | `manual_levels` | `manual_levels_tool` |
+| Human vs system | `human_vs_system` | `human_vs_system_tool` |
+| Validated strategies | `strategy_status` | `strategy_library_tool` |
+| Backtest next | `backtest_queue` | `strategy_library_tool` |
+
+Replies label deterministic outputs as **SOURCE OF TRUTH**; narrative LLM cannot override risk, sizing, or approval facts.
 
 ## Analytics questions (Slice 31)
 

@@ -16,6 +16,15 @@ export function canExecutePaperOrder(
   proposal: TradeProposal,
   approval: ApprovalRequest | null | undefined,
 ): { allowed: boolean; reason?: string } {
+  if (proposal.loss_acceptance_required) {
+    const status = proposal.loss_acceptance_status ?? "pending";
+    if (status === "pending") {
+      return { allowed: false, reason: "Loss acceptance required before paper execution." };
+    }
+    if (status === "rejected") {
+      return { allowed: false, reason: "Planned loss was not accepted — reduce size or skip." };
+    }
+  }
   if (proposal.risk_result?.action === "block") {
     return { allowed: false, reason: "Blocked by risk engine." };
   }

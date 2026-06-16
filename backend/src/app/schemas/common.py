@@ -398,6 +398,8 @@ class StrategyValidationStatus(StrEnum):
     DRAFT = "draft"
     IN_REVIEW = "in_review"
     VALIDATED = "validated"
+    RESTRICTED = "restricted"
+    RETIRED = "retired"
     NEEDS_REVISION = "needs_revision"
     DEPRECATED = "deprecated"
 
@@ -406,9 +408,22 @@ class BacktestStatus(StrEnum):
     """Placeholder backtest lifecycle."""
 
     NOT_RUN = "not_run"
+    NOT_STARTED = "not_started"
     SCHEDULED = "scheduled"
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETE = "complete"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class BacktestRunStatus(StrEnum):
+    """Backtest run lifecycle (Slice 34)."""
+
+    NOT_STARTED = "not_started"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
     FAILED = "failed"
 
 

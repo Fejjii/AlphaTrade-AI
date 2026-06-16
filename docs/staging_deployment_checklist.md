@@ -97,6 +97,12 @@ COOKIE_MODE=true ./scripts/staging-smoke.sh
 
 **Slice 33 strategy library:** Migration **`k1l2m3n4o5p6`** adds user strategies, manual levels, and loss acceptance fields on proposals.
 
+**Slice 34 workflow wiring:** Migration **`l2m3n4o5p6q7`** adds backtest runs, paper validation runs, and `paper_eligible` on user strategies. Run:
+
+```bash
+cd backend && uv run alembic upgrade head
+```
+
 ---
 
 ## 5. Backend deploy (Render)

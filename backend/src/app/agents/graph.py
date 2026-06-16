@@ -36,6 +36,7 @@ def build_agent_graph(runtime: AgentRuntime) -> StateGraph:
         "message_classification",
         "intent_classification",
         "context_retrieval",
+        "strategy_workflow_tools",
         "trading_analytics_retrieval",
         "market_context_retrieval",
         "indicator_calculation",
@@ -61,6 +62,7 @@ def build_agent_graph(runtime: AgentRuntime) -> StateGraph:
         "message_classification": nodes.message_classification,
         "intent_classification": nodes.intent_classification,
         "context_retrieval": nodes.context_retrieval,
+        "strategy_workflow_tools": nodes.strategy_workflow_tools,
         "trading_analytics_retrieval": nodes.trading_analytics_retrieval,
         "market_context_retrieval": nodes.market_context_retrieval,
         "indicator_calculation": nodes.indicator_calculation,
@@ -105,9 +107,11 @@ def build_agent_graph(runtime: AgentRuntime) -> StateGraph:
         {
             "trading_analysis": "market_context_retrieval",
             "analytics": "trading_analytics_retrieval",
+            "strategy_workflow": "strategy_workflow_tools",
             "general": "memory_update",
         },
     )
+    graph.add_edge("strategy_workflow_tools", "memory_update")
     graph.add_edge("trading_analytics_retrieval", "memory_update")
 
     graph.add_edge("market_context_retrieval", "indicator_calculation")

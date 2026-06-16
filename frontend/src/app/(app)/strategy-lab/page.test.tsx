@@ -16,6 +16,7 @@ describe("StrategyLabPage", () => {
   it("renders strategy lab", () => {
     render(<StrategyLabPage />);
     expect(screen.getByText("Strategy Lab")).toBeInTheDocument();
+    expect(screen.getByText("Create strategy")).toBeInTheDocument();
     expect(screen.getByText("Pullback")).toBeInTheDocument();
   });
 });

@@ -25,7 +25,7 @@
 - **RAG knowledge base** — playbooks, policies, and journal lessons (not trading signals)
 - **Journal → RAG loop** — trade reviews auto-sync to knowledge for future agent retrieval
 - **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
-- **Strategy library & pre-trade** — strategy cards, manual levels, deterministic pre-trade analysis, position sizing v2, loss acceptance (Slice 33; paper only)
+- **Strategy library & pre-trade** — strategy cards, manual levels, pre-trade analysis, sizing, loss acceptance, agent routing, backtest/paper validation placeholders (Slice 33–34; paper only)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies
 - **Billing scaffold** — Stripe placeholder + usage export (`BILLING_ENABLED=false` by default)

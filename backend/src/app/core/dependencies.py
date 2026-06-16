@@ -14,6 +14,7 @@ from app.providers.registry import ProviderRegistry, get_provider_registry
 from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
+from app.services.backtest_service import BacktestService
 from app.services.execution_service import ExecutionService
 from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
@@ -24,6 +25,7 @@ from app.services.manual_level_service import ManualLevelService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
+from app.services.paper_validation_service import PaperValidationService
 from app.services.position_service import PositionService
 from app.services.position_sizing_service import PositionSizingService
 from app.services.pretrade_analysis_service import PreTradeAnalysisService
@@ -193,6 +195,14 @@ def get_human_vs_system_service(session: SessionDep) -> HumanVsSystemService:
     return HumanVsSystemService(session)
 
 
+def get_backtest_service(session: SessionDep, settings: SettingsDep) -> BacktestService:
+    return BacktestService(session, settings)
+
+
+def get_paper_validation_service(session: SessionDep) -> PaperValidationService:
+    return PaperValidationService(session)
+
+
 PositionSizingServiceDep = Annotated[PositionSizingService, Depends(get_position_sizing_service)]
 LossAcceptanceServiceDep = Annotated[LossAcceptanceService, Depends(get_loss_acceptance_service)]
 StrategyLibraryServiceDep = Annotated[StrategyLibraryService, Depends(get_strategy_library_service)]
@@ -201,3 +211,5 @@ PreTradeAnalysisServiceDep = Annotated[
     PreTradeAnalysisService, Depends(get_pretrade_analysis_service)
 ]
 HumanVsSystemServiceDep = Annotated[HumanVsSystemService, Depends(get_human_vs_system_service)]
+BacktestServiceDep = Annotated[BacktestService, Depends(get_backtest_service)]
+PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]

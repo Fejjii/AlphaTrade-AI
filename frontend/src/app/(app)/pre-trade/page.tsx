@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LossAcceptancePanel } from "@/components/strategy/LossAcceptancePanel";
 import { ErrorState } from "@/components/states";
 import { api } from "@/lib/api";
 import type { PreTradeAnalyzeResponse, PositionSizingResult } from "@/lib/api/types";
@@ -41,12 +42,7 @@ export default function PreTradePage() {
   }
 
   async function confirmLoss(accepted: boolean) {
-    if (!sizing) return;
-    const result = await api.risk.lossAcceptance({
-      planned_loss_amount: sizing.planned_loss_amount,
-      accepted,
-    });
-    setLossAccepted(result.can_execute_paper);
+    setLossAccepted(accepted);
   }
 
   return (
@@ -110,25 +106,11 @@ export default function PreTradePage() {
       ) : null}
 
       {sizing ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Loss acceptance</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <Button variant="secondary" onClick={() => void confirmLoss(true)}>
-              Accept planned loss
-            </Button>
-            <Button variant="outline" onClick={() => void confirmLoss(false)}>
-              Not acceptable — reduce or skip
-            </Button>
-            {lossAccepted === true ? (
-              <p className="w-full text-sm text-emerald-400">Loss accepted (paper gate only).</p>
-            ) : null}
-            {lossAccepted === false ? (
-              <p className="w-full text-sm text-amber-400">Paper execution blocked until size adjusted.</p>
-            ) : null}
-          </CardContent>
-        </Card>
+        <LossAcceptancePanel sizing={sizing} onAccepted={confirmLoss} />
+      ) : null}
+
+      {lossAccepted === false ? (
+        <p className="text-sm text-amber-400">Paper execution would remain blocked until size adjusted.</p>
       ) : null}
 
       <Card>

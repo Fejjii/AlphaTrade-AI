@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { LossAcceptancePanel } from "@/components/strategy/LossAcceptancePanel";
 import { RiskBadge } from "@/components/RiskBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,29 @@ export function ProposalDetailPanel({
           <span>Size: {formatDecimal(proposal.position_size)}</span>
           <span>Strategy: {proposal.strategy_id}</span>
         </div>
+
+        {proposal.loss_acceptance_required || proposal.planned_loss_amount ? (
+          <LossAcceptancePanel
+            sizing={{
+              entry_price: proposal.entry_price,
+              invalidation_level: proposal.exit.stop_loss,
+              stop_loss_distance: "0",
+              account_balance: "10000",
+              max_risk_percent: "1",
+              maximum_acceptable_loss: proposal.planned_loss_amount ?? "0",
+              notional_position_size: proposal.position_size,
+              leverage_limit: proposal.leverage,
+              leverage_recommendation: proposal.leverage,
+              confidence_score: proposal.confidence * 100,
+              confidence_adjusted_size: proposal.position_size,
+              worst_case_scenario: "Worst case equals planned loss if stop is hit.",
+              final_recommendation: "normal_size",
+              planned_loss_amount: proposal.planned_loss_amount ?? "0",
+            }}
+            proposalId={proposal.id}
+            onAccepted={() => onRefresh?.()}
+          />
+        ) : null}
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">

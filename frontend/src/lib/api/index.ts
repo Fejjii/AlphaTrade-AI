@@ -50,6 +50,9 @@ import type {
   PositionSizingResult,
   HumanVsSystemComparison,
   UserStrategy,
+  BacktestRun,
+  PaginatedBacktestRuns,
+  PaperValidationSummary,
   MarketSnapshotResponse,
   OHLCVResponse,
   TickerResponse,
@@ -172,6 +175,11 @@ export const api = {
       apiFetch<PaginatedTradeProposals>("/proposals", { query: params }),
     get: (id: string) => apiFetch<TradeProposal>(`/proposals/${id}`),
     workflow: (id: string) => apiFetch<ProposalWorkflowView>(`/proposals/${id}/workflow`),
+    lossAcceptance: (id: string, body: { planned_loss_amount: string; accepted: boolean }) =>
+      apiFetch<TradeProposal>(`/proposals/${id}/loss-acceptance`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
   },
   approvals: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>
@@ -364,6 +372,33 @@ export const api = {
         auth: true,
       }),
     modules: () => apiFetch<string[]>("/strategies/modules", { auth: false }),
+    update: (id: string, body: { name?: string; card?: Record<string, unknown> }) =>
+      apiFetch<UserStrategy>(`/strategies/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    createVersion: (id: string, body: { card: Record<string, unknown>; validation_status?: string }) =>
+      apiFetch<{ id: string; version: number }>(`/strategies/${id}/versions`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    requestBacktest: (id: string, body?: Record<string, unknown>) =>
+      apiFetch<BacktestRun>(`/strategies/${id}/backtests`, {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+        auth: true,
+      }),
+    listBacktests: (id: string) =>
+      apiFetch<PaginatedBacktestRuns>(`/strategies/${id}/backtests`, { auth: true }),
+    startPaperValidation: (id: string) =>
+      apiFetch<{ id: string; status: string }>(`/strategies/${id}/paper-validation/start`, {
+        method: "POST",
+        auth: true,
+      }),
+    paperValidation: (id: string) =>
+      apiFetch<PaperValidationSummary>(`/strategies/${id}/paper-validation`, { auth: true }),
   },
   manualLevels: {
     list: (params?: { symbol?: string; exchange?: string }) =>
@@ -371,6 +406,12 @@ export const api = {
     create: (body: Record<string, unknown>) =>
       apiFetch<ManualChartLevel>("/manual-levels", {
         method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    update: (id: string, body: Record<string, unknown>) =>
+      apiFetch<ManualChartLevel>(`/manual-levels/${id}`, {
+        method: "PATCH",
         body: JSON.stringify(body),
         auth: true,
       }),

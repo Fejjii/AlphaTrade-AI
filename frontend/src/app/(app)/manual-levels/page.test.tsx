@@ -16,5 +16,6 @@ describe("ManualLevelsPage", () => {
   it("renders manual levels page", () => {
     render(<ManualLevelsPage />);
     expect(screen.getByText("Manual Levels")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Add level" })).toBeInTheDocument();
   });
 });

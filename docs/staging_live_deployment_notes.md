@@ -1,6 +1,13 @@
 # Staging Live Deployment Notes
 
-Working notes for **Slice 32** — staging validation after Slice 31 analytics.  
+Working notes for **Slice 32** — staging validation after Slice 31 analytics.
+
+**Slice 34:** After deploying strategy workflow wiring, run migrations through **`l2m3n4o5p6q7`**:
+
+```bash
+cd backend && uv run alembic upgrade head
+```
+
 **Do not commit** filled secrets or this file if you paste credentials into §0.
 
 Related: [pre_deployment_checklist.md](pre_deployment_checklist.md) · [deployment_command_pack.md](deployment_command_pack.md) · [staging_deployment_worksheet.template.md](staging_deployment_worksheet.template.md) · [staging_execution_checklist.md](staging_execution_checklist.md) · [staging_deployment_runbook.md](staging_deployment_runbook.md)

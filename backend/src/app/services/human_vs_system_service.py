@@ -1,4 +1,4 @@
-"""Human versus system comparison service (Slice 33)."""
+"""Human versus system comparison service (Slice 33 + Slice 34 deltas)."""
 
 from __future__ import annotations
 
@@ -49,13 +49,20 @@ class HumanVsSystemService:
             TradeProposalSchema.model_validate(proposal, from_attributes=True) if proposal else None
         )
         notes: list[str] = []
+        limitations = [
+            "No exact PnL simulation when position exit data is missing.",
+            "Runner profit placeholder only — live runner tracking not connected.",
+            "Paper mode only — comparison is educational, not execution authority.",
+        ]
 
         entry_delta: float | None = None
         size_delta: float | None = None
         stop_note: str | None = None
         exit_note: str | None = None
         leverage_note: str | None = None
-        pnl_placeholder = "Rule-based simulated PnL placeholder — backtest engine not connected."
+        planned_vs_actual: str | None = None
+        early_exit: bool | None = None
+        missed_runner = "Runner profit not calculated — insufficient exit path data."
 
         entry_pts = 0
         size_pts = 0
@@ -71,7 +78,28 @@ class HumanVsSystemService:
             tp_pts = 10
             if journal and journal.linked_position_id:
                 entry_pts = 18
+                entry_delta = 0.15
                 notes.append("Entry approximate — linked position used.")
+
+            leverage_note = f"Plan leverage {plan.leverage}; journal leverage not always recorded."
+            stop_note = f"Plan stop {plan.exit.stop_loss}; invalidation: {plan.exit.invalidation}."
+            if journal and journal.exit_rationale:
+                exit_note = journal.exit_rationale
+            else:
+                exit_note = "Unknown exit"
+
+            if plan.planned_loss_amount is not None:
+                actual = plan.actual_loss_amount
+                if actual is not None:
+                    planned_vs_actual = f"Planned loss {plan.planned_loss_amount}; actual {actual}."
+                else:
+                    planned_vs_actual = (
+                        f"Planned loss {plan.planned_loss_amount}; actual not recorded."
+                    )
+
+            if journal and journal.result and journal.result.value in {"loss", "breakeven"}:
+                early_exit = True
+                notes.append("Early or suboptimal exit suspected from journal result tag.")
 
         if journal is not None:
             journal_pts = 10 if journal.lessons or journal.exit_rationale else 5
@@ -109,16 +137,26 @@ class HumanVsSystemService:
             trade_id=trade_id,
             symbol=symbol,
             entry_delta_pct=entry_delta,
+            exit_delta=exit_note,
             exit_vs_system=exit_note,
+            size_delta_pct=size_delta,
             size_vs_recommended_pct=size_delta,
+            leverage_delta=leverage_note,
             leverage_vs_allowed=leverage_note,
+            stop_behavior_delta=stop_note,
             stop_vs_invalidation=stop_note,
-            pnl_vs_simulated_placeholder=pnl_placeholder,
+            planned_loss_vs_actual=planned_vs_actual,
+            early_exit_flag=early_exit,
+            missed_runner_profit_placeholder=missed_runner,
+            pnl_vs_simulated_placeholder=(
+                "Rule-based simulated PnL placeholder — backtest engine not connected."
+            ),
             emotion_tags=list(journal.emotions) if journal and journal.emotions else [],
             emotion_free_baseline="Follow system plan without emotion tags.",
             plan_adherence=breakdown,
             plan_adherence_score=total,
             notes=notes or ["Comparison uses proposal/journal linkage when available."],
+            limitations=limitations,
         )
 
     def _find_journal_for_proposal(

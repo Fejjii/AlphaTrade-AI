@@ -42,6 +42,15 @@ class Intent(StrEnum):
     REVIEW = "review"
     UPDATE_RULE = "update_rule"
     EXPLAIN = "explain"
+    STRATEGY_CARD = "strategy_card"
+    PRE_TRADE = "pre_trade"
+    POSITION_SIZE = "position_size"
+    INVALIDATION_QUERY = "invalidation_query"
+    LOSS_ACCEPTANCE = "loss_acceptance"
+    HUMAN_VS_SYSTEM = "human_vs_system"
+    MANUAL_LEVELS = "manual_levels"
+    STRATEGY_STATUS = "strategy_status"
+    BACKTEST_QUEUE = "backtest_queue"
     UNKNOWN = "unknown"
 
 

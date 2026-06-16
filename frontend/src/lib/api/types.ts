@@ -145,6 +145,9 @@ export interface TradeProposal {
   status: ProposalStatus;
   approval_required: boolean;
   risk_result?: RiskCheckResult | null;
+  loss_acceptance_required?: boolean;
+  loss_acceptance_status?: string;
+  planned_loss_amount?: string | null;
   created_at: string;
 }
 
@@ -835,8 +838,50 @@ export interface UserStrategy {
   notes?: string | null;
   latest_card?: StrategyCard | null;
   validation_status?: string | null;
+  backtest_status?: string | null;
+  paper_validation_status?: string | null;
+  paper_eligible?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface BacktestRun {
+  id: string;
+  strategy_id: string;
+  status: string;
+  assumptions: Record<string, unknown>;
+  result?: {
+    win_rate?: number;
+    profit_factor?: number;
+    max_drawdown_pct?: number;
+    trade_count?: number;
+    meets_success_criteria?: boolean;
+    note?: string;
+  } | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaginatedBacktestRuns {
+  items: BacktestRun[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaperValidationSummary {
+  strategy_id: string;
+  paper_eligible: boolean;
+  latest_status?: string | null;
+  runs: Array<{
+    id: string;
+    status: string;
+    paper_eligible: boolean;
+    notes?: string | null;
+  }>;
+  total: number;
+  limitation: string;
 }
 
 export interface PaginatedUserStrategies {
@@ -911,6 +956,15 @@ export interface PreTradeAnalyzeResponse {
 
 export interface HumanVsSystemComparison {
   trade_id: string;
+  symbol?: string | null;
+  entry_delta_pct?: number | null;
+  exit_delta?: string | null;
+  size_delta_pct?: number | null;
+  leverage_delta?: string | null;
+  stop_behavior_delta?: string | null;
+  planned_loss_vs_actual?: string | null;
+  early_exit_flag?: boolean | null;
+  missed_runner_profit_placeholder?: string | null;
   plan_adherence_score: number;
   plan_adherence: {
     entry_followed_plan: number;
@@ -922,4 +976,5 @@ export interface HumanVsSystemComparison {
   };
   emotion_tags: string[];
   notes: string[];
+  limitations?: string[];
 }

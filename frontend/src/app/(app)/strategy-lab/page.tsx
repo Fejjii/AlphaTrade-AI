@@ -26,6 +26,15 @@ export default function StrategyLabPage() {
         </p>
       </div>
 
+      <div>
+        <Link
+          href="/strategy-lab/new"
+          className="inline-flex rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-white"
+        >
+          Create strategy
+        </Link>
+      </div>
+
       {loading ? <LoadingState label="Loading strategies…" /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
 

@@ -301,8 +301,9 @@ def _strategy_library_execute(args: dict[str, Any], session: Any | None) -> Tool
             sid = _uuid.UUID(str(args["strategy_id"]))
             result = service.get(sid, organization_id=org, user_id=user).model_dump(mode="json")
         elif action == "create":
+            create_args = {k: v for k, v in args.items() if k != "action"}
             payload = UserStrategyCreate.model_validate(
-                {**args, "organization_id": org, "user_id": user}
+                {**create_args, "organization_id": org, "user_id": user}
             )
             result = service.create(payload).model_dump(mode="json")
         else:

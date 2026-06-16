@@ -40,6 +40,7 @@ from app.schemas.common import (
     AuditEventType,
     AuditResult,
     AuditSeverity,
+    BacktestRunStatus,
     BacktestStatus,
     CostSource,
     DocumentSourceType,
@@ -350,6 +351,7 @@ class UserStrategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paper_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -376,6 +378,44 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     paper_validation_status: Mapped[PaperValidationStatus] = mapped_column(
         _enum(PaperValidationStatus), default=PaperValidationStatus.NOT_STARTED
     )
+
+
+class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Placeholder backtest run record (Slice 34 — no live execution)."""
+
+    __tablename__ = "backtest_runs"
+
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    status: Mapped[BacktestRunStatus] = mapped_column(
+        _enum(BacktestRunStatus), default=BacktestRunStatus.NOT_STARTED
+    )
+    assumptions: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PaperValidationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Paper validation placeholder run (Slice 34 — paper only)."""
+
+    __tablename__ = "paper_validation_runs"
+
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    status: Mapped[PaperValidationStatus] = mapped_column(
+        _enum(PaperValidationStatus), default=PaperValidationStatus.NOT_STARTED
+    )
+    paper_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ManualChartLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
