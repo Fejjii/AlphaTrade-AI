@@ -39,9 +39,46 @@ class DailyDisciplineSnapshot(StrictModel):
         description="One of: calm, caution, locked, review_only",
         default="calm",
     )
+    risk_settings_source: str = Field(
+        default="system_default",
+        description="One of: configured_daily_state, user_risk_settings, system_default",
+    )
+    pnl_sources: dict[str, Decimal | None] = Field(default_factory=dict)
     reasons: list[str] = Field(default_factory=list)
     recommended_action: str = ""
     limitations: list[str] = Field(default_factory=list)
+
+
+class DisciplineScoreSummary(StrictModel):
+    score: int | None = None
+    grade: str | None = None
+    band: str | None = Field(
+        default=None,
+        description="One of: strong, good, caution, review_needed",
+    )
+    main_contributors: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class OpenPaperTradesSummary(StrictModel):
+    proposal_flow_count: int = 0
+    paper_validation_count: int = 0
+    total_count: int = 0
+    total_open_exposure: Decimal | None = None
+    items: list[OpenPaperTradeItem] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class OpenPaperTradeItem(StrictModel):
+    position_id: UUID | None = None
+    paper_trade_id: UUID | None = None
+    strategy_id: UUID | None = None
+    strategy_name: str | None = None
+    symbol: str
+    direction: str
+    unrealized_pnl: Decimal | None = None
+    status: str = "open"
+    source: str = Field(description="proposal_flow or paper_validation")
 
 
 class StrategyReadinessCounts(StrictModel):
@@ -73,14 +110,6 @@ class ActivePaperValidationItem(StrictModel):
     strategy_id: UUID
     name: str
     status: str = "running"
-
-
-class OpenPaperTradeItem(StrictModel):
-    position_id: UUID | None = None
-    symbol: str
-    direction: str
-    unrealized_pnl: Decimal | None = None
-    status: str = "open"
 
 
 class AlertSummaryItem(StrictModel):
@@ -122,9 +151,11 @@ class NextRecommendedAction(StrictModel):
 class DashboardSummary(StrictModel):
     safety: DashboardSafetyStatus
     daily_discipline: DailyDisciplineSnapshot | None = None
+    discipline_score: DisciplineScoreSummary | None = None
     strategy_readiness: StrategyReadinessSummary | None = None
     active_paper_validations: list[ActivePaperValidationItem] = Field(default_factory=list)
     open_paper_trades: list[OpenPaperTradeItem] = Field(default_factory=list)
+    open_paper_trades_summary: OpenPaperTradesSummary | None = None
     alerts_lessons: AlertsLessonsSummary | None = None
     market_watcher: MarketWatcherDashboardStatus | None = None
     bridge: BridgeDashboardStatus | None = None

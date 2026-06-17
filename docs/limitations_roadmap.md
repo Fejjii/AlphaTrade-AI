@@ -36,12 +36,12 @@
 ### Trader workflow UX (Slice 43–44)
 
 - Trader-first dashboard, workflow stepper, status badges, human-readable paper validation + alert summaries
-- **`GET /dashboard/summary`** (Slice 44): deterministic paper-only aggregation — daily discipline snapshot,
-  strategy readiness counts, alerts/lessons, market watcher + bridge status, next recommended action
-- Daily paper PnL from closed trades today + open position unrealized PnL; **no broker data**
-- User timezone for day boundaries (UTC fallback reported in `limitations`)
-- `daily_target` / `max_trades_per_day` only when configured on `daily_risk_states` for the day; otherwise
-  limitations — no fake configured values
+- **`GET /dashboard/summary`** (Slice 44–45): deterministic paper-only aggregation — daily discipline snapshot,
+  discipline score, risk settings source, open paper trades from proposal flow + paper validation, PnL source breakdown
+- **`GET/PATCH /risk/settings`** (Slice 45): user-facing paper discipline limits with audit logging; agent updates require confirmation
+- Strategy readiness counts, alerts/lessons, market watcher + bridge status, next recommended action
+- Daily paper PnL from closed paper-validation trades + proposal-flow positions; **no broker data**
+- Risk limits from daily state → user settings → system defaults (`risk_settings_source`); limitations when defaults apply
 - Frontend uses summary as primary source; resilient legacy fallback if endpoint unavailable (Slice 43)
 - Real trading remains disabled; all execution remains paper only
 

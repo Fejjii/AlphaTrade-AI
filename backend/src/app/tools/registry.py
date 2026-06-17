@@ -1295,6 +1295,121 @@ def _structure_from_text_execute(args: dict[str, Any]) -> ToolOutput:
         return ToolOutput(tool_name="structure_from_text_tool", success=False, error=str(exc))
 
 
+def _risk_settings_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.risk import UserRiskSettingsUpdate
+    from app.services.audit_service import AuditService
+    from app.services.dashboard.daily_discipline import build_daily_discipline_snapshot
+    from app.services.dashboard_summary_service import DashboardSummaryService
+    from app.services.risk.settings_service import RiskSettingsService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="risk_settings_tool",
+            success=False,
+            error="Database session required for risk settings.",
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        action = str(args.get("action", "get"))
+        service = RiskSettingsService(session, AuditService(session))
+
+        if action == "get":
+            result = service.get(organization_id=org, user_id=user).model_dump(mode="json")
+            summary = "Current risk settings loaded from persisted configuration or defaults."
+        elif action == "update":
+            blocked = _require_mutation_confirmation(
+                "risk_settings_tool", args, action="update risk settings"
+            )
+            if blocked is not None:
+                return blocked
+            skip_keys = {"action", "organization_id", "user_id", "confirm", "user_message"}
+            payload = UserRiskSettingsUpdate.model_validate(
+                {k: v for k, v in args.items() if k not in skip_keys}
+            )
+            updated = service.update(payload, organization_id=org, user_id=user)
+            session.commit()
+            result = updated.model_dump(mode="json")
+            summary = "Risk settings updated. Paper-only discipline guidance applies."
+        elif action == "discipline":
+            snapshot = build_daily_discipline_snapshot(
+                session,
+                organization_id=org,
+                user_id=user,
+                risk_settings=service,
+            )
+            result = snapshot.model_dump(mode="json")
+            summary = (
+                f"Discipline status={snapshot.discipline_status}. "
+                f"Paper PnL today={snapshot.net_pnl_today_paper}."
+            )
+        elif action == "discipline_score":
+            from app.services.analytics.discipline_score import DisciplineScoreService
+
+            score = DisciplineScoreService(session).compute(
+                organization_id=org,
+                user_id=user,
+            )
+            result = score.model_dump(mode="json")
+            summary = f"Discipline score={score.score} ({score.grade})."
+        elif action == "open_trades":
+            summary_service = DashboardSummaryService(session, get_settings())
+            open_summary = summary_service._open_paper_trades_summary(org, user)
+            result = open_summary.model_dump(mode="json")
+            summary = f"{open_summary.total_count} open paper trade(s)."
+        elif action == "paper_pnl":
+            snapshot = build_daily_discipline_snapshot(
+                session,
+                organization_id=org,
+                user_id=user,
+                risk_settings=service,
+            )
+            result = {
+                "realized_pnl_paper": str(snapshot.realized_pnl_today_paper),
+                "unrealized_pnl_paper": str(snapshot.unrealized_pnl_paper),
+                "net_pnl_today_paper": str(snapshot.net_pnl_today_paper),
+                "pnl_sources": {k: str(v) for k, v in snapshot.pnl_sources.items()},
+                "limitations": snapshot.limitations,
+            }
+            summary = f"Paper PnL today={snapshot.net_pnl_today_paper}."
+        elif action == "loss_lock_reason":
+            snapshot = build_daily_discipline_snapshot(
+                session,
+                organization_id=org,
+                user_id=user,
+                risk_settings=service,
+            )
+            result = {
+                "loss_lock_active": snapshot.loss_lock_active,
+                "reasons": snapshot.reasons,
+                "risk_settings_source": snapshot.risk_settings_source,
+            }
+            summary = (
+                "Daily lock is active."
+                if snapshot.loss_lock_active
+                else "Daily lock is not active."
+            )
+        else:
+            return ToolOutput(
+                tool_name="risk_settings_tool",
+                success=False,
+                error=f"Unknown action: {action}",
+            )
+
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="risk_settings_tool",
+            success=True,
+            result={"summary": summary, **result},
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="risk_settings_tool", success=False, error=str(exc))
+
+
 def build_default_registry(
     _settings: Settings | None = None,
     rag_service: RagService | None = None,
@@ -1555,6 +1670,19 @@ def build_default_registry(
             has_fallback=True,
             enabled=True,
             execute=lambda args: _backtest_tool_execute(args, db_session, settings),
+        ),
+        ToolDefinition(
+            name="risk_settings_tool",
+            description=(
+                "Read or update paper risk settings, discipline score, open paper trades, "
+                "and daily paper PnL. Updates require explicit confirmation."
+            ),
+            risk_level=ToolRiskLevel.MEDIUM,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _risk_settings_execute(args, db_session),
         ),
     ]
     for tool in tools:

@@ -344,6 +344,8 @@ export interface DailyDisciplineSnapshot {
   max_trades_per_day: number | null;
   remaining_trades_allowed: number | null;
   discipline_status: "calm" | "caution" | "locked" | "review_only" | string;
+  risk_settings_source: "configured_daily_state" | "user_risk_settings" | "system_default" | string;
+  pnl_sources: Record<string, string | null>;
   reasons: string[];
   recommended_action: string;
   limitations: string[];
@@ -382,10 +384,61 @@ export interface ActivePaperValidationItem {
 
 export interface OpenPaperTradeItem {
   position_id: string | null;
+  paper_trade_id?: string | null;
+  strategy_id?: string | null;
+  strategy_name?: string | null;
   symbol: string;
   direction: string;
   unrealized_pnl: string | null;
   status: string;
+  source?: string;
+}
+
+export interface DisciplineScoreSummary {
+  score: number | null;
+  grade: string | null;
+  band: "strong" | "good" | "caution" | "review_needed" | string | null;
+  main_contributors: string[];
+  limitations: string[];
+}
+
+export interface OpenPaperTradesSummary {
+  proposal_flow_count: number;
+  paper_validation_count: number;
+  total_count: number;
+  total_open_exposure: string | null;
+  items: OpenPaperTradeItem[];
+  limitations: string[];
+}
+
+export interface UserRiskSettings {
+  organization_id: string;
+  user_id: string;
+  daily_loss_limit: string | null;
+  daily_target: string | null;
+  max_trades_per_day: number;
+  max_risk_per_trade_percent: string;
+  default_account_balance: string;
+  timezone: string;
+  green_day_protection_enabled: boolean;
+  one_loss_stop_enabled: boolean;
+  overtrading_guard_enabled: boolean;
+  notes: string | null;
+  using_defaults: boolean;
+  timezone_fallback: boolean;
+}
+
+export interface UserRiskSettingsUpdate {
+  daily_loss_limit?: string | null;
+  daily_target?: string | null;
+  max_trades_per_day?: number;
+  max_risk_per_trade_percent?: string;
+  default_account_balance?: string;
+  timezone?: string;
+  green_day_protection_enabled?: boolean;
+  one_loss_stop_enabled?: boolean;
+  overtrading_guard_enabled?: boolean;
+  notes?: string | null;
 }
 
 export interface AlertSummaryItem {
@@ -413,9 +466,11 @@ export interface NextRecommendedAction {
 export interface DashboardSummary {
   safety: DashboardSafetyStatus;
   daily_discipline: DailyDisciplineSnapshot | null;
+  discipline_score: DisciplineScoreSummary | null;
   strategy_readiness: StrategyReadinessSummary | null;
   active_paper_validations: ActivePaperValidationItem[];
   open_paper_trades: OpenPaperTradeItem[];
+  open_paper_trades_summary: OpenPaperTradesSummary | null;
   alerts_lessons: AlertsLessonsSummary | null;
   market_watcher: {
     effective_enabled: boolean;

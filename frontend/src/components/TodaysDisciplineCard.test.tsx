@@ -22,6 +22,12 @@ const snapshot: DailyDisciplineSnapshot = {
   max_trades_per_day: 20,
   remaining_trades_allowed: 17,
   discipline_status: "locked",
+  risk_settings_source: "user_risk_settings",
+  pnl_sources: {
+    paper_validation_closed: "-25.50",
+    proposal_flow_closed: "0",
+    proposal_flow_open_unrealized: "10.00",
+  },
   reasons: ["Daily loss limit reached for paper trading today."],
   recommended_action: "Step back and review today's paper results before taking more risk.",
   limitations: ["daily_target is not configured for this tenant."],
@@ -44,9 +50,22 @@ describe("TodaysDisciplineCard", () => {
   });
 
   it("renders loss lock and limitations", () => {
-    render(<TodaysDisciplineCard snapshot={snapshot} />);
+    render(
+      <TodaysDisciplineCard
+        snapshot={snapshot}
+        disciplineScore={{
+          score: 72,
+          grade: "C",
+          band: "caution",
+          main_contributors: ["Consistent stop-loss usage"],
+          limitations: [],
+        }}
+      />,
+    );
     expect(screen.getByTestId("discipline-loss-protection")).toHaveTextContent("engaged");
     expect(screen.getByTestId("discipline-limitations")).toHaveTextContent("daily_target");
+    expect(screen.getByTestId("discipline-score-badge")).toHaveTextContent("72");
+    expect(screen.getByTestId("discipline-configured-limits")).toHaveTextContent("Max trades: 20");
   });
 
   it("uses calm wording without harsh phrasing", () => {

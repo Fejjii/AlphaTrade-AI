@@ -71,7 +71,7 @@ Talking points:
 
 ---
 
-## 4. Dashboard (trader-first, Slice 43–44)
+## 4. Dashboard (trader-first, Slice 43–45)
 
 Route: `/` · API: `GET /dashboard/summary`
 
@@ -80,16 +80,27 @@ Highlight:
 - **Paper mode active** banner + `PAPER mode` / `Real trading disabled` status badges
 - **Workflow stepper:** Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve Strategy, with per-step complete / blocked / next status
 - **What to do next** from backend `next_recommended_action` (with link + reason)
-- **Today's discipline** from `daily_discipline` snapshot: trades today, paper PnL today, loss/green-day/frequency states, reasons, limitations
+- **Today's discipline** from `daily_discipline` snapshot: trades today, paper PnL today, configured limits, `risk_settings_source`, discipline score band, loss/green-day/frequency states, limitations (collapsed)
 - **Strategy readiness** counts and top strategies needing action
-- **Active paper validations**, **Open paper trades**, **Latest alerts**, **Lessons pending review**
+- **Active paper validations**, **Open paper trades** (proposal flow + paper validation counts), **Latest alerts**, **Lessons pending review**
 - Developer-first details (provider status, backend version, estimated cost, audit events) are tucked into a collapsed **Developer details** section
 
 Talking points:
 
 - Dashboard summary is **deterministic, paper-only, tenant-scoped** — no LLM, no broker data
-- Daily PnL uses **closed paper trades today** plus open position unrealized PnL when available; timezone from user profile (UTC fallback with limitation)
-- If `/dashboard/summary` fails, the UI falls back to legacy client-side composition (Slice 43 behavior)
+- Daily PnL aggregates closed paper-validation trades and proposal-flow positions; limitations when unrealized marks are unavailable
+- Risk limits resolve from daily state → user settings → system defaults (never silent invention)
+
+---
+
+## 4b. Risk Settings (Slice 45)
+
+Route: `/risk` · API: `GET/PATCH /risk/settings`, `POST /risk/settings/reset-defaults`
+
+1. Show daily loss limit, target, max trades, toggles for green-day / one-loss / overtrading guard
+2. Save settings — audit event `risk_settings_updated`
+3. Return to dashboard — Today's discipline shows configured limits and source
+4. Agent: ask "What are my risk settings?" (read) vs "Set max trades to 3" (requires explicit confirmation)
 
 ---
 

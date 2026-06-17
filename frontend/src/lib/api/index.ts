@@ -53,6 +53,8 @@ import type {
   PositionSizingResult,
   HumanVsSystemComparison,
   UserStrategy,
+  UserRiskSettings,
+  UserRiskSettingsUpdate,
   BacktestRun,
   PaginatedBacktestRuns,
   PaginatedBacktestTrades,
@@ -568,6 +570,18 @@ export const api = {
       }),
   },
   risk: {
+    settings: () => apiFetch<UserRiskSettings>("/risk/settings", { auth: true }),
+    updateSettings: (body: UserRiskSettingsUpdate) =>
+      apiFetch<UserRiskSettings>("/risk/settings", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    resetSettings: () =>
+      apiFetch<UserRiskSettings>("/risk/settings/reset-defaults", {
+        method: "POST",
+        auth: true,
+      }),
     size: (body: Record<string, unknown>) =>
       apiFetch<PositionSizingResult>("/risk/size", {
         method: "POST",

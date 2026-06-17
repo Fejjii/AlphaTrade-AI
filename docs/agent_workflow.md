@@ -29,6 +29,7 @@ flowchart TD
 | Guardrails | Injection, moderation, trading policy |
 | RAG | Rules, playbook, **journal lessons** — never direct signals |
 | Analytics | `analytics_summary_tool` for review questions (setups, mistakes, discipline) |
+| Risk settings | `risk_settings_tool` for settings, discipline score, open paper trades, daily PnL — updates require confirmation |
 | Strategy / pre-trade (Slice 33–39) | `strategy_workflow_tools` node routes workspace intents to registered tools |
 | Market data | Read-only ticker/OHLCV via provider abstraction |
 | Strategies | Seven deterministic MVP setups |
@@ -106,6 +107,21 @@ Backtest intents call `backtest_tool`; paper validation intents call `paper_vali
 ## Analytics questions (Slice 31)
 
 Review-style messages route to `trading_analytics_retrieval`, which calls `analytics_summary_tool` (DB session required). The deterministic reply includes discipline score, repeated mistakes, and setup activity — not LLM-scored discipline.
+
+## Risk settings questions (Slice 45)
+
+Risk and discipline intents can call `risk_settings_tool`:
+
+| Question | Action |
+| --- | --- |
+| What are my risk settings? | `get` |
+| Set max trades per day to 3 | `update` with `confirm=true` |
+| What is my discipline score today? | `discipline_score` |
+| Why is my daily lock active? | `loss_lock_reason` |
+| How many paper trades are open? | `open_trades` |
+| What is my paper PnL today? | `paper_pnl` |
+
+State-changing `update` requires explicit user confirmation — same mutation policy as lesson accept and scheduler tick.
 
 ## API endpoints
 

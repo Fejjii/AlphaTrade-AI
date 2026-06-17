@@ -42,6 +42,7 @@ from app.services.pretrade_analysis_service import PreTradeAnalysisService
 from app.services.proposal_service import ProposalService
 from app.services.quota_service import QuotaService
 from app.services.rag_service import RagService, build_rag_service
+from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
 from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_service import StrategyService
@@ -333,10 +334,25 @@ HistoricalCandleServiceDep = Annotated[
 def get_dashboard_summary_service(
     session: SessionDep,
     settings: SettingsDep,
+    audit_service: AuditServiceDep,
 ) -> DashboardSummaryService:
-    return DashboardSummaryService(session, settings)
+    return DashboardSummaryService(
+        session,
+        settings,
+        risk_settings=RiskSettingsService(session, audit_service),
+    )
 
 
 DashboardSummaryServiceDep = Annotated[
     DashboardSummaryService, Depends(get_dashboard_summary_service)
 ]
+
+
+def get_risk_settings_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+) -> RiskSettingsService:
+    return RiskSettingsService(session, audit_service)
+
+
+RiskSettingsServiceDep = Annotated[RiskSettingsService, Depends(get_risk_settings_service)]

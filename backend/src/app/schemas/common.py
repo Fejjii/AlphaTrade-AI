@@ -327,6 +327,7 @@ class AuditEventType(StrEnum):
     LESSON_ARCHIVED = "lesson_archived"
     PAPER_SCHEDULER_TICK = "paper_scheduler_tick"
     PAPER_VALIDATION_RUNTIME = "paper_validation_runtime"
+    RISK_SETTINGS_UPDATED = "risk_settings_updated"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"

@@ -26,7 +26,8 @@
 - **RAG knowledge base** — playbooks, policies, and journal lessons (not trading signals)
 - **Journal → RAG loop** — trade reviews auto-sync to knowledge for future agent retrieval
 - **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
-- **Dashboard summary** — paper-only aggregated snapshot with daily discipline, strategy readiness, alerts/lessons, and next recommended action (`GET /dashboard/summary`, Slice 44)
+- **Dashboard summary** — paper-only aggregated snapshot with daily discipline, discipline score, risk settings source, strategy readiness, open paper trades (both flows), alerts/lessons, and next recommended action (`GET /dashboard/summary`, Slice 44–45)
+- **Risk settings** — tenant-scoped paper discipline limits (`GET/PATCH /risk/settings`, reset defaults, Slice 45)
 - **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot, scheduler foundation, alerts, optional signed webhook delivery, market watcher + paper scan bridge), lesson → version flow, agent routing (Slice 33–42; paper only)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies

@@ -980,6 +980,30 @@ class DailyRiskState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class UserRiskSettings(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Persistent per-user risk settings for paper discipline (Slice 45)."""
+
+    __tablename__ = "user_risk_settings"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_user_risk_settings_org_user"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    daily_loss_limit: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    daily_target: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    max_trades_per_day: Mapped[int] = mapped_column(Integer, default=20)
+    max_risk_per_trade_percent: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("1"))
+    default_account_balance: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("10000"))
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    green_day_protection_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    one_loss_stop_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    overtrading_guard_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class RiskEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "risk_events"
 

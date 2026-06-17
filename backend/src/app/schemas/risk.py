@@ -109,3 +109,40 @@ class RiskEvent(ORMModel):
     confidence: Confidence | None = None
     details: dict[str, str] = Field(default_factory=dict)
     timestamp: datetime
+
+
+class UserRiskSettingsResponse(StrictModel):
+    """Tenant-scoped user risk settings for paper discipline."""
+
+    organization_id: UUID
+    user_id: UUID
+    daily_loss_limit: Decimal | None = None
+    daily_target: Decimal | None = None
+    max_trades_per_day: int = Field(default=20, ge=1)
+    max_risk_per_trade_percent: Decimal = Field(default=Decimal("1"), gt=0, le=10)
+    default_account_balance: PositiveDecimal = Field(default=Decimal("10000"))
+    timezone: str = "UTC"
+    green_day_protection_enabled: bool = True
+    one_loss_stop_enabled: bool = False
+    overtrading_guard_enabled: bool = True
+    notes: str | None = None
+    using_defaults: bool = Field(
+        default=False,
+        description="True when no persisted row exists and system defaults are returned.",
+    )
+    timezone_fallback: bool = False
+
+
+class UserRiskSettingsUpdate(StrictModel):
+    """Partial update for user risk settings."""
+
+    daily_loss_limit: Decimal | None = None
+    daily_target: Decimal | None = None
+    max_trades_per_day: int | None = Field(default=None, ge=1)
+    max_risk_per_trade_percent: Decimal | None = Field(default=None, gt=0, le=10)
+    default_account_balance: PositiveDecimal | None = None
+    timezone: str | None = None
+    green_day_protection_enabled: bool | None = None
+    one_loss_stop_enabled: bool | None = None
+    overtrading_guard_enabled: bool | None = None
+    notes: str | None = None

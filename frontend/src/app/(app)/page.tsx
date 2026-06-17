@@ -189,6 +189,8 @@ export default function DashboardPage() {
           max_trades_per_day: null,
           remaining_trades_allowed: null,
           discipline_status: "calm",
+          risk_settings_source: "system_default",
+          pnl_sources: {},
           reasons: [],
           recommended_action:
             data?.legacyDiscipline?.improvement_suggestions?.[0] ??
@@ -264,7 +266,10 @@ export default function DashboardPage() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <TodaysDisciplineCard snapshot={disciplineSnapshot} />
+        <TodaysDisciplineCard
+          snapshot={disciplineSnapshot}
+          disciplineScore={summary?.discipline_score ?? null}
+        />
 
         <Card data-testid="strategy-readiness-card">
           <CardHeader>
@@ -338,16 +343,28 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Open paper trades</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {summary?.open_paper_trades_summary ? (
+              <p className="text-xs text-zinc-400" data-testid="open-paper-trades-counts">
+                Proposal flow: {summary.open_paper_trades_summary.proposal_flow_count} · Paper
+                validation: {summary.open_paper_trades_summary.paper_validation_count}
+              </p>
+            ) : null}
             {summary?.open_paper_trades.length ? (
               summary.open_paper_trades.map((trade) => (
                 <div
-                  key={trade.position_id ?? trade.symbol}
+                  key={trade.paper_trade_id ?? trade.position_id ?? `${trade.symbol}-${trade.source}`}
                   className="rounded-lg border border-zinc-800 px-3 py-2 text-sm"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-zinc-200">{trade.symbol}</span>
+                    <span className="text-zinc-200">
+                      {trade.symbol}
+                      {trade.strategy_name ? ` · ${trade.strategy_name}` : ""}
+                    </span>
                     <Badge variant="muted">{trade.direction}</Badge>
                   </div>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Source: {trade.source ?? "proposal_flow"}
+                  </p>
                   {trade.unrealized_pnl != null ? (
                     <p className="mt-1 text-xs text-zinc-400">
                       Unrealized PnL: {formatDecimal(trade.unrealized_pnl)}
@@ -358,6 +375,16 @@ export default function DashboardPage() {
             ) : (
               <EmptyState title="No open paper positions" />
             )}
+            {summary?.open_paper_trades_summary?.limitations.length ? (
+              <details className="text-xs text-amber-500/80" data-testid="open-paper-trades-limitations">
+                <summary className="cursor-pointer text-zinc-400">Limitations</summary>
+                <ul className="mt-2 space-y-1">
+                  {summary.open_paper_trades_summary.limitations.map((item) => (
+                    <li key={item}>• {item}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </CardContent>
         </Card>
       </div>

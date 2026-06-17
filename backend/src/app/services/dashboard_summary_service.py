@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.schemas.common import LessonCandidateStatus, PaperAlertSeverity, PositionStatus
+from app.db.models import PaperTrade, UserStrategy
+from app.schemas.common import (
+    LessonCandidateStatus,
+    PaperAlertSeverity,
+    PaperTradeStatus,
+    PositionStatus,
+)
 from app.schemas.dashboard import (
     ActivePaperValidationItem,
     AlertsLessonsSummary,
@@ -17,9 +25,12 @@ from app.schemas.dashboard import (
     BridgeDashboardStatus,
     DashboardSafetyStatus,
     DashboardSummary,
+    DisciplineScoreSummary,
     MarketWatcherDashboardStatus,
     OpenPaperTradeItem,
+    OpenPaperTradesSummary,
 )
+from app.services.analytics.discipline_score import DisciplineScoreService
 from app.services.dashboard.daily_discipline import build_daily_discipline_snapshot
 from app.services.dashboard.next_action import resolve_next_recommended_action
 from app.services.dashboard.strategy_readiness import build_strategy_readiness
@@ -28,12 +39,23 @@ from app.services.market_watcher_bridge_service import MarketWatcherBridgeServic
 from app.services.market_watcher_service import MarketWatcherService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.position_service import PositionService
+from app.services.risk.settings_service import RiskSettingsService
 from app.services.strategy_library_service import StrategyLibraryService
 
 logger = structlog.get_logger(__name__)
 
 _HIGH_PRIORITY = frozenset({PaperAlertSeverity.CRITICAL, PaperAlertSeverity.WARNING})
 _RUNNING_PAPER = frozenset({"running", "active", "in_progress"})
+
+
+def _discipline_band(score: int) -> str:
+    if score >= 90:
+        return "strong"
+    if score >= 80:
+        return "good"
+    if score >= 60:
+        return "caution"
+    return "review_needed"
 
 
 class DashboardSummaryService:
@@ -50,6 +72,7 @@ class DashboardSummaryService:
         lessons: LessonCandidateService | None = None,
         market_watcher: MarketWatcherService | None = None,
         bridge: MarketWatcherBridgeService | None = None,
+        risk_settings: RiskSettingsService | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -59,6 +82,11 @@ class DashboardSummaryService:
         self._lessons = lessons or LessonCandidateService(session, settings=settings)
         self._market_watcher = market_watcher or MarketWatcherService(session, settings)
         self._bridge = bridge or MarketWatcherBridgeService(session, settings)
+        if risk_settings is None:
+            from app.services.audit_service import AuditService
+
+            risk_settings = RiskSettingsService(session, AuditService(session))
+        self._risk_settings = risk_settings
 
     def summarize(
         self,
@@ -81,7 +109,14 @@ class DashboardSummaryService:
                 self._session,
                 organization_id=organization_id,
                 user_id=user_id,
+                risk_settings=self._risk_settings,
             ),
+        )
+
+        discipline_score = self._safe_section(
+            "discipline_score",
+            limitations,
+            lambda: self._discipline_score_summary(organization_id, user_id),
         )
 
         strategy_readiness = self._safe_section(
@@ -97,11 +132,21 @@ class DashboardSummaryService:
             default=[],
         )
 
-        open_trades = self._safe_section(
-            "open_paper_trades",
+        open_trades_summary = self._safe_section(
+            "open_paper_trades_summary",
             limitations,
-            lambda: self._open_paper_trades(organization_id, user_id),
-            default=[],
+            lambda: self._open_paper_trades_summary(organization_id, user_id),
+        )
+
+        open_trades = (
+            open_trades_summary.items
+            if open_trades_summary is not None
+            else self._safe_section(
+                "open_paper_trades",
+                limitations,
+                lambda: self._open_paper_trades(organization_id, user_id),
+                default=[],
+            )
         )
 
         alerts_lessons = self._safe_section(
@@ -145,9 +190,11 @@ class DashboardSummaryService:
         return DashboardSummary(
             safety=safety,
             daily_discipline=daily,
+            discipline_score=discipline_score,
             strategy_readiness=strategy_readiness,
             active_paper_validations=active_paper or [],
             open_paper_trades=open_trades or [],
+            open_paper_trades_summary=open_trades_summary,
             alerts_lessons=alerts_lessons,
             market_watcher=watcher_status,
             bridge=bridge_status,
@@ -196,6 +243,108 @@ class DashboardSummaryService:
                 )
         return items
 
+    def _discipline_score_summary(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> DisciplineScoreSummary:
+        result = DisciplineScoreService(self._session).compute(
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        band = _discipline_band(result.score)
+        contributors = result.positive_behaviors[:3] + result.negative_behaviors[:2]
+        return DisciplineScoreSummary(
+            score=result.score,
+            grade=result.grade,
+            band=band,
+            main_contributors=contributors[:5],
+        )
+
+    def _open_paper_trades_summary(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> OpenPaperTradesSummary:
+        limitations: list[str] = []
+        items: list[OpenPaperTradeItem] = []
+
+        if self._positions is None:
+            from app.services.audit_service import AuditService
+
+            self._positions = PositionService(self._session, AuditService(self._session))
+        position_rows, _ = self._positions.list_positions(
+            organization_id=organization_id,
+            user_id=user_id,
+            status=PositionStatus.OPEN,
+            limit=10,
+        )
+        for row in position_rows:
+            items.append(
+                OpenPaperTradeItem(
+                    position_id=row.id,
+                    symbol=row.symbol,
+                    direction=row.direction.value,
+                    unrealized_pnl=row.unrealized_pnl,
+                    status="open",
+                    source="proposal_flow",
+                )
+            )
+
+        paper_rows = self._session.scalars(
+            select(PaperTrade)
+            .where(
+                PaperTrade.organization_id == organization_id,
+                PaperTrade.user_id == user_id,
+                PaperTrade.status == PaperTradeStatus.OPEN,
+            )
+            .order_by(PaperTrade.entry_time.desc())
+            .limit(10)
+        ).all()
+        strategy_names = self._strategy_name_map(
+            {row.strategy_id for row in paper_rows if row.strategy_id is not None}
+        )
+        for row in paper_rows:
+            items.append(
+                OpenPaperTradeItem(
+                    paper_trade_id=row.id,
+                    strategy_id=row.strategy_id,
+                    strategy_name=strategy_names.get(row.strategy_id),
+                    symbol=row.symbol,
+                    direction=row.direction.value,
+                    unrealized_pnl=None,
+                    status="open",
+                    source="paper_validation",
+                )
+            )
+            limitations.append(
+                "Paper-validation open trades do not include live unrealized PnL in this slice."
+            )
+
+        exposure: Decimal | None = None
+        position_exposure = sum(
+            (abs(row.unrealized_pnl) for row in position_rows),
+            Decimal("0"),
+        )
+        if position_rows:
+            exposure = position_exposure
+        if paper_rows and exposure is None:
+            exposure = Decimal("0")
+
+        unique_limits = list(dict.fromkeys(limitations))
+        return OpenPaperTradesSummary(
+            proposal_flow_count=len(position_rows),
+            paper_validation_count=len(paper_rows),
+            total_count=len(position_rows) + len(paper_rows),
+            total_open_exposure=exposure,
+            items=items[:10],
+            limitations=unique_limits,
+        )
+
+    def _strategy_name_map(self, strategy_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not strategy_ids:
+            return {}
+        rows = self._session.scalars(
+            select(UserStrategy).where(UserStrategy.id.in_(strategy_ids))
+        ).all()
+        return {row.id: row.name for row in rows}
+
     def _open_paper_trades(
         self, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> list[OpenPaperTradeItem]:
@@ -216,6 +365,7 @@ class DashboardSummaryService:
                 direction=row.direction.value,
                 unrealized_pnl=row.unrealized_pnl,
                 status="open",
+                source="proposal_flow",
             )
             for row in rows
         ]

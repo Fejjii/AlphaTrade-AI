@@ -36,8 +36,17 @@ const summary = {
     max_trades_per_day: 20,
     remaining_trades_allowed: 16,
     discipline_status: "caution",
+    risk_settings_source: "user_risk_settings",
+    pnl_sources: { paper_validation_closed: "12.50" },
     reasons: ["Daily target reached — green-day protection is active."],
     recommended_action: "Move deliberately — protective signals are active for paper trading today.",
+    limitations: ["Unrealized paper PnL unavailable for some open validation trades."],
+  },
+  discipline_score: {
+    score: 84,
+    grade: "B",
+    band: "good",
+    main_contributors: ["Consistent stop-loss usage"],
     limitations: [],
   },
   strategy_readiness: {
@@ -63,7 +72,38 @@ const summary = {
     limitations: [],
   },
   active_paper_validations: [{ strategy_id: "s1", name: "HTF Pullback", status: "running" }],
-  open_paper_trades: [],
+  open_paper_trades: [
+    {
+      position_id: "p1",
+      paper_trade_id: null,
+      strategy_id: null,
+      strategy_name: null,
+      symbol: "BTCUSDT",
+      direction: "long",
+      unrealized_pnl: "5",
+      status: "open",
+      source: "proposal_flow",
+    },
+    {
+      position_id: null,
+      paper_trade_id: "t1",
+      strategy_id: "s1",
+      strategy_name: "HTF Pullback",
+      symbol: "ETHUSDT",
+      direction: "short",
+      unrealized_pnl: null,
+      status: "open",
+      source: "paper_validation",
+    },
+  ],
+  open_paper_trades_summary: {
+    proposal_flow_count: 1,
+    paper_validation_count: 1,
+    total_count: 2,
+    total_open_exposure: "5",
+    items: [],
+    limitations: ["Paper-validation open trades do not include live unrealized PnL in this slice."],
+  },
   alerts_lessons: {
     unread_alerts: 2,
     latest_high_priority: [
@@ -143,5 +183,22 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-lessons-pending")).toHaveTextContent("2");
     expect(screen.getByTestId("what-to-do-next")).toBeInTheDocument();
     expect(screen.getByTestId("next-action-reason")).toHaveTextContent("Green-day protection");
+  });
+
+  it("displays discipline score and configured limits", () => {
+    render(<DashboardPage />);
+    expect(screen.getByTestId("discipline-score-badge")).toHaveTextContent("84");
+    expect(screen.getByTestId("discipline-configured-limits")).toHaveTextContent("Max trades: 20");
+  });
+
+  it("shows open paper trades from summary", () => {
+    render(<DashboardPage />);
+    expect(screen.getByTestId("open-paper-trades-counts")).toHaveTextContent("Paper validation: 1");
+    expect(screen.getByTestId("dashboard-open-paper-trades")).toHaveTextContent("HTF Pullback");
+  });
+
+  it("renders PnL limitations in discipline details", () => {
+    render(<DashboardPage />);
+    expect(screen.getByTestId("discipline-limitations")).toHaveTextContent("Unrealized paper PnL");
   });
 });
