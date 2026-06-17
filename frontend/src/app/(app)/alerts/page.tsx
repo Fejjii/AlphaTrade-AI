@@ -8,10 +8,30 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type { PaperAlert } from "@/lib/api/types";
 
+const ALERT_TYPE_LABELS: Record<string, string> = {
+  setup_signal_detected: "Setup signal",
+  paper_trade_opened: "Paper trade opened",
+  paper_trade_closed: "Paper trade closed",
+  stop_hit: "Stop hit",
+  tp_hit: "Take profit hit",
+  runner_exit: "Runner exit",
+  data_stale: "Data stale",
+  strategy_blocked: "Strategy blocked",
+  promotion_status_changed: "Promotion status changed",
+  paper_validation_restricted: "Paper validation restricted",
+  overtrading_warning: "Overtrading warning",
+  daily_loss_lock_warning: "Daily loss lock warning",
+};
+
+function alertTypeLabel(type: string): string {
+  return ALERT_TYPE_LABELS[type] ?? type.replace(/_/g, " ");
+}
+
 export default function AlertsPage() {
   const [filterType, setFilterType] = useState("");
   const [filterSeverity, setFilterSeverity] = useState("");
   const [busy, setBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const loader = useCallback(
     () =>
@@ -23,8 +43,10 @@ export default function AlertsPage() {
     [filterType, filterSeverity],
   );
   const summaryLoader = useCallback(() => api.alerts.summary(), []);
+  const deliveryLoader = useCallback(() => api.alerts.deliveryStatus(), []);
   const { data, loading, error, reload } = useAsyncData(loader, [filterType, filterSeverity]);
   const { data: summary, reload: reloadSummary } = useAsyncData(summaryLoader, []);
+  const { data: deliveryStatus } = useAsyncData(deliveryLoader, []);
 
   async function markRead(alert: PaperAlert) {
     setBusy(true);
@@ -46,24 +68,81 @@ export default function AlertsPage() {
     }
   }
 
+  async function deliverAlert(alert: PaperAlert) {
+    setBusy(true);
+    setActionMessage(null);
+    try {
+      const result = await api.alerts.deliver(alert.id);
+      setActionMessage(result.message);
+      await reload();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Delivery failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deliverPending() {
+    setBusy(true);
+    setActionMessage(null);
+    try {
+      const result = await api.alerts.deliverPending();
+      setActionMessage(`Delivered ${result.delivered} of ${result.processed} pending alert(s).`);
+      await reload();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Deliver pending failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const externalEnabled = deliveryStatus?.effective_external_enabled ?? false;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Alerts</h1>
-          <p className="text-sm text-zinc-400">
-            Paper validation alerts — storage only, no Telegram or email delivery yet.
+          <p className="text-sm text-zinc-400" data-testid="alerts-in-app-copy">
+            In-app alerts are active. External delivery is disabled unless configured.
+          </p>
+          <p className="text-sm text-zinc-500" data-testid="alerts-paper-only-disclaimer">
+            No real trades are executed from alerts. Paper validation only.
           </p>
           {summary ? (
             <p className="mt-1 text-sm text-zinc-300" data-testid="alerts-unread-count">
               {summary.unread} unread of {summary.total}
             </p>
           ) : null}
+          {deliveryStatus ? (
+            <p className="mt-1 text-xs text-zinc-500" data-testid="alerts-delivery-disabled-copy">
+              External delivery:{" "}
+              {deliveryStatus.effective_external_enabled ? "enabled" : "disabled by default"}
+            </p>
+          ) : null}
         </div>
-        <Button variant="secondary" disabled={busy} onClick={() => void markAllRead()}>
-          Mark all read
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {externalEnabled ? (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void deliverPending()}
+              data-testid="deliver-pending-alerts"
+            >
+              Deliver pending
+            </Button>
+          ) : null}
+          <Button variant="secondary" disabled={busy} onClick={() => void markAllRead()}>
+            Mark all read
+          </Button>
+        </div>
       </div>
+
+      {actionMessage ? (
+        <p className="text-sm text-zinc-400" data-testid="alert-action-message">
+          {actionMessage}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 text-sm">
         <select
@@ -104,7 +183,9 @@ export default function AlertsPage() {
               data-testid="alert-card"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-zinc-100">{alert.alert_type}</span>
+                <span className="font-medium text-zinc-100" data-testid="alert-type-label">
+                  {alertTypeLabel(alert.alert_type)}
+                </span>
                 <span className="text-zinc-500">{new Date(alert.created_at).toLocaleString()}</span>
               </div>
               <p className="mt-1 text-zinc-300">{alert.message}</p>
@@ -115,21 +196,44 @@ export default function AlertsPage() {
                   ? ` · Run ${alert.paper_validation_run_id.slice(0, 8)}`
                   : ""}
               </p>
+              <p className="mt-1 text-xs text-zinc-500" data-testid="alert-delivery-status">
+                Delivery: {alert.delivery_channel ?? "in_app"} · {alert.delivery_status ?? "disabled"}
+                {alert.delivered_at
+                  ? ` · Delivered ${new Date(alert.delivered_at).toLocaleString()}`
+                  : ""}
+              </p>
+              {alert.last_delivery_error ? (
+                <p className="mt-1 text-xs text-amber-500/80" data-testid="alert-delivery-error">
+                  Last error: {alert.last_delivery_error}
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-zinc-500">
                 {alert.read_at ? "Read" : "Unread"}
               </p>
-              {!alert.read_at ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  disabled={busy}
-                  onClick={() => void markRead(alert)}
-                  data-testid="mark-alert-read"
-                >
-                  Mark read
-                </Button>
-              ) : null}
+              <div className="mt-2 flex flex-wrap gap-2">
+                {!alert.read_at ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void markRead(alert)}
+                    data-testid="mark-alert-read"
+                  >
+                    Mark read
+                  </Button>
+                ) : null}
+                {externalEnabled && alert.delivery_status === "pending" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void deliverAlert(alert)}
+                    data-testid="deliver-alert-button"
+                  >
+                    Deliver
+                  </Button>
+                ) : null}
+              </div>
             </article>
           ))
         ) : (

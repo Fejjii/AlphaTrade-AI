@@ -78,6 +78,22 @@ class Settings(BaseSettings):
     paper_scheduler_max_scans_per_minute: int = Field(default=10, ge=1, le=120)
     paper_scheduler_stale_data_max_age_minutes: int = Field(default=60, ge=5, le=1440)
 
+    # --- Alert delivery (Slice 41 — disabled by default) ---
+    alert_delivery_enabled: bool = False
+    alert_webhook_enabled: bool = False
+    alert_webhook_url: str = ""
+    alert_webhook_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    alert_webhook_max_retries: int = Field(default=2, ge=0, le=5)
+    telegram_alerts_enabled: bool = False
+    email_alerts_enabled: bool = False
+
+    # --- Market watcher (Slice 41 — read-only, disabled by default) ---
+    market_watcher_enabled: bool = False
+    market_watcher_stale_data_max_age_minutes: int = Field(default=60, ge=5, le=1440)
+    market_watcher_default_symbols: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["BTCUSDT"]
+    )
+
     # --- Data stores (placeholders; clients wired in later slices) ---
     database_url: str = "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade"
     redis_url: str = "redis://localhost:6379/0"

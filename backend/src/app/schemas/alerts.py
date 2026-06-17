@@ -8,6 +8,8 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.common import (
+    AlertDeliveryChannel,
+    AlertDeliveryStatus,
     ORMModel,
     PaperAlertSeverity,
     PaperAlertType,
@@ -27,6 +29,12 @@ class PaperAlert(ORMModel):
     message: str
     read_at: datetime | None = None
     metadata: dict | None = None
+    delivery_status: AlertDeliveryStatus = AlertDeliveryStatus.DISABLED
+    delivery_channel: AlertDeliveryChannel = AlertDeliveryChannel.IN_APP
+    delivery_attempts: int = 0
+    last_delivery_error: str | None = None
+    delivered_at: datetime | None = None
+    next_retry_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

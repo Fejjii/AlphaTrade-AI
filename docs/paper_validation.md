@@ -24,13 +24,17 @@ Scheduler skips runs when: strategy blocked, run stopped/restricted, stale data,
 
 `GET /paper-validation/scheduler/history`
 
-## Alerts (Slice 40)
+## Alerts (Slice 40–41)
 
-`paper_validation_alerts` stores tenant-scoped alert events (no Telegram/email delivery yet).
+`paper_validation_alerts` stores tenant-scoped in-app alerts. Slice 41 adds optional external delivery (disabled by default) and delivery status fields. See [alerts.md](./alerts.md).
 
 Types: `setup_signal_detected`, `paper_trade_opened`, `paper_trade_closed`, `stop_hit`, `tp_hit`, `runner_exit`, `strategy_blocked`, `data_stale`, `promotion_status_changed`, `paper_validation_restricted`, `overtrading_warning`, `daily_loss_lock_warning`.
 
-API: `GET /alerts`, `GET /alerts/summary`, `PATCH /alerts/{id}/read`, `PATCH /alerts/read-all`
+API: `GET /alerts`, delivery endpoints, `PATCH /alerts/{id}/read`. Marking read does not mutate delivery status.
+
+## Market watcher prep (Slice 41)
+
+Read-only market scanning foundation — disabled by default. See [market_watcher.md](./market_watcher.md). Feeds paper validation scan decisions later; never places orders.
 
 ## 7-day sample windows (Slice 40)
 
@@ -132,7 +136,7 @@ Accepted lessons vs pending observations: only **accepted** lessons affect promo
 
 ## Migration
 
-Apply through head **`s9t0u1v2w3x4`** (Slice 40C; prior Slice 40: `r8s9t0u1v2w3`):
+Apply through head **`t0u1v2w3x4y5`** (Slice 41; prior Slice 40C: `s9t0u1v2w3x4`):
 
 ```bash
 cd backend && uv run alembic upgrade head

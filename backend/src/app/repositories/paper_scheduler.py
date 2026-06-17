@@ -183,6 +183,45 @@ class PaperAlertRepository(SQLAlchemyRepository[PaperValidationAlert]):
             .limit(1)
         )
 
+    def list_pending_delivery(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        limit: int = 50,
+    ) -> list[PaperValidationAlert]:
+        from app.schemas.common import AlertDeliveryStatus
+
+        return list(
+            self._session.scalars(
+                select(PaperValidationAlert)
+                .where(
+                    PaperValidationAlert.organization_id == organization_id,
+                    PaperValidationAlert.delivery_status == AlertDeliveryStatus.PENDING,
+                )
+                .order_by(PaperValidationAlert.created_at.asc())
+                .limit(limit)
+            ).all()
+        )
+
+    def count_by_delivery_status(self, organization_id: uuid.UUID) -> dict[str, int]:
+        from app.schemas.common import AlertDeliveryStatus
+
+        counts: dict[str, int] = {}
+        for status in AlertDeliveryStatus:
+            count = int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(PaperValidationAlert)
+                    .where(
+                        PaperValidationAlert.organization_id == organization_id,
+                        PaperValidationAlert.delivery_status == status,
+                    )
+                )
+                or 0
+            )
+            counts[status.value] = count
+        return counts
+
 
 class PaperObservabilityRepository(SQLAlchemyRepository[PaperValidationObservabilityEvent]):
     model = PaperValidationObservabilityEvent

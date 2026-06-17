@@ -76,6 +76,8 @@ class Intent(StrEnum):
     PAPER_VALIDATION_RECOMMEND = "paper_validation_recommend"
     PAPER_SCHEDULER_QUERY = "paper_scheduler_query"
     PAPER_ALERTS_QUERY = "paper_alerts_query"
+    ALERT_DELIVERY_QUERY = "alert_delivery_query"
+    MARKET_WATCHER_QUERY = "market_watcher_query"
     UNKNOWN = "unknown"
 
 

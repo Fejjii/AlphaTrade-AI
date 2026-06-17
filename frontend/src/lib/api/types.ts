@@ -1050,7 +1050,45 @@ export interface PaperAlert {
   paper_trade_id?: string | null;
   message: string;
   read_at?: string | null;
+  delivery_status?: string;
+  delivery_channel?: string;
+  delivery_attempts?: number;
+  last_delivery_error?: string | null;
+  delivered_at?: string | null;
+  next_retry_at?: string | null;
   created_at: string;
+}
+
+export interface AlertDeliveryStatusResponse {
+  delivery_enabled: boolean;
+  webhook_enabled: boolean;
+  telegram_enabled: boolean;
+  email_enabled: boolean;
+  push_enabled: boolean;
+  webhook_configured: boolean;
+  effective_external_enabled: boolean;
+  channels: string[];
+  paper_only: boolean;
+}
+
+export interface MarketWatcherStatus {
+  env_enabled: boolean;
+  effective_enabled: boolean;
+  watched_symbols: string[];
+  last_scan_at?: string | null;
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+}
+
+export interface MarketWatcherScanResult {
+  scanned_at: string;
+  env_enabled: boolean;
+  effective_enabled: boolean;
+  symbols_scanned: number;
+  observations_created: number;
+  setup_signals: string[];
+  decisions: string[];
+  paper_only: boolean;
 }
 
 export interface PaperAlertSummary {

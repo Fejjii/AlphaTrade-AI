@@ -530,6 +530,34 @@ class PaperAlertSeverity(StrEnum):
     CRITICAL = "critical"
 
 
+class AlertDeliveryStatus(StrEnum):
+    """External alert delivery lifecycle (Slice 41)."""
+
+    PENDING = "pending"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    DISABLED = "disabled"
+
+
+class AlertDeliveryChannel(StrEnum):
+    """Alert delivery channel (Slice 41)."""
+
+    IN_APP = "in_app"
+    WEBHOOK = "webhook"
+    TELEGRAM = "telegram"
+    EMAIL = "email"
+    PUSH = "push"
+
+
+class MarketWatcherObservationStatus(StrEnum):
+    """Read-only market watcher observation freshness (Slice 41)."""
+
+    FRESH = "fresh"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 
@@ -545,6 +573,9 @@ class PaperObservabilityEventType(StrEnum):
     DATA_STALE = "data_stale"
     PROVIDER_FALLBACK_USED = "provider_fallback_used"
     RUNTIME_ERROR = "runtime_error"
+    ALERT_DELIVERY_FAILED = "alert_delivery_failed"
+    ALERT_DELIVERY_SUCCEEDED = "alert_delivery_succeeded"
+    MARKET_WATCHER_SCAN = "market_watcher_scan"
 
 
 class PaperEligibilityStatus(StrEnum):

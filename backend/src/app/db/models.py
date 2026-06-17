@@ -35,6 +35,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.schemas.common import (
     ActorType,
+    AlertDeliveryChannel,
+    AlertDeliveryStatus,
     ApprovalAction,
     ApprovalStatus,
     AuditEventType,
@@ -48,6 +50,7 @@ from app.schemas.common import (
     ExecutionMode,
     LossAcceptanceStatus,
     ManualLevelType,
+    MarketWatcherObservationStatus,
     MembershipRole,
     OrderSide,
     OrderStatus,
@@ -710,6 +713,46 @@ class PaperValidationAlert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dedup_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    delivery_status: Mapped[AlertDeliveryStatus] = mapped_column(
+        _enum(AlertDeliveryStatus), default=AlertDeliveryStatus.DISABLED
+    )
+    delivery_channel: Mapped[AlertDeliveryChannel] = mapped_column(
+        _enum(AlertDeliveryChannel), default=AlertDeliveryChannel.IN_APP
+    )
+    delivery_attempts: Mapped[int] = mapped_column(default=0)
+    last_delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Read-only market watcher observations (Slice 41 — no execution)."""
+
+    __tablename__ = "market_watcher_observations"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    data_freshness: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[MarketWatcherObservationStatus] = mapped_column(
+        _enum(MarketWatcherObservationStatus), nullable=False
+    )
+    related_strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    related_paper_validation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_alert_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_alerts.id"), nullable=True
+    )
 
 
 class PaperValidationObservabilityEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):

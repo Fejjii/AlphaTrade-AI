@@ -128,6 +128,24 @@ def classify_strategy_workflow(message: str) -> Intent | None:
         return Intent.PAPER_SCHEDULER_QUERY
     if "what alerts" in lowered or "my alerts" in lowered or "unread alert" in lowered:
         return Intent.PAPER_ALERTS_QUERY
+    if (
+        "external alert" in lowered
+        or "alert delivery" in lowered
+        or "deliver pending alert" in lowered
+        or "why was this alert not delivered" in lowered
+        or "why was alert not delivered" in lowered
+    ):
+        return Intent.ALERT_DELIVERY_QUERY
+    if (
+        "market watcher" in lowered
+        or "symbols are being watched" in lowered
+        or "symbols being watched" in lowered
+        or "setup signal appear" in lowered
+        or "did any setup signal" in lowered
+    ):
+        return Intent.MARKET_WATCHER_QUERY
+    if "market data fresh" in lowered or "is the market data fresh" in lowered:
+        return Intent.MARKET_WATCHER_QUERY
     if "why was" in lowered and "skipped" in lowered:
         return Intent.PAPER_VALIDATION_QUERY
     if "data stale" in lowered or "is the data stale" in lowered:
@@ -176,4 +194,6 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.PAPER_VALIDATION_RECOMMEND,
         Intent.PAPER_SCHEDULER_QUERY,
         Intent.PAPER_ALERTS_QUERY,
+        Intent.ALERT_DELIVERY_QUERY,
+        Intent.MARKET_WATCHER_QUERY,
     }

@@ -149,5 +149,6 @@ Revisions (through Slice 39):
 7. `q7r8s9t0u1v2` — paper signals, paper trades, runtime scan/tick (Slice 39)
 8. `r8s9t0u1v2w3` — paper scheduler, runtime history, alerts (Slice 40)
 9. `s9t0u1v2w3x4` — alert dedup indexes, lesson gate hardening (Slice 40C)
+10. `t0u1v2w3x4y5` — alert delivery fields, market watcher observations (Slice 41)
 
-Head should be **`s9t0u1v2w3x4`**.
+Head should be **`t0u1v2w3x4y5`**.

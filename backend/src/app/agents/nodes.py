@@ -931,6 +931,74 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         else:
             answer_lines.append(f"Alerts query failed: {output.error}")
 
+    elif intent is Intent.ALERT_DELIVERY_QUERY:
+        action = "alert_delivery_status"
+        lowered = agent.message.lower()
+        if "deliver pending" in lowered or "deliver alert" in lowered:
+            action = "deliver_pending"
+        elif "why" in lowered and "not delivered" in lowered:
+            action = "alert_delivery_reason"
+        elif "external" in lowered and "enabled" in lowered:
+            action = "alert_delivery_status"
+        output = _run_tool(
+            "paper_validation_tool",
+            {
+                "action": action,
+                "organization_id": org,
+                "user_id": user,
+                "strategy_id": org,
+                "user_message": agent.message,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "paper_validation_tool",
+                    output.result.get("summary", "Alert delivery status retrieved."),
+                )
+            )
+            delivery = output.result.get("delivery_status")
+            if delivery:
+                answer_lines.append(
+                    f"External delivery enabled: {delivery.get('effective_external_enabled')}."
+                )
+        else:
+            answer_lines.append(f"Alert delivery query failed: {output.error}")
+
+    elif intent is Intent.MARKET_WATCHER_QUERY:
+        action = "market_watcher_status"
+        lowered = agent.message.lower()
+        if "scan" in lowered and "watcher" in lowered:
+            action = "market_watcher_scan"
+        elif "fresh" in lowered or "observation" in lowered or "setup signal" in lowered:
+            action = "market_watcher_observations"
+        elif "watched" in lowered or "watching" in lowered:
+            action = "market_watcher_status"
+        output = _run_tool(
+            "paper_validation_tool",
+            {
+                "action": action,
+                "organization_id": org,
+                "user_id": user,
+                "strategy_id": org,
+                "user_message": agent.message,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "paper_validation_tool",
+                    output.result.get("summary", "Market watcher status retrieved."),
+                )
+            )
+            observations = output.result.get("observations") or []
+            for obs in observations[:3]:
+                answer_lines.append(
+                    f"- {obs.get('symbol')}: {obs.get('status')} ({obs.get('data_freshness')})"
+                )
+        else:
+            answer_lines.append(f"Market watcher query failed: {output.error}")
+
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
 

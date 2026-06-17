@@ -524,6 +524,27 @@ def _strategy_testability_execute(args: dict[str, Any], session: Any | None) -> 
 def _require_owner_scheduler_tick(
     session: Any, org: Any, user: Any, args: dict[str, Any]
 ) -> ToolOutput | None:
+    return _require_owner_mutation(
+        session,
+        org,
+        user,
+        args,
+        tool_name="paper_validation_tool",
+        action_label="scheduler tick",
+        confirm_hint="I confirm scheduler tick",
+    )
+
+
+def _require_owner_mutation(
+    session: Any,
+    org: Any,
+    user: Any,
+    args: dict[str, Any],
+    *,
+    tool_name: str,
+    action_label: str,
+    confirm_hint: str,
+) -> ToolOutput | None:
     from app.agents.mutation_policy import mutation_allowed
     from app.repositories.memberships import MembershipRepository
     from app.schemas.common import MembershipRole
@@ -531,18 +552,18 @@ def _require_owner_scheduler_tick(
     membership = MembershipRepository(session).get_for_user_and_org(user, org)
     if membership is None or membership.role is not MembershipRole.OWNER:
         return ToolOutput(
-            tool_name="paper_validation_tool",
+            tool_name=tool_name,
             success=False,
-            error="Owner role required for scheduler tick.",
+            error=f"Owner role required for {action_label}.",
         )
     user_message = str(args.get("user_message", ""))
     if not mutation_allowed(user_message, confirm_arg=bool(args.get("confirm"))):
         return ToolOutput(
-            tool_name="paper_validation_tool",
+            tool_name=tool_name,
             success=False,
             error=(
-                "Explicit confirmation required for scheduler tick. "
-                "Reply with 'I confirm scheduler tick' or confirm=true."
+                f"Explicit confirmation required for {action_label}. "
+                f"Reply with '{confirm_hint}' or confirm=true."
             ),
         )
     return None
@@ -913,6 +934,112 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
                 "summary": f"{summary.unread} unread of {summary.total} paper validation alert(s).",
                 "alerts": [a.model_dump(mode="json") for a in listing.items],
                 "summary_counts": summary.model_dump(mode="json"),
+            }
+        elif action == "alert_delivery_status":
+            from app.services.alert_delivery_service import AlertDeliveryService
+
+            delivery = AlertDeliveryService(session)
+            status = delivery.get_status()
+            counts = delivery.delivery_summary(org)
+            result = {
+                "summary": (
+                    f"External delivery enabled={status.effective_external_enabled}. "
+                    f"Pending={counts.pending}, delivered={counts.delivered}."
+                ),
+                "delivery_status": status.model_dump(mode="json"),
+                "delivery_summary": counts.model_dump(mode="json"),
+            }
+        elif action == "deliver_pending":
+            blocked = _require_owner_mutation(
+                session,
+                org,
+                user,
+                args,
+                tool_name="paper_validation_tool",
+                action_label="deliver pending alerts",
+                confirm_hint="I confirm deliver pending alerts",
+            )
+            if blocked is not None:
+                return blocked
+            from app.services.alert_delivery_service import AlertDeliveryService
+
+            pending = AlertDeliveryService(session).deliver_pending(
+                organization_id=org, user_id=user
+            )
+            session.commit()
+            result = {
+                "summary": (
+                    f"Delivered {pending.delivered} of {pending.processed} pending alert(s)."
+                ),
+                "deliver_pending": pending.model_dump(mode="json"),
+            }
+        elif action == "alert_delivery_reason":
+            from app.services.alert_delivery_service import AlertDeliveryService
+            from app.services.paper_alert_service import PaperAlertService
+
+            alert_id = args.get("alert_id")
+            if alert_id:
+                alert = PaperAlertService(session).get_alert(
+                    _uuid.UUID(str(alert_id)), organization_id=org
+                )
+            else:
+                listing = PaperAlertService(session).list_alerts(org, limit=1)
+                alert = listing.items[0] if listing.items else None
+            if alert is None:
+                result = {"summary": "No alert found."}
+            else:
+                result = {
+                    "summary": (
+                        f"Alert delivery status={alert.delivery_status.value}. "
+                        f"Channel={alert.delivery_channel.value}."
+                    ),
+                    "alert": alert.model_dump(mode="json"),
+                    "delivery_enabled": AlertDeliveryService(session)
+                    .get_status()
+                    .effective_external_enabled,
+                }
+        elif action == "market_watcher_status":
+            from app.services.market_watcher_service import MarketWatcherService
+
+            status = MarketWatcherService(session).get_status(organization_id=org, user_id=user)
+            result = {
+                "summary": (
+                    f"Market watcher env={status.env_enabled}, "
+                    f"symbols={', '.join(status.watched_symbols) or 'none'}."
+                ),
+                "market_watcher": status.model_dump(mode="json"),
+            }
+        elif action == "market_watcher_scan":
+            blocked = _require_owner_mutation(
+                session,
+                org,
+                user,
+                args,
+                tool_name="paper_validation_tool",
+                action_label="market watcher scan",
+                confirm_hint="I confirm market watcher scan",
+            )
+            if blocked is not None:
+                return blocked
+            from app.services.market_watcher_service import MarketWatcherService
+
+            scan = MarketWatcherService(session).scan(organization_id=org, user_id=user)
+            session.commit()
+            result = {
+                "summary": (
+                    f"Market watcher scan complete. "
+                    f"Observations={scan.observations_created}, paper only."
+                ),
+                "scan": scan.model_dump(mode="json"),
+            }
+        elif action == "market_watcher_observations":
+            from app.services.market_watcher_service import MarketWatcherService
+
+            observations = MarketWatcherService(session).list_observations(org, limit=5)
+            fresh = sum(1 for o in observations.items if o.status.value == "fresh")
+            result = {
+                "summary": (f"{observations.total} observation(s). Fresh={fresh}. Read-only scan."),
+                "observations": [o.model_dump(mode="json") for o in observations.items],
             }
         elif action == "skip_reason":
             from app.services.paper_scheduler_service import PaperSchedulerService

@@ -35,6 +35,7 @@ export const navItems = [
   { href: "/lessons", label: "Lessons", icon: ListChecks },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/alerts", label: "Alerts", icon: Bell },
+  { href: "/market-watcher", label: "Market Watcher", icon: Eye },
   { href: "/knowledge", label: "Knowledge Base", icon: ListChecks },
   { href: "/risk", label: "Risk Settings", icon: Shield },
   { href: "/usage", label: "Usage", icon: Gauge },

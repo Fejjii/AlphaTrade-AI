@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,9 @@ from app.schemas.common import (
     PaperAlertType,
 )
 from app.services.audit_service import AuditService
+
+if TYPE_CHECKING:
+    from app.services.alert_delivery_service import AlertDeliveryService
 
 # Cooldown seconds per alert type — suppress duplicate notifications within the window.
 ALERT_COOLDOWN_SECONDS: dict[PaperAlertType, int] = {
@@ -57,10 +61,17 @@ def build_alert_dedup_key(
 
 
 class PaperAlertService:
-    def __init__(self, session: Session, *, audit_service: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        audit_service: AuditService | None = None,
+        delivery_service: AlertDeliveryService | None = None,
+    ) -> None:
         self._session = session
         self._alerts = PaperAlertRepository(session)
         self._audit = audit_service or AuditService(session)
+        self._delivery = delivery_service
 
     def create(
         self,
@@ -104,6 +115,12 @@ class PaperAlertService:
             metadata_json=metadata,
             dedup_key=key,
         )
+        delivery = self._delivery
+        if delivery is None:
+            from app.services.alert_delivery_service import AlertDeliveryService
+
+            delivery = AlertDeliveryService(self._session)
+        delivery.initialize_delivery_fields(row)
         self._alerts.add(row)
         return self._to_schema(row)
 
@@ -221,6 +238,12 @@ class PaperAlertService:
             message=row.message,
             read_at=row.read_at,
             metadata=row.metadata_json,
+            delivery_status=row.delivery_status,
+            delivery_channel=row.delivery_channel,
+            delivery_attempts=row.delivery_attempts,
+            last_delivery_error=row.last_delivery_error,
+            delivered_at=row.delivered_at,
+            next_retry_at=row.next_retry_at,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

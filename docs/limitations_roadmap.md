@@ -33,13 +33,18 @@
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
 - Docker Compose enables httpOnly refresh cookies + access token denylist (Slice 22).
 
+### Alert delivery & market watcher (Slice 41 — remaining gaps)
+
+- Webhook delivery only; Telegram/email/push are stubs
+- No background delivery loop — manual/batch deliver endpoints
+- Market watcher has no scheduled loop — manual scan only
+- Scan history is in-memory per process (observations persisted)
+- Does not change `ENABLE_REAL_TRADING` or execution mode
+
 ### Paper validation scheduler & alerts (Slice 40 — remaining gaps)
 
-- No Telegram/email/push alert delivery — storage and UI only
-- No always-on in-process scheduler loop — manual tick + optional env flag
-- Sample windows use simple 7-day buckets; not full walk-forward optimization
 - Alert deduplication with cooldown windows (Slice 40C)
-- Does not change `ENABLE_REAL_TRADING` or execution mode
+- No always-on in-process scheduler loop — manual tick + optional env flag
 
 ### Paper validation runtime (Slice 39 — remaining gaps)
 

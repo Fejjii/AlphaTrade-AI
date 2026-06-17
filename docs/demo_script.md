@@ -198,7 +198,7 @@ Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]`, `/strategy-l
    - *"What paper signals were detected?"*
    - *"What did the paper bot do?"*
    - *"Should I improve or retire this strategy?"*
-11. **Scheduler & alerts (Slice 40)** — show scheduler status (disabled by default), manual scheduler tick, runtime history, Alerts page.
+11. **Scheduler & alerts (Slice 40–41)** — scheduler status (disabled by default), manual tick, runtime history, Alerts page with delivery status (external delivery disabled unless configured), Market Watcher read-only scan prep.
 12. Emphasize: backtest is **historical simulation**; paper validation is **local simulation** — neither enables live trading.
 
 Optional API smoke:

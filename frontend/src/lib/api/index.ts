@@ -63,6 +63,9 @@ import type {
   PaperRuntimeHistoryRecord,
   PaperAlert,
   PaperAlertSummary,
+  AlertDeliveryStatusResponse,
+  MarketWatcherStatus,
+  MarketWatcherScanResult,
   PaperScanResult,
   PaperSignalResult,
   PaperTickResult,
@@ -363,10 +366,27 @@ export const api = {
     }) =>
       apiFetch<{ items: PaperAlert[]; total: number }>("/alerts", { query: params, auth: true }),
     summary: () => apiFetch<PaperAlertSummary>("/alerts/summary", { auth: true }),
+    deliveryStatus: () =>
+      apiFetch<AlertDeliveryStatusResponse>("/alerts/delivery-status", { auth: true }),
     markRead: (id: string) =>
       apiFetch<PaperAlert>(`/alerts/${id}/read`, { method: "PATCH", auth: true }),
     markAllRead: () =>
       apiFetch<{ marked_read: number }>("/alerts/read-all", { method: "PATCH", auth: true }),
+    deliver: (id: string) =>
+      apiFetch<{ alert: PaperAlert; delivered: boolean; message: string }>(
+        `/alerts/${id}/deliver`,
+        { method: "POST", auth: true },
+      ),
+    deliverPending: () =>
+      apiFetch<{ processed: number; delivered: number; failed: number }>(
+        "/alerts/deliver-pending",
+        { method: "POST", auth: true },
+      ),
+  },
+  marketWatcher: {
+    status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),
+    scan: () =>
+      apiFetch<MarketWatcherScanResult>("/market-watcher/scan", { method: "POST", auth: true }),
   },
   market: {
     ticker: (params?: { symbol?: string; exchange?: string }) =>

@@ -11,6 +11,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
+from app.services.alert_delivery_service import AlertDeliveryService
 from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
@@ -27,6 +28,7 @@ from app.services.manual_level_service import ManualLevelService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
+from app.services.market_watcher_service import MarketWatcherService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_scheduler_service import PaperSchedulerService
@@ -255,8 +257,17 @@ def get_paper_eligibility_service(
     return PaperEligibilityService(session, settings)
 
 
-def get_paper_alert_service(session: SessionDep) -> PaperAlertService:
-    return PaperAlertService(session)
+def get_paper_alert_service(session: SessionDep, settings: SettingsDep) -> PaperAlertService:
+    delivery = AlertDeliveryService(session, settings)
+    return PaperAlertService(session, delivery_service=delivery)
+
+
+def get_alert_delivery_service(session: SessionDep, settings: SettingsDep) -> AlertDeliveryService:
+    return AlertDeliveryService(session, settings)
+
+
+def get_market_watcher_service(session: SessionDep, settings: SettingsDep) -> MarketWatcherService:
+    return MarketWatcherService(session, settings)
 
 
 def get_paper_scheduler_service(
@@ -300,6 +311,8 @@ PaperEligibilityServiceDep = Annotated[
     PaperEligibilityService, Depends(get_paper_eligibility_service)
 ]
 PaperAlertServiceDep = Annotated[PaperAlertService, Depends(get_paper_alert_service)]
+AlertDeliveryServiceDep = Annotated[AlertDeliveryService, Depends(get_alert_delivery_service)]
+MarketWatcherServiceDep = Annotated[MarketWatcherService, Depends(get_market_watcher_service)]
 PaperSchedulerServiceDep = Annotated[PaperSchedulerService, Depends(get_paper_scheduler_service)]
 HistoricalCandleServiceDep = Annotated[
     HistoricalCandleService, Depends(get_historical_candle_service)
