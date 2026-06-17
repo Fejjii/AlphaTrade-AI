@@ -31,6 +31,7 @@ export const navItems = [
   { href: "/manual-levels", label: "Manual Levels", icon: Target },
   { href: "/pre-trade", label: "Pre-Trade", icon: Scale },
   { href: "/journal", label: "Journal", icon: BookOpen },
+  { href: "/lessons", label: "Lessons", icon: ListChecks },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/knowledge", label: "Knowledge Base", icon: ListChecks },
   { href: "/risk", label: "Risk Settings", icon: Shield },

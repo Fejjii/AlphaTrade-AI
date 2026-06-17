@@ -436,6 +436,53 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         else:
             answer_lines.append(f"Structure draft failed: {output.error}")
 
+    elif intent in {
+        Intent.LESSON_PENDING_QUERY,
+        Intent.LESSON_ACCEPTED_QUERY,
+        Intent.LESSON_ACCEPT,
+        Intent.LESSON_REJECT,
+        Intent.LESSON_RULE_SUGGEST,
+        Intent.ADD_RUNNER_RULE,
+    }:
+        lesson_match = re.search(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            agent.message,
+            re.I,
+        )
+        action = "list_pending"
+        if intent is Intent.LESSON_ACCEPTED_QUERY:
+            action = "list_accepted"
+            if "early exit" in agent.message.lower():
+                action = "list_early_exit"
+            elif "stop" in agent.message.lower():
+                action = "list_stop_refusal"
+        elif intent is Intent.LESSON_ACCEPT:
+            action = "accept"
+        elif intent is Intent.LESSON_REJECT:
+            action = "reject"
+        elif intent is Intent.LESSON_RULE_SUGGEST:
+            action = "rule_suggest"
+        elif intent is Intent.ADD_RUNNER_RULE:
+            action = "runner_rule_hint"
+        output = _run_tool(
+            "lesson_review_tool",
+            {
+                "action": action,
+                "lesson_id": lesson_match.group(0) if lesson_match else None,
+                "organization_id": org,
+                "user_id": user,
+            },
+        )
+        if output.success and output.result:
+            summary = output.result.get("summary", "Lesson data retrieved.")
+            answer_lines.append(_format_tool_answer("lesson_review_tool", summary))
+            if output.result.get("pending_observation"):
+                answer_lines.append(
+                    "Note: pending observations are not permanent rules until you accept them."
+                )
+        else:
+            answer_lines.append(f"Lesson review failed: {output.error}")
+
     elif intent is Intent.STRATEGY_STATUS:
         output = _run_tool(
             "strategy_library_tool",

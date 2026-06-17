@@ -57,6 +57,10 @@ Backtest engine resolves rules in order:
 3. **default_setup** — known setup type defaults
 4. **unsupported** — returns `needs_structured_rules`
 
+## Post-exit runner analysis (Slice 37)
+
+Human-vs-system runner analysis may fetch historical candles after exit time to compute MFE/MAE, TP2/TP3 hit flags, and capped missed-profit estimates. When candles are missing, analysis returns explicit limitations — no fabricated hindsight PnL.
+
 Result includes `rule_engine_source` in the backtest payload.
 
 ## Safety

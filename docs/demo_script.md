@@ -150,6 +150,18 @@ Route: `/journal`
 2. Optional: open `/journal?proposal_id={id}` to prefill from a proposal
 3. Show **RAG synced** badge when ingest completed
 4. Explain redaction of secrets before any RAG ingest
+5. Run **Discipline analysis** — link to `/lessons` or create lesson candidate
+
+---
+
+## 11b. Lesson review (Slice 37)
+
+Route: `/lessons`
+
+1. Show pending lesson candidates from runner / stop discipline analysis
+2. Accept with optional reviewer notes — accepted lessons may ingest to RAG
+3. Reject — audit trail preserved, not promoted to memory
+4. Strategy Lab structured rule editor — add/edit/remove blocks; testability score updates
 
 ---
 

@@ -65,12 +65,25 @@ class StrategyTestabilityService:
         limitations: list[str] = []
         if score < 70:
             limitations.append("Strategy needs structured rules before reliable backtest v1.")
+        unsupported, ambiguous, suggested = self._analyze_rule_quality(structured)
+        not_ready_reason = None
+        if not ready:
+            if missing:
+                not_ready_reason = f"Missing: {', '.join(m.label for m in missing[:3])}"
+            elif unsupported:
+                not_ready_reason = f"Unsupported rule types: {', '.join(unsupported[:3])}"
+            else:
+                not_ready_reason = "Structured rules incomplete for backtest v1."
         return StrategyTestability(
             strategy_id=strategy_id,
             score=score,
             band=band,
             ready_for_backtest=ready,
             missing_fields=missing,
+            unsupported_rule_types=unsupported,
+            ambiguous_conditions=ambiguous,
+            not_backtestable_reason=not_ready_reason,
+            suggested_edits=suggested,
             has_structured_rules=structured is not None,
             structured_rules=structured,
             limitations=limitations,
@@ -202,3 +215,31 @@ class StrategyTestabilityService:
         if score >= 40:
             return TestabilityBand.PARTIAL
         return TestabilityBand.VAGUE
+
+    def _analyze_rule_quality(
+        self,
+        structured: StructuredRules | None,
+    ) -> tuple[list[str], list[str], list[str]]:
+        if structured is None:
+            return [], [], ["Add structured entry and exit rule blocks in Strategy Lab."]
+        unsupported: list[str] = []
+        ambiguous: list[str] = []
+        suggested: list[str] = []
+        for entry in structured.entry_rules:
+            if not entry.conditions and entry.trigger_type.value in {
+                "liquidity_sweep",
+                "reclaim",
+                "failed_breakout",
+            }:
+                ambiguous.append(f"Entry '{entry.trigger_type.value}' lacks lookback/conditions.")
+                suggested.append(
+                    f"Add timeframe and lookback to {entry.trigger_type.value} entry block."
+                )
+        for exit_rule in structured.exit_rules:
+            if exit_rule.rule_type.value == "runner_structure_break" and not exit_rule.conditions:
+                suggested.append("Define structure-break conditions for runner exit.")
+            if exit_rule.rule_type.value in {"atr_stop", "swing_stop"} and exit_rule.value is None:
+                ambiguous.append(f"Exit '{exit_rule.rule_type.value}' missing value/lookback.")
+        if not structured.no_trade_rules:
+            suggested.append("Add at least one no-trade filter (e.g. daily loss lock).")
+        return unsupported, ambiguous, suggested

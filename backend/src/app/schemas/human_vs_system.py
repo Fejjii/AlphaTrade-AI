@@ -25,6 +25,9 @@ class RunnerAnalysis(StrictModel):
     max_favorable_excursion_after_exit: Decimal | None = None
     max_adverse_excursion_after_exit: Decimal | None = None
     would_runner_have_helped: bool | None = None
+    tp2_would_have_hit: bool | None = None
+    tp3_would_have_hit: bool | None = None
+    runner_invalidation_would_have_hit: bool | None = None
     recommended_lesson: str | None = None
     confidence: AnalysisConfidence = AnalysisConfidence.LOW
     limitations: list[str] = Field(default_factory=list)

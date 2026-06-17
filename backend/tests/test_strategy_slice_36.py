@@ -311,12 +311,12 @@ def test_backtest_prefers_structured_rules() -> None:
 
     vague = resolve_backtest_rules(
         StrategyCard.model_validate(
-                _sample_card(
-                    entry_conditions=["maybe enter"],
-                    stop_loss=["unclear level"],
-                    take_profit_plan=["somewhere up"],
-                    confirmation_conditions=[],
-                )
+            _sample_card(
+                entry_conditions=["maybe enter"],
+                stop_loss=["unclear level"],
+                take_profit_plan=["somewhere up"],
+                confirmation_conditions=[],
+            )
         ),
         StrategyId.MANUAL_REVIEW,
         None,

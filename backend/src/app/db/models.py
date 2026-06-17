@@ -382,7 +382,7 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class LessonCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Discipline lesson awaiting review (Slice 36 — not auto-promoted to rules)."""
+    """Discipline lesson awaiting review — not auto-promoted to permanent rules."""
 
     __tablename__ = "lesson_candidates"
 
@@ -390,13 +390,28 @@ class LessonCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id"), nullable=False
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(40), default="journal", nullable=False)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    related_strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    trade_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("journals.id"), nullable=True
     )
-    trade_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    category: Mapped[str] = mapped_column(String(60), nullable=False)
-    summary: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(40), default="lesson_candidate", nullable=False)
+    related_journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journals.id"), nullable=True
+    )
+    lesson_text: Mapped[str] = mapped_column(Text, nullable=False)
+    mistake_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    confidence: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="pending_review", nullable=False)
+    proposed_rule_update: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    accepted_rule_update: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    analysis_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class HistoricalCandle(UUIDPrimaryKeyMixin, TimestampMixin, Base):

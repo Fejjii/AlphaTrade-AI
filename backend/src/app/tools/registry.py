@@ -524,6 +524,131 @@ def _strategy_testability_execute(args: dict[str, Any], session: Any | None) -> 
         return ToolOutput(tool_name="strategy_testability_tool", success=False, error=str(exc))
 
 
+def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.common import LessonCandidateStatus
+    from app.schemas.lesson import LessonCandidateAccept, LessonCandidateReject
+    from app.services.lesson_candidate_service import LessonCandidateService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="lesson_review_tool", success=False, error="DB session required."
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        action = str(args.get("action", "list_pending"))
+        service = LessonCandidateService(session)
+        summary = ""
+        pending_observation = False
+        result_payload: dict[str, Any] = {}
+
+        if action == "list_pending":
+            items, total = service.list_candidates(
+                organization_id=org,
+                user_id=user,
+                status=LessonCandidateStatus.PENDING_REVIEW,
+                limit=10,
+            )
+            summary = f"{total} lesson(s) pending review."
+            result_payload = {
+                "items": [i.model_dump(mode="json") for i in items],
+                "pending_observation": True,
+            }
+            pending_observation = True
+        elif action == "list_accepted":
+            items, total = service.list_accepted(organization_id=org, user_id=user, limit=10)
+            summary = f"{total} accepted lesson(s)."
+            result_payload = {"items": [i.model_dump(mode="json") for i in items]}
+        elif action == "list_early_exit":
+            items, total = service.list_accepted(
+                organization_id=org, user_id=user, mistake_type="early_exit", limit=10
+            )
+            summary = f"{total} accepted lesson(s) related to early exits."
+            result_payload = {"items": [i.model_dump(mode="json") for i in items]}
+        elif action == "list_stop_refusal":
+            items, total = service.list_accepted(
+                organization_id=org, user_id=user, mistake_type="stop_violation", limit=10
+            )
+            summary = f"{total} accepted lesson(s) related to stop discipline."
+            result_payload = {"items": [i.model_dump(mode="json") for i in items]}
+        elif action == "accept":
+            lesson_id = args.get("lesson_id")
+            if not lesson_id:
+                return ToolOutput(
+                    tool_name="lesson_review_tool",
+                    success=False,
+                    error="Provide lesson_id to accept.",
+                )
+            accepted = service.accept(
+                _uuid.UUID(str(lesson_id)),
+                LessonCandidateAccept(reviewer_notes="Accepted via agent."),
+                organization_id=org,
+                user_id=user,
+            )
+            session.commit()
+            summary = f"Lesson accepted: {accepted.lesson_text[:120]}"
+            result_payload = accepted.model_dump(mode="json")
+        elif action == "reject":
+            lesson_id = args.get("lesson_id")
+            if not lesson_id:
+                return ToolOutput(
+                    tool_name="lesson_review_tool",
+                    success=False,
+                    error="Provide lesson_id to reject.",
+                )
+            rejected = service.reject(
+                _uuid.UUID(str(lesson_id)),
+                LessonCandidateReject(reviewer_notes="Rejected via agent."),
+                organization_id=org,
+                user_id=user,
+            )
+            session.commit()
+            summary = "Lesson rejected — kept for audit trail."
+            result_payload = rejected.model_dump(mode="json")
+            pending_observation = True
+        elif action == "rule_suggest":
+            lesson_id = args.get("lesson_id")
+            if lesson_id:
+                lesson = service.get(_uuid.UUID(str(lesson_id)), organization_id=org, user_id=user)
+                proposed = lesson.proposed_rule_update
+                if proposed:
+                    summary = f"Proposed rule update: {proposed.summary}"
+                else:
+                    summary = (
+                        "No proposed rule on this lesson — review lesson text and Strategy Lab."
+                    )
+                result_payload = lesson.model_dump(mode="json")
+                pending_observation = lesson.status != LessonCandidateStatus.ACCEPTED
+            else:
+                summary = "Provide a lesson_id to see proposed rule updates."
+        elif action == "runner_rule_hint":
+            summary = (
+                "Add a runner_structure_break exit block in Strategy Lab after partial TP. "
+                "Real trading remains disabled — paper only."
+            )
+        else:
+            return ToolOutput(
+                tool_name="lesson_review_tool", success=False, error=f"Unknown action: {action}"
+            )
+
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="lesson_review_tool",
+            success=True,
+            result={
+                "summary": summary,
+                "pending_observation": pending_observation,
+                **result_payload,
+            },
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="lesson_review_tool", success=False, error=str(exc))
+
+
 def _structure_from_text_execute(args: dict[str, Any]) -> ToolOutput:
     from app.schemas.structured_rules import StructureFromTextRequest
     from app.services.structure_from_text_service import StructureFromTextService
@@ -753,6 +878,19 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=_structure_from_text_execute,
+        ),
+        ToolDefinition(
+            name="lesson_review_tool",
+            description=(
+                "List, accept, or reject lesson candidates; "
+                "query accepted lessons and rule updates."
+            ),
+            risk_level=ToolRiskLevel.MEDIUM,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _lesson_review_execute(args, db_session),
         ),
         ToolDefinition(
             name="backtest_tool",

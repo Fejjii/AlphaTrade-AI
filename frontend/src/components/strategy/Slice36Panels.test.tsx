@@ -83,4 +83,27 @@ describe("DisciplineAnalysisPanel", () => {
     expect(screen.getByTestId("early-exit-analysis")).toHaveTextContent("Early exit");
     expect(screen.getByTestId("stop-loss-analysis")).toHaveTextContent("Stop loss discipline");
   });
+
+  it("links to lesson candidates", () => {
+    render(
+      <DisciplineAnalysisPanel
+        comparison={{
+          trade_id: "t1",
+          plan_adherence_score: 72,
+          plan_adherence: {
+            entry_followed_plan: 18,
+            size_respected_risk: 20,
+            stop_loss_respected: 15,
+            profit_taking_followed: 10,
+            emotion_controlled: 9,
+            journal_completed: 0,
+          },
+          emotion_tags: [],
+          notes: [],
+        }}
+        lessonCandidateIds={["lesson-abc"]}
+      />,
+    );
+    expect(screen.getByText("View lesson candidate")).toBeInTheDocument();
+  });
 });

@@ -21,6 +21,7 @@ from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
 from app.services.journal_rag_sync_service import JournalRagSyncService
 from app.services.journal_service import JournalService
+from app.services.lesson_candidate_service import LessonCandidateService
 from app.services.loss_acceptance_service import LossAcceptanceService
 from app.services.manual_level_service import ManualLevelService
 from app.services.market_cache import MarketDataCache
@@ -195,8 +196,27 @@ def get_pretrade_analysis_service(
     return PreTradeAnalysisService(session, market_data_service)
 
 
-def get_human_vs_system_service(session: SessionDep) -> HumanVsSystemService:
-    return HumanVsSystemService(session)
+def get_human_vs_system_service(
+    session: SessionDep,
+    settings: SettingsDep,
+) -> HumanVsSystemService:
+    provider = resolve_market_data_provider(settings)
+    candle_service = HistoricalCandleService(session, provider, settings)
+    return HumanVsSystemService(session, historical_candle_service=candle_service)
+
+
+def get_lesson_candidate_service(
+    session: SessionDep,
+    settings: SettingsDep,
+    rag_service: RagServiceDep,
+) -> LessonCandidateService:
+    audit = AuditService(session, strict_mode=settings.observability_strict_mode)
+    return LessonCandidateService(
+        session,
+        audit_service=audit,
+        rag_service=rag_service,
+        settings=settings,
+    )
 
 
 def get_strategy_testability_service(session: SessionDep) -> StrategyTestabilityService:
@@ -237,6 +257,7 @@ PreTradeAnalysisServiceDep = Annotated[
     PreTradeAnalysisService, Depends(get_pretrade_analysis_service)
 ]
 HumanVsSystemServiceDep = Annotated[HumanVsSystemService, Depends(get_human_vs_system_service)]
+LessonCandidateServiceDep = Annotated[LessonCandidateService, Depends(get_lesson_candidate_service)]
 StrategyTestabilityServiceDep = Annotated[
     StrategyTestabilityService, Depends(get_strategy_testability_service)
 ]

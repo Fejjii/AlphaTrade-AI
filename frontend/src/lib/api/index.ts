@@ -56,6 +56,8 @@ import type {
   PaperValidationSummary,
   StrategyTestability,
   StructuredRules,
+  LessonCandidate,
+  PaginatedLessonCandidates,
   MarketSnapshotResponse,
   OHLCVResponse,
   TickerResponse,
@@ -471,10 +473,47 @@ export const api = {
   },
   journalDiscipline: {
     analyze: (journalId: string) =>
-      apiFetch<{ journal_entry_id: string; comparison: HumanVsSystemComparison; lessons_generated: string[] }>(
-        `/journal/entries/${journalId}/discipline-analysis`,
-        { auth: true },
-      ),
+      apiFetch<{
+        journal_entry_id: string;
+        comparison: HumanVsSystemComparison;
+        lessons_generated: string[];
+        lesson_candidate_ids: string[];
+      }>(`/journal/entries/${journalId}/discipline-analysis`, { auth: true }),
+  },
+  lessons: {
+    listCandidates: (params?: { status?: string; mistake_type?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set("status", params.status);
+      if (params?.mistake_type) q.set("mistake_type", params.mistake_type);
+      const suffix = q.toString() ? `?${q}` : "";
+      return apiFetch<PaginatedLessonCandidates>(`/lessons/candidates${suffix}`, { auth: true });
+    },
+    getCandidate: (id: string) =>
+      apiFetch<LessonCandidate>(`/lessons/candidates/${id}`, { auth: true }),
+    createCandidate: (body: Record<string, unknown>) =>
+      apiFetch<LessonCandidate>("/lessons/candidates", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    accept: (id: string, body: Record<string, unknown>) =>
+      apiFetch<LessonCandidate>(`/lessons/candidates/${id}/accept`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    reject: (id: string, body: Record<string, unknown>) =>
+      apiFetch<LessonCandidate>(`/lessons/candidates/${id}/reject`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    listAccepted: (params?: { mistake_type?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.mistake_type) q.set("mistake_type", params.mistake_type);
+      const suffix = q.toString() ? `?${q}` : "";
+      return apiFetch<PaginatedLessonCandidates>(`/lessons/accepted${suffix}`, { auth: true });
+    },
   },
 };
 

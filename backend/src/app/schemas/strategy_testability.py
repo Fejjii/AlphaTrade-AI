@@ -26,6 +26,10 @@ class StrategyTestability(StrictModel):
     band: TestabilityBand
     ready_for_backtest: bool
     missing_fields: list[MissingRuleField] = Field(default_factory=list)
+    unsupported_rule_types: list[str] = Field(default_factory=list)
+    ambiguous_conditions: list[str] = Field(default_factory=list)
+    not_backtestable_reason: str | None = None
+    suggested_edits: list[str] = Field(default_factory=list)
     has_structured_rules: bool = False
     structured_rules: StructuredRules | None = None
     limitations: list[str] = Field(default_factory=list)

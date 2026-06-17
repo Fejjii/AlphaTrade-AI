@@ -1019,6 +1019,9 @@ export interface RunnerAnalysis {
   max_favorable_excursion_after_exit?: string | null;
   max_adverse_excursion_after_exit?: string | null;
   would_runner_have_helped?: boolean | null;
+  tp2_would_have_hit?: boolean | null;
+  tp3_would_have_hit?: boolean | null;
+  runner_invalidation_would_have_hit?: boolean | null;
   recommended_lesson?: string | null;
   confidence?: string;
   limitations?: string[];
@@ -1076,14 +1079,80 @@ export interface StrategyTestability {
   band: string;
   ready_for_backtest: boolean;
   missing_fields: { field_key: string; label: string; severity?: string }[];
+  unsupported_rule_types?: string[];
+  ambiguous_conditions?: string[];
+  not_backtestable_reason?: string | null;
+  suggested_edits?: string[];
   has_structured_rules: boolean;
   structured_rules?: StructuredRules | null;
   limitations?: string[];
 }
 
+export interface RuleCondition {
+  timeframe?: string | null;
+  indicator?: string | null;
+  operator?: string | null;
+  value?: string | number | null;
+  lookback_candles?: number | null;
+  confirmation_required?: boolean;
+}
+
 export interface StructuredRules {
   primary_timeframe?: string | null;
-  entry_rules: { trigger_type: string; direction?: string }[];
-  exit_rules: { rule_type: string; value?: string; r_multiple?: string }[];
-  no_trade_rules: { rule_type: string }[];
+  entry_rules: {
+    trigger_type: string;
+    direction?: string;
+    conditions?: RuleCondition[];
+    notes?: string | null;
+  }[];
+  exit_rules: {
+    rule_type: string;
+    value?: string | number | null;
+    r_multiple?: string | number | null;
+    size_fraction?: number | null;
+    conditions?: RuleCondition[];
+    notes?: string | null;
+  }[];
+  no_trade_rules: {
+    rule_type: string;
+    threshold?: string | number | null;
+    conditions?: RuleCondition[];
+    notes?: string | null;
+  }[];
+}
+
+export interface ProposedRuleUpdate {
+  summary: string;
+  structured_rules_patch?: StructuredRules | null;
+  create_new_version?: boolean;
+  attach_to_strategy?: boolean;
+}
+
+export interface LessonCandidate {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  source_type: string;
+  source_id?: string | null;
+  related_strategy_id?: string | null;
+  related_trade_id?: string | null;
+  related_journal_entry_id?: string | null;
+  lesson_text: string;
+  mistake_type: string;
+  severity: string;
+  confidence?: string | null;
+  status: string;
+  proposed_rule_update?: ProposedRuleUpdate | null;
+  accepted_rule_update?: ProposedRuleUpdate | null;
+  reviewer_notes?: string | null;
+  analysis_metadata?: Record<string, unknown> | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface PaginatedLessonCandidates {
+  items: LessonCandidate[];
+  total: number;
+  limit: number;
+  offset: number;
 }

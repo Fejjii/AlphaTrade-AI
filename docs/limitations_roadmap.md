@@ -1,6 +1,13 @@
 # Limitations and Roadmap
 
-## Current limitations (post Slice 35)
+## Current limitations (post Slice 37)
+
+### Lesson learning loop
+
+- Lesson candidates require **explicit accept** before RAG/memory promotion
+- Post-exit runner analysis depends on stored historical candles
+- Missed profit estimates are **capped** to reduce hindsight bias
+- Structured rule editor improves testability scoring but complex NL still needs human review
 
 ### Trading and execution
 

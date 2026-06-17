@@ -87,8 +87,11 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 | Backtest results / what did backtest show | `backtest_results` | `backtest_tool` |
 | Paper eligible? / why not validated | `backtest_eligibility` | `backtest_tool` |
 | Backtest queue (legacy) | `backtest_queue` | `strategy_library_tool` |
+| Pending / accepted lessons | `lesson_pending_query` / `lesson_accepted_query` | `lesson_review_tool` |
+| Accept / reject lesson | `lesson_accept` / `lesson_reject` | `lesson_review_tool` |
+| Make strategy testable / runner rule | `strategy_testability` / `add_runner_rule` | `strategy_testability_tool` |
 
-Replies label deterministic outputs as **SOURCE OF TRUTH**; narrative LLM cannot override risk, sizing, approval facts, or **invent backtest metrics**.
+Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).
 
 Backtest intents call `backtest_tool`, which runs or reads the deterministic engine — the LLM explains results but cannot fabricate win rate, drawdown, or promotion status.
 

@@ -58,6 +58,12 @@ class Intent(StrEnum):
     STOP_DISCIPLINE_QUERY = "stop_discipline_query"
     STRATEGY_TESTABILITY = "strategy_testability"
     STRUCTURE_STRATEGY = "structure_strategy"
+    LESSON_PENDING_QUERY = "lesson_pending_query"
+    LESSON_ACCEPTED_QUERY = "lesson_accepted_query"
+    LESSON_ACCEPT = "lesson_accept"
+    LESSON_REJECT = "lesson_reject"
+    LESSON_RULE_SUGGEST = "lesson_rule_suggest"
+    ADD_RUNNER_RULE = "add_runner_rule"
     UNKNOWN = "unknown"
 
 

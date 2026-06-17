@@ -206,6 +206,36 @@ export default function JournalPage() {
                 <DisciplineAnalysisPanel
                   comparison={discipline?.comparison ?? null}
                   error={disciplineError}
+                  lessonCandidateIds={discipline?.lesson_candidate_ids ?? []}
+                  journalEntryId={entry.id}
+                  onCreateLesson={
+                    discipline?.lesson_candidate_ids?.length
+                      ? undefined
+                      : async () => {
+                          const lesson =
+                            discipline?.comparison.missed_runner?.recommended_lesson ??
+                            discipline?.comparison.stop_loss_analysis?.lesson;
+                          if (!lesson) return;
+                          setBusy(true);
+                          try {
+                            await api.lessons.createCandidate({
+                              source_type: "journal",
+                              related_journal_entry_id: entry.id,
+                              related_trade_id: entry.id,
+                              lesson_text: lesson,
+                              mistake_type: discipline?.comparison.missed_runner?.early_exit_flag
+                                ? "early_exit"
+                                : "discipline",
+                              severity: "medium",
+                            });
+                            const result = await api.journalDiscipline.analyze(entry.id);
+                            setDiscipline(result);
+                          } finally {
+                            setBusy(false);
+                          }
+                        }
+                  }
+                  createBusy={busy}
                 />
               ) : null}
               <Button

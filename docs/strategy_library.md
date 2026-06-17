@@ -88,15 +88,19 @@ Revisions:
 
 Head should be **`n4o5p6q7r8s9`**.
 
-## Structured rules (Slice 36)
+## Structured rules (Slice 36–37)
+
+Strategy Lab includes a **rich structured rule editor** with add/edit/remove for entry, exit, and no-trade blocks.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/strategies/{id}/testability` | Score 0-100 and missing fields |
+| GET | `/strategies/{id}/testability` | Score 0-100, missing fields, suggested edits |
 | PATCH | `/strategies/{id}/structured-rules` | Save machine-testable rule blocks |
 | POST | `/strategies/{id}/structured-rules/validate` | Deterministic validation |
 | POST | `/strategies/{id}/structure-from-text` | Keyword draft from plain English |
 
-Testability bands: 0-39 vague, 40-69 partial, 70-100 machine testable.
+Testability UI shows ready-for-backtest badge, unsupported types, ambiguous conditions, and suggested next edits.
 
-Optional smoke: `./scripts/strategy-smoke.sh` (requires running backend).
+Accepted lessons may propose rule updates — see [lesson_workflow.md](lesson_workflow.md).
+
+Migration head: **`o5p6q7r8s9t0`** (Slice 37).

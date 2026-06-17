@@ -60,6 +60,22 @@ def classify_strategy_workflow(message: str) -> Intent | None:
         return Intent.PRE_TRADE
     if "pre-trade" in lowered or "pre trade" in lowered:
         return Intent.PRE_TRADE
+    if "pending review" in lowered and "lesson" in lowered:
+        return Intent.LESSON_PENDING_QUERY
+    if "accepted lesson" in lowered or ("my lessons" in lowered and "accepted" in lowered):
+        return Intent.LESSON_ACCEPTED_QUERY
+    if "accept" in lowered and "lesson" in lowered:
+        return Intent.LESSON_ACCEPT
+    if "reject" in lowered and "lesson" in lowered:
+        return Intent.LESSON_REJECT
+    if "rule should i update" in lowered or "update from this mistake" in lowered:
+        return Intent.LESSON_RULE_SUGGEST
+    if "runner rule" in lowered and "strateg" in lowered:
+        return Intent.ADD_RUNNER_RULE
+    if "early exit" in lowered and "lesson" in lowered:
+        return Intent.LESSON_ACCEPTED_QUERY
+    if "stop loss refusal" in lowered or ("stop" in lowered and "refusal" in lowered):
+        return Intent.LESSON_ACCEPTED_QUERY
 
     return None
 
@@ -82,4 +98,10 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.STOP_DISCIPLINE_QUERY,
         Intent.STRATEGY_TESTABILITY,
         Intent.STRUCTURE_STRATEGY,
+        Intent.LESSON_PENDING_QUERY,
+        Intent.LESSON_ACCEPTED_QUERY,
+        Intent.LESSON_ACCEPT,
+        Intent.LESSON_REJECT,
+        Intent.LESSON_RULE_SUGGEST,
+        Intent.ADD_RUNNER_RULE,
     }

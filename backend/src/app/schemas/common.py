@@ -321,6 +321,10 @@ class AuditEventType(StrEnum):
     BILLING_PLAN_CHANGED = "billing_plan_changed"
     BILLING_USAGE_EXPORTED = "billing_usage_exported"
     PROVIDER_USAGE_METADATA_MISSING = "provider_usage_metadata_missing"
+    LESSON_CANDIDATE_CREATED = "lesson_candidate_created"
+    LESSON_ACCEPTED = "lesson_accepted"
+    LESSON_REJECTED = "lesson_rejected"
+    LESSON_ARCHIVED = "lesson_archived"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"
@@ -556,13 +560,36 @@ class TestabilityBand(StrEnum):
     MACHINE_TESTABLE = "machine_testable"
 
 
-class LessonCandidateStatus(StrEnum):
-    """Lesson candidate review lifecycle (Slice 36)."""
+class LessonSourceType(StrEnum):
+    """Origin of a lesson candidate (Slice 37)."""
 
-    CANDIDATE = "lesson_candidate"
-    NEEDS_REVIEW = "needs_review"
-    ACCEPTED = "accepted_lesson"
-    REJECTED = "rejected_lesson"
+    HUMAN_VS_SYSTEM = "human_vs_system"
+    RUNNER_ANALYSIS = "runner_analysis"
+    STOP_LOSS_REFUSAL = "stop_loss_refusal"
+    JOURNAL = "journal"
+    BACKTEST = "backtest"
+    AGENT = "agent"
+
+
+class LessonSeverity(StrEnum):
+    """Severity of a discipline mistake."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class LessonCandidateStatus(StrEnum):
+    """Lesson candidate review lifecycle (Slice 37)."""
+
+    PENDING_REVIEW = "pending_review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
+    # Legacy aliases (Slice 36)
+    CANDIDATE = "pending_review"
+    NEEDS_REVIEW = "pending_review"
 
 
 class AnalysisConfidence(StrEnum):

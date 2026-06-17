@@ -20,17 +20,13 @@ Compares journaled trades, linked proposals, backtest context, and system recomm
 | System would have done | From linked proposal |
 | Limitations | Explicit when data missing |
 
-## Runner analysis
+## Runner analysis (Slice 37)
 
-Conservative post-exit MFE estimate (50% cap). No hindsight shaming. Confidence `low` without candle data.
+Fetches post-exit candles when available via historical candle service. Computes MFE/MAE after exit, TP2/TP3 hit flags, runner invalidation, and capped missed-profit estimate (50% of MFE). Returns limitations when candles missing — no fake estimates.
 
-## Stop loss refusal
+## Lesson review workflow
 
-Detects actual loss above planned, missing stop, rejected loss acceptance. Avoidable loss is an estimate.
-
-## Lesson candidates
-
-Early exits and stop violations create `lesson_candidate` rows for review — not auto-promoted to permanent rules.
+See [lesson_workflow.md](lesson_workflow.md). API: `/lessons/candidates`, accept/reject/archive, `/lessons/accepted`.
 
 ## Agent
 

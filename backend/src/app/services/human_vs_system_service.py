@@ -12,12 +12,15 @@ from app.core.errors import NotFoundError
 from app.db.models import BacktestRun, Position, TradeJournal, TradeProposal
 from app.repositories.journal import JournalRepository
 from app.repositories.proposals import ProposalRepository
+from app.schemas.common import LessonSeverity, LessonSourceType, Timeframe
 from app.schemas.human_vs_system import (
     DisciplineAnalysis,
     HumanVsSystemComparison,
     PlanAdherenceBreakdown,
 )
-from app.schemas.proposal import ExitCriteria, TakeProfitLevel, TradeProposal as TradeProposalSchema
+from app.schemas.proposal import ExitCriteria, TakeProfitLevel
+from app.schemas.proposal import TradeProposal as TradeProposalSchema
+from app.services.historical_candle_service import HistoricalCandleService
 from app.services.lesson_candidate_service import LessonCandidateService
 from app.services.runner_missed_profit_analyzer import (
     RunnerAnalysisInput,
@@ -32,13 +35,19 @@ from app.services.stop_loss_refusal_analyzer import (
 class HumanVsSystemService:
     """Compare actual trade behavior to system plan, backtest, and analyzers."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        historical_candle_service: HistoricalCandleService | None = None,
+    ) -> None:
         self._proposals = ProposalRepository(session)
         self._journal = JournalRepository(session)
         self._session = session
         self._runner = RunnerAndMissedProfitAnalyzer()
         self._stop = StopLossRefusalAnalyzer()
         self._lessons = LessonCandidateService(session)
+        self._candles = historical_candle_service
 
     def compare(
         self,
@@ -121,11 +130,7 @@ class HumanVsSystemService:
                     )
                     limitations.append("Actual loss not recorded — planned vs actual is partial.")
 
-        if (
-            position is not None
-            and position.closed_at
-            and position.status.value == "closed"
-        ):
+        if position is not None and position.closed_at and position.status.value == "closed":
             notes.append("Linked position closed — using position data where available.")
 
         tp_prices: list[Decimal] = []
@@ -138,15 +143,24 @@ class HumanVsSystemService:
             planned_stop = plan.exit.stop_loss
             planned_loss = plan.planned_loss_amount
 
-        closed_position = position is not None and position.status.value == "closed"
+        exit_price = self._resolve_exit_price(journal, position, plan)
+        exit_time = position.closed_at if position else None
+        invalidation_price = plan.exit.stop_loss if plan else None
+        post_exit_candles = self._fetch_post_exit_candles(
+            symbol=(journal.symbol if journal else (plan.symbol if plan else None)),
+            timeframe=(journal.timeframe if journal else (plan.timeframe if plan else None)),
+            exit_time=exit_time,
+        )
         runner_analysis = self._runner.analyze(
             RunnerAnalysisInput(
                 entry_price=actual_entry or (plan.entry_price if plan else None),
-                exit_price=position.entry_price if closed_position else None,
-                exit_time=position.closed_at if position else None,
+                exit_price=exit_price,
+                exit_time=exit_time,
                 direction=direction,
                 tp_plan_prices=tp_prices,
                 runner_enabled=runner_enabled,
+                invalidation_price=invalidation_price,
+                candles_after_exit=post_exit_candles,
             )
         )
 
@@ -267,6 +281,9 @@ class HumanVsSystemService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> DisciplineAnalysis:
+        _journal, proposal = self._resolve_trade(
+            journal_entry_id, organization_id=organization_id, user_id=user_id
+        )
         comparison = self.compare(
             journal_entry_id,
             organization_id=organization_id,
@@ -274,6 +291,7 @@ class HumanVsSystemService:
         )
         lessons: list[str] = []
         candidate_ids: list[uuid.UUID] = []
+        strategy_id = proposal.user_strategy_id if proposal else None
         if comparison.missed_runner and comparison.missed_runner.recommended_lesson:
             lessons.append(comparison.missed_runner.recommended_lesson)
             if comparison.missed_runner.early_exit_flag:
@@ -284,6 +302,18 @@ class HumanVsSystemService:
                     trade_id=journal_entry_id,
                     category="early_exit",
                     summary=comparison.missed_runner.recommended_lesson,
+                    source_type=LessonSourceType.RUNNER_ANALYSIS,
+                    related_strategy_id=strategy_id,
+                    severity=LessonSeverity.MEDIUM,
+                    analysis_metadata={
+                        "limitations": comparison.missed_runner.limitations,
+                        "confidence": comparison.missed_runner.confidence.value,
+                        "missed_profit_estimate": (
+                            str(comparison.missed_runner.missed_profit_estimate)
+                            if comparison.missed_runner.missed_profit_estimate
+                            else None
+                        ),
+                    },
                 )
                 candidate_ids.append(cid)
         if comparison.stop_loss_analysis and comparison.stop_loss_analysis.lesson:
@@ -296,6 +326,12 @@ class HumanVsSystemService:
                     trade_id=journal_entry_id,
                     category="stop_violation",
                     summary=comparison.stop_loss_analysis.lesson,
+                    source_type=LessonSourceType.STOP_LOSS_REFUSAL,
+                    related_strategy_id=strategy_id,
+                    severity=LessonSeverity.HIGH,
+                    analysis_metadata={
+                        "limitations": comparison.stop_loss_analysis.limitations,
+                    },
                 )
                 candidate_ids.append(cid)
         return DisciplineAnalysis(
@@ -442,3 +478,51 @@ class HumanVsSystemService:
             TradeJournal.user_id == user_id,
         )
         return self._journal._session.scalar(stmt)
+
+    def _resolve_exit_price(
+        self,
+        journal: TradeJournal | None,
+        position: Position | None,
+        plan: TradeProposalSchema | None,
+    ) -> Decimal | None:
+        if position is not None and position.status.value == "closed":
+            if position.size and position.size != 0 and position.realized_pnl:
+                return (position.entry_price + position.realized_pnl / position.size).quantize(
+                    Decimal("0.00000001")
+                )
+            return position.entry_price
+        if plan is not None and plan.exit.take_profits:
+            return plan.exit.take_profits[0].price
+        return None
+
+    def _fetch_post_exit_candles(
+        self,
+        *,
+        symbol: str | None,
+        timeframe: str | None,
+        exit_time: object | None,
+    ) -> list[tuple[object, Decimal, Decimal, Decimal, Decimal]] | None:
+        if self._candles is None or symbol is None or timeframe is None or exit_time is None:
+            return None
+        try:
+            tf = Timeframe(timeframe)
+        except ValueError:
+            return None
+        from datetime import datetime
+
+        if not isinstance(exit_time, datetime):
+            return None
+        result = self._candles.get_candles(
+            symbol=symbol,
+            exchange="binance",
+            timeframe=tf,
+            start_time=exit_time,
+            limit=RunnerAndMissedProfitAnalyzer.LOOKAHEAD_BARS + 2,
+        )
+        if not result.items:
+            return None
+        return [
+            (c.open_time, c.open, c.high, c.low, c.close)
+            for c in result.items
+            if c.open_time >= exit_time
+        ]
