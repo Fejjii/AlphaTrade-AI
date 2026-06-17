@@ -46,7 +46,7 @@ RULES_JSON='{
 
 echo "Paper validation smoke — BASE_URL=${BASE_URL}"
 
-echo "1/10 — health (paper mode)"
+echo "1/14 — health (paper mode)"
 health_json="$(curl -fsS "${BASE_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys
@@ -136,10 +136,42 @@ echo "9/10 — get run"
 curl -fsS -H "$(auth_header)" "${BASE_URL}/paper-validation/${RUN_ID}" >/dev/null
 echo "  OK"
 
-echo "10/10 — real trading remains disabled"
+echo "10/14 — real trading remains disabled"
 python3 - <<'PY' "$health_json"
 import json, sys
 assert json.loads(sys.argv[1]).get("real_trading_enabled") is False
+print("  OK")
+PY
+
+echo "11/14 — scheduler status"
+sched_json="$(curl -fsS -H "$(auth_header)" "${BASE_URL}/paper-validation/scheduler/status")"
+python3 - <<'PY' "$sched_json"
+import json, sys
+p = json.loads(sys.argv[1])
+assert "env_enabled" in p
+assert p.get("real_trading_enabled") is False
+print(f"  OK: env_enabled={p.get('env_enabled')}")
+PY
+
+echo "12/14 — manual scheduler tick"
+tick_sched_json="$(curl -fsS -X POST -H "$(auth_header)" "${BASE_URL}/paper-validation/scheduler/tick")"
+python3 - <<'PY' "$tick_sched_json"
+import json, sys
+p = json.loads(sys.argv[1])
+assert "decisions" in p
+print(f"  OK: effective_enabled={p.get('effective_enabled')}")
+PY
+
+echo "13/14 — runtime history + alerts summary"
+curl -fsS -H "$(auth_header)" "${BASE_URL}/paper-validation/scheduler/history" >/dev/null
+curl -fsS -H "$(auth_header)" "${BASE_URL}/alerts/summary" >/dev/null
+echo "  OK"
+
+echo "14/14 — metrics still present"
+python3 - <<'PY' "$metrics_json"
+import json, sys
+p = json.loads(sys.argv[1])
+assert "paper_trades_count" in p
 print("  OK")
 PY
 

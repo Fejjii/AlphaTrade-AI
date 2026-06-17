@@ -47,3 +47,24 @@ class PaperValidationRunRepository(SQLAlchemyRepository[PaperValidationRun]):
             PaperValidationRun.organization_id == organization_id,
         )
         return self._session.scalar(stmt)
+
+    def list_active_for_org(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        limit: int = 50,
+    ) -> list[PaperValidationRun]:
+        from app.schemas.common import PaperValidationStatus
+
+        stmt = (
+            select(PaperValidationRun)
+            .where(
+                PaperValidationRun.organization_id == organization_id,
+                PaperValidationRun.status.in_(
+                    [PaperValidationStatus.IN_PROGRESS, PaperValidationStatus.NOT_STARTED]
+                ),
+            )
+            .order_by(PaperValidationRun.updated_at.desc())
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt).all())

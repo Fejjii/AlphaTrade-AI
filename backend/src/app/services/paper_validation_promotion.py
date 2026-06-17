@@ -1,4 +1,4 @@
-"""Conservative paper validation promotion (Slice 39 — paper only, no live)."""
+"""Conservative paper validation promotion (Slice 39-40 — paper only, no live)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from app.schemas.common import PaperValidationRecommendation, PaperValidationSta
 from app.schemas.paper_validation import PaperValidationMetrics
 
 MIN_PAPER_TRADES = 10
+MIN_RUNTIME_WINDOWS = 2
 MIN_PROFIT_FACTOR = 1.1
 MAX_DRAWDOWN_PCT = 25.0
 MIN_WIN_RATE_FOR_CONTINUE = 0.40
@@ -29,6 +30,9 @@ def evaluate_paper_promotion(
     has_critical_lesson_blockers: bool,
     severe_overtrading: bool,
     min_runtime_days_met: bool,
+    runtime_windows_count: int = 0,
+    data_stale: bool = False,
+    provider_failures: bool = False,
 ) -> PaperPromotionDecision:
     blockers: list[str] = []
 
@@ -62,6 +66,24 @@ def evaluate_paper_promotion(
         blockers.append("Recent severe overtrading behavior detected.")
         return PaperPromotionDecision(
             recommendation=PaperValidationRecommendation.RESTRICT,
+            status=PaperValidationStatus.IN_PROGRESS,
+            blockers=blockers,
+            paper_validated=False,
+        )
+
+    if data_stale:
+        blockers.append("Market data is stale — refresh before promotion.")
+        return PaperPromotionDecision(
+            recommendation=PaperValidationRecommendation.IMPROVE,
+            status=PaperValidationStatus.IN_PROGRESS,
+            blockers=blockers,
+            paper_validated=False,
+        )
+
+    if provider_failures:
+        blockers.append("Provider failures detected during paper validation.")
+        return PaperPromotionDecision(
+            recommendation=PaperValidationRecommendation.IMPROVE,
             status=PaperValidationStatus.IN_PROGRESS,
             blockers=blockers,
             paper_validated=False,
@@ -120,6 +142,11 @@ def evaluate_paper_promotion(
 
     if not min_runtime_days_met:
         blockers.append("Paper validation has not run across enough time or samples.")
+
+    if runtime_windows_count < MIN_RUNTIME_WINDOWS:
+        blockers.append(
+            f"Need at least {MIN_RUNTIME_WINDOWS} sample windows (have {runtime_windows_count})."
+        )
 
     if blockers:
         return PaperPromotionDecision(

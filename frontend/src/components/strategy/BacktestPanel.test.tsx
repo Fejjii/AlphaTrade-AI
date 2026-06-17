@@ -54,6 +54,11 @@ describe("PaperValidationPanel", () => {
         onScan={vi.fn()}
         onTick={vi.fn()}
         onStop={vi.fn()}
+        scheduler={null}
+        history={[]}
+        alerts={[]}
+        onSchedulerTick={vi.fn()}
+        onMarkAlertRead={vi.fn()}
       />,
     );
     expect(screen.getByText(/Paper validation/)).toBeInTheDocument();

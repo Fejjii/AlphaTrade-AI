@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.routes import (
+    alerts,
     analytics,
     approvals,
     audit,
@@ -130,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         strategy_modules.router,
         strategy_library.router,
         paper_validation.router,
+        alerts.router,
         backtests.router,
         manual_levels.router,
         pretrade.router,

@@ -15,7 +15,10 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type {
+  PaperAlert,
   PaperEligibilityReport,
+  PaperRuntimeHistoryRecord,
+  PaperSchedulerStatus,
   PaperSignalResult,
   PaperTradeRecord,
 } from "@/lib/api/types";
@@ -39,6 +42,9 @@ export default function StrategyDetailPage() {
   const [eligibility, setEligibility] = useState<PaperEligibilityReport | null>(null);
   const [signals, setSignals] = useState<PaperSignalResult[]>([]);
   const [trades, setTrades] = useState<PaperTradeRecord[]>([]);
+  const [scheduler, setScheduler] = useState<PaperSchedulerStatus | null>(null);
+  const [history, setHistory] = useState<PaperRuntimeHistoryRecord[]>([]);
+  const [alerts, setAlerts] = useState<PaperAlert[]>([]);
   const [rulesBusy, setRulesBusy] = useState(false);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
@@ -50,18 +56,29 @@ export default function StrategyDetailPage() {
   const latestRunId = paperSummary?.runs[0]?.id;
 
   async function refreshPaperData() {
-    const summary = await api.strategies.paperValidation(id);
-    const report = await api.strategies.paperEligibility(id);
+    const [summary, report, sched, alertList] = await Promise.all([
+      api.strategies.paperValidation(id),
+      api.strategies.paperEligibility(id),
+      api.strategies.schedulerStatus(),
+      api.alerts.list({ limit: 10 }),
+    ]);
     setPaperSummary(summary);
     setEligibility(report);
+    setScheduler(sched);
+    setAlerts(alertList.items);
     const runId = summary.runs[0]?.id;
     if (runId) {
-      const [sig, tr] = await Promise.all([
+      const [sig, tr, hist] = await Promise.all([
         api.strategies.paperValidationSignals(runId),
         api.strategies.paperValidationTrades(runId),
+        api.strategies.schedulerHistory({ run_id: runId, limit: 10 }),
       ]);
       setSignals(sig.items);
       setTrades(tr.items);
+      setHistory(hist.items);
+    } else {
+      const hist = await api.strategies.schedulerHistory({ limit: 10 });
+      setHistory(hist.items);
     }
   }
 
@@ -216,6 +233,9 @@ export default function StrategyDetailPage() {
         <PaperValidationPanel
           summary={paperSummary}
           eligibility={eligibility}
+          scheduler={scheduler}
+          history={history}
+          alerts={alerts}
           busy={paperBusy}
           signals={signals}
           trades={trades}
@@ -240,6 +260,16 @@ export default function StrategyDetailPage() {
             void withPaperAction(async () => {
               if (!latestRunId) throw new Error("Start paper validation first.");
               await api.strategies.stopPaperValidation(latestRunId);
+            })
+          }
+          onSchedulerTick={() =>
+            void withPaperAction(async () => {
+              await api.strategies.schedulerTick();
+            })
+          }
+          onMarkAlertRead={(alertId) =>
+            void withPaperAction(async () => {
+              await api.alerts.markRead(alertId);
             })
           }
         />

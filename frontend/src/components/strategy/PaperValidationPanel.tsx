@@ -1,7 +1,10 @@
 "use client";
 
 import type {
+  PaperAlert,
   PaperEligibilityReport,
+  PaperRuntimeHistoryRecord,
+  PaperSchedulerStatus,
   PaperSignalResult,
   PaperTradeRecord,
   PaperValidationRun,
@@ -13,6 +16,9 @@ import { Button } from "@/components/ui/button";
 type Props = {
   summary: PaperValidationSummary | null;
   eligibility: PaperEligibilityReport | null;
+  scheduler: PaperSchedulerStatus | null;
+  history: PaperRuntimeHistoryRecord[];
+  alerts: PaperAlert[];
   busy: boolean;
   signals: PaperSignalResult[];
   trades: PaperTradeRecord[];
@@ -20,11 +26,16 @@ type Props = {
   onScan: () => void;
   onTick: () => void;
   onStop: () => void;
+  onSchedulerTick: () => void;
+  onMarkAlertRead: (id: string) => void;
 };
 
 export function PaperValidationPanel({
   summary,
   eligibility,
+  scheduler,
+  history,
+  alerts,
   busy,
   signals,
   trades,
@@ -32,10 +43,16 @@ export function PaperValidationPanel({
   onScan,
   onTick,
   onStop,
+  onSchedulerTick,
+  onMarkAlertRead,
 }: Props) {
   const latest: PaperValidationRun | undefined = summary?.runs[0];
   const openTrades = trades.filter((t) => t.status === "open");
   const closedTrades = trades.filter((t) => t.status === "closed");
+  const dataStale = history.some((h) => h.data_freshness === "stale" || h.warnings.length > 0);
+  const providerFallback = history.some((h) =>
+    h.warnings.some((w) => w.toLowerCase().includes("fallback")),
+  );
 
   return (
     <Card data-testid="paper-validation-panel">
@@ -47,10 +64,38 @@ export function PaperValidationPanel({
           Simulated paper trades only — no exchange orders. Real trading disabled.
         </p>
 
+        {scheduler ? (
+          <div className="rounded border border-zinc-800 p-3" data-testid="scheduler-status">
+            <p>
+              Scheduler: env {scheduler.env_enabled ? "on" : "off"} · tenant{" "}
+              {scheduler.tenant_enabled ? "on" : "off"} · effective{" "}
+              {scheduler.effective_enabled ? "on" : "off"}
+            </p>
+            {scheduler.last_tick_at ? (
+              <p data-testid="last-scheduler-tick">
+                Last tick: {new Date(scheduler.last_tick_at).toLocaleString()} (
+                {scheduler.last_tick_status ?? "—"})
+              </p>
+            ) : (
+              <p data-testid="last-scheduler-tick">Last tick: none yet</p>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-2"
+              disabled={busy}
+              onClick={onSchedulerTick}
+              data-testid="manual-scheduler-tick"
+            >
+              Manual scheduler tick
+            </Button>
+          </div>
+        ) : null}
+
         {latest ? (
           <p data-testid="paper-validation-run-status">
             Run status: <span className="text-zinc-100">{latest.status}</span> · Mode:{" "}
-            {latest.runtime_mode ?? "scan_only"}
+            <span data-testid="runtime-mode">{latest.runtime_mode ?? "scan_only"}</span>
           </p>
         ) : null}
 
@@ -71,6 +116,26 @@ export function PaperValidationPanel({
           </div>
         ) : null}
 
+        {latest && (latest.blockers?.length ?? 0) > 0 ? (
+          <ul className="list-disc pl-4 text-amber-200" data-testid="paper-validation-blockers">
+            {(latest.blockers ?? []).map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
+        ) : null}
+
+        {dataStale ? (
+          <p className="text-amber-200" data-testid="data-freshness-warning">
+            Data freshness warning — recent cycles reported stale or limited data.
+          </p>
+        ) : null}
+
+        {providerFallback ? (
+          <p className="text-amber-200" data-testid="provider-fallback-warning">
+            Provider fallback was used in a recent runtime cycle.
+          </p>
+        ) : null}
+
         {eligibility && eligibility.unresolved_lesson_candidates.length > 0 ? (
           <p className="text-amber-200" data-testid="unresolved-lesson-blocker">
             {eligibility.unresolved_lesson_candidates.length} unresolved lesson candidate(s) —
@@ -84,6 +149,46 @@ export function PaperValidationPanel({
             <pre className="overflow-x-auto text-xs text-zinc-400">
               {JSON.stringify(latest.last_scan_result, null, 0)}
             </pre>
+          </div>
+        ) : null}
+
+        {history.length > 0 ? (
+          <div data-testid="runtime-history">
+            <p className="text-zinc-400">Runtime cycles ({history.length})</p>
+            <ul className="space-y-1 text-xs">
+              {history.slice(0, 5).map((h) => (
+                <li key={h.id} className="rounded border border-zinc-800 px-2 py-1">
+                  {h.mode} · {h.status}
+                  {h.reason ? ` — ${h.reason}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {alerts.length > 0 ? (
+          <div data-testid="paper-validation-alerts">
+            <p className="text-zinc-400">Recent alerts ({alerts.length})</p>
+            <ul className="space-y-1">
+              {alerts.slice(0, 5).map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-2 rounded border border-zinc-800 px-2 py-1">
+                  <span className={a.read_at ? "text-zinc-500" : "text-zinc-100"}>
+                    [{a.severity}] {a.alert_type}: {a.message}
+                  </span>
+                  {!a.read_at ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => onMarkAlertRead(a.id)}
+                      data-testid={`mark-alert-read-${a.id}`}
+                    >
+                      Mark read
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

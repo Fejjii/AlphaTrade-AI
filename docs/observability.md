@@ -98,3 +98,13 @@ LOG_JSON=true uv run uvicorn app.main:app --reload
 ```
 
 See [deployment.md](deployment.md) for monitoring plan in deploy context.
+
+## Paper validation observability (Slice 40)
+
+`paper_validation_observability_events` and `paper_validation_runtime_history` provide tenant-scoped structured events for paper validation:
+
+- Scheduler tick started/completed
+- Scan skipped, signal/trade lifecycle, metrics updated
+- Promotion status changed, strategy blocked, data stale, provider fallback, runtime errors
+
+Scheduler manual ticks also emit `paper_scheduler_tick` audit events. See [paper_validation.md](paper_validation.md) and [alerts.md](alerts.md).

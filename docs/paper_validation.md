@@ -1,6 +1,42 @@
-# Paper Validation (Slice 35, 38, 39)
+# Paper Validation (Slice 35, 38, 39, 40)
 
 Paper validation tracks **simulated paper trades** via the paper bot runtime. No exchange orders. Real trading remains disabled.
+
+## Scheduler foundation (Slice 40)
+
+Optional paper validation scheduler — **disabled by default**.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `ENABLE_PAPER_SCHEDULER` | `false` | Env gate — must be true for any automated tick |
+| Tenant `enabled` | `false` | Per-org opt-in via `PATCH /paper-validation/scheduler/config` |
+| `interval_seconds` | 300 | Safe interval between cycles |
+| `max_runs_per_cycle` | 5 | Cap active runs processed per tick |
+| `max_scans_per_minute` | 10 | Rate limit |
+
+**v1:** manual `POST /paper-validation/scheduler/tick` (owner role). No fragile always-on background job by default.
+
+Scheduler skips runs when: strategy blocked, run stopped/restricted, stale data, rate limit exceeded.
+
+## Runtime history (Slice 40)
+
+`paper_validation_runtime_history` records each scan/tick/scheduler cycle: status (`skipped`, `success`, `failed`, `partial`), blockers, warnings, data freshness, latency, redacted errors.
+
+`GET /paper-validation/scheduler/history`
+
+## Alerts (Slice 40)
+
+`paper_validation_alerts` stores tenant-scoped alert events (no Telegram/email delivery yet).
+
+Types: `setup_signal_detected`, `paper_trade_opened`, `paper_trade_closed`, `stop_hit`, `tp_hit`, `runner_exit`, `strategy_blocked`, `data_stale`, `promotion_status_changed`, `paper_validation_restricted`, `overtrading_warning`, `daily_loss_lock_warning`.
+
+API: `GET /alerts`, `GET /alerts/summary`, `PATCH /alerts/{id}/read`, `PATCH /alerts/read-all`
+
+## Walk-forward sample windows (Slice 40)
+
+`paper_validation_sample_windows` — 7-day buckets from closed paper trades: trades_count, win_rate, net_pnl, max_drawdown, expectancy, recommendation, data_quality.
+
+Promotion now also requires minimum runtime windows and checks stale data / provider failures.
 
 ## Runtime model (Slice 39)
 
@@ -25,12 +61,12 @@ There is **no real mode**. No exchange order APIs are called.
 
 ## Manual tick (v1)
 
-Automated scheduling is deferred. Use:
+Use:
 
-- **UI:** Run scan / Run tick buttons in Strategy Lab
-- **API:** `POST /paper-validation/{run_id}/tick` for tests and smoke scripts
+- **UI:** Run scan / Run tick / Manual scheduler tick in Strategy Lab
+- **API:** `POST /paper-validation/{run_id}/tick`, `POST /paper-validation/scheduler/tick`
 
-Optional in-process background loop is **disabled by default** for stability.
+Optional in-process background loop is **disabled by default** (`ENABLE_PAPER_SCHEDULER=false`).
 
 ## Paper bot engine v1
 

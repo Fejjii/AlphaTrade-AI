@@ -325,6 +325,8 @@ class AuditEventType(StrEnum):
     LESSON_ACCEPTED = "lesson_accepted"
     LESSON_REJECTED = "lesson_rejected"
     LESSON_ARCHIVED = "lesson_archived"
+    PAPER_SCHEDULER_TICK = "paper_scheduler_tick"
+    PAPER_VALIDATION_RUNTIME = "paper_validation_runtime"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"
@@ -486,6 +488,63 @@ class PaperTradeStatus(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
     CANCELLED = "cancelled"
+
+
+class PaperRuntimeCycleStatus(StrEnum):
+    """Runtime scan/tick cycle outcome (Slice 40)."""
+
+    SKIPPED = "skipped"
+    SUCCESS = "success"
+    FAILED = "failed"
+    PARTIAL = "partial"
+
+
+class PaperRuntimeCycleMode(StrEnum):
+    """Runtime cycle mode (Slice 40)."""
+
+    SCAN = "scan"
+    TICK = "tick"
+    SCHEDULER_TICK = "scheduler_tick"
+
+
+class PaperAlertType(StrEnum):
+    """Paper validation alert types (Slice 40 — storage only, no delivery)."""
+
+    SETUP_SIGNAL_DETECTED = "setup_signal_detected"
+    PAPER_TRADE_OPENED = "paper_trade_opened"
+    PAPER_TRADE_CLOSED = "paper_trade_closed"
+    STOP_HIT = "stop_hit"
+    TP_HIT = "tp_hit"
+    RUNNER_EXIT = "runner_exit"
+    STRATEGY_BLOCKED = "strategy_blocked"
+    DATA_STALE = "data_stale"
+    PROMOTION_STATUS_CHANGED = "promotion_status_changed"
+    PAPER_VALIDATION_RESTRICTED = "paper_validation_restricted"
+    OVERTRADING_WARNING = "overtrading_warning"
+    DAILY_LOSS_LOCK_WARNING = "daily_loss_lock_warning"
+
+
+class PaperAlertSeverity(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class PaperObservabilityEventType(StrEnum):
+    """Structured paper validation observability events (Slice 40)."""
+
+    SCHEDULER_TICK_STARTED = "scheduler_tick_started"
+    SCHEDULER_TICK_COMPLETED = "scheduler_tick_completed"
+    SCAN_SKIPPED = "scan_skipped"
+    SIGNAL_CREATED = "signal_created"
+    PAPER_TRADE_OPENED = "paper_trade_opened"
+    PAPER_TRADE_CLOSED = "paper_trade_closed"
+    METRICS_UPDATED = "metrics_updated"
+    PROMOTION_STATUS_CHANGED = "promotion_status_changed"
+    STRATEGY_BLOCKED = "strategy_blocked"
+    DATA_STALE = "data_stale"
+    PROVIDER_FALLBACK_USED = "provider_fallback_used"
+    RUNTIME_ERROR = "runtime_error"
 
 
 class PaperEligibilityStatus(StrEnum):

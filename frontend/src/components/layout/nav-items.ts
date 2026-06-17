@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  Bell,
   BookOpen,
   Bot,
   ClipboardCheck,
@@ -33,6 +34,7 @@ export const navItems = [
   { href: "/journal", label: "Journal", icon: BookOpen },
   { href: "/lessons", label: "Lessons", icon: ListChecks },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/knowledge", label: "Knowledge Base", icon: ListChecks },
   { href: "/risk", label: "Risk Settings", icon: Shield },
   { href: "/usage", label: "Usage", icon: Gauge },

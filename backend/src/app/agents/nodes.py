@@ -796,6 +796,16 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                 action = "activity"
             elif "restricted" in agent.message.lower():
                 action = "restricted"
+            elif "skipped" in agent.message.lower():
+                action = "skip_reason"
+            elif "stale" in agent.message.lower():
+                action = "data_stale"
+            elif "blocker" in agent.message.lower():
+                action = "blockers"
+            elif "last" in agent.message.lower() and "run" in agent.message.lower():
+                action = "last_run"
+            elif "ready" in agent.message.lower() and "paper" in agent.message.lower():
+                action = "ready"
             output = _run_tool(
                 "paper_validation_tool",
                 {
@@ -824,6 +834,52 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                     answer_lines.append(f"Blockers: {'; '.join(blockers[:3])}")
             else:
                 answer_lines.append(f"Paper validation failed: {output.error}")
+
+    elif intent is Intent.PAPER_SCHEDULER_QUERY:
+        sched_action = "scheduler_status"
+        if "tick" in agent.message.lower() or "run scheduler" in agent.message.lower():
+            sched_action = "scheduler_tick"
+        output = _run_tool(
+            "paper_validation_tool",
+            {
+                "action": sched_action,
+                "organization_id": org,
+                "user_id": user,
+                "strategy_id": org,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "paper_validation_tool",
+                    output.result.get("summary", "Scheduler status retrieved."),
+                )
+            )
+        else:
+            answer_lines.append(f"Scheduler query failed: {output.error}")
+
+    elif intent is Intent.PAPER_ALERTS_QUERY:
+        output = _run_tool(
+            "paper_validation_tool",
+            {
+                "action": "alerts",
+                "organization_id": org,
+                "user_id": user,
+                "strategy_id": org,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "paper_validation_tool",
+                    output.result.get("summary", "Alerts retrieved."),
+                )
+            )
+            alerts = output.result.get("alerts") or []
+            for alert in alerts[:3]:
+                answer_lines.append(f"- [{alert.get('severity')}] {alert.get('message')}")
+        else:
+            answer_lines.append(f"Alerts query failed: {output.error}")
 
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."

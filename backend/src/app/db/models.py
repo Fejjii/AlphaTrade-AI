@@ -52,6 +52,11 @@ from app.schemas.common import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PaperAlertSeverity,
+    PaperAlertType,
+    PaperObservabilityEventType,
+    PaperRuntimeCycleMode,
+    PaperRuntimeCycleStatus,
     PaperSignalStatus,
     PaperTradeStatus,
     PaperValidationRuntimeMode,
@@ -625,6 +630,127 @@ class PaperValidationMetricSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     trigger_trade_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("paper_trades.id"), nullable=True
     )
+
+
+class PaperValidationSchedulerConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant-scoped paper scheduler settings (Slice 40 — env flag still required)."""
+
+    __tablename__ = "paper_validation_scheduler_configs"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_paper_scheduler_org"),)
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
+    max_runs_per_cycle: Mapped[int] = mapped_column(Integer, default=5)
+    max_scans_per_minute: Mapped[int] = mapped_column(Integer, default=10)
+    last_tick_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_tick_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PaperValidationRuntimeHistory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Per-cycle runtime history for scans, ticks, and scheduler cycles."""
+
+    __tablename__ = "paper_validation_runtime_history"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=True
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    symbol: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    mode: Mapped[PaperRuntimeCycleMode] = mapped_column(
+        _enum(PaperRuntimeCycleMode), nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[PaperRuntimeCycleStatus] = mapped_column(
+        _enum(PaperRuntimeCycleStatus), nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signals_created: Mapped[int] = mapped_column(Integer, default=0)
+    trades_opened: Mapped[int] = mapped_column(Integer, default=0)
+    trades_closed: Mapped[int] = mapped_column(Integer, default=0)
+    blockers: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    data_freshness: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PaperValidationAlert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Paper validation alert events (Slice 40 — no Telegram/email delivery)."""
+
+    __tablename__ = "paper_validation_alerts"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    alert_type: Mapped[PaperAlertType] = mapped_column(_enum(PaperAlertType), nullable=False)
+    severity: Mapped[PaperAlertSeverity] = mapped_column(
+        _enum(PaperAlertSeverity), default=PaperAlertSeverity.INFO
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    paper_validation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=True
+    )
+    paper_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_trades.id"), nullable=True
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+
+
+class PaperValidationObservabilityEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Structured observability for paper validation runtime."""
+
+    __tablename__ = "paper_validation_observability_events"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    event_type: Mapped[PaperObservabilityEventType] = mapped_column(
+        _enum(PaperObservabilityEventType), nullable=False
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=True
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+
+
+class PaperValidationSampleWindow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Walk-forward sample window metrics for paper validation evidence."""
+
+    __tablename__ = "paper_validation_sample_windows"
+
+    paper_validation_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=False
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    trades_count: Mapped[int] = mapped_column(Integer, default=0)
+    win_rate: Mapped[float] = mapped_column(default=0.0)
+    net_pnl: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
+    max_drawdown: Mapped[float] = mapped_column(default=0.0)
+    expectancy: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
+    recommendation: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    data_quality: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class ManualChartLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):

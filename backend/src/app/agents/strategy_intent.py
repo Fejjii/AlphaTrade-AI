@@ -112,6 +112,22 @@ def classify_strategy_workflow(message: str) -> Intent | None:
         return Intent.PAPER_VALIDATION_QUERY
     if "improve or retire" in lowered and "strateg" in lowered:
         return Intent.PAPER_VALIDATION_RECOMMEND
+    if (
+        "paper scheduler" in lowered
+        or "scheduler running" in lowered
+        or "scheduler tick" in lowered
+    ):
+        return Intent.PAPER_SCHEDULER_QUERY
+    if "what alerts" in lowered or "my alerts" in lowered or "unread alert" in lowered:
+        return Intent.PAPER_ALERTS_QUERY
+    if "why was" in lowered and "skipped" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "data stale" in lowered or "is the data stale" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "blockers" in lowered and "paper" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "last paper validation run" in lowered or "what happened in the last paper" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
 
     return None
 
@@ -150,4 +166,6 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.PAPER_VALIDATION_SCAN,
         Intent.PAPER_VALIDATION_QUERY,
         Intent.PAPER_VALIDATION_RECOMMEND,
+        Intent.PAPER_SCHEDULER_QUERY,
+        Intent.PAPER_ALERTS_QUERY,
     }

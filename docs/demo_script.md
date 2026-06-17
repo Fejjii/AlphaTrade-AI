@@ -176,7 +176,7 @@ Route: `/analytics`
 
 In **Workspace**, ask: “What mistakes do I repeat?” — agent uses `analytics_summary_tool`.
 
-## 13. Strategy library, backtest & paper validation (Slice 33–39)
+## 13. Strategy library, backtest & paper validation (Slice 33–40)
 
 Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]`, `/strategy-lab/[id]/edit`, `/lessons`, `/manual-levels`, `/pre-trade`
 
@@ -198,6 +198,7 @@ Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]`, `/strategy-l
    - *"What paper signals were detected?"*
    - *"What did the paper bot do?"*
    - *"Should I improve or retire this strategy?"*
+11. **Scheduler & alerts (Slice 40)** — show scheduler status (disabled by default), manual scheduler tick, runtime history, Alerts page.
 12. Emphasize: backtest is **historical simulation**; paper validation is **local simulation** — neither enables live trading.
 
 Optional API smoke:

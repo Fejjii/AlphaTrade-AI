@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     execution_mode: ExecutionMode = ExecutionMode.PAPER
     enable_real_trading: bool = False
 
+    # --- Paper validation scheduler (Slice 40 — disabled by default) ---
+    enable_paper_scheduler: bool = False
+    paper_scheduler_interval_seconds: int = Field(default=300, ge=60, le=86400)
+    paper_scheduler_max_runs_per_cycle: int = Field(default=5, ge=1, le=50)
+    paper_scheduler_max_scans_per_minute: int = Field(default=10, ge=1, le=120)
+    paper_scheduler_stale_data_max_age_minutes: int = Field(default=60, ge=5, le=1440)
+
     # --- Data stores (placeholders; clients wired in later slices) ---
     database_url: str = "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade"
     redis_url: str = "redis://localhost:6379/0"

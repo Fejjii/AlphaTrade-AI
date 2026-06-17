@@ -58,6 +58,11 @@ import type {
   PaperValidationMetrics,
   PaperValidationRun,
   PaperValidationSummary,
+  PaperSchedulerStatus,
+  PaperSchedulerTickResult,
+  PaperRuntimeHistoryRecord,
+  PaperAlert,
+  PaperAlertSummary,
   PaperScanResult,
   PaperSignalResult,
   PaperTickResult,
@@ -349,6 +354,20 @@ export const api = {
     events: (params?: { limit?: number; offset?: number; event_type?: string }) =>
       apiFetch<PaginatedAuditRecords>("/audit/events", { query: params }),
   },
+  alerts: {
+    list: (params?: {
+      alert_type?: string;
+      severity?: string;
+      unread_only?: boolean;
+      limit?: number;
+    }) =>
+      apiFetch<{ items: PaperAlert[]; total: number }>("/alerts", { query: params, auth: true }),
+    summary: () => apiFetch<PaperAlertSummary>("/alerts/summary", { auth: true }),
+    markRead: (id: string) =>
+      apiFetch<PaperAlert>(`/alerts/${id}/read`, { method: "PATCH", auth: true }),
+    markAllRead: () =>
+      apiFetch<{ marked_read: number }>("/alerts/read-all", { method: "PATCH", auth: true }),
+  },
   market: {
     ticker: (params?: { symbol?: string; exchange?: string }) =>
       apiFetch<TickerResponse>("/market/ticker", { query: params }),
@@ -446,6 +465,18 @@ export const api = {
       ),
     paperValidationMetrics: (runId: string) =>
       apiFetch<PaperValidationMetrics>(`/paper-validation/${runId}/metrics`, { auth: true }),
+    schedulerStatus: () =>
+      apiFetch<PaperSchedulerStatus>("/paper-validation/scheduler/status", { auth: true }),
+    schedulerTick: () =>
+      apiFetch<PaperSchedulerTickResult>("/paper-validation/scheduler/tick", {
+        method: "POST",
+        auth: true,
+      }),
+    schedulerHistory: (params?: { run_id?: string; limit?: number }) =>
+      apiFetch<{ items: PaperRuntimeHistoryRecord[]; total: number }>(
+        "/paper-validation/scheduler/history",
+        { query: params, auth: true },
+      ),
     testability: (id: string) =>
       apiFetch<StrategyTestability>(`/strategies/${id}/testability`, { auth: true }),
     patchStructuredRules: (id: string, body: Partial<StructuredRules>) =>

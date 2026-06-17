@@ -993,6 +993,73 @@ export interface PaperValidationSummary {
   limitation?: string;
 }
 
+export interface PaperSchedulerStatus {
+  env_enabled: boolean;
+  tenant_enabled: boolean;
+  effective_enabled: boolean;
+  config: {
+    enabled: boolean;
+    interval_seconds: number;
+    max_runs_per_cycle: number;
+    max_scans_per_minute: number;
+  };
+  last_tick_at?: string | null;
+  last_tick_status?: string | null;
+  real_trading_enabled: boolean;
+  limitation: string;
+}
+
+export interface PaperSchedulerTickResult {
+  ticked_at: string;
+  env_enabled: boolean;
+  effective_enabled: boolean;
+  runs_processed: number;
+  runs_skipped: number;
+  scans_executed: number;
+  ticks_executed: number;
+  alerts_created: number;
+  decisions: string[];
+  limitation: string;
+}
+
+export interface PaperRuntimeHistoryRecord {
+  id: string;
+  run_id?: string | null;
+  strategy_id?: string | null;
+  symbol?: string | null;
+  mode: string;
+  started_at: string;
+  completed_at?: string | null;
+  status: string;
+  reason?: string | null;
+  signals_created: number;
+  trades_opened: number;
+  trades_closed: number;
+  blockers: string[];
+  warnings: string[];
+  data_freshness?: string | null;
+  latency_ms?: number | null;
+}
+
+export interface PaperAlert {
+  id: string;
+  alert_type: string;
+  severity: string;
+  strategy_id?: string | null;
+  paper_validation_run_id?: string | null;
+  paper_trade_id?: string | null;
+  message: string;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export interface PaperAlertSummary {
+  total: number;
+  unread: number;
+  by_type: Record<string, number>;
+  by_severity: Record<string, number>;
+}
+
 export interface PaginatedBacktestRuns {
   items: BacktestRun[];
   total: number;

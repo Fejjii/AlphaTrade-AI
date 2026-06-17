@@ -27,7 +27,9 @@ from app.services.manual_level_service import ManualLevelService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
+from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
+from app.services.paper_scheduler_service import PaperSchedulerService
 from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
 from app.services.paper_validation_service import PaperValidationService
 from app.services.position_service import PositionService
@@ -253,6 +255,16 @@ def get_paper_eligibility_service(
     return PaperEligibilityService(session, settings)
 
 
+def get_paper_alert_service(session: SessionDep) -> PaperAlertService:
+    return PaperAlertService(session)
+
+
+def get_paper_scheduler_service(
+    session: SessionDep, settings: SettingsDep, audit_service: AuditServiceDep
+) -> PaperSchedulerService:
+    return PaperSchedulerService(session, settings, audit_service=audit_service)
+
+
 def get_historical_candle_service(
     session: SessionDep,
     settings: SettingsDep,
@@ -287,6 +299,8 @@ PaperValidationRuntimeServiceDep = Annotated[
 PaperEligibilityServiceDep = Annotated[
     PaperEligibilityService, Depends(get_paper_eligibility_service)
 ]
+PaperAlertServiceDep = Annotated[PaperAlertService, Depends(get_paper_alert_service)]
+PaperSchedulerServiceDep = Annotated[PaperSchedulerService, Depends(get_paper_scheduler_service)]
 HistoricalCandleServiceDep = Annotated[
     HistoricalCandleService, Depends(get_historical_candle_service)
 ]

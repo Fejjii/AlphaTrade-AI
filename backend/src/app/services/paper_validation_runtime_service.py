@@ -28,6 +28,11 @@ from app.repositories.strategy_library import UserStrategyRepository, UserStrate
 from app.schemas.common import (
     BacktestRunStatus,
     BacktestStatus,
+    PaperAlertSeverity,
+    PaperAlertType,
+    PaperObservabilityEventType,
+    PaperRuntimeCycleMode,
+    PaperRuntimeCycleStatus,
     PaperSignalStatus,
     PaperTradeStatus,
     PaperValidationRuntimeMode,
@@ -51,8 +56,11 @@ from app.schemas.paper_validation import (
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.structured_rules import StructuredRules
 from app.services.historical_candle_service import HistoricalCandleService
+from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_bot_engine import PaperBotEngine, _OpenPaperTrade
 from app.services.paper_eligibility_service import PaperEligibilityService
+from app.services.paper_observability_service import PaperObservabilityService
+from app.services.paper_sample_window_service import PaperSampleWindowService
 from app.services.paper_validation_promotion import compute_max_drawdown, evaluate_paper_promotion
 from app.services.structured_rule_resolver import resolve_backtest_rules
 
@@ -79,6 +87,9 @@ class PaperValidationRuntimeService:
         provider = resolve_market_data_provider(self._settings)
         self._candles = HistoricalCandleService(session, provider, self._settings)
         self._engine = PaperBotEngine()
+        self._observability = PaperObservabilityService(session)
+        self._alerts = PaperAlertService(session)
+        self._sample_windows = PaperSampleWindowService(session)
 
     def start(
         self,
@@ -112,10 +123,7 @@ class PaperValidationRuntimeService:
             StrategyValidationStatus.VALIDATED,
         }
         can_start = (
-            eligibility.paper_eligible
-            or strategy.paper_eligible
-            or has_backtest
-            or in_review
+            eligibility.paper_eligible or strategy.paper_eligible or has_backtest or in_review
         )
         if not can_start:
             raise ValidationAppError(
@@ -163,6 +171,13 @@ class PaperValidationRuntimeService:
         ctx = self._load_context(run, organization_id=organization_id, user_id=user_id)
         config = ctx.config
         now = datetime.now(UTC)
+        builder = self._observability.start_history(
+            organization_id=organization_id,
+            mode=PaperRuntimeCycleMode.SCAN,
+            run_id=run.id,
+            strategy_id=run.strategy_id,
+            symbol=config.symbol,
+        )
 
         lookback_days = self._engine.default_lookback_days(config.timeframe)
         candle_rows, data_limitations = self._candles.ensure_candles_for_backtest(
@@ -172,6 +187,27 @@ class PaperValidationRuntimeService:
             start_date=(now - timedelta(days=lookback_days)).date(),
             end_date=now.date(),
         )
+        data_stale = any("stale" in str(note).lower() for note in data_limitations)
+        if data_stale:
+            builder.warnings.extend(data_limitations)
+            builder.data_freshness = "stale"
+            self._observability.emit(
+                organization_id=organization_id,
+                event_type=PaperObservabilityEventType.DATA_STALE,
+                run_id=run.id,
+                strategy_id=run.strategy_id,
+                metadata={"limitations": data_limitations},
+            )
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=PaperAlertType.DATA_STALE,
+                severity=PaperAlertSeverity.WARNING,
+                message=f"Stale data detected during scan for run {run.id}.",
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+            )
+        elif candle_rows:
+            builder.data_freshness = "fresh"
 
         resolved = resolve_backtest_rules(ctx.card, ctx.setup_type, ctx.structured)
         rules = resolved.rules
@@ -275,6 +311,44 @@ class PaperValidationRuntimeService:
         run.last_scan_at = now
         run.last_scan_result = scan_result
 
+        builder.signals_created = 1
+        if trade_created:
+            builder.trades_opened = 1
+        builder.blockers = list(run.blockers or [])
+        cycle_status = (
+            PaperRuntimeCycleStatus.PARTIAL if data_stale else PaperRuntimeCycleStatus.SUCCESS
+        )
+        self._observability.record_history(builder, cycle_status)
+        self._observability.emit(
+            organization_id=organization_id,
+            event_type=PaperObservabilityEventType.SIGNAL_CREATED,
+            run_id=run.id,
+            strategy_id=run.strategy_id,
+            metadata={"triggered": triggered, "trade_created": trade_created},
+        )
+        if triggered:
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
+                message=f"Paper setup signal detected for {config.symbol}.",
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+            )
+        if trade_created:
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=PaperAlertType.PAPER_TRADE_OPENED,
+                message=f"Paper trade opened for {config.symbol}.",
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+            )
+            self._observability.emit(
+                organization_id=organization_id,
+                event_type=PaperObservabilityEventType.PAPER_TRADE_OPENED,
+                run_id=run.id,
+                strategy_id=run.strategy_id,
+            )
+
         return PaperScanResult(
             run_id=run.id,
             signal=self._signal_to_schema(signal_row),
@@ -294,15 +368,27 @@ class PaperValidationRuntimeService:
         ctx = self._load_context(run, organization_id=organization_id, user_id=user_id)
         config = ctx.config
         now = datetime.now(UTC)
+        builder = self._observability.start_history(
+            organization_id=organization_id,
+            mode=PaperRuntimeCycleMode.TICK,
+            run_id=run.id,
+            strategy_id=run.strategy_id,
+            symbol=config.symbol,
+        )
+        prior_rec = run.recommendation
 
         lookback_days = self._engine.default_lookback_days(config.timeframe)
-        candle_rows, _ = self._candles.ensure_candles_for_backtest(
+        candle_rows, data_limitations = self._candles.ensure_candles_for_backtest(
             symbol=config.symbol,
             exchange=config.exchange,
             timeframe=Timeframe(config.timeframe),
             start_date=(now - timedelta(days=lookback_days)).date(),
             end_date=now.date(),
         )
+        data_stale = any("stale" in str(note).lower() for note in data_limitations)
+        if data_stale:
+            builder.warnings.extend(data_limitations)
+            builder.data_freshness = "stale"
         if not candle_rows:
             raise ValidationAppError("No candles available for paper tick.")
 
@@ -312,6 +398,7 @@ class PaperValidationRuntimeService:
         closed_count = 0
 
         open_trades = self._trades.list_open_for_run(run.id, organization_id=organization_id)
+        closed_details: list[tuple[PaperTradeModel, object]] = []
         for trade_row in open_trades:
             open_state = self._trade_to_open_state(trade_row, config)
             close = self._engine.monitor_bar(
@@ -324,6 +411,7 @@ class PaperValidationRuntimeService:
             if close is None:
                 continue
             self._apply_close(trade_row, close)
+            closed_details.append((trade_row, close))
             self._record_event(
                 trade_row.id,
                 "closed",
@@ -335,7 +423,10 @@ class PaperValidationRuntimeService:
             closed_count += 1
 
         metrics = self._aggregate_metrics(run.id, organization_id=organization_id, config=config)
-        promotion = self._evaluate_promotion(run, metrics, organization_id, user_id)
+        self._sample_windows.refresh_for_run(run.id, organization_id=organization_id)
+        promotion = self._evaluate_promotion(
+            run, metrics, organization_id, user_id, data_stale=data_stale
+        )
         run.metrics = metrics.model_dump(mode="json")
         run.recommendation = promotion.recommendation.value
         run.blockers = promotion.blockers
@@ -363,6 +454,75 @@ class PaperValidationRuntimeService:
         remaining_open = len(
             self._trades.list_open_for_run(run.id, organization_id=organization_id)
         )
+
+        builder.trades_closed = closed_count
+        builder.blockers = list(run.blockers or [])
+        cycle_status = (
+            PaperRuntimeCycleStatus.PARTIAL if data_stale else PaperRuntimeCycleStatus.SUCCESS
+        )
+        self._observability.record_history(builder, cycle_status)
+        self._observability.emit(
+            organization_id=organization_id,
+            event_type=PaperObservabilityEventType.METRICS_UPDATED,
+            run_id=run.id,
+            strategy_id=run.strategy_id,
+            metadata={
+                "trades_closed": closed_count,
+                "paper_trades_count": metrics.paper_trades_count,
+            },
+        )
+        if prior_rec != promotion.recommendation.value:
+            self._observability.emit(
+                organization_id=organization_id,
+                event_type=PaperObservabilityEventType.PROMOTION_STATUS_CHANGED,
+                run_id=run.id,
+                strategy_id=run.strategy_id,
+                metadata={"from": prior_rec, "to": promotion.recommendation.value},
+            )
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=PaperAlertType.PROMOTION_STATUS_CHANGED,
+                message=(
+                    f"Paper validation recommendation changed to {promotion.recommendation.value}."
+                ),
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+            )
+        for trade_row, close in closed_details:
+            alert_type = PaperAlertService.alert_type_for_exit(close.exit_reason)
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=alert_type,
+                message=f"Paper trade closed ({close.exit_reason}) on {trade_row.symbol}.",
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+                paper_trade_id=trade_row.id,
+            )
+            self._observability.emit(
+                organization_id=organization_id,
+                event_type=PaperObservabilityEventType.PAPER_TRADE_CLOSED,
+                run_id=run.id,
+                strategy_id=run.strategy_id,
+                metadata={"exit_reason": close.exit_reason},
+            )
+        if metrics.paper_trades_count > 50 and metrics.win_rate < 0.3:
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=PaperAlertType.OVERTRADING_WARNING,
+                severity=PaperAlertSeverity.WARNING,
+                message="Overtrading warning: high trade count with low win rate.",
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+            )
+        if metrics.consecutive_losses >= 5:
+            self._alerts.create(
+                organization_id=organization_id,
+                alert_type=PaperAlertType.DAILY_LOSS_LOCK_WARNING,
+                severity=PaperAlertSeverity.WARNING,
+                message=f"Loss streak warning: {metrics.consecutive_losses} consecutive losses.",
+                strategy_id=run.strategy_id,
+                paper_validation_run_id=run.id,
+            )
 
         return PaperTickResult(
             run_id=run.id,
@@ -718,6 +878,8 @@ class PaperValidationRuntimeService:
         metrics: PaperValidationMetrics,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        *,
+        data_stale: bool = False,
     ):
         eligibility = PaperEligibilityService(self._session, self._settings).evaluate(
             run.strategy_id,
@@ -734,13 +896,20 @@ class PaperValidationRuntimeService:
             created = run.created_at
             if created.tzinfo is None:
                 created = created.replace(tzinfo=UTC)
-            min_days = (datetime.now(UTC) - created).days >= 0 or enough_samples
+            min_days = (datetime.now(UTC) - created).days >= 1 or enough_samples
+        windows_count = self._sample_windows.count_windows(run.id, organization_id=organization_id)
+        provider_failures = bool(
+            run.last_scan_result and run.last_scan_result.get("provider_failure")
+        )
         return evaluate_paper_promotion(
             metrics=metrics,
             paper_eligible=run.paper_eligible,
             has_critical_lesson_blockers=has_critical,
             severe_overtrading=severe_overtrading,
             min_runtime_days_met=min_days,
+            runtime_windows_count=windows_count,
+            data_stale=data_stale,
+            provider_failures=provider_failures,
         )
 
     @staticmethod

@@ -1,6 +1,6 @@
 # Limitations and Roadmap
 
-## Current limitations (post Slice 39)
+## Current limitations (post Slice 40)
 
 ### Lesson learning loop
 
@@ -25,7 +25,7 @@
 - Strategy library & pre-trade (Slice 33–39): Strategy Lab includes backtest v1, structured rules, lesson → version flow, and **paper validation runtime**.
 - Agent routes strategy-workflow, backtest, and paper validation intents to registered tools (Slice 34–39).
 - **Backtest v1** replays stored OHLCV with fees/slippage — historical simulation only; not a profit guarantee. Complex NL rules may require structured translation (`needs_structured_rules`).
-- **Paper validation runtime (Slice 39):** deterministic scan/tick bot creates `paper_signals` and simulated `paper_trades` — no exchange orders. Modes: `scan_only` (default) and `auto_paper`. Manual scan/tick only — no autonomous scheduler yet.
+- **Paper validation runtime (Slice 39–40):** deterministic scan/tick bot + optional scheduler foundation. Scheduler **disabled by default** (`ENABLE_PAPER_SCHEDULER=false`). Manual scheduler tick via API/UI. Runtime history, observability events, and in-app alerts (no delivery).
 - **Paper eligibility (Slice 38):** conservative gates via `/paper-eligibility`; `paper_validated` does **not** enable live trading.
 - Human-vs-system v2 adds delta fields; PnL simulation and runner tracking remain placeholders.
 - Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
@@ -33,9 +33,16 @@
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
 - Docker Compose enables httpOnly refresh cookies + access token denylist (Slice 22).
 
+### Paper validation scheduler & alerts (Slice 40 — remaining gaps)
+
+- No Telegram/email/push alert delivery — storage and UI only
+- No always-on in-process scheduler loop — manual tick + optional env flag
+- Sample windows use simple 7-day buckets; not full walk-forward optimization
+- Alert volume not deduplicated across rapid scan cycles
+- Does not change `ENABLE_REAL_TRADING` or execution mode
+
 ### Paper validation runtime (Slice 39 — remaining gaps)
 
-- Manual scan/tick only — no production scheduler; background loop disabled by default
 - `scan_only` default creates signals without trades; `auto_paper` opens simulated positions locally
 - Partial TP closes full position at first TP in v1 (multi-TP schema deferred)
 - Mock/deterministic candles in tests; production uses stored historical data

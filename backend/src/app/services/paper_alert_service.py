@@ -1,0 +1,139 @@
+"""Paper validation alert storage (Slice 40 — no delivery)."""
+
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy.orm import Session
+
+from app.core.errors import NotFoundError
+from app.db.models import PaperValidationAlert as AlertModel
+from app.repositories.paper_scheduler import PaperAlertRepository
+from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
+from app.schemas.common import PaperAlertSeverity, PaperAlertType
+
+
+class PaperAlertService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._alerts = PaperAlertRepository(session)
+
+    def create(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        alert_type: PaperAlertType,
+        message: str,
+        severity: PaperAlertSeverity = PaperAlertSeverity.INFO,
+        user_id: uuid.UUID | None = None,
+        strategy_id: uuid.UUID | None = None,
+        paper_validation_run_id: uuid.UUID | None = None,
+        paper_trade_id: uuid.UUID | None = None,
+        metadata: dict | None = None,
+    ) -> PaperAlert:
+        row = AlertModel(
+            organization_id=organization_id,
+            user_id=user_id,
+            alert_type=alert_type,
+            severity=severity,
+            strategy_id=strategy_id,
+            paper_validation_run_id=paper_validation_run_id,
+            paper_trade_id=paper_trade_id,
+            message=message,
+            metadata_json=metadata,
+        )
+        self._alerts.add(row)
+        return self._to_schema(row)
+
+    def list_alerts(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        alert_type: PaperAlertType | None = None,
+        severity: PaperAlertSeverity | None = None,
+        unread_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PaginatedPaperAlerts:
+        rows, total = self._alerts.list_for_org(
+            organization_id,
+            alert_type=alert_type,
+            severity=severity,
+            unread_only=unread_only,
+            limit=limit,
+            offset=offset,
+        )
+        return PaginatedPaperAlerts(
+            items=[self._to_schema(r) for r in rows],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_alert(self, alert_id: uuid.UUID, *, organization_id: uuid.UUID) -> PaperAlert:
+        from sqlalchemy import select
+
+        row = self._session.scalar(
+            select(AlertModel).where(
+                AlertModel.id == alert_id,
+                AlertModel.organization_id == organization_id,
+            )
+        )
+        if row is None:
+            raise NotFoundError("Alert not found.")
+        return self._to_schema(row)
+
+    def mark_read(self, alert_id: uuid.UUID, *, organization_id: uuid.UUID) -> PaperAlert:
+        row = self._alerts.mark_read(alert_id, organization_id=organization_id)
+        if row is None:
+            raise NotFoundError("Alert not found.")
+        return self._to_schema(row)
+
+    def mark_all_read(self, organization_id: uuid.UUID) -> int:
+        return self._alerts.mark_all_read(organization_id)
+
+    def summary(self, organization_id: uuid.UUID) -> PaperAlertSummary:
+        rows, total = self._alerts.list_for_org(organization_id, limit=500)
+        unread = self._alerts.count_unread(organization_id)
+        by_type: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
+        for row in rows:
+            by_type[row.alert_type.value] = by_type.get(row.alert_type.value, 0) + 1
+            by_severity[row.severity.value] = by_severity.get(row.severity.value, 0) + 1
+        return PaperAlertSummary(
+            total=total,
+            unread=unread,
+            by_type=by_type,
+            by_severity=by_severity,
+        )
+
+    @staticmethod
+    def _to_schema(row: AlertModel) -> PaperAlert:
+        return PaperAlert(
+            id=row.id,
+            organization_id=row.organization_id,
+            user_id=row.user_id,
+            alert_type=row.alert_type,
+            severity=row.severity,
+            strategy_id=row.strategy_id,
+            paper_validation_run_id=row.paper_validation_run_id,
+            paper_trade_id=row.paper_trade_id,
+            message=row.message,
+            read_at=row.read_at,
+            metadata=row.metadata_json,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def alert_type_for_exit(exit_reason: str | None) -> PaperAlertType:
+        if not exit_reason:
+            return PaperAlertType.PAPER_TRADE_CLOSED
+        lowered = exit_reason.lower()
+        if "stop" in lowered:
+            return PaperAlertType.STOP_HIT
+        if "take_profit" in lowered or lowered.startswith("tp"):
+            return PaperAlertType.TP_HIT
+        if "runner" in lowered:
+            return PaperAlertType.RUNNER_EXIT
+        return PaperAlertType.PAPER_TRADE_CLOSED

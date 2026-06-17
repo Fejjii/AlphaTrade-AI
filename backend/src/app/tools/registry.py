@@ -816,6 +816,54 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
                 "run_id": str(run.id),
                 "real_trading_enabled": False,
             }
+        elif action in {"scheduler_status", "status"} and (
+            action == "scheduler_status" or args.get("scheduler_only")
+        ):
+            from app.services.paper_scheduler_service import PaperSchedulerService
+
+            sched = PaperSchedulerService(session).get_status(organization_id=org)
+            result = {
+                "summary": (
+                    f"Scheduler env={sched.env_enabled}, tenant={sched.tenant_enabled}, "
+                    f"effective={sched.effective_enabled}."
+                ),
+                "scheduler": sched.model_dump(mode="json"),
+            }
+        elif action == "scheduler_tick":
+            from app.services.paper_scheduler_service import PaperSchedulerService
+
+            tick = PaperSchedulerService(session).tick(organization_id=org, user_id=user)
+            session.commit()
+            result = {
+                "summary": (
+                    f"Scheduler tick complete. Processed={tick.runs_processed}, "
+                    f"skipped={tick.runs_skipped}."
+                ),
+                "tick": tick.model_dump(mode="json"),
+            }
+        elif action == "alerts":
+            from app.services.paper_alert_service import PaperAlertService
+
+            listing = PaperAlertService(session).list_alerts(org, limit=10)
+            summary = PaperAlertService(session).summary(org)
+            result = {
+                "summary": f"{summary.unread} unread of {summary.total} paper validation alert(s).",
+                "alerts": [a.model_dump(mode="json") for a in listing.items],
+                "summary_counts": summary.model_dump(mode="json"),
+            }
+        elif action == "skip_reason":
+            from app.services.paper_scheduler_service import PaperSchedulerService
+
+            history = PaperSchedulerService(session).list_history(organization_id=org, limit=5)
+            skipped = [h for h in history.items if h.status.value == "skipped"]
+            result = {
+                "summary": (
+                    f"{len(skipped)} recent skipped cycle(s)."
+                    if skipped
+                    else "No recent skipped cycles."
+                ),
+                "skipped": [h.model_dump(mode="json") for h in skipped],
+            }
         elif run_id is None:
             result = {"summary": "No paper validation run found — start validation first."}
         elif action == "scan":
@@ -888,6 +936,53 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
                 "recommendation": rec,
                 "metrics": metrics.model_dump(mode="json"),
                 "blockers": run.blockers,
+            }
+        elif action == "data_stale":
+            run = runtime.get_run(run_id, organization_id=org)
+            stale = any("stale" in str(v).lower() for v in (run.last_scan_result or {}).values())
+            result = {
+                "summary": f"Data stale indicators: {stale}. Paper only.",
+                "last_scan_result": run.last_scan_result,
+            }
+        elif action == "blockers":
+            run = runtime.get_run(run_id, organization_id=org)
+            from app.services.paper_eligibility_service import PaperEligibilityService
+
+            report = PaperEligibilityService(session).evaluate(
+                sid, organization_id=org, user_id=user
+            )
+            result = {
+                "summary": f"{len(report.blockers)} eligibility blocker(s).",
+                "blockers": report.blockers,
+                "run_blockers": run.blockers,
+            }
+        elif action == "last_run":
+            run = runtime.get_run(run_id, organization_id=org)
+            from app.services.paper_scheduler_service import PaperSchedulerService
+
+            history = PaperSchedulerService(session).list_history(
+                organization_id=org, run_id=run_id, limit=5
+            )
+            result = {
+                "summary": (
+                    f"Last run status={run.status.value}. {history.total} history record(s)."
+                ),
+                "run": run.model_dump(mode="json"),
+                "history": [h.model_dump(mode="json") for h in history.items],
+            }
+        elif action == "ready":
+            from app.services.paper_eligibility_service import PaperEligibilityService
+
+            report = PaperEligibilityService(session).evaluate(
+                sid, organization_id=org, user_id=user
+            )
+            result = {
+                "summary": (
+                    f"Paper eligible={report.paper_eligible}. "
+                    f"Recommendation={report.recommendation}."
+                ),
+                "paper_eligible": report.paper_eligible,
+                "blockers": report.blockers,
             }
         else:
             run = runtime.get_run(run_id, organization_id=org)

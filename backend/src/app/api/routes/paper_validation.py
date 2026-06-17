@@ -1,4 +1,4 @@
-"""Paper validation runtime API (Slice 39 — paper only)."""
+"""Paper validation runtime API (Slice 39-40 — paper only)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,18 @@ import uuid
 
 from fastapi import APIRouter, Query
 
-from app.core.dependencies import PaperValidationRuntimeServiceDep, SessionDep
+from app.core.dependencies import (
+    PaperSchedulerServiceDep,
+    PaperValidationRuntimeServiceDep,
+    SessionDep,
+)
 from app.schemas.common import PaperTradeStatus
+from app.schemas.paper_scheduler import (
+    PaginatedPaperRuntimeHistory,
+    PaperSchedulerConfigUpdate,
+    PaperSchedulerStatus,
+    PaperSchedulerTickResult,
+)
 from app.schemas.paper_validation import (
     PaginatedPaperPositions,
     PaginatedPaperSignals,
@@ -17,9 +27,76 @@ from app.schemas.paper_validation import (
     PaperValidationMetrics,
     PaperValidationRun,
 )
-from app.security.rbac import TraderDep
+from app.security.rbac import OwnerDep, TraderDep
 
 router = APIRouter(prefix="/paper-validation", tags=["paper-validation"])
+
+
+@router.get(
+    "/scheduler/status",
+    response_model=PaperSchedulerStatus,
+    summary="Paper validation scheduler status",
+)
+async def get_scheduler_status(
+    tenant: TraderDep,
+    service: PaperSchedulerServiceDep,
+) -> PaperSchedulerStatus:
+    return service.get_status(organization_id=tenant.organization_id)
+
+
+@router.post(
+    "/scheduler/tick",
+    response_model=PaperSchedulerTickResult,
+    summary="Manual paper validation scheduler tick",
+)
+async def scheduler_tick(
+    tenant: OwnerDep,
+    service: PaperSchedulerServiceDep,
+    session: SessionDep,
+) -> PaperSchedulerTickResult:
+    result = service.tick(organization_id=tenant.organization_id, user_id=tenant.user_id)
+    session.commit()
+    return result
+
+
+@router.patch(
+    "/scheduler/config",
+    response_model=PaperSchedulerStatus,
+    summary="Update tenant paper scheduler config",
+)
+async def update_scheduler_config(
+    payload: PaperSchedulerConfigUpdate,
+    tenant: OwnerDep,
+    service: PaperSchedulerServiceDep,
+    session: SessionDep,
+) -> PaperSchedulerStatus:
+    result = service.update_config(
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/scheduler/history",
+    response_model=PaginatedPaperRuntimeHistory,
+    summary="Scheduler and runtime cycle history",
+)
+async def list_scheduler_history(
+    tenant: TraderDep,
+    service: PaperSchedulerServiceDep,
+    run_id: uuid.UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedPaperRuntimeHistory:
+    return service.list_history(
+        organization_id=tenant.organization_id,
+        run_id=run_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(
