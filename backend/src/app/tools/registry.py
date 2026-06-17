@@ -521,6 +521,51 @@ def _strategy_testability_execute(args: dict[str, Any], session: Any | None) -> 
         return ToolOutput(tool_name="strategy_testability_tool", success=False, error=str(exc))
 
 
+def _require_owner_scheduler_tick(
+    session: Any, org: Any, user: Any, args: dict[str, Any]
+) -> ToolOutput | None:
+    from app.agents.mutation_policy import mutation_allowed
+    from app.repositories.memberships import MembershipRepository
+    from app.schemas.common import MembershipRole
+
+    membership = MembershipRepository(session).get_for_user_and_org(user, org)
+    if membership is None or membership.role is not MembershipRole.OWNER:
+        return ToolOutput(
+            tool_name="paper_validation_tool",
+            success=False,
+            error="Owner role required for scheduler tick.",
+        )
+    user_message = str(args.get("user_message", ""))
+    if not mutation_allowed(user_message, confirm_arg=bool(args.get("confirm"))):
+        return ToolOutput(
+            tool_name="paper_validation_tool",
+            success=False,
+            error=(
+                "Explicit confirmation required for scheduler tick. "
+                "Reply with 'I confirm scheduler tick' or confirm=true."
+            ),
+        )
+    return None
+
+
+def _require_mutation_confirmation(
+    tool_name: str, args: dict[str, Any], *, action: str
+) -> ToolOutput | None:
+    from app.agents.mutation_policy import mutation_allowed
+
+    user_message = str(args.get("user_message", ""))
+    if not mutation_allowed(user_message, confirm_arg=bool(args.get("confirm"))):
+        return ToolOutput(
+            tool_name=tool_name,
+            success=False,
+            error=(
+                f"Explicit confirmation required to {action}. "
+                "Questions do not mutate state. Reply with 'I confirm' or confirm=true."
+            ),
+        )
+    return None
+
+
 def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
     import uuid as _uuid
 
@@ -572,6 +617,11 @@ def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOut
             summary = f"{total} accepted lesson(s) related to stop discipline."
             result_payload = {"items": [i.model_dump(mode="json") for i in items]}
         elif action == "accept":
+            blocked = _require_mutation_confirmation(
+                "lesson_review_tool", args, action="accept this lesson"
+            )
+            if blocked is not None:
+                return blocked
             lesson_id = args.get("lesson_id")
             if not lesson_id:
                 return ToolOutput(
@@ -589,6 +639,11 @@ def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOut
             summary = f"Lesson accepted: {accepted.lesson_text[:120]}"
             result_payload = accepted.model_dump(mode="json")
         elif action == "reject":
+            blocked = _require_mutation_confirmation(
+                "lesson_review_tool", args, action="reject this lesson"
+            )
+            if blocked is not None:
+                return blocked
             lesson_id = args.get("lesson_id")
             if not lesson_id:
                 return ToolOutput(
@@ -677,6 +732,11 @@ def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOut
             }
             pending_observation = True
         elif action == "create_version_from_lesson":
+            blocked = _require_mutation_confirmation(
+                "lesson_review_tool", args, action="create a strategy version from this lesson"
+            )
+            if blocked is not None:
+                return blocked
             lesson_id = args.get("lesson_id")
             if not lesson_id:
                 return ToolOutput(
@@ -832,6 +892,9 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
         elif action == "scheduler_tick":
             from app.services.paper_scheduler_service import PaperSchedulerService
 
+            blocked = _require_owner_scheduler_tick(session, org, user, args)
+            if blocked is not None:
+                return blocked
             tick = PaperSchedulerService(session).tick(organization_id=org, user_id=user)
             session.commit()
             result = {

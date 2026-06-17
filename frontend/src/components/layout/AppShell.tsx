@@ -1,5 +1,6 @@
 "use client";
 
+import { NotFinancialAdviceBanner } from "@/components/layout/NotFinancialAdviceBanner";
 import { BottomNav, Sidebar } from "@/components/layout/navigation";
 import { TopBar } from "@/components/layout/TopBar";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <TopBar />
             <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 overflow-x-hidden px-4 py-6 lg:px-6">
               <PaperModeBanner />
+              <NotFinancialAdviceBanner />
               {children}
             </main>
           </div>

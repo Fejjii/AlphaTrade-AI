@@ -240,7 +240,7 @@ Templates: `.env.example`, `.env.docker.example`, `.env.staging.example`, `front
 ## Known limitations
 
 - No real exchange or broker execution
-- No automated trading without human approval
+- No automated **live** trading without human approval; paper validation `auto_paper` may open **simulated** trades without proposal approval (paper only)
 - Stripe billing is scaffold-only — no live charges by default
 - LLM narrative is optional; deterministic analysis + risk engine remain authoritative
 - Binance public API may rate-limit; mock fallback is automatic
@@ -285,7 +285,9 @@ Full reference: [docs/deployment.md](docs/deployment.md) · Security: [docs/secu
 
 ## Development status
 
-Built in vertical slices (1–39 complete). See [docs/limitations_roadmap.md](docs/limitations_roadmap.md) for scope boundaries.
+Built in vertical slices (1–40 complete). See [docs/limitations_roadmap.md](docs/limitations_roadmap.md) for scope boundaries.
+
+**Not financial advice.** Paper simulation and backtests do not guarantee real-world results.
 
 ## Source of truth
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,39 @@ from app.db.models import PaperValidationAlert as AlertModel
 from app.repositories.paper_scheduler import PaperAlertRepository
 from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
 from app.schemas.common import PaperAlertSeverity, PaperAlertType
+
+# Cooldown seconds per alert type — suppress duplicate notifications within the window.
+ALERT_COOLDOWN_SECONDS: dict[PaperAlertType, int] = {
+    PaperAlertType.SETUP_SIGNAL_DETECTED: 3600,
+    PaperAlertType.PAPER_TRADE_OPENED: 1800,
+    PaperAlertType.PAPER_TRADE_CLOSED: 86400,
+    PaperAlertType.STOP_HIT: 86400,
+    PaperAlertType.TP_HIT: 86400,
+    PaperAlertType.RUNNER_EXIT: 86400,
+    PaperAlertType.DATA_STALE: 3600,
+    PaperAlertType.STRATEGY_BLOCKED: 3600,
+    PaperAlertType.OVERTRADING_WARNING: 86400,
+    PaperAlertType.DAILY_LOSS_LOCK_WARNING: 86400,
+    PaperAlertType.PROMOTION_STATUS_CHANGED: 3600,
+}
+
+
+def build_alert_dedup_key(
+    *,
+    alert_type: PaperAlertType,
+    organization_id: uuid.UUID,
+    paper_validation_run_id: uuid.UUID | None = None,
+    paper_trade_id: uuid.UUID | None = None,
+    strategy_id: uuid.UUID | None = None,
+) -> str:
+    parts = [alert_type.value, str(organization_id)]
+    if paper_validation_run_id is not None:
+        parts.append(str(paper_validation_run_id))
+    if paper_trade_id is not None:
+        parts.append(str(paper_trade_id))
+    elif strategy_id is not None:
+        parts.append(str(strategy_id))
+    return ":".join(parts)
 
 
 class PaperAlertService:
@@ -30,7 +64,24 @@ class PaperAlertService:
         paper_validation_run_id: uuid.UUID | None = None,
         paper_trade_id: uuid.UUID | None = None,
         metadata: dict | None = None,
-    ) -> PaperAlert:
+        dedup_key: str | None = None,
+        skip_dedup: bool = False,
+    ) -> PaperAlert | None:
+        """Create an alert, returning None when deduplication suppresses a duplicate."""
+        key = dedup_key or build_alert_dedup_key(
+            alert_type=alert_type,
+            organization_id=organization_id,
+            paper_validation_run_id=paper_validation_run_id,
+            paper_trade_id=paper_trade_id,
+            strategy_id=strategy_id,
+        )
+        if not skip_dedup:
+            cooldown = ALERT_COOLDOWN_SECONDS.get(alert_type, 3600)
+            since = datetime.now(UTC) - timedelta(seconds=cooldown)
+            existing = self._alerts.find_recent_by_dedup_key(organization_id, key, since=since)
+            if existing is not None:
+                return None
+
         row = AlertModel(
             organization_id=organization_id,
             user_id=user_id,
@@ -41,6 +92,7 @@ class PaperAlertService:
             paper_trade_id=paper_trade_id,
             message=message,
             metadata_json=metadata,
+            dedup_key=key,
         )
         self._alerts.add(row)
         return self._to_schema(row)

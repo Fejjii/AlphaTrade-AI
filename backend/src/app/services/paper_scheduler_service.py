@@ -21,7 +21,6 @@ from app.schemas.common import (
     AuditEventType,
     AuditResult,
     AuditSeverity,
-    PaperAlertType,
     PaperObservabilityEventType,
     PaperRuntimeCycleMode,
     PaperRuntimeCycleStatus,
@@ -235,32 +234,14 @@ class PaperSchedulerService:
                     f"closed={tick.trades_closed}."
                 )
                 if scan.signal and scan.signal.triggered:
-                    self._alerts.create(
-                        organization_id=organization_id,
-                        alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
-                        message=f"Paper setup signal detected for run {run.id}.",
-                        strategy_id=run.strategy_id,
-                        paper_validation_run_id=run.id,
-                    )
-                    alerts_created += 1
+                    decisions.append(f"Processed run {run.id}: setup signal (alert via runtime).")
                 if scan.trade_created:
-                    self._alerts.create(
-                        organization_id=organization_id,
-                        alert_type=PaperAlertType.PAPER_TRADE_OPENED,
-                        message=f"Paper trade opened for run {run.id}.",
-                        strategy_id=run.strategy_id,
-                        paper_validation_run_id=run.id,
-                    )
-                    alerts_created += 1
+                    decisions.append(f"Processed run {run.id}: trade opened (alert via runtime).")
                 if tick.trades_closed > 0:
-                    self._alerts.create(
-                        organization_id=organization_id,
-                        alert_type=PaperAlertType.PAPER_TRADE_CLOSED,
-                        message=f"{tick.trades_closed} paper trade(s) closed for run {run.id}.",
-                        strategy_id=run.strategy_id,
-                        paper_validation_run_id=run.id,
+                    decisions.append(
+                        f"Processed run {run.id}: {tick.trades_closed} trade(s) closed "
+                        "(alerts via runtime)."
                     )
-                    alerts_created += 1
             except Exception as exc:
                 runs_skipped += 1
                 msg = type(exc).__name__

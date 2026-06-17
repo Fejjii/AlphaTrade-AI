@@ -4,17 +4,30 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import PaperAlertServiceDep, SessionDep
 from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
 from app.schemas.common import PaperAlertSeverity, PaperAlertType
+from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import ReaderDep, TraderDep
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
+_ALERTS_READ_LIMIT = Depends(
+    tenant_rate_limit_dependency("alerts:read", limit=120, window_seconds=3600, user_limit=120)
+)
+_ALERTS_WRITE_LIMIT = Depends(
+    tenant_rate_limit_dependency("alerts:write", limit=60, window_seconds=3600, user_limit=60)
+)
 
-@router.get("", response_model=PaginatedPaperAlerts, summary="List paper validation alerts")
+
+@router.get(
+    "",
+    response_model=PaginatedPaperAlerts,
+    summary="List paper validation alerts",
+    dependencies=[_ALERTS_READ_LIMIT],
+)
 async def list_alerts(
     tenant: ReaderDep,
     service: PaperAlertServiceDep,
@@ -34,7 +47,12 @@ async def list_alerts(
     )
 
 
-@router.get("/summary", response_model=PaperAlertSummary, summary="Alert summary counts")
+@router.get(
+    "/summary",
+    response_model=PaperAlertSummary,
+    summary="Alert summary counts",
+    dependencies=[_ALERTS_READ_LIMIT],
+)
 async def alerts_summary(
     tenant: ReaderDep,
     service: PaperAlertServiceDep,
@@ -42,7 +60,12 @@ async def alerts_summary(
     return service.summary(tenant.organization_id)
 
 
-@router.get("/{alert_id}", response_model=PaperAlert, summary="Get alert by id")
+@router.get(
+    "/{alert_id}",
+    response_model=PaperAlert,
+    summary="Get alert by id",
+    dependencies=[_ALERTS_READ_LIMIT],
+)
 async def get_alert(
     alert_id: uuid.UUID,
     tenant: ReaderDep,
@@ -51,7 +74,12 @@ async def get_alert(
     return service.get_alert(alert_id, organization_id=tenant.organization_id)
 
 
-@router.patch("/{alert_id}/read", response_model=PaperAlert, summary="Mark alert as read")
+@router.patch(
+    "/{alert_id}/read",
+    response_model=PaperAlert,
+    summary="Mark alert as read",
+    dependencies=[_ALERTS_WRITE_LIMIT],
+)
 async def mark_alert_read(
     alert_id: uuid.UUID,
     tenant: TraderDep,
@@ -63,7 +91,7 @@ async def mark_alert_read(
     return result
 
 
-@router.patch("/read-all", summary="Mark all alerts as read")
+@router.patch("/read-all", summary="Mark all alerts as read", dependencies=[_ALERTS_WRITE_LIMIT])
 async def mark_all_alerts_read(
     tenant: TraderDep,
     service: PaperAlertServiceDep,

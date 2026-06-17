@@ -51,6 +51,7 @@ def build_journal_document_text(entry: JournalEntry | TradeJournal) -> str:
         result = entry.result.value if hasattr(entry.result, "value") else str(entry.result)
 
     lines = [
+        "[PENDING_OBSERVATION — not a permanent trading rule until accepted in Lessons]",
         f"Symbol: {entry.symbol}",
         f"Timeframe: {timeframe}",
         f"Direction: {direction}",
@@ -66,10 +67,10 @@ def build_journal_document_text(entry: JournalEntry | TradeJournal) -> str:
         lines.append(f"Emotion tags: {', '.join(entry.emotions)}")
     if entry.mistakes:
         lines.append(f"Mistake tags: {', '.join(entry.mistakes)}")
-    if entry.lessons:
-        lines.append(f"Lessons: {entry.lessons}")
     if entry.improvement_rule:
-        lines.append(f"Improvement rule: {entry.improvement_rule}")
+        lines.append(f"Draft improvement (pending review): {entry.improvement_rule}")
+    if entry.lessons:
+        lines.append(f"Draft lessons (pending review): {entry.lessons}")
     if entry.tags:
         lines.append(f"Tags: {', '.join(entry.tags)}")
     return sanitize_journal_text("\n".join(lines))

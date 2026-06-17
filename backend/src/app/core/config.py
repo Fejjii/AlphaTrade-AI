@@ -119,6 +119,7 @@ class Settings(BaseSettings):
     auth_omit_refresh_from_body: bool = True
     access_token_denylist_enabled: bool = True
     access_token_denylist_use_redis: bool = True
+    access_token_denylist_fail_closed: bool = True
     password_min_length: int = 12
     password_max_length: int = 128
     bcrypt_max_password_bytes: int = 72

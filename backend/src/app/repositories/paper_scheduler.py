@@ -165,6 +165,24 @@ class PaperAlertRepository(SQLAlchemyRepository[PaperValidationAlert]):
             row.read_at = now
         return len(rows)
 
+    def find_recent_by_dedup_key(
+        self,
+        organization_id: uuid.UUID,
+        dedup_key: str,
+        *,
+        since: datetime,
+    ) -> PaperValidationAlert | None:
+        return self._session.scalar(
+            select(PaperValidationAlert)
+            .where(
+                PaperValidationAlert.organization_id == organization_id,
+                PaperValidationAlert.dedup_key == dedup_key,
+                PaperValidationAlert.created_at >= since,
+            )
+            .order_by(PaperValidationAlert.created_at.desc())
+            .limit(1)
+        )
+
 
 class PaperObservabilityRepository(SQLAlchemyRepository[PaperValidationObservabilityEvent]):
     model = PaperValidationObservabilityEvent

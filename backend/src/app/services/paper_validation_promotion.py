@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Protocol
 
 from app.schemas.common import PaperValidationRecommendation, PaperValidationStatus
 from app.schemas.paper_validation import PaperValidationMetrics
@@ -178,6 +180,25 @@ def evaluate_paper_promotion(
         blockers=["Paper metrics do not support continuation."],
         paper_validated=False,
     )
+
+
+class _ClosedTradeRow(Protocol):
+    exit_time: datetime | None
+    created_at: datetime
+    net_pnl: Decimal | None
+
+
+def sort_closed_trades_chronologically[T: _ClosedTradeRow](rows: list[T]) -> list[T]:
+    """Order closed trades by exit_time ascending, then created_at for stable ties."""
+
+    def _sort_key(row: T) -> tuple[datetime, datetime]:
+        exit_t = row.exit_time or datetime.min.replace(tzinfo=UTC)
+        created = row.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        return (exit_t, created)
+
+    return sorted(rows, key=_sort_key)
 
 
 def compute_max_drawdown(equity_points: list[Decimal]) -> float:

@@ -16,6 +16,7 @@ from app.schemas.common import LessonSeverity, LessonSourceType, Timeframe
 from app.schemas.human_vs_system import (
     DisciplineAnalysis,
     HumanVsSystemComparison,
+    LessonCandidateSuggestion,
     PlanAdherenceBreakdown,
 )
 from app.schemas.proposal import ExitCriteria, TakeProfitLevel
@@ -281,7 +282,7 @@ class HumanVsSystemService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> DisciplineAnalysis:
-        _journal, proposal = self._resolve_trade(
+        _journal, _proposal = self._resolve_trade(
             journal_entry_id, organization_id=organization_id, user_id=user_id
         )
         comparison = self.compare(
@@ -290,55 +291,94 @@ class HumanVsSystemService:
             user_id=user_id,
         )
         lessons: list[str] = []
-        candidate_ids: list[uuid.UUID] = []
-        strategy_id = proposal.user_strategy_id if proposal else None
+        suggestions: list[LessonCandidateSuggestion] = []
         if comparison.missed_runner and comparison.missed_runner.recommended_lesson:
             lessons.append(comparison.missed_runner.recommended_lesson)
             if comparison.missed_runner.early_exit_flag:
-                cid = self._lessons.create_candidate(
-                    organization_id=organization_id,
-                    user_id=user_id,
-                    journal_entry_id=journal_entry_id,
-                    trade_id=journal_entry_id,
-                    category="early_exit",
-                    summary=comparison.missed_runner.recommended_lesson,
-                    source_type=LessonSourceType.RUNNER_ANALYSIS,
-                    related_strategy_id=strategy_id,
-                    severity=LessonSeverity.MEDIUM,
-                    analysis_metadata={
-                        "limitations": comparison.missed_runner.limitations,
-                        "confidence": comparison.missed_runner.confidence.value,
-                        "missed_profit_estimate": (
-                            str(comparison.missed_runner.missed_profit_estimate)
-                            if comparison.missed_runner.missed_profit_estimate
-                            else None
-                        ),
-                    },
+                suggestions.append(
+                    LessonCandidateSuggestion(
+                        category="early_exit",
+                        summary=comparison.missed_runner.recommended_lesson,
+                        source_type=LessonSourceType.RUNNER_ANALYSIS.value,
+                        severity=LessonSeverity.MEDIUM.value,
+                    )
                 )
-                candidate_ids.append(cid)
         if comparison.stop_loss_analysis and comparison.stop_loss_analysis.lesson:
             lessons.append(comparison.stop_loss_analysis.lesson)
             if comparison.stop_loss_analysis.stop_violation_flag:
-                cid = self._lessons.create_candidate(
-                    organization_id=organization_id,
-                    user_id=user_id,
-                    journal_entry_id=journal_entry_id,
-                    trade_id=journal_entry_id,
-                    category="stop_violation",
-                    summary=comparison.stop_loss_analysis.lesson,
-                    source_type=LessonSourceType.STOP_LOSS_REFUSAL,
-                    related_strategy_id=strategy_id,
-                    severity=LessonSeverity.HIGH,
-                    analysis_metadata={
-                        "limitations": comparison.stop_loss_analysis.limitations,
-                    },
+                suggestions.append(
+                    LessonCandidateSuggestion(
+                        category="stop_violation",
+                        summary=comparison.stop_loss_analysis.lesson,
+                        source_type=LessonSourceType.STOP_LOSS_REFUSAL.value,
+                        severity=LessonSeverity.HIGH.value,
+                    )
                 )
-                candidate_ids.append(cid)
+        existing = self._lessons.list_for_journal(
+            journal_entry_id, organization_id=organization_id, user_id=user_id
+        )
+        candidate_ids = [row.id for row in existing]
         return DisciplineAnalysis(
             journal_entry_id=journal_entry_id,
             comparison=comparison,
             lessons_generated=lessons,
             lesson_candidate_ids=candidate_ids,
+            candidate_suggestions=suggestions,
+        )
+
+    def create_discipline_candidate(
+        self,
+        journal_entry_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        category: str,
+    ) -> uuid.UUID:
+        """Persist a lesson candidate from discipline analysis (explicit POST only)."""
+        analysis = self.analyze_discipline(
+            journal_entry_id, organization_id=organization_id, user_id=user_id
+        )
+        match = next(
+            (s for s in analysis.candidate_suggestions if s.category == category),
+            None,
+        )
+        if match is None:
+            from app.core.errors import ValidationAppError
+
+            raise ValidationAppError(
+                f"No lesson candidate suggestion for category '{category}' on this entry."
+            )
+        existing = self._lessons.list_for_journal(
+            journal_entry_id, organization_id=organization_id, user_id=user_id
+        )
+        for row in existing:
+            if row.mistake_type == category:
+                return row.id
+        _journal, proposal = self._resolve_trade(
+            journal_entry_id, organization_id=organization_id, user_id=user_id
+        )
+        strategy_id = proposal.user_strategy_id if proposal else None
+        source_type = LessonSourceType(match.source_type)
+        severity = LessonSeverity(match.severity)
+        metadata: dict | None = None
+        if category == "early_exit" and analysis.comparison.missed_runner:
+            metadata = {
+                "limitations": analysis.comparison.missed_runner.limitations,
+                "confidence": analysis.comparison.missed_runner.confidence.value,
+            }
+        elif category == "stop_violation" and analysis.comparison.stop_loss_analysis:
+            metadata = {"limitations": analysis.comparison.stop_loss_analysis.limitations}
+        return self._lessons.create_candidate(
+            organization_id=organization_id,
+            user_id=user_id,
+            journal_entry_id=journal_entry_id,
+            trade_id=journal_entry_id,
+            category=category,
+            summary=match.summary,
+            source_type=source_type,
+            related_strategy_id=strategy_id,
+            severity=severity,
+            analysis_metadata=metadata,
         )
 
     def _proposal_to_schema(self, proposal: TradeProposal) -> TradeProposalSchema:

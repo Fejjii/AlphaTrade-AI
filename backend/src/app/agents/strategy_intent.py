@@ -81,8 +81,16 @@ def classify_strategy_workflow(message: str) -> Intent | None:
     if "accepted lesson" in lowered or ("my lessons" in lowered and "accepted" in lowered):
         return Intent.LESSON_ACCEPTED_QUERY
     if "accept" in lowered and "lesson" in lowered:
+        from app.agents.mutation_policy import is_question_message
+
+        if is_question_message(message):
+            return Intent.LESSON_RULE_SUGGEST
         return Intent.LESSON_ACCEPT
     if "reject" in lowered and "lesson" in lowered:
+        from app.agents.mutation_policy import is_question_message
+
+        if is_question_message(message):
+            return Intent.LESSON_RULE_SUGGEST
         return Intent.LESSON_REJECT
     if "rule should i update" in lowered or "update from this mistake" in lowered:
         return Intent.LESSON_RULE_SUGGEST

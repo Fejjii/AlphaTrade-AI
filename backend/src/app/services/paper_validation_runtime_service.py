@@ -61,7 +61,11 @@ from app.services.paper_bot_engine import PaperBotEngine, _OpenPaperTrade
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_observability_service import PaperObservabilityService
 from app.services.paper_sample_window_service import PaperSampleWindowService
-from app.services.paper_validation_promotion import compute_max_drawdown, evaluate_paper_promotion
+from app.services.paper_validation_promotion import (
+    compute_max_drawdown,
+    evaluate_paper_promotion,
+    sort_closed_trades_chronologically,
+)
 from app.services.structured_rule_resolver import resolve_backtest_rules
 
 
@@ -280,7 +284,7 @@ class PaperValidationRuntimeService:
             slip_rate = config.slippage_bps / Decimal("10000")
             open_state = self._engine.open_trade_state(
                 direction=rules.direction,
-                entry_time=candle_rows[-1].open_time,
+                entry_time=candle_rows[-1].close_time,
                 entry_price=evaluation.entry_price,
                 stop_loss=evaluation.stop_loss,
                 size=size,
@@ -409,6 +413,7 @@ class PaperValidationRuntimeService:
                 timeout_bars=config.trade_timeout_bars,
             )
             if close is None:
+                self._persist_open_trade_state(trade_row, open_state)
                 continue
             self._apply_close(trade_row, close)
             closed_details.append((trade_row, close))
@@ -708,7 +713,10 @@ class PaperValidationRuntimeService:
 
         parsed = rules if isinstance(rules, ParsedStrategyRules) else None
         tp_plan = {"r_multiples": [str(m) for m in (parsed.tp_r_multiples if parsed else ())]}
-        runner_plan = {"use_runner": parsed.use_runner} if parsed and parsed.use_runner else None
+        runner_plan = {"use_runner": parsed.use_runner} if parsed and parsed.use_runner else {}
+        if not isinstance(runner_plan, dict):
+            runner_plan = {}
+        runner_plan.setdefault("bars_open", 0)
         row = PaperTradeModel(
             paper_validation_run_id=run.id,
             strategy_id=run.strategy_id,
@@ -748,6 +756,13 @@ class PaperValidationRuntimeService:
             tp_multiples = tuple(Decimal(v) for v in trade_row.tp_plan["r_multiples"])
         if trade_row.runner_plan:
             use_runner = bool(trade_row.runner_plan.get("use_runner"))
+        bars_open = 0
+        last_bar_open_time: datetime | None = None
+        if trade_row.runner_plan:
+            bars_open = int(trade_row.runner_plan.get("bars_open", 0))
+            raw_last = trade_row.runner_plan.get("last_bar_open_time")
+            if raw_last:
+                last_bar_open_time = datetime.fromisoformat(str(raw_last))
         rules = ParsedStrategyRules(
             machine_readable=True,
             limitation=None,
@@ -761,7 +776,7 @@ class PaperValidationRuntimeService:
         fee_rate = config.fees_bps / Decimal("10000")
         slip_rate = config.slippage_bps / Decimal("10000")
         engine = PaperBotEngine()
-        return engine.open_trade_state(
+        state = engine.open_trade_state(
             direction=trade_row.direction,
             entry_time=trade_row.entry_time or datetime.now(UTC),
             entry_price=trade_row.entry_price or Decimal("0"),
@@ -771,6 +786,17 @@ class PaperValidationRuntimeService:
             fee_rate=fee_rate,
             slip_rate=slip_rate,
         )
+        state.bars_open = bars_open
+        state.last_bar_open_time = last_bar_open_time
+        return state
+
+    @staticmethod
+    def _persist_open_trade_state(trade_row: PaperTradeModel, state: _OpenPaperTrade) -> None:
+        plan = dict(trade_row.runner_plan or {})
+        plan["bars_open"] = state.bars_open
+        if state.last_bar_open_time is not None:
+            plan["last_bar_open_time"] = state.last_bar_open_time.isoformat()
+        trade_row.runner_plan = plan
 
     @staticmethod
     def _apply_close(trade_row: PaperTradeModel, close: object) -> None:
@@ -813,8 +839,9 @@ class PaperValidationRuntimeService:
         if not rows:
             return self._empty_metrics()
 
-        pnls = [r.net_pnl or Decimal("0") for r in rows]
-        gross_pnls = [r.gross_pnl or Decimal("0") for r in rows]
+        ordered = sort_closed_trades_chronologically(rows)
+        pnls = [r.net_pnl or Decimal("0") for r in ordered]
+        gross_pnls = [r.gross_pnl or Decimal("0") for r in ordered]
         wins = [p for p in pnls if p > 0]
         losses = [abs(p) for p in pnls if p <= 0]
         gross_profit = sum(wins, Decimal("0"))
@@ -822,7 +849,7 @@ class PaperValidationRuntimeService:
         pf = float(gross_profit / gross_loss) if gross_loss > 0 else float(gross_profit)
         net = sum(pnls, Decimal("0"))
         gross = sum(gross_pnls, Decimal("0"))
-        count = len(rows)
+        count = len(ordered)
         total_fees = sum((r.fees or Decimal("0") for r in rows), Decimal("0"))
         total_slip = sum((r.slippage or Decimal("0") for r in rows), Decimal("0"))
 
@@ -843,15 +870,15 @@ class PaperValidationRuntimeService:
                 streak = 0
 
         durations = []
-        for r in rows:
+        for r in ordered:
             if r.entry_time and r.exit_time:
                 hours = max(0.01, (r.exit_time - r.entry_time).total_seconds() / 3600)
                 durations.append(hours)
         avg_hold = sum(durations) / len(durations) if durations else 0.0
 
-        stop_respected = sum(1 for r in rows if r.exit_reason == "stop_loss")
-        early_exit = sum(1 for r in rows if r.exit_reason == "runner_trail")
-        runner_helped = sum(1 for r in rows if r.exit_reason and "runner" in r.exit_reason)
+        stop_respected = sum(1 for r in ordered if r.exit_reason == "stop_loss")
+        early_exit = sum(1 for r in ordered if r.exit_reason == "runner_trail")
+        runner_helped = sum(1 for r in ordered if r.exit_reason and "runner" in r.exit_reason)
 
         return PaperValidationMetrics(
             paper_trades_count=count,

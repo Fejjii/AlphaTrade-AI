@@ -75,6 +75,16 @@ class HistoricalCandleService:
             bars = ohlcv.bars
             source = ohlcv.envelope.source
             limitations = []
+            filtered = [b for b in bars if start_dt <= b.timestamp <= end_dt]
+            if filtered:
+                bars = filtered
+            elif bars:
+                limitations.append(
+                    "Provider returned candles outside requested range — results may not "
+                    "match backtest window."
+                )
+            else:
+                limitations.append("Provider returned no candles for requested range.")
             if ohlcv.envelope.fallback_used:
                 limitations.append("Provider fallback used — verify data provenance.")
             if ohlcv.envelope.is_stale:

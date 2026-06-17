@@ -464,24 +464,46 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             action = "rule_suggest"
         elif intent is Intent.ADD_RUNNER_RULE:
             action = "runner_rule_hint"
-        output = _run_tool(
-            "lesson_review_tool",
-            {
-                "action": action,
-                "lesson_id": lesson_match.group(0) if lesson_match else None,
-                "organization_id": org,
-                "user_id": user,
-            },
-        )
-        if output.success and output.result:
-            summary = output.result.get("summary", "Lesson data retrieved.")
-            answer_lines.append(_format_tool_answer("lesson_review_tool", summary))
-            if output.result.get("pending_observation"):
+        tool_args: dict = {
+            "action": action,
+            "lesson_id": lesson_match.group(0) if lesson_match else None,
+            "organization_id": org,
+            "user_id": user,
+            "user_message": agent.message,
+        }
+        from app.agents.mutation_policy import mutation_allowed
+
+        preview_only = intent in {
+            Intent.LESSON_ACCEPT,
+            Intent.LESSON_REJECT,
+        } and not mutation_allowed(agent.message)
+        if preview_only:
+            tool_args["action"] = "rule_suggest" if lesson_match else "list_pending"
+            output = _run_tool("lesson_review_tool", tool_args)
+            if output.success and output.result:
                 answer_lines.append(
-                    "Note: pending observations are not permanent rules until you accept them."
+                    _format_tool_answer(
+                        "lesson_review_tool",
+                        "Preview only — no state changed. To mutate, reply with explicit "
+                        "confirmation (e.g. 'I confirm accept lesson <id>').",
+                    )
                 )
+                summary = output.result.get("summary", "")
+                if summary:
+                    answer_lines.append(summary)
+            else:
+                answer_lines.append(f"Lesson preview failed: {output.error}")
         else:
-            answer_lines.append(f"Lesson review failed: {output.error}")
+            output = _run_tool("lesson_review_tool", tool_args)
+            if output.success and output.result:
+                summary = output.result.get("summary", "Lesson data retrieved.")
+                answer_lines.append(_format_tool_answer("lesson_review_tool", summary))
+                if output.result.get("pending_observation"):
+                    answer_lines.append(
+                        "Note: pending observations are not permanent rules until you accept them."
+                    )
+            else:
+                answer_lines.append(f"Lesson review failed: {output.error}")
 
     elif intent is Intent.PAPER_ELIGIBILITY_BLOCKERS:
         output = _run_tool(
@@ -526,24 +548,51 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             agent.message,
             re.I,
         )
-        output = _run_tool(
-            "lesson_review_tool",
-            {
-                "action": "create_version_from_lesson",
-                "lesson_id": lesson_match.group(0) if lesson_match else None,
-                "organization_id": org,
-                "user_id": user,
-            },
-        )
-        if output.success and output.result:
-            answer_lines.append(
-                _format_tool_answer(
-                    "lesson_review_tool",
-                    output.result.get("summary", "Strategy version created from lesson."),
-                )
+        from app.agents.mutation_policy import mutation_allowed
+
+        if not mutation_allowed(agent.message):
+            output = _run_tool(
+                "lesson_review_tool",
+                {
+                    "action": "rule_suggest",
+                    "lesson_id": lesson_match.group(0) if lesson_match else None,
+                    "organization_id": org,
+                    "user_id": user,
+                    "user_message": agent.message,
+                },
             )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "lesson_review_tool",
+                        "Preview only — strategy version not created. "
+                        "Confirm explicitly to proceed.",
+                    )
+                )
+                answer_lines.append(output.result.get("summary", ""))
+            else:
+                answer_lines.append(f"Version preview failed: {output.error}")
         else:
-            answer_lines.append(f"Version creation failed: {output.error}")
+            output = _run_tool(
+                "lesson_review_tool",
+                {
+                    "action": "create_version_from_lesson",
+                    "lesson_id": lesson_match.group(0) if lesson_match else None,
+                    "organization_id": org,
+                    "user_id": user,
+                    "user_message": agent.message,
+                    "confirm": True,
+                },
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "lesson_review_tool",
+                        output.result.get("summary", "Strategy version created from lesson."),
+                    )
+                )
+            else:
+                answer_lines.append(f"Version creation failed: {output.error}")
 
     elif intent in {Intent.LESSON_STRATEGY_LINKED, Intent.LESSON_UNRESOLVED_BLOCKERS}:
         list_out = _run_tool(
@@ -846,6 +895,7 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                 "organization_id": org,
                 "user_id": user,
                 "strategy_id": org,
+                "user_message": agent.message,
             },
         )
         if output.success and output.result:

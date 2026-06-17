@@ -46,6 +46,7 @@ class _RedisDenylist:
     def __init__(self, settings: Settings) -> None:
         import redis
 
+        self._settings = settings
         self._client = redis.from_url(
             settings.redis_url,
             socket_connect_timeout=settings.redis_connect_timeout_seconds,
@@ -63,7 +64,17 @@ class _RedisDenylist:
     def is_denied(self, jti: str) -> bool:
         try:
             return bool(self._client.exists(f"{self._prefix}{jti}"))
-        except Exception:
+        except Exception as exc:
+            logger.error(
+                "access_token_denylist_check_failed",
+                error_type=type(exc).__name__,
+                fail_closed=self._settings.access_token_denylist_fail_closed,
+            )
+            if self._settings.access_token_denylist_fail_closed:
+                from app.core.config import Environment
+
+                if self._settings.environment is not Environment.LOCAL:
+                    return True
             return False
 
 

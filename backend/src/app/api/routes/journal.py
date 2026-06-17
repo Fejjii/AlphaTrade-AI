@@ -7,7 +7,12 @@ import uuid
 from fastapi import APIRouter, Query
 
 from app.core.auth import TenantDep
-from app.core.dependencies import HumanVsSystemServiceDep, JournalServiceDep, SessionDep
+from app.core.dependencies import (
+    HumanVsSystemServiceDep,
+    JournalServiceDep,
+    LessonCandidateServiceDep,
+    SessionDep,
+)
 from app.schemas.human_vs_system import DisciplineAnalysis
 from app.schemas.journal import (
     JournalEntry,
@@ -16,6 +21,7 @@ from app.schemas.journal import (
     JournalEntryUpdate,
     PaginatedJournalEntries,
 )
+from app.schemas.lesson import LessonCandidate
 from app.security.rbac import TraderDep
 from app.security.tenant import ensure_same_organization
 
@@ -132,4 +138,32 @@ async def journal_discipline_analysis(
         journal_entry_id,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
+    )
+
+
+@router.post(
+    "/entries/{journal_entry_id}/discipline-analysis/candidates",
+    response_model=LessonCandidate,
+    summary="Create lesson candidate from discipline analysis",
+)
+async def create_discipline_lesson_candidate(
+    journal_entry_id: uuid.UUID,
+    tenant: TraderDep,
+    journal_service: JournalServiceDep,
+    hvs_service: HumanVsSystemServiceDep,
+    lesson_service: LessonCandidateServiceDep,
+    session: SessionDep,
+    category: str = Query(..., description="Suggestion category, e.g. early_exit"),
+) -> LessonCandidate:
+    entry = journal_service.get(journal_entry_id)
+    ensure_same_organization(entry.organization_id, tenant)
+    candidate_id = hvs_service.create_discipline_candidate(
+        journal_entry_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        category=category,
+    )
+    session.commit()
+    return lesson_service.get(
+        candidate_id, organization_id=tenant.organization_id, user_id=tenant.user_id
     )

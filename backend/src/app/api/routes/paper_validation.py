@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import (
     PaperSchedulerServiceDep,
@@ -27,15 +27,27 @@ from app.schemas.paper_validation import (
     PaperValidationMetrics,
     PaperValidationRun,
 )
+from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, TraderDep
 
 router = APIRouter(prefix="/paper-validation", tags=["paper-validation"])
+
+_PAPER_SCHEDULER_READ = Depends(
+    tenant_rate_limit_dependency("paper-validation:scheduler:read", limit=120, window_seconds=3600)
+)
+_PAPER_SCHEDULER_WRITE = Depends(
+    tenant_rate_limit_dependency("paper-validation:scheduler:write", limit=30, window_seconds=3600)
+)
+_PAPER_RUNTIME_WRITE = Depends(
+    tenant_rate_limit_dependency("paper-validation:runtime:write", limit=60, window_seconds=3600)
+)
 
 
 @router.get(
     "/scheduler/status",
     response_model=PaperSchedulerStatus,
     summary="Paper validation scheduler status",
+    dependencies=[_PAPER_SCHEDULER_READ],
 )
 async def get_scheduler_status(
     tenant: TraderDep,
@@ -48,6 +60,7 @@ async def get_scheduler_status(
     "/scheduler/tick",
     response_model=PaperSchedulerTickResult,
     summary="Manual paper validation scheduler tick",
+    dependencies=[_PAPER_SCHEDULER_WRITE],
 )
 async def scheduler_tick(
     tenant: OwnerDep,
@@ -63,6 +76,7 @@ async def scheduler_tick(
     "/scheduler/config",
     response_model=PaperSchedulerStatus,
     summary="Update tenant paper scheduler config",
+    dependencies=[_PAPER_SCHEDULER_WRITE],
 )
 async def update_scheduler_config(
     payload: PaperSchedulerConfigUpdate,
@@ -83,6 +97,7 @@ async def update_scheduler_config(
     "/scheduler/history",
     response_model=PaginatedPaperRuntimeHistory,
     summary="Scheduler and runtime cycle history",
+    dependencies=[_PAPER_SCHEDULER_READ],
 )
 async def list_scheduler_history(
     tenant: TraderDep,
@@ -116,6 +131,7 @@ async def get_paper_validation_run(
     "/{run_id}/scan",
     response_model=PaperScanResult,
     summary="Scan market for paper signals",
+    dependencies=[_PAPER_RUNTIME_WRITE],
 )
 async def scan_paper_validation(
     run_id: uuid.UUID,
@@ -136,6 +152,7 @@ async def scan_paper_validation(
     "/{run_id}/tick",
     response_model=PaperTickResult,
     summary="Advance paper trade monitoring (manual tick)",
+    dependencies=[_PAPER_RUNTIME_WRITE],
 )
 async def tick_paper_validation(
     run_id: uuid.UUID,
@@ -156,6 +173,7 @@ async def tick_paper_validation(
     "/{run_id}/stop",
     response_model=PaperValidationRun,
     summary="Stop paper validation run",
+    dependencies=[_PAPER_RUNTIME_WRITE],
 )
 async def stop_paper_validation(
     run_id: uuid.UUID,

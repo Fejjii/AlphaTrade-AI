@@ -95,6 +95,7 @@ def slice40_client() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="slice40-test-secret-key-min",
         rate_limit_use_redis=False,
+        access_token_denylist_use_redis=False,
         provider_mode="mock",
         market_data_provider="mock",
     )

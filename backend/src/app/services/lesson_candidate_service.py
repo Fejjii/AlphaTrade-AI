@@ -402,6 +402,7 @@ class LessonCandidateService:
 
     def _build_rag_text(self, row: LessonCandidateModel) -> str:
         lines = [
+            "[ACCEPTED_TRADING_LESSON — reviewed rule, not a pending observation]",
             f"Status: accepted trading lesson (reviewed {row.reviewed_at or row.created_at})",
             f"Source: {row.source_type}",
             f"Mistake type: {row.mistake_type}",

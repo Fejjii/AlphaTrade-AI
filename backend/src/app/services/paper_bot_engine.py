@@ -24,6 +24,7 @@ class _OpenPaperTrade:
     entry_fees: Decimal
     entry_slippage: Decimal
     bars_open: int = 0
+    last_bar_open_time: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,9 @@ class PaperBotEngine:
         slip_rate: Decimal,
         timeout_bars: int,
     ) -> CloseEvaluation | None:
-        trade.bars_open += 1
+        if trade.last_bar_open_time is None or bar.open_time > trade.last_bar_open_time:
+            trade.bars_open += 1
+            trade.last_bar_open_time = bar.open_time
         closed = self._maybe_close(trade, bar=bar, fee_rate=fee_rate, slip_rate=slip_rate)
         if closed is not None:
             return closed
@@ -241,11 +244,10 @@ class PaperBotEngine:
         if trade.use_runner and trade.tp_hit >= 1:
             if direction == TradeDirection.LONG:
                 trail = bar.close * Decimal("0.985")
+                runner_hit = bar.low <= trail
             else:
                 trail = bar.close * Decimal("1.015")
-            runner_hit = (direction == TradeDirection.LONG and bar.close < trail) or (
-                direction == TradeDirection.SHORT and bar.close > trail
-            )
+                runner_hit = bar.high >= trail
             if runner_hit:
                 return self._close_at_price(
                     trade,

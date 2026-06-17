@@ -38,7 +38,7 @@
 - No Telegram/email/push alert delivery — storage and UI only
 - No always-on in-process scheduler loop — manual tick + optional env flag
 - Sample windows use simple 7-day buckets; not full walk-forward optimization
-- Alert volume not deduplicated across rapid scan cycles
+- Alert deduplication with cooldown windows (Slice 40C)
 - Does not change `ENABLE_REAL_TRADING` or execution mode
 
 ### Paper validation runtime (Slice 39 — remaining gaps)

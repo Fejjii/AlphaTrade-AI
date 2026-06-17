@@ -66,7 +66,7 @@ Use:
 - **UI:** Run scan / Run tick / Manual scheduler tick in Strategy Lab
 - **API:** `POST /paper-validation/{run_id}/tick`, `POST /paper-validation/scheduler/tick`
 
-Optional in-process background loop is **disabled by default** (`ENABLE_PAPER_SCHEDULER=false`).
+Optional in-process background loop is **not implemented** — only manual `POST /paper-validation/scheduler/tick` when `ENABLE_PAPER_SCHEDULER=true`.
 
 ## Paper bot engine v1
 
@@ -132,7 +132,7 @@ Accepted lessons vs pending observations: only **accepted** lessons affect promo
 
 ## Migration
 
-Apply through head **`q7r8s9t0u1v2`** (Slice 39):
+Apply through head **`s9t0u1v2w3x4`** (Slice 40C; prior Slice 40: `r8s9t0u1v2w3`):
 
 ```bash
 cd backend && uv run alembic upgrade head

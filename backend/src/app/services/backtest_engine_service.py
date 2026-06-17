@@ -156,7 +156,7 @@ class BacktestEngineService:
                     tp_levels = self._tp_prices(fill, stop, rules.tp_r_multiples, rules.direction)
                     open_trade = _OpenTrade(
                         direction=rules.direction,
-                        entry_time=bar.open_time,
+                        entry_time=bar.close_time,
                         entry_price=fill,
                         stop_loss=stop,
                         size=size,
@@ -311,12 +311,14 @@ class BacktestEngineService:
         if trade.use_runner and trade.tp_hit >= 1:
             if direction == TradeDirection.LONG:
                 trail = bar.close * Decimal("0.985")
+                runner_hit = bar.low <= trail
             else:
                 trail = bar.close * Decimal("1.015")
-            if direction == TradeDirection.LONG and bar.close < trail:
+                runner_hit = bar.high >= trail
+            if runner_hit:
                 return self._build_trade_record(
                     trade,
-                    exit_time=bar.open_time,
+                    exit_time=bar.close_time,
                     exit_price=bar.close,
                     exit_reason="runner_trail",
                     tp_status=f"tp{trade.tp_hit}+runner",

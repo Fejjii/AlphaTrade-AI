@@ -79,10 +79,23 @@ class HumanVsSystemComparison(StrictModel):
     limitations: list[str] = Field(default_factory=list)
 
 
+class LessonCandidateSuggestion(StrictModel):
+    """Read-only suggestion from discipline analysis — persist via POST."""
+
+    category: str
+    summary: str
+    source_type: str
+    severity: str = "medium"
+
+
 class DisciplineAnalysis(StrictModel):
     """Journal-focused discipline breakdown (Slice 36)."""
 
     journal_entry_id: UUID
     comparison: HumanVsSystemComparison
     lessons_generated: list[str] = Field(default_factory=list)
-    lesson_candidate_ids: list[UUID] = Field(default_factory=list)
+    lesson_candidate_ids: list[UUID] = Field(
+        default_factory=list,
+        description="Existing persisted candidates linked to this journal entry only.",
+    )
+    candidate_suggestions: list[LessonCandidateSuggestion] = Field(default_factory=list)

@@ -10,6 +10,7 @@ from typing import Any
 
 import structlog
 
+from app.guardrails.context_sanitizer import sanitize_retrieved_snippet
 from app.guardrails.narrative_validation import NarrativeValidationGuardrail
 from app.guardrails.redaction import redact_mapping
 from app.providers.llm import LLMCompletionRequest, LLMCompletionResult, LLMMessage, LLMProvider
@@ -240,7 +241,14 @@ def build_sanitized_narrative_context(
             "document_id": str(c.document_id),
             "source_type": c.source_type.value,
             "title": c.title,
-            "snippet": (c.snippet or "")[:200],
+            "snippet": sanitize_retrieved_snippet(c.snippet or ""),
+            "memory_kind": (
+                "accepted_trading_lesson"
+                if c.source_type.value == "review_note"
+                else "pending_observation"
+                if c.source_type.value == "trade_journal"
+                else "reference"
+            ),
         }
         for c in (agent.citations or agent.retrieved_context or [])[:8]
     ]

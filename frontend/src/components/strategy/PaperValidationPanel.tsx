@@ -146,9 +146,17 @@ export function PaperValidationPanel({
         {latest?.last_scan_result ? (
           <div className="rounded border border-zinc-800 p-3" data-testid="latest-scan-result">
             <p className="text-zinc-400">Latest scan</p>
-            <pre className="overflow-x-auto text-xs text-zinc-400">
-              {JSON.stringify(latest.last_scan_result, null, 0)}
-            </pre>
+            <p className="text-sm text-zinc-200">
+              Signal triggered:{" "}
+              {latest.last_scan_result.triggered === true ? "yes" : "no"}
+              {latest.last_scan_result.trade_created ? " · paper trade opened" : ""}
+            </p>
+            {Array.isArray(latest.last_scan_result.limitations) &&
+            latest.last_scan_result.limitations.length > 0 ? (
+              <p className="mt-1 text-xs text-amber-200/90">
+                Notes: {(latest.last_scan_result.limitations as string[]).slice(0, 3).join("; ")}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

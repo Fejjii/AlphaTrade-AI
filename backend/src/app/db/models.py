@@ -708,6 +708,7 @@ class PaperValidationAlert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     message: Mapped[str] = mapped_column(Text, nullable=False)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dedup_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
 
 
