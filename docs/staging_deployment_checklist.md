@@ -43,7 +43,7 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 5 | `REDIS_URL` | Managed Redis (not localhost) | ☐ |
 | 6 | `QDRANT_URL` | Qdrant Cloud HTTPS, **or empty** for in-memory RAG (staging only) | ☐ |
 | 7 | `JWT_SECRET` | 32+ byte random (not placeholder) | ☐ |
-| 8 | `CORS_ORIGINS` | Exact frontend URL, `https://...` | ☐ |
+| 8 | `CORS_ORIGINS` | `https://alpha-trade-ai-eight.vercel.app` (+ git-main alias if needed) | ☐ |
 | 9 | `AUTH_REFRESH_COOKIE_ENABLED` | `true` | ☐ |
 | 10 | `AUTH_COOKIE_SECURE` | `true` | ☐ |
 | 11 | `AUTH_COOKIE_SAMESITE` | `none` (Vercel + separate API host) | ☐ |
@@ -63,6 +63,8 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 25 | `EMAIL_PROVIDER` | `mock` | ☐ |
 | 26 | `MARKET_WATCHER_ENABLED` | `false` | ☐ |
 | 27 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` | ☐ |
+| 28 | `REQUIRE_EMAIL_VERIFIED` | `false` (demo login) | ☐ |
+| 29 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (if Redis invalid) | ☐ |
 
 Validate before deploy:
 
@@ -124,6 +126,7 @@ cd backend && uv run alembic upgrade head
 ## 6. Frontend deploy (Vercel)
 
 - [ ] Root directory: `frontend`
+- [ ] Production URL: `https://alpha-trade-ai-eight.vercel.app` (not `alpha-trade-ai.vercel.app`)
 - [ ] Env vars from §3
 - [ ] Deploy successful
 - [ ] Update `CORS_ORIGINS` on backend to match Vercel URL

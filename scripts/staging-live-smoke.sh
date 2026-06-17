@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Slice 47 — live staging smoke (health, safety, auth routes, notifications, market watcher).
+# Slice 48 — live staging smoke (health, safety, CORS, frontend routes, auth, notifications).
 # Usage:
 #   BACKEND_URL=https://your-api.onrender.com ./scripts/staging-live-smoke.sh
 #   BACKEND_URL=... FRONTEND_URL=https://your-app.vercel.app ./scripts/staging-live-smoke.sh
+#   SMOKE_EMAIL=user@example.com SMOKE_PASSWORD='...' ./scripts/staging-live-smoke.sh
 #
 # Does not print secrets. Does not hardcode credentials.
 set -euo pipefail
@@ -70,7 +71,7 @@ auth_header() {
 
 echo "Staging live smoke — BACKEND_URL=${BACKEND_URL} FRONTEND_URL=${FRONTEND_URL:-<none>}"
 
-echo "1/14 — /health"
+echo "1/16 — /health"
 health_json="$(curl_api "${BACKEND_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys
@@ -81,7 +82,7 @@ print(f"  OK: execution_mode=paper real_trading_enabled=false environment={p.get
 PY
 assert_no_secrets "$health_json"
 
-echo "2/14 — /health/ready"
+echo "2/16 — /health/ready"
 ready_json="$(curl_api "${BACKEND_URL}/health/ready")"
 python3 - <<'PY' "$ready_json" "$ALLOW_DEGRADED_READY"
 import json, sys
@@ -96,23 +97,43 @@ else:
 PY
 assert_no_secrets "$ready_json"
 
-echo "3/14 — verify-safety invariants"
+echo "3/16 — verify-safety invariants"
 BASE_URL="${BACKEND_URL}" ./scripts/verify-safety.sh
 
 if [[ -n "$FRONTEND_URL" ]]; then
-  echo "4/14 — frontend loads (${FRONTEND_URL})"
+  echo "4/16 — frontend loads (${FRONTEND_URL})"
+  frontend_html="$(curl -sS "${FRONTEND_URL}/" || true)"
   frontend_code="$(curl -sS -o /dev/null -w '%{http_code}' "${FRONTEND_URL}/" || true)"
   if [[ "$frontend_code" == "200" ]]; then
     echo "  OK: frontend HTTP ${frontend_code}"
   else
     echo "  WARN: frontend HTTP ${frontend_code} (check Vercel root directory=frontend and deployment protection)"
   fi
+  if printf '%s' "$frontend_html" | rg -q '_next/static|<title>AlphaTrade AI</title>'; then
+    echo "  OK: Next.js AlphaTrade frontend detected"
+  elif printf '%s' "$frontend_html" | rg -q '<title>Your Project</title>'; then
+    echo "  WARN: placeholder app detected — use production alias https://alpha-trade-ai-eight.vercel.app"
+  else
+    echo "  WARN: could not confirm Next.js app markup"
+  fi
 else
-  echo "4/14 — frontend check skipped (set FRONTEND_URL to enable)"
+  echo "4/16 — frontend check skipped (set FRONTEND_URL to enable)"
 fi
 
 if [[ -n "$FRONTEND_URL" ]]; then
-  echo "5/14 — CORS preflight"
+  echo "5/16 — frontend /login route"
+  login_code="$(curl -sS -o /dev/null -w '%{http_code}' "${FRONTEND_URL}/login" || true)"
+  if [[ "$login_code" == "200" ]]; then
+    echo "  OK: /login HTTP ${login_code}"
+  else
+    echo "  WARN: /login HTTP ${login_code} — wrong Vercel project or deployment protection"
+  fi
+else
+  echo "5/16 — frontend /login skipped"
+fi
+
+if [[ -n "$FRONTEND_URL" ]]; then
+  echo "6/16 — CORS preflight"
   cors_status="$(curl -sS -o /dev/null -w '%{http_code}' -X OPTIONS "${BACKEND_URL}/health" \
     -H "Origin: ${FRONTEND_URL}" \
     -H "Access-Control-Request-Method: GET" \
@@ -123,18 +144,18 @@ if [[ -n "$FRONTEND_URL" ]]; then
     echo "  WARN: CORS preflight HTTP ${cors_status} — set CORS_ORIGINS=${FRONTEND_URL} on backend and redeploy"
   fi
 else
-  echo "5/14 — CORS preflight skipped"
+  echo "6/16 — CORS preflight skipped"
 fi
 
 if [[ "$SKIP_REGISTER" == "true" ]]; then
-  echo "6/14 — register skipped (SKIP_REGISTER=true)"
+  echo "7/16 — register skipped (SKIP_REGISTER=true)"
   if [[ -z "${SMOKE_ACCESS_TOKEN:-}" ]]; then
     echo "SMOKE_ACCESS_TOKEN required when SKIP_REGISTER=true" >&2
     exit 1
   fi
   TOKEN="$SMOKE_ACCESS_TOKEN"
 else
-  echo "6/14 — register"
+  echo "7/16 — register"
   register_json="$(curl_api_cookie -X POST "${BACKEND_URL}/auth/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
@@ -146,7 +167,7 @@ else
   TOKEN="$SMOKE_ACCESS_TOKEN"
 fi
 
-echo "7/14 — GET /dashboard/summary"
+echo "8/16 — GET /dashboard/summary"
 dash_json="$(curl_api -H "$(auth_header)" "${BACKEND_URL}/dashboard/summary")"
 python3 - <<'PY' "$dash_json"
 import json, sys
@@ -158,7 +179,7 @@ print("  OK: dashboard summary paper-only")
 PY
 assert_no_secrets "$dash_json"
 
-echo "8/14 — GET /risk/settings"
+echo "9/16 — GET /risk/settings"
 risk_json="$(curl_api -H "$(auth_header)" "${BACKEND_URL}/risk/settings")"
 python3 - <<'PY' "$risk_json"
 import json, sys
@@ -168,7 +189,7 @@ print("  OK")
 PY
 assert_no_secrets "$risk_json"
 
-echo "9/14 — notification preferences + delivery status"
+echo "10/16 — notification preferences + delivery status"
 prefs_json="$(curl_api -H "$(auth_header)" "${BACKEND_URL}/notifications/preferences")"
 python3 - <<'PY' "$prefs_json"
 import json, sys
@@ -189,7 +210,7 @@ print("  OK: effective_external_enabled=false")
 PY
 assert_no_secrets "$status_json"
 
-echo "10/14 — POST /notifications/test (safe skip external)"
+echo "11/16 — POST /notifications/test (safe skip external)"
 test_json="$(curl_api -X POST -H "$(auth_header)" "${BACKEND_URL}/notifications/test")"
 python3 - <<'PY' "$test_json"
 import json, sys
@@ -199,7 +220,7 @@ print("  OK")
 PY
 assert_no_secrets "$test_json"
 
-echo "11/14 — GET /alerts/delivery-summary"
+echo "12/16 — GET /alerts/delivery-summary"
 summary_json="$(curl_api -H "$(auth_header)" "${BACKEND_URL}/alerts/delivery-summary")"
 python3 - <<'PY' "$summary_json"
 import json, sys
@@ -210,7 +231,7 @@ print("  OK")
 PY
 assert_no_secrets "$summary_json"
 
-echo "12/14 — market watcher + bridge status"
+echo "13/16 — market watcher + bridge status"
 mw_json="$(curl_api -H "$(auth_header)" "${BACKEND_URL}/market-watcher/status")"
 python3 - <<'PY' "$mw_json"
 import json, sys
@@ -229,13 +250,27 @@ print(f"  OK: bridge env_enabled={p.get('env_enabled')}")
 PY
 assert_no_secrets "$bridge_json"
 
-echo "13/14 — protected chat (read-only safe message)"
+echo "14/16 — protected chat (read-only safe message)"
 curl_api -X POST -H "$(auth_header)" -H 'Content-Type: application/json' \
   "${BACKEND_URL}/chat/message" \
   -d '{"message":"Staging live smoke: what is paper mode?"}' >/dev/null
 echo "  OK"
 
-echo "14/14 — real_trading_enabled still false"
+echo "15/16 — environment still paper-only"
+health_json="$(curl_api "${BACKEND_URL}/health")"
+python3 - <<'PY' "$health_json"
+import json, sys
+p = json.loads(sys.argv[1])
+assert p.get("execution_mode") == "paper", p
+assert p.get("real_trading_enabled") is False, p
+env = p.get("environment")
+if env == "staging":
+    print("  OK: environment=staging")
+else:
+    print(f"  WARN: environment={env!r} (set ENVIRONMENT=staging on Render)")
+PY
+
+echo "16/16 — real_trading_enabled still false"
 health_json="$(curl_api "${BACKEND_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys

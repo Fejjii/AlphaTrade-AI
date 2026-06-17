@@ -6,7 +6,7 @@ Replace placeholders — **never paste real secrets into committed files**.
 | Placeholder | Example |
 |-------------|---------|
 | `<BACKEND_URL>` | `https://alphatrade-api-staging.onrender.com` |
-| `<FRONTEND_URL>` | `https://alpha-trade-ai.vercel.app` (Vercel **Root Directory** must be `frontend`) |
+| `<FRONTEND_URL>` | `https://alpha-trade-ai-eight.vercel.app` (Vercel Root Directory = `frontend`) |
 
 ---
 

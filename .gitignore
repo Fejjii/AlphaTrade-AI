@@ -44,3 +44,4 @@ frontend/.env*.local
 *.sqlite3
 *.db
 logs/
+.vercel

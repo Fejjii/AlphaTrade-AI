@@ -267,7 +267,8 @@ Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + *
 | Service | Staging URL (Slice 47) |
 |---------|------------------------|
 | Backend API | https://alphatrade-api-staging.onrender.com |
-| Frontend (intended) | https://alpha-trade-ai.vercel.app — set Vercel **Root Directory** to `frontend` |
+| Frontend (production) | https://alpha-trade-ai-eight.vercel.app — Vercel Root Directory = `frontend` |
+| Frontend (do not use) | https://alpha-trade-ai.vercel.app — blocked/wrong placeholder |
 
 | Doc | Purpose |
 |-----|---------|
@@ -284,9 +285,10 @@ Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + *
 ```bash
 ENV_FILE=.env.staging ./scripts/check-env.sh
 BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/verify-safety.sh
-FRONTEND_URL=https://alpha-trade-ai.vercel.app COOKIE_MODE=true ALLOW_DEGRADED_READY=true \
+FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app COOKIE_MODE=true ALLOW_DEGRADED_READY=true \
   BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-smoke.sh
-BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
+FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
+  BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
 ```
 
 After deploy, add your public URLs to the README table above or pin them in release notes.

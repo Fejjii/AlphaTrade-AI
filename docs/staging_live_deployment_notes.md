@@ -62,9 +62,11 @@ Related: [pre_deployment_checklist.md](pre_deployment_checklist.md) · [deployme
 
 3. **Environment Variables** (Production + Preview) — see §3 frontend table.
 
-4. Deploy → copy URL (e.g. `https://alphatrade-ai.vercel.app`) into §0.
+4. Deploy → copy production alias URL (e.g. `https://alpha-trade-ai-eight.vercel.app`) into §0.
 
 5. Update Render `CORS_ORIGINS` to that exact URL → **redeploy backend**.
+
+> **Do not use** `https://alpha-trade-ai.vercel.app` — that domain is blocked by another Vercel account and serves an unrelated placeholder app.
 
 Optional: [frontend/vercel.json](../frontend/vercel.json) is already present.
 

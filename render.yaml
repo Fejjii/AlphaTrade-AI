@@ -56,6 +56,8 @@ services:
       - key: RATE_LIMIT_USE_REDIS
         value: true
       - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
+        value: true
+      - key: REQUIRE_EMAIL_VERIFIED
         value: false
       - key: DATABASE_URL
         sync: false
@@ -68,6 +70,6 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: CORS_ORIGINS
-        sync: false
+        value: https://alpha-trade-ai-eight.vercel.app,https://alpha-trade-ai-alphatrade-ai.vercel.app,https://alpha-trade-ai-git-main-alphatrade-ai.vercel.app
       - key: OPENAI_API_KEY
         sync: false

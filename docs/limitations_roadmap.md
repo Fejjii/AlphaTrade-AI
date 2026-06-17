@@ -66,11 +66,13 @@
 - `./scripts/notifications-smoke.sh` for preferences and delivery status API
 - Staging defaults: `ALERT_DELIVERY_ENABLED=false`, webhook/Telegram off, `EMAIL_PROVIDER=mock` (Slice 47 validated on Render)
 
-### Staging deployment (Slice 47)
+### Staging deployment (Slice 47–48)
 
 - Backend live at Render with paper-only invariants verified
-- Frontend Vercel project must use Root Directory `frontend` — wrong root serves unrelated placeholder app
-- `./scripts/staging-live-smoke.sh` for extended live API QA (dashboard, risk, notifications, watcher)
+- Frontend Vercel project uses Root Directory `frontend`; production alias is `alpha-trade-ai-eight.vercel.app`
+- `alpha-trade-ai.vercel.app` is blocked (another Vercel account) — do not use for demo
+- `./scripts/staging-live-smoke.sh` for extended live API QA (CORS, /login, dashboard, notifications, watcher)
+- Browser demo blocked until Render `CORS_ORIGINS` matches Vercel alias
 - See [staging_deployment.md](staging_deployment.md) for URLs, gaps, and demo checklist
 
 ### Alert delivery & market watcher (Slice 41 — remaining gaps)
