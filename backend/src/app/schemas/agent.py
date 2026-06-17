@@ -70,6 +70,10 @@ class Intent(StrEnum):
     LESSON_STRATEGY_LINKED = "lesson_strategy_linked"
     LESSON_UNRESOLVED_BLOCKERS = "lesson_unresolved_blockers"
     BACKTEST_PREP = "backtest_prep"
+    PAPER_VALIDATION_START = "paper_validation_start"
+    PAPER_VALIDATION_SCAN = "paper_validation_scan"
+    PAPER_VALIDATION_QUERY = "paper_validation_query"
+    PAPER_VALIDATION_RECOMMEND = "paper_validation_recommend"
     UNKNOWN = "unknown"
 
 

@@ -92,6 +92,26 @@ def classify_strategy_workflow(message: str) -> Intent | None:
         return Intent.LESSON_ACCEPTED_QUERY
     if "stop loss refusal" in lowered or ("stop" in lowered and "refusal" in lowered):
         return Intent.LESSON_ACCEPTED_QUERY
+    if "start paper validation" in lowered or (
+        "paper validation" in lowered and "start" in lowered
+    ):
+        return Intent.PAPER_VALIDATION_START
+    if "scan" in lowered and ("strateg" in lowered or "paper" in lowered):
+        return Intent.PAPER_VALIDATION_SCAN
+    if "paper signal" in lowered or "what paper signals" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "paper trades are open" in lowered or "open paper" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "what did the paper bot" in lowered or "paper bot do" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "paper validated" in lowered and "strateg" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "paper validation metric" in lowered or "show paper validation" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "still restricted" in lowered and "strateg" in lowered:
+        return Intent.PAPER_VALIDATION_QUERY
+    if "improve or retire" in lowered and "strateg" in lowered:
+        return Intent.PAPER_VALIDATION_RECOMMEND
 
     return None
 
@@ -126,4 +146,8 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.LESSON_STRATEGY_LINKED,
         Intent.LESSON_UNRESOLVED_BLOCKERS,
         Intent.BACKTEST_PREP,
+        Intent.PAPER_VALIDATION_START,
+        Intent.PAPER_VALIDATION_SCAN,
+        Intent.PAPER_VALIDATION_QUERY,
+        Intent.PAPER_VALIDATION_RECOMMEND,
     }

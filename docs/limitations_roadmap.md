@@ -1,10 +1,12 @@
 # Limitations and Roadmap
 
-## Current limitations (post Slice 38)
+## Current limitations (post Slice 39)
 
 ### Lesson learning loop
 
 - Lesson candidates require **explicit accept** before RAG/memory promotion
+- Three accept paths: lesson only, attach rule, new strategy version (Slice 38) — no silent mutation
+- Pending observations block paper promotion when critical; **accepted** lessons only affect eligibility
 - Post-exit runner analysis depends on stored historical candles
 - Missed profit estimates are **capped** to reduce hindsight bias
 - Structured rule editor improves testability scoring but complex NL still needs human review
@@ -15,20 +17,30 @@
 - Market data is **read-only** — no order placement against Binance or any exchange.
 - Paper execution simulates fills locally — no broker connectivity.
 
-### MVP workflow (Slice 20–22)
+### MVP workflow (Slice 20–39)
 
 - End-to-end proposal → approval → paper order → position is implemented and tested.
 - Journal → RAG sync is on by default; disable via `JOURNAL_RAG_SYNC_ENABLED=false`.
 - Trading analytics (Slice 31) are **paper-only** and deterministic; discipline score is not LLM-generated.
-- Strategy library & pre-trade (Slice 33–35) are deterministic; Strategy Lab includes backtest v1 UI and paper validation metrics.
-- Agent routes strategy-workflow and backtest intents to registered tools (Slice 34–35).
+- Strategy library & pre-trade (Slice 33–39): Strategy Lab includes backtest v1, structured rules, lesson → version flow, and **paper validation runtime**.
+- Agent routes strategy-workflow, backtest, and paper validation intents to registered tools (Slice 34–39).
 - **Backtest v1** replays stored OHLCV with fees/slippage — historical simulation only; not a profit guarantee. Complex NL rules may require structured translation (`needs_structured_rules`).
-- **Paper validation** aggregates linked paper positions; no live paper bot yet. `paper_eligible` is conservative and informational only.
+- **Paper validation runtime (Slice 39):** deterministic scan/tick bot creates `paper_signals` and simulated `paper_trades` — no exchange orders. Modes: `scan_only` (default) and `auto_paper`. Manual scan/tick only — no autonomous scheduler yet.
+- **Paper eligibility (Slice 38):** conservative gates via `/paper-eligibility`; `paper_validated` does **not** enable live trading.
 - Human-vs-system v2 adds delta fields; PnL simulation and runner tracking remain placeholders.
 - Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
 - Playwright E2E: **API workflow in CI**; full browser tour optional locally (skipped in CI).
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
 - Docker Compose enables httpOnly refresh cookies + access token denylist (Slice 22).
+
+### Paper validation runtime (Slice 39 — remaining gaps)
+
+- Manual scan/tick only — no production scheduler; background loop disabled by default
+- `scan_only` default creates signals without trades; `auto_paper` opens simulated positions locally
+- Partial TP closes full position at first TP in v1 (multi-TP schema deferred)
+- Mock/deterministic candles in tests; production uses stored historical data
+- Not connected to proposal approval flow or exchange fills
+- Does not change `ENABLE_REAL_TRADING` or execution mode
 
 ### Providers
 
@@ -98,9 +110,10 @@ Responses label `is_live`, `fallback_used`, and `is_stale`. Mock data is never p
 
 ## Recommended next slices
 
-1. **Slice 36 — Human-vs-system v2 + backtest comparison** (compare backtest to actual trades; runner tracking)
-2. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
-3. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
-4. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)
+1. **Paper validation scheduler** — optional background scan/tick loop (currently manual / disabled by default)
+2. **Human-vs-system v2 + backtest comparison** — compare backtest to actual trades; runner tracking
+3. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
+4. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
+5. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)
 
 Slice 27A (post-push validation, README/demo polish) is complete in the repo docs and setup scripts.

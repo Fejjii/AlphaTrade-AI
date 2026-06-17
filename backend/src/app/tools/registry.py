@@ -670,9 +670,7 @@ def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOut
                 limit=20,
             )
             with_proposals = [p for p in pending if p.proposed_rule_update]
-            summary = (
-                f"{len(with_proposals)} pending lesson(s) propose strategy rule updates."
-            )
+            summary = f"{len(with_proposals)} pending lesson(s) propose strategy rule updates."
             result_payload = {
                 "items": [i.model_dump(mode="json") for i in with_proposals],
                 "pending_observation": True,
@@ -778,6 +776,139 @@ def _paper_eligibility_execute(args: dict[str, Any], session: Any | None) -> Too
         )
     except Exception as exc:
         return ToolOutput(tool_name="paper_eligibility_tool", success=False, error=str(exc))
+
+
+def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.paper_validation import PaperValidationRunStart
+    from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
+    from app.services.paper_validation_service import PaperValidationService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="paper_validation_tool", success=False, error="DB session required."
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        sid = _uuid.UUID(str(args["strategy_id"]))
+        action = str(args.get("action", "status"))
+        runtime = PaperValidationRuntimeService(session)
+        listing = PaperValidationService(session).list_for_strategy(
+            sid, organization_id=org, user_id=user, limit=1
+        )
+        run_id = listing.runs[0].id if listing.runs else None
+
+        if action == "start":
+            run = runtime.start(
+                sid,
+                PaperValidationRunStart(),
+                organization_id=org,
+                user_id=user,
+            )
+            session.commit()
+            result = {
+                "summary": (
+                    f"Paper validation started (run {run.id}). Mode: {run.runtime_mode.value}."
+                ),
+                "run_id": str(run.id),
+                "real_trading_enabled": False,
+            }
+        elif run_id is None:
+            result = {"summary": "No paper validation run found — start validation first."}
+        elif action == "scan":
+            scan = runtime.scan(run_id, organization_id=org, user_id=user)
+            session.commit()
+            triggered = scan.signal.triggered if scan.signal else False
+            result = {
+                "summary": (
+                    f"Scan complete. Triggered={triggered}. Trade created={scan.trade_created}."
+                ),
+                "blockers": scan.blockers,
+                "signal": scan.signal.model_dump(mode="json") if scan.signal else None,
+            }
+        elif action == "signals":
+            signals = runtime.list_signals(run_id, organization_id=org, limit=5)
+            latest_triggered = signals.items[0].triggered if signals.items else False
+            result = {
+                "summary": (
+                    f"{signals.total} paper signal(s). Latest triggered={latest_triggered}."
+                ),
+                "signals": [s.model_dump(mode="json") for s in signals.items],
+            }
+        elif action == "open_trades":
+            positions = runtime.list_open_positions(run_id, organization_id=org)
+            result = {
+                "summary": f"{len(positions)} open paper position(s).",
+                "positions": [p.model_dump(mode="json") for p in positions],
+            }
+        elif action == "metrics":
+            metrics = runtime.get_metrics(run_id, organization_id=org)
+            run = runtime.get_run(run_id, organization_id=org)
+            result = {
+                "summary": (
+                    f"Paper metrics: {metrics.paper_trades_count} trades, "
+                    f"PF={metrics.profit_factor:.2f}."
+                ),
+                "metrics": metrics.model_dump(mode="json"),
+                "recommendation": run.recommendation.value if run.recommendation else None,
+            }
+        elif action == "activity":
+            run = runtime.get_run(run_id, organization_id=org)
+            trades = runtime.list_trades(run_id, organization_id=org, limit=5)
+            result = {
+                "summary": (
+                    f"Run status={run.status.value}. "
+                    f"Last scan={run.last_scan_at}. Open monitoring via tick endpoint."
+                ),
+                "last_scan_result": run.last_scan_result,
+                "recent_trades": [t.model_dump(mode="json") for t in trades.items],
+            }
+        elif action == "restricted":
+            from app.services.paper_eligibility_service import PaperEligibilityService
+
+            report = PaperEligibilityService(session).evaluate(
+                sid, organization_id=org, user_id=user
+            )
+            result = {
+                "summary": (
+                    f"Status={report.status.value}. Restricted reasons from eligibility gates."
+                ),
+                "blockers": report.blockers,
+                "status": report.status.value,
+            }
+        elif action == "recommend":
+            run = runtime.get_run(run_id, organization_id=org)
+            metrics = runtime.get_metrics(run_id, organization_id=org)
+            rec = run.recommendation.value if run.recommendation else "insufficient_data"
+            result = {
+                "summary": f"Recommendation: {rec}. Paper only — no live promotion.",
+                "recommendation": rec,
+                "metrics": metrics.model_dump(mode="json"),
+                "blockers": run.blockers,
+            }
+        else:
+            run = runtime.get_run(run_id, organization_id=org)
+            validated = run.status.value == "passed"
+            result = {
+                "summary": (
+                    f"Paper validation status={run.status.value}. "
+                    f"Paper validated={validated}. Real trading disabled."
+                ),
+                "run": run.model_dump(mode="json"),
+            }
+
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="paper_validation_tool",
+            success=True,
+            result=result,
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="paper_validation_tool", success=False, error=str(exc))
 
 
 def _structure_from_text_execute(args: dict[str, Any]) -> ToolOutput:
@@ -1035,6 +1166,19 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda args: _paper_eligibility_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="paper_validation_tool",
+            description=(
+                "Paper validation runtime: start, scan, signals, open trades, metrics "
+                "(simulated paper only — no exchange orders)."
+            ),
+            risk_level=ToolRiskLevel.LOW,
+            requires_approval=False,
+            provider_dependencies=("mock-market-data",),
+            has_fallback=True,
+            enabled=True,
+            execute=lambda args: _paper_validation_tool_execute(args, db_session),
         ),
         ToolDefinition(
             name="backtest_tool",

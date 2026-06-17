@@ -28,6 +28,7 @@ from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
 from app.services.paper_eligibility_service import PaperEligibilityService
+from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
 from app.services.paper_validation_service import PaperValidationService
 from app.services.position_service import PositionService
 from app.services.position_sizing_service import PositionSizingService
@@ -240,6 +241,12 @@ def get_paper_validation_service(session: SessionDep) -> PaperValidationService:
     return PaperValidationService(session)
 
 
+def get_paper_validation_runtime_service(
+    session: SessionDep, settings: SettingsDep
+) -> PaperValidationRuntimeService:
+    return PaperValidationRuntimeService(session, settings)
+
+
 def get_paper_eligibility_service(
     session: SessionDep, settings: SettingsDep
 ) -> PaperEligibilityService:
@@ -274,6 +281,9 @@ StructureFromTextServiceDep = Annotated[
 ]
 BacktestServiceDep = Annotated[BacktestService, Depends(get_backtest_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]
+PaperValidationRuntimeServiceDep = Annotated[
+    PaperValidationRuntimeService, Depends(get_paper_validation_runtime_service)
+]
 PaperEligibilityServiceDep = Annotated[
     PaperEligibilityService, Depends(get_paper_eligibility_service)
 ]

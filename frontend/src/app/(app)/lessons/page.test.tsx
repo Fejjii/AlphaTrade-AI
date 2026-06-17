@@ -182,7 +182,12 @@ describe("PaperValidationPanel", () => {
           limitations: ["Paper only"],
         }}
         busy={false}
+        signals={[]}
+        trades={[]}
         onStart={vi.fn()}
+        onScan={vi.fn()}
+        onTick={vi.fn()}
+        onStop={vi.fn()}
       />,
     );
     expect(screen.getByTestId("paper-eligibility-status")).toBeInTheDocument();

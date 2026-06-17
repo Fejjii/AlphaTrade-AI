@@ -907,24 +907,81 @@ export interface PaperValidationMetrics {
   paper_trades_count: number;
   win_rate: number;
   net_pnl: string;
+  gross_pnl?: string;
   profit_factor: number;
   expectancy: string;
   max_drawdown_pct: number;
+  total_fees?: string;
+  total_slippage?: string;
+  average_win?: string;
+  average_loss?: string;
+  consecutive_losses?: number;
+  average_holding_time_hours?: number;
   plan_adherence_avg?: number | null;
   early_exit_count?: number;
   stop_respected_count?: number;
+  runner_helped_count?: number;
 }
 
 export interface PaperValidationRun {
   id: string;
   strategy_id: string;
+  strategy_version_id?: string | null;
   status: string;
+  runtime_mode?: string;
   paper_eligible: boolean;
+  config?: Record<string, unknown> | null;
+  blockers?: string[];
+  last_scan_at?: string | null;
+  last_tick_at?: string | null;
+  last_scan_result?: Record<string, unknown> | null;
   metrics?: PaperValidationMetrics | null;
   recommendation?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PaperSignalResult {
+  id: string;
+  triggered: boolean;
+  status: string;
+  symbol: string;
+  direction: string;
+  confidence: number;
+  suggested_entry?: string | null;
+  stop_loss?: string | null;
+  reason?: string | null;
+  created_at: string;
+}
+
+export interface PaperTradeRecord {
+  id: string;
+  status: string;
+  symbol: string;
+  direction: string;
+  entry_price?: string | null;
+  exit_price?: string | null;
+  net_pnl?: string | null;
+  exit_reason?: string | null;
+  created_at: string;
+}
+
+export interface PaperScanResult {
+  run_id: string;
+  signal?: PaperSignalResult | null;
+  trade_created: boolean;
+  blockers: string[];
+  scanned_at: string;
+}
+
+export interface PaperTickResult {
+  run_id: string;
+  trades_closed: number;
+  trades_open: number;
+  metrics?: PaperValidationMetrics | null;
+  recommendation?: string | null;
+  ticked_at: string;
 }
 
 export interface PaperValidationSummary {

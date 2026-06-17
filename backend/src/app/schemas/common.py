@@ -460,6 +460,32 @@ class PaperValidationRecommendation(StrEnum):
     RESTRICT = "restrict"
     RETIRE = "retire"
     INSUFFICIENT_DATA = "insufficient_data"
+    PAPER_VALIDATED = "paper_validated"
+
+
+class PaperValidationRuntimeMode(StrEnum):
+    """Paper validation runtime mode (Slice 39 — paper only)."""
+
+    SCAN_ONLY = "scan_only"
+    AUTO_PAPER = "auto_paper"
+
+
+class PaperSignalStatus(StrEnum):
+    """Paper signal lifecycle."""
+
+    DETECTED = "detected"
+    NOT_TESTABLE = "not_testable"
+    BLOCKED_FILTER = "blocked_filter"
+    CONSUMED = "consumed"
+
+
+class PaperTradeStatus(StrEnum):
+    """Simulated paper trade status."""
+
+    PROPOSED = "proposed"
+    OPEN = "open"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
 
 
 class PaperEligibilityStatus(StrEnum):

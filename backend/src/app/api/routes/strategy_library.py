@@ -18,7 +18,11 @@ from app.core.dependencies import (
 )
 from app.schemas.backtest import BacktestRun, BacktestRunCreate, PaginatedBacktestRuns
 from app.schemas.paper_eligibility import PaperEligibilityReport
-from app.schemas.paper_validation import PaperValidationRun, PaperValidationSummary
+from app.schemas.paper_validation import (
+    PaperValidationRun,
+    PaperValidationRunStart,
+    PaperValidationSummary,
+)
 from app.schemas.strategy_library import (
     PaginatedUserStrategies,
     PaginatedUserStrategyVersions,
@@ -203,11 +207,13 @@ async def start_paper_validation(
     tenant: TraderDep,
     service: PaperValidationServiceDep,
     session: SessionDep,
+    body: PaperValidationRunStart | None = None,
 ) -> PaperValidationRun:
     result = service.start(
         strategy_id,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
+        payload=body,
     )
     session.commit()
     return result

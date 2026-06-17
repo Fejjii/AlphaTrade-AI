@@ -1,6 +1,8 @@
-# Backtesting (Slice 35-36)
+# Backtesting (Slice 35–39)
 
 Deterministic **backtest engine v1** replays stored historical OHLCV candles. Historical simulation only — **not** a profit guarantee. Real trading remains disabled.
+
+Passing backtest gates unlocks **paper validation runtime** (Slice 39) — a separate simulated scan/tick loop, not live orders. See [paper_validation.md](paper_validation.md) and [lesson_workflow.md](lesson_workflow.md) for lesson → version flow.
 
 ## What v1 supports
 
@@ -42,7 +44,7 @@ Deterministic **backtest engine v1** replays stored historical OHLCV candles. Hi
 
 ## Migration
 
-Apply through head **`n4o5p6q7r8s9`** after Slice 35:
+Apply through head **`q7r8s9t0u1v2`** (Slice 39):
 
 ```bash
 cd backend && uv run alembic upgrade head
@@ -63,6 +65,15 @@ Human-vs-system runner analysis may fetch historical candles after exit time to 
 
 Result includes `rule_engine_source` in the backtest payload.
 
+## Post-backtest path (Slice 38–39)
+
+1. **Structured rules** — required for reliable replay (see priority above)
+2. **Backtest v1** — conservative promotion (`paper_eligible`, `needs_more_sample`, etc.)
+3. **Paper eligibility** — `GET /strategies/{id}/paper-eligibility` returns blockers; pending lessons vs accepted lessons
+4. **Paper validation runtime** — manual scan/tick simulates trades; `paper_validated` is paper-only, not live
+
+Accepted lessons may attach rules or bump strategy version — see [lesson_workflow.md](lesson_workflow.md).
+
 ## Safety
 
 - Backtest results are labeled historical simulation only
@@ -70,4 +81,4 @@ Result includes `rule_engine_source` in the backtest payload.
 - Incomplete or gappy data marks results `unreliable_data`
 - No API path executes real exchange orders
 
-See also: [strategy_library.md](strategy_library.md) · [paper_validation.md](paper_validation.md)
+See also: [strategy_library.md](strategy_library.md) · [paper_validation.md](paper_validation.md) · [lesson_workflow.md](lesson_workflow.md)

@@ -48,7 +48,12 @@ describe("PaperValidationPanel", () => {
         }}
         eligibility={null}
         busy={false}
+        signals={[]}
+        trades={[]}
         onStart={vi.fn()}
+        onScan={vi.fn()}
+        onTick={vi.fn()}
+        onStop={vi.fn()}
       />,
     );
     expect(screen.getByText(/Paper validation/)).toBeInTheDocument();

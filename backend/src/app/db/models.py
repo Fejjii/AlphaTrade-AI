@@ -52,6 +52,9 @@ from app.schemas.common import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PaperSignalStatus,
+    PaperTradeStatus,
+    PaperValidationRuntimeMode,
     PaperValidationStatus,
     PositionStatus,
     ProposalStatus,
@@ -495,6 +498,9 @@ class PaperValidationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "paper_validation_runs"
 
     strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
     )
@@ -502,11 +508,123 @@ class PaperValidationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[PaperValidationStatus] = mapped_column(
         _enum(PaperValidationStatus), default=PaperValidationStatus.NOT_STARTED
     )
+    runtime_mode: Mapped[PaperValidationRuntimeMode] = mapped_column(
+        _enum(PaperValidationRuntimeMode), default=PaperValidationRuntimeMode.SCAN_ONLY
+    )
     paper_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    blockers: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_tick_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_scan_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     recommendation: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PaperSignal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Detected setup during paper validation scan (Slice 39)."""
+
+    __tablename__ = "paper_signals"
+
+    paper_validation_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=False
+    )
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    direction: Mapped[TradeDirection] = mapped_column(_enum(TradeDirection), nullable=False)
+    triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[PaperSignalStatus] = mapped_column(
+        _enum(PaperSignalStatus), default=PaperSignalStatus.DETECTED
+    )
+    matched_entry_blocks: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    blocked_no_trade_filters: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float] = mapped_column(default=0.0)
+    suggested_entry: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    stop_loss: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    invalidation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tp_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    runner_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    limitations: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    rule_engine_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PaperTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Simulated paper trade (Slice 39 — no exchange orders)."""
+
+    __tablename__ = "paper_trades"
+
+    paper_validation_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=False
+    )
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_from_signal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_signals.id"), nullable=True
+    )
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    direction: Mapped[TradeDirection] = mapped_column(_enum(TradeDirection), nullable=False)
+    entry_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    entry_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    size: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    stop_loss: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    invalidation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tp_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    runner_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[PaperTradeStatus] = mapped_column(
+        _enum(PaperTradeStatus), default=PaperTradeStatus.PROPOSED
+    )
+    exit_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    exit_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    gross_pnl: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    net_pnl: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    fees: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    slippage: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    rule_engine_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PaperTradeEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Audit trail for paper trade lifecycle events."""
+
+    __tablename__ = "paper_trade_events"
+
+    paper_trade_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("paper_trades.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class PaperValidationMetricSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Point-in-time paper validation metrics after trade close."""
+
+    __tablename__ = "paper_validation_metric_snapshots"
+
+    paper_validation_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=False
+    )
+    metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    trigger_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_trades.id"), nullable=True
+    )
 
 
 class ManualChartLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):

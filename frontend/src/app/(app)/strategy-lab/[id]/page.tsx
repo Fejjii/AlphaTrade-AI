@@ -14,7 +14,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import type { PaperEligibilityReport } from "@/lib/api/types";
+import type {
+  PaperEligibilityReport,
+  PaperSignalResult,
+  PaperTradeRecord,
+} from "@/lib/api/types";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
 
 function setupLabel(value: string) {
@@ -33,6 +37,8 @@ export default function StrategyDetailPage() {
     ReturnType<typeof api.strategies.paperValidation>
   > | null>(null);
   const [eligibility, setEligibility] = useState<PaperEligibilityReport | null>(null);
+  const [signals, setSignals] = useState<PaperSignalResult[]>([]);
+  const [trades, setTrades] = useState<PaperTradeRecord[]>([]);
   const [rulesBusy, setRulesBusy] = useState(false);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
@@ -41,9 +47,44 @@ export default function StrategyDetailPage() {
   const versionsLoader = useCallback(() => api.strategies.listVersions(id), [id]);
   const { data: versionsData } = useAsyncData(versionsLoader, [id]);
 
+  const latestRunId = paperSummary?.runs[0]?.id;
+
+  async function refreshPaperData() {
+    const summary = await api.strategies.paperValidation(id);
+    const report = await api.strategies.paperEligibility(id);
+    setPaperSummary(summary);
+    setEligibility(report);
+    const runId = summary.runs[0]?.id;
+    if (runId) {
+      const [sig, tr] = await Promise.all([
+        api.strategies.paperValidationSignals(runId),
+        api.strategies.paperValidationTrades(runId),
+      ]);
+      setSignals(sig.items);
+      setTrades(tr.items);
+    }
+  }
+
   useEffect(() => {
     void api.strategies.paperEligibility(id).then(setEligibility).catch(() => setEligibility(null));
+    void api.strategies.paperValidation(id).then(setPaperSummary).catch(() => setPaperSummary(null));
   }, [id, data?.current_version, data?.backtest_status]);
+
+  useEffect(() => {
+    if (!latestRunId) return;
+    void Promise.all([
+      api.strategies.paperValidationSignals(latestRunId),
+      api.strategies.paperValidationTrades(latestRunId),
+    ])
+      .then(([sig, tr]) => {
+        setSignals(sig.items);
+        setTrades(tr.items);
+      })
+      .catch(() => {
+        setSignals([]);
+        setTrades([]);
+      });
+  }, [latestRunId]);
 
   const card = data?.latest_card;
 
@@ -65,15 +106,12 @@ export default function StrategyDetailPage() {
     }
   }
 
-  async function startPaperValidation() {
+  async function withPaperAction(action: () => Promise<void>) {
     setPaperBusy(true);
     setActionError(null);
     try {
-      await api.strategies.startPaperValidation(id);
-      const summary = await api.strategies.paperValidation(id);
-      const report = await api.strategies.paperEligibility(id);
-      setPaperSummary(summary);
-      setEligibility(report);
+      await action();
+      await refreshPaperData();
       await reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Paper validation failed");
@@ -179,7 +217,31 @@ export default function StrategyDetailPage() {
           summary={paperSummary}
           eligibility={eligibility}
           busy={paperBusy}
-          onStart={() => void startPaperValidation()}
+          signals={signals}
+          trades={trades}
+          onStart={() =>
+            void withPaperAction(async () => {
+              await api.strategies.startPaperValidation(id, { runtime_mode: "scan_only" });
+            })
+          }
+          onScan={() =>
+            void withPaperAction(async () => {
+              if (!latestRunId) throw new Error("Start paper validation first.");
+              await api.strategies.scanPaperValidation(latestRunId);
+            })
+          }
+          onTick={() =>
+            void withPaperAction(async () => {
+              if (!latestRunId) throw new Error("Start paper validation first.");
+              await api.strategies.tickPaperValidation(latestRunId);
+            })
+          }
+          onStop={() =>
+            void withPaperAction(async () => {
+              if (!latestRunId) throw new Error("Start paper validation first.");
+              await api.strategies.stopPaperValidation(latestRunId);
+            })
+          }
         />
       </div>
     </div>

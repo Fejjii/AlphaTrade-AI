@@ -762,6 +762,69 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             else:
                 answer_lines.append(f"Backtest results failed: {output.error}")
 
+    elif intent in {
+        Intent.PAPER_VALIDATION_START,
+        Intent.PAPER_VALIDATION_SCAN,
+        Intent.PAPER_VALIDATION_QUERY,
+        Intent.PAPER_VALIDATION_RECOMMEND,
+    }:
+        list_out = _run_tool(
+            "strategy_library_tool",
+            {"action": "list", "organization_id": org, "user_id": user},
+        )
+        strategy_id = None
+        if list_out.success and list_out.result:
+            items = list_out.result.get("items", [])
+            strategy_id = items[0].get("id") if items else None
+        if strategy_id is None:
+            answer_lines.append("No strategy found for paper validation.")
+        else:
+            action = "status"
+            if intent is Intent.PAPER_VALIDATION_START:
+                action = "start"
+            elif intent is Intent.PAPER_VALIDATION_SCAN:
+                action = "scan"
+            elif intent is Intent.PAPER_VALIDATION_RECOMMEND:
+                action = "recommend"
+            elif "signal" in agent.message.lower():
+                action = "signals"
+            elif "open" in agent.message.lower():
+                action = "open_trades"
+            elif "metric" in agent.message.lower():
+                action = "metrics"
+            elif "paper bot" in agent.message.lower() or "what did" in agent.message.lower():
+                action = "activity"
+            elif "restricted" in agent.message.lower():
+                action = "restricted"
+            output = _run_tool(
+                "paper_validation_tool",
+                {
+                    "action": action,
+                    "organization_id": org,
+                    "user_id": user,
+                    "strategy_id": strategy_id,
+                },
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "paper_validation_tool",
+                        output.result.get("summary", "Paper validation data retrieved."),
+                    )
+                )
+                metrics = output.result.get("metrics")
+                if metrics:
+                    answer_lines.append(
+                        f"Metrics: trades={metrics.get('paper_trades_count')}, "
+                        f"win_rate={metrics.get('win_rate')}, "
+                        f"max_dd={metrics.get('max_drawdown_pct')}%."
+                    )
+                blockers = output.result.get("blockers") or []
+                if blockers:
+                    answer_lines.append(f"Blockers: {'; '.join(blockers[:3])}")
+            else:
+                answer_lines.append(f"Paper validation failed: {output.error}")
+
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
 

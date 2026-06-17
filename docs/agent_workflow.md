@@ -29,7 +29,7 @@ flowchart TD
 | Guardrails | Injection, moderation, trading policy |
 | RAG | Rules, playbook, **journal lessons** — never direct signals |
 | Analytics | `analytics_summary_tool` for review questions (setups, mistakes, discipline) |
-| Strategy / pre-trade (Slice 33–34) | `strategy_workflow_tools` node routes nine workspace intents to registered tools |
+| Strategy / pre-trade (Slice 33–39) | `strategy_workflow_tools` node routes workspace intents to registered tools |
 | Market data | Read-only ticker/OHLCV via provider abstraction |
 | Strategies | Seven deterministic MVP setups |
 | Risk gate | 15 rules; `BLOCK` stops paper execution |
@@ -90,10 +90,14 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 | Pending / accepted lessons | `lesson_pending_query` / `lesson_accepted_query` | `lesson_review_tool` |
 | Accept / reject lesson | `lesson_accept` / `lesson_reject` | `lesson_review_tool` |
 | Make strategy testable / runner rule | `strategy_testability` / `add_runner_rule` | `strategy_testability_tool` |
+| Start paper validation | `paper_validation_start` | `paper_validation_tool` |
+| Scan strategy / paper signals | `paper_validation_scan` | `paper_validation_tool` |
+| Paper trades, metrics, validated status | `paper_validation_query` | `paper_validation_tool` |
+| Improve or retire recommendation | `paper_validation_recommend` | `paper_validation_tool` |
 
 Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).
 
-Backtest intents call `backtest_tool`, which runs or reads the deterministic engine — the LLM explains results but cannot fabricate win rate, drawdown, or promotion status.
+Backtest intents call `backtest_tool`; paper validation intents call `paper_validation_tool` — both run deterministic engines. The LLM explains results but cannot fabricate win rate, drawdown, signals, or promotion status. **No path places exchange orders.**
 
 ## Analytics questions (Slice 31)
 

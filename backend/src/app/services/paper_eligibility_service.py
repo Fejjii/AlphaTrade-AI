@@ -79,9 +79,7 @@ class PaperEligibilityService:
         )
         unresolved = pending_rows
         critical_unresolved = [
-            lesson
-            for lesson in unresolved
-            if lesson.severity in CRITICAL_SEVERITIES
+            lesson for lesson in unresolved if lesson.severity in CRITICAL_SEVERITIES
         ]
 
         blockers: list[str] = []
@@ -110,9 +108,7 @@ class PaperEligibilityService:
                 limitations=limitations,
             )
 
-        missing_required = [
-            m.label for m in testability.missing_fields if m.severity == "required"
-        ]
+        missing_required = [m.label for m in testability.missing_fields if m.severity == "required"]
         if any("Stop loss" in label for label in missing_required):
             blockers.append("Stop loss rule missing from structured rules.")
         if any("Invalidation" in label for label in missing_required):
@@ -282,10 +278,8 @@ class PaperEligibilityService:
                 f"Testability score {testability.score} meets threshold.",
                 f"Backtest sample {latest_backtest.trade_count} "
                 f"(preferred {PREFERRED_SAMPLE_SIZE}).",
-                f"Profit factor {latest_backtest.profit_factor:.2f} "
-                f"(min {MIN_PROFIT_FACTOR}).",
-                f"Max drawdown {latest_backtest.max_drawdown_pct:.1f}% "
-                f"(max {MAX_DRAWDOWN_PCT}%).",
+                f"Profit factor {latest_backtest.profit_factor:.2f} (min {MIN_PROFIT_FACTOR}).",
+                f"Max drawdown {latest_backtest.max_drawdown_pct:.1f}% (max {MAX_DRAWDOWN_PCT}%).",
             ]
         )
         if unresolved:
@@ -317,9 +311,7 @@ class PaperEligibilityService:
         user_id: uuid.UUID,
     ) -> bool:
         """Sync strategy.paper_eligible from gate evaluation."""
-        report = self.evaluate(
-            strategy_id, organization_id=organization_id, user_id=user_id
-        )
+        report = self.evaluate(strategy_id, organization_id=organization_id, user_id=user_id)
         strategy = self._strategies.get_scoped(
             strategy_id, organization_id=organization_id, user_id=user_id
         )

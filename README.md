@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Release** | `v0.1.0-paper-mvp` — Slices 1–35 (backtest engine v1) |
+| **Release** | `v0.1.0-paper-mvp` — Slices 1–39 (paper validation runtime) |
 | **Execution** | `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` |
 | **Providers** | Mock by default; optional OpenAI, Qdrant, Binance public (read-only) |
 | **Stack** | FastAPI · LangGraph · PostgreSQL · Redis · Qdrant · Next.js 15 |
@@ -25,7 +25,7 @@
 - **RAG knowledge base** — playbooks, policies, and journal lessons (not trading signals)
 - **Journal → RAG loop** — trade reviews auto-sync to knowledge for future agent retrieval
 - **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
-- **Strategy library & pre-trade** — strategy cards, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, paper validation metrics, agent routing (Slice 33–35; paper only)
+- **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot), lesson → version flow, agent routing (Slice 33–39; paper only)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies
 - **Billing scaffold** — Stripe placeholder + usage export (`BILLING_ENABLED=false` by default)
@@ -156,7 +156,8 @@ Open http://localhost:3000. Smoke checks:
 chmod +x scripts/docker-validate.sh scripts/e2e-smoke.sh scripts/strategy-smoke.sh
 ./scripts/docker-validate.sh
 ./scripts/e2e-smoke.sh
-./scripts/strategy-smoke.sh   # optional — Slice 34 strategy workflows
+./scripts/strategy-smoke.sh   # optional — Slice 38 strategy + lesson workflows
+./scripts/paper-validation-smoke.sh  # optional — Slice 39 scan/tick runtime
 ```
 
 Stop: `docker compose down`
@@ -284,7 +285,7 @@ Full reference: [docs/deployment.md](docs/deployment.md) · Security: [docs/secu
 
 ## Development status
 
-Built in vertical slices (1–26 complete). See [docs/limitations_roadmap.md](docs/limitations_roadmap.md) for scope boundaries.
+Built in vertical slices (1–39 complete). See [docs/limitations_roadmap.md](docs/limitations_roadmap.md) for scope boundaries.
 
 ## Source of truth
 

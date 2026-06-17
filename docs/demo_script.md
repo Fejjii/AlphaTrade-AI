@@ -176,24 +176,36 @@ Route: `/analytics`
 
 In **Workspace**, ask: “What mistakes do I repeat?” — agent uses `analytics_summary_tool`.
 
-## 13. Strategy library, backtest & paper validation (Slice 33–35)
+## 13. Strategy library, backtest & paper validation (Slice 33–39)
 
-Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]/edit`, `/manual-levels`, `/pre-trade`
+Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]`, `/strategy-lab/[id]/edit`, `/lessons`, `/manual-levels`, `/pre-trade`
 
 1. Open **Strategy Lab** — list user strategy cards; create via **New strategy** (`StrategyCardForm`).
-2. Open a strategy detail — run **Backtest v1** (symbol, timeframe, date range, capital, fees, slippage); review metrics, equity curve summary, and simulated trades table.
+2. Open a strategy detail — save **structured rules**; run **Backtest v1** (symbol, timeframe, date range, capital, fees, slippage); review metrics and simulated trades.
 3. If rules are vague NL, show **needs structured rules** limitation — do not expect fake trades.
-4. Start **paper validation** — metrics from linked paper positions (win rate, PnL, drawdown, recommendation).
-5. Open **Manual levels** — add support/resistance for a symbol.
-6. Open **Pre-Trade** — run deterministic analysis; review sizing and **Loss acceptance** panel.
-7. In **Workspace**, ask:
+4. Review **paper eligibility** panel — blockers, accepted vs pending lessons, `real_trading_enabled: false`.
+5. **Start paper validation** — choose `scan_only` (signals only) or `auto_paper` (simulated trades).
+6. **Run scan** — deterministic setup detection; show paper signals and latest scan result.
+7. **Run tick** — monitor open simulated trades (stop, TP, runner, timeout); show closed trades and metrics.
+8. Optional: **Stop run** when demo complete.
+9. Open **Manual levels** — add support/resistance for a symbol.
+10. Open **Pre-Trade** — run deterministic analysis; review sizing and **Loss acceptance** panel.
+11. In **Workspace**, ask:
    - *"Backtest this strategy on BTC 15m"*
    - *"Is this strategy paper eligible?"*
-   - *"What did the backtest show?"*
-   - *"Why is this strategy not validated?"*
-8. Emphasize: backtest is **historical simulation only**; paper validation does not enable live trading.
+   - *"Start paper validation for this strategy"*
+   - *"Scan this strategy now"*
+   - *"What paper signals were detected?"*
+   - *"What did the paper bot do?"*
+   - *"Should I improve or retire this strategy?"*
+12. Emphasize: backtest is **historical simulation**; paper validation is **local simulation** — neither enables live trading.
 
-Optional API smoke: `./scripts/strategy-smoke.sh`
+Optional API smoke:
+
+```bash
+./scripts/strategy-smoke.sh
+./scripts/paper-validation-smoke.sh
+```
 
 ---
 

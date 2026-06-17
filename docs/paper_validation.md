@@ -1,57 +1,110 @@
-# Paper Validation (Slice 35)
+# Paper Validation (Slice 35, 38, 39)
 
-Paper validation tracks **simulated paper trades** linked to a strategy. No exchange orders. Real trading remains disabled.
+Paper validation tracks **simulated paper trades** via the paper bot runtime. No exchange orders. Real trading remains disabled.
 
-## Metrics tracked
+## Runtime model (Slice 39)
 
-Each `paper_validation_runs` record stores:
+| Entity | Purpose |
+|--------|---------|
+| `paper_validation_runs` | Active validation session with mode, config, metrics |
+| `paper_signals` | Detected setups from structured rule scan |
+| `paper_trades` | Simulated trades (open = position, closed = history) |
+| `paper_trade_events` | Lifecycle audit (opened, closed) |
+| `paper_validation_metric_snapshots` | Point-in-time metrics after each close |
 
-- `paper_trades_count`
-- `win_rate`
-- `net_pnl`
-- `profit_factor`
-- `expectancy`
-- `max_drawdown_pct`
-- `plan_adherence_avg` (when available)
-- `early_exit_count` / `stop_respected_count` (groundwork)
-- `recommendation`: `continue`, `improve`, `restrict`, `retire`, `insufficient_data`
+Each paper trade stores: strategy/version/run ids, symbol, exchange, timeframe, direction, entry/exit, stop, TP/runner plans, fees, slippage, PnL, `rule_engine_source`, `created_from_signal_id`.
 
-Metrics aggregate from closed **paper positions** linked to proposals with `user_strategy_id`.
+## Runtime modes
+
+| Mode | Behavior |
+|------|----------|
+| `scan_only` (default) | Detect setup → create `paper_signal` — **no** simulated trade |
+| `auto_paper` | After deterministic checks → open simulated `paper_trade` |
+
+There is **no real mode**. No exchange order APIs are called.
+
+## Manual tick (v1)
+
+Automated scheduling is deferred. Use:
+
+- **UI:** Run scan / Run tick buttons in Strategy Lab
+- **API:** `POST /paper-validation/{run_id}/tick` for tests and smoke scripts
+
+Optional in-process background loop is **disabled by default** for stability.
+
+## Paper bot engine v1
+
+`PaperBotEngine` / `PaperValidationRuntimeService`:
+
+1. Load paper-eligible strategy + structured rules
+2. Fetch recent OHLCV candles (mock or stored)
+3. Evaluate entry via structured rules (same resolver as backtest)
+4. Apply no-trade filters
+5. Create paper signal
+6. In `auto_paper`, open simulated trade with fees/slippage
+7. On tick, monitor open trades — stop, TP, runner, timeout
+8. Update metrics and promotion recommendation
+
+Non-machine-testable rules → `not_testable` signal + blocker (no fake trades).
+
+## Metrics
+
+Updated after each closed paper trade:
+
+- trade count, win rate, net/gross PnL, profit factor, expectancy
+- **max_drawdown_pct** (equity curve based — no longer placeholder)
+- total fees, slippage, average win/loss, consecutive losses
+- average holding time, stop respected, early exit, runner helped counts
+
+## Promotion (paper only)
+
+Recommendation may be: `continue`, `improve`, `restrict`, `retire`, `insufficient_data`, `paper_validated`.
+
+`paper_validated` requires (conservative): min trades, positive expectancy, PF ≥ 1.1, max DD ≤ 25%, stop respect, no critical lesson blockers, enough samples/time.
+
+**Does not promote to live trading.**
+
+## Paper eligibility gates (Slice 38)
+
+See `GET /strategies/{id}/paper-eligibility` for: `needs_structure`, `needs_backtest`, `needs_more_sample`, `needs_lesson_review`, `paper_eligible`, `paper_validation_running`, `paper_validated`, `restricted`.
+
+Accepted lessons vs pending observations: only **accepted** lessons affect promotion; pending candidates are blockers when critical.
 
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/strategies/{id}/paper-validation/start` | Start / snapshot validation |
+| POST | `/strategies/{id}/paper-validation/start` | Start run (`runtime_mode`, optional `config`) |
+| POST | `/paper-validation/{run_id}/scan` | Scan for signals |
+| POST | `/paper-validation/{run_id}/tick` | Monitor/close open trades |
+| GET | `/paper-validation/{run_id}` | Run detail |
+| GET | `/paper-validation/{run_id}/signals` | Paper signals |
+| GET | `/paper-validation/{run_id}/trades` | Paper trades |
+| GET | `/paper-validation/{run_id}/positions` | Open positions |
+| GET | `/paper-validation/{run_id}/metrics` | Current metrics |
+| POST | `/paper-validation/{run_id}/stop` | Stop run |
 | GET | `/strategies/{id}/paper-validation` | List runs |
-| GET | `/strategies/{id}/paper-validation/{run_id}` | Single run with metrics |
+| GET | `/strategies/{id}/paper-eligibility` | Gates and blockers |
 
-## Limitations
+## Limitations (v1)
 
-- No autonomous paper bot — metrics update from existing paper workflow
+- Partial TP closes full position at first TP (schema supports multi-TP; v1 simplified)
+- No autonomous scheduler — manual scan/tick
+- Mock/deterministic candles in tests; production uses stored historical data
 - Not connected to exchange fills
 - Does not enable live trading or change `ENABLE_REAL_TRADING`
-- `paper_eligible` requires multi-gate evaluation (Slice 38) — not a single backtest alone
-
-## Slice 38 — paper eligibility gates
-
-`GET /strategies/{id}/paper-eligibility` returns deterministic status:
-
-| Status | Meaning |
-|--------|---------|
-| `needs_structure` | Testability below threshold or missing stop/invalidation |
-| `needs_backtest` | No completed backtest |
-| `needs_more_sample` | Backtest sample or metrics below threshold |
-| `needs_lesson_review` | Critical unresolved lesson candidates or repeated mistakes pending |
-| `paper_eligible` | All gates pass — may start paper validation |
-| `paper_validation_running` | Paper validation in progress |
-| `paper_validated` | Paper validation passed (still paper only) |
-| `restricted` | Negative expectancy or excessive drawdown |
-
-Gates include: testability ≥70, structured rules, completed backtest, min sample (20), positive expectancy, profit factor ≥1.1, max drawdown ≤25%, no critical unresolved lessons for the strategy, stop/invalidation present.
-
-Paper validation dashboard shows blockers, latest backtest metrics, linked accepted lessons, and unresolved lesson candidates. **No live trading promotion.**
 
 ## Migration
 
-Requires **`m3n4o5p6q7r8`** (`metrics`, `recommendation`, `ended_at` on paper validation runs).
+Apply through head **`q7r8s9t0u1v2`** (Slice 39):
+
+```bash
+cd backend && uv run alembic upgrade head
+```
+
+## Smoke
+
+```bash
+./scripts/paper-validation-smoke.sh
+./scripts/strategy-smoke.sh
+```

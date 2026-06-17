@@ -55,7 +55,13 @@ import type {
   BacktestRun,
   PaginatedBacktestRuns,
   PaginatedBacktestTrades,
+  PaperValidationMetrics,
+  PaperValidationRun,
   PaperValidationSummary,
+  PaperScanResult,
+  PaperSignalResult,
+  PaperTickResult,
+  PaperTradeRecord,
   StrategyTestability,
   StructuredRules,
   LessonCandidate,
@@ -405,13 +411,41 @@ export const api = {
       apiFetch<PaginatedUserStrategyVersions>(`/strategies/${id}/versions`, { auth: true }),
     paperEligibility: (id: string) =>
       apiFetch<PaperEligibilityReport>(`/strategies/${id}/paper-eligibility`, { auth: true }),
-    startPaperValidation: (id: string) =>
+    startPaperValidation: (id: string, body?: Record<string, unknown>) =>
       apiFetch<{ id: string; status: string }>(`/strategies/${id}/paper-validation/start`, {
         method: "POST",
+        body: JSON.stringify(body ?? {}),
         auth: true,
       }),
     paperValidation: (id: string) =>
       apiFetch<PaperValidationSummary>(`/strategies/${id}/paper-validation`, { auth: true }),
+    scanPaperValidation: (runId: string) =>
+      apiFetch<PaperScanResult>(`/paper-validation/${runId}/scan`, {
+        method: "POST",
+        auth: true,
+      }),
+    tickPaperValidation: (runId: string) =>
+      apiFetch<PaperTickResult>(`/paper-validation/${runId}/tick`, {
+        method: "POST",
+        auth: true,
+      }),
+    stopPaperValidation: (runId: string) =>
+      apiFetch<PaperValidationRun>(`/paper-validation/${runId}/stop`, {
+        method: "POST",
+        auth: true,
+      }),
+    paperValidationSignals: (runId: string) =>
+      apiFetch<{ items: PaperSignalResult[]; total: number }>(
+        `/paper-validation/${runId}/signals`,
+        { auth: true },
+      ),
+    paperValidationTrades: (runId: string) =>
+      apiFetch<{ items: PaperTradeRecord[]; total: number }>(
+        `/paper-validation/${runId}/trades`,
+        { auth: true },
+      ),
+    paperValidationMetrics: (runId: string) =>
+      apiFetch<PaperValidationMetrics>(`/paper-validation/${runId}/metrics`, { auth: true }),
     testability: (id: string) =>
       apiFetch<StrategyTestability>(`/strategies/${id}/testability`, { auth: true }),
     patchStructuredRules: (id: string, body: Partial<StructuredRules>) =>
