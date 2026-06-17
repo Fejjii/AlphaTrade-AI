@@ -206,6 +206,17 @@ Optional API smoke:
 ```bash
 ./scripts/strategy-smoke.sh
 ./scripts/paper-validation-smoke.sh
+./scripts/market-watcher-smoke.sh   # Slice 42 — read-only watcher + paper scan bridge
+```
+
+**Docker full stack** (recommended before demo):
+
+```bash
+docker compose up --build -d
+./scripts/docker-validate.sh
+./scripts/e2e-smoke.sh
+./scripts/market-watcher-smoke.sh
+docker compose down
 ```
 
 ---

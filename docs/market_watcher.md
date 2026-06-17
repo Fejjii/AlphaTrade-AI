@@ -67,3 +67,11 @@ Bridge decisions stored in `market_watcher_bridge_decisions` with decision type,
 Deterministic tools answer: watcher running?, symbols watched?, data fresh?, bridge enabled?, bridge skip reason?, triggered scans?, linked runs?, run bridge tick (with confirmation).
 
 Paper only — no live trading path.
+
+## Smoke test
+
+```bash
+./scripts/market-watcher-smoke.sh   # requires running backend (Docker or local)
+```
+
+Verifies watcher status, manual scan/disabled response, bridge status/tick, bridge history, observations, alerts summary, and `real_trading_enabled=false`.

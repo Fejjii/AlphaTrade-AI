@@ -33,11 +33,12 @@
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
 - Docker Compose enables httpOnly refresh cookies + access token denylist (Slice 22).
 
-### Market watcher bridge (Slice 42 — remaining gaps)
+### Market watcher bridge (Slice 42 — validated in 42B)
 
 - Bridge disabled by default; manual tick only (no always-on auto loop unless `MARKET_WATCHER_BRIDGE_AUTO_TICK=true`)
 - Bridge triggers paper validation **scan** only — no exchange or broker execution
 - Webhook HMAC signing optional; Telegram/email/push remain stubs
+- `./scripts/market-watcher-smoke.sh` covers watcher + bridge API smoke in Docker
 - Auto tick scheduler not wired in-process (env flag reserved for future conservative loop)
 
 ### Alert delivery & market watcher (Slice 41 — remaining gaps)

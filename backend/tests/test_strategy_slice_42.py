@@ -44,19 +44,21 @@ from app.schemas.common import (
     MembershipRole,
     PaperAlertSource,
     PaperAlertType,
-    PaperValidationStatus,
+    PaperValidationRecommendation,
     Timeframe,
 )
-from app.schemas.paper_validation import PaperValidationConfig
 from app.schemas.structured_rules import EntryRuleBlock, ExitRuleBlock, StructuredRules
 from app.security.passwords import hash_password
 from app.services.alert_delivery_service import AlertDeliveryService
 from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
 from app.services.paper_alert_service import PaperAlertService
+from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
 from app.tools.registry import _require_owner_mutation
 
 ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000000500")
 USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000501")
+OTHER_ORG = uuid.UUID("00000000-0000-0000-0000-000000000502")
+OTHER_USER = uuid.UUID("00000000-0000-0000-0000-000000000503")
 
 
 @pytest.fixture
@@ -512,3 +514,157 @@ def test_alert_source_in_schema(slice42_db: sessionmaker[Session]) -> None:
         )
         assert created is not None
         assert created.alert_source == PaperAlertSource.MARKET_WATCHER_BRIDGE
+
+
+def test_bridge_does_not_call_exchange_trading_api(slice42_db: sessionmaker[Session]) -> None:
+    with slice42_db() as session:
+        runtime = PaperValidationRuntimeService(session, _settings())
+        assert not hasattr(runtime, "place_order")
+        assert not any(
+            name in dir(runtime) for name in ("create_order", "place_order", "submit_order")
+        )
+
+
+def test_bridge_only_calls_paper_validation_scan(
+    slice42_client: TestClient, slice42_db: sessionmaker[Session]
+) -> None:
+    strategy_id = _create_strategy(slice42_client)
+    run_id = _start_run(slice42_client, strategy_id)
+    with slice42_db() as session:
+        _seed_observation(
+            session,
+            run_id=uuid.UUID(run_id),
+            strategy_id=uuid.UUID(strategy_id),
+        )
+        session.commit()
+
+        mock_runtime = MagicMock()
+        mock_runtime.scan.return_value = MagicMock(signal=None, blockers=[], trade_created=False)
+        bridge = MarketWatcherBridgeService(session, _settings(market_watcher_bridge_enabled=True))
+        bridge._runtime = mock_runtime
+        bridge._should_skip_run = MagicMock(return_value=(None, []))
+        result = bridge.tick(organization_id=ORG_ID, user_id=USER_ID)
+        assert result.scans_triggered == 1
+        mock_runtime.scan.assert_called_once()
+        assert not any(
+            name in dir(mock_runtime) for name in ("create_order", "place_order", "submit_order")
+        )
+
+
+def test_bridge_skips_blocked_strategy(
+    slice42_client: TestClient, slice42_db: sessionmaker[Session]
+) -> None:
+    strategy_id = _create_strategy(slice42_client)
+    run_id = _start_run(slice42_client, strategy_id)
+    with slice42_db() as session:
+        run = session.scalar(
+            select(PaperValidationRun).where(PaperValidationRun.id == uuid.UUID(run_id))
+        )
+        assert run is not None
+        run.recommendation = PaperValidationRecommendation.RESTRICT.value
+        _seed_observation(
+            session,
+            run_id=uuid.UUID(run_id),
+            strategy_id=uuid.UUID(strategy_id),
+        )
+        session.commit()
+
+        bridge = MarketWatcherBridgeService(session, _settings(market_watcher_bridge_enabled=True))
+        result = bridge.tick(organization_id=ORG_ID, user_id=USER_ID)
+        assert result.scans_triggered == 0
+        decisions = session.scalars(select(MarketWatcherBridgeDecision)).all()
+        assert any(
+            d.decision == MarketWatcherBridgeDecisionType.SKIPPED_BLOCKED_STRATEGY
+            for d in decisions
+        )
+
+
+def test_bridge_history_tenant_scoped(slice42_db: sessionmaker[Session]) -> None:
+    settings = _settings(market_watcher_bridge_enabled=False)
+    with slice42_db() as session:
+        other_org = Organization(id=OTHER_ORG, name="Other Org")
+        other_user = User(
+            id=OTHER_USER,
+            email="other42@test.example",
+            hashed_password=hash_password("TestPassword123!", settings),
+            email_verified=True,
+        )
+        session.add(other_org)
+        session.add(other_user)
+        session.flush()
+        session.add(
+            Membership(user_id=OTHER_USER, organization_id=OTHER_ORG, role=MembershipRole.OWNER)
+        )
+        session.commit()
+
+    with slice42_db() as session:
+        bridge_a = MarketWatcherBridgeService(session, settings)
+        bridge_b = MarketWatcherBridgeService(session, settings)
+        bridge_a.tick(organization_id=ORG_ID, user_id=USER_ID)
+        bridge_b.tick(organization_id=OTHER_ORG, user_id=OTHER_USER)
+
+        org_history = bridge_a.list_history(ORG_ID)
+        other_history = bridge_b.list_history(OTHER_ORG)
+        assert org_history.total >= 1
+        assert other_history.total >= 1
+        assert all(item.organization_id == ORG_ID for item in org_history.items)
+        assert all(item.organization_id == OTHER_ORG for item in other_history.items)
+
+
+def test_webhook_url_not_logged_in_raw_form(slice42_db: sessionmaker[Session]) -> None:
+    mock_post = MagicMock(side_effect=httpx.ConnectError("https://example.com/hook refused"))
+    settings = _settings(
+        alert_delivery_enabled=True,
+        alert_webhook_enabled=True,
+        alert_webhook_url="https://example.com/hook",
+    )
+    with slice42_db() as session:
+        alert = PaperAlertService(session).create(
+            organization_id=ORG_ID,
+            alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
+            message="test",
+        )
+        assert alert is not None
+        row = session.scalar(
+            select(PaperValidationAlert).where(PaperValidationAlert.id == alert.id)
+        )
+        assert row is not None
+        row.delivery_status = AlertDeliveryStatus.PENDING
+        session.flush()
+        result = AlertDeliveryService(session, settings, http_post=mock_post).deliver_alert(
+            row.id, organization_id=ORG_ID
+        )
+        assert result.delivered is False
+        assert result.alert.last_delivery_error is not None
+        assert "example.com/hook" not in (result.alert.last_delivery_error or "")
+
+
+def test_delivery_retry_does_not_duplicate_alerts(slice42_db: sessionmaker[Session]) -> None:
+    mock_post = MagicMock(return_value=MagicMock(status_code=500))
+    settings = _settings(
+        alert_delivery_enabled=True,
+        alert_webhook_enabled=True,
+        alert_webhook_url="https://example.com/hook",
+        alert_webhook_max_retries=1,
+    )
+    with slice42_db() as session:
+        alert = PaperAlertService(session).create(
+            organization_id=ORG_ID,
+            alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
+            message="retry test",
+        )
+        assert alert is not None
+        row = session.scalar(
+            select(PaperValidationAlert).where(PaperValidationAlert.id == alert.id)
+        )
+        assert row is not None
+        row.delivery_status = AlertDeliveryStatus.PENDING
+        session.flush()
+        delivery = AlertDeliveryService(session, settings, http_post=mock_post)
+        for _ in range(3):
+            delivery.deliver_alert(row.id, organization_id=ORG_ID)
+            session.refresh(row)
+            row.next_retry_at = datetime.now(UTC) - timedelta(minutes=1)
+            session.flush()
+        alert_count = session.scalars(select(PaperValidationAlert)).all()
+        assert len(alert_count) == 1

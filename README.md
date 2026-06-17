@@ -153,11 +153,12 @@ docker compose up --build
 Open http://localhost:3000. Smoke checks:
 
 ```bash
-chmod +x scripts/docker-validate.sh scripts/e2e-smoke.sh scripts/strategy-smoke.sh
+chmod +x scripts/docker-validate.sh scripts/e2e-smoke.sh scripts/strategy-smoke.sh scripts/market-watcher-smoke.sh
 ./scripts/docker-validate.sh
 ./scripts/e2e-smoke.sh
 ./scripts/strategy-smoke.sh   # optional — Slice 38 strategy + lesson workflows
 ./scripts/paper-validation-smoke.sh  # optional — Slice 39–40 scan/tick/scheduler/alerts
+./scripts/market-watcher-smoke.sh  # optional — Slice 42 read-only watcher + paper scan bridge
 ```
 
 Stop: `docker compose down`

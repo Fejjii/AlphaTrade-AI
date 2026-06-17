@@ -151,4 +151,5 @@ cd backend && uv run alembic upgrade head
 ```bash
 ./scripts/paper-validation-smoke.sh
 ./scripts/strategy-smoke.sh
+./scripts/market-watcher-smoke.sh   # Slice 42 — watcher + bridge (read-only, paper scan only)
 ```

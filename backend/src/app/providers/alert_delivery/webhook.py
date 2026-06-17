@@ -103,8 +103,11 @@ class WebhookAlertDeliveryProvider:
                 )
             return AlertDeliveryResult(success=True, channel=self.channel)
         except Exception as exc:
+            error = redact_text(str(exc))
+            if webhook_url in error:
+                error = error.replace(webhook_url, "***REDACTED***")
             return AlertDeliveryResult(
                 success=False,
                 channel=self.channel,
-                error=redact_text(str(exc)),
+                error=error,
             )
