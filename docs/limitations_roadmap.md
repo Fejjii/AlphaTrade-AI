@@ -33,14 +33,21 @@
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
 - Docker Compose enables httpOnly refresh cookies + access token denylist (Slice 22).
 
-### Trader workflow UX (Slice 43)
+### Trader workflow UX (Slice 43–44)
 
-- Frontend-only polish: trader-first dashboard, workflow stepper, status badges, human-readable
-  paper validation + alert summaries, calmer non-judgmental copy, consistent disclaimers
-- No new trading engines, no in-process auto scheduler, no broker/exchange execution
-- No `/dashboard/summary` backend endpoint added — the dashboard composes existing endpoints
-  client-side (resilient to individual endpoint failures)
+- Trader-first dashboard, workflow stepper, status badges, human-readable paper validation + alert summaries
+- **`GET /dashboard/summary`** (Slice 44): deterministic paper-only aggregation — daily discipline snapshot,
+  strategy readiness counts, alerts/lessons, market watcher + bridge status, next recommended action
+- Daily paper PnL from closed trades today + open position unrealized PnL; **no broker data**
+- User timezone for day boundaries (UTC fallback reported in `limitations`)
+- `daily_target` / `max_trades_per_day` only when configured on `daily_risk_states` for the day; otherwise
+  limitations — no fake configured values
+- Frontend uses summary as primary source; resilient legacy fallback if endpoint unavailable (Slice 43)
 - Real trading remains disabled; all execution remains paper only
+
+### Trader workflow UX (Slice 43 — superseded details)
+
+- Frontend-only polish before Slice 44 composed existing endpoints client-side
 
 ### Market watcher bridge (Slice 42 — validated in 42B)
 

@@ -107,6 +107,14 @@ chat, RAG ingest, market analyze, narrative, and paper execution. See
 
 See [agent_workflow.md](agent_workflow.md) and [demo_script.md](demo_script.md).
 
+## Dashboard summary (Slice 44)
+
+- Route: `GET /dashboard/summary` — auth + tenant scoped, rate limited, deterministic (no LLM).
+- `DashboardSummaryService` aggregates existing subsystems; partial failures return `limitations` instead of 500.
+- `daily_discipline` snapshot: paper trades + journal counts for the user's local day; realized PnL from closed
+  paper trades; unrealized from open paper positions; risk flags from optional `daily_risk_states` row.
+- No real trading path; no broker/exchange data.
+
 ## Data flow
 
 ```mermaid

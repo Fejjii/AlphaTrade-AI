@@ -319,6 +319,120 @@ export interface RiskBehaviorAnalytics {
   triggered_rules: Record<string, number>;
 }
 
+export interface DashboardSafetyStatus {
+  execution_mode: string;
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+  real_trading_disabled: boolean;
+}
+
+export interface DailyDisciplineSnapshot {
+  date: string;
+  timezone: string;
+  trades_today: number;
+  paper_trades_opened_today: number;
+  paper_trades_closed_today: number;
+  journal_entries_today: number;
+  realized_pnl_today_paper: string | null;
+  unrealized_pnl_paper: string | null;
+  net_pnl_today_paper: string | null;
+  daily_loss_limit: string | null;
+  daily_target: string | null;
+  loss_lock_active: boolean;
+  green_day_protection_active: boolean;
+  overtrading_warning_active: boolean;
+  max_trades_per_day: number | null;
+  remaining_trades_allowed: number | null;
+  discipline_status: "calm" | "caution" | "locked" | "review_only" | string;
+  reasons: string[];
+  recommended_action: string;
+  limitations: string[];
+}
+
+export interface StrategyReadinessCounts {
+  needs_structure: number;
+  ready_for_backtest: number;
+  needs_more_sample: number;
+  paper_eligible: number;
+  paper_validation_running: number;
+  paper_validated: number;
+  restricted: number;
+}
+
+export interface StrategyActionItem {
+  strategy_id: string;
+  name: string;
+  status: string;
+  next_action: string;
+  blockers: string[];
+  link_hint: string;
+}
+
+export interface StrategyReadinessSummary {
+  counts: StrategyReadinessCounts;
+  top_needing_action: StrategyActionItem[];
+  limitations: string[];
+}
+
+export interface ActivePaperValidationItem {
+  strategy_id: string;
+  name: string;
+  status: string;
+}
+
+export interface OpenPaperTradeItem {
+  position_id: string | null;
+  symbol: string;
+  direction: string;
+  unrealized_pnl: string | null;
+  status: string;
+}
+
+export interface AlertSummaryItem {
+  alert_type: string;
+  severity: string;
+  message: string;
+}
+
+export interface AlertsLessonsSummary {
+  unread_alerts: number;
+  latest_high_priority: AlertSummaryItem[];
+  pending_lessons: number;
+  accepted_lessons: number;
+  top_pending_lessons: string[];
+  limitations: string[];
+}
+
+export interface NextRecommendedAction {
+  action: string;
+  reason: string;
+  link: string;
+  priority: number;
+}
+
+export interface DashboardSummary {
+  safety: DashboardSafetyStatus;
+  daily_discipline: DailyDisciplineSnapshot | null;
+  strategy_readiness: StrategyReadinessSummary | null;
+  active_paper_validations: ActivePaperValidationItem[];
+  open_paper_trades: OpenPaperTradeItem[];
+  alerts_lessons: AlertsLessonsSummary | null;
+  market_watcher: {
+    effective_enabled: boolean;
+    last_scan_at: string | null;
+    fresh_observations: number;
+    limitations: string[];
+  } | null;
+  bridge: {
+    effective_enabled: boolean;
+    last_tick_at: string | null;
+    scans_triggered_last_tick: number;
+    limitations: string[];
+  } | null;
+  next_recommended_action: NextRecommendedAction;
+  limitations: string[];
+}
+
 export interface PaginatedJournalEntries {
   items: JournalEntry[];
   total: number;

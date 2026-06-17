@@ -16,6 +16,7 @@ from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.backtest_service import BacktestService
+from app.services.dashboard_summary_service import DashboardSummaryService
 from app.services.execution_service import ExecutionService
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.human_vs_system_service import HumanVsSystemService
@@ -326,4 +327,16 @@ MarketWatcherBridgeServiceDep = Annotated[
 PaperSchedulerServiceDep = Annotated[PaperSchedulerService, Depends(get_paper_scheduler_service)]
 HistoricalCandleServiceDep = Annotated[
     HistoricalCandleService, Depends(get_historical_candle_service)
+]
+
+
+def get_dashboard_summary_service(
+    session: SessionDep,
+    settings: SettingsDep,
+) -> DashboardSummaryService:
+    return DashboardSummaryService(session, settings)
+
+
+DashboardSummaryServiceDep = Annotated[
+    DashboardSummaryService, Depends(get_dashboard_summary_service)
 ]

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback } from "react";
 
 import { AuditEventCard } from "@/components/AuditEventCard";
-import { PositionCard } from "@/components/PositionCard";
 import { ProviderStatusCard } from "@/components/ProviderStatusCard";
 import { TodaysDisciplineCard } from "@/components/TodaysDisciplineCard";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
@@ -18,7 +17,7 @@ import { alertTypeLabel, severityRank, severityVariant } from "@/lib/alert-displ
 import { strategyStatusFor } from "@/lib/strategy-status";
 import { formatDecimal } from "@/lib/utils";
 import { buildWorkflowSteps, firstActionableStep } from "@/lib/workflow-steps";
-import type { UserStrategy } from "@/lib/api/types";
+import type { DashboardSummary, UserStrategy } from "@/lib/api/types";
 
 async function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
   try {
@@ -39,35 +38,74 @@ function featuredStrategy(strategies: UserStrategy[]): UserStrategy | null {
   return running ?? eligible ?? strategies[0];
 }
 
+type DashboardData = {
+  summary: DashboardSummary | null;
+  strategies: UserStrategy[];
+  usage: Awaited<ReturnType<typeof api.usage.summary>> | null;
+  audit: Awaited<ReturnType<typeof api.audit.events>> | null;
+  legacyDiscipline: Awaited<ReturnType<typeof api.analytics.discipline>> | null;
+  legacyRisk: Awaited<ReturnType<typeof api.analytics.riskBehavior>> | null;
+  legacyTradesToday: number | null;
+};
+
+async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
+  const [strategies, discipline, risk, tradeReview, usage, audit] = await Promise.all([
+    settled(api.strategies.list({ limit: 50 }), { items: [], total: 0, limit: 50, offset: 0 }),
+    settled(api.analytics.discipline(), null),
+    settled(api.analytics.riskBehavior(), null),
+    settled(api.analytics.tradeReview(), null),
+    settled(api.usage.summary(), null),
+    settled(api.audit.events({ limit: 5 }), { items: [], total: 0, limit: 5, offset: 0 }),
+  ]);
+  return {
+    strategies: strategies.items,
+    legacyDiscipline: discipline,
+    legacyRisk: risk,
+    legacyTradesToday: tradeReview?.total_journaled_trades ?? null,
+    usage,
+    audit,
+  };
+}
+
 export default function DashboardPage() {
   const { providers, health } = useAppContext();
   const { executionMode, realTradingEnabled } = useSafetyPosture();
 
-  const loader = useCallback(async () => {
-    const [strategies, positions, alertSummary, alerts, lessons, discipline, risk, tradeReview, usage, audit] =
-      await Promise.all([
-        settled(api.strategies.list({ limit: 50 }), { items: [], total: 0, limit: 50, offset: 0 }),
-        settled(api.positions.list({ limit: 5, status: "open" }), {
-          items: [],
-          total: 0,
-          limit: 5,
-          offset: 0,
-        }),
-        settled(api.alerts.summary(), { total: 0, unread: 0, by_type: {}, by_severity: {} }),
-        settled(api.alerts.list({ limit: 5 }), { items: [], total: 0 }),
-        settled(api.lessons.listCandidates({ status: "pending_review" }), {
-          items: [],
-          total: 0,
-          limit: 50,
-          offset: 0,
-        }),
-        settled(api.analytics.discipline(), null),
-        settled(api.analytics.riskBehavior(), null),
-        settled(api.analytics.tradeReview(), null),
-        settled(api.usage.summary(), null),
-        settled(api.audit.events({ limit: 5 }), { items: [], total: 0, limit: 5, offset: 0 }),
-      ]);
-    return { strategies, positions, alertSummary, alerts, lessons, discipline, risk, tradeReview, usage, audit };
+  const loader = useCallback(async (): Promise<DashboardData> => {
+    const [summary, usage, audit] = await Promise.all([
+      settled(api.dashboard.summary(), null),
+      settled(api.usage.summary(), null),
+      settled(api.audit.events({ limit: 5 }), { items: [], total: 0, limit: 5, offset: 0 }),
+    ]);
+
+    if (summary) {
+      const strategies = await settled(api.strategies.list({ limit: 50 }), {
+        items: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+      });
+      return {
+        summary,
+        strategies: strategies.items,
+        usage,
+        audit,
+        legacyDiscipline: null,
+        legacyRisk: null,
+        legacyTradesToday: null,
+      };
+    }
+
+    const legacy = await loadLegacyDashboard();
+    return {
+      summary: null,
+      strategies: legacy.strategies ?? [],
+      usage: legacy.usage ?? null,
+      audit: legacy.audit ?? null,
+      legacyDiscipline: legacy.legacyDiscipline ?? null,
+      legacyRisk: legacy.legacyRisk ?? null,
+      legacyTradesToday: legacy.legacyTradesToday ?? null,
+    };
   }, []);
 
   const { data, loading, error, reload } = useAsyncData(loader, []);
@@ -75,7 +113,8 @@ export default function DashboardPage() {
   if (loading) return <LoadingState label="Loading dashboard…" />;
   if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
 
-  const strategies = data?.strategies.items ?? [];
+  const summary = data?.summary ?? null;
+  const strategies = data?.strategies ?? [];
   const featured = featuredStrategy(strategies);
   const steps = featured
     ? buildWorkflowSteps({
@@ -87,23 +126,76 @@ export default function DashboardPage() {
     : [];
   const focus = featured ? firstActionableStep(steps) : null;
 
-  const activePaper = strategies.filter((s) =>
-    RUNNING_PAPER.has((s.paper_validation_status ?? "").toLowerCase()),
-  );
-  const pendingLessons = data?.lessons.total ?? 0;
-  const unreadAlerts = data?.alertSummary.unread ?? 0;
-  const latestAlerts = [...(data?.alerts.items ?? [])].sort(
-    (a, b) => severityRank(b.severity) - severityRank(a.severity),
-  );
+  const daily = summary?.daily_discipline ?? null;
+  const readiness = summary?.strategy_readiness;
+  const alertsLessons = summary?.alerts_lessons;
+  const nextAction = summary?.next_recommended_action;
 
-  const nextActions: string[] = [];
-  if (focus) nextActions.push(`${featured?.name}: ${focus.nextAction}`);
-  if (pendingLessons > 0)
-    nextActions.push(`Review ${pendingLessons} learning signal${pendingLessons === 1 ? "" : "s"} in Lessons.`);
-  if (unreadAlerts > 0)
-    nextActions.push(`Read ${unreadAlerts} new alert${unreadAlerts === 1 ? "" : "s"} (alerts never trade).`);
-  if (strategies.length === 0) nextActions.push("Create your first strategy to start the workflow.");
-  if (nextActions.length === 0) nextActions.push("You're up to date. Wait patiently for setups that match your plan.");
+  const pendingLessons = alertsLessons?.pending_lessons ?? 0;
+  const unreadAlerts = alertsLessons?.unread_alerts ?? 0;
+  const latestAlerts = summary?.alerts_lessons?.latest_high_priority ?? [];
+
+  const activePaper =
+    summary?.active_paper_validations ??
+    strategies.filter((s) => RUNNING_PAPER.has((s.paper_validation_status ?? "").toLowerCase()));
+
+  const nextActions: { text: string; href?: string; reason?: string }[] = [];
+  if (nextAction) {
+    nextActions.push({
+      text: nextAction.action,
+      href: nextAction.link,
+      reason: nextAction.reason,
+    });
+  } else {
+    if (focus) nextActions.push({ text: `${featured?.name}: ${focus.nextAction}` });
+    if (pendingLessons > 0) {
+      nextActions.push({
+        text: `Review ${pendingLessons} learning signal${pendingLessons === 1 ? "" : "s"} in Lessons.`,
+        href: "/lessons",
+      });
+    }
+    if (unreadAlerts > 0) {
+      nextActions.push({
+        text: `Read ${unreadAlerts} new alert${unreadAlerts === 1 ? "" : "s"} (alerts never trade).`,
+        href: "/alerts",
+      });
+    }
+    if (strategies.length === 0) {
+      nextActions.push({ text: "Create your first strategy to start the workflow.", href: "/strategy-lab" });
+    }
+    if (nextActions.length === 0) {
+      nextActions.push({ text: "You're up to date. Wait patiently for setups that match your plan." });
+    }
+  }
+
+  const disciplineSnapshot =
+    daily ??
+    (data?.legacyDiscipline || data?.legacyRisk || data?.legacyTradesToday != null
+      ? {
+          date: new Date().toISOString().slice(0, 10),
+          timezone: "UTC",
+          trades_today: data?.legacyTradesToday ?? 0,
+          paper_trades_opened_today: 0,
+          paper_trades_closed_today: 0,
+          journal_entries_today: 0,
+          realized_pnl_today_paper: null,
+          unrealized_pnl_paper: null,
+          net_pnl_today_paper: null,
+          daily_loss_limit: null,
+          daily_target: null,
+          loss_lock_active: (data?.legacyRisk?.daily_loss_warnings ?? 0) > 0,
+          green_day_protection_active: (data?.legacyRisk?.green_day_warnings ?? 0) > 0,
+          overtrading_warning_active: (data?.legacyRisk?.overtrading_warnings ?? 0) > 0,
+          max_trades_per_day: null,
+          remaining_trades_allowed: null,
+          discipline_status: "calm",
+          reasons: [],
+          recommended_action:
+            data?.legacyDiscipline?.improvement_suggestions?.[0] ??
+            "Stay patient and wait for setups that match your plan.",
+          limitations: summary ? [] : ["Dashboard summary endpoint unavailable; showing legacy fallback."],
+        }
+      : null);
 
   return (
     <div className="space-y-6">
@@ -116,16 +208,25 @@ export default function DashboardPage() {
 
       <div className="flex flex-wrap items-center gap-2" data-testid="dashboard-safety-status">
         <Badge variant="success" data-testid="dashboard-paper-only">
-          {executionMode.toUpperCase()} mode
+          {(summary?.safety.execution_mode ?? executionMode).toUpperCase()} mode
         </Badge>
         <Badge
-          variant={realTradingEnabled ? "danger" : "success"}
+          variant={
+            (summary?.safety.real_trading_enabled ?? realTradingEnabled) ? "danger" : "success"
+          }
           data-testid="dashboard-real-trading-status"
         >
-          Real trading {realTradingEnabled ? "enabled" : "disabled"}
+          Real trading{" "}
+          {(summary?.safety.real_trading_enabled ?? realTradingEnabled) ? "enabled" : "disabled"}
         </Badge>
         <Badge variant="muted">Simulated execution only</Badge>
       </div>
+
+      {summary?.limitations.length ? (
+        <p className="text-xs text-amber-500/80" data-testid="dashboard-summary-limitations">
+          {summary.limitations.join(" ")}
+        </p>
+      ) : null}
 
       {featured ? (
         <WorkflowStepper steps={steps} />
@@ -141,27 +242,47 @@ export default function DashboardPage() {
           <CardTitle className="text-base">What to do next</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-1 text-sm text-zinc-300">
-            {nextActions.map((action) => (
-              <li key={action}>• {action}</li>
+          <ul className="space-y-2 text-sm text-zinc-300">
+            {nextActions.map((item) => (
+              <li key={item.text}>
+                {item.href ? (
+                  <Link href={item.href} className="underline decoration-zinc-600 hover:text-zinc-100">
+                    {item.text}
+                  </Link>
+                ) : (
+                  <span>• {item.text}</span>
+                )}
+                {item.reason ? (
+                  <p className="mt-0.5 text-xs text-zinc-500" data-testid="next-action-reason">
+                    {item.reason}
+                  </p>
+                ) : null}
+              </li>
             ))}
           </ul>
         </CardContent>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <TodaysDisciplineCard
-          discipline={data?.discipline ?? null}
-          risk={data?.risk ?? null}
-          tradesToday={data?.tradeReview?.total_journaled_trades ?? null}
-        />
+        <TodaysDisciplineCard snapshot={disciplineSnapshot} />
 
         <Card data-testid="strategy-readiness-card">
           <CardHeader>
             <CardTitle className="text-base">Strategy readiness</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {strategies.length ? (
+            {readiness?.top_needing_action.length ? (
+              readiness.top_needing_action.map((strategy) => (
+                <Link
+                  key={strategy.strategy_id}
+                  href={strategy.link_hint}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2 hover:border-zinc-600"
+                >
+                  <span className="truncate text-zinc-200">{strategy.name}</span>
+                  <Badge variant="muted">{strategy.status}</Badge>
+                </Link>
+              ))
+            ) : strategies.length ? (
               strategies.slice(0, 5).map((strategy) => {
                 const view = strategyStatusFor(strategy);
                 return (
@@ -189,16 +310,20 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {activePaper.length ? (
-              activePaper.map((strategy) => (
-                <Link
-                  key={strategy.id}
-                  href={`/strategy-lab/${strategy.id}`}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2 hover:border-zinc-600"
-                >
-                  <span className="truncate text-zinc-200">{strategy.name}</span>
-                  <Badge variant="info">Running</Badge>
-                </Link>
-              ))
+              activePaper.map((strategy) => {
+                const id = "strategy_id" in strategy ? strategy.strategy_id : strategy.id;
+                const name = strategy.name;
+                return (
+                  <Link
+                    key={id}
+                    href={`/strategy-lab/${id}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2 hover:border-zinc-600"
+                  >
+                    <span className="truncate text-zinc-200">{name}</span>
+                    <Badge variant="info">Running</Badge>
+                  </Link>
+                );
+              })
             ) : (
               <EmptyState
                 title="No active paper validations"
@@ -213,9 +338,22 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Open paper trades</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data?.positions.items.length ? (
-              data.positions.items.map((position) => (
-                <PositionCard key={position.id} position={position} />
+            {summary?.open_paper_trades.length ? (
+              summary.open_paper_trades.map((trade) => (
+                <div
+                  key={trade.position_id ?? trade.symbol}
+                  className="rounded-lg border border-zinc-800 px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-zinc-200">{trade.symbol}</span>
+                    <Badge variant="muted">{trade.direction}</Badge>
+                  </div>
+                  {trade.unrealized_pnl != null ? (
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Unrealized PnL: {formatDecimal(trade.unrealized_pnl)}
+                    </p>
+                  ) : null}
+                </div>
               ))
             ) : (
               <EmptyState title="No open paper positions" />
@@ -232,15 +370,18 @@ export default function DashboardPage() {
           <CardContent className="space-y-2 text-sm">
             {latestAlerts.length ? (
               <>
-                {latestAlerts.slice(0, 5).map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2"
-                  >
-                    <span className="truncate text-zinc-200">{alertTypeLabel(alert.alert_type)}</span>
-                    <Badge variant={severityVariant(alert.severity)}>{alert.severity}</Badge>
-                  </div>
-                ))}
+                {[...latestAlerts]
+                  .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+                  .slice(0, 5)
+                  .map((alert) => (
+                    <div
+                      key={`${alert.alert_type}-${alert.message}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2"
+                    >
+                      <span className="truncate text-zinc-200">{alertTypeLabel(alert.alert_type)}</span>
+                      <Badge variant={severityVariant(alert.severity)}>{alert.severity}</Badge>
+                    </div>
+                  ))}
                 <Link href="/alerts" className="block text-xs text-zinc-400 underline">
                   View all alerts
                 </Link>
@@ -294,7 +435,7 @@ export default function DashboardPage() {
           <div>
             <h3 className="mb-2 text-sm font-medium text-zinc-300">Recent audit events</h3>
             <div className="space-y-2">
-              {data?.audit.items.length ? (
+              {data?.audit?.items.length ? (
                 data.audit.items.map((event) => <AuditEventCard key={event.event_id} event={event} />)
               ) : (
                 <p className="text-sm text-zinc-500">No audit events yet.</p>

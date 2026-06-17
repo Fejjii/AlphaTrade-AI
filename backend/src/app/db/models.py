@@ -974,6 +974,8 @@ class DailyRiskState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     realized_pnl: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
     unrealized_pnl: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"))
     daily_loss_limit: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    daily_target: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    max_trades_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     trade_count: Mapped[int] = mapped_column(Integer, default=0)
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
 

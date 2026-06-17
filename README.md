@@ -17,7 +17,7 @@
 
 ## Key features
 
-- **Trader-first dashboard** — workflow stepper (Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve), "what to do next" guidance, Today's discipline card, and strategy readiness badges (developer diagnostics collapsed) (Slice 43)
+- **Trader-first dashboard** — workflow stepper (Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve), "what to do next" guidance, Today's discipline card with backend daily snapshot, and strategy readiness badges (developer diagnostics collapsed) (Slice 43–44)
 - **AI Trading Workspace** — LangGraph agent with guardrails, RAG context, and schema-validated responses
 - **Deterministic risk engine** — 15 rules; `BLOCK` is final authority over proposals and paper execution
 - **Human approval workflow** — proposals require explicit approve / reject / modify before paper orders
@@ -26,6 +26,7 @@
 - **RAG knowledge base** — playbooks, policies, and journal lessons (not trading signals)
 - **Journal → RAG loop** — trade reviews auto-sync to knowledge for future agent retrieval
 - **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
+- **Dashboard summary** — paper-only aggregated snapshot with daily discipline, strategy readiness, alerts/lessons, and next recommended action (`GET /dashboard/summary`, Slice 44)
 - **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot, scheduler foundation, alerts, optional signed webhook delivery, market watcher + paper scan bridge), lesson → version flow, agent routing (Slice 33–42; paper only)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies

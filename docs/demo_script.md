@@ -71,21 +71,25 @@ Talking points:
 
 ---
 
-## 4. Dashboard (trader-first, Slice 43)
+## 4. Dashboard (trader-first, Slice 43–44)
 
-Route: `/`
+Route: `/` · API: `GET /dashboard/summary`
 
 Highlight:
 
 - **Paper mode active** banner + `PAPER mode` / `Real trading disabled` status badges
 - **Workflow stepper:** Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve Strategy, with per-step complete / blocked / next status
-- **What to do next** card aggregating the most relevant action across strategy, lessons, and alerts
-- **Today's discipline** card (score, loss/green-day protection, frequency notice, calm next action)
-- **Strategy readiness** with one status badge per strategy
+- **What to do next** from backend `next_recommended_action` (with link + reason)
+- **Today's discipline** from `daily_discipline` snapshot: trades today, paper PnL today, loss/green-day/frequency states, reasons, limitations
+- **Strategy readiness** counts and top strategies needing action
 - **Active paper validations**, **Open paper trades**, **Latest alerts**, **Lessons pending review**
 - Developer-first details (provider status, backend version, estimated cost, audit events) are tucked into a collapsed **Developer details** section
 
-Talking point: the dashboard answers *"what should I do next?"* without exposing raw diagnostics by default.
+Talking points:
+
+- Dashboard summary is **deterministic, paper-only, tenant-scoped** — no LLM, no broker data
+- Daily PnL uses **closed paper trades today** plus open position unrealized PnL when available; timezone from user profile (UTC fallback with limitation)
+- If `/dashboard/summary` fails, the UI falls back to legacy client-side composition (Slice 43 behavior)
 
 ---
 

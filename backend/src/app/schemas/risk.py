@@ -37,6 +37,12 @@ class DailyRiskState(ORMModel):
     realized_pnl: Decimal = Decimal("0")
     unrealized_pnl: Decimal = Decimal("0")
     daily_loss_limit: Decimal = Field(description="Max loss before trading locks (account ccy).")
+    daily_target: Decimal | None = Field(
+        default=None, description="Optional daily profit target for green-day protection."
+    )
+    max_trades_per_day: int | None = Field(
+        default=None, ge=1, description="Optional per-day trade frequency cap."
+    )
     trade_count: int = Field(default=0, ge=0)
     locked: bool = False
     updated_at: datetime

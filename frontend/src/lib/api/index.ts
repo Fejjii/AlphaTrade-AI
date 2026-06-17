@@ -7,6 +7,7 @@ import type {
   HealthResponse,
   IngestDocumentResponse,
   DisciplineScoreResult,
+  DashboardSummary,
   JournalEntry,
   RiskBehaviorAnalytics,
   SetupAnalyticsResponse,
@@ -298,6 +299,9 @@ export const api = {
     tradeReview: () => apiFetch<TradeReviewAnalytics>("/analytics/trade-review"),
     discipline: () => apiFetch<DisciplineScoreResult>("/analytics/discipline"),
     riskBehavior: () => apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior"),
+  },
+  dashboard: {
+    summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
   },
   knowledge: {
     ingest: (body: {

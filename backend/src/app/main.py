@@ -24,6 +24,7 @@ from app.api.routes import (
     backtests,
     billing,
     chat,
+    dashboard,
     execution,
     health,
     human_vs_system,
@@ -150,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         audit.router,
         usage.router,
         billing.router,
+        dashboard.router,
         tools.router,
     ):
         app.include_router(r)
