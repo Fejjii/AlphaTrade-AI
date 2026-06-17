@@ -86,6 +86,12 @@ describe("AlertsPage Slice 41", () => {
     expect(screen.getByTestId("alert-source-label")).toHaveTextContent("Market watcher bridge");
   });
 
+  it("renders severity badge and suggested next action", () => {
+    render(<AlertsPage />);
+    expect(screen.getByTestId("alert-severity-badge")).toHaveTextContent("info");
+    expect(screen.getByTestId("alert-next-action")).toHaveTextContent("never place");
+  });
+
   it("renders paper only disclaimer", () => {
     render(<AlertsPage />);
     expect(screen.getByTestId("alerts-paper-only-disclaimer")).toHaveTextContent("No real trades");

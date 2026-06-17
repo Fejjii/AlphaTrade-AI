@@ -87,10 +87,16 @@ describe("MarketWatcherPage Slice 42", () => {
     expect(screen.getByTestId("bridge-env-enabled")).toHaveTextContent("false");
   });
 
-  it("renders bridge decision history", () => {
+  it("renders bridge decision history with human-readable labels", () => {
     render(<MarketWatcherPage />);
     expect(screen.getByTestId("bridge-decision-history")).toBeInTheDocument();
     expect(screen.getByTestId("bridge-skipped-reason")).toHaveTextContent("Bridge disabled");
+    expect(screen.getByTestId("bridge-decision-label")).toHaveTextContent("Skipped — bridge disabled");
+  });
+
+  it("explains what the action buttons do", () => {
+    render(<MarketWatcherPage />);
+    expect(screen.getByTestId("market-watcher-action-help")).toHaveTextContent("never places");
   });
 
   it("does not render bridge tick when disabled", () => {

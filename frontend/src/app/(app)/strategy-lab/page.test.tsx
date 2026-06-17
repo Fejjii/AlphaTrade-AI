@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import StrategyLabPage from "@/app/(app)/strategy-lab/page";
+
+afterEach(cleanup);
 
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
@@ -18,5 +20,11 @@ describe("StrategyLabPage", () => {
     expect(screen.getByText("Strategy Lab")).toBeInTheDocument();
     expect(screen.getByText("Create strategy")).toBeInTheDocument();
     expect(screen.getByText("Pullback")).toBeInTheDocument();
+  });
+
+  it("shows a status badge and next action for each strategy", () => {
+    render(<StrategyLabPage />);
+    expect(screen.getByTestId("strategy-status-badge")).toHaveTextContent("Needs structure");
+    expect(screen.getByTestId("strategy-next-action")).toHaveTextContent("Next:");
   });
 });

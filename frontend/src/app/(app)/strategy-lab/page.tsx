@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useCallback } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
+import { strategyStatusFor } from "@/lib/strategy-status";
 
 function setupLabel(value: string) {
   return SETUP_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
@@ -40,20 +42,30 @@ export default function StrategyLabPage() {
 
       {data?.items.length ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {data.items.map((strategy) => (
-            <Link key={strategy.id} href={`/strategy-lab/${strategy.id}`}>
-              <Card className="transition hover:border-zinc-600">
-                <CardHeader>
-                  <CardTitle className="text-base">{strategy.name}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm text-zinc-300">
-                  <p>Setup: {setupLabel(strategy.setup_type)}</p>
-                  <p>Version: {strategy.current_version}</p>
-                  <p>Status: {strategy.validation_status ?? "draft"}</p>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+          {data.items.map((strategy) => {
+            const view = strategyStatusFor(strategy);
+            return (
+              <Link key={strategy.id} href={`/strategy-lab/${strategy.id}`} data-testid="strategy-card">
+                <Card className="transition hover:border-zinc-600">
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-base">{strategy.name}</CardTitle>
+                      <Badge variant={view.variant} data-testid="strategy-status-badge">
+                        {view.label}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-1 text-sm text-zinc-300">
+                    <p>Setup: {setupLabel(strategy.setup_type)}</p>
+                    <p>Version: {strategy.current_version}</p>
+                    <p className="text-zinc-400" data-testid="strategy-next-action">
+                      Next: {view.nextAction}
+                    </p>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
         </div>
       ) : null}
 

@@ -154,8 +154,8 @@ export default function AnalyticsPage() {
                 <p>Risk blocks: {data.risk.risk_blocks_count}</p>
                 <p>Daily loss warnings: {data.risk.daily_loss_warnings}</p>
                 <p>Green day warnings: {data.risk.green_day_warnings}</p>
-                <p>Overtrading warnings: {data.risk.overtrading_warnings}</p>
-                <p>Revenge trading warnings: {data.risk.revenge_trading_warnings}</p>
+                <p>Trading frequency notices: {data.risk.overtrading_warnings}</p>
+                <p>Emotion-driven trade notices: {data.risk.revenge_trading_warnings}</p>
                 <p>
                   Journal completion: {(data.risk.journal_completion_rate * 100).toFixed(0)}%
                 </p>

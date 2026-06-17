@@ -3,11 +3,32 @@
 import { useCallback, useEffect, useState } from "react";
 import { LessonAcceptPanel, type AcceptPath } from "@/components/lessons/LessonAcceptPanel";
 import { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
-import { LoadingState } from "@/components/states";
+import { EmptyState, LoadingState } from "@/components/states";
 import { api } from "@/lib/api";
 import type { LessonCandidate, ProposedRuleUpdate } from "@/lib/api/types";
 
 type Tab = "pending" | "accepted" | "rejected";
+
+const TAB_DESCRIPTIONS: Record<Tab, string> = {
+  pending: "Pending observations are not accepted trading rules — review them before they become memory.",
+  accepted: "Accepted lessons are reviewed rules or memories. Accepting can optionally update a strategy version.",
+  rejected: "Rejected lessons are archived as learning context only — they do not affect strategies.",
+};
+
+const EMPTY_STATES: Record<Tab, { title: string; description: string }> = {
+  pending: {
+    title: "No pending lessons",
+    description: "New learning signals from journaling and analysis will appear here for review.",
+  },
+  accepted: {
+    title: "No accepted lessons yet",
+    description: "Lessons you accept become reviewed rules or memories and show up here.",
+  },
+  rejected: {
+    title: "No rejected lessons yet",
+    description: "Lessons you archive as context only will be listed here.",
+  },
+};
 
 export default function LessonsPage() {
   const [tab, setTab] = useState<Tab>("pending");
@@ -87,6 +108,9 @@ export default function LessonsPage() {
         <p className="text-sm text-zinc-400">
           Review discipline observations before they become accepted trading memory. Paper mode only.
         </p>
+        <p className="mt-1 text-xs text-zinc-500" data-testid="lessons-tab-description">
+          {TAB_DESCRIPTIONS[tab]}
+        </p>
       </div>
       <div className="flex flex-wrap gap-2" role="tablist">
         {(["pending", "accepted", "rejected"] as Tab[]).map((t) => (
@@ -108,7 +132,12 @@ export default function LessonsPage() {
       {loading ? (
         <LoadingState label="Loading lessons…" />
       ) : items.length === 0 ? (
-        <p className="text-sm text-zinc-500">No {tab} lessons yet.</p>
+        <div data-testid={`lessons-empty-${tab}`}>
+          <EmptyState
+            title={EMPTY_STATES[tab].title}
+            description={EMPTY_STATES[tab].description}
+          />
+        </div>
       ) : (
         <div className="space-y-4">
           {items.map((lesson) => (

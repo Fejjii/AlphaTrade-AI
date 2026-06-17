@@ -3,41 +3,18 @@
 import { useCallback, useState } from "react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
+import {
+  alertNextAction,
+  alertSourceLabel,
+  alertTypeLabel,
+  severityRank,
+  severityVariant,
+} from "@/lib/alert-display";
 import type { PaperAlert } from "@/lib/api/types";
-
-const ALERT_TYPE_LABELS: Record<string, string> = {
-  setup_signal_detected: "Setup signal",
-  paper_trade_opened: "Paper trade opened",
-  paper_trade_closed: "Paper trade closed",
-  stop_hit: "Stop hit",
-  tp_hit: "Take profit hit",
-  runner_exit: "Runner exit",
-  data_stale: "Data stale",
-  strategy_blocked: "Strategy blocked",
-  promotion_status_changed: "Promotion status changed",
-  paper_validation_restricted: "Paper validation restricted",
-  overtrading_warning: "Overtrading warning",
-  daily_loss_lock_warning: "Daily loss lock warning",
-};
-
-function alertTypeLabel(type: string): string {
-  return ALERT_TYPE_LABELS[type] ?? type.replace(/_/g, " ");
-}
-
-const ALERT_SOURCE_LABELS: Record<string, string> = {
-  paper_validation_runtime: "Paper validation",
-  market_watcher: "Market watcher",
-  market_watcher_bridge: "Market watcher bridge",
-  manual_action: "Manual action",
-};
-
-function alertSourceLabel(source: string | undefined): string {
-  if (!source) return "Paper validation";
-  return ALERT_SOURCE_LABELS[source] ?? source.replace(/_/g, " ");
-}
 
 export default function AlertsPage() {
   const [filterType, setFilterType] = useState("");
@@ -188,28 +165,33 @@ export default function AlertsPage() {
 
       <div className="grid gap-3" data-testid="alerts-list">
         {data?.items.length ? (
-          data.items.map((alert) => (
+          [...data.items]
+            .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+            .map((alert) => (
             <article
               key={alert.id}
               className="rounded-lg border border-zinc-800 p-4 text-sm"
               data-testid="alert-card"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-zinc-100" data-testid="alert-type-label">
-                  {alertTypeLabel(alert.alert_type)}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={severityVariant(alert.severity)} data-testid="alert-severity-badge">
+                    {alert.severity}
+                  </Badge>
+                  <span className="font-medium text-zinc-100" data-testid="alert-type-label">
+                    {alertTypeLabel(alert.alert_type)}
+                  </span>
+                </div>
                 <span className="text-zinc-500">{new Date(alert.created_at).toLocaleString()}</span>
               </div>
               <p className="mt-1 text-zinc-300">{alert.message}</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Severity: {alert.severity}
-                {alert.strategy_id ? ` · Strategy ${alert.strategy_id.slice(0, 8)}` : ""}
-                {alert.paper_validation_run_id
-                  ? ` · Run ${alert.paper_validation_run_id.slice(0, 8)}`
-                  : ""}
-              </p>
               <p className="mt-1 text-xs text-zinc-500" data-testid="alert-source-label">
                 Source: {alertSourceLabel(alert.alert_source)}
+                {" · "}
+                {alert.read_at ? "Read" : "Unread"}
+              </p>
+              <p className="mt-1 text-xs text-zinc-400" data-testid="alert-next-action">
+                Suggested: {alertNextAction(alert.alert_type)}
               </p>
               <p className="mt-1 text-xs text-zinc-500" data-testid="alert-delivery-status">
                 Delivery: {alert.delivery_channel ?? "in_app"} · {alert.delivery_status ?? "disabled"}
@@ -222,9 +204,15 @@ export default function AlertsPage() {
                   Last error: {alert.last_delivery_error}
                 </p>
               ) : null}
-              <p className="mt-1 text-xs text-zinc-500">
-                {alert.read_at ? "Read" : "Unread"}
-              </p>
+              {alert.strategy_id || alert.paper_validation_run_id ? (
+                <details className="mt-1 text-xs text-zinc-500" data-testid="alert-technical-ids">
+                  <summary className="cursor-pointer">Technical IDs</summary>
+                  {alert.strategy_id ? <p>Strategy: {alert.strategy_id}</p> : null}
+                  {alert.paper_validation_run_id ? (
+                    <p>Run: {alert.paper_validation_run_id}</p>
+                  ) : null}
+                </details>
+              ) : null}
               <div className="mt-2 flex flex-wrap gap-2">
                 {!alert.read_at ? (
                   <Button

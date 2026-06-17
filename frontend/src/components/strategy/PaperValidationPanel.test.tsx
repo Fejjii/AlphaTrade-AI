@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
+
+afterEach(cleanup);
 
 const baseProps = {
   summary: {
@@ -102,5 +104,20 @@ describe("PaperValidationPanel slice 40", () => {
     expect(screen.getByTestId("paper-validation-blockers")).toBeInTheDocument();
     expect(screen.getByTestId("data-freshness-warning")).toBeInTheDocument();
     expect(screen.getByTestId("mark-alert-read-a1")).toBeInTheDocument();
+  });
+});
+
+describe("PaperValidationPanel human-readable summary", () => {
+  it("shows a running summary with mode and next action", () => {
+    render(<PaperValidationPanel {...baseProps} />);
+    expect(screen.getByTestId("paper-validation-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-validation-running")).toHaveTextContent("Running");
+    expect(screen.getByTestId("paper-validation-mode")).toHaveTextContent("Scan only");
+    expect(screen.getByTestId("paper-validation-next-action")).toHaveTextContent("What to do next");
+  });
+
+  it("keeps raw runtime data behind a technical details section", () => {
+    render(<PaperValidationPanel {...baseProps} />);
+    expect(screen.getByTestId("paper-validation-technical-details")).toBeInTheDocument();
   });
 });

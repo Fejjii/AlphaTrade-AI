@@ -67,7 +67,9 @@ export function DisciplineAnalysisPanel({
             <p className="font-medium text-zinc-200">Stop loss discipline</p>
             {stop?.lesson ? <p>{stop.lesson}</p> : null}
             {stop?.avoidable_loss_estimate ? (
-              <p className="text-zinc-400">Avoidable loss estimate: {stop.avoidable_loss_estimate}</p>
+              <p className="text-zinc-400">
+                Estimated preventable loss: {stop.avoidable_loss_estimate}
+              </p>
             ) : null}
           </div>
         </div>

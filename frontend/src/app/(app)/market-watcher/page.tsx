@@ -7,6 +7,20 @@ import { Button } from "@/components/ui/button";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 
+const DECISION_LABELS: Record<string, string> = {
+  skipped_disabled: "Skipped — bridge disabled",
+  skipped_blocked_strategy: "Skipped — strategy blocked",
+  skipped_not_eligible: "Skipped — strategy not paper-eligible",
+  skipped_stale: "Skipped — observation was stale",
+  skipped_no_observations: "Skipped — no fresh observations",
+  triggered_scan: "Triggered a paper validation scan",
+  scan_triggered: "Triggered a paper validation scan",
+};
+
+function decisionLabel(decision: string): string {
+  return DECISION_LABELS[decision] ?? decision.replace(/_/g, " ");
+}
+
 export default function MarketWatcherPage() {
   const [busy, setBusy] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -141,7 +155,9 @@ export default function MarketWatcherPage() {
           <ul className="space-y-2">
             {bridgeHistory.items.slice(0, 10).map((d) => (
               <li key={d.id} data-testid="bridge-decision-row">
-                <span className="font-mono text-xs text-zinc-500">{d.decision}</span>
+                <span className="text-zinc-200" data-testid="bridge-decision-label">
+                  {decisionLabel(d.decision)}
+                </span>
                 {d.symbol ? ` · ${d.symbol}` : null}
                 {d.reason ? (
                   <p className="text-zinc-400" data-testid="bridge-skipped-reason">
@@ -157,24 +173,31 @@ export default function MarketWatcherPage() {
         </section>
       ) : null}
 
-      <div className="flex flex-wrap gap-3">
-        <Button
-          disabled={busy}
-          onClick={() => void runScan()}
-          data-testid="market-watcher-scan-button"
-        >
-          Run read-only scan
-        </Button>
-        {bridgeStatus?.env_enabled ? (
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-3">
           <Button
             disabled={busy}
-            variant="secondary"
-            onClick={() => void runBridgeTick()}
-            data-testid="market-watcher-bridge-tick-button"
+            onClick={() => void runScan()}
+            data-testid="market-watcher-scan-button"
           >
-            Run bridge tick
+            Run read-only scan
           </Button>
-        ) : null}
+          {bridgeStatus?.env_enabled ? (
+            <Button
+              disabled={busy}
+              variant="secondary"
+              onClick={() => void runBridgeTick()}
+              data-testid="market-watcher-bridge-tick-button"
+            >
+              Run bridge tick
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-xs text-zinc-500" data-testid="market-watcher-action-help">
+          Run read-only scan observes the watched symbols and records observations — it never places
+          orders. Run bridge tick asks the bridge to trigger paper validation scans for eligible
+          strategies. Neither action executes real or paper trades directly.
+        </p>
       </div>
 
       {scanResult ? (

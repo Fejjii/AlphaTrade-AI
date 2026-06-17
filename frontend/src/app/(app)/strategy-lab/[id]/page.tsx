@@ -9,11 +9,15 @@ import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
 import { emptyStrategyCard } from "@/components/strategy/StrategyCardForm";
+import { WorkflowStepper } from "@/components/WorkflowStepper";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
+import { strategyStatusFor } from "@/lib/strategy-status";
+import { buildWorkflowSteps } from "@/lib/workflow-steps";
 import type {
   PaperAlert,
   PaperEligibilityReport,
@@ -164,17 +168,30 @@ export default function StrategyDetailPage() {
       {actionError ? <ErrorState message={actionError} /> : null}
 
       {data ? (
-        <div className="flex flex-wrap gap-2 text-sm text-zinc-300">
-          <span>Validation: {data.validation_status ?? "draft"}</span>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-300">
+          <Badge variant={strategyStatusFor(data).variant} data-testid="strategy-status-badge">
+            {strategyStatusFor(data).label}
+          </Badge>
           <span>Backtest: {data.backtest_status ?? "not_run"}</span>
           <span>Paper: {data.paper_validation_status ?? "not_started"}</span>
           {eligibility ? (
-            <span data-testid="strategy-paper-status">
-              Eligibility: {eligibility.status}
-            </span>
+            <span data-testid="strategy-paper-status">Eligibility: {eligibility.status}</span>
           ) : null}
-          {data.paper_eligible ? <span className="text-emerald-400">Paper eligible</span> : null}
         </div>
+      ) : null}
+
+      {data ? (
+        <WorkflowStepper
+          steps={buildWorkflowSteps({
+            strategyId: id,
+            hasStructuredRules: testabilityData?.has_structured_rules,
+            readyForBacktest: testabilityData?.ready_for_backtest,
+            backtestStatus: data.backtest_status,
+            paperValidationStatus: data.paper_validation_status,
+            paperEligible: eligibility?.paper_eligible ?? data.paper_eligible,
+            unresolvedLessonCount: eligibility?.unresolved_lesson_candidates.length,
+          })}
+        />
       ) : null}
 
       {card ? (

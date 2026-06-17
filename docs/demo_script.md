@@ -38,6 +38,25 @@ Explain these invariants before showing features:
 
 ---
 
+## 2b. Trader-first demo flow (recommended order)
+
+A tight 8–10 minute path that follows the product workflow:
+
+1. **Dashboard overview** — paper-only status, workflow stepper, "what to do next"
+2. **Create or open a strategy** in Strategy Lab (status badge + next action)
+3. **Show testability score** — structured rules drive backtest readiness
+4. **Run/show a backtest result** — historical sample, fees + slippage
+5. **Show paper eligibility** — conservative gates, blockers explained in plain language
+6. **Start or view paper validation** — human-readable summary: running, mode, last scan, next action
+7. **Run a market watcher scan** — read-only observations, no orders
+8. **Show a bridge decision** — bridge triggers paper validation scans only
+9. **Show an alert** — severity, source, suggested action; alerts never trade
+10. **Review a lesson** — pending vs accepted vs rejected; accepting can update a strategy version
+11. **Human vs system** — discipline analysis with calm, non-judgmental wording
+12. **Emphasise paper-only safety** — real trading disabled throughout
+
+---
+
 ## 3. Login
 
 **Docker (recommended):** http://localhost:3000 — cookie auth enabled in Compose.
@@ -52,16 +71,21 @@ Talking points:
 
 ---
 
-## 4. Dashboard
+## 4. Dashboard (trader-first, Slice 43)
 
 Route: `/`
 
 Highlight:
 
-- **Paper mode active** banner
-- Provider status cards (LLM, embeddings, Qdrant, Redis, market data, exchange, billing, email)
-- Quick links to Workspace, Market, Proposals
-- Kill switch affordance on trading pages (UI guard, not live trading)
+- **Paper mode active** banner + `PAPER mode` / `Real trading disabled` status badges
+- **Workflow stepper:** Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve Strategy, with per-step complete / blocked / next status
+- **What to do next** card aggregating the most relevant action across strategy, lessons, and alerts
+- **Today's discipline** card (score, loss/green-day protection, frequency notice, calm next action)
+- **Strategy readiness** with one status badge per strategy
+- **Active paper validations**, **Open paper trades**, **Latest alerts**, **Lessons pending review**
+- Developer-first details (provider status, backend version, estimated cost, audit events) are tucked into a collapsed **Developer details** section
+
+Talking point: the dashboard answers *"what should I do next?"* without exposing raw diagnostics by default.
 
 ---
 

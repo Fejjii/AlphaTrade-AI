@@ -11,7 +11,9 @@ import type {
   PaperValidationSummary,
 } from "@/lib/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { buildPaperValidationView } from "@/lib/paper-validation-summary";
 
 type Props = {
   summary: PaperValidationSummary | null;
@@ -53,6 +55,7 @@ export function PaperValidationPanel({
   const providerFallback = history.some((h) =>
     h.warnings.some((w) => w.toLowerCase().includes("fallback")),
   );
+  const view = buildPaperValidationView(latest, eligibility, history);
 
   return (
     <Card data-testid="paper-validation-panel">
@@ -64,40 +67,28 @@ export function PaperValidationPanel({
           Simulated paper trades only — no exchange orders. Real trading disabled.
         </p>
 
-        {scheduler ? (
-          <div className="rounded border border-zinc-800 p-3" data-testid="scheduler-status">
-            <p>
-              Scheduler: env {scheduler.env_enabled ? "on" : "off"} · tenant{" "}
-              {scheduler.tenant_enabled ? "on" : "off"} · effective{" "}
-              {scheduler.effective_enabled ? "on" : "off"}
-            </p>
-            {scheduler.last_tick_at ? (
-              <p data-testid="last-scheduler-tick">
-                Last tick: {new Date(scheduler.last_tick_at).toLocaleString()} (
-                {scheduler.last_tick_status ?? "—"})
-              </p>
-            ) : (
-              <p data-testid="last-scheduler-tick">Last tick: none yet</p>
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-2"
-              disabled={busy}
-              onClick={onSchedulerTick}
-              data-testid="manual-scheduler-tick"
-            >
-              Manual scheduler tick
-            </Button>
+        <div
+          className="space-y-2 rounded border border-zinc-800 bg-zinc-950/40 p-3"
+          data-testid="paper-validation-summary"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={view.running ? "info" : "muted"} data-testid="paper-validation-running">
+              {view.running ? "Running" : "Not running"}
+            </Badge>
+            <span className="text-zinc-400" data-testid="paper-validation-mode">
+              {view.modeLabel}
+            </span>
           </div>
-        ) : null}
-
-        {latest ? (
-          <p data-testid="paper-validation-run-status">
-            Run status: <span className="text-zinc-100">{latest.status}</span> · Mode:{" "}
-            <span data-testid="runtime-mode">{latest.runtime_mode ?? "scan_only"}</span>
+          <p data-testid="paper-validation-scan-summary">{view.lastScanSummary}</p>
+          {view.skipReason ? (
+            <p className="text-amber-200" data-testid="paper-validation-skip-reason">
+              Skipped: {view.skipReason}
+            </p>
+          ) : null}
+          <p className="text-zinc-300" data-testid="paper-validation-next-action">
+            What to do next: {view.nextAction}
           </p>
-        ) : null}
+        </div>
 
         {eligibility ? (
           <div className="space-y-2 rounded border border-zinc-800 p-3" data-testid="paper-eligibility-status">
@@ -141,37 +132,6 @@ export function PaperValidationPanel({
             {eligibility.unresolved_lesson_candidates.length} unresolved lesson candidate(s) —
             review in Lessons before paper promotion.
           </p>
-        ) : null}
-
-        {latest?.last_scan_result ? (
-          <div className="rounded border border-zinc-800 p-3" data-testid="latest-scan-result">
-            <p className="text-zinc-400">Latest scan</p>
-            <p className="text-sm text-zinc-200">
-              Signal triggered:{" "}
-              {latest.last_scan_result.triggered === true ? "yes" : "no"}
-              {latest.last_scan_result.trade_created ? " · paper trade opened" : ""}
-            </p>
-            {Array.isArray(latest.last_scan_result.limitations) &&
-            latest.last_scan_result.limitations.length > 0 ? (
-              <p className="mt-1 text-xs text-amber-200/90">
-                Notes: {(latest.last_scan_result.limitations as string[]).slice(0, 3).join("; ")}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {history.length > 0 ? (
-          <div data-testid="runtime-history">
-            <p className="text-zinc-400">Runtime cycles ({history.length})</p>
-            <ul className="space-y-1 text-xs">
-              {history.slice(0, 5).map((h) => (
-                <li key={h.id} className="rounded border border-zinc-800 px-2 py-1">
-                  {h.mode} · {h.status}
-                  {h.reason ? ` — ${h.reason}` : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
         ) : null}
 
         {alerts.length > 0 ? (
@@ -230,18 +190,6 @@ export function PaperValidationPanel({
           </Button>
         </div>
 
-        {signals.length > 0 ? (
-          <ul className="space-y-1" data-testid="paper-signals-list">
-            <p className="text-zinc-400">Paper signals ({signals.length})</p>
-            {signals.slice(0, 5).map((s) => (
-              <li key={s.id} className="rounded border border-zinc-800 px-2 py-1">
-                {s.triggered ? "Triggered" : "No setup"} · {s.status} · conf{" "}
-                {(s.confidence * 100).toFixed(0)}%
-              </li>
-            ))}
-          </ul>
-        ) : null}
-
         {openTrades.length > 0 ? (
           <div data-testid="open-paper-positions">
             <p className="text-zinc-400">Open positions ({openTrades.length})</p>
@@ -292,6 +240,91 @@ export function PaperValidationPanel({
             Metrics update as paper trades close — run scan and tick to simulate.
           </p>
         )}
+
+        <details
+          className="rounded border border-zinc-800 p-3"
+          data-testid="paper-validation-technical-details"
+        >
+          <summary className="cursor-pointer text-zinc-400">Technical details</summary>
+          <div className="mt-3 space-y-3">
+            {latest ? (
+              <p data-testid="paper-validation-run-status">
+                Run status: <span className="text-zinc-100">{latest.status}</span> · Mode:{" "}
+                <span data-testid="runtime-mode">{latest.runtime_mode ?? "scan_only"}</span>
+              </p>
+            ) : null}
+
+            {scheduler ? (
+              <div className="rounded border border-zinc-800 p-3" data-testid="scheduler-status">
+                <p>
+                  Scheduler: env {scheduler.env_enabled ? "on" : "off"} · tenant{" "}
+                  {scheduler.tenant_enabled ? "on" : "off"} · effective{" "}
+                  {scheduler.effective_enabled ? "on" : "off"}
+                </p>
+                {scheduler.last_tick_at ? (
+                  <p data-testid="last-scheduler-tick">
+                    Last tick: {new Date(scheduler.last_tick_at).toLocaleString()} (
+                    {scheduler.last_tick_status ?? "—"})
+                  </p>
+                ) : (
+                  <p data-testid="last-scheduler-tick">Last tick: none yet</p>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-2"
+                  disabled={busy}
+                  onClick={onSchedulerTick}
+                  data-testid="manual-scheduler-tick"
+                >
+                  Manual scheduler tick
+                </Button>
+              </div>
+            ) : null}
+
+            {latest?.last_scan_result ? (
+              <div className="rounded border border-zinc-800 p-3" data-testid="latest-scan-result">
+                <p className="text-zinc-400">Latest scan</p>
+                <p className="text-sm text-zinc-200">
+                  Signal triggered: {latest.last_scan_result.triggered === true ? "yes" : "no"}
+                  {latest.last_scan_result.trade_created ? " · paper trade opened" : ""}
+                </p>
+                {Array.isArray(latest.last_scan_result.limitations) &&
+                latest.last_scan_result.limitations.length > 0 ? (
+                  <p className="mt-1 text-xs text-amber-200/90">
+                    Notes: {(latest.last_scan_result.limitations as string[]).slice(0, 3).join("; ")}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {history.length > 0 ? (
+              <div data-testid="runtime-history">
+                <p className="text-zinc-400">Runtime cycles ({history.length})</p>
+                <ul className="space-y-1 text-xs">
+                  {history.slice(0, 5).map((h) => (
+                    <li key={h.id} className="rounded border border-zinc-800 px-2 py-1">
+                      {h.mode} · {h.status}
+                      {h.reason ? ` — ${h.reason}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {signals.length > 0 ? (
+              <ul className="space-y-1" data-testid="paper-signals-list">
+                <p className="text-zinc-400">Paper signals ({signals.length})</p>
+                {signals.slice(0, 5).map((s) => (
+                  <li key={s.id} className="rounded border border-zinc-800 px-2 py-1">
+                    {s.triggered ? "Triggered" : "No setup"} · {s.status} · conf{" "}
+                    {(s.confidence * 100).toFixed(0)}%
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </details>
       </CardContent>
     </Card>
   );

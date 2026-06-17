@@ -2,6 +2,7 @@
 
 import { EmailVerificationNotice } from "@/components/account/EmailVerificationNotice";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
+import { SafetyDisclaimers } from "@/components/SafetyDisclaimers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
@@ -62,6 +63,14 @@ export default function SettingsPage() {
         <CardContent className="text-sm text-zinc-400">
           Live provider cards load from the backend on other pages. Configure env vars in
           <code className="mx-1 rounded bg-zinc-900 px-1">frontend/.env.local</code>.
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Safety &amp; disclaimers</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SafetyDisclaimers />
         </CardContent>
       </Card>
     </div>

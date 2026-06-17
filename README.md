@@ -17,6 +17,7 @@
 
 ## Key features
 
+- **Trader-first dashboard** — workflow stepper (Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve), "what to do next" guidance, Today's discipline card, and strategy readiness badges (developer diagnostics collapsed) (Slice 43)
 - **AI Trading Workspace** — LangGraph agent with guardrails, RAG context, and schema-validated responses
 - **Deterministic risk engine** — 15 rules; `BLOCK` is final authority over proposals and paper execution
 - **Human approval workflow** — proposals require explicit approve / reject / modify before paper orders
@@ -195,7 +196,7 @@ uv run python ../evaluation/evaluate_guardrails.py
 
 15-minute walkthrough for portfolio or stakeholder demos:
 
-1. **Dashboard** — paper mode banner, provider status cards
+1. **Dashboard** — paper-only status, workflow stepper, "what to do next", today's discipline
 2. **Market Monitor** — read-only ticker/OHLCV with live/mock labels
 3. **AI Workspace** — chat: *"Analyze BTC pullback on 4h"*
 4. **Proposals** — structured plan, risk result, exit levels

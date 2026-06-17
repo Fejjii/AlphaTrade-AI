@@ -73,6 +73,13 @@ describe("LessonsPage", () => {
     expect(await screen.findByTestId("lesson-candidate-card")).toBeInTheDocument();
   });
 
+  it("clarifies that pending observations are not accepted rules", async () => {
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-tab-description")).toHaveTextContent(
+      "not accepted trading rules",
+    );
+  });
+
   it("opens accept panel for accept lesson only flow", async () => {
     render(<LessonsPage />);
     fireEvent.click(await screen.findByTestId("accept-lesson-btn"));
