@@ -82,9 +82,7 @@ def slice46_db() -> Iterator[sessionmaker[Session]]:
         session.add(owner)
         session.add(reader)
         session.flush()
-        session.add(
-            Membership(user_id=USER_ID, organization_id=ORG_ID, role=MembershipRole.OWNER)
-        )
+        session.add(Membership(user_id=USER_ID, organization_id=ORG_ID, role=MembershipRole.OWNER))
         session.add(
             Membership(user_id=READER_ID, organization_id=ORG_ID, role=MembershipRole.TRADER)
         )
@@ -142,9 +140,7 @@ def _create_alert(session: Session, settings: Settings | None = None) -> PaperVa
         user_id=USER_ID,
     )
     assert created is not None
-    row = session.scalar(
-        select(PaperValidationAlert).where(PaperValidationAlert.id == created.id)
-    )
+    row = session.scalar(select(PaperValidationAlert).where(PaperValidationAlert.id == created.id))
     assert row is not None
     return row
 
@@ -369,6 +365,119 @@ def test_agent_notification_update_requires_confirmation() -> None:
     )
     assert blocked is not None
     assert mutation_allowed("I confirm update notification preferences", confirm_arg=True)
+
+
+def test_agent_notification_question_does_not_mutate() -> None:
+    blocked = _require_mutation_confirmation(
+        "notification_preferences_tool",
+        {"user_message": "should I turn on Telegram alerts?"},
+        action="update notification preferences",
+    )
+    assert blocked is not None
+
+
+def test_agent_test_notification_requires_confirmation() -> None:
+    blocked = _require_mutation_confirmation(
+        "notification_preferences_tool",
+        {"user_message": "send a test notification"},
+        action="send test notification",
+    )
+    assert blocked is not None
+
+
+def test_agent_telegram_status_read_only(slice46_db: sessionmaker[Session]) -> None:
+    from app.tools.registry import _notification_preferences_execute
+
+    with slice46_db() as session:
+        out = _notification_preferences_execute(
+            {
+                "organization_id": str(ORG_ID),
+                "user_id": str(USER_ID),
+                "action": "telegram_enabled",
+                "user_message": "are Telegram alerts enabled?",
+            },
+            session,
+        )
+        assert out.success is True
+        assert out.result is not None
+        assert out.result["effective"] is False
+
+
+def test_delivery_routing_user_pref_alone_insufficient(slice46_db: sessionmaker[Session]) -> None:
+    settings = _settings(alert_delivery_enabled=False, alert_webhook_enabled=True)
+    with slice46_db() as session:
+        prefs_service = NotificationPreferencesService(session, AuditService(session))
+        prefs = prefs_service.update(
+            NotificationPreferencesUpdate(webhook_enabled=True),
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+        )
+        delivery = AlertDeliveryService(session, settings)
+        routing = route_alert_delivery(
+            settings=settings,
+            preferences=prefs,
+            providers=delivery._providers,
+            severity=PaperAlertSeverity.CRITICAL,
+            alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
+            now=datetime.now(UTC),
+        )
+        assert routing.should_deliver is False
+        assert "disabled globally" in (routing.skipped_reason or "").lower()
+
+
+def test_delivery_routing_env_alone_insufficient(slice46_db: sessionmaker[Session]) -> None:
+    settings = _settings(
+        alert_delivery_enabled=True,
+        alert_webhook_enabled=True,
+        alert_webhook_url="https://example.com/hook",
+    )
+    with slice46_db() as session:
+        prefs = NotificationPreferencesService(session, AuditService(session)).get(
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+        )
+        delivery = AlertDeliveryService(session, settings)
+        routing = route_alert_delivery(
+            settings=settings,
+            preferences=prefs,
+            providers=delivery._providers,
+            severity=PaperAlertSeverity.CRITICAL,
+            alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
+            now=datetime.now(UTC),
+        )
+        assert routing.should_deliver is False
+        assert "external channels" in (routing.skipped_reason or "").lower()
+
+
+def test_digest_mode_skips_immediate_external(slice46_db: sessionmaker[Session]) -> None:
+    from app.schemas.common import NotificationDigestMode
+
+    settings = _settings(
+        alert_delivery_enabled=True,
+        alert_webhook_enabled=True,
+        alert_webhook_url="https://example.com/hook",
+    )
+    with slice46_db() as session:
+        prefs_service = NotificationPreferencesService(session, AuditService(session))
+        prefs = prefs_service.update(
+            NotificationPreferencesUpdate(
+                webhook_enabled=True,
+                digest_mode=NotificationDigestMode.DAILY_DIGEST,
+            ),
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+        )
+        delivery = AlertDeliveryService(session, settings)
+        routing = route_alert_delivery(
+            settings=settings,
+            preferences=prefs,
+            providers=delivery._providers,
+            severity=PaperAlertSeverity.CRITICAL,
+            alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
+            now=datetime.now(UTC),
+        )
+        assert routing.should_deliver is False
+        assert "digest" in (routing.skipped_reason or "").lower()
 
 
 def test_webhook_signed_still_works() -> None:

@@ -1490,8 +1490,7 @@ def _notification_preferences_execute(args: dict[str, Any], session: Any | None)
                 "effective": enabled and status.telegram_configured,
             }
             summary = (
-                f"Telegram alerts user={prefs.telegram_enabled}, "
-                f"env={status.telegram_enabled}."
+                f"Telegram alerts user={prefs.telegram_enabled}, env={status.telegram_enabled}."
             )
         elif action == "webhook_enabled":
             prefs = prefs_service.get(organization_id=org, user_id=user)
@@ -1519,9 +1518,7 @@ def _notification_preferences_execute(args: dict[str, Any], session: Any | None)
             latency_ms=latency,
         )
     except Exception as exc:
-        return ToolOutput(
-            tool_name="notification_preferences_tool", success=False, error=str(exc)
-        )
+        return ToolOutput(tool_name="notification_preferences_tool", success=False, error=str(exc))
 
 
 def build_default_registry(

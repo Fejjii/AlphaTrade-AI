@@ -237,7 +237,7 @@ Routes: `/strategy-lab`, `/strategy-lab/new`, `/strategy-lab/[id]`, `/strategy-l
    - *"What paper signals were detected?"*
    - *"What did the paper bot do?"*
    - *"Should I improve or retire this strategy?"*
-11. **Scheduler & alerts (Slice 40–41)** — scheduler status (disabled by default), manual tick, runtime history, Alerts page with delivery status (external delivery disabled unless configured), Market Watcher read-only scan prep.
+11. **Scheduler & alerts (Slice 40–46)** — scheduler status (disabled by default), manual tick, runtime history, Alerts page with delivery status (external delivery disabled unless configured), Settings notification preferences (Telegram/webhook off by default), Market Watcher read-only scan prep.
 12. Emphasize: backtest is **historical simulation**; paper validation is **local simulation** — neither enables live trading.
 
 Optional API smoke:
@@ -246,6 +246,7 @@ Optional API smoke:
 ./scripts/strategy-smoke.sh
 ./scripts/paper-validation-smoke.sh
 ./scripts/market-watcher-smoke.sh   # Slice 42 — read-only watcher + paper scan bridge
+./scripts/notifications-smoke.sh    # Slice 46 — preferences, delivery status, test send (no secrets)
 ```
 
 **Docker full stack** (recommended before demo):
@@ -255,6 +256,7 @@ docker compose up --build -d
 ./scripts/docker-validate.sh
 ./scripts/e2e-smoke.sh
 ./scripts/market-watcher-smoke.sh
+./scripts/notifications-smoke.sh
 docker compose down
 ```
 

@@ -213,9 +213,7 @@ def test_webhook_success_updates_delivery_status(slice41_db: sessionmaker[Sessio
         row.user_id = USER_ID
         session.flush()
         delivery = AlertDeliveryService(session, settings, http_post=mock_post)
-        result = delivery.deliver_alert(
-            row.id, organization_id=ORG_ID, user_id=USER_ID
-        )
+        result = delivery.deliver_alert(row.id, organization_id=ORG_ID, user_id=USER_ID)
         assert result.delivered is True
         assert result.alert.delivery_status == AlertDeliveryStatus.DELIVERED
         mock_post.assert_called_once()
@@ -243,9 +241,7 @@ def test_webhook_failure_redacted_and_non_fatal(slice41_db: sessionmaker[Session
         row.user_id = USER_ID
         session.flush()
         delivery = AlertDeliveryService(session, settings, http_post=mock_post)
-        result = delivery.deliver_alert(
-            row.id, organization_id=ORG_ID, user_id=USER_ID
-        )
+        result = delivery.deliver_alert(row.id, organization_id=ORG_ID, user_id=USER_ID)
     assert result.delivered is False
     assert result.alert.delivery_status == AlertDeliveryStatus.FAILED
     assert result.alert.last_delivery_error is not None

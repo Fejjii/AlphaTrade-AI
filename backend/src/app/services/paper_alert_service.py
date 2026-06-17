@@ -124,9 +124,7 @@ class PaperAlertService:
             from app.services.alert_delivery_service import AlertDeliveryService
 
             delivery = AlertDeliveryService(self._session)
-        delivery.initialize_delivery_fields(
-            row, organization_id=organization_id, user_id=user_id
-        )
+        delivery.initialize_delivery_fields(row, organization_id=organization_id, user_id=user_id)
         self._alerts.add(row)
         return self._to_schema(row)
 

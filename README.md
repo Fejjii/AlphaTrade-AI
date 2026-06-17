@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Release** | `v0.1.0-paper-mvp` — Slices 1–42 (market watcher bridge & webhook hardening) |
+| **Release** | `v0.1.0-paper-mvp` — Slices 1–46 (notification preferences, Telegram/webhook delivery) |
 | **Execution** | `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` |
 | **Providers** | Mock by default; optional OpenAI, Qdrant, Binance public (read-only) |
 | **Stack** | FastAPI · LangGraph · PostgreSQL · Redis · Qdrant · Next.js 15 |
@@ -28,7 +28,8 @@
 - **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
 - **Dashboard summary** — paper-only aggregated snapshot with daily discipline, discipline score, risk settings source, strategy readiness, open paper trades (both flows), alerts/lessons, and next recommended action (`GET /dashboard/summary`, Slice 44–45)
 - **Risk settings** — tenant-scoped paper discipline limits (`GET/PATCH /risk/settings`, reset defaults, Slice 45)
-- **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot, scheduler foundation, alerts, optional signed webhook delivery, market watcher + paper scan bridge), lesson → version flow, agent routing (Slice 33–42; paper only)
+- **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot, scheduler foundation, alerts, optional signed webhook/Telegram delivery with user preferences, market watcher + paper scan bridge), lesson → version flow, agent routing (Slice 33–46; paper only)
+- **Notification preferences** — in-app alerts by default; Telegram and webhook external delivery **disabled by default**; email/push stubs; no secrets in DB (Slice 46)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies
 - **Billing scaffold** — Stripe placeholder + usage export (`BILLING_ENABLED=false` by default)

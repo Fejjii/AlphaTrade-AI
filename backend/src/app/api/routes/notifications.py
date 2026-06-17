@@ -30,9 +30,7 @@ _PREFS_WRITE = Depends(
     )
 )
 _PREFS_TEST = Depends(
-    tenant_rate_limit_dependency(
-        "notifications:test", limit=10, window_seconds=3600, user_limit=10
-    )
+    tenant_rate_limit_dependency("notifications:test", limit=10, window_seconds=3600, user_limit=10)
 )
 
 

@@ -205,9 +205,7 @@ class AlertDeliveryService:
         delivery_results: dict[str, bool] = {}
         errors: dict[str, str] = {}
         skipped: list[str] = []
-        external = [
-            c for c in routing.selected_channels if c is not AlertDeliveryChannel.IN_APP
-        ]
+        external = [c for c in routing.selected_channels if c is not AlertDeliveryChannel.IN_APP]
         if not routing.should_deliver or not external:
             skipped.append("external")
             if routing.skipped_reason:
@@ -272,9 +270,7 @@ class AlertDeliveryService:
             now=datetime.now(UTC),
         )
         self._store_skipped_reason(row, routing.skipped_reason)
-        external = [
-            c for c in routing.selected_channels if c is not AlertDeliveryChannel.IN_APP
-        ]
+        external = [c for c in routing.selected_channels if c is not AlertDeliveryChannel.IN_APP]
         if routing.should_deliver and external:
             row.delivery_status = AlertDeliveryStatus.PENDING
             row.delivery_channel = external[0]
