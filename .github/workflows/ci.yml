@@ -45,6 +45,7 @@ jobs:
           test -x scripts/check-env.sh
           test -x scripts/verify-safety.sh
           test -x scripts/staging-smoke.sh
+          test -x scripts/staging-live-smoke.sh
           test -x scripts/run-migrations.sh
 
   frontend:

@@ -57,6 +57,12 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 19 | `ACCESS_TOKEN_DENYLIST_ENABLED` | `true` | ☐ |
 | 20 | `ACCESS_TOKEN_DENYLIST_USE_REDIS` | `true` | ☐ |
 | 21 | `LOG_JSON` | `true` (recommended) | ☐ |
+| 22 | `ALERT_DELIVERY_ENABLED` | `false` | ☐ |
+| 23 | `ALERT_WEBHOOK_ENABLED` | `false` | ☐ |
+| 24 | `TELEGRAM_ALERTS_ENABLED` | `false` | ☐ |
+| 25 | `EMAIL_PROVIDER` | `mock` | ☐ |
+| 26 | `MARKET_WATCHER_ENABLED` | `false` | ☐ |
+| 27 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` | ☐ |
 
 Validate before deploy:
 
@@ -135,6 +141,14 @@ COOKIE_MODE=true \
 ALLOW_DEGRADED_READY=true \
 BASE_URL=https://YOUR-API.onrender.com \
 ./scripts/staging-smoke.sh
+
+# Slice 47 — extended live smoke (dashboard, risk, notifications, market watcher)
+BACKEND_URL=https://YOUR-API.onrender.com \
+FRONTEND_URL=https://YOUR-APP.vercel.app \
+./scripts/staging-live-smoke.sh
+
+BACKEND_URL=https://YOUR-API.onrender.com ./scripts/notifications-smoke.sh
+BACKEND_URL=https://YOUR-API.onrender.com ./scripts/market-watcher-smoke.sh
 
 # Optional — Slice 31 analytics (requires migration j0k1l2m3n4o5 applied first)
 INCLUDE_ANALYTICS=true \

@@ -64,6 +64,14 @@
 - Daily digest mode defers immediate external send
 - Email/push remain stubs
 - `./scripts/notifications-smoke.sh` for preferences and delivery status API
+- Staging defaults: `ALERT_DELIVERY_ENABLED=false`, webhook/Telegram off, `EMAIL_PROVIDER=mock` (Slice 47 validated on Render)
+
+### Staging deployment (Slice 47)
+
+- Backend live at Render with paper-only invariants verified
+- Frontend Vercel project must use Root Directory `frontend` — wrong root serves unrelated placeholder app
+- `./scripts/staging-live-smoke.sh` for extended live API QA (dashboard, risk, notifications, watcher)
+- See [staging_deployment.md](staging_deployment.md) for URLs, gaps, and demo checklist
 
 ### Alert delivery & market watcher (Slice 41 — remaining gaps)
 

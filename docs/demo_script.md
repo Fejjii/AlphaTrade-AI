@@ -61,6 +61,12 @@ A tight 8–10 minute path that follows the product workflow:
 
 **Docker (recommended):** http://localhost:3000 — cookie auth enabled in Compose.
 
+**Staging (Slice 47):** https://alpha-trade-ai.vercel.app (requires Vercel Root Directory = `frontend`) · API https://alphatrade-api-staging.onrender.com
+
+```bash
+BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
+```
+
 **Local dev:** Register at `/register`, sign in at `/login`. Bearer tokens in `sessionStorage`.
 
 Talking points:

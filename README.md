@@ -264,8 +264,14 @@ Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
 
 Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + **Upstash Redis** + optional **Qdrant Cloud**. Paper-only; real trading off.
 
+| Service | Staging URL (Slice 47) |
+|---------|------------------------|
+| Backend API | https://alphatrade-api-staging.onrender.com |
+| Frontend (intended) | https://alpha-trade-ai.vercel.app — set Vercel **Root Directory** to `frontend` |
+
 | Doc | Purpose |
 |-----|---------|
+| [staging_deployment.md](docs/staging_deployment.md) | Live URLs, smoke results, demo flow, known gaps |
 | [pre_deployment_checklist.md](docs/pre_deployment_checklist.md) | Local prep before cloud accounts |
 | [deployment_command_pack.md](docs/deployment_command_pack.md) | Copy-paste validation & smoke commands |
 | [staging_deployment_worksheet.template.md](docs/staging_deployment_worksheet.template.md) | URL/secret placeholders (copy to `.local.md`) |
@@ -277,9 +283,10 @@ Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + *
 
 ```bash
 ENV_FILE=.env.staging ./scripts/check-env.sh
-BASE_URL=https://YOUR_BACKEND_URL ./scripts/verify-safety.sh
-FRONTEND_URL=https://YOUR_FRONTEND_URL COOKIE_MODE=true ALLOW_DEGRADED_READY=true \
-  BASE_URL=https://YOUR_BACKEND_URL ./scripts/staging-smoke.sh
+BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/verify-safety.sh
+FRONTEND_URL=https://alpha-trade-ai.vercel.app COOKIE_MODE=true ALLOW_DEGRADED_READY=true \
+  BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-smoke.sh
+BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
 ```
 
 After deploy, add your public URLs to the README table above or pin them in release notes.

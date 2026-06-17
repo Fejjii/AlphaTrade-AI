@@ -10,6 +10,7 @@ SCRIPTS = (
     "scripts/check-env.sh",
     "scripts/verify-safety.sh",
     "scripts/staging-smoke.sh",
+    "scripts/staging-live-smoke.sh",
     "scripts/run-migrations.sh",
 )
 
@@ -33,6 +34,7 @@ def test_staging_deployment_docs_exist() -> None:
         "docs/deployment_command_pack.md",
         "docs/staging_deployment_worksheet.template.md",
         "docs/staging_execution_checklist.md",
+        "docs/staging_deployment.md",
         "render.yaml",
         "frontend/vercel.json",
     ):

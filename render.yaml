@@ -23,6 +23,18 @@ services:
         value: fallback
       - key: BILLING_ENABLED
         value: false
+      - key: ALERT_DELIVERY_ENABLED
+        value: false
+      - key: ALERT_WEBHOOK_ENABLED
+        value: false
+      - key: TELEGRAM_ALERTS_ENABLED
+        value: false
+      - key: EMAIL_PROVIDER
+        value: mock
+      - key: MARKET_WATCHER_ENABLED
+        value: false
+      - key: MARKET_WATCHER_BRIDGE_ENABLED
+        value: false
       - key: MARKET_DATA_ENABLED
         value: true
       - key: DEBUG

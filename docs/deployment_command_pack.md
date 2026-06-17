@@ -6,7 +6,7 @@ Replace placeholders — **never paste real secrets into committed files**.
 | Placeholder | Example |
 |-------------|---------|
 | `<BACKEND_URL>` | `https://alphatrade-api-staging.onrender.com` |
-| `<FRONTEND_URL>` | `https://alphatrade-ai.vercel.app` |
+| `<FRONTEND_URL>` | `https://alpha-trade-ai.vercel.app` (Vercel **Root Directory** must be `frontend`) |
 
 ---
 
@@ -76,6 +76,11 @@ COOKIE_MODE=true \
 ALLOW_DEGRADED_READY=true \
 BASE_URL=<BACKEND_URL> \
 ./scripts/staging-smoke.sh
+
+# Slice 47 extended live smoke (dashboard, risk, notifications, market watcher)
+FRONTEND_URL=<FRONTEND_URL> \
+BACKEND_URL=<BACKEND_URL> \
+./scripts/staging-live-smoke.sh
 ```
 
 Local Docker (cookie mode):
