@@ -1,6 +1,6 @@
 # Limitations and Roadmap
 
-## Current limitations (post Slice 37)
+## Current limitations (post Slice 38)
 
 ### Lesson learning loop
 

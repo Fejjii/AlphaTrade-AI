@@ -114,8 +114,14 @@ class BacktestService:
                 version.backtest_status = promotion.backtest_status
                 if promotion.validation_status is not None:
                     version.validation_status = promotion.validation_status
-                strategy.paper_eligible = promotion.paper_eligible
-                if promotion.paper_eligible:
+                from app.services.paper_eligibility_service import PaperEligibilityService
+
+                PaperEligibilityService(self._session, self._settings).refresh_strategy_flag(
+                    strategy_id,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                )
+                if strategy.paper_eligible:
                     version.paper_validation_status = PaperValidationStatus.NOT_STARTED
         except Exception as exc:
             run.status = BacktestRunStatus.FAILED

@@ -12,6 +12,7 @@ from app.db.models import UserStrategy as UserStrategyModel
 from app.db.models import UserStrategyVersion as UserStrategyVersionModel
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
 from app.schemas.common import DocumentSourceType, StrategyValidationStatus
+from app.schemas.paper_eligibility import LessonSourceMetadata
 from app.schemas.rag import IngestDocumentRequest
 from app.schemas.strategy_library import (
     StrategyCard,
@@ -211,6 +212,10 @@ class StrategyLibraryService:
 
     @staticmethod
     def _version_to_schema(row: UserStrategyVersionModel) -> UserStrategyVersion:
+        lesson_source = None
+        if row.lesson_source_metadata:
+            with suppress(Exception):
+                lesson_source = LessonSourceMetadata.model_validate(row.lesson_source_metadata)
         return UserStrategyVersion(
             id=row.id,
             strategy_id=row.strategy_id,
@@ -219,6 +224,7 @@ class StrategyLibraryService:
             validation_status=row.validation_status,
             backtest_status=row.backtest_status,
             paper_validation_status=row.paper_validation_status,
+            lesson_source_metadata=lesson_source,
             created_at=row.created_at,
         )
 

@@ -17,6 +17,7 @@ from app.schemas.common import (
     StrictModel,
     Timeframe,
 )
+from app.schemas.paper_eligibility import LessonSourceMetadata
 
 
 class StrategyCard(StrictModel):
@@ -58,6 +59,7 @@ class UserStrategyVersion(ORMModel):
     validation_status: StrategyValidationStatus
     backtest_status: BacktestStatus
     paper_validation_status: PaperValidationStatus
+    lesson_source_metadata: LessonSourceMetadata | None = None
     created_at: datetime
 
 

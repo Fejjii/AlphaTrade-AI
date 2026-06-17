@@ -483,6 +483,125 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         else:
             answer_lines.append(f"Lesson review failed: {output.error}")
 
+    elif intent is Intent.PAPER_ELIGIBILITY_BLOCKERS:
+        output = _run_tool(
+            "paper_eligibility_tool",
+            {
+                "action": "blockers",
+                "organization_id": org,
+                "user_id": user,
+            },
+        )
+        if output.success and output.result:
+            blockers = output.result.get("blockers") or []
+            answer_lines.append(
+                _format_tool_answer(
+                    "paper_eligibility_tool",
+                    output.result.get("summary", "Paper eligibility blockers retrieved."),
+                )
+            )
+            if blockers:
+                answer_lines.append(f"Blockers: {'; '.join(blockers[:5])}")
+        else:
+            answer_lines.append(f"Paper eligibility check failed: {output.error}")
+
+    elif intent is Intent.LESSON_STRATEGY_UPDATE:
+        output = _run_tool(
+            "lesson_review_tool",
+            {"action": "lessons_to_update", "organization_id": org, "user_id": user},
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer("lesson_review_tool", output.result.get("summary", ""))
+            )
+            answer_lines.append(
+                "Pending observations are not permanent rules until you accept them in Lessons."
+            )
+        else:
+            answer_lines.append(f"Lesson query failed: {output.error}")
+
+    elif intent is Intent.LESSON_CREATE_VERSION:
+        lesson_match = re.search(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            agent.message,
+            re.I,
+        )
+        output = _run_tool(
+            "lesson_review_tool",
+            {
+                "action": "create_version_from_lesson",
+                "lesson_id": lesson_match.group(0) if lesson_match else None,
+                "organization_id": org,
+                "user_id": user,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "lesson_review_tool",
+                    output.result.get("summary", "Strategy version created from lesson."),
+                )
+            )
+        else:
+            answer_lines.append(f"Version creation failed: {output.error}")
+
+    elif intent in {Intent.LESSON_STRATEGY_LINKED, Intent.LESSON_UNRESOLVED_BLOCKERS}:
+        list_out = _run_tool(
+            "strategy_library_tool",
+            {"action": "list", "organization_id": org, "user_id": user},
+        )
+        strategy_id = None
+        if list_out.success and list_out.result:
+            items = list_out.result.get("items", [])
+            strategy_id = items[0].get("id") if items else None
+        action = (
+            "list_unresolved_for_strategy"
+            if intent is Intent.LESSON_UNRESOLVED_BLOCKERS
+            else "list_for_strategy"
+        )
+        output = _run_tool(
+            "lesson_review_tool",
+            {
+                "action": action,
+                "strategy_id": strategy_id,
+                "organization_id": org,
+                "user_id": user,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer("lesson_review_tool", output.result.get("summary", ""))
+            )
+            if output.result.get("pending_observation"):
+                answer_lines.append("Pending observations differ from accepted trading memory.")
+        else:
+            answer_lines.append(f"Lesson query failed: {output.error}")
+
+    elif intent is Intent.BACKTEST_PREP:
+        test_out = _run_tool(
+            "strategy_testability_tool",
+            {"organization_id": org, "user_id": user},
+        )
+        elig_out = _run_tool(
+            "paper_eligibility_tool",
+            {"action": "blockers", "organization_id": org, "user_id": user},
+        )
+        if test_out.success and test_out.result:
+            missing = test_out.result.get("missing_fields") or []
+            labels = [m.get("label") for m in missing[:4] if m.get("label")]
+            answer_lines.append(
+                _format_tool_answer(
+                    "strategy_testability_tool",
+                    f"Score {test_out.result.get('score')}. "
+                    f"Ready={test_out.result.get('ready_for_backtest')}. "
+                    f"Missing: {', '.join(labels) or 'none'}.",
+                )
+            )
+        if elig_out.success and elig_out.result:
+            blockers = elig_out.result.get("blockers") or []
+            if blockers:
+                answer_lines.append(f"Also blocked: {'; '.join(blockers[:3])}")
+
     elif intent is Intent.STRATEGY_STATUS:
         output = _run_tool(
             "strategy_library_tool",
@@ -593,23 +712,26 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             answer_lines.append("No strategy found.")
         elif intent is Intent.BACKTEST_ELIGIBILITY:
             output = _run_tool(
-                "backtest_tool",
+                "paper_eligibility_tool",
                 {
-                    "action": "eligibility",
+                    "action": "evaluate",
                     "organization_id": org,
                     "user_id": user,
                     "strategy_id": strategy_id,
                 },
             )
             if output.success and output.result:
+                blockers = output.result.get("blockers") or []
                 answer_lines.append(
                     _format_tool_answer(
-                        "backtest_tool",
-                        f"Paper eligible: {output.result.get('paper_eligible')}. "
-                        f"Validation: {output.result.get('validation_status')}. "
-                        f"Backtest: {output.result.get('backtest_status')}.",
+                        "paper_eligibility_tool",
+                        output.result.get("summary")
+                        or f"Status: {output.result.get('status')}. "
+                        f"Eligible: {output.result.get('paper_eligible')}.",
                     )
                 )
+                if blockers:
+                    answer_lines.append(f"Blockers: {'; '.join(blockers[:3])}")
             else:
                 answer_lines.append(f"Eligibility check failed: {output.error}")
         else:

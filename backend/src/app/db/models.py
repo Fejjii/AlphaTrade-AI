@@ -379,6 +379,7 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         _enum(PaperValidationStatus), default=PaperValidationStatus.NOT_STARTED
     )
     structured_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    lesson_source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class LessonCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):

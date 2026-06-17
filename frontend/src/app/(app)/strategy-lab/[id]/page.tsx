@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
+import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
 import { emptyStrategyCard } from "@/components/strategy/StrategyCardForm";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
+import type { PaperEligibilityReport } from "@/lib/api/types";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
 
 function setupLabel(value: string) {
@@ -30,10 +32,18 @@ export default function StrategyDetailPage() {
   const [paperSummary, setPaperSummary] = useState<Awaited<
     ReturnType<typeof api.strategies.paperValidation>
   > | null>(null);
+  const [eligibility, setEligibility] = useState<PaperEligibilityReport | null>(null);
   const [rulesBusy, setRulesBusy] = useState(false);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
   const { data: testabilityData, reload: reloadTestability } = useAsyncData(testabilityLoader, [id]);
+
+  const versionsLoader = useCallback(() => api.strategies.listVersions(id), [id]);
+  const { data: versionsData } = useAsyncData(versionsLoader, [id]);
+
+  useEffect(() => {
+    void api.strategies.paperEligibility(id).then(setEligibility).catch(() => setEligibility(null));
+  }, [id, data?.current_version, data?.backtest_status]);
 
   const card = data?.latest_card;
 
@@ -61,7 +71,9 @@ export default function StrategyDetailPage() {
     try {
       await api.strategies.startPaperValidation(id);
       const summary = await api.strategies.paperValidation(id);
+      const report = await api.strategies.paperEligibility(id);
       setPaperSummary(summary);
+      setEligibility(report);
       await reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Paper validation failed");
@@ -101,6 +113,11 @@ export default function StrategyDetailPage() {
           <span>Validation: {data.validation_status ?? "draft"}</span>
           <span>Backtest: {data.backtest_status ?? "not_run"}</span>
           <span>Paper: {data.paper_validation_status ?? "not_started"}</span>
+          {eligibility ? (
+            <span data-testid="strategy-paper-status">
+              Eligibility: {eligibility.status}
+            </span>
+          ) : null}
           {data.paper_eligible ? <span className="text-emerald-400">Paper eligible</span> : null}
         </div>
       ) : null}
@@ -150,6 +167,8 @@ export default function StrategyDetailPage() {
         }}
       />
 
+      {versionsData ? <StrategyVersionHistory versions={versionsData.items} /> : null}
+
       <div className="grid gap-4 md:grid-cols-2">
         <BacktestPanel
           strategyId={id}
@@ -158,6 +177,7 @@ export default function StrategyDetailPage() {
         />
         <PaperValidationPanel
           summary={paperSummary}
+          eligibility={eligibility}
           busy={paperBusy}
           onStart={() => void startPaperValidation()}
         />

@@ -46,6 +46,7 @@ class LessonCandidateAccept(StrictModel):
     accepted_rule_update: ProposedRuleUpdate | None = None
     attach_rule_to_strategy: bool = False
     create_strategy_version: bool = False
+    related_strategy_id: UUID | None = None
 
 
 class LessonCandidateReject(StrictModel):

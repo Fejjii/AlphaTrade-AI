@@ -31,7 +31,26 @@ Metrics aggregate from closed **paper positions** linked to proposals with `user
 - No autonomous paper bot — metrics update from existing paper workflow
 - Not connected to exchange fills
 - Does not enable live trading or change `ENABLE_REAL_TRADING`
-- `paper_eligible` requires conservative backtest promotion first
+- `paper_eligible` requires multi-gate evaluation (Slice 38) — not a single backtest alone
+
+## Slice 38 — paper eligibility gates
+
+`GET /strategies/{id}/paper-eligibility` returns deterministic status:
+
+| Status | Meaning |
+|--------|---------|
+| `needs_structure` | Testability below threshold or missing stop/invalidation |
+| `needs_backtest` | No completed backtest |
+| `needs_more_sample` | Backtest sample or metrics below threshold |
+| `needs_lesson_review` | Critical unresolved lesson candidates or repeated mistakes pending |
+| `paper_eligible` | All gates pass — may start paper validation |
+| `paper_validation_running` | Paper validation in progress |
+| `paper_validated` | Paper validation passed (still paper only) |
+| `restricted` | Negative expectancy or excessive drawdown |
+
+Gates include: testability ≥70, structured rules, completed backtest, min sample (20), positive expectancy, profit factor ≥1.1, max drawdown ≤25%, no critical unresolved lessons for the strategy, stop/invalidation present.
+
+Paper validation dashboard shows blockers, latest backtest metrics, linked accepted lessons, and unresolved lesson candidates. **No live trading promotion.**
 
 ## Migration
 

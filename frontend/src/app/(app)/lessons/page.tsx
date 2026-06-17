@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { LessonAcceptPanel, type AcceptPath } from "@/components/lessons/LessonAcceptPanel";
 import { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
 import { LoadingState } from "@/components/states";
 import { api } from "@/lib/api";
-import type { LessonCandidate } from "@/lib/api/types";
+import type { LessonCandidate, ProposedRuleUpdate } from "@/lib/api/types";
 
 type Tab = "pending" | "accepted" | "rejected";
 
@@ -15,6 +16,7 @@ export default function LessonsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,17 +41,28 @@ export default function LessonsPage() {
     void load();
   }, [load]);
 
-  const handleAccept = async (id: string) => {
+  const handleAcceptSubmit = async (
+    id: string,
+    payload: {
+      path: AcceptPath;
+      reviewerNotes: string;
+      ruleUpdate: ProposedRuleUpdate | null;
+      strategyId: string | null;
+    },
+  ) => {
     setBusyId(id);
     try {
       await api.lessons.accept(id, {
-        reviewer_notes: notes[id] ?? "",
-        attach_rule_to_strategy: false,
-        create_strategy_version: false,
+        reviewer_notes: payload.reviewerNotes,
+        accepted_rule_update: payload.ruleUpdate ?? undefined,
+        attach_rule_to_strategy: payload.path === "attach_rule",
+        create_strategy_version: payload.path === "create_version",
+        related_strategy_id: payload.strategyId ?? undefined,
       });
+      setAcceptingId(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Accept failed");
+      throw e;
     } finally {
       setBusyId(null);
     }
@@ -100,28 +113,43 @@ export default function LessonsPage() {
         <div className="space-y-4">
           {items.map((lesson) => (
             <div key={lesson.id} className="space-y-2">
-              {tab === "pending" ? (
-                <label className="block text-xs text-zinc-500">
-                  Reviewer notes (optional)
-                  <textarea
-                    className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 p-2 text-sm"
-                    rows={2}
-                    value={notes[lesson.id] ?? ""}
-                    onChange={(e) =>
-                      setNotes((prev) => ({ ...prev, [lesson.id]: e.target.value }))
+              {acceptingId === lesson.id ? (
+                <LessonAcceptPanel
+                  lesson={lesson}
+                  busy={busyId === lesson.id}
+                  onAccept={(payload) => handleAcceptSubmit(lesson.id, payload)}
+                  onCancel={() => setAcceptingId(null)}
+                />
+              ) : (
+                <>
+                  {tab === "pending" ? (
+                    <label className="block text-xs text-zinc-500">
+                      Reviewer notes (optional)
+                      <textarea
+                        className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 p-2 text-sm"
+                        rows={2}
+                        value={notes[lesson.id] ?? ""}
+                        onChange={(e) =>
+                          setNotes((prev) => ({ ...prev, [lesson.id]: e.target.value }))
+                        }
+                        data-testid={`reviewer-notes-${lesson.id}`}
+                      />
+                    </label>
+                  ) : lesson.reviewer_notes ? (
+                    <p className="text-xs text-zinc-500">Notes: {lesson.reviewer_notes}</p>
+                  ) : null}
+                  <LessonCandidateCard
+                    lesson={lesson}
+                    busy={busyId === lesson.id}
+                    onAccept={
+                      tab === "pending"
+                        ? () => setAcceptingId(lesson.id)
+                        : undefined
                     }
-                    data-testid={`reviewer-notes-${lesson.id}`}
+                    onReject={tab === "pending" ? () => handleReject(lesson.id) : undefined}
                   />
-                </label>
-              ) : lesson.reviewer_notes ? (
-                <p className="text-xs text-zinc-500">Notes: {lesson.reviewer_notes}</p>
-              ) : null}
-              <LessonCandidateCard
-                lesson={lesson}
-                busy={busyId === lesson.id}
-                onAccept={tab === "pending" ? () => handleAccept(lesson.id) : undefined}
-                onReject={tab === "pending" ? () => handleReject(lesson.id) : undefined}
-              />
+                </>
+              )}
             </div>
           ))}
         </div>

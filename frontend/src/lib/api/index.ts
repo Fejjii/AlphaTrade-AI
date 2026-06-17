@@ -46,6 +46,8 @@ import type {
   ManualChartLevel,
   PaginatedManualChartLevels,
   PaginatedUserStrategies,
+  PaginatedUserStrategyVersions,
+  PaperEligibilityReport,
   PreTradeAnalyzeResponse,
   PositionSizingResult,
   HumanVsSystemComparison,
@@ -399,6 +401,10 @@ export const api = {
       apiFetch<PaginatedBacktestRuns>(`/strategies/${id}/backtests`, { auth: true }),
     listBacktestTrades: (runId: string) =>
       apiFetch<PaginatedBacktestTrades>(`/backtests/${runId}/trades`, { auth: true }),
+    listVersions: (id: string) =>
+      apiFetch<PaginatedUserStrategyVersions>(`/strategies/${id}/versions`, { auth: true }),
+    paperEligibility: (id: string) =>
+      apiFetch<PaperEligibilityReport>(`/strategies/${id}/paper-eligibility`, { auth: true }),
     startPaperValidation: (id: string) =>
       apiFetch<{ id: string; status: string }>(`/strategies/${id}/paper-validation/start`, {
         method: "POST",

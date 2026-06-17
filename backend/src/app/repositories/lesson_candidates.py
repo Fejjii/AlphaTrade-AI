@@ -82,3 +82,27 @@ class LessonCandidateRepository:
             ),
         )
         return list(self._session.scalars(stmt).all())
+
+    def list_for_strategy(
+        self,
+        strategy_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        status: LessonCandidateStatus | None = None,
+        limit: int = 50,
+    ) -> list[LessonCandidateModel]:
+        filters = [
+            LessonCandidateModel.organization_id == organization_id,
+            LessonCandidateModel.user_id == user_id,
+            LessonCandidateModel.related_strategy_id == strategy_id,
+        ]
+        if status is not None:
+            filters.append(LessonCandidateModel.status == status.value)
+        stmt = (
+            select(LessonCandidateModel)
+            .where(*filters)
+            .order_by(LessonCandidateModel.created_at.desc())
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt).all())

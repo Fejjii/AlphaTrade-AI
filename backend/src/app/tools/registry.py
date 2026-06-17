@@ -351,16 +351,13 @@ def _backtest_tool_execute(args: dict[str, Any], session: Any | None, settings: 
             else:
                 result = items[0].model_dump(mode="json")
         elif action == "eligibility":
-            from app.services.strategy_library_service import StrategyLibraryService
+            from app.services.paper_eligibility_service import PaperEligibilityService
 
             sid = _uuid.UUID(str(args["strategy_id"]))
-            strategy = StrategyLibraryService(session).get(sid, organization_id=org, user_id=user)
-            result = {
-                "strategy_id": str(sid),
-                "paper_eligible": strategy.paper_eligible,
-                "validation_status": strategy.validation_status,
-                "backtest_status": strategy.backtest_status,
-            }
+            report = PaperEligibilityService(session).evaluate(
+                sid, organization_id=org, user_id=user
+            )
+            result = report.model_dump(mode="json")
         else:
             return ToolOutput(tool_name="backtest_tool", success=False, error="Unknown action.")
         latency = (time.perf_counter() - start) * 1000
@@ -629,6 +626,78 @@ def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOut
                 "Add a runner_structure_break exit block in Strategy Lab after partial TP. "
                 "Real trading remains disabled — paper only."
             )
+        elif action == "list_for_strategy":
+            strategy_id = args.get("strategy_id")
+            if not strategy_id:
+                return ToolOutput(
+                    tool_name="lesson_review_tool",
+                    success=False,
+                    error="Provide strategy_id.",
+                )
+            items = service.list_for_strategy(
+                _uuid.UUID(str(strategy_id)),
+                organization_id=org,
+                user_id=user,
+                status=LessonCandidateStatus.ACCEPTED,
+            )
+            summary = f"{len(items)} accepted lesson(s) linked to strategy."
+            result_payload = {"items": [i.model_dump(mode="json") for i in items]}
+        elif action == "list_unresolved_for_strategy":
+            strategy_id = args.get("strategy_id")
+            if not strategy_id:
+                return ToolOutput(
+                    tool_name="lesson_review_tool",
+                    success=False,
+                    error="Provide strategy_id.",
+                )
+            items = service.list_for_strategy(
+                _uuid.UUID(str(strategy_id)),
+                organization_id=org,
+                user_id=user,
+                status=LessonCandidateStatus.PENDING_REVIEW,
+            )
+            summary = f"{len(items)} unresolved lesson candidate(s) for strategy."
+            result_payload = {
+                "items": [i.model_dump(mode="json") for i in items],
+                "pending_observation": True,
+            }
+            pending_observation = True
+        elif action == "lessons_to_update":
+            pending, _ = service.list_candidates(
+                organization_id=org,
+                user_id=user,
+                status=LessonCandidateStatus.PENDING_REVIEW,
+                limit=20,
+            )
+            with_proposals = [p for p in pending if p.proposed_rule_update]
+            summary = (
+                f"{len(with_proposals)} pending lesson(s) propose strategy rule updates."
+            )
+            result_payload = {
+                "items": [i.model_dump(mode="json") for i in with_proposals],
+                "pending_observation": True,
+            }
+            pending_observation = True
+        elif action == "create_version_from_lesson":
+            lesson_id = args.get("lesson_id")
+            if not lesson_id:
+                return ToolOutput(
+                    tool_name="lesson_review_tool",
+                    success=False,
+                    error="Provide lesson_id.",
+                )
+            accepted = service.accept(
+                _uuid.UUID(str(lesson_id)),
+                LessonCandidateAccept(
+                    reviewer_notes="Strategy version created via agent.",
+                    create_strategy_version=True,
+                ),
+                organization_id=org,
+                user_id=user,
+            )
+            session.commit()
+            summary = "Accepted lesson and created new strategy version (explicit action)."
+            result_payload = accepted.model_dump(mode="json")
         else:
             return ToolOutput(
                 tool_name="lesson_review_tool", success=False, error=f"Unknown action: {action}"
@@ -647,6 +716,68 @@ def _lesson_review_execute(args: dict[str, Any], session: Any | None) -> ToolOut
         )
     except Exception as exc:
         return ToolOutput(tool_name="lesson_review_tool", success=False, error=str(exc))
+
+
+def _paper_eligibility_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.paper_eligibility_service import PaperEligibilityService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="paper_eligibility_tool", success=False, error="DB session required."
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        action = str(args.get("action", "evaluate"))
+        service = PaperEligibilityService(session)
+        strategy_id = args.get("strategy_id")
+        if strategy_id is None:
+            from app.repositories.strategy_library import UserStrategyRepository
+
+            rows, _ = UserStrategyRepository(session).list_scoped(
+                organization_id=org, user_id=user, limit=1, offset=0
+            )
+            if not rows:
+                return ToolOutput(
+                    tool_name="paper_eligibility_tool",
+                    success=False,
+                    error="No strategies found.",
+                )
+            strategy_id = rows[0].id
+
+        sid = _uuid.UUID(str(strategy_id))
+        if action == "blockers":
+            report = service.evaluate(sid, organization_id=org, user_id=user)
+            summary = (
+                f"Status: {report.status.value}. "
+                f"{len(report.blockers)} blocker(s). Paper only — no live trading."
+            )
+            result = {
+                "summary": summary,
+                "blockers": report.blockers,
+                "status": report.status.value,
+                "paper_eligible": report.paper_eligible,
+            }
+        else:
+            report = service.evaluate(sid, organization_id=org, user_id=user)
+            summary = (
+                f"Paper eligibility: {report.status.value}. "
+                f"Eligible={report.paper_eligible}. "
+                f"Recommendation: {report.recommendation}."
+            )
+            result = {"summary": summary, **report.model_dump(mode="json")}
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="paper_eligibility_tool",
+            success=True,
+            result=result,
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="paper_eligibility_tool", success=False, error=str(exc))
 
 
 def _structure_from_text_execute(args: dict[str, Any]) -> ToolOutput:
@@ -891,6 +1022,19 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda args: _lesson_review_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="paper_eligibility_tool",
+            description=(
+                "Deterministic paper eligibility gates, blockers, and promotion status "
+                "(paper only — no live trading)."
+            ),
+            risk_level=ToolRiskLevel.READ,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _paper_eligibility_execute(args, db_session),
         ),
         ToolDefinition(
             name="backtest_tool",

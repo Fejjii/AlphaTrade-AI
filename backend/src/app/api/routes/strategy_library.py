@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 
 from app.core.dependencies import (
     BacktestServiceDep,
+    PaperEligibilityServiceDep,
     PaperValidationServiceDep,
     SessionDep,
     StrategyLibraryServiceDep,
@@ -16,6 +17,7 @@ from app.core.dependencies import (
     StructureFromTextServiceDep,
 )
 from app.schemas.backtest import BacktestRun, BacktestRunCreate, PaginatedBacktestRuns
+from app.schemas.paper_eligibility import PaperEligibilityReport
 from app.schemas.paper_validation import PaperValidationRun, PaperValidationSummary
 from app.schemas.strategy_library import (
     PaginatedUserStrategies,
@@ -203,6 +205,26 @@ async def start_paper_validation(
     session: SessionDep,
 ) -> PaperValidationRun:
     result = service.start(
+        strategy_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/{strategy_id}/paper-eligibility",
+    response_model=PaperEligibilityReport,
+    summary="Paper eligibility gates and blockers (paper only)",
+)
+async def get_paper_eligibility(
+    strategy_id: uuid.UUID,
+    tenant: TraderDep,
+    service: PaperEligibilityServiceDep,
+    session: SessionDep,
+) -> PaperEligibilityReport:
+    result = service.evaluate(
         strategy_id,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,

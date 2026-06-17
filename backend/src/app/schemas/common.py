@@ -462,6 +462,19 @@ class PaperValidationRecommendation(StrEnum):
     INSUFFICIENT_DATA = "insufficient_data"
 
 
+class PaperEligibilityStatus(StrEnum):
+    """Unified paper promotion gate status (Slice 38 — paper only, no live trading)."""
+
+    NEEDS_STRUCTURE = "needs_structure"
+    NEEDS_BACKTEST = "needs_backtest"
+    NEEDS_MORE_SAMPLE = "needs_more_sample"
+    NEEDS_LESSON_REVIEW = "needs_lesson_review"
+    PAPER_ELIGIBLE = "paper_eligible"
+    PAPER_VALIDATION_RUNNING = "paper_validation_running"
+    PAPER_VALIDATED = "paper_validated"
+    RESTRICTED = "restricted"
+
+
 class ManualLevelType(StrEnum):
     """Manual chart level types (Slice 33)."""
 

@@ -37,6 +37,22 @@ def classify_strategy_workflow(message: str) -> Intent | None:
         return Intent.POSITION_SIZE
     if "paper eligible" in lowered or "paper eligibility" in lowered:
         return Intent.BACKTEST_ELIGIBILITY
+    if "blocked from paper" in lowered or "paper validation block" in lowered:
+        return Intent.PAPER_ELIGIBILITY_BLOCKERS
+    if "which lessons" in lowered and "update" in lowered and "strateg" in lowered:
+        return Intent.LESSON_STRATEGY_UPDATE
+    if "create" in lowered and "strategy version" in lowered and "lesson" in lowered:
+        return Intent.LESSON_CREATE_VERSION
+    if "accepted lessons" in lowered and "linked" in lowered:
+        return Intent.LESSON_STRATEGY_LINKED
+    if "unresolved mistake" in lowered or (
+        "blocking" in lowered and "strateg" in lowered and "lesson" in lowered
+    ):
+        return Intent.LESSON_UNRESOLVED_BLOCKERS
+    if "fix before backtest" in lowered or (
+        "before backtest" in lowered and ("fix" in lowered or "what should" in lowered)
+    ):
+        return Intent.BACKTEST_PREP
     if "backtest" in lowered and (
         "show" in lowered or "result" in lowered or "what did" in lowered
     ):
@@ -104,4 +120,10 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.LESSON_REJECT,
         Intent.LESSON_RULE_SUGGEST,
         Intent.ADD_RUNNER_RULE,
+        Intent.PAPER_ELIGIBILITY_BLOCKERS,
+        Intent.LESSON_STRATEGY_UPDATE,
+        Intent.LESSON_CREATE_VERSION,
+        Intent.LESSON_STRATEGY_LINKED,
+        Intent.LESSON_UNRESOLVED_BLOCKERS,
+        Intent.BACKTEST_PREP,
     }

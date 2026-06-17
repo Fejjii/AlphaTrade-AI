@@ -34,6 +34,7 @@ from app.schemas.lesson import (
     LessonCandidateReject,
     ProposedRuleUpdate,
 )
+from app.schemas.paper_eligibility import LessonSourceMetadata
 from app.schemas.rag import IngestDocumentRequest
 from app.services.audit_service import AuditService
 from app.services.journal_rag_sync_service import sanitize_journal_text
@@ -216,6 +217,24 @@ class LessonCandidateService:
         )
         return [row.id for row in rows]
 
+    def list_for_strategy(
+        self,
+        strategy_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        status: LessonCandidateStatus | None = None,
+        limit: int = 50,
+    ) -> list[LessonCandidate]:
+        rows = self._repo.list_for_strategy(
+            strategy_id,
+            organization_id=organization_id,
+            user_id=user_id,
+            status=status,
+            limit=limit,
+        )
+        return [self._to_schema(row) for row in rows]
+
     def accept(
         self,
         lesson_id: uuid.UUID,
@@ -244,6 +263,9 @@ class LessonCandidateService:
         if rule_update is not None:
             row.accepted_rule_update = rule_update.model_dump(mode="json")
 
+        if payload.related_strategy_id and not row.related_strategy_id:
+            row.related_strategy_id = payload.related_strategy_id
+
         rag_doc_id: uuid.UUID | None = None
         if self._rag is not None and self._settings.journal_rag_sync_enabled:
             rag_doc_id = self._ingest_accepted_lesson(row)
@@ -251,7 +273,7 @@ class LessonCandidateService:
         if rule_update and row.related_strategy_id:
             if payload.create_strategy_version or rule_update.create_new_version:
                 self._create_strategy_version_with_rules(
-                    row.related_strategy_id,
+                    row,
                     rule_update,
                     organization_id=organization_id,
                     user_id=user_id,
@@ -420,12 +442,15 @@ class LessonCandidateService:
 
     def _create_strategy_version_with_rules(
         self,
-        strategy_id: uuid.UUID,
+        lesson_row: LessonCandidateModel,
         rule_update: ProposedRuleUpdate,
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> None:
+        strategy_id = lesson_row.related_strategy_id
+        if strategy_id is None:
+            raise NotFoundError("Related strategy not found.")
         strategy = self._strategies.get_scoped(
             strategy_id, organization_id=organization_id, user_id=user_id
         )
@@ -442,6 +467,14 @@ class LessonCandidateService:
             card["runner_plan"] = runner_plan
         from app.db.models import UserStrategyVersion as UserStrategyVersionModel
 
+        source_metadata = LessonSourceMetadata(
+            lesson_id=lesson_row.id,
+            mistake_type=lesson_row.mistake_type,
+            accepted_lesson_text=lesson_row.lesson_text,
+            rule_update_summary=rule_update.summary,
+            reviewer_notes=lesson_row.reviewer_notes,
+            created_at=datetime.now(UTC),
+        )
         new_version = UserStrategyVersionModel(
             strategy_id=strategy_id,
             version=strategy.current_version,
@@ -452,6 +485,7 @@ class LessonCandidateService:
                 if rule_update.structured_rules_patch
                 else version.structured_rules
             ),
+            lesson_source_metadata=source_metadata.model_dump(mode="json"),
         )
         self._versions.add(new_version)
 

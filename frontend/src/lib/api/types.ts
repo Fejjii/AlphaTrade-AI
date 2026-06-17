@@ -1156,3 +1156,54 @@ export interface PaginatedLessonCandidates {
   limit: number;
   offset: number;
 }
+
+export interface LessonSourceMetadata {
+  lesson_id: string;
+  mistake_type: string;
+  accepted_lesson_text: string;
+  rule_update_summary?: string | null;
+  reviewer_notes?: string | null;
+  created_at: string;
+}
+
+export interface UserStrategyVersion {
+  id: string;
+  strategy_id: string;
+  version: number;
+  card: Record<string, unknown>;
+  validation_status: string;
+  backtest_status: string;
+  paper_validation_status: string;
+  lesson_source_metadata?: LessonSourceMetadata | null;
+  created_at: string;
+}
+
+export interface PaginatedUserStrategyVersions {
+  items: UserStrategyVersion[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaperEligibilityReport {
+  strategy_id: string;
+  status: string;
+  paper_eligible: boolean;
+  testability_score: number;
+  blockers: string[];
+  eligibility_reasons: string[];
+  latest_backtest?: {
+    trade_count: number;
+    win_rate: number;
+    profit_factor: number;
+    expectancy: string;
+    max_drawdown_pct: number;
+    recommendation?: string | null;
+  } | null;
+  accepted_lessons: LessonCandidate[];
+  unresolved_lesson_candidates: LessonCandidate[];
+  paper_validation_recommendation?: string | null;
+  recommendation: string;
+  real_trading_enabled: boolean;
+  limitations: string[];
+}

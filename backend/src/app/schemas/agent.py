@@ -64,6 +64,12 @@ class Intent(StrEnum):
     LESSON_REJECT = "lesson_reject"
     LESSON_RULE_SUGGEST = "lesson_rule_suggest"
     ADD_RUNNER_RULE = "add_runner_rule"
+    PAPER_ELIGIBILITY_BLOCKERS = "paper_eligibility_blockers"
+    LESSON_STRATEGY_UPDATE = "lesson_strategy_update"
+    LESSON_CREATE_VERSION = "lesson_create_version"
+    LESSON_STRATEGY_LINKED = "lesson_strategy_linked"
+    LESSON_UNRESOLVED_BLOCKERS = "lesson_unresolved_blockers"
+    BACKTEST_PREP = "backtest_prep"
     UNKNOWN = "unknown"
 
 

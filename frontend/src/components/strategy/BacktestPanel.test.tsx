@@ -46,11 +46,12 @@ describe("PaperValidationPanel", () => {
           ],
           total: 1,
         }}
+        eligibility={null}
         busy={false}
         onStart={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Paper validation metrics/)).toBeInTheDocument();
+    expect(screen.getByText(/Paper validation/)).toBeInTheDocument();
     expect(screen.getByText(/Paper trades: 2/)).toBeInTheDocument();
   });
 });
