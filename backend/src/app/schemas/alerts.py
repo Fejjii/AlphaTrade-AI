@@ -12,6 +12,7 @@ from app.schemas.common import (
     AlertDeliveryStatus,
     ORMModel,
     PaperAlertSeverity,
+    PaperAlertSource,
     PaperAlertType,
     StrictModel,
 )
@@ -29,6 +30,7 @@ class PaperAlert(ORMModel):
     message: str
     read_at: datetime | None = None
     metadata: dict | None = None
+    alert_source: PaperAlertSource = PaperAlertSource.PAPER_VALIDATION_RUNTIME
     delivery_status: AlertDeliveryStatus = AlertDeliveryStatus.DISABLED
     delivery_channel: AlertDeliveryChannel = AlertDeliveryChannel.IN_APP
     delivery_attempts: int = 0

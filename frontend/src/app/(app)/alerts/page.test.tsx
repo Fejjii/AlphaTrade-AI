@@ -41,6 +41,7 @@ vi.mock("@/hooks/useAsyncData", () => ({
             message: "Setup on BTCUSDT",
             delivery_status: "disabled",
             delivery_channel: "in_app",
+            alert_source: "market_watcher_bridge",
             created_at: new Date().toISOString(),
           },
         ],
@@ -78,6 +79,11 @@ describe("AlertsPage Slice 41", () => {
     render(<AlertsPage />);
     expect(screen.queryByTestId("deliver-pending-alerts")).toBeNull();
     expect(screen.queryByTestId("deliver-alert-button")).toBeNull();
+  });
+
+  it("renders alert source label", () => {
+    render(<AlertsPage />);
+    expect(screen.getByTestId("alert-source-label")).toHaveTextContent("Market watcher bridge");
   });
 
   it("renders paper only disclaimer", () => {

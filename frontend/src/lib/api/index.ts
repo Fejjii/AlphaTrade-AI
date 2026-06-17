@@ -66,6 +66,10 @@ import type {
   AlertDeliveryStatusResponse,
   MarketWatcherStatus,
   MarketWatcherScanResult,
+  MarketWatcherBridgeStatus,
+  MarketWatcherBridgeTickResult,
+  PaginatedMarketWatcherBridgeHistory,
+  PaginatedMarketWatcherObservations,
   PaperScanResult,
   PaperSignalResult,
   PaperTickResult,
@@ -387,6 +391,23 @@ export const api = {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),
     scan: () =>
       apiFetch<MarketWatcherScanResult>("/market-watcher/scan", { method: "POST", auth: true }),
+    observations: (params?: { symbol?: string; limit?: number; offset?: number }) =>
+      apiFetch<PaginatedMarketWatcherObservations>("/market-watcher/observations", {
+        auth: true,
+        query: params,
+      }),
+    bridgeStatus: () =>
+      apiFetch<MarketWatcherBridgeStatus>("/market-watcher/bridge/status", { auth: true }),
+    bridgeTick: () =>
+      apiFetch<MarketWatcherBridgeTickResult>("/market-watcher/bridge/tick", {
+        method: "POST",
+        auth: true,
+      }),
+    bridgeHistory: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedMarketWatcherBridgeHistory>("/market-watcher/bridge/history", {
+        auth: true,
+        query: params,
+      }),
   },
   market: {
     ticker: (params?: { symbol?: string; exchange?: string }) =>

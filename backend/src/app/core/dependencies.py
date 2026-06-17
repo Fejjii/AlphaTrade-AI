@@ -28,6 +28,7 @@ from app.services.manual_level_service import ManualLevelService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
+from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
 from app.services.market_watcher_service import MarketWatcherService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
@@ -266,6 +267,12 @@ def get_alert_delivery_service(session: SessionDep, settings: SettingsDep) -> Al
     return AlertDeliveryService(session, settings)
 
 
+def get_market_watcher_bridge_service(
+    session: SessionDep, settings: SettingsDep, audit_service: AuditServiceDep
+) -> MarketWatcherBridgeService:
+    return MarketWatcherBridgeService(session, settings, audit_service=audit_service)
+
+
 def get_market_watcher_service(session: SessionDep, settings: SettingsDep) -> MarketWatcherService:
     return MarketWatcherService(session, settings)
 
@@ -313,6 +320,9 @@ PaperEligibilityServiceDep = Annotated[
 PaperAlertServiceDep = Annotated[PaperAlertService, Depends(get_paper_alert_service)]
 AlertDeliveryServiceDep = Annotated[AlertDeliveryService, Depends(get_alert_delivery_service)]
 MarketWatcherServiceDep = Annotated[MarketWatcherService, Depends(get_market_watcher_service)]
+MarketWatcherBridgeServiceDep = Annotated[
+    MarketWatcherBridgeService, Depends(get_market_watcher_bridge_service)
+]
 PaperSchedulerServiceDep = Annotated[PaperSchedulerService, Depends(get_paper_scheduler_service)]
 HistoricalCandleServiceDep = Annotated[
     HistoricalCandleService, Depends(get_historical_candle_service)

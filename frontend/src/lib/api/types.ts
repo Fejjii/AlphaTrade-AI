@@ -1056,6 +1056,7 @@ export interface PaperAlert {
   last_delivery_error?: string | null;
   delivered_at?: string | null;
   next_retry_at?: string | null;
+  alert_source?: string;
   created_at: string;
 }
 
@@ -1089,6 +1090,65 @@ export interface MarketWatcherScanResult {
   setup_signals: string[];
   decisions: string[];
   paper_only: boolean;
+}
+
+export interface MarketWatcherObservation {
+  id: string;
+  symbol: string;
+  exchange: string;
+  timeframe: string;
+  observed_at: string;
+  status: string;
+  data_freshness?: string | null;
+  related_strategy_id?: string | null;
+  related_paper_validation_run_id?: string | null;
+}
+
+export interface PaginatedMarketWatcherObservations {
+  items: MarketWatcherObservation[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface MarketWatcherBridgeStatus {
+  env_enabled: boolean;
+  auto_tick_enabled: boolean;
+  effective_enabled: boolean;
+  last_tick_at?: string | null;
+  last_tick_status?: string | null;
+  decisions_last_tick: number;
+  scans_triggered_last_tick: number;
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+}
+
+export interface MarketWatcherBridgeDecision {
+  id: string;
+  decision: string;
+  symbol?: string | null;
+  reason?: string | null;
+  blockers: string[];
+  triggered_scan_id?: string | null;
+  created_alert_id?: string | null;
+  created_at: string;
+}
+
+export interface MarketWatcherBridgeTickResult {
+  ticked_at: string;
+  env_enabled: boolean;
+  effective_enabled: boolean;
+  observations_processed: number;
+  scans_triggered: number;
+  decisions: string[];
+  paper_only: boolean;
+}
+
+export interface PaginatedMarketWatcherBridgeHistory {
+  items: MarketWatcherBridgeDecision[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface PaperAlertSummary {

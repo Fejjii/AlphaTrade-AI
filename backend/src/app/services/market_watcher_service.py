@@ -264,7 +264,9 @@ class MarketWatcherService:
             select(PaperValidationRun)
             .where(
                 PaperValidationRun.organization_id == organization_id,
-                PaperValidationRun.status == PaperValidationStatus.RUNNING,
+                PaperValidationRun.status.in_(
+                    [PaperValidationStatus.IN_PROGRESS, PaperValidationStatus.NOT_STARTED]
+                ),
             )
             .order_by(PaperValidationRun.started_at.desc())
             .limit(1)

@@ -1,8 +1,13 @@
-"""Webhook alert delivery provider (Slice 41 — disabled by default)."""
+"""Webhook alert delivery provider (Slice 41/42 — disabled by default, signed payloads)."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import httpx
 
@@ -13,6 +18,12 @@ from app.providers.alert_delivery.base import (
     AlertDeliveryResult,
 )
 from app.schemas.common import AlertDeliveryChannel
+
+
+def _build_signature(secret: str, timestamp: str, body: bytes) -> str:
+    message = f"{timestamp}.{body.decode('utf-8')}"
+    digest = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
 
 
 class WebhookAlertDeliveryProvider:
@@ -42,8 +53,16 @@ class WebhookAlertDeliveryProvider:
                 error="Webhook delivery disabled.",
                 skipped=True,
             )
-        body = {
+
+        event_id = payload.event_id or str(uuid.uuid4())
+        idempotency_key = payload.idempotency_key or payload.dedup_key or payload.alert_id
+        timestamp = payload.timestamp or datetime.now(UTC).isoformat()
+
+        body_dict = {
             "alert_id": payload.alert_id,
+            "event_id": event_id,
+            "idempotency_key": idempotency_key,
+            "timestamp": timestamp,
             "organization_id": payload.organization_id,
             "alert_type": payload.alert_type,
             "severity": payload.severity,
@@ -55,10 +74,25 @@ class WebhookAlertDeliveryProvider:
             "metadata": payload.metadata,
             "paper_only": True,
         }
+        body_bytes = json.dumps(body_dict, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "X-AlphaTrade-Alert-Id": payload.alert_id,
+            "X-AlphaTrade-Event-Id": event_id,
+            "X-AlphaTrade-Idempotency-Key": idempotency_key,
+            "X-AlphaTrade-Timestamp": timestamp,
+        }
+        secret = self._settings.alert_webhook_secret.strip()
+        if secret:
+            headers["X-AlphaTrade-Signature"] = _build_signature(secret, timestamp, body_bytes)
+
+        webhook_url = self._settings.alert_webhook_url.strip()
         try:
             response = self._http_post(
-                self._settings.alert_webhook_url.strip(),
-                json=body,
+                webhook_url,
+                content=body_bytes,
+                headers=headers,
                 timeout=self._settings.alert_webhook_timeout_seconds,
             )
             if response.status_code >= 400:

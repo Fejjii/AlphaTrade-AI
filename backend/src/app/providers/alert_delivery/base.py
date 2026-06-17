@@ -20,6 +20,9 @@ class AlertDeliveryPayload:
     paper_trade_id: str | None = None
     dedup_key: str | None = None
     metadata: dict | None = None
+    event_id: str | None = None
+    idempotency_key: str | None = None
+    timestamp: str | None = None
 
 
 @dataclass(frozen=True)

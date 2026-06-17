@@ -999,6 +999,45 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         else:
             answer_lines.append(f"Market watcher query failed: {output.error}")
 
+    elif intent is Intent.MARKET_WATCHER_BRIDGE_QUERY:
+        action = "bridge_status"
+        lowered = agent.message.lower()
+        if "tick" in lowered and "bridge" in lowered:
+            action = "bridge_tick"
+        elif "skip" in lowered and ("bridge" in lowered or "strateg" in lowered):
+            action = "bridge_skip_reason"
+        elif "trigger" in lowered and "scan" in lowered:
+            action = "bridge_triggered_scans"
+        elif "linked" in lowered or "observation" in lowered:
+            action = "bridge_linked_runs"
+        elif "history" in lowered or "decision" in lowered:
+            action = "bridge_history"
+        elif "enabled" in lowered:
+            action = "bridge_status"
+        output = _run_tool(
+            "paper_validation_tool",
+            {
+                "action": action,
+                "organization_id": org,
+                "user_id": user,
+                "strategy_id": org,
+                "user_message": agent.message,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "paper_validation_tool",
+                    output.result.get("summary", "Bridge status retrieved."),
+                )
+            )
+            for item in (output.result.get("bridge_decisions") or [])[:3]:
+                answer_lines.append(
+                    f"- {item.get('symbol')}: {item.get('decision')} — {item.get('reason')}"
+                )
+        else:
+            answer_lines.append(f"Market watcher bridge query failed: {output.error}")
+
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
 

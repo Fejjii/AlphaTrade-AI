@@ -137,6 +137,19 @@ def classify_strategy_workflow(message: str) -> Intent | None:
     ):
         return Intent.ALERT_DELIVERY_QUERY
     if (
+        "bridge" in lowered
+        and ("market watcher" in lowered or "watcher" in lowered or "paper" in lowered)
+    ) or "bridge tick" in lowered:
+        return Intent.MARKET_WATCHER_BRIDGE_QUERY
+    if "bridge skip" in lowered or ("why did the bridge skip" in lowered and "strateg" in lowered):
+        return Intent.MARKET_WATCHER_BRIDGE_QUERY
+    if "bridge enabled" in lowered or "is the bridge enabled" in lowered:
+        return Intent.MARKET_WATCHER_BRIDGE_QUERY
+    if "market watcher trigger" in lowered and "scan" in lowered:
+        return Intent.MARKET_WATCHER_BRIDGE_QUERY
+    if "linked to market observation" in lowered or "paper validation runs are linked" in lowered:
+        return Intent.MARKET_WATCHER_BRIDGE_QUERY
+    if (
         "market watcher" in lowered
         or "symbols are being watched" in lowered
         or "symbols being watched" in lowered
@@ -196,4 +209,5 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.PAPER_ALERTS_QUERY,
         Intent.ALERT_DELIVERY_QUERY,
         Intent.MARKET_WATCHER_QUERY,
+        Intent.MARKET_WATCHER_BRIDGE_QUERY,
     }

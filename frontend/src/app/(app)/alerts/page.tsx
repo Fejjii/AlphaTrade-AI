@@ -27,6 +27,18 @@ function alertTypeLabel(type: string): string {
   return ALERT_TYPE_LABELS[type] ?? type.replace(/_/g, " ");
 }
 
+const ALERT_SOURCE_LABELS: Record<string, string> = {
+  paper_validation_runtime: "Paper validation",
+  market_watcher: "Market watcher",
+  market_watcher_bridge: "Market watcher bridge",
+  manual_action: "Manual action",
+};
+
+function alertSourceLabel(source: string | undefined): string {
+  if (!source) return "Paper validation";
+  return ALERT_SOURCE_LABELS[source] ?? source.replace(/_/g, " ");
+}
+
 export default function AlertsPage() {
   const [filterType, setFilterType] = useState("");
   const [filterSeverity, setFilterSeverity] = useState("");
@@ -195,6 +207,9 @@ export default function AlertsPage() {
                 {alert.paper_validation_run_id
                   ? ` · Run ${alert.paper_validation_run_id.slice(0, 8)}`
                   : ""}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500" data-testid="alert-source-label">
+                Source: {alertSourceLabel(alert.alert_source)}
               </p>
               <p className="mt-1 text-xs text-zinc-500" data-testid="alert-delivery-status">
                 Delivery: {alert.delivery_channel ?? "in_app"} · {alert.delivery_status ?? "disabled"}

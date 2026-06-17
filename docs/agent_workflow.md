@@ -101,7 +101,7 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 
 Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).
 
-Backtest intents call `backtest_tool`; paper validation intents call `paper_validation_tool` — both run deterministic engines. Scheduler, alert delivery, and market watcher questions also use `paper_validation_tool` (never LLM-invented status). State-changing actions (deliver pending, market watcher scan, scheduler tick) require explicit owner confirmation. The LLM explains results but cannot fabricate win rate, drawdown, signals, scheduler state, delivery status, or promotion status. **No path places exchange orders.**
+Backtest intents call `backtest_tool`; paper validation intents call `paper_validation_tool` — both run deterministic engines. Scheduler, alert delivery, market watcher, and **market watcher bridge** questions also use `paper_validation_tool` (never LLM-invented status). State-changing actions (deliver pending, market watcher scan, **bridge tick**, scheduler tick) require explicit owner confirmation. The LLM explains results but cannot fabricate win rate, drawdown, signals, scheduler state, delivery status, bridge decisions, or promotion status. **No path places exchange orders.**
 
 ## Analytics questions (Slice 31)
 

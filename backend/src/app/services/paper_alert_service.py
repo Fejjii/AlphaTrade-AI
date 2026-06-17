@@ -19,6 +19,7 @@ from app.schemas.common import (
     AuditResult,
     AuditSeverity,
     PaperAlertSeverity,
+    PaperAlertSource,
     PaperAlertType,
 )
 from app.services.audit_service import AuditService
@@ -87,8 +88,11 @@ class PaperAlertService:
         metadata: dict | None = None,
         dedup_key: str | None = None,
         skip_dedup: bool = False,
+        source: PaperAlertSource = PaperAlertSource.PAPER_VALIDATION_RUNTIME,
     ) -> PaperAlert | None:
         """Create an alert, returning None when deduplication suppresses a duplicate."""
+        meta = dict(metadata or {})
+        meta.setdefault("source", source.value)
         key = dedup_key or build_alert_dedup_key(
             alert_type=alert_type,
             organization_id=organization_id,
@@ -112,7 +116,7 @@ class PaperAlertService:
             paper_validation_run_id=paper_validation_run_id,
             paper_trade_id=paper_trade_id,
             message=message,
-            metadata_json=metadata,
+            metadata_json=meta,
             dedup_key=key,
         )
         delivery = self._delivery
@@ -226,6 +230,12 @@ class PaperAlertService:
 
     @staticmethod
     def _to_schema(row: AlertModel) -> PaperAlert:
+        meta = row.metadata_json or {}
+        raw_source = meta.get("source", PaperAlertSource.PAPER_VALIDATION_RUNTIME.value)
+        try:
+            alert_source = PaperAlertSource(raw_source)
+        except ValueError:
+            alert_source = PaperAlertSource.PAPER_VALIDATION_RUNTIME
         return PaperAlert(
             id=row.id,
             organization_id=row.organization_id,
@@ -238,6 +248,7 @@ class PaperAlertService:
             message=row.message,
             read_at=row.read_at,
             metadata=row.metadata_json,
+            alert_source=alert_source,
             delivery_status=row.delivery_status,
             delivery_channel=row.delivery_channel,
             delivery_attempts=row.delivery_attempts,

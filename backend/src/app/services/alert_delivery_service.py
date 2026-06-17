@@ -142,6 +142,9 @@ class AlertDeliveryService:
 
     @staticmethod
     def build_payload(row: AlertModel) -> AlertDeliveryPayload:
+        from datetime import UTC, datetime
+
+        dedup = row.dedup_key or str(row.id)
         return AlertDeliveryPayload(
             alert_id=str(row.id),
             organization_id=str(row.organization_id),
@@ -155,6 +158,9 @@ class AlertDeliveryService:
             paper_trade_id=str(row.paper_trade_id) if row.paper_trade_id else None,
             dedup_key=row.dedup_key,
             metadata=row.metadata_json,
+            event_id=str(uuid.uuid4()),
+            idempotency_key=dedup,
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
     def _deliver_row(
@@ -240,8 +246,11 @@ class AlertDeliveryService:
             else:
                 row.delivery_status = AlertDeliveryStatus.FAILED
                 row.last_delivery_error = redact_text(outcome.error or "Delivery failed.")
-                if row.delivery_attempts <= self._settings.alert_webhook_max_retries:
+                max_retries = self._settings.alert_webhook_max_retries
+                if row.delivery_attempts <= max_retries:
                     row.next_retry_at = now + timedelta(minutes=5 * row.delivery_attempts)
+                else:
+                    row.next_retry_at = None
                 message = row.last_delivery_error or "Delivery failed."
                 self._observability.emit(
                     organization_id=organization_id,

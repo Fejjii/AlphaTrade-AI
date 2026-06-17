@@ -59,3 +59,50 @@ class PaginatedMarketWatcherObservations(StrictModel):
 class PaginatedMarketWatcherHistory(StrictModel):
     items: list[MarketWatcherScanResult]
     total: int
+
+
+class MarketWatcherBridgeStatus(StrictModel):
+    env_enabled: bool
+    auto_tick_enabled: bool
+    effective_enabled: bool
+    last_tick_at: datetime | None = None
+    last_tick_status: str | None = None
+    decisions_last_tick: int = 0
+    scans_triggered_last_tick: int = 0
+    paper_only: bool = True
+    real_trading_enabled: bool = False
+
+
+class MarketWatcherBridgeDecision(StrictModel):
+    id: UUID
+    organization_id: UUID
+    observation_id: UUID | None = None
+    strategy_id: UUID | None = None
+    paper_validation_run_id: UUID | None = None
+    symbol: str | None = None
+    exchange: str | None = None
+    timeframe: str | None = None
+    decision: str
+    reason: str | None = None
+    blockers: list[str] = Field(default_factory=list)
+    triggered_scan_id: UUID | None = None
+    created_alert_id: UUID | None = None
+    latency_ms: int | None = None
+    created_at: datetime
+
+
+class MarketWatcherBridgeTickResult(StrictModel):
+    ticked_at: datetime
+    env_enabled: bool
+    effective_enabled: bool
+    observations_processed: int = 0
+    scans_triggered: int = 0
+    decisions: list[str] = Field(default_factory=list)
+    paper_only: bool = True
+
+
+class PaginatedMarketWatcherBridgeHistory(StrictModel):
+    items: list[MarketWatcherBridgeDecision]
+    total: int
+    limit: int
+    offset: int

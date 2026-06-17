@@ -108,5 +108,6 @@ See [deployment.md](deployment.md) for monitoring plan in deploy context.
 - Promotion status changed, strategy blocked, data stale, provider fallback, runtime errors
 - Alert delivery succeeded/failed (Slice 41 — redacted errors, no secret leakage)
 - Market watcher scan (Slice 41 — read-only, paper only)
+- Market watcher bridge tick / scan triggered (Slice 42 — paper scan bridge only)
 
 Scheduler manual ticks also emit `paper_scheduler_tick` audit events. See [paper_validation.md](paper_validation.md) and [alerts.md](alerts.md).

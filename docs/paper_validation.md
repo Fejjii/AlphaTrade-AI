@@ -32,9 +32,13 @@ Types: `setup_signal_detected`, `paper_trade_opened`, `paper_trade_closed`, `sto
 
 API: `GET /alerts`, delivery endpoints, `PATCH /alerts/{id}/read`. Marking read does not mutate delivery status.
 
+## Market watcher bridge (Slice 42)
+
+Connects read-only observations to eligible paper validation **scans** — disabled by default (`MARKET_WATCHER_BRIDGE_ENABLED=false`). Manual bridge tick via API or agent (owner + confirmation). Records decisions and creates alerts with source `market_watcher_bridge`. Never places real orders.
+
 ## Market watcher prep (Slice 41)
 
-Read-only market scanning foundation — disabled by default. See [market_watcher.md](./market_watcher.md). Feeds paper validation scan decisions later; never places orders.
+Read-only market scanning foundation — disabled by default. See [market_watcher.md](./market_watcher.md). Feeds paper validation scan decisions; never places orders.
 
 ## 7-day sample windows (Slice 40)
 
@@ -136,7 +140,7 @@ Accepted lessons vs pending observations: only **accepted** lessons affect promo
 
 ## Migration
 
-Apply through head **`t0u1v2w3x4y5`** (Slice 41; prior Slice 40C: `s9t0u1v2w3x4`):
+Apply through head **`u1v2w3x4y5z6`** (Slice 42; prior Slice 41: `t0u1v2w3x4y5`):
 
 ```bash
 cd backend && uv run alembic upgrade head

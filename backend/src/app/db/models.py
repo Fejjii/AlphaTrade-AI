@@ -50,6 +50,7 @@ from app.schemas.common import (
     ExecutionMode,
     LossAcceptanceStatus,
     ManualLevelType,
+    MarketWatcherBridgeDecisionType,
     MarketWatcherObservationStatus,
     MembershipRole,
     OrderSide,
@@ -753,6 +754,40 @@ class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_alert_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("paper_validation_alerts.id"), nullable=True
     )
+
+
+class MarketWatcherBridgeDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Market watcher → paper validation bridge decision history (Slice 42)."""
+
+    __tablename__ = "market_watcher_bridge_decisions"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    observation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("market_watcher_observations.id"), nullable=True
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    paper_validation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=True
+    )
+    symbol: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    decision: Mapped[MarketWatcherBridgeDecisionType] = mapped_column(
+        _enum(MarketWatcherBridgeDecisionType), nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    blockers: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    triggered_scan_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_signals.id"), nullable=True
+    )
+    created_alert_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_alerts.id"), nullable=True
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class PaperValidationObservabilityEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):

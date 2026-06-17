@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import MarketWatcherServiceDep, SessionDep
+from app.core.dependencies import MarketWatcherBridgeServiceDep, MarketWatcherServiceDep, SessionDep
 from app.schemas.market_watcher import (
+    MarketWatcherBridgeStatus,
+    MarketWatcherBridgeTickResult,
     MarketWatcherScanResult,
     MarketWatcherStatus,
+    PaginatedMarketWatcherBridgeHistory,
     PaginatedMarketWatcherHistory,
     PaginatedMarketWatcherObservations,
 )
@@ -88,3 +91,47 @@ async def market_watcher_observations(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/bridge/status",
+    response_model=MarketWatcherBridgeStatus,
+    summary="Market watcher bridge status",
+    dependencies=[_MW_READ_LIMIT],
+)
+async def market_watcher_bridge_status(
+    tenant: ReaderDep,
+    bridge: MarketWatcherBridgeServiceDep,
+) -> MarketWatcherBridgeStatus:
+    return bridge.get_status(organization_id=tenant.organization_id)
+
+
+@router.post(
+    "/bridge/tick",
+    response_model=MarketWatcherBridgeTickResult,
+    summary="Manual market watcher bridge tick (paper scan only)",
+    dependencies=[_MW_WRITE_LIMIT],
+)
+async def market_watcher_bridge_tick(
+    tenant: OwnerDep,
+    bridge: MarketWatcherBridgeServiceDep,
+    session: SessionDep,
+) -> MarketWatcherBridgeTickResult:
+    result = bridge.tick(organization_id=tenant.organization_id, user_id=tenant.user_id)
+    session.commit()
+    return result
+
+
+@router.get(
+    "/bridge/history",
+    response_model=PaginatedMarketWatcherBridgeHistory,
+    summary="Market watcher bridge decision history",
+    dependencies=[_MW_READ_LIMIT],
+)
+async def market_watcher_bridge_history(
+    tenant: ReaderDep,
+    bridge: MarketWatcherBridgeServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedMarketWatcherBridgeHistory:
+    return bridge.list_history(tenant.organization_id, limit=limit, offset=offset)

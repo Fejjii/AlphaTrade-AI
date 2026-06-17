@@ -78,6 +78,7 @@ class Intent(StrEnum):
     PAPER_ALERTS_QUERY = "paper_alerts_query"
     ALERT_DELIVERY_QUERY = "alert_delivery_query"
     MARKET_WATCHER_QUERY = "market_watcher_query"
+    MARKET_WATCHER_BRIDGE_QUERY = "market_watcher_bridge_query"
     UNKNOWN = "unknown"
 
 

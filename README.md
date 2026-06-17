@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Release** | `v0.1.0-paper-mvp` — Slices 1–41 (alert delivery & market watcher prep) |
+| **Release** | `v0.1.0-paper-mvp` — Slices 1–42 (market watcher bridge & webhook hardening) |
 | **Execution** | `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` |
 | **Providers** | Mock by default; optional OpenAI, Qdrant, Binance public (read-only) |
 | **Stack** | FastAPI · LangGraph · PostgreSQL · Redis · Qdrant · Next.js 15 |
@@ -25,7 +25,7 @@
 - **RAG knowledge base** — playbooks, policies, and journal lessons (not trading signals)
 - **Journal → RAG loop** — trade reviews auto-sync to knowledge for future agent retrieval
 - **Trading analytics** — setup performance, trade review, deterministic discipline score, risk behavior (`/analytics/*`)
-- **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot, scheduler foundation, alerts, optional webhook delivery, market watcher prep), lesson → version flow, agent routing (Slice 33–41; paper only)
+- **Strategy library & pre-trade** — strategy cards, structured rules, manual levels, pre-trade analysis, sizing, loss acceptance, **backtest engine v1**, **paper validation runtime** (scan/tick bot, scheduler foundation, alerts, optional signed webhook delivery, market watcher + paper scan bridge), lesson → version flow, agent routing (Slice 33–42; paper only)
 - **Observability** — audit events, usage metering, organization quotas, provider status dashboard
 - **Auth & tenancy** — JWT sessions, RBAC (OWNER / TRADER / VIEWER), optional httpOnly refresh cookies
 - **Billing scaffold** — Stripe placeholder + usage export (`BILLING_ENABLED=false` by default)

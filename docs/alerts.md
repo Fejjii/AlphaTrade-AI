@@ -1,6 +1,15 @@
-# Paper Validation Alerts (Slice 40–41)
+# Paper Validation Alerts (Slice 40–42)
 
 Alerts are **stored and displayed in-app**. External delivery is **disabled by default** (Slice 41).
+
+## Alert sources (Slice 42)
+
+Each alert exposes `alert_source` derived from metadata:
+
+- `paper_validation_runtime` (default)
+- `market_watcher`
+- `market_watcher_bridge`
+- `manual_action`
 
 ## In-app alerts
 
@@ -13,6 +22,7 @@ All paper validation events create tenant-scoped in-app alerts. No real trades a
 | `ALERT_DELIVERY_ENABLED` | `false` | Master switch for external delivery |
 | `ALERT_WEBHOOK_ENABLED` | `false` | Webhook provider |
 | `ALERT_WEBHOOK_URL` | empty | Webhook target (never commit secrets) |
+| `ALERT_WEBHOOK_SECRET` | empty | Optional HMAC signing secret (Slice 42) |
 | `TELEGRAM_ALERTS_ENABLED` | `false` | Placeholder stub |
 | `EMAIL_ALERTS_ENABLED` | `false` | Placeholder stub |
 
@@ -20,7 +30,7 @@ When disabled, `delivery_status=disabled` and alerts remain in-app only.
 
 ### Webhook provider
 
-When enabled, POSTs a redacted JSON payload with timeout and retry limit (`ALERT_WEBHOOK_MAX_RETRIES`). Failures emit observability events and do not crash paper validation.
+When enabled, POSTs a JSON payload with idempotency key, event id, timestamp, and optional HMAC signature (`X-AlphaTrade-Signature` when `ALERT_WEBHOOK_SECRET` is set). Headers include `X-AlphaTrade-Alert-Id`, `X-AlphaTrade-Event-Id`, `X-AlphaTrade-Idempotency-Key`, `X-AlphaTrade-Timestamp`. Webhook URL and errors are redacted in logs. Retries stop after `ALERT_WEBHOOK_MAX_RETRIES`; failed delivery keeps the alert in-app.
 
 ### Delivery status fields
 

@@ -94,6 +94,14 @@ class Settings(BaseSettings):
         default_factory=lambda: ["BTCUSDT"]
     )
 
+    # --- Market watcher bridge (Slice 42 — disabled by default, paper scan only) ---
+    market_watcher_bridge_enabled: bool = False
+    market_watcher_bridge_auto_tick: bool = False
+    market_watcher_bridge_interval_seconds: int = Field(default=300, ge=60, le=86400)
+    market_watcher_bridge_max_observations_per_cycle: int = Field(default=10, ge=1, le=100)
+    market_watcher_bridge_max_scans_per_cycle: int = Field(default=5, ge=1, le=50)
+    alert_webhook_secret: str = ""
+
     # --- Data stores (placeholders; clients wired in later slices) ---
     database_url: str = "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade"
     redis_url: str = "redis://localhost:6379/0"

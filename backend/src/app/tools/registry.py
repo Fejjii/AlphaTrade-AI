@@ -1041,6 +1041,85 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
                 "summary": (f"{observations.total} observation(s). Fresh={fresh}. Read-only scan."),
                 "observations": [o.model_dump(mode="json") for o in observations.items],
             }
+        elif action == "bridge_status":
+            from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
+
+            status = MarketWatcherBridgeService(session).get_status(organization_id=org)
+            result = {
+                "summary": (
+                    f"Bridge env={status.env_enabled}, effective={status.effective_enabled}, "
+                    f"auto_tick={status.auto_tick_enabled}."
+                ),
+                "bridge": status.model_dump(mode="json"),
+            }
+        elif action == "bridge_tick":
+            blocked = _require_owner_mutation(
+                session,
+                org,
+                user,
+                args,
+                tool_name="paper_validation_tool",
+                action_label="market watcher bridge tick",
+                confirm_hint="I confirm market watcher bridge tick",
+            )
+            if blocked is not None:
+                return blocked
+            from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
+
+            tick = MarketWatcherBridgeService(session).tick(organization_id=org, user_id=user)
+            session.commit()
+            result = {
+                "summary": (
+                    f"Bridge tick complete. Scans triggered={tick.scans_triggered}, "
+                    f"observations={tick.observations_processed}."
+                ),
+                "bridge_tick": tick.model_dump(mode="json"),
+            }
+        elif action == "bridge_history":
+            from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
+
+            history = MarketWatcherBridgeService(session).list_history(org, limit=10)
+            triggered = [d for d in history.items if d.decision == "triggered_scan"]
+            result = {
+                "summary": (
+                    f"{history.total} bridge decision(s). Triggered scans={len(triggered)}."
+                ),
+                "bridge_decisions": [d.model_dump(mode="json") for d in history.items],
+            }
+        elif action == "bridge_skip_reason":
+            from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
+
+            history = MarketWatcherBridgeService(session).list_history(org, limit=10)
+            skipped = [d for d in history.items if d.decision.startswith("skipped_")]
+            strategy_id = args.get("strategy_id")
+            if strategy_id:
+                skipped = [d for d in skipped if str(d.strategy_id) == str(strategy_id)]
+            result = {
+                "summary": (skipped[0].reason if skipped else "No recent bridge skip decisions."),
+                "skipped": [d.model_dump(mode="json") for d in skipped[:5]],
+            }
+        elif action == "bridge_linked_runs":
+            from app.services.market_watcher_service import MarketWatcherService
+
+            observations = MarketWatcherService(session).list_observations(org, limit=20)
+            linked = [
+                o.model_dump(mode="json")
+                for o in observations.items
+                if o.related_paper_validation_run_id is not None
+            ]
+            result = {
+                "summary": f"{len(linked)} observation(s) linked to paper validation runs.",
+                "linked_observations": linked,
+            }
+        elif action == "bridge_triggered_scans":
+            from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
+
+            history = MarketWatcherBridgeService(session).list_history(org, limit=20)
+            triggered = [d for d in history.items if d.decision == "triggered_scan"]
+            result = {
+                "summary": f"Market watcher bridge triggered {len(triggered)} scan(s) recently.",
+                "triggered": [d.model_dump(mode="json") for d in triggered],
+            }
         elif action == "skip_reason":
             from app.services.paper_scheduler_service import PaperSchedulerService
 

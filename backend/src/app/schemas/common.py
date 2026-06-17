@@ -505,6 +505,7 @@ class PaperRuntimeCycleMode(StrEnum):
     SCAN = "scan"
     TICK = "tick"
     SCHEDULER_TICK = "scheduler_tick"
+    MARKET_WATCHER_BRIDGE = "market_watcher_bridge"
 
 
 class PaperAlertType(StrEnum):
@@ -558,6 +559,26 @@ class MarketWatcherObservationStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class MarketWatcherBridgeDecisionType(StrEnum):
+    """Bridge decision outcomes (Slice 42 — paper scan bridge only)."""
+
+    TRIGGERED_SCAN = "triggered_scan"
+    SKIPPED_STALE_DATA = "skipped_stale_data"
+    SKIPPED_BLOCKED_STRATEGY = "skipped_blocked_strategy"
+    SKIPPED_NO_MATCHING_RUN = "skipped_no_matching_run"
+    SKIPPED_DISABLED = "skipped_disabled"
+    FAILED = "failed"
+
+
+class PaperAlertSource(StrEnum):
+    """Origin of a paper validation alert (Slice 42)."""
+
+    PAPER_VALIDATION_RUNTIME = "paper_validation_runtime"
+    MARKET_WATCHER = "market_watcher"
+    MARKET_WATCHER_BRIDGE = "market_watcher_bridge"
+    MANUAL_ACTION = "manual_action"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 
@@ -576,6 +597,8 @@ class PaperObservabilityEventType(StrEnum):
     ALERT_DELIVERY_FAILED = "alert_delivery_failed"
     ALERT_DELIVERY_SUCCEEDED = "alert_delivery_succeeded"
     MARKET_WATCHER_SCAN = "market_watcher_scan"
+    MARKET_WATCHER_BRIDGE_TICK = "market_watcher_bridge_tick"
+    MARKET_WATCHER_BRIDGE_SCAN_TRIGGERED = "market_watcher_bridge_scan_triggered"
 
 
 class PaperEligibilityStatus(StrEnum):
