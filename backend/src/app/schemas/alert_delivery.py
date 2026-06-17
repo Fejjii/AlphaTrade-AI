@@ -9,6 +9,7 @@ from app.schemas.common import (
     AlertDeliveryChannel,
     StrictModel,
 )
+from app.schemas.notifications import ChannelProviderStatus
 
 ALERT_TYPE_LABELS: dict[str, str] = {
     "setup_signal_detected": "Setup signal detected",
@@ -33,9 +34,12 @@ class AlertDeliveryStatusResponse(StrictModel):
     email_enabled: bool
     push_enabled: bool
     webhook_configured: bool
+    telegram_configured: bool = False
     effective_external_enabled: bool
     channels: list[str] = Field(default_factory=list)
+    channel_statuses: list[ChannelProviderStatus] = Field(default_factory=list)
     paper_only: bool = True
+    limitations: list[str] = Field(default_factory=list)
 
 
 class AlertDeliverResult(StrictModel):

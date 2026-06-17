@@ -23,6 +23,8 @@ class AlertDeliveryPayload:
     event_id: str | None = None
     idempotency_key: str | None = None
     timestamp: str | None = None
+    telegram_chat_id: str | None = None
+    is_test: bool = False
 
 
 @dataclass(frozen=True)

@@ -939,15 +939,22 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
             from app.services.alert_delivery_service import AlertDeliveryService
 
             delivery = AlertDeliveryService(session)
-            status = delivery.get_status()
+            status = delivery.get_status(
+                organization_id=org,
+                user_id=user,
+            )
             counts = delivery.delivery_summary(org)
+            prefs = delivery._preferences.get(organization_id=org, user_id=user)
             result = {
                 "summary": (
                     f"External delivery enabled={status.effective_external_enabled}. "
+                    f"Webhook user={prefs.webhook_enabled}, "
+                    f"telegram user={prefs.telegram_enabled}. "
                     f"Pending={counts.pending}, delivered={counts.delivered}."
                 ),
                 "delivery_status": status.model_dump(mode="json"),
                 "delivery_summary": counts.model_dump(mode="json"),
+                "notification_preferences": prefs.model_dump(mode="json"),
             }
         elif action == "deliver_pending":
             blocked = _require_owner_mutation(
@@ -988,15 +995,19 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
             if alert is None:
                 result = {"summary": "No alert found."}
             else:
+                delivery = AlertDeliveryService(session)
+                status = delivery.get_status(organization_id=org, user_id=user)
+                skipped = alert.delivery_skipped_reason or "No skipped reason recorded."
                 result = {
                     "summary": (
                         f"Alert delivery status={alert.delivery_status.value}. "
-                        f"Channel={alert.delivery_channel.value}."
+                        f"Channel={alert.delivery_channel.value}. "
+                        f"Skipped reason: {skipped}"
                     ),
                     "alert": alert.model_dump(mode="json"),
-                    "delivery_enabled": AlertDeliveryService(session)
-                    .get_status()
-                    .effective_external_enabled,
+                    "delivery_enabled": status.effective_external_enabled,
+                    "skipped_reason": skipped,
+                    "retry_exhausted": alert.retry_exhausted,
                 }
         elif action == "market_watcher_status":
             from app.services.market_watcher_service import MarketWatcherService
@@ -1410,6 +1421,109 @@ def _risk_settings_execute(args: dict[str, Any], session: Any | None) -> ToolOut
         return ToolOutput(tool_name="risk_settings_tool", success=False, error=str(exc))
 
 
+def _notification_preferences_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.schemas.notifications import NotificationPreferencesUpdate
+    from app.services.alert_delivery_service import AlertDeliveryService
+    from app.services.audit_service import AuditService
+    from app.services.notifications.preferences_service import NotificationPreferencesService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="notification_preferences_tool",
+            success=False,
+            error="Database session required for notification preferences.",
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        action = str(args.get("action", "get"))
+        prefs_service = NotificationPreferencesService(session, AuditService(session))
+        delivery = AlertDeliveryService(session, preferences_service=prefs_service)
+
+        if action == "get":
+            prefs = prefs_service.get(organization_id=org, user_id=user)
+            status = delivery.get_status(organization_id=org, user_id=user)
+            result = {
+                "preferences": prefs.model_dump(mode="json"),
+                "provider_status": status.model_dump(mode="json"),
+            }
+            summary = (
+                f"In-app={prefs.in_app_enabled}. "
+                f"Webhook user={prefs.webhook_enabled}, telegram user={prefs.telegram_enabled}. "
+                f"Min severity={prefs.min_severity.value}."
+            )
+        elif action == "test":
+            blocked = _require_mutation_confirmation(
+                "notification_preferences_tool", args, action="send test notification"
+            )
+            if blocked is not None:
+                return blocked
+            test = delivery.send_test_notification(organization_id=org, user_id=user)
+            session.commit()
+            result = test.model_dump(mode="json")
+            summary = test.message
+        elif action == "update":
+            blocked = _require_mutation_confirmation(
+                "notification_preferences_tool", args, action="update notification preferences"
+            )
+            if blocked is not None:
+                return blocked
+            skip_keys = {"action", "organization_id", "user_id", "confirm", "user_message"}
+            payload = NotificationPreferencesUpdate.model_validate(
+                {k: v for k, v in args.items() if k not in skip_keys}
+            )
+            updated = prefs_service.update(payload, organization_id=org, user_id=user)
+            session.commit()
+            result = updated.model_dump(mode="json")
+            summary = "Notification preferences updated. Alerts never execute trades."
+        elif action == "telegram_enabled":
+            prefs = prefs_service.get(organization_id=org, user_id=user)
+            status = delivery.get_status(organization_id=org, user_id=user)
+            enabled = prefs.telegram_enabled and status.telegram_enabled
+            result = {
+                "user_enabled": prefs.telegram_enabled,
+                "env_enabled": status.telegram_enabled,
+                "configured": status.telegram_configured,
+                "effective": enabled and status.telegram_configured,
+            }
+            summary = (
+                f"Telegram alerts user={prefs.telegram_enabled}, "
+                f"env={status.telegram_enabled}."
+            )
+        elif action == "webhook_enabled":
+            prefs = prefs_service.get(organization_id=org, user_id=user)
+            status = delivery.get_status(organization_id=org, user_id=user)
+            enabled = prefs.webhook_enabled and status.webhook_enabled
+            result = {
+                "user_enabled": prefs.webhook_enabled,
+                "env_enabled": status.webhook_enabled,
+                "configured": status.webhook_configured,
+                "effective": enabled and status.webhook_configured,
+            }
+            summary = f"Webhook alerts user={prefs.webhook_enabled}, env={status.webhook_enabled}."
+        else:
+            return ToolOutput(
+                tool_name="notification_preferences_tool",
+                success=False,
+                error=f"Unknown action: {action}",
+            )
+
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="notification_preferences_tool",
+            success=True,
+            result={"summary": summary, **result},
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(
+            tool_name="notification_preferences_tool", success=False, error=str(exc)
+        )
+
+
 def build_default_registry(
     _settings: Settings | None = None,
     rag_service: RagService | None = None,
@@ -1683,6 +1797,19 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=lambda args: _risk_settings_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="notification_preferences_tool",
+            description=(
+                "Read or update notification preferences, check webhook/Telegram status, "
+                "or send a safe test notification. Mutations require explicit confirmation."
+            ),
+            risk_level=ToolRiskLevel.MEDIUM,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _notification_preferences_execute(args, db_session),
         ),
     ]
     for tool in tools:

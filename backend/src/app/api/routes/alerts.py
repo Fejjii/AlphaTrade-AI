@@ -79,7 +79,10 @@ async def alert_delivery_status(
     tenant: ReaderDep,
     delivery: AlertDeliveryServiceDep,
 ) -> AlertDeliveryStatusResponse:
-    return delivery.get_status()
+    return delivery.get_status(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
 
 
 @router.get(

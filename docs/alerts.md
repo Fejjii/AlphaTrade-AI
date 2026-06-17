@@ -15,7 +15,7 @@ Each alert exposes `alert_source` derived from metadata:
 
 All paper validation events create tenant-scoped in-app alerts. No real trades are executed from alerts.
 
-## External delivery (Slice 41)
+## External delivery (Slice 41/46)
 
 | Env flag | Default | Purpose |
 |----------|---------|---------|
@@ -23,8 +23,12 @@ All paper validation events create tenant-scoped in-app alerts. No real trades a
 | `ALERT_WEBHOOK_ENABLED` | `false` | Webhook provider |
 | `ALERT_WEBHOOK_URL` | empty | Webhook target (never commit secrets) |
 | `ALERT_WEBHOOK_SECRET` | empty | Optional HMAC signing secret (Slice 42) |
-| `TELEGRAM_ALERTS_ENABLED` | `false` | Placeholder stub |
+| `TELEGRAM_ALERTS_ENABLED` | `false` | Telegram provider (Slice 46) |
+| `TELEGRAM_BOT_TOKEN` | empty | Bot token — env only, never in DB |
+| `TELEGRAM_CHAT_ID` | empty | Optional staging chat id |
 | `EMAIL_ALERTS_ENABLED` | `false` | Placeholder stub |
+
+User notification preferences (`/notifications/preferences`) gate webhook and Telegram per user. See [notifications.md](notifications.md).
 
 When disabled, `delivery_status=disabled` and alerts remain in-app only.
 
@@ -37,6 +41,7 @@ When enabled, POSTs a JSON payload with idempotency key, event id, timestamp, an
 - `delivery_status`: `pending`, `delivered`, `failed`, `skipped`, `disabled`
 - `delivery_channel`: `in_app`, `webhook`, `telegram`, `email`, `push`
 - `delivery_attempts`, `last_delivery_error` (redacted), `delivered_at`, `next_retry_at`
+- `delivery_skipped_reason`, `retry_exhausted` (Slice 46)
 
 Delivery respects alert dedup keys — duplicate alerts are suppressed at creation, not re-sent externally.
 
@@ -62,6 +67,8 @@ Delivery respects alert dedup keys — duplicate alerts are suppressed at creati
 | GET | `/alerts/delivery-summary` | Delivery status counts |
 | POST | `/alerts/{id}/deliver` | Manual deliver (owner) |
 | POST | `/alerts/deliver-pending` | Deliver pending batch (owner) |
+
+Notification preferences: see [notifications.md](notifications.md).
 
 ## UI
 

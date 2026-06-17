@@ -98,6 +98,7 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 | Paper scheduler status/tick | `paper_scheduler_query` | `paper_validation_tool` |
 | Paper alerts | `paper_alerts_query` | `paper_validation_tool` |
 | Alert delivery status / deliver pending | `alert_delivery_query` | `paper_validation_tool` |
+| Notification preferences / test send | `notification_preferences_query` | `notification_preferences_tool` |
 | Market watcher status / scan | `market_watcher_query` | `paper_validation_tool` |
 
 Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).

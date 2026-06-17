@@ -37,6 +37,8 @@ class PaperAlert(ORMModel):
     last_delivery_error: str | None = None
     delivered_at: datetime | None = None
     next_retry_at: datetime | None = None
+    delivery_skipped_reason: str | None = None
+    retry_exhausted: bool = False
     created_at: datetime
     updated_at: datetime
 

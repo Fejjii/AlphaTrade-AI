@@ -45,6 +45,9 @@ class WebhookAlertDeliveryProvider:
             and bool(self._settings.alert_webhook_url.strip())
         )
 
+    def is_configured(self) -> bool:
+        return bool(self._settings.alert_webhook_url.strip())
+
     def deliver(self, payload: AlertDeliveryPayload) -> AlertDeliveryResult:
         if not self.is_enabled():
             return AlertDeliveryResult(

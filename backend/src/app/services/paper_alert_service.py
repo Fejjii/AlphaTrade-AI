@@ -124,7 +124,9 @@ class PaperAlertService:
             from app.services.alert_delivery_service import AlertDeliveryService
 
             delivery = AlertDeliveryService(self._session)
-        delivery.initialize_delivery_fields(row)
+        delivery.initialize_delivery_fields(
+            row, organization_id=organization_id, user_id=user_id
+        )
         self._alerts.add(row)
         return self._to_schema(row)
 
@@ -236,6 +238,13 @@ class PaperAlertService:
             alert_source = PaperAlertSource(raw_source)
         except ValueError:
             alert_source = PaperAlertSource.PAPER_VALIDATION_RUNTIME
+        skipped_reason = meta.get("delivery_skipped_reason")
+        max_retries = 2
+        retry_exhausted = (
+            row.delivery_status.value == "failed"
+            and row.next_retry_at is None
+            and row.delivery_attempts > max_retries
+        )
         return PaperAlert(
             id=row.id,
             organization_id=row.organization_id,
@@ -255,6 +264,8 @@ class PaperAlertService:
             last_delivery_error=row.last_delivery_error,
             delivered_at=row.delivered_at,
             next_retry_at=row.next_retry_at,
+            delivery_skipped_reason=skipped_reason,
+            retry_exhausted=retry_exhausted,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

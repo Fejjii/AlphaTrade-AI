@@ -110,4 +110,4 @@ See [deployment.md](deployment.md) for monitoring plan in deploy context.
 - Market watcher scan (Slice 41 — read-only, paper only)
 - Market watcher bridge tick / scan triggered (Slice 42 — paper scan bridge only)
 
-Scheduler manual ticks also emit `paper_scheduler_tick` audit events. See [paper_validation.md](paper_validation.md) and [alerts.md](alerts.md).
+Scheduler manual ticks also emit `paper_scheduler_tick` audit events. Alert delivery emits `ALERT_DELIVERY_SUCCEEDED` / `ALERT_DELIVERY_FAILED` observability events. Notification preference updates emit `notification_preferences_updated`; test sends emit `notification_test_sent`. See [paper_validation.md](paper_validation.md), [alerts.md](alerts.md), and [notifications.md](notifications.md).

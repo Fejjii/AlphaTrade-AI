@@ -31,6 +31,7 @@ from app.services.market_data_service import MarketDataService
 from app.services.market_service import MarketService
 from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
 from app.services.market_watcher_service import MarketWatcherService
+from app.services.notifications.preferences_service import NotificationPreferencesService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_scheduler_service import PaperSchedulerService
@@ -345,6 +346,18 @@ def get_dashboard_summary_service(
 
 DashboardSummaryServiceDep = Annotated[
     DashboardSummaryService, Depends(get_dashboard_summary_service)
+]
+
+
+def get_notification_preferences_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+) -> NotificationPreferencesService:
+    return NotificationPreferencesService(session, audit_service)
+
+
+NotificationPreferencesServiceDep = Annotated[
+    NotificationPreferencesService, Depends(get_notification_preferences_service)
 ]
 
 

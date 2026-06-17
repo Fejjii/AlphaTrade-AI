@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     alert_webhook_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
     alert_webhook_max_retries: int = Field(default=2, ge=0, le=5)
     telegram_alerts_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    telegram_max_retries: int = Field(default=2, ge=0, le=5)
     email_alerts_enabled: bool = False
 
     # --- Market watcher (Slice 41 — read-only, disabled by default) ---

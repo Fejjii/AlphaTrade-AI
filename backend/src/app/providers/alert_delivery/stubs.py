@@ -30,15 +30,6 @@ class _StubAlertDeliveryProvider:
         )
 
 
-class TelegramAlertDeliveryProvider(_StubAlertDeliveryProvider):
-    def __init__(self, settings: Settings) -> None:
-        super().__init__(
-            settings,
-            channel=AlertDeliveryChannel.TELEGRAM,
-            enabled=settings.telegram_alerts_enabled,
-        )
-
-
 class EmailAlertDeliveryProvider(_StubAlertDeliveryProvider):
     def __init__(self, settings: Settings) -> None:
         super().__init__(

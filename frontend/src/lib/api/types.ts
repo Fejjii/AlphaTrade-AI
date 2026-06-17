@@ -1225,6 +1225,8 @@ export interface PaperAlert {
   last_delivery_error?: string | null;
   delivered_at?: string | null;
   next_retry_at?: string | null;
+  delivery_skipped_reason?: string | null;
+  retry_exhausted?: boolean;
   alert_source?: string;
   created_at: string;
 }
@@ -1236,9 +1238,47 @@ export interface AlertDeliveryStatusResponse {
   email_enabled: boolean;
   push_enabled: boolean;
   webhook_configured: boolean;
+  telegram_configured?: boolean;
   effective_external_enabled: boolean;
   channels: string[];
+  channel_statuses?: ChannelProviderStatus[];
   paper_only: boolean;
+  limitations?: string[];
+}
+
+export interface ChannelProviderStatus {
+  channel: string;
+  env_enabled: boolean;
+  user_enabled: boolean;
+  configured: boolean;
+  available: boolean;
+  status_label: string;
+}
+
+export interface NotificationPreferences {
+  in_app_enabled: boolean;
+  webhook_enabled: boolean;
+  telegram_enabled: boolean;
+  min_severity: string;
+  enabled_alert_types?: string[] | null;
+  quiet_hours_enabled?: boolean;
+  quiet_hours_start?: string | null;
+  quiet_hours_end?: string | null;
+  timezone?: string;
+  digest_mode?: string;
+  telegram_chat_id?: string | null;
+  using_defaults?: boolean;
+}
+
+export interface NotificationTestResult {
+  success: boolean;
+  message: string;
+  channels_attempted: string[];
+  channels_succeeded: string[];
+  channels_skipped: string[];
+  errors: Record<string, string>;
+  paper_only: boolean;
+  test_label: string;
 }
 
 export interface MarketWatcherStatus {

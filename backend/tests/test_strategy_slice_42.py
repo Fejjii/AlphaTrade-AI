@@ -119,6 +119,18 @@ def _settings(**overrides: object) -> Settings:
     return Settings(**base)
 
 
+def _enable_webhook_prefs(session: Session) -> None:
+    from app.schemas.notifications import NotificationPreferencesUpdate
+    from app.services.audit_service import AuditService
+    from app.services.notifications.preferences_service import NotificationPreferencesService
+
+    NotificationPreferencesService(session, AuditService(session)).update(
+        NotificationPreferencesUpdate(webhook_enabled=True),
+        organization_id=ORG_ID,
+        user_id=USER_ID,
+    )
+
+
 @pytest.fixture
 def slice42_client(slice42_db: sessionmaker[Session]) -> Iterator[TestClient]:
     app = create_app(settings=_settings())
@@ -413,10 +425,12 @@ def test_webhook_failure_redacted(slice42_db: sessionmaker[Session]) -> None:
         alert_webhook_url="https://example.com/hook",
     )
     with slice42_db() as session:
+        _enable_webhook_prefs(session)
         alert = PaperAlertService(session).create(
             organization_id=ORG_ID,
             alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
             message="test",
+            user_id=USER_ID,
         )
         assert alert is not None
         row = session.scalar(
@@ -426,7 +440,7 @@ def test_webhook_failure_redacted(slice42_db: sessionmaker[Session]) -> None:
         row.delivery_status = AlertDeliveryStatus.PENDING
         session.flush()
         result = AlertDeliveryService(session, settings, http_post=mock_post).deliver_alert(
-            row.id, organization_id=ORG_ID
+            row.id, organization_id=ORG_ID, user_id=USER_ID
         )
         assert result.delivered is False
         assert result.alert.last_delivery_error is not None
@@ -441,10 +455,12 @@ def test_delivery_retry_stops_after_max_attempts(slice42_db: sessionmaker[Sessio
         alert_webhook_max_retries=1,
     )
     with slice42_db() as session:
+        _enable_webhook_prefs(session)
         alert = PaperAlertService(session).create(
             organization_id=ORG_ID,
             alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
             message="retry test",
+            user_id=USER_ID,
         )
         assert alert is not None
         row = session.scalar(
@@ -454,15 +470,15 @@ def test_delivery_retry_stops_after_max_attempts(slice42_db: sessionmaker[Sessio
         row.delivery_status = AlertDeliveryStatus.PENDING
         session.flush()
         delivery = AlertDeliveryService(session, settings, http_post=mock_post)
-        delivery.deliver_alert(row.id, organization_id=ORG_ID)
+        delivery.deliver_alert(row.id, organization_id=ORG_ID, user_id=USER_ID)
         session.refresh(row)
         row.next_retry_at = datetime.now(UTC) - timedelta(minutes=1)
         session.flush()
-        delivery.deliver_alert(row.id, organization_id=ORG_ID)
+        delivery.deliver_alert(row.id, organization_id=ORG_ID, user_id=USER_ID)
         session.refresh(row)
         row.next_retry_at = datetime.now(UTC) - timedelta(minutes=1)
         session.flush()
-        result = delivery.deliver_alert(row.id, organization_id=ORG_ID)
+        result = delivery.deliver_alert(row.id, organization_id=ORG_ID, user_id=USER_ID)
         session.refresh(row)
         assert row.delivery_attempts == 3
         assert row.next_retry_at is None
@@ -619,10 +635,12 @@ def test_webhook_url_not_logged_in_raw_form(slice42_db: sessionmaker[Session]) -
         alert_webhook_url="https://example.com/hook",
     )
     with slice42_db() as session:
+        _enable_webhook_prefs(session)
         alert = PaperAlertService(session).create(
             organization_id=ORG_ID,
             alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
             message="test",
+            user_id=USER_ID,
         )
         assert alert is not None
         row = session.scalar(
@@ -632,7 +650,7 @@ def test_webhook_url_not_logged_in_raw_form(slice42_db: sessionmaker[Session]) -
         row.delivery_status = AlertDeliveryStatus.PENDING
         session.flush()
         result = AlertDeliveryService(session, settings, http_post=mock_post).deliver_alert(
-            row.id, organization_id=ORG_ID
+            row.id, organization_id=ORG_ID, user_id=USER_ID
         )
         assert result.delivered is False
         assert result.alert.last_delivery_error is not None
@@ -648,10 +666,12 @@ def test_delivery_retry_does_not_duplicate_alerts(slice42_db: sessionmaker[Sessi
         alert_webhook_max_retries=1,
     )
     with slice42_db() as session:
+        _enable_webhook_prefs(session)
         alert = PaperAlertService(session).create(
             organization_id=ORG_ID,
             alert_type=PaperAlertType.SETUP_SIGNAL_DETECTED,
             message="retry test",
+            user_id=USER_ID,
         )
         assert alert is not None
         row = session.scalar(
@@ -662,7 +682,7 @@ def test_delivery_retry_does_not_duplicate_alerts(slice42_db: sessionmaker[Sessi
         session.flush()
         delivery = AlertDeliveryService(session, settings, http_post=mock_post)
         for _ in range(3):
-            delivery.deliver_alert(row.id, organization_id=ORG_ID)
+            delivery.deliver_alert(row.id, organization_id=ORG_ID, user_id=USER_ID)
             session.refresh(row)
             row.next_retry_at = datetime.now(UTC) - timedelta(minutes=1)
             session.flush()

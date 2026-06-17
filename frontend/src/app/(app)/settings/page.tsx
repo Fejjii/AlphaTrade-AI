@@ -1,6 +1,7 @@
 "use client";
 
 import { EmailVerificationNotice } from "@/components/account/EmailVerificationNotice";
+import { NotificationSettingsPanel } from "@/components/NotificationSettingsPanel";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { SafetyDisclaimers } from "@/components/SafetyDisclaimers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,6 +74,7 @@ export default function SettingsPage() {
           <SafetyDisclaimers />
         </CardContent>
       </Card>
+      <NotificationSettingsPanel />
     </div>
   );
 }

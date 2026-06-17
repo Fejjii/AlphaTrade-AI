@@ -67,6 +67,8 @@ import type {
   PaperAlert,
   PaperAlertSummary,
   AlertDeliveryStatusResponse,
+  NotificationPreferences,
+  NotificationTestResult,
   MarketWatcherStatus,
   MarketWatcherScanResult,
   MarketWatcherBridgeStatus,
@@ -392,6 +394,23 @@ export const api = {
         "/alerts/deliver-pending",
         { method: "POST", auth: true },
       ),
+  },
+  notifications: {
+    preferences: () =>
+      apiFetch<NotificationPreferences>("/notifications/preferences", { auth: true }),
+    updatePreferences: (body: Partial<NotificationPreferences>) =>
+      apiFetch<NotificationPreferences>("/notifications/preferences", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    resetPreferences: () =>
+      apiFetch<NotificationPreferences>("/notifications/preferences/reset-defaults", {
+        method: "POST",
+        auth: true,
+      }),
+    sendTest: () =>
+      apiFetch<NotificationTestResult>("/notifications/test", { method: "POST", auth: true }),
   },
   marketWatcher: {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),

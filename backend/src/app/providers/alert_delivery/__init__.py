@@ -12,8 +12,8 @@ from app.providers.alert_delivery.in_app import InAppAlertDeliveryProvider
 from app.providers.alert_delivery.stubs import (
     EmailAlertDeliveryProvider,
     PushAlertDeliveryProvider,
-    TelegramAlertDeliveryProvider,
 )
+from app.providers.alert_delivery.telegram import TelegramAlertDeliveryProvider
 from app.providers.alert_delivery.webhook import WebhookAlertDeliveryProvider
 
 
@@ -26,7 +26,7 @@ def build_alert_delivery_providers(
     return [
         InAppAlertDeliveryProvider(),
         WebhookAlertDeliveryProvider(cfg, http_post=http_post),
-        TelegramAlertDeliveryProvider(cfg),
+        TelegramAlertDeliveryProvider(cfg, http_post=http_post),
         EmailAlertDeliveryProvider(cfg),
         PushAlertDeliveryProvider(cfg),
     ]

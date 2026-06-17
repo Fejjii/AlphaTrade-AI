@@ -1004,6 +1004,37 @@ class UserRiskSettings(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class UserNotificationPreferences(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Per-user notification delivery preferences (Slice 46 — no provider secrets)."""
+
+    __tablename__ = "user_notification_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "user_id",
+            name="uq_user_notification_preferences_org_user",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    webhook_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    min_severity: Mapped[PaperAlertSeverity] = mapped_column(
+        _enum(PaperAlertSeverity), default=PaperAlertSeverity.INFO
+    )
+    enabled_alert_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    quiet_hours_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    quiet_hours_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    quiet_hours_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    digest_mode: Mapped[str] = mapped_column(String(32), default="immediate")
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class RiskEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "risk_events"
 

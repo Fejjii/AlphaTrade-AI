@@ -104,10 +104,17 @@ export default function AlertsPage() {
             </p>
           ) : null}
           {deliveryStatus ? (
-            <p className="mt-1 text-xs text-zinc-500" data-testid="alerts-delivery-disabled-copy">
-              External delivery:{" "}
-              {deliveryStatus.effective_external_enabled ? "enabled" : "disabled by default"}
-            </p>
+            <div className="mt-1 space-y-1" data-testid="alerts-provider-status">
+              <p className="text-xs text-zinc-500" data-testid="alerts-delivery-disabled-copy">
+                External delivery:{" "}
+                {deliveryStatus.effective_external_enabled ? "enabled" : "disabled by default"}
+              </p>
+              {deliveryStatus.channel_statuses?.map((ch) => (
+                <p key={ch.channel} className="text-xs text-zinc-600">
+                  {ch.channel}: {ch.status_label}
+                </p>
+              ))}
+            </div>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -198,7 +205,18 @@ export default function AlertsPage() {
                 {alert.delivered_at
                   ? ` · Delivered ${new Date(alert.delivered_at).toLocaleString()}`
                   : ""}
+                {alert.delivery_attempts ? ` · Attempts ${alert.delivery_attempts}` : ""}
               </p>
+              {alert.delivery_skipped_reason ? (
+                <p className="mt-1 text-xs text-zinc-500" data-testid="alert-skipped-reason">
+                  Skipped: {alert.delivery_skipped_reason}
+                </p>
+              ) : null}
+              {alert.retry_exhausted ? (
+                <p className="mt-1 text-xs text-amber-500/80" data-testid="alert-retry-exhausted">
+                  Retry exhausted — alert remains in-app only.
+                </p>
+              ) : null}
               {alert.last_delivery_error ? (
                 <p className="mt-1 text-xs text-amber-500/80" data-testid="alert-delivery-error">
                   Last error: {alert.last_delivery_error}

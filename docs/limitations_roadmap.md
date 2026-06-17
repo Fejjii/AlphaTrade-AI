@@ -53,13 +53,20 @@
 
 - Bridge disabled by default; manual tick only (no always-on auto loop unless `MARKET_WATCHER_BRIDGE_AUTO_TICK=true`)
 - Bridge triggers paper validation **scan** only — no exchange or broker execution
-- Webhook HMAC signing optional; Telegram/email/push remain stubs
+- Webhook HMAC signing optional; Telegram provider added (Slice 46); email/push remain stubs
 - `./scripts/market-watcher-smoke.sh` covers watcher + bridge API smoke in Docker
 - Auto tick scheduler not wired in-process (env flag reserved for future conservative loop)
 
+### Alert delivery & notifications (Slice 46)
+
+- Telegram and webhook polished; user preferences gate external delivery
+- Per-tenant webhook URLs not in DB — env-global staging pattern
+- Daily digest mode defers immediate external send
+- Email/push remain stubs
+- `./scripts/notifications-smoke.sh` for preferences and delivery status API
+
 ### Alert delivery & market watcher (Slice 41 — remaining gaps)
 
-- Webhook delivery only; Telegram/email/push are stubs
 - No background delivery loop — manual/batch deliver endpoints
 - Market watcher has no scheduled loop — manual scan only
 - Scan history is in-memory per process (observations and bridge decisions persisted)
