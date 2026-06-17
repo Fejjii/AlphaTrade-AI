@@ -16,7 +16,7 @@ AlphaTrade AI is a **human-in-the-loop trading copilot** for crypto markets. It 
 - Build structured trade proposals with mandatory exit plans
 - Pass every plan through a deterministic risk engine
 - Require **explicit human approval** before any paper simulation
-- Journal outcomes and feed lessons back into RAG for continuous learning
+- Journal outcomes and feed **accepted lessons after review** back into RAG
 
 It is **not** an auto-trading bot. It is analysis, education, risk management, and decision support.
 
@@ -267,7 +267,7 @@ Transparency: every provider reports `is_mock`, `fallback_used`, and detail text
 Be explicit about MVP boundaries:
 
 - No real exchange or broker execution
-- No auto-trading without approval
+- No real broker or exchange execution without explicit future approval (paper validation may open simulated trades in `auto_paper` mode)
 - Stripe billing scaffold only — no live payments unless explicitly configured
 - Cost estimates labeled by source — not invoice-grade unless `provider_reported`
 - Responsive web PWA — not native mobile apps

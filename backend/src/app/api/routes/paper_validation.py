@@ -181,7 +181,11 @@ async def stop_paper_validation(
     service: PaperValidationRuntimeServiceDep,
     session: SessionDep,
 ) -> PaperValidationRun:
-    result = service.stop(run_id, organization_id=tenant.organization_id)
+    result = service.stop(
+        run_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
     session.commit()
     return result
 

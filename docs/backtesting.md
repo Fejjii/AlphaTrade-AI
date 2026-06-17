@@ -44,7 +44,7 @@ Passing backtest gates unlocks **paper validation runtime** (Slice 39) — a sep
 
 ## Migration
 
-Apply through head **`q7r8s9t0u1v2`** (Slice 39):
+Apply through head **`s9t0u1v2w3x4`** (Slice 40C):
 
 ```bash
 cd backend && uv run alembic upgrade head

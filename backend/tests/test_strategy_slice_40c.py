@@ -97,8 +97,9 @@ def test_question_does_not_allow_mutation() -> None:
 
 
 def test_explicit_confirmation_allows_mutation() -> None:
-    msg = "I confirm accept lesson 00000000-0000-0000-0000-000000000099"
+    msg = "I confirm, accept lesson 00000000-0000-0000-0000-000000000099"
     assert mutation_allowed(msg)
+    assert not mutation_allowed("confirmed accept lesson 00000000-0000-0000-0000-000000000099")
 
 
 def test_malicious_snippet_sanitized() -> None:

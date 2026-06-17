@@ -147,5 +147,7 @@ Revisions (through Slice 39):
 5. `o5p6q7r8s9t0` — lesson review, runner analysis fields (Slice 37)
 6. `p6q7r8s9t0u1` — lesson accept paths, `lesson_source_metadata` (Slice 38)
 7. `q7r8s9t0u1v2` — paper signals, paper trades, runtime scan/tick (Slice 39)
+8. `r8s9t0u1v2w3` — paper scheduler, runtime history, alerts (Slice 40)
+9. `s9t0u1v2w3x4` — alert dedup indexes, lesson gate hardening (Slice 40C)
 
-Head should be **`q7r8s9t0u1v2`**.
+Head should be **`s9t0u1v2w3x4`**.

@@ -32,9 +32,9 @@ Types: `setup_signal_detected`, `paper_trade_opened`, `paper_trade_closed`, `sto
 
 API: `GET /alerts`, `GET /alerts/summary`, `PATCH /alerts/{id}/read`, `PATCH /alerts/read-all`
 
-## Walk-forward sample windows (Slice 40)
+## 7-day sample windows (Slice 40)
 
-`paper_validation_sample_windows` — 7-day buckets from closed paper trades: trades_count, win_rate, net_pnl, max_drawdown, expectancy, recommendation, data_quality.
+`paper_validation_sample_windows` — simple 7-day buckets from closed paper trades (not full walk-forward optimization): trades_count, win_rate, net_pnl, max_drawdown, expectancy, recommendation, data_quality.
 
 Promotion now also requires minimum runtime windows and checks stale data / provider failures.
 

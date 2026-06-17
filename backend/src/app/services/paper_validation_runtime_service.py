@@ -25,7 +25,12 @@ from app.repositories.paper_runtime import (
 )
 from app.repositories.paper_validation import PaperValidationRunRepository
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
+from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
+    ActorType,
+    AuditEventType,
+    AuditResult,
+    AuditSeverity,
     BacktestRunStatus,
     BacktestStatus,
     PaperAlertSeverity,
@@ -55,6 +60,7 @@ from app.schemas.paper_validation import (
 )
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.structured_rules import StructuredRules
+from app.services.audit_service import AuditService
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_bot_engine import PaperBotEngine, _OpenPaperTrade
@@ -79,7 +85,13 @@ class _RunContext:
 
 
 class PaperValidationRuntimeService:
-    def __init__(self, session: Session, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        settings: Settings | None = None,
+        *,
+        audit_service: AuditService | None = None,
+    ) -> None:
         self._session = session
         self._settings = settings or get_settings()
         self._runs = PaperValidationRunRepository(session)
@@ -94,6 +106,7 @@ class PaperValidationRuntimeService:
         self._observability = PaperObservabilityService(session)
         self._alerts = PaperAlertService(session)
         self._sample_windows = PaperSampleWindowService(session)
+        self._audit = audit_service or AuditService(session)
 
     def start(
         self,
@@ -353,6 +366,18 @@ class PaperValidationRuntimeService:
                 strategy_id=run.strategy_id,
             )
 
+        self._record_runtime_audit(
+            organization_id=organization_id,
+            user_id=user_id,
+            run_id=run.id,
+            action="scan",
+            metadata={
+                "triggered": triggered,
+                "trade_created": trade_created,
+                "paper_only": True,
+            },
+        )
+
         return PaperScanResult(
             run_id=run.id,
             signal=self._signal_to_schema(signal_row),
@@ -529,6 +554,18 @@ class PaperValidationRuntimeService:
                 paper_validation_run_id=run.id,
             )
 
+        self._record_runtime_audit(
+            organization_id=organization_id,
+            user_id=user_id,
+            run_id=run.id,
+            action="tick",
+            metadata={
+                "trades_closed": closed_count,
+                "trades_open": remaining_open,
+                "paper_only": True,
+            },
+        )
+
         return PaperTickResult(
             run_id=run.id,
             trades_closed=closed_count,
@@ -543,6 +580,7 @@ class PaperValidationRuntimeService:
         run_id: uuid.UUID,
         *,
         organization_id: uuid.UUID,
+        user_id: uuid.UUID,
     ) -> PaperValidationRun:
         run = self._runs.get_scoped(run_id, organization_id=organization_id)
         if run is None:
@@ -553,6 +591,13 @@ class PaperValidationRuntimeService:
         version = self._versions.latest(run.strategy_id)
         if version is not None:
             version.paper_validation_status = PaperValidationStatus.FAILED
+        self._record_runtime_audit(
+            organization_id=organization_id,
+            user_id=user_id,
+            run_id=run.id,
+            action="stop",
+            metadata={"paper_only": True},
+        )
         return self._to_schema(run)
 
     def get_run(
@@ -629,6 +674,31 @@ class PaperValidationRuntimeService:
             return PaperValidationMetrics.model_validate(run.metrics)
         config = PaperValidationConfig.model_validate(run.config or {})
         return self._aggregate_metrics(run_id, organization_id=organization_id, config=config)
+
+    def _record_runtime_audit(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        run_id: uuid.UUID,
+        action: str,
+        metadata: dict,
+    ) -> None:
+        self._audit.record(
+            AuditRecordCreate(
+                request_id=f"paper-validation-{action}-{run_id}",
+                trace_id=str(uuid.uuid4()),
+                user_id=user_id,
+                organization_id=organization_id,
+                event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+                resource_type="paper_validation_run",
+                resource_id=str(run_id),
+                actor_type=ActorType.USER,
+                result=AuditResult.SUCCESS,
+                severity=AuditSeverity.INFO,
+                metadata={"action": action, **metadata},
+            )
+        )
 
     def _load_context(
         self,

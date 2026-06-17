@@ -86,7 +86,11 @@ async def mark_alert_read(
     service: PaperAlertServiceDep,
     session: SessionDep,
 ) -> PaperAlert:
-    result = service.mark_read(alert_id, organization_id=tenant.organization_id)
+    result = service.mark_read(
+        alert_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
     session.commit()
     return result
 
@@ -97,6 +101,6 @@ async def mark_all_alerts_read(
     service: PaperAlertServiceDep,
     session: SessionDep,
 ) -> dict[str, int]:
-    count = service.mark_all_read(tenant.organization_id)
+    count = service.mark_all_read(tenant.organization_id, user_id=tenant.user_id)
     session.commit()
     return {"marked_read": count}

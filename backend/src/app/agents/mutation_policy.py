@@ -31,7 +31,7 @@ def has_explicit_confirmation(message: str, *, confirm_arg: bool | None = None) 
     lowered = message.lower()
     return (
         "confirm=true" in lowered
-        or re.search(r"\b(i confirm|confirmed|confirm action|yes confirm)\b", lowered) is not None
+        or re.search(r"\b(i confirm|confirm action|yes,?\s*confirm)\b", lowered) is not None
     )
 
 

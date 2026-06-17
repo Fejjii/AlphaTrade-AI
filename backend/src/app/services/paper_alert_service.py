@@ -11,7 +11,16 @@ from app.core.errors import NotFoundError
 from app.db.models import PaperValidationAlert as AlertModel
 from app.repositories.paper_scheduler import PaperAlertRepository
 from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
-from app.schemas.common import PaperAlertSeverity, PaperAlertType
+from app.schemas.audit import AuditRecordCreate
+from app.schemas.common import (
+    ActorType,
+    AuditEventType,
+    AuditResult,
+    AuditSeverity,
+    PaperAlertSeverity,
+    PaperAlertType,
+)
+from app.services.audit_service import AuditService
 
 # Cooldown seconds per alert type — suppress duplicate notifications within the window.
 ALERT_COOLDOWN_SECONDS: dict[PaperAlertType, int] = {
@@ -48,9 +57,10 @@ def build_alert_dedup_key(
 
 
 class PaperAlertService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, audit_service: AuditService | None = None) -> None:
         self._session = session
         self._alerts = PaperAlertRepository(session)
+        self._audit = audit_service or AuditService(session)
 
     def create(
         self,
@@ -135,14 +145,52 @@ class PaperAlertService:
             raise NotFoundError("Alert not found.")
         return self._to_schema(row)
 
-    def mark_read(self, alert_id: uuid.UUID, *, organization_id: uuid.UUID) -> PaperAlert:
+    def mark_read(
+        self,
+        alert_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+    ) -> PaperAlert:
         row = self._alerts.mark_read(alert_id, organization_id=organization_id)
         if row is None:
             raise NotFoundError("Alert not found.")
+        self._audit.record(
+            AuditRecordCreate(
+                request_id=f"alert-read-{alert_id}",
+                trace_id=str(uuid.uuid4()),
+                user_id=user_id,
+                organization_id=organization_id,
+                event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+                resource_type="paper_validation_alert",
+                resource_id=str(alert_id),
+                actor_type=ActorType.USER,
+                result=AuditResult.SUCCESS,
+                severity=AuditSeverity.INFO,
+                metadata={"action": "alert_read"},
+            )
+        )
         return self._to_schema(row)
 
-    def mark_all_read(self, organization_id: uuid.UUID) -> int:
-        return self._alerts.mark_all_read(organization_id)
+    def mark_all_read(self, organization_id: uuid.UUID, *, user_id: uuid.UUID | None = None) -> int:
+        count = self._alerts.mark_all_read(organization_id)
+        if count > 0:
+            self._audit.record(
+                AuditRecordCreate(
+                    request_id=f"alert-read-all-{organization_id}",
+                    trace_id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+                    resource_type="paper_validation_alert",
+                    resource_id=str(organization_id),
+                    actor_type=ActorType.USER,
+                    result=AuditResult.SUCCESS,
+                    severity=AuditSeverity.INFO,
+                    metadata={"action": "alert_read_all", "marked_read": count},
+                )
+            )
+        return count
 
     def summary(self, organization_id: uuid.UUID) -> PaperAlertSummary:
         rows, total = self._alerts.list_for_org(organization_id, limit=500)

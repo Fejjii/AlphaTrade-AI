@@ -79,9 +79,10 @@ class HistoricalCandleService:
             if filtered:
                 bars = filtered
             elif bars:
+                bars = []
                 limitations.append(
-                    "Provider returned candles outside requested range — results may not "
-                    "match backtest window."
+                    "Provider returned candles outside requested range — none stored. "
+                    "Backtest window unavailable."
                 )
             else:
                 limitations.append("Provider returned no candles for requested range.")
