@@ -94,12 +94,10 @@ Deterministic intent detection (`strategy_intent.py`) routes workspace questions
 | Scan strategy / paper signals | `paper_validation_scan` | `paper_validation_tool` |
 | Paper trades, metrics, validated status | `paper_validation_query` | `paper_validation_tool` |
 | Improve or retire recommendation | `paper_validation_recommend` | `paper_validation_tool` |
-
-Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).
-
-| Paper validation recommend | `paper_validation_recommend` | `paper_validation_tool` |
 | Paper scheduler status/tick | `paper_scheduler_query` | `paper_validation_tool` |
 | Paper alerts | `paper_alerts_query` | `paper_validation_tool` |
+
+Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).
 
 Backtest intents call `backtest_tool`; paper validation intents call `paper_validation_tool` — both run deterministic engines. Scheduler and alert questions also use `paper_validation_tool` (never LLM-invented status). The LLM explains results but cannot fabricate win rate, drawdown, signals, scheduler state, or promotion status. **No path places exchange orders.**
 
