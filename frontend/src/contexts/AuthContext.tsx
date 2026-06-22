@@ -29,6 +29,14 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const [mustVerifyEmail, setMustVerifyEmail] = useState(true);
+
+  useEffect(() => {
+    void api.health
+      .get()
+      .then((health) => setMustVerifyEmail(health.must_verify_email))
+      .catch(() => setMustVerifyEmail(true));
+  }, []);
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
   const [organization, setOrganization] = useState<MeResponse["organization"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,22 +76,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string) => {
       const response = await api.auth.login({ email, password });
       await applyAuthResponse(response);
-      if (!response.user.email_verified) {
+      if (mustVerifyEmail && !response.user.email_verified) {
         router.replace("/verify-email");
       } else {
         router.replace("/");
       }
     },
-    [applyAuthResponse, router],
+    [applyAuthResponse, mustVerifyEmail, router],
   );
 
   const register = useCallback(
     async (email: string, password: string, organizationName: string) => {
       const response = await api.auth.register({ email, password, organization_name: organizationName });
       await applyAuthResponse(response);
-      router.replace(response.user.email_verified ? "/" : "/verify-email");
+      if (mustVerifyEmail && !response.user.email_verified) {
+        router.replace("/verify-email");
+      } else {
+        router.replace("/");
+      }
     },
-    [applyAuthResponse, router],
+    [applyAuthResponse, mustVerifyEmail, router],
   );
 
   const logout = useCallback(async () => {

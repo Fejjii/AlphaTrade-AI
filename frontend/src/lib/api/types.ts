@@ -71,6 +71,8 @@ export interface HealthResponse {
   environment: string;
   execution_mode: string;
   real_trading_enabled: boolean;
+  must_verify_email: boolean;
+  demo_seed_enabled?: boolean;
   timestamp: string;
 }
 

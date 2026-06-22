@@ -173,6 +173,7 @@ class Settings(BaseSettings):
     password_reset_expire_hours: int = 2
     invitation_expire_hours: int = 168
     require_email_verified: bool | None = None
+    demo_seed_enabled: bool = False
     email_auto_verify_local: bool = False
     smtp_host: str = ""
     smtp_port: int = 587

@@ -20,6 +20,8 @@ class HealthResponse(BaseModel):
     environment: str
     execution_mode: str
     real_trading_enabled: bool
+    must_verify_email: bool
+    demo_seed_enabled: bool = False
     timestamp: datetime
 
 

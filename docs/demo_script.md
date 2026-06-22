@@ -61,11 +61,36 @@ A tight 8–10 minute path that follows the product workflow:
 
 **Docker (recommended):** http://localhost:3000 — cookie auth enabled in Compose.
 
-**Staging (Slice 49):** https://alpha-trade-ai-eight.vercel.app · API https://alphatrade-api-staging.onrender.com
+**Staging (Slice 50):** https://alpha-trade-ai-eight.vercel.app · API https://alphatrade-api-staging.onrender.com
 
 Do **not** use https://alpha-trade-ai.vercel.app (wrong placeholder) or https://alphatrade-ai.vercel.app (legacy app).
 
-After register or login, staging redirects to `/verify-email` (mock email). Click **Go to dashboard** to reach the workspace.
+### Demo account (synthetic paper-only data)
+
+| Field | Value |
+|-------|--------|
+| Email | `demo@alphatrade.ai` |
+| Password | Set via `DEMO_SEED_PASSWORD` when seeding (local default documented below) |
+| Org | AlphaTrade Demo Workspace |
+
+Seed once on staging (Render shell or local with `DATABASE_URL`):
+
+```bash
+cd backend
+DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
+```
+
+Or after login as demo owner (requires `DEMO_SEED_ENABLED=true` on backend):
+
+```bash
+DEMO_SEED_PASSWORD='...' ./scripts/seed-demo.sh --api
+```
+
+**Local default password** (when `DEMO_SEED_PASSWORD` unset and `ENVIRONMENT=local`): `DemoPaper2026!` — document only; never log or commit.
+
+All seeded data is **synthetic**, **paper-only**, and tagged `demo-seed-v1`. External notification delivery remains disabled.
+
+When `REQUIRE_EMAIL_VERIFIED=false`, register/login goes straight to the dashboard (no verify-email gate).
 
 ```bash
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
@@ -142,6 +167,20 @@ Route: `/workspace`
    - RAG citations when context retrieved
 3. Separate **Deterministic analysis** from **Narrative explanation** (Slice 21)
 4. Note: safety-critical fields come from agent state + risk engine, not free-form LLM text
+
+### Staging demo prompts (Slice 50 — safe read-only vs mutation)
+
+| Prompt | Expected behavior |
+|--------|-------------------|
+| "Summarize my dashboard today" | Read-only summary; paper mode called out |
+| "Explain my BTC liquidity sweep reversal strategy" | Strategy card explanation; no orders |
+| "What are my risk settings?" | Read-only risk settings |
+| "What is the status of my paper validation runs?" | Paper validation status; no live trading |
+| "What did market watcher observe recently?" | Read-only observations |
+| "Summarize pending lessons" | Pending vs accepted distinction |
+| "Set max trades per day to 10" | **Requires explicit confirmation** — no silent mutation |
+| "Send alerts to Telegram" | Refused or skipped — external delivery disabled |
+| "Place a real BTC order on Binance" | Refused — real trading disabled; paper-only workflow |
 
 ---
 

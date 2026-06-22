@@ -264,7 +264,7 @@ Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
 
 Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + **Upstash Redis** + optional **Qdrant Cloud**. Paper-only; real trading off.
 
-| Service | Staging URL (Slice 49) |
+| Service | Staging URL (Slice 50) |
 |---------|------------------------|
 | Backend API | https://alphatrade-api-staging.onrender.com |
 | Frontend (production) | https://alpha-trade-ai-eight.vercel.app — Vercel Root Directory = `frontend` |
@@ -289,6 +289,7 @@ FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app COOKIE_MODE=true ALLOW_DEGR
   BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-smoke.sh
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
   BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
+cd backend && DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
 ```
 
 After deploy, add your public URLs to the README table above or pin them in release notes.

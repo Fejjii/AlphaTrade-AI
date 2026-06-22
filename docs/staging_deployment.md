@@ -1,8 +1,8 @@
-# Staging Deployment (Slice 49)
+# Staging Deployment (Slice 50)
 
 Public staging for **AlphaTrade AI** — paper-only execution, no live trading, no live Stripe.
 This document records live URLs, Vercel/Render configuration, smoke commands, browser demo flow,
-and known gaps after Slice 49 validation (baseline commit `8b29444`).
+and known gaps after Slice 50 demo seed (baseline commit `738c34a`).
 
 > **Never commit secrets.** Store credentials only in Render / Vercel / Upstash dashboards.
 
@@ -75,6 +75,7 @@ Apply in Render Dashboard → **Environment** → **Save** → **Manual Deploy**
 | `MARKET_WATCHER_ENABLED` | `false` |
 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` |
 | `REQUIRE_EMAIL_VERIFIED` | `false` (frictionless demo login) |
+| `DEMO_SEED_ENABLED` | `true` (enables owner-only `POST /demo/seed` on staging) |
 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (when Redis URL invalid) |
 | `REDIS_URL` | Valid `rediss://...` (Upstash/Render) **or** fix/clear invalid scheme |
 | `QDRANT_URL` | Reachable HTTPS endpoint **or** empty (in-memory RAG fallback) |
@@ -120,6 +121,13 @@ ALLOW_DEGRADED_READY=true \
 BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 ./scripts/staging-smoke.sh
 
+# Slice 50 — seed synthetic demo tenant (Render shell)
+cd backend
+DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
+
+# Or owner-authenticated API seed (after demo user exists)
+DEMO_SEED_PASSWORD='...' ./scripts/seed-demo.sh --api
+
 # Slice 48 extended live smoke
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
 BACKEND_URL=https://alphatrade-api-staging.onrender.com \
@@ -161,8 +169,8 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/market-watcher
 
 Open **https://alpha-trade-ai-eight.vercel.app**
 
-1. Register or log in at `/register` or `/login`
-2. After sign-in, the app redirects to `/verify-email` (mock email provider). Click **Go to dashboard** to continue the demo.
+1. Log in as **`demo@alphatrade.ai`** (after running demo seed) or register a new user
+2. With `REQUIRE_EMAIL_VERIFIED=false`, login/register goes directly to the dashboard
 3. Confirm **Paper mode active** and **Real trading disabled** badges
 4. Dashboard → Today's discipline, workflow stepper
 5. Risk Settings → limits and save
@@ -199,11 +207,11 @@ Open **https://alpha-trade-ai-eight.vercel.app**
 | Gap | Impact | Fix |
 |-----|--------|-----|
 | `alpha-trade-ai.vercel.app` blocked | Intended short URL unavailable | Use `alpha-trade-ai-eight.vercel.app`; reclaim domain separately |
-| Mock email verification UX | Register/login redirect to `/verify-email` | Click **Go to dashboard**; or add real email provider in a later slice |
+| Mock email verification UX | Optional on staging when `REQUIRE_EMAIL_VERIFIED=false` | Login/register skip verify-email; production still enforces verification |
 | `REDIS_URL` cleared | In-memory rate-limit fallback | Use `rediss://...` or keep `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true` |
 | Qdrant unreachable | In-memory vector fallback | Fix `QDRANT_URL` or leave empty |
 | Preview deploy SSO | Automated preview checks blocked | Use production alias for smoke |
-| Sparse demo data | Dashboard cards may be empty for new users | Seed demo data in Slice 50+ (after auth E2E confirmed) |
+| Demo data | Run seed after deploy | `uv run python scripts/seed_demo.py` on Render shell |
 
 **Real trading remains disabled.** All execution is paper-only.
 

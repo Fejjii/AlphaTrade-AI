@@ -25,6 +25,7 @@ from app.api.routes import (
     billing,
     chat,
     dashboard,
+    demo,
     execution,
     health,
     human_vs_system,
@@ -154,6 +155,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         usage.router,
         billing.router,
         dashboard.router,
+        demo.router,
         tools.router,
     ):
         app.include_router(r)

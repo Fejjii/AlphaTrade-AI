@@ -173,8 +173,8 @@ Manual:
 - [ ] Paper banner visible
 - [ ] Provider status shows paper exchange
 - [ ] No secrets in screenshots
-- [ ] Slice 49: `staging-live-smoke.sh` passes with `FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app`
-- [ ] Browser: register/login → `/verify-email` → **Go to dashboard** → refresh persists session
+- [ ] Slice 50: demo seed run (`uv run python scripts/seed_demo.py` or `POST /demo/seed`)
+- [ ] Login as `demo@alphatrade.ai` shows rich dashboard data
 
 ---
 

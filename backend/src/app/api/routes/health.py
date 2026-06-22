@@ -27,6 +27,8 @@ async def health(settings: SettingsDep) -> HealthResponse:
         environment=settings.environment.value,
         execution_mode=settings.execution_mode.value,
         real_trading_enabled=settings.real_trading_enabled,
+        must_verify_email=settings.must_verify_email,
+        demo_seed_enabled=settings.demo_seed_enabled,
         timestamp=datetime.now(UTC),
     )
 

@@ -14,10 +14,18 @@ function VerifyEmailContent() {
   const params = useSearchParams();
   const token = params.get("token");
   const { user, loading, refreshProfile } = useAuth();
+  const [mustVerifyEmail, setMustVerifyEmail] = useState(true);
   const [status, setStatus] = useState<"idle" | "confirming" | "success" | "error">(
     token ? "confirming" : "idle",
   );
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.health
+      .get()
+      .then((health) => setMustVerifyEmail(health.must_verify_email))
+      .catch(() => setMustVerifyEmail(true));
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -34,6 +42,8 @@ function VerifyEmailContent() {
     })();
   }, [token, refreshProfile]);
 
+  const canContinueWithoutVerification = Boolean(user) && !mustVerifyEmail;
+
   if (loading) {
     return <p className="text-sm text-zinc-400">Loading…</p>;
   }
@@ -42,21 +52,33 @@ function VerifyEmailContent() {
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-50">Email verification</h1>
-        <p className="text-sm text-zinc-400">Confirm your address to unlock staging and production policies.</p>
+        <p className="text-sm text-zinc-400">
+          {canContinueWithoutVerification
+            ? "Staging demo mode — email verification is optional. Continue to the paper-only dashboard."
+            : "Confirm your address to unlock staging and production policies."}
+        </p>
       </div>
       <PaperModeBanner />
       {status === "confirming" ? <p className="text-sm text-zinc-400">Confirming your link…</p> : null}
       {status === "success" && message ? <SuccessState message={message} /> : null}
       {status === "error" && message ? <ErrorState message={message} /> : null}
-      {user && !user.email_verified ? <EmailVerificationNotice /> : null}
+      {user && !user.email_verified && mustVerifyEmail ? <EmailVerificationNotice /> : null}
       {user?.email_verified ? (
         <SuccessState message="Your email is verified. You can continue to the workspace." />
+      ) : null}
+      {canContinueWithoutVerification ? (
+        <Link
+          href="/"
+          className="inline-flex h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500"
+        >
+          Continue to dashboard
+        </Link>
       ) : null}
       <Link
         href={user ? "/" : "/login"}
         className="inline-flex h-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 px-4 text-sm font-medium text-zinc-100 hover:bg-zinc-700"
       >
-        {user ? "Go to dashboard" : "Sign in"}
+        {user ? (canContinueWithoutVerification ? "Open dashboard (secondary)" : "Go to dashboard") : "Sign in"}
       </Link>
     </div>
   );

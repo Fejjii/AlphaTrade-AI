@@ -84,6 +84,23 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 ./scripts/staging-live-smoke.sh
 ```
 
+### Demo seed (Slice 50 — synthetic paper-only tenant)
+
+Render shell or local with staging `DATABASE_URL`:
+
+```bash
+cd backend
+DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
+```
+
+Owner API seed (requires `DEMO_SEED_ENABLED=true` and deployed backend):
+
+```bash
+DEMO_SEED_PASSWORD='...' BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/seed-demo.sh --api
+```
+
+Demo login: `demo@alphatrade.ai` · Frontend: https://alpha-trade-ai-eight.vercel.app
+
 Local Docker (cookie mode):
 
 ```bash
