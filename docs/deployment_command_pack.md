@@ -77,9 +77,10 @@ ALLOW_DEGRADED_READY=true \
 BASE_URL=<BACKEND_URL> \
 ./scripts/staging-smoke.sh
 
-# Slice 47 extended live smoke (dashboard, risk, notifications, market watcher)
-FRONTEND_URL=<FRONTEND_URL> \
-BACKEND_URL=<BACKEND_URL> \
+# Slice 47 extended live smoke (dashboard, risk, notifications, market watcher, CORS)
+FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
+COOKIE_MODE=true \
+BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 ./scripts/staging-live-smoke.sh
 ```
 

@@ -1,19 +1,19 @@
-# Staging Deployment (Slice 48)
+# Staging Deployment (Slice 49)
 
 Public staging for **AlphaTrade AI** — paper-only execution, no live trading, no live Stripe.
 This document records live URLs, Vercel/Render configuration, smoke commands, browser demo flow,
-and known gaps after Slice 48 QA (baseline commit `b4c30d0`).
+and known gaps after Slice 49 validation (baseline commit `8b29444`).
 
 > **Never commit secrets.** Store credentials only in Render / Vercel / Upstash dashboards.
 
 ---
 
-## Live URLs (Slice 48)
+## Live URLs (Slice 49)
 
-| Service | URL | Status (2026-06-18) |
+| Service | URL | Status (2026-06-22) |
 |---------|-----|---------------------|
-| **Backend API** | https://alphatrade-api-staging.onrender.com | Live — paper mode, API smoke OK |
-| **Frontend (production alias)** | https://alpha-trade-ai-eight.vercel.app | **Next.js app** — `/login` 200, API URL baked in |
+| **Backend API** | https://alphatrade-api-staging.onrender.com | Live — `environment=staging`, paper mode, CORS OK |
+| **Frontend (production alias)** | https://alpha-trade-ai-eight.vercel.app | **Next.js app** — `/login` + `/register` 200, Render API in bundle |
 | **Frontend (git-main alias)** | https://alpha-trade-ai-git-main-alphatrade-ai.vercel.app | Same deployment family |
 | **Blocked / wrong** | https://alpha-trade-ai.vercel.app | Unrelated Vite placeholder (`Your Project`) — **do not use** |
 | **Legacy / wrong** | https://alphatrade-ai.vercel.app | Unrelated static app — **do not use** |
@@ -137,17 +137,22 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/market-watcher
 - `GET /providers/status` → exchange mock/paper-only, billing mock/disabled
 - Authenticated routes return paper-only safety fields
 
-**Slice 48 live results:**
+**Slice 49 live results:**
 
 | Check | Result |
 |-------|--------|
-| `/health` | OK — paper, real trading off (`environment` still `local` until Render env updated) |
-| `/health/ready` | OK |
+| `/health` | OK — `environment=staging`, `execution_mode=paper`, `real_trading_enabled=false` |
+| `/health/ready` | OK — `ready=true` |
 | `verify-safety.sh` | Passed |
-| `staging-live-smoke.sh` | Passed (API routes); CORS preflight **WARN HTTP 400** until Render `CORS_ORIGINS` redeploy |
-| Frontend `/` + `/login` | OK on `alpha-trade-ai-eight.vercel.app` (Next.js) |
-| Frontend `alpha-trade-ai.vercel.app` | Wrong placeholder app — blocked domain |
-| `notifications-smoke.sh` | Passed — external delivery disabled |
+| `staging-live-smoke.sh` | Passed — auth, dashboard, notifications, CORS |
+| CORS preflight | OK — HTTP 200 from `alpha-trade-ai-eight.vercel.app` |
+| Frontend `/` + `/login` + `/register` | OK on `alpha-trade-ai-eight.vercel.app` (Next.js, title AlphaTrade AI) |
+| Production JS API URL | `alphatrade-api-staging.onrender.com` (no `localhost:8000`) |
+| Browser register/login | OK — cookie auth; redirects to `/verify-email` (mock email) |
+| Browser dashboard | OK — via **Go to dashboard** on verify-email page |
+| Auth persistence | OK — session survives page refresh |
+| Logout / login again | OK |
+| `notifications-smoke.sh` | Passed — `effective_external_enabled=false`, `paper_only=true` |
 | `market-watcher-smoke.sh` | Passed — watcher/bridge env off |
 
 ---
@@ -156,27 +161,26 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/market-watcher
 
 Open **https://alpha-trade-ai-eight.vercel.app**
 
-1. Register or log in (`REQUIRE_EMAIL_VERIFIED=false` on backend recommended)
-2. Confirm **Paper mode active** and **Real trading disabled** badges
-3. Dashboard → Today's discipline, workflow stepper
-4. Risk Settings → limits and save
-5. Strategy Lab → backtest / paper eligibility
-6. Paper Validation → scan/tick (simulated)
-7. Market Watcher → manual scan (env off = safe status)
-8. Alerts → delivery summary; external skipped
-9. Notifications Settings → webhook/Telegram off; test notification safe
-10. Lessons → pending / accept flow
-11. AI Workspace → read-only question; mutation requires confirmation
-12. Confirm no real trade path
+1. Register or log in at `/register` or `/login`
+2. After sign-in, the app redirects to `/verify-email` (mock email provider). Click **Go to dashboard** to continue the demo.
+3. Confirm **Paper mode active** and **Real trading disabled** badges
+4. Dashboard → Today's discipline, workflow stepper
+5. Risk Settings → limits and save
+6. Strategy Lab → backtest / paper eligibility
+7. Paper Validation → scan/tick (simulated)
+8. Market Watcher → manual scan (env off = safe status)
+9. Alerts → delivery summary; external skipped
+10. Notifications Settings → webhook/Telegram off; test notification safe
+11. Lessons → pending / accept flow
+12. AI Workspace → read-only question; mutation requires confirmation
+13. Confirm no real trade path
 
-**Blocked until Render CORS fix:** cross-origin API calls from the browser (register/login/dashboard) will fail with CORS 400 until `CORS_ORIGINS` includes the Vercel alias and backend is redeployed.
-
-**CORS / auth cookie checks (after Render redeploy):**
+**CORS / auth cookie checks (Slice 49 — verified):**
 
 - OPTIONS preflight returns 200/204 (not 400)
-- Register/login from browser works
-- Authenticated requests persist across page refresh (httpOnly refresh cookie)
-- Logout clears session
+- Register/login from browser works (httpOnly refresh cookie set)
+- Authenticated requests persist across page refresh
+- Logout clears session; login again works
 - No mixed content; API URL is `https://alphatrade-api-staging.onrender.com` (not localhost)
 
 ---
@@ -190,17 +194,16 @@ Open **https://alpha-trade-ai-eight.vercel.app**
 
 ---
 
-## Known staging limitations (Slice 48)
+## Known staging limitations (Slice 49)
 
 | Gap | Impact | Fix |
 |-----|--------|-----|
-| `ENVIRONMENT=local` on live API | Misleading health metadata | Set `ENVIRONMENT=staging` on Render |
-| `CORS_ORIGINS` not set to Vercel alias | Browser API calls fail (OPTIONS 400) | Apply Render env table above, redeploy |
 | `alpha-trade-ai.vercel.app` blocked | Intended short URL unavailable | Use `alpha-trade-ai-eight.vercel.app`; reclaim domain separately |
-| `REDIS_URL` invalid scheme | In-memory rate-limit fallback | Use `rediss://...` or enable `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true` |
+| Mock email verification UX | Register/login redirect to `/verify-email` | Click **Go to dashboard**; or add real email provider in a later slice |
+| `REDIS_URL` cleared | In-memory rate-limit fallback | Use `rediss://...` or keep `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true` |
 | Qdrant unreachable | In-memory vector fallback | Fix `QDRANT_URL` or leave empty |
 | Preview deploy SSO | Automated preview checks blocked | Use production alias for smoke |
-| Browser demo | Blocked on CORS until Render redeploy | Manual Render env update required |
+| Sparse demo data | Dashboard cards may be empty for new users | Seed demo data in Slice 50+ (after auth E2E confirmed) |
 
 **Real trading remains disabled.** All execution is paper-only.
 

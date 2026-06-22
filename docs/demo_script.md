@@ -61,13 +61,17 @@ A tight 8–10 minute path that follows the product workflow:
 
 **Docker (recommended):** http://localhost:3000 — cookie auth enabled in Compose.
 
-**Staging (Slice 48):** https://alpha-trade-ai-eight.vercel.app · API https://alphatrade-api-staging.onrender.com
+**Staging (Slice 49):** https://alpha-trade-ai-eight.vercel.app · API https://alphatrade-api-staging.onrender.com
 
 Do **not** use https://alpha-trade-ai.vercel.app (wrong placeholder) or https://alphatrade-ai.vercel.app (legacy app).
 
+After register or login, staging redirects to `/verify-email` (mock email). Click **Go to dashboard** to reach the workspace.
+
 ```bash
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
-BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
+COOKIE_MODE=true \
+BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+./scripts/staging-live-smoke.sh
 ```
 
 **Local dev:** Register at `/register`, sign in at `/login`. Bearer tokens in `sessionStorage`.

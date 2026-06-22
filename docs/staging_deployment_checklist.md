@@ -53,7 +53,7 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 15 | `MARKET_DATA_ENABLED` | `true` | ☐ |
 | 16 | `OPENAI_API_KEY` | Optional (mock/fallback without) | ☐ |
 | 17 | `RATE_LIMIT_USE_REDIS` | `true` | ☐ |
-| 18 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `false` | ☐ |
+| 18 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (when Redis URL cleared/invalid on staging) | ☐ |
 | 19 | `ACCESS_TOKEN_DENYLIST_ENABLED` | `true` | ☐ |
 | 20 | `ACCESS_TOKEN_DENYLIST_USE_REDIS` | `true` | ☐ |
 | 21 | `LOG_JSON` | `true` (recommended) | ☐ |
@@ -64,7 +64,6 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 26 | `MARKET_WATCHER_ENABLED` | `false` | ☐ |
 | 27 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` | ☐ |
 | 28 | `REQUIRE_EMAIL_VERIFIED` | `false` (demo login) | ☐ |
-| 29 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (if Redis invalid) | ☐ |
 
 Validate before deploy:
 
@@ -174,6 +173,8 @@ Manual:
 - [ ] Paper banner visible
 - [ ] Provider status shows paper exchange
 - [ ] No secrets in screenshots
+- [ ] Slice 49: `staging-live-smoke.sh` passes with `FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app`
+- [ ] Browser: register/login → `/verify-email` → **Go to dashboard** → refresh persists session
 
 ---
 

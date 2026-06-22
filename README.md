@@ -264,7 +264,7 @@ Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
 
 Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + **Upstash Redis** + optional **Qdrant Cloud**. Paper-only; real trading off.
 
-| Service | Staging URL (Slice 47) |
+| Service | Staging URL (Slice 49) |
 |---------|------------------------|
 | Backend API | https://alphatrade-api-staging.onrender.com |
 | Frontend (production) | https://alpha-trade-ai-eight.vercel.app — Vercel Root Directory = `frontend` |
