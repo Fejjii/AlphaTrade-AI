@@ -295,6 +295,9 @@ class QdrantVectorStore:
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
 
     def status(self) -> ProviderStatus:
+        # The hosted Qdrant URL is intentionally omitted from `detail`: this
+        # status is served publicly via the unauthenticated /providers/status
+        # endpoint. The endpoint is logged server-side at connect time instead.
         if self._using_qdrant:
             return ProviderStatus(
                 name=self.name,
@@ -302,7 +305,7 @@ class QdrantVectorStore:
                 health=ProviderHealth.HEALTHY,
                 using_fallback=False,
                 is_mock=False,
-                detail=f"Qdrant connected at {self._url}.",
+                detail="Qdrant connected.",
             )
         return ProviderStatus(
             name=self.name,
@@ -310,7 +313,7 @@ class QdrantVectorStore:
             health=ProviderHealth.DEGRADED,
             using_fallback=True,
             is_mock=True,
-            detail=f"Qdrant unavailable at {self._url} — in-memory vector fallback active.",
+            detail="Qdrant unavailable — in-memory vector fallback active.",
         )
 
 

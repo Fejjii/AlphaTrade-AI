@@ -38,10 +38,12 @@ class RedisInfrastructureProvider:
             self._using_redis = True
             self._detail = "Redis connected for rate limiting."
         except Exception as exc:
+            # Connection errors can include host/port; omit from public provider status.
+            logger.warning("redis_connect_failed", error=str(exc))
             if settings.rate_limit_allow_in_memory_fallback:
-                self._detail = f"Redis unavailable ({exc}) — in-memory rate limit fallback active."
+                self._detail = "Redis unavailable — in-memory rate limit fallback active."
             else:
-                self._detail = f"Redis unavailable and fallback disabled: {exc}"
+                self._detail = "Redis unavailable and fallback disabled."
 
     def status(self) -> ProviderStatus:
         if not self._settings.rate_limit_use_redis:
