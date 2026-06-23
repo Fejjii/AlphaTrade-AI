@@ -4,13 +4,31 @@
 
 **Human-in-the-loop AI trading copilot** for crypto markets — structured analysis, deterministic risk, explicit approvals, and **paper-only** execution.
 
-> **Safety:** Paper trading only. Real exchange execution is **disabled by default** and **not wired** in this release. No broker connectivity. No live Stripe charges unless billing is explicitly enabled with keys.
+> **Safety:** Paper trading only. Real exchange execution is **disabled by default** and **not wired** in this release. No broker connectivity. No live Stripe charges unless billing is explicitly enabled with keys. External notifications (Telegram, webhook) are **disabled by default**. Demo data is **synthetic and paper-only**.
+
+## Live demo (staging)
+
+| | |
+|---|---|
+| **App** | https://alpha-trade-ai-eight.vercel.app |
+| **API** | https://alphatrade-api-staging.onrender.com |
+| **Demo user** | `demo@alphatrade.ai` |
+| **Demo password** | Private — set on Render as `DEMO_SEED_PASSWORD`; not stored in this repo |
+| **Walkthrough** | [docs/demo_script.md](docs/demo_script.md) (5–8 min portfolio flow) |
+
+Do **not** use https://alpha-trade-ai.vercel.app (wrong placeholder). Reseed demo data: `DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api`
+
+## What it is and why it exists
+
+AlphaTrade AI closes the gap between “chat about trading” and a **governed decision workflow**: strategy cards → backtest → paper validation → lessons, with a deterministic risk engine and human approval before any simulated execution. Built as a portfolio-grade full-stack AI platform with safety-first defaults.
+
+Portfolio positioning: [docs/portfolio_positioning.md](docs/portfolio_positioning.md)
 
 ## At a glance
 
 | | |
 |---|---|
-| **Release** | `v0.1.0-paper-mvp` — Slices 1–46 (notification preferences, Telegram/webhook delivery) |
+| **Release** | `v0.1.0-paper-mvp` — Slices 1–55 (staging demo, portfolio walkthrough) |
 | **Execution** | `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` |
 | **Providers** | Mock by default; optional OpenAI, Qdrant, Binance public (read-only) |
 | **Stack** | FastAPI · LangGraph · PostgreSQL · Redis · Qdrant · Next.js 15 |
@@ -197,21 +215,16 @@ uv run python ../evaluation/evaluate_guardrails.py
 
 ## Demo workflow
 
-15-minute walkthrough for portfolio or stakeholder demos:
+**5–8 minute portfolio demo** (recommended for reviewers):
 
-1. **Dashboard** — paper-only status, workflow stepper, "what to do next", today's discipline
-2. **Market Monitor** — read-only ticker/OHLCV with live/mock labels
-3. **AI Workspace** — chat: *"Analyze BTC pullback on 4h"*
-4. **Proposals** — structured plan, risk result, exit levels
-5. **Approvals** — approve for paper / reject / modify
-6. **Paper execution** — simulated order on approved proposal
-7. **Positions** — paper position lifecycle
-8. **Journal** — lessons and tags → RAG sync
-9. **Knowledge** — search ingested journal/playbook content
-10. **Usage** — token/cost estimates and quotas
-11. **Audit** — proposal, approval, execution events
+1. **Dashboard** — paper-only status, workflow stepper, discipline snapshot
+2. **Strategy Lab** — three seeded strategies, backtest and paper eligibility
+3. **Paper Validation** — simulated scan/tick runs
+4. **Alerts & Lessons** — inform-only alerts; pending lesson review
+5. **Risk Settings** — tenant discipline limits
+6. **AI Workspace** — safe read-only prompts + refusal of real trading and silent mutations
 
-Full script: [docs/demo_script.md](docs/demo_script.md)
+Full script with copy-paste prompts: [docs/demo_script.md](docs/demo_script.md) · Screenshots: [docs/screenshots_checklist.md](docs/screenshots_checklist.md)
 
 ## Portfolio and Interview Resources
 
@@ -219,13 +232,14 @@ Packaging for CV, GitHub, LinkedIn, and technical interviews (no product feature
 
 | Document | Purpose |
 |----------|---------|
+| [portfolio_positioning.md](docs/portfolio_positioning.md) | Problem, solution, architecture, AI patterns, safety, next steps |
+| [demo_script.md](docs/demo_script.md) | 5–8 min live staging walkthrough with AI prompts |
+| [screenshots_checklist.md](docs/screenshots_checklist.md) | Portfolio and README capture list |
 | [interview_package.md](docs/interview_package.md) | Full system overview — architecture, AI, risk, safety, roadmap |
 | [interview_pitch.md](docs/interview_pitch.md) | 30s / 60s / 2m pitches, demo script, expected Q&A |
 | [cv_project_entry.md](docs/cv_project_entry.md) | Resume bullets, stack line, role keywords |
 | [linkedin_project_post.md](docs/linkedin_project_post.md) | Short, medium, and technical LinkedIn posts |
 | [technical_qa.md](docs/technical_qa.md) | Stack and design decisions (FastAPI, LangGraph, RAG, etc.) |
-
-Live demo: [docs/demo_script.md](docs/demo_script.md) · Screenshots: [docs/screenshots_checklist.md](docs/screenshots_checklist.md)
 
 ## Environment variables
 
@@ -249,8 +263,10 @@ Templates: `.env.example`, `.env.docker.example`, `.env.staging.example`, `front
 - Stripe billing is scaffold-only — no live charges by default
 - LLM narrative is optional; deterministic analysis + risk engine remain authoritative
 - Binance public API may rate-limit; mock fallback is automatic
+- **Staging:** Qdrant may be degraded with in-memory vector fallback (demo AI Workspace still works); mock LLM/embeddings unless OpenAI is configured
+- **Staging:** External notifications disabled by default; demo password is private (Render env only)
 
-Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
+Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md) · Staging status: [docs/staging_deployment.md](docs/staging_deployment.md)
 
 ## Roadmap
 
@@ -264,11 +280,12 @@ Full list: [docs/limitations_roadmap.md](docs/limitations_roadmap.md)
 
 Managed path: **Vercel** (frontend) + **Render** (API) + **Render Postgres** + **Upstash Redis** + optional **Qdrant Cloud**. Paper-only; real trading off.
 
-| Service | Staging URL (Slice 50) |
+| Service | Staging URL (Slice 55) |
 |---------|------------------------|
 | Backend API | https://alphatrade-api-staging.onrender.com |
 | Frontend (production) | https://alpha-trade-ai-eight.vercel.app — Vercel Root Directory = `frontend` |
 | Frontend (do not use) | https://alpha-trade-ai.vercel.app — blocked/wrong placeholder |
+| Demo user | `demo@alphatrade.ai` — password in Render `DEMO_SEED_PASSWORD` only |
 
 | Doc | Purpose |
 |-----|---------|
@@ -289,7 +306,9 @@ FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app COOKIE_MODE=true ALLOW_DEGR
   BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-smoke.sh
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
   BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/staging-live-smoke.sh
-cd backend && DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
+DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api
+export DEMO_SEED_PASSWORD='<private>' && ./scripts/validate-demo-staging.sh
+export DEMO_SEED_PASSWORD='<private>' && ./scripts/validate-demo-chat-staging.sh
 ```
 
 After deploy, add your public URLs to the README table above or pin them in release notes.
@@ -300,7 +319,7 @@ Full reference: [docs/deployment.md](docs/deployment.md) · Security: [docs/secu
 
 ## Development status
 
-Built in vertical slices (1–40 complete). See [docs/limitations_roadmap.md](docs/limitations_roadmap.md) for scope boundaries.
+Built in vertical slices (1–55 complete). Staging is demo-ready with paper-only execution. See [docs/limitations_roadmap.md](docs/limitations_roadmap.md) for scope boundaries.
 
 **Not financial advice.** Paper simulation and backtests do not guarantee real-world results.
 
