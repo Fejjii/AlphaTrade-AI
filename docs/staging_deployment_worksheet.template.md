@@ -20,7 +20,7 @@
 | Placeholder | Notes |
 |-------------|--------|
 | `DATABASE_URL` | Render Postgres external URL (`postgres://` OK; app normalizes driver) |
-| `REDIS_URL` | Upstash `rediss://...` or Render Redis URL |
+| `REDIS_URL` | Upstash: `rediss://default:<token>@<host>.upstash.io:6379` (TLS). **Do not** paste `redis-cli --tls -u ...` |
 | `QDRANT_URL` | Qdrant Cloud HTTPS, **or empty** for in-memory RAG on staging |
 | `QDRANT_API_KEY` | Optional; required if Qdrant Cloud uses API key auth |
 

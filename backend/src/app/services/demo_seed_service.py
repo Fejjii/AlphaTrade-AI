@@ -6,28 +6,33 @@ Never enabled in production.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Environment, Settings
 from app.core.errors import ForbiddenError, ValidationAppError
 from app.db.models import (
     DailyRiskState,
+    EmailVerificationToken,
     LessonCandidate,
     MarketWatcherObservation,
     Membership,
     Organization,
+    OrganizationInvitation,
     PaperSignal,
     PaperTrade,
     PaperTradeEvent,
     PaperValidationAlert,
     PaperValidationRun,
+    PasswordResetToken,
+    RefreshToken,
     TradeJournal,
     User,
     UserStrategy,
@@ -62,6 +67,9 @@ logger = structlog.get_logger(__name__)
 DEMO_EMAIL = "demo@alphatrade.ai"
 DEMO_ORG_NAME = "AlphaTrade Demo Workspace"
 DEMO_SEED_TAG = "demo-seed-v1"
+BOOTSTRAP_SEED_EMAIL_RE = re.compile(
+    r"^(?:demo-seed-bootstrap|seed-bootstrap)-\d+@example\.com$",
+)
 
 # Stable UUIDs — idempotent upserts and targeted cleanup.
 DEMO_ORG_ID = uuid.UUID("a1000001-0000-4000-8000-000000000001")
@@ -167,12 +175,14 @@ class DemoSeedService:
         self._seed_journals(org.id, user.id)
         self._seed_risk_settings(org.id, user.id)
         self._seed_market_watcher(org.id, user.id)
+        bootstrap_removed = self._cleanup_bootstrap_seed_accounts()
         self._session.commit()
         logger.info(
             "demo_seed_completed",
             organization_id=str(org.id),
             user_id=str(user.id),
             email=DEMO_EMAIL,
+            bootstrap_accounts_removed=bootstrap_removed,
         )
         return DemoSeedResult(
             organization_id=org.id,
@@ -231,6 +241,52 @@ class DemoSeedService:
                 )
         self._session.flush()
         return org, user
+
+    def _cleanup_bootstrap_seed_accounts(self) -> int:
+        """Remove temporary API seed bootstrap owners; never touches demo tenant."""
+        removed = 0
+        candidates = self._session.scalars(select(User)).all()
+        for user in candidates:
+            if user.id == DEMO_USER_ID or not BOOTSTRAP_SEED_EMAIL_RE.match(user.email):
+                continue
+            memberships = self._session.scalars(
+                select(Membership).where(Membership.user_id == user.id)
+            ).all()
+            org_ids = [
+                membership.organization_id
+                for membership in memberships
+                if membership.organization_id != DEMO_ORG_ID
+            ]
+            self._session.execute(
+                delete(RefreshToken).where(RefreshToken.user_id == user.id)
+            )
+            self._session.execute(
+                delete(EmailVerificationToken).where(
+                    EmailVerificationToken.user_id == user.id
+                )
+            )
+            self._session.execute(
+                delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+            )
+            self._session.execute(delete(Membership).where(Membership.user_id == user.id))
+            for org_id in org_ids:
+                remaining_members = self._session.scalar(
+                    select(func.count())
+                    .select_from(Membership)
+                    .where(Membership.organization_id == org_id)
+                )
+                if remaining_members == 0:
+                    self._session.execute(
+                        delete(OrganizationInvitation).where(
+                            OrganizationInvitation.organization_id == org_id
+                        )
+                    )
+                    self._session.execute(
+                        delete(Organization).where(Organization.id == org_id)
+                    )
+            self._session.execute(delete(User).where(User.id == user.id))
+            removed += 1
+        return removed
 
     def _clear_demo_entities(self) -> None:
         trade_ids = [DEMO_TRADE_OPEN, DEMO_TRADE_CLOSED]

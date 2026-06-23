@@ -20,6 +20,7 @@ dist/
 
 # Staging worksheet with real URLs/secrets (template is committed)
 docs/staging_deployment_worksheet.local.md
+docs/staging_ops.local.md
 
 # Test / coverage
 .pytest_cache/

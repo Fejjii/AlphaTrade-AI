@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 
 import pytest
@@ -12,10 +13,17 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import Environment, Settings
 from app.db.base import Base
-from app.db.models import LessonCandidate, PaperValidationAlert, UserStrategy
+from app.db.models import (
+    LessonCandidate,
+    Membership,
+    Organization,
+    PaperValidationAlert,
+    User,
+    UserStrategy,
+)
 from app.db.session import get_session
 from app.main import create_app
-from app.schemas.common import LessonCandidateStatus
+from app.schemas.common import LessonCandidateStatus, MembershipRole
 from app.services.dashboard_summary_service import DashboardSummaryService
 from app.services.demo_seed_service import (
     DEMO_EMAIL,
@@ -192,3 +200,38 @@ def test_health_exposes_must_verify_email(demo_client: TestClient) -> None:
     body = health.json()
     assert body["must_verify_email"] is False
     assert body["real_trading_enabled"] is False
+
+
+def test_demo_seed_removes_bootstrap_accounts(
+    demo_seed_env: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, settings = demo_seed_env
+    with factory() as session:
+        bootstrap_org = Organization(
+            id=uuid.uuid4(),
+            name="Demo Seed Bootstrap",
+        )
+        bootstrap_user = User(
+            id=uuid.uuid4(),
+            email="demo-seed-bootstrap-9999999999@example.com",
+            hashed_password="not-used",
+            email_verified=False,
+        )
+        session.add(bootstrap_org)
+        session.add(bootstrap_user)
+        session.flush()
+        session.add(
+            Membership(
+                user_id=bootstrap_user.id,
+                organization_id=bootstrap_org.id,
+                role=MembershipRole.OWNER,
+            )
+        )
+        session.commit()
+
+        DemoSeedService(session, settings).seed(password="DemoPaper2026!")
+
+        assert session.get(User, bootstrap_user.id) is None
+        assert session.get(Organization, bootstrap_org.id) is None
+        demo_user = session.scalar(select(User).where(User.email == DEMO_EMAIL))
+        assert demo_user is not None

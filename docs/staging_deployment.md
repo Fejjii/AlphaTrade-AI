@@ -1,8 +1,8 @@
-# Staging Deployment (Slice 50)
+# Staging Deployment (Slice 52)
 
 Public staging for **AlphaTrade AI** — paper-only execution, no live trading, no live Stripe.
 This document records live URLs, Vercel/Render configuration, smoke commands, browser demo flow,
-and known gaps after Slice 50 demo seed (baseline commit `738c34a`).
+and known gaps after Slice 52 ops hardening (baseline commit `31d1e2e`).
 
 > **Never commit secrets.** Store credentials only in Render / Vercel / Upstash dashboards.
 
@@ -76,8 +76,9 @@ Apply in Render Dashboard → **Environment** → **Save** → **Manual Deploy**
 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` |
 | `REQUIRE_EMAIL_VERIFIED` | `false` (frictionless demo login) |
 | `DEMO_SEED_ENABLED` | `true` (enables owner-only `POST /demo/seed` on staging) |
-| `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (when Redis URL invalid) |
-| `REDIS_URL` | Valid `rediss://...` (Upstash/Render) **or** fix/clear invalid scheme |
+| `DEMO_SEED_PASSWORD` | Private demo password (Render env — never commit; sets `demo@alphatrade.ai` on seed) |
+| `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (when Redis URL invalid on staging) |
+| `REDIS_URL` | Valid Upstash URL: `rediss://default:<token>@<host>.upstash.io:6379` — **not** a `redis-cli` command |
 | `QDRANT_URL` | Reachable HTTPS endpoint **or** empty (in-memory RAG fallback) |
 
 Blueprint defaults: [`render.yaml`](../render.yaml) · template: [`.env.staging.example`](../.env.staging.example)
@@ -121,14 +122,18 @@ ALLOW_DEGRADED_READY=true \
 BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 ./scripts/staging-smoke.sh
 
-# Slice 51 — seed synthetic demo tenant without Render shell (owner API + optional body password)
-cd backend
-DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
+# Slice 52 — reseed with Render DEMO_SEED_PASSWORD (no local password)
+DEMO_SEED_USE_SERVER_PASSWORD=true \
+BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+./scripts/seed-demo.sh --api
 
-# Preferred on Render Free (no shell): local API seed with bootstrap owner
+# Or pass password locally (also sent in body when server env unset)
 DEMO_SEED_PASSWORD='your-chosen-demo-password' \
 BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 ./scripts/seed-demo.sh --api
+
+# Validate demo login + data (requires DEMO_SEED_PASSWORD in env — never logged)
+./scripts/validate-demo-staging.sh
 
 # Slice 48 extended live smoke
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
@@ -204,16 +209,16 @@ Open **https://alpha-trade-ai-eight.vercel.app**
 
 ---
 
-## Known staging limitations (Slice 49)
+## Known staging limitations (Slice 52)
 
 | Gap | Impact | Fix |
 |-----|--------|-----|
 | `alpha-trade-ai.vercel.app` blocked | Intended short URL unavailable | Use `alpha-trade-ai-eight.vercel.app`; reclaim domain separately |
 | Mock email verification UX | Optional on staging when `REQUIRE_EMAIL_VERIFIED=false` | Login/register skip verify-email; production still enforces verification |
-| `REDIS_URL` cleared | In-memory rate-limit fallback | Use `rediss://...` or keep `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true` |
+| `REDIS_URL` invalid scheme | Redis degraded; in-memory rate-limit fallback | Set `rediss://default:<token>@<host>.upstash.io:6379` on Render (not `redis-cli --tls -u ...`) |
 | Qdrant unreachable | In-memory vector fallback | Fix `QDRANT_URL` or leave empty |
 | Preview deploy SSO | Automated preview checks blocked | Use production alias for smoke |
-| Demo data | Run seed after deploy | `DEMO_SEED_PASSWORD='...' ./scripts/seed-demo.sh --api` (no Render shell) |
+| Demo data | Run seed after deploy | `DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api` |
 
 **Real trading remains disabled.** All execution is paper-only.
 
