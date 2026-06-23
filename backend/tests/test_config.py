@@ -53,3 +53,10 @@ def test_trade_mode_requires_explicit_real_trading_flag() -> None:
 def test_real_trading_enabled_only_when_fully_configured() -> None:
     settings = Settings(execution_mode="trade", enable_real_trading=True)
     assert settings.real_trading_enabled is True
+
+
+def test_redis_url_normalizes_redis_cli_wrapper() -> None:
+    settings = Settings(
+        redis_url="redis-cli --tls -u rediss://default:token@host.upstash.io:6379",
+    )
+    assert settings.redis_url == "rediss://default:token@host.upstash.io:6379"

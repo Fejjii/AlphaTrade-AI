@@ -1,8 +1,8 @@
-# Staging Deployment (Slice 52)
+# Staging Deployment (Slice 53)
 
 Public staging for **AlphaTrade AI** — paper-only execution, no live trading, no live Stripe.
 This document records live URLs, Vercel/Render configuration, smoke commands, browser demo flow,
-and known gaps after Slice 52 ops hardening (baseline commit `31d1e2e`).
+and known gaps after Slice 53 env alignment (baseline commit `157400a`).
 
 > **Never commit secrets.** Store credentials only in Render / Vercel / Upstash dashboards.
 
@@ -78,7 +78,7 @@ Apply in Render Dashboard → **Environment** → **Save** → **Manual Deploy**
 | `DEMO_SEED_ENABLED` | `true` (enables owner-only `POST /demo/seed` on staging) |
 | `DEMO_SEED_PASSWORD` | Private demo password on Render (min 12 characters; never commit). Sets `demo@alphatrade.ai` on seed. |
 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (when Redis URL invalid on staging) |
-| `REDIS_URL` | Valid Upstash URL: `rediss://default:<token>@<host>.upstash.io:6379` — **not** a `redis-cli` command |
+| `REDIS_URL` | Valid Upstash URL: `rediss://default:<token>@<host>.upstash.io:6379` — **not** a `redis-cli` command (app also normalizes common `redis-cli --tls -u` mistakes) |
 | `QDRANT_URL` | Reachable HTTPS endpoint **or** empty (in-memory RAG fallback) |
 
 Blueprint defaults: [`render.yaml`](../render.yaml) · template: [`.env.staging.example`](../.env.staging.example)

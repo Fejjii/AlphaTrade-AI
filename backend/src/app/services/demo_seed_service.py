@@ -245,47 +245,64 @@ class DemoSeedService:
     def _cleanup_bootstrap_seed_accounts(self) -> int:
         """Remove temporary API seed bootstrap owners; never touches demo tenant."""
         removed = 0
-        candidates = self._session.scalars(select(User)).all()
+        candidates = self._session.scalars(
+            select(User).where(User.id != DEMO_USER_ID, User.email != DEMO_EMAIL)
+        ).all()
         for user in candidates:
-            if user.id == DEMO_USER_ID or not BOOTSTRAP_SEED_EMAIL_RE.match(user.email):
+            if not BOOTSTRAP_SEED_EMAIL_RE.match(user.email):
                 continue
-            memberships = self._session.scalars(
-                select(Membership).where(Membership.user_id == user.id)
-            ).all()
-            org_ids = [
-                membership.organization_id
-                for membership in memberships
-                if membership.organization_id != DEMO_ORG_ID
-            ]
-            self._session.execute(
-                delete(RefreshToken).where(RefreshToken.user_id == user.id)
-            )
-            self._session.execute(
-                delete(EmailVerificationToken).where(
-                    EmailVerificationToken.user_id == user.id
-                )
-            )
-            self._session.execute(
-                delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
-            )
-            self._session.execute(delete(Membership).where(Membership.user_id == user.id))
-            for org_id in org_ids:
-                remaining_members = self._session.scalar(
-                    select(func.count())
-                    .select_from(Membership)
-                    .where(Membership.organization_id == org_id)
-                )
-                if remaining_members == 0:
+            try:
+                with self._session.begin_nested():
+                    memberships = self._session.scalars(
+                        select(Membership).where(Membership.user_id == user.id)
+                    ).all()
+                    org_ids = [
+                        membership.organization_id
+                        for membership in memberships
+                        if membership.organization_id != DEMO_ORG_ID
+                    ]
                     self._session.execute(
-                        delete(OrganizationInvitation).where(
-                            OrganizationInvitation.organization_id == org_id
+                        delete(RefreshToken).where(RefreshToken.user_id == user.id)
+                    )
+                    self._session.execute(
+                        delete(EmailVerificationToken).where(
+                            EmailVerificationToken.user_id == user.id
                         )
                     )
                     self._session.execute(
-                        delete(Organization).where(Organization.id == org_id)
+                        delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
                     )
-            self._session.execute(delete(User).where(User.id == user.id))
-            removed += 1
+                    self._session.execute(
+                        delete(OrganizationInvitation).where(
+                            OrganizationInvitation.invited_by_user_id == user.id
+                        )
+                    )
+                    self._session.execute(
+                        delete(Membership).where(Membership.user_id == user.id)
+                    )
+                    for org_id in org_ids:
+                        remaining_members = self._session.scalar(
+                            select(func.count())
+                            .select_from(Membership)
+                            .where(Membership.organization_id == org_id)
+                        )
+                        if remaining_members == 0:
+                            self._session.execute(
+                                delete(OrganizationInvitation).where(
+                                    OrganizationInvitation.organization_id == org_id
+                                )
+                            )
+                            self._session.execute(
+                                delete(Organization).where(Organization.id == org_id)
+                            )
+                    self._session.execute(delete(User).where(User.id == user.id))
+                removed += 1
+            except Exception as exc:
+                logger.warning(
+                    "bootstrap_cleanup_skipped",
+                    email=user.email,
+                    error_type=type(exc).__name__,
+                )
         return removed
 
     def _clear_demo_entities(self) -> None:

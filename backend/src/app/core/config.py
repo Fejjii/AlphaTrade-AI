@@ -234,6 +234,21 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
+    @field_validator("redis_url", mode="before")
+    @classmethod
+    def _normalize_redis_url(cls, value: object) -> object:
+        """Accept bare URLs; recover redis:// from common redis-cli --tls -u mistakes."""
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if stripped.startswith("redis-cli"):
+            for scheme in ("rediss://", "redis://"):
+                idx = stripped.find(scheme)
+                if idx >= 0:
+                    remainder = stripped[idx:]
+                    return remainder.split()[0].strip("'\"")
+        return stripped
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalize_log_level(cls, value: object) -> object:
