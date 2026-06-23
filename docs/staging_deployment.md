@@ -76,7 +76,7 @@ Apply in Render Dashboard → **Environment** → **Save** → **Manual Deploy**
 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` |
 | `REQUIRE_EMAIL_VERIFIED` | `false` (frictionless demo login) |
 | `DEMO_SEED_ENABLED` | `true` (enables owner-only `POST /demo/seed` on staging) |
-| `DEMO_SEED_PASSWORD` | Private demo password (Render env — never commit; sets `demo@alphatrade.ai` on seed) |
+| `DEMO_SEED_PASSWORD` | Private demo password on Render (min 12 characters; never commit). Sets `demo@alphatrade.ai` on seed. |
 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `true` (when Redis URL invalid on staging) |
 | `REDIS_URL` | Valid Upstash URL: `rediss://default:<token>@<host>.upstash.io:6379` — **not** a `redis-cli` command |
 | `QDRANT_URL` | Reachable HTTPS endpoint **or** empty (in-memory RAG fallback) |
@@ -134,6 +134,9 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 
 # Validate demo login + data (requires DEMO_SEED_PASSWORD in env — never logged)
 ./scripts/validate-demo-staging.sh
+
+# AI workspace chat safety prompts
+./scripts/validate-demo-chat-staging.sh
 
 # Slice 48 extended live smoke
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \

@@ -14,7 +14,7 @@ Copy to `docs/staging_ops.local.md` (gitignored). Store demo password and other 
 
 | Key | Your value |
 |-----|------------|
-| `DEMO_SEED_PASSWORD` | `<private-demo-password>` |
+| `DEMO_SEED_PASSWORD` | `<private-demo-password>` (min 12 characters) |
 | `REDIS_URL` | Upstash `rediss://default:<token>@<host>.upstash.io:6379` (not `redis-cli` prefix) |
 
 ## Reseed staging (no Render shell)
@@ -27,6 +27,7 @@ DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api
 ## Validate demo login (never prints password)
 
 ```bash
-export DEMO_SEED_PASSWORD='<private-demo-password>'
+export DEMO_SEED_PASSWORD='<private-demo-password>'   # min 12 characters
 ./scripts/validate-demo-staging.sh
+./scripts/validate-demo-chat-staging.sh
 ```

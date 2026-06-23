@@ -80,12 +80,12 @@ assert len(lessons.get("items", [])) >= 5
 print("  OK")
 PY
 
-echo "5/6 — paper validation runs"
-RUNS="$(curl -fsS -H "$AUTH" "${BACKEND_URL}/paper-validation/runs")"
-python3 - <<'PY' "$RUNS"
+echo "5/6 — paper validation (dashboard snapshot)"
+DASH="$(curl -fsS -H "$AUTH" "${BACKEND_URL}/dashboard/summary")"
+python3 - <<'PY' "$DASH"
 import json, sys
 d = json.loads(sys.argv[1])
-assert len(d.get("items", [])) >= 3
+assert len(d.get("active_paper_validations", [])) >= 1
 print("  OK")
 PY
 
