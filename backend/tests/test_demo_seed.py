@@ -174,7 +174,11 @@ def test_demo_seed_endpoint_owner_only(demo_client: TestClient) -> None:
     assert register.status_code == 201
     token = register.json()["tokens"]["access_token"]
     with demo_client as client:
-        seeded = client.post("/demo/seed", headers={"Authorization": f"Bearer {token}"})
+        seeded = client.post(
+            "/demo/seed",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"password": "DemoPaper2026!"},
+        )
         assert seeded.status_code == 200
         body = seeded.json()
         assert body["paper_only"] is True

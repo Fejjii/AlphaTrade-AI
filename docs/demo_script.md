@@ -80,11 +80,15 @@ cd backend
 DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
 ```
 
-Or after login as demo owner (requires `DEMO_SEED_ENABLED=true` on backend):
+Or from local against staging (Render Free — no shell):
 
 ```bash
-DEMO_SEED_PASSWORD='...' ./scripts/seed-demo.sh --api
+DEMO_SEED_PASSWORD='your-chosen-demo-password' \
+BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+./scripts/seed-demo.sh --api
 ```
+
+Registers a temporary owner if needed; password is sent in the request body only (never logged).
 
 **Local default password** (when `DEMO_SEED_PASSWORD` unset and `ENVIRONMENT=local`): `DemoPaper2026!` — document only; never log or commit.
 

@@ -121,12 +121,14 @@ ALLOW_DEGRADED_READY=true \
 BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 ./scripts/staging-smoke.sh
 
-# Slice 50 — seed synthetic demo tenant (Render shell)
+# Slice 51 — seed synthetic demo tenant without Render shell (owner API + optional body password)
 cd backend
 DEMO_SEED_PASSWORD='your-chosen-demo-password' uv run python scripts/seed_demo.py
 
-# Or owner-authenticated API seed (after demo user exists)
-DEMO_SEED_PASSWORD='...' ./scripts/seed-demo.sh --api
+# Preferred on Render Free (no shell): local API seed with bootstrap owner
+DEMO_SEED_PASSWORD='your-chosen-demo-password' \
+BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+./scripts/seed-demo.sh --api
 
 # Slice 48 extended live smoke
 FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
@@ -211,7 +213,7 @@ Open **https://alpha-trade-ai-eight.vercel.app**
 | `REDIS_URL` cleared | In-memory rate-limit fallback | Use `rediss://...` or keep `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true` |
 | Qdrant unreachable | In-memory vector fallback | Fix `QDRANT_URL` or leave empty |
 | Preview deploy SSO | Automated preview checks blocked | Use production alias for smoke |
-| Demo data | Run seed after deploy | `uv run python scripts/seed_demo.py` on Render shell |
+| Demo data | Run seed after deploy | `DEMO_SEED_PASSWORD='...' ./scripts/seed-demo.sh --api` (no Render shell) |
 
 **Real trading remains disabled.** All execution is paper-only.
 

@@ -9,6 +9,19 @@ from pydantic import Field
 from app.schemas.common import StrictModel
 
 
+class DemoSeedRequest(StrictModel):
+    """Optional body for staging API seed when server env lacks DEMO_SEED_PASSWORD."""
+
+    password: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Demo account password. Used when DEMO_SEED_PASSWORD is unset on the server "
+            "(e.g. Render staging without shell). Never logged."
+        ),
+    )
+
+
 class DemoSeedResponse(StrictModel):
     organization_id: UUID
     user_id: UUID
