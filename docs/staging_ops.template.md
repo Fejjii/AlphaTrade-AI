@@ -24,6 +24,8 @@ export DEMO_SEED_PASSWORD='<private-demo-password>'   # or use server env:
 DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api
 ```
 
+Uses existing bootstrap owner when present; new bootstrap registrations use unique org names.
+
 ## Validate demo login (never prints password)
 
 ```bash

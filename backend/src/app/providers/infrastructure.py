@@ -36,7 +36,7 @@ class RedisInfrastructureProvider:
             )
             client.ping()
             self._using_redis = True
-            self._detail = f"Redis connected at {settings.redis_url} for rate limiting."
+            self._detail = "Redis connected for rate limiting."
         except Exception as exc:
             if settings.rate_limit_allow_in_memory_fallback:
                 self._detail = f"Redis unavailable ({exc}) — in-memory rate limit fallback active."

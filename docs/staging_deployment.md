@@ -1,8 +1,8 @@
-# Staging Deployment (Slice 53)
+# Staging Deployment (Slice 54)
 
 Public staging for **AlphaTrade AI** — paper-only execution, no live trading, no live Stripe.
 This document records live URLs, Vercel/Render configuration, smoke commands, browser demo flow,
-and known gaps after Slice 53 env alignment (baseline commit `157400a`).
+and known gaps after Slice 54 infrastructure validation (baseline commit `adf5aff`).
 
 > **Never commit secrets.** Store credentials only in Render / Vercel / Upstash dashboards.
 
@@ -212,16 +212,18 @@ Open **https://alpha-trade-ai-eight.vercel.app**
 
 ---
 
-## Known staging limitations (Slice 52)
+## Known staging limitations (Slice 54)
 
 | Gap | Impact | Fix |
 |-----|--------|-----|
 | `alpha-trade-ai.vercel.app` blocked | Intended short URL unavailable | Use `alpha-trade-ai-eight.vercel.app`; reclaim domain separately |
 | Mock email verification UX | Optional on staging when `REQUIRE_EMAIL_VERIFIED=false` | Login/register skip verify-email; production still enforces verification |
-| `REDIS_URL` invalid scheme | Redis degraded; in-memory rate-limit fallback | Set `rediss://default:<token>@<host>.upstash.io:6379` on Render (not `redis-cli --tls -u ...`) |
-| Qdrant unreachable | In-memory vector fallback | Fix `QDRANT_URL` or leave empty |
+| Qdrant unreachable | In-memory vector fallback; demo AI Workspace still works | Fix `QDRANT_URL`/API key or accept staging fallback |
+| Legacy bootstrap seed owner | `seed-bootstrap-*@example.com` may remain (FK constraints) | Harmless; cleanup skips safely on reseed |
+| Bootstrap org name collision | `Demo Seed Bootstrap` org name is unique in DB | `seed-demo.sh` uses timestamped org names for new bootstrap owners |
 | Preview deploy SSO | Automated preview checks blocked | Use production alias for smoke |
 | Demo data | Run seed after deploy | `DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api` |
+| Local demo validation | Scripts need `export DEMO_SEED_PASSWORD` matching Render | Store in gitignored `docs/staging_ops.local.md` only |
 
 **Real trading remains disabled.** All execution is paper-only.
 

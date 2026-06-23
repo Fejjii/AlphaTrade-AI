@@ -51,11 +51,31 @@ PY
         return 0
       fi
     fi
+    # Reuse a known bootstrap owner when register would fail on duplicate org name.
+    LEGACY_BOOT_EMAIL="${DEMO_BOOTSTRAP_EMAIL:-seed-bootstrap-1782212606@example.com}"
+    LEGACY_BOOT_PASS="${DEMO_BOOTSTRAP_PASSWORD:-SecurePass-SeedBootstrap-1}"
+    LEGACY_LOGIN="$(curl -fsS -X POST "${BACKEND_URL}/auth/login" \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"${LEGACY_BOOT_EMAIL}\",\"password\":\"${LEGACY_BOOT_PASS}\"}" 2>/dev/null || true)"
+    if [[ -n "$LEGACY_LOGIN" ]]; then
+      DEMO_OWNER_TOKEN="$(python3 - <<'PY' "$LEGACY_LOGIN"
+import json, sys
+try:
+    print(json.loads(sys.argv[1])["tokens"]["access_token"])
+except (KeyError, json.JSONDecodeError):
+    pass
+PY
+)"
+    fi
+    if [[ -n "${DEMO_OWNER_TOKEN:-}" ]]; then
+      return 0
+    fi
     BOOT_EMAIL="demo-seed-bootstrap-$(date +%s)@example.com"
     BOOT_PASS="SecurePass-DemoSeedBootstrap-1"
+    BOOT_ORG="Demo Seed Bootstrap $(date +%s)"
     REG_JSON="$(curl -fsS -X POST "${BACKEND_URL}/auth/register" \
       -H 'Content-Type: application/json' \
-      -d "{\"email\":\"${BOOT_EMAIL}\",\"password\":\"${BOOT_PASS}\",\"organization_name\":\"Demo Seed Bootstrap\"}")"
+      -d "{\"email\":\"${BOOT_EMAIL}\",\"password\":\"${BOOT_PASS}\",\"organization_name\":\"${BOOT_ORG}\"}")"
     DEMO_OWNER_TOKEN="$(python3 - <<'PY' "$REG_JSON"
 import json, sys
 print(json.loads(sys.argv[1])["tokens"]["access_token"])
