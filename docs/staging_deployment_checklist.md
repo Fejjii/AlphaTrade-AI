@@ -40,7 +40,7 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 2 | `EXECUTION_MODE` | `paper` | ☐ |
 | 3 | `ENABLE_REAL_TRADING` | `false` | ☐ |
 | 4 | `DATABASE_URL` | Managed Postgres (not localhost) | ☐ |
-| `REDIS_URL` | Upstash `rediss://default:<token>@<host>.upstash.io:6379` (bare URL, not `redis-cli`) — confirm `redis` is **healthy** in `/providers/status` |
+| 5 | `REDIS_URL` | Upstash `rediss://default:<token>@<host>.upstash.io:6379` (bare URL, not `redis-cli`) — confirm `redis` is **healthy** in `/providers/status` | ☐ |
 | 6 | `QDRANT_URL` | Qdrant Cloud HTTPS, **or empty** for in-memory RAG (staging only) | ☐ |
 | 7 | `JWT_SECRET` | 32+ byte random (not placeholder) | ☐ |
 | 8 | `CORS_ORIGINS` | `https://alpha-trade-ai-eight.vercel.app` (+ git-main alias if needed) | ☐ |
