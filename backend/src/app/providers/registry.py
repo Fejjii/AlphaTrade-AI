@@ -20,6 +20,7 @@ from app.providers.base import (
 from app.providers.billing.factory import resolve_billing_provider
 from app.providers.email.factory import resolve_email_provider
 from app.providers.embeddings import EmbeddingsProvider, MockEmbeddingsProvider
+from app.providers.exchange.factory import resolve_exchange_provider
 from app.providers.factory import resolve_market_data_provider, resolve_providers, should_use_qdrant
 from app.providers.infrastructure import RedisInfrastructureProvider
 from app.providers.llm import LLMProvider, MockLLMProvider
@@ -165,14 +166,12 @@ def build_default_registry(settings: Settings) -> ProviderRegistry:
     market_data = resolve_market_data_provider(settings)
     registry.register(_MarketDataProviderAdapter(market_data))
 
-    mode_detail = f"execution_mode={settings.execution_mode.value}"
-    registry.register(
-        BaseMockProvider(
-            "mock-exchange",
-            ProviderKind.EXCHANGE,
-            detail=f"Paper/mock exchange only; real trading disabled ({mode_detail}).",
-        )
-    )
+    # Exchange: mock by default; BloFin demo (read-only) when explicitly enabled.
+    resolved_exchange = resolve_exchange_provider(settings)
+    registry.register(resolved_exchange.status_provider)
+    if resolved_exchange.market_data is not None:
+        registry.register(_MarketDataProviderAdapter(resolved_exchange.market_data))
+
     registry.register(BaseMockProvider("mock-news", ProviderKind.NEWS))
     registry.register(BaseMockProvider("mock-notifications", ProviderKind.NOTIFICATIONS))
     registry.register(BaseMockProvider("mock-tracing", ProviderKind.TRACING))

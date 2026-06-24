@@ -39,6 +39,21 @@ class PositionRepository(SQLAlchemyRepository[Position]):
         total = int(self._session.scalar(count_stmt) or 0)
         return list(self._session.scalars(list_stmt.limit(limit).offset(offset)).all()), total
 
+    def list_closed_for_analytics(
+        self,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> list[Position]:
+        """Return all closed positions (oldest-first) for performance analytics."""
+        stmt = select(Position).where(Position.status == PositionStatus.CLOSED)
+        if organization_id is not None:
+            stmt = stmt.where(Position.organization_id == organization_id)
+        if user_id is not None:
+            stmt = stmt.where(Position.user_id == user_id)
+        stmt = stmt.order_by(Position.closed_at.asc())
+        return list(self._session.scalars(stmt).all())
+
     def get_scoped(
         self,
         position_id: uuid.UUID,

@@ -81,6 +81,33 @@ Apply in Render Dashboard → **Environment** → **Save** → **Manual Deploy**
 | `REDIS_URL` | Valid Upstash URL: `rediss://default:<token>@<host>.upstash.io:6379` — **not** a `redis-cli` command (app also normalizes common `redis-cli --tls -u` mistakes) |
 | `QDRANT_URL` | Reachable HTTPS endpoint **or** empty (in-memory RAG fallback) |
 
+### BloFin demo exchange (optional — staging validation only)
+
+Keep **`EXCHANGE_MODE=paper_internal`** until you are ready for controlled demo connectivity.
+When enabling BloFin demo mirroring on staging:
+
+| Variable | Staging value |
+|----------|---------------|
+| `EXCHANGE_MODE` | `paper_exchange_demo` (staging only; **never** production) |
+| `EXECUTION_MODE` | `paper` (required) |
+| `ENABLE_REAL_TRADING` | `false` (required) |
+| `BLOFIN_DEMO_ENABLED` | `true` |
+| `BLOFIN_DEMO_REST_BASE_URL` | `https://demo-trading-openapi.blofin.com` |
+| `BLOFIN_DEMO_WS_URL` | `wss://demo-trading-openapi.blofin.com/ws/public` (optional) |
+| `BLOFIN_API_KEY` | Demo API key (**read + trade only**; no withdraw/transfer) |
+| `BLOFIN_API_SECRET` | Demo secret (Render secret store only) |
+| `BLOFIN_API_PASSPHRASE` | Demo passphrase (Render secret store only) |
+| `WORKER_ENABLED` | `false` (default; worker is read-only and never places orders) |
+| `TELEGRAM_ALERTS_ENABLED` | `false` (Telegram is outbound-only) |
+
+Safety invariants (enforced at startup):
+
+- Production BloFin hosts (`openapi.blofin.com`, etc.) are **blocked**
+- Plain HTTP / non-TLS URLs are **blocked**
+- Keys with withdraw or transfer scope **refuse startup**
+- Internal paper orders remain the source of truth; demo mirroring is best-effort
+- Owner-only **`GET /exchange/status`** returns booleans + provider health only (no keys, URLs, or signed payloads)
+
 Blueprint defaults: [`render.yaml`](../render.yaml) · template: [`.env.staging.example`](../.env.staging.example)
 
 Validate locally before saving platform env:
@@ -153,6 +180,7 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/market-watcher
 
 - `GET /health` → `execution_mode: paper`, `real_trading_enabled: false`
 - `GET /providers/status` → exchange mock/paper-only, billing mock/disabled
+- `GET /exchange/status` (owner auth) → booleans only when demo mode configured; no secrets
 - Authenticated routes return paper-only safety fields
 
 **Slice 49 live results:**

@@ -134,3 +134,35 @@ def test_deployment_posture_excludes_secrets() -> None:
 def test_validate_deployment_skips_local() -> None:
     settings = Settings()
     validate_deployment_settings(settings)  # no raise
+
+
+_DEMO_HOST = "demo-trading-openapi.blofin.com"
+_DEMO_EXCHANGE = {
+    "exchange_mode": "paper_exchange_demo",
+    "blofin_demo_enabled": True,
+    "blofin_api_key": "demo-key",
+    "blofin_api_secret": "demo-secret",
+    "blofin_api_passphrase": "demo-pass",
+    "blofin_demo_rest_base_url": f"https://{_DEMO_HOST}",
+}
+
+
+def test_staging_allows_paper_exchange_demo() -> None:
+    settings = Settings(**{**_STAGING_BASE, **_DEMO_EXCHANGE})
+    assert settings.exchange_demo_active is True
+    validate_deployment_settings(settings)  # no raise
+
+
+def test_production_rejects_paper_exchange_demo() -> None:
+    with pytest.raises(ValidationError, match="paper_exchange_demo is not allowed in production"):
+        Settings(**{**_PRODUCTION_BASE, **_DEMO_EXCHANGE})
+
+
+def test_deployment_posture_reports_exchange_axis_without_secrets() -> None:
+    settings = Settings(**{**_STAGING_BASE, **_DEMO_EXCHANGE})
+    posture = deployment_posture(settings)
+    assert posture["exchange_mode"] == "paper_exchange_demo"
+    assert posture["exchange_demo_active"] is True
+    assert posture["blofin_demo_configured"] is True
+    assert "demo-secret" not in str(posture)
+    assert "demo-pass" not in str(posture)

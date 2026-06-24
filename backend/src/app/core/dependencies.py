@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
+from app.providers.exchange.factory import resolve_exchange_execution_provider
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
 from app.services.alert_delivery_service import AlertDeliveryService
@@ -37,6 +38,7 @@ from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_scheduler_service import PaperSchedulerService
 from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
 from app.services.paper_validation_service import PaperValidationService
+from app.services.performance_service import PerformanceService
 from app.services.position_service import PositionService
 from app.services.position_sizing_service import PositionSizingService
 from app.services.pretrade_analysis_service import PreTradeAnalysisService
@@ -125,11 +127,24 @@ def get_execution_service(
     settings: SettingsDep,
     audit_service: AuditServiceDep,
 ) -> ExecutionService:
-    return ExecutionService(session, settings, audit_service)
+    exchange_execution = resolve_exchange_execution_provider(settings)
+    return ExecutionService(
+        session,
+        settings,
+        audit_service,
+        exchange_execution=exchange_execution,
+    )
 
 
 def get_position_service(session: SessionDep, audit_service: AuditServiceDep) -> PositionService:
     return PositionService(session, audit_service)
+
+
+def get_performance_service(session: SessionDep) -> PerformanceService:
+    return PerformanceService(session)
+
+
+PerformanceServiceDep = Annotated[PerformanceService, Depends(get_performance_service)]
 
 
 def get_journal_service(

@@ -7,7 +7,7 @@ unaffected unless ``ENVIRONMENT`` is set to ``staging`` or ``production``.
 
 from __future__ import annotations
 
-from app.core.config import Environment, ExecutionMode, Settings
+from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
 
 _LOCALHOST_MARKERS = ("localhost", "127.0.0.1")
 _WEAK_JWT_SECRETS = frozenset(
@@ -43,6 +43,14 @@ def validate_deployment_settings(settings: Settings) -> None:
         errors.append("enable_real_trading must be false in staging/production")
     if settings.execution_mode is ExecutionMode.TRADE:
         errors.append("execution_mode=trade is not allowed in staging/production")
+
+    # The demo exchange is allowed in staging only (for validation), never in
+    # production. ``trade_live`` is rejected globally by exchange_safety.
+    if (
+        settings.exchange_mode is ExchangeMode.PAPER_EXCHANGE_DEMO
+        and settings.environment is Environment.PRODUCTION
+    ):
+        errors.append("exchange_mode=paper_exchange_demo is not allowed in production")
 
     if settings.jwt_secret.strip().lower() in _WEAK_JWT_SECRETS:
         errors.append("jwt_secret is a known weak placeholder; use a long random value")
@@ -106,6 +114,9 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "execution_mode": settings.execution_mode.value,
         "real_trading_enabled": settings.real_trading_enabled,
         "enable_real_trading": settings.enable_real_trading,
+        "exchange_mode": settings.exchange_mode.value,
+        "exchange_demo_active": settings.exchange_demo_active,
+        "blofin_demo_configured": settings.blofin_demo_configured,
         "provider_mode": settings.provider_mode,
         "auth_refresh_cookie_enabled": settings.auth_refresh_cookie_enabled,
         "auth_cookie_secure": _cookie_secure_resolved(settings),

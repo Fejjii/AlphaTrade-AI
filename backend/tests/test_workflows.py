@@ -15,9 +15,16 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.core.errors import TradingPolicyError
 from app.db.base import Base
-from app.db.models import Membership, Organization, User
+from app.db.models import ExchangeFill, ExchangeOrder, Membership, Organization, User
 from app.db.session import get_session
 from app.main import create_app
+from app.providers.exchange.base import (
+    ExchangeFill as ExchangeFillDTO,
+)
+from app.providers.exchange.base import (
+    ExchangeOrderRequest,
+    ExchangeOrderResult,
+)
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.common import (
     ApprovalAction,
@@ -612,3 +619,171 @@ def test_real_trading_remains_disabled(workflow_db: tuple[sessionmaker[Session],
     assert settings.real_trading_enabled is False
     service = build_agent_service(settings=settings)
     assert service.runtime.real_trading_allowed is False
+
+
+# --- Slice 61: BloFin demo paper execution --------------------------------
+
+
+class _FakeDemoExecution:
+    """In-memory stand-in for the BloFin demo execution provider."""
+
+    name = "fake-demo-execution"
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[ExchangeOrderRequest] = []
+
+    def place_order(self, request: ExchangeOrderRequest) -> ExchangeOrderResult:
+        self.calls.append(request)
+        if self.fail:
+            raise RuntimeError("demo venue unavailable")
+        return ExchangeOrderResult(
+            exchange_order_id="demo-abc",
+            client_order_id=request.client_order_id,
+            status="filled",
+            filled_size=request.size,
+            average_price=Decimal("60000"),
+            fills=(
+                ExchangeFillDTO(
+                    fill_id="t1",
+                    order_id="demo-abc",
+                    price=Decimal("60000"),
+                    size=request.size,
+                    fee=Decimal("0.01"),
+                    fee_currency="USDT",
+                ),
+            ),
+        )
+
+    def cancel_order(self, *, inst_id: str, exchange_order_id: str) -> None: ...
+
+    def get_order(self, *, inst_id: str, exchange_order_id: str) -> ExchangeOrderResult:
+        raise NotImplementedError
+
+
+def _demo_settings() -> Settings:
+    return Settings(
+        environment="local",
+        log_json=False,
+        execution_mode="paper",
+        enable_real_trading=False,
+        exchange_mode="paper_exchange_demo",
+        blofin_demo_enabled=True,
+        blofin_api_key="demo-key",
+        blofin_api_secret="demo-secret",
+        blofin_api_passphrase="demo-pass",
+        blofin_demo_rest_base_url="https://demo-trading-openapi.blofin.com",
+        database_url="sqlite+pysqlite:///:memory:",
+        jwt_secret="workflow-test-secret",
+        rate_limit_use_redis=False,
+        access_token_denylist_use_redis=False,
+    )
+
+
+def test_demo_execution_mirrors_paper_order(
+    workflow_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, base_settings = workflow_db
+    settings = _demo_settings()
+    assert settings.exchange_demo_active is True
+    assert settings.real_trading_enabled is False
+
+    with factory() as session:
+        proposal_id, approval_id = _seed_approved_proposal(session, base_settings)
+        fake = _FakeDemoExecution()
+        execution = ExecutionService(
+            session,
+            settings,
+            AuditService(session),
+            exchange_execution=fake,
+        )
+        order = execution.place_paper_order(
+            PaperOrderRequest(
+                proposal_id=proposal_id,
+                approval_id=approval_id,
+                symbol="BTCUSDT",
+                side="buy",
+                type="market",
+                size=Decimal("0.01"),
+                idempotency_key="demo-idem-001",
+            )
+        )
+        session.commit()
+
+        assert len(fake.calls) == 1
+        assert fake.calls[0].inst_id == "BTC-USDT"
+        assert order.exchange_order_id == "demo-abc"
+
+        exchange_orders = session.query(ExchangeOrder).all()
+        assert len(exchange_orders) == 1
+        assert exchange_orders[0].exchange_mode == "paper_exchange_demo"
+        assert exchange_orders[0].status == "filled"
+
+        fills = session.query(ExchangeFill).all()
+        assert len(fills) == 1
+        assert fills[0].fee_currency == "USDT"
+
+
+def test_demo_execution_failure_does_not_break_paper_order(
+    workflow_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, base_settings = workflow_db
+    settings = _demo_settings()
+
+    with factory() as session:
+        proposal_id, approval_id = _seed_approved_proposal(session, base_settings)
+        fake = _FakeDemoExecution(fail=True)
+        execution = ExecutionService(
+            session,
+            settings,
+            AuditService(session),
+            exchange_execution=fake,
+        )
+        order = execution.place_paper_order(
+            PaperOrderRequest(
+                proposal_id=proposal_id,
+                approval_id=approval_id,
+                symbol="BTCUSDT",
+                side="buy",
+                type="market",
+                size=Decimal("0.01"),
+                idempotency_key="demo-idem-002",
+            )
+        )
+        session.commit()
+
+        # Internal paper order still succeeds (source of truth).
+        assert order.id is not None
+        failed = session.query(ExchangeOrder).all()
+        assert len(failed) == 1
+        assert failed[0].status == "failed"
+
+
+def test_demo_routing_skipped_when_real_trading_would_be_enabled(
+    workflow_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    """Defense-in-depth: even if a provider is wired, paper_internal never mirrors."""
+    factory, settings = workflow_db  # paper_internal settings
+    with factory() as session:
+        proposal_id, approval_id = _seed_approved_proposal(session, settings)
+        fake = _FakeDemoExecution()
+        execution = ExecutionService(
+            session,
+            settings,
+            AuditService(session),
+            exchange_execution=fake,
+        )
+        execution.place_paper_order(
+            PaperOrderRequest(
+                proposal_id=proposal_id,
+                approval_id=approval_id,
+                symbol="BTCUSDT",
+                side="buy",
+                type="market",
+                size=Decimal("0.01"),
+                idempotency_key="demo-idem-003",
+            )
+        )
+        session.commit()
+        assert fake.calls == []
+        assert session.query(ExchangeOrder).all() == []

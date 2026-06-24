@@ -1,0 +1,278 @@
+"""Tests for the BloFin demo exchange provider (Slice 57, read-only).
+
+All network access is mocked via ``httpx.MockTransport`` so no real venue is
+contacted. Covers signing headers, retry/rate-limit/error handling, secret
+redaction, market-data mapping with fallback, and the withdrawal-scope refusal.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import httpx
+import pytest
+
+from app.core.config import Settings
+from app.providers.exchange.blofin_account import BloFinAccountProvider
+from app.providers.exchange.blofin_client import BloFinClient
+from app.providers.exchange.blofin_market_data import BloFinMarketDataProvider
+from app.providers.exchange.errors import (
+    ExchangeAuthError,
+    ExchangeRateLimitError,
+    ExchangeRequestError,
+    ExchangeUnavailableError,
+)
+from app.providers.exchange.factory import resolve_exchange_provider
+from app.providers.exchange.mapping import (
+    from_blofin_inst_id,
+    timeframe_to_bar,
+    to_blofin_inst_id,
+)
+from app.schemas.common import Timeframe
+
+_DEMO_URL = "https://demo-trading-openapi.blofin.com"
+
+_DEMO_SETTINGS = {
+    "exchange_mode": "paper_exchange_demo",
+    "blofin_demo_enabled": True,
+    "blofin_api_key": "demo-key",
+    "blofin_api_secret": "demo-secret",
+    "blofin_api_passphrase": "demo-pass",
+    "blofin_demo_rest_base_url": _DEMO_URL,
+}
+
+
+def _client(handler, **kwargs) -> BloFinClient:
+    return BloFinClient(
+        base_url=_DEMO_URL,
+        api_key="demo-key",
+        api_secret="demo-secret",
+        api_passphrase="demo-pass",
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _seconds: None,  # no real sleeping in tests
+        max_retries=2,
+        **kwargs,
+    )
+
+
+# --- mapping ---------------------------------------------------------------
+
+
+def test_symbol_mapping_round_trip() -> None:
+    assert to_blofin_inst_id("BTCUSDT") == "BTC-USDT"
+    assert to_blofin_inst_id("ETH/USDT") == "ETH-USDT"
+    assert to_blofin_inst_id("SOL-USDC") == "SOL-USDC"
+    assert from_blofin_inst_id("BTC-USDT") == "BTCUSDT"
+
+
+def test_timeframe_to_bar() -> None:
+    assert timeframe_to_bar(Timeframe.M1) == "1m"
+    assert timeframe_to_bar(Timeframe.H1) == "1H"
+    assert timeframe_to_bar(Timeframe.D1) == "1D"
+
+
+# --- client safety ---------------------------------------------------------
+
+
+def test_client_refuses_non_demo_host() -> None:
+    with pytest.raises(ValueError, match="production host"):
+        BloFinClient(
+            base_url="https://openapi.blofin.com",
+            api_key="k",
+            api_secret="s",
+            api_passphrase="p",
+        )
+
+
+def test_signed_request_sends_auth_headers() -> None:
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(request.headers)
+        return httpx.Response(200, json={"code": "0", "data": {"ok": True}})
+
+    data = _client(handler).request("GET", "/api/v1/account/balance", signed=True)
+    assert data == {"ok": True}
+    assert captured["access-key"] == "demo-key"
+    assert captured["access-sign"]
+    assert captured["access-passphrase"] == "demo-pass"
+    assert "access-timestamp" in captured
+    assert "access-nonce" in captured
+
+
+def test_signature_is_deterministic_for_fixed_inputs() -> None:
+    client = _client(lambda r: httpx.Response(200, json={"code": "0", "data": None}))
+    sig_a = client._sign(method="GET", path="/x", timestamp="1", nonce="n", body="")
+    sig_b = client._sign(method="GET", path="/x", timestamp="1", nonce="n", body="")
+    assert sig_a == sig_b
+    assert "demo-secret" not in sig_a
+
+
+def test_unsigned_request_omits_auth_headers() -> None:
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(request.headers)
+        return httpx.Response(200, json={"code": "0", "data": []})
+
+    _client(handler).request("GET", "/api/v1/market/tickers", params={"instId": "BTC-USDT"})
+    assert "access-key" not in captured
+
+
+# --- client error handling -------------------------------------------------
+
+
+def test_auth_error_is_not_retried() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(401, json={"code": "401", "msg": "bad key"})
+
+    with pytest.raises(ExchangeAuthError):
+        _client(handler).request("GET", "/api/v1/account/balance", signed=True)
+    assert calls["n"] == 1
+
+
+def test_rate_limit_is_retried_then_raised() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429, text="too many")
+
+    with pytest.raises(ExchangeRateLimitError):
+        _client(handler).request("GET", "/api/v1/market/tickers")
+    assert calls["n"] == 3  # initial + 2 retries
+
+
+def test_server_error_is_retried_then_raised() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503, text="unavailable")
+
+    with pytest.raises(ExchangeUnavailableError):
+        _client(handler).request("GET", "/api/v1/market/tickers")
+    assert calls["n"] == 3
+
+
+def test_venue_error_code_raises_request_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "1001", "msg": "bad param", "data": None})
+
+    with pytest.raises(ExchangeRequestError, match="1001"):
+        _client(handler).request("GET", "/api/v1/market/tickers")
+
+
+def test_last_error_is_redacted() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "1", "msg": "api_key=leakedsecret", "data": None})
+
+    client = _client(handler)
+    with pytest.raises(ExchangeRequestError):
+        client.request("GET", "/api/v1/market/tickers")
+    assert "leakedsecret" not in (client.last_error or "")
+    assert "***REDACTED***" in (client.last_error or "")
+
+
+# --- market data -----------------------------------------------------------
+
+
+def test_market_data_parses_candles_oldest_first() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        # BloFin returns newest-first rows: [ts, o, h, l, c, vol, ...]
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "data": [
+                    ["1700000060000", "11", "12", "10", "11.5", "100"],
+                    ["1700000000000", "10", "11", "9", "10.5", "120"],
+                ],
+            },
+        )
+
+    provider = BloFinMarketDataProvider(_client(handler))
+    result = provider.get_ohlcv("BTCUSDT", Timeframe.M1, limit=2)
+    assert [b.close for b in result.bars] == [Decimal("10.5"), Decimal("11.5")]
+    assert result.envelope.source == "blofin-demo"
+
+
+def test_market_data_falls_back_to_mock_on_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="down")
+
+    provider = BloFinMarketDataProvider(_client(handler))
+    result = provider.get_ticker("BTCUSDT")
+    assert result.envelope.source == "mock"
+    assert provider.status().using_fallback is True
+
+
+# --- account & permissions -------------------------------------------------
+
+
+def test_permissions_without_withdraw_scope() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "0", "data": {"permissions": "read,trade"}})
+
+    perms = BloFinAccountProvider(_client(handler)).get_account_permissions()
+    assert perms.can_trade is True
+    assert perms.can_withdraw is False
+    assert perms.can_transfer is False
+
+
+def test_permissions_detects_withdraw_scope() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"code": "0", "data": {"permissions": "read,trade,withdraw"}}
+        )
+
+    perms = BloFinAccountProvider(_client(handler)).get_account_permissions()
+    assert perms.can_withdraw is True
+
+
+# --- factory ---------------------------------------------------------------
+
+
+def test_factory_returns_mock_by_default() -> None:
+    resolved = resolve_exchange_provider(Settings())
+    assert resolved.is_demo is False
+    assert resolved.account is None
+    assert resolved.status_provider.name == "mock-exchange"
+
+
+def test_factory_builds_demo_providers_for_safe_key() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "0", "data": {"permissions": "read,trade"}})
+
+    resolved = resolve_exchange_provider(
+        Settings(**_DEMO_SETTINGS), transport=httpx.MockTransport(handler)
+    )
+    assert resolved.is_demo is True
+    assert resolved.account is not None
+    assert resolved.market_data is not None
+    assert resolved.status_provider.name == "blofin-demo-account"
+
+
+def test_factory_refuses_key_with_withdrawal_scope() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"code": "0", "data": {"permissions": "read,trade,withdraw"}}
+        )
+
+    with pytest.raises(ValueError, match="withdrawal/transfer scope"):
+        resolve_exchange_provider(
+            Settings(**_DEMO_SETTINGS), transport=httpx.MockTransport(handler)
+        )
+
+
+def test_factory_tolerates_permission_probe_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="down")
+
+    resolved = resolve_exchange_provider(
+        Settings(**_DEMO_SETTINGS), transport=httpx.MockTransport(handler)
+    )
+    assert resolved.is_demo is True  # read-only continues; execution re-verifies later

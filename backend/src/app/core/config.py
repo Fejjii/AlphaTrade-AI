@@ -36,6 +36,25 @@ class ExecutionMode(StrEnum):
     TRADE = "trade"
 
 
+class ExchangeMode(StrEnum):
+    """Exchange connectivity for paper flows.
+
+    This axis is INDEPENDENT from ``execution_mode``/``enable_real_trading``.
+    It controls only whether paper trading talks to an external demo exchange.
+
+    * ``paper_internal`` (default): pure in-database simulation, no exchange calls.
+    * ``paper_exchange_demo``: routes paper orders to an allowlisted BloFin *demo*
+      account. Still not real money; requires ``execution_mode=paper`` and
+      ``enable_real_trading=false`` (enforced in :mod:`app.core.exchange_safety`).
+    * ``trade_live``: an explicit tombstone. Selecting it refuses startup. Real
+      exchange execution is intentionally never implemented.
+    """
+
+    PAPER_INTERNAL = "paper_internal"
+    PAPER_EXCHANGE_DEMO = "paper_exchange_demo"
+    TRADE_LIVE = "trade_live"
+
+
 class Settings(BaseSettings):
     """Validated application configuration.
 
@@ -70,6 +89,34 @@ class Settings(BaseSettings):
     # --- Trading safety ---
     execution_mode: ExecutionMode = ExecutionMode.PAPER
     enable_real_trading: bool = False
+
+    # --- Exchange connectivity (Slice 56A — demo only, disabled by default) ---
+    # Independent from execution_mode; see ``ExchangeMode``. Defaults keep the
+    # platform on pure internal simulation with no external exchange calls.
+    exchange_mode: ExchangeMode = ExchangeMode.PAPER_INTERNAL
+    blofin_demo_enabled: bool = False
+    blofin_api_key: str = ""
+    blofin_api_secret: str = ""
+    blofin_api_passphrase: str = ""
+    blofin_demo_rest_base_url: str = ""
+    blofin_demo_ws_url: str = ""
+    blofin_request_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
+    blofin_max_retries: int = Field(default=2, ge=0, le=5)
+    blofin_rate_limit_requests_per_second: int = Field(default=5, ge=1, le=50)
+
+    # --- Background worker (Slice 59 — disabled by default) ---
+    worker_enabled: bool = False
+    worker_mode: str = "process"  # process | in_process
+    worker_name: str = "alphatrade-worker"
+    worker_scan_interval_seconds: int = Field(default=60, ge=5, le=86400)
+    worker_lock_ttl_seconds: int = Field(default=120, ge=5, le=3600)
+    worker_heartbeat_interval_seconds: int = Field(default=30, ge=5, le=3600)
+
+    # --- Worker system alerts (Slice 60 — outbound only, disabled by default) ---
+    worker_alerts_enabled: bool = False
+    worker_alert_min_severity: str = "info"  # info | warning | critical
+    worker_quiet_hours_start: str = ""  # "HH:MM" UTC; empty disables quiet hours
+    worker_quiet_hours_end: str = ""
 
     # --- Paper validation scheduler (Slice 40 — disabled by default) ---
     enable_paper_scheduler: bool = False
@@ -234,6 +281,20 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
+    @field_validator("worker_mode", mode="before")
+    @classmethod
+    def _normalize_worker_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("exchange_mode", mode="before")
+    @classmethod
+    def _normalize_exchange_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
     @field_validator("redis_url", mode="before")
     @classmethod
     def _normalize_redis_url(cls, value: object) -> object:
@@ -283,6 +344,18 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _enforce_exchange_safety(self) -> Settings:
+        """Refuse to start with unsafe/ambiguous exchange connectivity.
+
+        Runs in every environment so demo mode can never be wired to a
+        production venue and ``trade_live`` can never be selected.
+        """
+        from app.core.exchange_safety import validate_exchange_mode_settings
+
+        validate_exchange_mode_settings(self)
+        return self
+
+    @model_validator(mode="after")
     def _validate_deployment_safety(self) -> Settings:
         """Enforce staging/production deployment invariants."""
         from app.core.deployment_safety import validate_deployment_settings
@@ -301,6 +374,20 @@ class Settings(BaseSettings):
     def real_trading_enabled(self) -> bool:
         """True only when live order execution is fully and explicitly enabled."""
         return self.execution_mode is ExecutionMode.TRADE and self.enable_real_trading
+
+    @property
+    def blofin_demo_configured(self) -> bool:
+        """True when all BloFin demo credentials are present (env-only)."""
+        return bool(
+            self.blofin_api_key.strip()
+            and self.blofin_api_secret.strip()
+            and self.blofin_api_passphrase.strip()
+        )
+
+    @property
+    def exchange_demo_active(self) -> bool:
+        """True when paper orders should route to the BloFin demo exchange."""
+        return self.exchange_mode is ExchangeMode.PAPER_EXCHANGE_DEMO
 
 
 @lru_cache

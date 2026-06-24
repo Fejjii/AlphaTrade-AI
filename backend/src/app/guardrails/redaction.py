@@ -21,7 +21,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(
             r"(api[_-]?key|access[_-]?token|refresh[_-]?token|exchange[_-]?secret"
-            r"|client[_-]?secret)\s*[:=]\s*['\"]?[^\s'\",;]+",
+            r"|exchange[_-]?key|client[_-]?secret|passphrase)\s*[:=]\s*['\"]?[^\s'\",;]+",
             re.IGNORECASE,
         ),
         r"\1=" + _REDACTED,
@@ -61,6 +61,14 @@ _SENSITIVE_KEYS = frozenset(
         "reset_token",
         "invite_token",
         "exchange_secret",
+        "exchange_api_key",
+        "exchange_api_secret",
+        "exchange_passphrase",
+        "passphrase",
+        "api_passphrase",
+        "blofin_api_key",
+        "blofin_api_secret",
+        "blofin_api_passphrase",
         "bearer",
         "stripe_secret_key",
         "stripe_webhook_secret",

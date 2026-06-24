@@ -75,3 +75,49 @@ services:
         value: https://alpha-trade-ai-eight.vercel.app,https://alpha-trade-ai-alphatrade-ai.vercel.app,https://alpha-trade-ai-git-main-alphatrade-ai.vercel.app
       - key: OPENAI_API_KEY
         sync: false
+
+  # Background worker (Slice 59) — separate always-on process; never trades.
+  # Disabled by default; flip WORKER_ENABLED to true to activate.
+  - type: worker
+    name: alphatrade-worker-staging
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: python -m app.workers.entrypoint
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: EXECUTION_MODE
+        value: paper
+      - key: ENABLE_REAL_TRADING
+        value: false
+      - key: EXCHANGE_MODE
+        value: paper_internal
+      - key: WORKER_ENABLED
+        value: false
+      - key: WORKER_MODE
+        value: process
+      - key: WORKER_SCAN_INTERVAL_SECONDS
+        value: 60
+      - key: PROVIDER_MODE
+        value: fallback
+      - key: MARKET_DATA_ENABLED
+        value: true
+      - key: LOG_JSON
+        value: true
+      - key: RATE_LIMIT_USE_REDIS
+        value: true
+      - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
+        value: true
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

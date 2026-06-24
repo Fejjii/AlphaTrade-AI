@@ -139,6 +139,31 @@ def test_secret_redaction() -> None:
     assert "***REDACTED***" in redacted
 
 
+def test_exchange_credential_redaction() -> None:
+    raw = "passphrase=topsecretpass exchange_key=abc123 blofin call"
+    redacted = redact_text(raw)
+    assert "topsecretpass" not in redacted
+    assert "abc123" not in redacted
+    assert "***REDACTED***" in redacted
+
+
+def test_exchange_credential_keys_masked_in_mapping() -> None:
+    from app.guardrails.redaction import redact_mapping
+
+    masked = redact_mapping(
+        {
+            "blofin_api_key": "k",
+            "blofin_api_secret": "s",
+            "blofin_api_passphrase": "p",
+            "exchange": "blofin",
+        }
+    )
+    assert masked["blofin_api_key"] == "***REDACTED***"
+    assert masked["blofin_api_secret"] == "***REDACTED***"
+    assert masked["blofin_api_passphrase"] == "***REDACTED***"
+    assert masked["exchange"] == "blofin"
+
+
 def test_guardrail_service_facade() -> None:
     service = GuardrailService()
     assert service.check_prompt_injection(GuardrailInput(message="hello")).allowed

@@ -201,7 +201,12 @@ def load_risk_events(
 
 
 def paper_pnl_for_position(row: Position) -> Decimal | None:
-    if row.status is not PositionStatus.CLOSED:
+    """Realized PnL for a *closed* paper position; ``None`` while still open.
+
+    Realized PnL is only meaningful once a position is closed. Open positions
+    carry unrealized PnL only and must be excluded from win/loss statistics.
+    """
+    if row.status is PositionStatus.CLOSED:
         return row.realized_pnl
     return None
 

@@ -13,9 +13,15 @@
 
 ### Trading and execution
 
-- **Real exchange execution is disabled** and not wired. `mock-exchange` is paper-only.
-- Market data is **read-only** — no order placement against Binance or any exchange.
-- Paper execution simulates fills locally — no broker connectivity.
+- **Real exchange execution is disabled** and not wired. `trade_live` refuses startup everywhere.
+- Default **`EXCHANGE_MODE=paper_internal`**: pure in-database paper simulation, no exchange calls.
+- Optional **`EXCHANGE_MODE=paper_exchange_demo`** (staging only): best-effort mirroring of internal paper
+  fills to a BloFin **demo** account over `https://demo-trading-openapi.blofin.com`. Not real money;
+  production BloFin hosts are blocked; withdraw/transfer API keys are refused.
+- Market data is **read-only** — no order placement against Binance or any live venue.
+- Background worker (Slice 59) is **disabled by default**, read-only (setup detection only), never places orders.
+- Telegram alerts (Slice 46) are **outbound only** — no inbound commands or order triggers.
+- Owner-only **`GET /exchange/status`** exposes credential booleans and provider health only (no secrets).
 
 ### MVP workflow (Slice 20–39)
 

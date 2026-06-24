@@ -23,6 +23,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -1299,3 +1300,176 @@ class AuditLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# --------------------------------------------------------------------------- #
+# Background worker (Slice 59)
+# --------------------------------------------------------------------------- #
+
+
+class WorkerHeartbeat(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Liveness + control record for a background worker instance.
+
+    One row per ``worker_name``. ``paused`` is the manual pause/resume switch;
+    ``status`` reflects the last cycle outcome.
+    """
+
+    __tablename__ = "worker_heartbeats"
+    __table_args__ = (UniqueConstraint("worker_name", name="uq_worker_heartbeat_name"),)
+
+    worker_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="starting", nullable=False)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cycle_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_beat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class MarketScanRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One worker scan cycle. Failed rows act as a dead-letter record."""
+
+    __tablename__ = "market_scan_runs"
+
+    worker_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="success", nullable=False)
+    symbols_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    setups_detected: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class SetupDetectionRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A persisted setup detection from the deterministic analysis engine."""
+
+    __tablename__ = "setup_detections"
+
+    scan_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("market_scan_runs.id"), nullable=True
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    setup_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    confidence: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    detected_metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# --------------------------------------------------------------------------- #
+# Exchange demo execution (Slice 61) — paper_exchange_demo only, never live
+# --------------------------------------------------------------------------- #
+
+
+class ExchangeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """An order mirrored to the BloFin *demo* venue.
+
+    ``exchange_mode`` is always ``paper_exchange_demo`` for rows created in this
+    scaffold. ``internal_order_id`` links back to the paper :class:`Order`.
+    """
+
+    __tablename__ = "exchange_orders"
+
+    internal_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orders.id"), nullable=True
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    inst_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    size: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
+    exchange_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="submitted", nullable=False)
+    filled_size: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
+    average_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
+
+
+class ExchangeFill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A fill recorded against an :class:`ExchangeOrder` (demo venue)."""
+
+    __tablename__ = "exchange_fills"
+
+    exchange_order_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("exchange_orders.id"), nullable=False
+    )
+    fill_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    size: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    fee: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
+    fee_currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
+# --------------------------------------------------------------------------- #
+# Performance analytics (Slice 62)
+# --------------------------------------------------------------------------- #
+
+
+class PerformanceSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A point-in-time account-level performance aggregate.
+
+    Headline metrics are stored as columns for cheap querying; the full payload
+    (breakdowns, equity curve) lives in ``metrics`` JSON.
+    """
+
+    __tablename__ = "performance_snapshots"
+
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    scope: Mapped[str] = mapped_column(String(32), default="account", nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    trade_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    net_pnl: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    gross_profit: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    gross_loss: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    total_fees: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    total_funding: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    win_rate: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    profit_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    expectancy: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    avg_r_multiple: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_drawdown: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    max_drawdown_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class StrategyPerformanceDaily(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Per-strategy, per-day performance rollup (idempotent on the natural key)."""
+
+    __tablename__ = "strategy_performance_daily"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "strategy_id",
+            "day",
+            name="uq_strategy_perf_daily_org_strategy_day",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    strategy_id: Mapped[str] = mapped_column(String(64), default="unknown", nullable=False)
+    day: Mapped[date_type] = mapped_column(Date, nullable=False)
+    trade_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    net_pnl: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    win_rate: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    profit_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    expectancy: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    max_drawdown: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
