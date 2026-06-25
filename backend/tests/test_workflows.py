@@ -15,7 +15,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.core.errors import TradingPolicyError
 from app.db.base import Base
-from app.db.models import ExchangeFill, ExchangeOrder, Membership, Organization, User
+from app.db.models import ExchangeFill, ExchangeOrder, Membership, Order, Organization, User
 from app.db.session import get_session
 from app.main import create_app
 from app.providers.exchange.base import (
@@ -172,6 +172,12 @@ def _seed_approved_proposal(session: Session, settings: Settings) -> tuple[uuid.
             risk_level=RiskSeverity.MEDIUM,
             rationale="seed",
             approval_required=True,
+            risk_result=RiskCheckResult(
+                action=RiskAction.ALLOW,
+                severity=RiskSeverity.LOW,
+                explanation="seed risk ok",
+                approval_required=True,
+            ),
         )
     )
     approval = approvals.create_for_proposal(
@@ -787,3 +793,133 @@ def test_demo_routing_skipped_when_real_trading_would_be_enabled(
         session.commit()
         assert fake.calls == []
         assert session.query(ExchangeOrder).all() == []
+
+
+def test_demo_mirror_idempotency_one_exchange_order(
+    workflow_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, _base_settings = workflow_db
+    settings = _demo_settings()
+    allowed_risk = RiskCheckResult(
+        action=RiskAction.ALLOW,
+        severity=RiskSeverity.LOW,
+        explanation="ok",
+        approval_required=True,
+    )
+
+    with factory() as session:
+        audit = AuditService(session)
+        proposals = ProposalService(session, audit)
+        approvals = ApprovalService(session, audit)
+        proposal = proposals.create(
+            TradeProposalCreate(
+                organization_id=ORG_ID,
+                user_id=USER_ID,
+                strategy_id=StrategyId.HTF_TREND_PULLBACK,
+                symbol="BTCUSDT",
+                timeframe="4h",
+                direction="long",
+                entry_price=Decimal("60000"),
+                position_size=Decimal("0.01"),
+                leverage=Decimal("3"),
+                exit=_exit(),
+                confidence=0.7,
+                risk_level=RiskSeverity.MEDIUM,
+                rationale="idem test",
+                approval_required=True,
+                risk_result=allowed_risk,
+            )
+        )
+        approval = approvals.create_for_proposal(
+            proposal_id=proposal.id,  # type: ignore[arg-type]
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+            risk_level=proposal.risk_level,
+            confidence=float(proposal.confidence),
+        )
+        approvals.decide(approval.id, ApprovalDecisionRequest(action=ApprovalAction.APPROVE))
+        proposal_id, approval_id = proposal.id, approval.id  # type: ignore[assignment]
+
+        fake = _FakeDemoExecution()
+        execution = ExecutionService(
+            session,
+            settings,
+            audit,
+            exchange_execution=fake,
+        )
+        request = PaperOrderRequest(
+            proposal_id=proposal_id,
+            approval_id=approval_id,
+            symbol="BTCUSDT",
+            side="buy",
+            type="market",
+            size=Decimal("0.01"),
+            idempotency_key="demo-idem-dup-001",
+        )
+        order1 = execution.place_paper_order(request)
+        order2 = execution.place_paper_order(request)
+        session.commit()
+
+        assert order1.id == order2.id
+        assert len(fake.calls) == 1
+        assert session.query(Order).count() == 1
+        assert session.query(ExchangeOrder).count() == 1
+
+
+def test_demo_mirror_requires_risk_result(
+    workflow_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, _base_settings = workflow_db
+    settings = _demo_settings()
+    fake = _FakeDemoExecution()
+
+    with factory() as session:
+        audit = AuditService(session)
+        proposals = ProposalService(session, audit)
+        approvals = ApprovalService(session, audit)
+        proposal = proposals.create(
+            TradeProposalCreate(
+                organization_id=ORG_ID,
+                user_id=USER_ID,
+                strategy_id=StrategyId.HTF_TREND_PULLBACK,
+                symbol="BTCUSDT",
+                timeframe="4h",
+                direction="long",
+                entry_price=Decimal("60000"),
+                position_size=Decimal("0.01"),
+                leverage=Decimal("3"),
+                exit=_exit(),
+                confidence=0.7,
+                risk_level=RiskSeverity.MEDIUM,
+                rationale="no risk result",
+                approval_required=True,
+            )
+        )
+        approval = approvals.create_for_proposal(
+            proposal_id=proposal.id,  # type: ignore[arg-type]
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+            risk_level=proposal.risk_level,
+            confidence=float(proposal.confidence),
+        )
+        approvals.decide(approval.id, ApprovalDecisionRequest(action=ApprovalAction.APPROVE))
+        proposal_id, approval_id = proposal.id, approval.id  # type: ignore[assignment]
+        execution = ExecutionService(
+            session,
+            settings,
+            audit,
+            exchange_execution=fake,
+        )
+        with pytest.raises(TradingPolicyError, match="risk engine result"):
+            execution.place_paper_order(
+                PaperOrderRequest(
+                    proposal_id=proposal_id,
+                    approval_id=approval_id,
+                    symbol="BTCUSDT",
+                    side="buy",
+                    type="market",
+                    size=Decimal("0.01"),
+                    idempotency_key="demo-no-risk-001",
+                )
+            )
+        assert fake.calls == []

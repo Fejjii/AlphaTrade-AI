@@ -74,6 +74,20 @@ class TradingPolicyError(AppError):
     code = "trading_policy_violation"
 
 
+class ExchangeDemoInactiveError(AppError):
+    """Raised when a BloFin demo probe is requested outside demo mode."""
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "exchange_demo_inactive"
+
+
+class ExchangeProviderError(AppError):
+    """Raised when a demo exchange provider call fails (redacted message only)."""
+
+    status_code = status.HTTP_502_BAD_GATEWAY
+    code = "exchange_provider_error"
+
+
 class QuotaExceededError(AppError):
     """Raised when an organization exceeds a hard usage quota."""
 

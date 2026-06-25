@@ -291,6 +291,7 @@ class AuditEventType(StrEnum):
     PAPER_ORDER_REJECTED = "paper_order_rejected"
     EXCHANGE_DEMO_ORDER_CREATED = "exchange_demo_order_created"
     EXCHANGE_DEMO_ORDER_FAILED = "exchange_demo_order_failed"
+    EXCHANGE_DEMO_ORDER_CANCELLED = "exchange_demo_order_cancelled"
     POSITION_UPDATED = "position_updated"
     JOURNAL_ENTRY_CREATED = "journal_entry_created"
     TOOL_CALLED = "tool_called"

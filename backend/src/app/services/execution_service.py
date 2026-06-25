@@ -101,6 +101,12 @@ class ExecutionService:
                     "Paper execution blocked by risk engine.",
                     details={"risk_action": risk.action.value},
                 )
+        elif self._demo_routing_enabled():
+            self._audit_reject(request, reason="demo_mirror_risk_result_required")
+            raise TradingPolicyError(
+                "Demo venue mirroring requires a risk engine result on the proposal.",
+                details={"exchange_mode": self._settings.exchange_mode.value},
+            )
 
         existing = self._orders.get_by_idempotency_key(request.idempotency_key)
         if existing is not None:
