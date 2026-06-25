@@ -162,6 +162,9 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 # Validate demo login + data (requires DEMO_SEED_PASSWORD in env — never logged)
 ./scripts/validate-demo-staging.sh
 
+# BloFin demo exchange (read-only, no orders) — requires EXCHANGE_MODE=paper_exchange_demo
+BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/validate-exchange-demo-staging.sh
+
 # AI workspace chat safety prompts
 ./scripts/validate-demo-chat-staging.sh
 

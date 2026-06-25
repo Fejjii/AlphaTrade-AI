@@ -56,14 +56,33 @@ exchange = next((p for p in providers if p.get("kind") == "exchange"), None)
 if exchange is None:
     print("FAIL: no exchange provider in /providers/status", file=sys.stderr)
     sys.exit(1)
-if exchange.get("is_mock") is not True:
-    print(f"FAIL: exchange is not mock: {exchange}", file=sys.stderr)
-    sys.exit(1)
+
+name = exchange.get("name") or ""
 detail = (exchange.get("detail") or "").lower()
-if "real trading disabled" not in detail and "paper" not in detail:
-    print(f"FAIL: exchange detail missing paper-only wording: {exchange.get('detail')}", file=sys.stderr)
+is_mock = exchange.get("is_mock") is True
+
+if is_mock:
+    if "real trading disabled" not in detail and "paper" not in detail:
+        print(
+            f"FAIL: exchange detail missing paper-only wording: {exchange.get('detail')}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print("  exchange: mock/paper-only")
+elif name == "blofin-demo-account":
+    if exchange.get("health") != "healthy":
+        print(f"FAIL: BloFin demo account unhealthy: {exchange}", file=sys.stderr)
+        sys.exit(1)
+    if "read-only" not in detail and "withdrawal" not in detail:
+        print(
+            f"FAIL: BloFin demo detail missing read-only wording: {exchange.get('detail')}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print("  exchange: blofin-demo-account (read-only, paper_exchange_demo)")
+else:
+    print(f"FAIL: unexpected exchange provider: {exchange}", file=sys.stderr)
     sys.exit(1)
-print("  exchange: mock/paper-only")
 
 billing = next((p for p in providers if p.get("kind") == "billing"), None)
 if billing is not None:

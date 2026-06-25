@@ -11,6 +11,7 @@ SCRIPTS = (
     "scripts/verify-safety.sh",
     "scripts/staging-smoke.sh",
     "scripts/staging-live-smoke.sh",
+    "scripts/validate-exchange-demo-staging.sh",
     "scripts/run-migrations.sh",
 )
 
