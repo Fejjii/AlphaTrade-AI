@@ -20,11 +20,11 @@ from app.core.exchange_safety import BLOFIN_DEMO_HOST_ALLOWLIST, is_allowlisted_
 from app.main import create_app
 from app.providers.alert_delivery.telegram import TelegramAlertDeliveryProvider
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
-from app.providers.registry import ProviderRegistry
 from app.providers.exchange.base import AccountPermissions
 from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.factory import resolve_exchange_provider
+from app.providers.registry import ProviderRegistry
 from app.tools.registry import build_default_registry as build_tool_registry
 from app.workers.scanner import build_market_scan_scanner
 
@@ -128,6 +128,36 @@ def test_blackbox_read_only_key_refused_when_scope_probe_succeeds() -> None:
     )
     with pytest.raises(ValueError, match="trade scope is required"):
         run_exchange_demo_startup_check(settings, registry)
+
+
+def test_blackbox_real_read_trade_key_passes_startup() -> None:
+    """Success criterion: a real BloFin read+trade key (readOnly=0) is accepted."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "query-apikey" in request.url.path:
+            return httpx.Response(
+                200,
+                json={
+                    "code": "0",
+                    "msg": "success",
+                    "data": {"apiKey": "k", "readOnly": 0, "type": 2},
+                },
+            )
+        return httpx.Response(200, json={"code": "0", "data": []})
+
+    settings = Settings(**_DEMO_OK)
+    registry = ProviderRegistry()
+    client = BloFinClient(
+        base_url=_DEMO_REST,
+        api_key="demo-key",
+        api_secret="demo-secret",
+        api_passphrase="demo-pass",
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _seconds: None,
+    )
+    registry.register(BloFinAccountProvider(client))
+    # Must not raise: read+trade is the supported demo posture.
+    run_exchange_demo_startup_check(settings, registry)
 
 
 def test_blackbox_provider_status_redacts_secrets() -> None:

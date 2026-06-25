@@ -13,7 +13,10 @@ import httpx
 import pytest
 
 from app.core.config import Settings
-from app.providers.exchange.blofin_account import BloFinAccountProvider
+from app.providers.exchange.blofin_account import (
+    BloFinAccountProvider,
+    parse_account_permissions,
+)
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.blofin_market_data import BloFinMarketDataProvider
 from app.providers.exchange.errors import (
@@ -231,6 +234,109 @@ def test_permissions_detects_withdraw_scope() -> None:
 
     perms = BloFinAccountProvider(_client(handler)).get_account_permissions()
     assert perms.can_withdraw is True
+
+
+def test_permissions_accepts_real_blofin_read_only_zero() -> None:
+    """Canonical BloFin shape: readOnly=0 means read+trade (no permissions string)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "msg": "success",
+                "data": {
+                    "uid": "uid",
+                    "apiName": "demo",
+                    "apiKey": "k",
+                    "readOnly": 0,
+                    "ips": [],
+                    "type": 2,
+                },
+            },
+        )
+
+    perms = BloFinAccountProvider(_client(handler)).get_account_permissions()
+    assert perms.can_trade is True
+    assert perms.can_read is True
+    assert perms.can_withdraw is False
+    assert perms.can_transfer is False
+    # Diagnostics expose field names only, never values.
+    assert "readOnly" in perms.response_keys
+    assert "apiKey" in perms.response_keys
+
+
+def test_permissions_read_only_one_is_read_only() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "0", "data": {"readOnly": 1}})
+
+    perms = BloFinAccountProvider(_client(handler)).get_account_permissions()
+    assert perms.can_read is True
+    assert perms.can_trade is False
+
+
+# --- permission parser shapes (pure, no network) ---------------------------
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"permissions": ["READ", "TRADE"]},
+        {"permissions": ["read", "trade"]},
+        {"permissions": "read,trade"},
+        {"permission": "read,trade"},
+        {"read": True, "trade": True},
+        {"scopes": ["Read", "Trade"]},
+        {"authorities": "READ TRADE"},
+        {"readOnly": 0},
+        {"readOnly": "0"},
+        # A list-wrapped data payload, as some BloFin responses return.
+        [{"permissions": "READ,TRADE"}],
+    ],
+)
+def test_parser_accepts_read_and_trade_shapes(payload: object) -> None:
+    perms = parse_account_permissions(payload)
+    assert perms.can_trade is True
+    assert perms.can_read is True
+    assert perms.can_withdraw is False
+    assert perms.can_transfer is False
+
+
+def test_parser_trade_only_implies_read() -> None:
+    """BloFin docs: TRADE can also request/view account info, so it implies read."""
+    perms = parse_account_permissions({"permissions": ["TRADE"]})
+    assert perms.can_trade is True
+    assert perms.can_read is True
+
+
+def test_parser_transfer_scope_is_flagged() -> None:
+    perms = parse_account_permissions({"permissions": "read,trade,transfer"})
+    assert perms.can_transfer is True
+    assert perms.can_withdraw is False
+
+
+def test_parser_withdraw_scope_is_flagged() -> None:
+    perms = parse_account_permissions({"permissions": ["READ", "TRADE", "WITHDRAW"]})
+    assert perms.can_withdraw is True
+
+
+def test_parser_boolean_transfer_flag_is_flagged() -> None:
+    perms = parse_account_permissions({"read": True, "trade": True, "transfer": True})
+    assert perms.can_transfer is True
+
+
+def test_parser_missing_trade_fails() -> None:
+    perms = parse_account_permissions({"permissions": "read"})
+    assert perms.can_trade is False
+    assert perms.can_read is True
+
+
+@pytest.mark.parametrize("payload", [{}, [], None, "", {"unexpected": "shape"}, {"readOnly": "?"}])
+def test_parser_unexpected_payload_fails_safe(payload: object) -> None:
+    perms = parse_account_permissions(payload)
+    assert perms.can_trade is False
+    assert perms.can_withdraw is False
+    assert perms.can_transfer is False
 
 
 # --- factory ---------------------------------------------------------------

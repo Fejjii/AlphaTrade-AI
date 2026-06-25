@@ -47,13 +47,39 @@ def _find_blofin_account(registry: ProviderRegistry):
     return None
 
 
+def _log_scope_diagnostics(permissions, *, endpoint: str) -> None:
+    """Emit redaction-safe scope diagnostics.
+
+    Logs only field *names*, normalized permission tokens, and derived boolean
+    flags - never raw account data, balances, headers, signatures, or secrets.
+    """
+    logger.info(
+        "exchange_demo_scope_diagnostics",
+        endpoint=endpoint,
+        http_status=200,  # probe returned a successful BloFin envelope (code 0)
+        response_shape_keys=list(permissions.response_keys),
+        normalized_permissions=list(permissions.raw_scopes),
+        has_read=permissions.can_read,
+        has_trade=permissions.can_trade,
+        has_transfer_or_withdraw=bool(permissions.can_transfer or permissions.can_withdraw),
+    )
+
+
 def _verify_demo_key_scope(account) -> None:
     """Refuse withdraw/transfer scope; require trade scope when probe succeeds."""
+    endpoint = getattr(account, "permissions_endpoint", "/api/v1/user/query-apikey")
     try:
         permissions = account.get_account_permissions()
     except ExchangeError as exc:
-        logger.warning("exchange_demo_scope_probe_unavailable", error=str(exc)[:200])
+        # Redacted: typed exchange error text is already sanitized by the client.
+        logger.warning(
+            "exchange_demo_scope_probe_unavailable",
+            endpoint=endpoint,
+            error=str(exc)[:200],
+        )
         return
+
+    _log_scope_diagnostics(permissions, endpoint=endpoint)
 
     if permissions.can_withdraw or permissions.can_transfer:
         raise ValueError(
@@ -62,12 +88,6 @@ def _verify_demo_key_scope(account) -> None:
         )
     if not permissions.can_trade:
         raise ValueError("Refusing BloFin demo key: trade scope is required (read + trade only).")
-    logger.info(
-        "exchange_demo_scope_verified",
-        can_trade=True,
-        can_withdraw=False,
-        can_transfer=False,
-    )
 
 
 def run_exchange_demo_startup_check(settings: Settings, registry: ProviderRegistry) -> None:

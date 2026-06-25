@@ -25,8 +25,33 @@ from app.providers.exchange.mapping import from_blofin_inst_id
 
 logger = structlog.get_logger(__name__)
 
-_WITHDRAW_SCOPES = frozenset({"withdraw", "withdrawal", "transfer", "internal_transfer"})
-_TRADE_SCOPES = frozenset({"trade", "trading"})
+# Endpoint that reports the configured key's scope. BloFin reports scope via an
+# integer ``readOnly`` field (0 = read+write/trade, 1 = read-only) and does not
+# return a per-permission string here; older/proxy shapes may, so we accept both.
+PERMISSIONS_ENDPOINT = "/api/v1/user/query-apikey"
+
+_TRADE_TOKENS = frozenset({"trade", "trading", "write", "readwrite", "read_write"})
+_READ_TOKENS = frozenset({"read", "readonly", "read_only"})
+_TRANSFER_TOKENS = frozenset({"transfer", "internal_transfer", "internaltransfer"})
+_WITHDRAW_TOKENS = frozenset({"withdraw", "withdrawal"})
+
+# Dict keys whose value is a list/string/bool of permission tokens.
+_PERMISSION_FIELDS = (
+    "permissions",
+    "permission",
+    "perm",
+    "perms",
+    "scopes",
+    "scope",
+    "authorities",
+    "authority",
+)
+
+# String/int values of a ``readOnly``-style field that mean "read-only".
+_READ_ONLY_TRUE = frozenset({"1", "true", "yes", "readonly", "read_only", "read-only", "y"})
+_READ_ONLY_FALSE = frozenset(
+    {"0", "false", "no", "readwrite", "read_write", "read-write", "rw", "n"}
+)
 
 
 def _to_decimal(value: Any, default: str = "0") -> Decimal:
@@ -36,11 +61,110 @@ def _to_decimal(value: Any, default: str = "0") -> Decimal:
         return Decimal(default)
 
 
+def _truthy(value: Any) -> bool:
+    """Interpret a permission flag value (bool/int/string) as a boolean."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return False
+
+
+def _normalize_tokens(value: Any) -> set[str]:
+    """Lower-cased permission tokens from a string, list, or boolean-dict value."""
+    tokens: set[str] = set()
+    if isinstance(value, str):
+        for part in value.replace(",", " ").replace(";", " ").replace("|", " ").split():
+            cleaned = part.strip().lower()
+            if cleaned:
+                tokens.add(cleaned)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            tokens |= _normalize_tokens(item)
+    elif isinstance(value, dict):
+        # e.g. {"read": true, "trade": true}
+        tokens |= {str(k).strip().lower() for k, v in value.items() if _truthy(v)}
+    return tokens
+
+
+def _coerce_read_only(value: Any) -> bool | None:
+    """Map a ``readOnly``-style field to True/False, or None when absent/unknown.
+
+    BloFin semantics: ``0`` = read + write (trade allowed), ``1`` = read only.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return int(value) == 1
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _READ_ONLY_TRUE:
+            return True
+        if token in _READ_ONLY_FALSE:
+            return False
+    return None
+
+
+def parse_account_permissions(payload: Any) -> AccountPermissions:
+    """Parse a BloFin API-key info payload into normalized permission flags.
+
+    Accepts every realistic shape returned by (or proxied in front of) BloFin's
+    ``query-apikey`` endpoint:
+
+    * the canonical demo response ``{"readOnly": 0}`` (0 = read+trade, 1 = read-only);
+    * a ``permissions`` string such as ``"read,trade"`` or a list ``["READ", "TRADE"]``;
+    * a boolean map such as ``{"read": true, "trade": true}``;
+    * ``scopes`` / ``authorities`` arrays.
+
+    Parsing is case-insensitive. ``TRADE`` implies read access (per BloFin docs).
+    Withdraw/transfer scopes are surfaced so callers can refuse money-movement keys;
+    an empty or unexpected payload yields ``can_trade=False`` so startup fails safe.
+    """
+    row = payload[0] if isinstance(payload, list) and payload else payload
+    if not isinstance(row, dict):
+        row = {}
+
+    response_keys = tuple(sorted(str(k) for k in row))
+
+    tokens: set[str] = set()
+    for key in _PERMISSION_FIELDS:
+        if key in row:
+            tokens |= _normalize_tokens(row[key])
+
+    # Direct boolean flags at the top level, e.g. {"trade": true}.
+    flag_trade = _truthy(row.get("trade")) or _truthy(row.get("trading"))
+    flag_read = _truthy(row.get("read"))
+    flag_transfer = _truthy(row.get("transfer")) or _truthy(row.get("internal_transfer"))
+    flag_withdraw = _truthy(row.get("withdraw")) or _truthy(row.get("withdrawal"))
+
+    read_only = _coerce_read_only(row.get("readOnly", row.get("read_only")))
+
+    has_trade = bool(tokens & _TRADE_TOKENS) or flag_trade or read_only is False
+    has_transfer = bool(tokens & _TRANSFER_TOKENS) or flag_transfer
+    has_withdraw = bool(tokens & _WITHDRAW_TOKENS) or flag_withdraw
+    # TRADE includes read access; a known readOnly flag also implies read.
+    has_read = bool(tokens & _READ_TOKENS) or flag_read or has_trade or read_only is not None
+
+    return AccountPermissions(
+        can_read=has_read,
+        can_trade=has_trade,
+        can_withdraw=has_withdraw,
+        can_transfer=has_transfer,
+        raw_scopes=tuple(sorted(tokens)),
+        response_keys=response_keys,
+    )
+
+
 class BloFinAccountProvider:
     """Read-only access to the BloFin demo account."""
 
     name = "blofin-demo-account"
     kind = ProviderKind.EXCHANGE
+    permissions_endpoint = PERMISSIONS_ENDPOINT
 
     def __init__(self, client: BloFinClient, *, is_demo: bool = True) -> None:
         self._client = client
@@ -127,20 +251,10 @@ class BloFinAccountProvider:
         Raises an :class:`ExchangeError` subclass if the venue cannot be reached
         or rejects the key; callers decide whether that is fatal.
         """
-        data = self._client.request("GET", "/api/v1/user/query-apikey", signed=True)
-        row = data[0] if isinstance(data, list) and data else data
-        scopes_raw = ""
-        if isinstance(row, dict):
-            scopes_raw = str(row.get("permissions", row.get("perm", "")))
-        scopes = tuple(s.strip().lower() for s in scopes_raw.replace(",", " ").split() if s.strip())
+        data = self._client.request("GET", PERMISSIONS_ENDPOINT, signed=True)
+        permissions = parse_account_permissions(data)
         self._permissions_verified_at = datetime.now(UTC)
-        return AccountPermissions(
-            can_read=True,
-            can_trade=any(s in _TRADE_SCOPES for s in scopes),
-            can_withdraw=any(s in _WITHDRAW_SCOPES for s in scopes),
-            can_transfer=any(s in {"transfer", "internal_transfer"} for s in scopes),
-            raw_scopes=scopes,
-        )
+        return permissions
 
     @staticmethod
     def _coerce_rows(data: Any, *, key: str) -> list[Any]:

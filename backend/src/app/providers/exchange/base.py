@@ -68,6 +68,9 @@ class AccountPermissions:
     can_withdraw: bool
     can_transfer: bool
     raw_scopes: tuple[str, ...] = field(default_factory=tuple)
+    # Field *names* (never values) seen in the venue response, for redacted
+    # startup diagnostics. Safe to log: contains no account data or secrets.
+    response_keys: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
