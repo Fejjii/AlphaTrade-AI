@@ -187,22 +187,25 @@ PY
 assert_no_secrets "$position_mode_json"
 
 echo "10/17 — GET /exchange/account/leverage-info (read-only)"
-leverage_json="$(curl -fsS -H "$(auth_header)" \
+leverage_http="$(curl -sS -o /tmp/exchange_leverage.json -w '%{http_code}' -H "$(auth_header)" \
   "${BACKEND_URL}/exchange/account/leverage-info?inst_id=BTC-USDT&margin_mode=cross")"
-python3 - <<'PY' "$leverage_json"
+leverage_json="$(cat /tmp/exchange_leverage.json)"
+python3 - <<'PY' "$leverage_http" "$leverage_json"
 import json, sys
-body = json.loads(sys.argv[1])
-if "error" in body:
-    err = body.get("error") or {}
-    assert err.get("code") == "exchange_provider_error", body
-    print("  OK: leverage probe returned redacted provider error (no secrets)")
-else:
+http, body_raw = sys.argv[1], sys.argv[2]
+body = json.loads(body_raw)
+if http == "200" and "error" not in body:
     assert body.get("inst_id") == "BTC-USDT", body
     assert body.get("margin_mode") == "cross", body
     assert "leverage" in body, body
     print(f"  OK: leverage={body.get('leverage')}")
+elif http in ("502", "500") and body.get("error", {}).get("code") == "exchange_provider_error":
+    print("  OK: leverage probe returned redacted provider error (no secrets)")
+else:
+    raise SystemExit(f"Unexpected leverage probe response HTTP {http}: {body}")
 PY
 assert_no_secrets "$leverage_json"
+rm -f /tmp/exchange_leverage.json
 
 echo "11/17 — order status probe (skipped — no known demo order id yet)"
 echo "  SKIP: no demo orders placed; order status route available for Slice 66b"

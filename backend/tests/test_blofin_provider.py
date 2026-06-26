@@ -17,7 +17,7 @@ from app.providers.exchange.blofin_account import (
     BloFinAccountProvider,
     parse_account_permissions,
 )
-from app.providers.exchange.blofin_client import BloFinClient
+from app.providers.exchange.blofin_client import BloFinClient, _signed_request_path
 from app.providers.exchange.blofin_market_data import BloFinMarketDataProvider
 from app.providers.exchange.errors import (
     ExchangeAuthError,
@@ -109,6 +109,124 @@ def test_signature_is_deterministic_for_fixed_inputs() -> None:
     sig_b = client._sign(method="GET", path="/x", timestamp="1", nonce="n", body="")
     assert sig_a == sig_b
     assert "demo-secret" not in sig_a
+
+
+def test_signed_request_path_is_stable_for_param_order() -> None:
+    path_a = _signed_request_path(
+        "/api/v1/account/leverage-info",
+        {"instId": "BTC-USDT", "marginMode": "cross"},
+    )
+    path_b = _signed_request_path(
+        "/api/v1/account/leverage-info",
+        {"marginMode": "cross", "instId": "BTC-USDT"},
+    )
+    assert path_a == path_b == "/api/v1/account/leverage-info?instId=BTC-USDT&marginMode=cross"
+
+
+def test_signed_request_path_unchanged_without_params() -> None:
+    path = "/api/v1/account/position-mode"
+    assert _signed_request_path(path, None) == path
+    assert _signed_request_path(path, {}) == path
+
+
+def test_signed_get_uses_query_path_in_signature() -> None:
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["sign"] = request.headers["access-sign"]
+        captured["url"] = str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "data": {"instId": "BTC-USDT", "marginMode": "cross", "leverage": "20"},
+            },
+        )
+
+    client = BloFinClient(
+        base_url=_DEMO_URL,
+        api_key="demo-key",
+        api_secret="demo-secret",
+        api_passphrase="demo-pass",
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _seconds: None,
+        max_retries=0,
+        clock=lambda: "1000",
+        nonce_factory=lambda: "fixednonce",
+    )
+    client.request(
+        "GET",
+        "/api/v1/account/leverage-info",
+        params={"instId": "BTC-USDT", "marginMode": "cross"},
+        signed=True,
+    )
+    expected = client._sign(
+        method="GET",
+        path="/api/v1/account/leverage-info?instId=BTC-USDT&marginMode=cross",
+        timestamp="1000",
+        nonce="fixednonce",
+        body="",
+    )
+    assert captured["sign"] == expected
+    assert captured["url"].endswith("instId=BTC-USDT&marginMode=cross")
+
+
+def test_signed_get_without_params_unchanged() -> None:
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["sign"] = request.headers["access-sign"]
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"code": "0", "data": {"positionMode": "net_mode"}})
+
+    client = BloFinClient(
+        base_url=_DEMO_URL,
+        api_key="demo-key",
+        api_secret="demo-secret",
+        api_passphrase="demo-pass",
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _seconds: None,
+        max_retries=0,
+        clock=lambda: "1000",
+        nonce_factory=lambda: "fixednonce",
+    )
+    client.request("GET", "/api/v1/account/position-mode", signed=True)
+    expected = client._sign(
+        method="GET",
+        path="/api/v1/account/position-mode",
+        timestamp="1000",
+        nonce="fixednonce",
+        body="",
+    )
+    assert captured["sign"] == expected
+    assert captured["url"].endswith("/api/v1/account/position-mode")
+
+
+def test_signed_get_failure_does_not_log_secrets() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": "152409", "msg": "api_key=supersecret", "data": None},
+        )
+
+    client = BloFinClient(
+        base_url=_DEMO_URL,
+        api_key="demo-key",
+        api_secret="demo-secret",
+        api_passphrase="demo-pass",
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _seconds: None,
+        max_retries=0,
+    )
+    with pytest.raises(ExchangeRequestError):
+        client.request(
+            "GET",
+            "/api/v1/account/leverage-info",
+            params={"instId": "BTC-USDT", "marginMode": "cross"},
+            signed=True,
+        )
+    assert "supersecret" not in (client.last_error or "")
+    assert "demo-secret" not in (client.last_error or "")
 
 
 def test_unsigned_request_omits_auth_headers() -> None:

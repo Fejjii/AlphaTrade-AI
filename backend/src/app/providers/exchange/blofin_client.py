@@ -23,6 +23,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 import structlog
@@ -55,6 +56,19 @@ def _first_order_error(data: Any) -> tuple[str | None, str | None]:
             msg = str(inner_msg) if inner_msg is not None else None
             return code, msg
     return None, None
+
+
+def _signed_request_path(path: str, params: dict[str, Any] | None) -> str:
+    """Return the request path used in the BloFin signature prehash.
+
+    Signed GET requests must include the query string in ``path`` with stable
+    parameter ordering (alphabetical by key).
+    """
+    if not params:
+        return path
+    ordered = sorted((str(key), str(value)) for key, value in params.items())
+    query = urlencode(ordered)
+    return f"{path}?{query}"
 
 
 def _now_ms() -> str:
@@ -157,6 +171,8 @@ class BloFinClient:
         assert_demo_host(self._base_url)
 
         body_str = json.dumps(body, separators=(",", ":")) if body is not None else ""
+        sign_path = _signed_request_path(path, params)
+        request_path = sign_path if params else path
         attempt = 0
         last_exc: Exception | None = None
 
@@ -164,13 +180,15 @@ class BloFinClient:
             self._throttle()
             try:
                 headers = (
-                    self._auth_headers(method=method, path=path, body=body_str) if signed else {}
+                    self._auth_headers(method=method, path=sign_path, body=body_str)
+                    if signed
+                    else {}
                 )
                 with self._client() as client:
                     response = client.request(
                         method.upper(),
-                        path,
-                        params=params,
+                        request_path,
+                        params=None,
                         content=body_str if body_str else None,
                         headers=headers,
                     )
