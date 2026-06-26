@@ -24,6 +24,11 @@ from app.providers.exchange.base import (
     ExchangeOrderResult,
 )
 from app.providers.exchange.mapping import to_blofin_inst_id
+from app.providers.exchange.venue_diagnostics import (
+    build_demo_mirror_failure_metadata,
+    endpoint_label,
+    log_fields_for_mirror_failure,
+)
 from app.repositories.approvals import ApprovalRepository
 from app.repositories.exchange_orders import ExchangeFillRepository, ExchangeOrderRepository
 from app.repositories.orders import OrderRepository
@@ -226,10 +231,22 @@ class ExecutionService:
                 )
             )
         except Exception as exc:  # demo mirror is best-effort; never break paper
+            failure_meta = build_demo_mirror_failure_metadata(
+                exc=exc,
+                request=request,
+                paper_order_id=str(order.id),
+                inst_id=inst_id,
+                exchange_mode=_EXCHANGE_DEMO_TAG,
+                endpoint_name=endpoint_label("POST", "/api/v1/trade/order"),
+            )
             logger.warning(
                 "exchange_demo_order_failed",
-                inst_id=inst_id,
-                error=type(exc).__name__,
+                **log_fields_for_mirror_failure(
+                    exc=exc,
+                    inst_id=inst_id,
+                    request=request,
+                    paper_order_id=str(order.id),
+                ),
             )
             exchange_order.status = "failed"
             self._exchange_orders.add(exchange_order)
@@ -243,7 +260,7 @@ class ExecutionService:
                     organization_id=order.organization_id,
                     user_id=order.user_id,
                     actor_type=ActorType.SYSTEM,
-                    metadata={"inst_id": inst_id, "mode": _EXCHANGE_DEMO_TAG},
+                    metadata=failure_meta,
                 )
             )
             return

@@ -31,10 +31,13 @@ from app.core.exchange_safety import assert_demo_host
 from app.guardrails.redaction import redact_text
 from app.providers.exchange.errors import (
     ExchangeAuthError,
+    ExchangeError,
     ExchangeRateLimitError,
     ExchangeRequestError,
     ExchangeUnavailableError,
+    VenueErrorDetails,
 )
+from app.providers.exchange.venue_diagnostics import endpoint_label
 
 logger = structlog.get_logger(__name__)
 
@@ -158,7 +161,7 @@ class BloFinClient:
                         content=body_str if body_str else None,
                         headers=headers,
                     )
-                return self._handle_response(response)
+                return self._handle_response(response, method=method, path=path)
             except (ExchangeRateLimitError, ExchangeUnavailableError) as exc:
                 last_exc = exc
                 self._last_error = redact_text(str(exc))
@@ -174,43 +177,93 @@ class BloFinClient:
                     break
                 self._backoff(attempt)
 
-        logger.warning("blofin_request_failed", method=method, path=path, error=self._last_error)
-        raise last_exc or ExchangeUnavailableError("BloFin request failed after retries.")
+        logger.warning(
+            "blofin_request_failed",
+            method=method,
+            path=path,
+            endpoint=endpoint_label(method, path),
+            error=self._last_error,
+        )
+        endpoint = endpoint_label(method, path)
+        details = VenueErrorDetails(endpoint_name=endpoint)
+        if isinstance(last_exc, ExchangeError) and last_exc.details is not None:
+            details = VenueErrorDetails(
+                venue_error_code=last_exc.details.venue_error_code,
+                venue_error_message=last_exc.details.venue_error_message,
+                http_status=last_exc.details.http_status,
+                endpoint_name=endpoint,
+            )
+        if last_exc is not None and isinstance(last_exc, ExchangeError):
+            raise type(last_exc)(str(last_exc), details=details) from last_exc
+        raise ExchangeUnavailableError(
+            "BloFin request failed after retries.",
+            details=details,
+        )
 
     def _backoff(self, attempt: int) -> None:
         delay = (2 ** (attempt - 1)) * self._min_interval
         # Deterministic jitter (no RNG) keeps tests reproducible.
         self._sleeper(delay * (1 + self._jitter))
 
-    def _handle_response(self, response: httpx.Response) -> Any:
+    def _handle_response(self, response: httpx.Response, *, method: str, path: str) -> Any:
+        endpoint = endpoint_label(method, path)
         status = response.status_code
         if status == 429:
-            raise ExchangeRateLimitError("BloFin rate limit exceeded.")
+            raise ExchangeRateLimitError(
+                "BloFin rate limit exceeded.",
+                details=VenueErrorDetails(http_status=status, endpoint_name=endpoint),
+            )
         if status in _RETRYABLE_STATUS:
-            raise ExchangeUnavailableError(f"BloFin server error: HTTP {status}.")
+            raise ExchangeUnavailableError(
+                f"BloFin server error: HTTP {status}.",
+                details=VenueErrorDetails(http_status=status, endpoint_name=endpoint),
+            )
         if status in (401, 403):
             self._last_error = "BloFin authentication/permission failure."
-            raise ExchangeAuthError(self._last_error)
+            raise ExchangeAuthError(
+                self._last_error,
+                details=VenueErrorDetails(
+                    venue_error_code=str(status),
+                    venue_error_message=self._last_error,
+                    http_status=status,
+                    endpoint_name=endpoint,
+                ),
+            )
         if status >= 400:
             self._last_error = f"BloFin rejected request: HTTP {status}."
-            raise ExchangeRequestError(self._last_error)
+            raise ExchangeRequestError(
+                self._last_error,
+                details=VenueErrorDetails(
+                    venue_error_code=str(status),
+                    venue_error_message=self._last_error,
+                    http_status=status,
+                    endpoint_name=endpoint,
+                ),
+            )
 
         try:
             payload = response.json()
         except Exception as exc:  # malformed body
             raise ExchangeUnavailableError(
-                f"BloFin returned non-JSON body: {redact_text(str(exc))}"
+                f"BloFin returned non-JSON body: {redact_text(str(exc))}",
+                details=VenueErrorDetails(http_status=status, endpoint_name=endpoint),
             ) from exc
 
         # BloFin envelope: {"code": "0", "msg": "...", "data": ...}; code 0 == ok.
         code = str(payload.get("code", "0"))
         if code != "0":
             msg = redact_text(str(payload.get("msg", "")))
+            details = VenueErrorDetails(
+                venue_error_code=code,
+                venue_error_message=msg or None,
+                http_status=status,
+                endpoint_name=endpoint,
+            )
             if code in ("401", "403"):
                 self._last_error = f"BloFin auth error {code}: {msg}"
-                raise ExchangeAuthError(self._last_error)
+                raise ExchangeAuthError(self._last_error, details=details)
             self._last_error = f"BloFin error {code}: {msg}"
-            raise ExchangeRequestError(self._last_error)
+            raise ExchangeRequestError(self._last_error, details=details)
 
         self._last_success_at = datetime.now(UTC)
         self._last_error = None

@@ -20,6 +20,11 @@ from app.providers.exchange.blofin_execution import (
     BloFinDemoExecutionProvider,
     DemoExecutionDisabledError,
 )
+from app.providers.exchange.errors import (
+    ExchangeAuthError,
+    ExchangeRequestError,
+    ExchangeUnavailableError,
+)
 from app.providers.exchange.factory import resolve_exchange_execution_provider
 from app.schemas.common import OrderSide, OrderType
 
@@ -190,3 +195,141 @@ def test_resolver_returns_provider_in_demo_mode() -> None:
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json={"code": "0", "data": []}))
     provider = resolve_exchange_execution_provider(settings, transport=transport)
     assert isinstance(provider, BloFinDemoExecutionProvider)
+
+
+# --- venue rejection diagnostics (mocked; no real network) -----------------
+
+
+def _limit_order_request(**overrides: object) -> ExchangeOrderRequest:
+    base = {
+        "symbol": "BTCUSDT",
+        "inst_id": "BTC-USDT",
+        "side": OrderSide.BUY,
+        "order_type": OrderType.LIMIT,
+        "size": Decimal("0.1"),
+        "price": Decimal("44716.5"),
+        "client_order_id": "slice66b001",
+    }
+    base.update(overrides)
+    return ExchangeOrderRequest(**base)  # type: ignore[arg-type]
+
+
+def test_place_order_price_band_rejection_persists_sanitized_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "51008",
+                "msg": "Order price is out of the allowable range",
+                "data": None,
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details = exc_info.value.details
+    assert details is not None
+    assert details.venue_error_code == "51008"
+    assert details.http_status == 200
+    assert details.endpoint_name == "POST /api/v1/trade/order"
+    assert "allowable range" in (details.venue_error_message or "")
+
+
+def test_place_order_invalid_instrument_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": "51001", "msg": "Instrument ID does not exist", "data": None},
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request(inst_id="NOT-A-PAIR"))
+    assert exc_info.value.details is not None
+    assert exc_info.value.details.venue_error_code == "51001"
+
+
+def test_place_order_invalid_order_type_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        assert body["orderType"] == "limit"
+        return httpx.Response(
+            200,
+            json={"code": "51000", "msg": "Parameter orderType error", "data": None},
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request(order_type=OrderType.LIMIT))
+    assert exc_info.value.details is not None
+    assert "orderType" in (exc_info.value.details.venue_error_message or "")
+
+
+def test_place_order_missing_required_field_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": "51000", "msg": "Parameter positionSide error", "data": None},
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    assert exc_info.value.details is not None
+    assert "positionSide" in (exc_info.value.details.venue_error_message or "")
+
+
+def test_place_order_read_only_or_trade_denied() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"code": "403", "msg": "API key read-only", "data": None})
+
+    with pytest.raises(ExchangeAuthError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details = exc_info.value.details
+    assert details is not None
+    assert details.http_status == 403
+    assert details.endpoint_name == "POST /api/v1/trade/order"
+
+
+def test_place_order_venue_4xx_http_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="bad request")
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details = exc_info.value.details
+    assert details is not None
+    assert details.http_status == 400
+    assert details.venue_error_code == "400"
+
+
+def test_place_order_venue_5xx_http_rejection() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503, text="unavailable")
+
+    with pytest.raises(ExchangeUnavailableError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details = exc_info.value.details
+    assert details is not None
+    assert details.http_status == 503
+    assert details.endpoint_name == "POST /api/v1/trade/order"
+    assert calls["n"] == 2
+
+
+def test_rejection_diagnostics_do_not_leak_secrets() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "1001",
+                "msg": "api_key=supersecret",
+                "data": None,
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request(client_order_id="idem12345"))
+    details_msg = exc_info.value.details.venue_error_message if exc_info.value.details else ""
+    assert "supersecret" not in str(exc_info.value)
+    assert "supersecret" not in (details_msg or "")
+    assert "***REDACTED***" in str(exc_info.value) or "***REDACTED***" in (details_msg or "")

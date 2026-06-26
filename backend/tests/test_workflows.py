@@ -15,7 +15,15 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.core.errors import TradingPolicyError
 from app.db.base import Base
-from app.db.models import ExchangeFill, ExchangeOrder, Membership, Order, Organization, User
+from app.db.models import (
+    AuditLog,
+    ExchangeFill,
+    ExchangeOrder,
+    Membership,
+    Order,
+    Organization,
+    User,
+)
 from app.db.session import get_session
 from app.main import create_app
 from app.providers.exchange.base import (
@@ -25,9 +33,11 @@ from app.providers.exchange.base import (
     ExchangeOrderRequest,
     ExchangeOrderResult,
 )
+from app.providers.exchange.errors import ExchangeRequestError, VenueErrorDetails
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.common import (
     ApprovalAction,
+    AuditEventType,
     MembershipRole,
     RiskAction,
     RiskRuleId,
@@ -635,12 +645,20 @@ class _FakeDemoExecution:
 
     name = "fake-demo-execution"
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        fail_with: Exception | None = None,
+    ) -> None:
         self.fail = fail
+        self.fail_with = fail_with
         self.calls: list[ExchangeOrderRequest] = []
 
     def place_order(self, request: ExchangeOrderRequest) -> ExchangeOrderResult:
         self.calls.append(request)
+        if self.fail_with is not None:
+            raise self.fail_with
         if self.fail:
             raise RuntimeError("demo venue unavailable")
         return ExchangeOrderResult(
@@ -763,6 +781,59 @@ def test_demo_execution_failure_does_not_break_paper_order(
         failed = session.query(ExchangeOrder).all()
         assert len(failed) == 1
         assert failed[0].status == "failed"
+
+
+def test_demo_mirror_failure_persists_sanitized_audit_metadata(
+    workflow_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, base_settings = workflow_db
+    settings = _demo_settings()
+    venue_error = ExchangeRequestError(
+        "BloFin error 51008: Order price is out of the allowable range",
+        details=VenueErrorDetails(
+            venue_error_code="51008",
+            venue_error_message="Order price is out of the allowable range",
+            http_status=200,
+            endpoint_name="POST /api/v1/trade/order",
+        ),
+    )
+
+    with factory() as session:
+        proposal_id, approval_id = _seed_approved_proposal(session, base_settings)
+        fake = _FakeDemoExecution(fail_with=venue_error)
+        execution = ExecutionService(
+            session,
+            settings,
+            AuditService(session),
+            exchange_execution=fake,
+        )
+        execution.place_paper_order(
+            PaperOrderRequest(
+                proposal_id=proposal_id,
+                approval_id=approval_id,
+                symbol="BTCUSDT",
+                side="buy",
+                type="limit",
+                size=Decimal("0.1"),
+                price=Decimal("44716.5"),
+                idempotency_key="slice66b-demo-limit-001",
+            )
+        )
+        session.commit()
+
+        audit = (
+            session.query(AuditLog)
+            .filter(AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_FAILED)
+            .one()
+        )
+        metadata = audit.redacted_metadata
+        assert metadata["venue_error_code"] == "51008"
+        assert metadata["endpoint_name"] == "POST /api/v1/trade/order"
+        assert metadata["order_side"] == "buy"
+        assert metadata["order_type"] == "limit"
+        assert metadata["paper_order_id"]
+        assert "client_order_id_hash" in metadata
+        assert "slice66b-demo-limit-001" not in str(metadata)
 
 
 def test_demo_routing_skipped_when_real_trading_would_be_enabled(
