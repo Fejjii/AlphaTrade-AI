@@ -17,6 +17,7 @@ from typing import Any
 
 import structlog
 
+from app.guardrails.redaction import redact_text
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.providers.exchange.base import (
     ExchangeFill,
@@ -24,6 +25,7 @@ from app.providers.exchange.base import (
     ExchangeOrderResult,
 )
 from app.providers.exchange.blofin_client import BloFinClient
+from app.providers.exchange.errors import ExchangeRequestError, VenueErrorDetails
 
 logger = structlog.get_logger(__name__)
 
@@ -105,6 +107,17 @@ class BloFinDemoExecutionProvider:
         row = data[0] if isinstance(data, list) and data else data
         if not isinstance(row, dict):
             row = {}
+        nested_code = row.get("code")
+        if nested_code is not None and str(nested_code) != "0":
+            nested_msg = redact_text(str(row.get("msg", "")))
+            code_str = str(nested_code)
+            raise ExchangeRequestError(
+                f"BloFin error {code_str}: {nested_msg}",
+                details=VenueErrorDetails(
+                    venue_error_code=code_str,
+                    venue_error_message=nested_msg or None,
+                ),
+            )
         order_id = str(row.get("orderId", row.get("ordId", "")))
         filled = Decimal(str(row.get("filledSize", row.get("accFillSz", "0")) or "0"))
         avg_raw = row.get("averagePrice", row.get("avgPx"))

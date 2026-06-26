@@ -180,6 +180,92 @@ def test_last_error_is_redacted() -> None:
     assert "***REDACTED***" in (client.last_error or "")
 
 
+def test_nested_order_error_prefers_data_reason_over_envelope() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "1",
+                "msg": "All operations failed",
+                "data": [{"code": "51020", "msg": "Position side mismatch"}],
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _client(handler).request("POST", "/api/v1/trade/order", body={}, signed=True)
+    details = exc_info.value.details
+    assert details is not None
+    assert details.venue_error_code == "51020"
+    assert details.venue_error_message == "Position side mismatch"
+    assert details.http_status == 200
+
+
+def test_nested_order_error_redacts_data_msg() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "1",
+                "msg": "All operations failed",
+                "data": [{"code": "51000", "msg": "api_key=leakedsecret"}],
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _client(handler).request("POST", "/api/v1/trade/order", body={}, signed=True)
+    details_msg = exc_info.value.details.venue_error_message if exc_info.value.details else ""
+    assert "leakedsecret" not in (details_msg or "")
+
+
+def test_position_mode_parses_net_mode() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": "0", "data": {"positionMode": "net_mode"}},
+        )
+
+    mode = BloFinAccountProvider(_client(handler)).get_position_mode()
+    assert mode.position_mode == "net_mode"
+
+
+def test_position_mode_parses_long_short_mode() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": "0", "data": {"positionMode": "long_short_mode"}},
+        )
+
+    mode = BloFinAccountProvider(_client(handler)).get_position_mode()
+    assert mode.position_mode == "long_short_mode"
+
+
+def test_leverage_info_parses_cross_margin() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["instId"] == "BTC-USDT"
+        assert request.url.params["marginMode"] == "cross"
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "data": {
+                    "instId": "BTC-USDT",
+                    "marginMode": "cross",
+                    "leverage": "50",
+                    "positionSide": "net",
+                },
+            },
+        )
+
+    info = BloFinAccountProvider(_client(handler)).get_leverage_info(
+        inst_id="BTC-USDT",
+        margin_mode="cross",
+    )
+    assert info.inst_id == "BTC-USDT"
+    assert info.margin_mode == "cross"
+    assert info.leverage == Decimal("50")
+    assert info.position_side == "net"
+
+
 # --- market data -----------------------------------------------------------
 
 

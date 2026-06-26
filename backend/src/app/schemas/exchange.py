@@ -92,3 +92,20 @@ class ExchangeOrderCancelResponse(StrictModel):
     exchange_order_id: str
     cancelled: bool
     generated_at: datetime
+
+
+class ExchangePositionModeResponse(StrictModel):
+    """Account position mode for demo order planning (read-only)."""
+
+    position_mode: str
+    generated_at: datetime
+
+
+class ExchangeLeverageInfoResponse(StrictModel):
+    """Configured leverage for an instrument (read-only)."""
+
+    inst_id: str
+    margin_mode: str
+    leverage: Decimal
+    position_side: str | None = None
+    generated_at: datetime

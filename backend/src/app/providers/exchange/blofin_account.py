@@ -15,7 +15,9 @@ import structlog
 
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.providers.exchange.base import (
+    AccountLeverageInfo,
     AccountPermissions,
+    AccountPositionMode,
     ExchangeBalance,
     ExchangeInstrument,
     ExchangePositionData,
@@ -244,6 +246,29 @@ class BloFinAccountProvider:
                 )
             )
         return positions
+
+    def get_position_mode(self) -> AccountPositionMode:
+        """Return the account position mode (one-way net vs hedge long/short)."""
+        data = self._client.request("GET", "/api/v1/account/position-mode", signed=True)
+        row = data if isinstance(data, dict) else {}
+        return AccountPositionMode(position_mode=str(row.get("positionMode", "")))
+
+    def get_leverage_info(self, *, inst_id: str, margin_mode: str) -> AccountLeverageInfo:
+        """Return configured leverage for an instrument under a margin mode."""
+        data = self._client.request(
+            "GET",
+            "/api/v1/account/leverage-info",
+            params={"instId": inst_id, "marginMode": margin_mode},
+            signed=True,
+        )
+        row = data if isinstance(data, dict) else {}
+        position_side_raw = row.get("positionSide")
+        return AccountLeverageInfo(
+            inst_id=str(row.get("instId", inst_id)),
+            margin_mode=str(row.get("marginMode", margin_mode)),
+            leverage=_to_decimal(row.get("leverage", "0")),
+            position_side=str(position_side_raw) if position_side_raw not in (None, "") else None,
+        )
 
     def get_account_permissions(self) -> AccountPermissions:
         """Probe the configured API key's scopes.

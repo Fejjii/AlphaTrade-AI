@@ -56,6 +56,23 @@ class ExchangePositionData:
 
 
 @dataclass(frozen=True)
+class AccountPositionMode:
+    """User position mode on the demo account (one-way vs hedge)."""
+
+    position_mode: str
+
+
+@dataclass(frozen=True)
+class AccountLeverageInfo:
+    """Configured leverage for an instrument and margin mode."""
+
+    inst_id: str
+    margin_mode: str
+    leverage: Decimal
+    position_side: str | None = None
+
+
+@dataclass(frozen=True)
 class AccountPermissions:
     """Permission scopes for the configured API key.
 

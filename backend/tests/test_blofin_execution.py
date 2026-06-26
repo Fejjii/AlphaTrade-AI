@@ -347,3 +347,72 @@ def test_rejection_diagnostics_do_not_leak_secrets() -> None:
     assert "supersecret" not in str(exc_info.value)
     assert "supersecret" not in (details_msg or "")
     assert "***REDACTED***" in str(exc_info.value) or "***REDACTED***" in (details_msg or "")
+
+
+def test_place_order_nested_error_surfaces_per_order_reason() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "1",
+                "msg": "All operations failed",
+                "data": [
+                    {
+                        "code": "51020",
+                        "msg": "Position side mismatch",
+                        "clientOrderId": "AT123",
+                    }
+                ],
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details = exc_info.value.details
+    assert details is not None
+    assert details.venue_error_code == "51020"
+    assert "Position side mismatch" in (details.venue_error_message or "")
+    assert details.http_status == 200
+
+
+def test_place_order_nested_error_redacts_secrets_in_data_msg() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "1",
+                "msg": "All operations failed",
+                "data": [{"code": "51000", "msg": "api_key=supersecret", "clientOrderId": "x"}],
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details_msg = exc_info.value.details.venue_error_message if exc_info.value.details else ""
+    assert "supersecret" not in str(exc_info.value)
+    assert "supersecret" not in (details_msg or "")
+
+
+def test_place_order_envelope_success_with_nested_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "msg": "",
+                "data": [
+                    {
+                        "code": "51008",
+                        "msg": "Order price is out of the allowable range",
+                        "clientOrderId": "x",
+                    }
+                ],
+            },
+        )
+
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        _provider(handler).place_order(_limit_order_request())
+    details = exc_info.value.details
+    assert details is not None
+    assert details.venue_error_code == "51008"
+    assert "allowable range" in (details.venue_error_message or "")

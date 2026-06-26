@@ -26,9 +26,11 @@ from app.schemas.exchange import (
     ExchangeBalancesResponse,
     ExchangeInstrumentItem,
     ExchangeInstrumentsResponse,
+    ExchangeLeverageInfoResponse,
     ExchangeOrderCancelResponse,
     ExchangeOrderStatusResponse,
     ExchangePositionItem,
+    ExchangePositionModeResponse,
     ExchangePositionsResponse,
     ExchangeStatusResponse,
 )
@@ -149,6 +151,51 @@ async def list_positions(
     positions = run_demo_provider_call("positions", account.get_positions)
     return ExchangePositionsResponse(
         items=[_map_position(p) for p in positions],
+        generated_at=_now(),
+    )
+
+
+@router.get(
+    "/account/position-mode",
+    response_model=ExchangePositionModeResponse,
+    summary="BloFin demo account position mode",
+)
+async def get_position_mode(
+    _tenant: OwnerDep,
+    settings: SettingsDep,
+) -> ExchangePositionModeResponse:
+    """Return one-way vs hedge position mode (read-only; no account mutation)."""
+    account = get_demo_account_provider(settings)
+    mode = run_demo_provider_call("position mode", account.get_position_mode)
+    return ExchangePositionModeResponse(
+        position_mode=mode.position_mode,
+        generated_at=_now(),
+    )
+
+
+@router.get(
+    "/account/leverage-info",
+    response_model=ExchangeLeverageInfoResponse,
+    summary="BloFin demo leverage for an instrument",
+)
+async def get_leverage_info(
+    _tenant: OwnerDep,
+    settings: SettingsDep,
+    inst_id: str = Query(default="BTC-USDT", description="BloFin instrument id."),
+    margin_mode: str = Query(default="cross", description="Margin mode (cross or isolated)."),
+) -> ExchangeLeverageInfoResponse:
+    """Return configured leverage for an instrument (read-only; no account mutation)."""
+    account = get_demo_account_provider(settings)
+    normalized_inst = to_blofin_inst_id(inst_id) if "-" not in inst_id else inst_id.upper()
+    info = run_demo_provider_call(
+        "leverage info",
+        lambda: account.get_leverage_info(inst_id=normalized_inst, margin_mode=margin_mode),
+    )
+    return ExchangeLeverageInfoResponse(
+        inst_id=info.inst_id,
+        margin_mode=info.margin_mode,
+        leverage=info.leverage,
+        position_side=info.position_side,
         generated_at=_now(),
     )
 

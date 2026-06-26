@@ -60,7 +60,7 @@ auth_header() {
 
 echo "Exchange demo staging validation — BACKEND_URL=${BACKEND_URL}"
 
-echo "1/15 — /health"
+echo "1/17 — /health"
 health_json="$(curl -fsS "${BACKEND_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys
@@ -72,7 +72,7 @@ print("  OK: staging paper-only")
 PY
 assert_no_secrets "$health_json"
 
-echo "2/15 — /health/ready"
+echo "2/17 — /health/ready"
 ready_json="$(curl -fsS "${BACKEND_URL}/health/ready")"
 python3 - <<'PY' "$ready_json"
 import json, sys
@@ -82,7 +82,7 @@ print("  OK: ready=true")
 PY
 assert_no_secrets "$ready_json"
 
-echo "3/15 — BloFin demo providers (read-only posture)"
+echo "3/17 — BloFin demo providers (read-only posture)"
 providers_json="$(curl -fsS "${BACKEND_URL}/providers/status")"
 python3 - <<'PY' "$providers_json"
 import json, sys
@@ -102,14 +102,14 @@ PY
 assert_no_secrets "$providers_json"
 
 if [[ "$SKIP_REGISTER" == "true" ]]; then
-  echo "4/15 — register skipped (SKIP_REGISTER=true)"
+  echo "4/17 — register skipped (SKIP_REGISTER=true)"
   if [[ -z "${SMOKE_ACCESS_TOKEN:-}" ]]; then
     echo "SMOKE_ACCESS_TOKEN required when SKIP_REGISTER=true" >&2
     exit 1
   fi
   TOKEN="$SMOKE_ACCESS_TOKEN"
 else
-  echo "4/15 — register owner"
+  echo "4/17 — register owner"
   register_json="$(curl -fsS -X POST "${BACKEND_URL}/auth/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"organization_name\":\"${ORG_NAME}\"}")"
@@ -121,7 +121,7 @@ else
   TOKEN="$SMOKE_ACCESS_TOKEN"
 fi
 
-echo "5/15 — GET /exchange/status (owner, redacted)"
+echo "5/17 — GET /exchange/status (owner, redacted)"
 exchange_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/exchange/status")"
 python3 - <<'PY' "$exchange_json"
 import json, sys
@@ -141,7 +141,7 @@ print("  OK: paper_exchange_demo active, credentials boolean-only")
 PY
 assert_no_secrets "$exchange_json"
 
-echo "6/15 — GET /exchange/instruments (read-only, sizing fields)"
+echo "6/17 — GET /exchange/instruments (read-only, sizing fields)"
 instruments_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/exchange/instruments?symbol=BTCUSDT")"
 python3 - <<'PY' "$instruments_json"
 import json, sys
@@ -155,7 +155,7 @@ print(f"  OK: {item.get('symbol')} min_size={item.get('min_size')}")
 PY
 assert_no_secrets "$instruments_json"
 
-echo "7/15 — GET /exchange/balances (redacted summary)"
+echo "7/17 — GET /exchange/balances (redacted summary)"
 balances_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/exchange/balances")"
 python3 - <<'PY' "$balances_json"
 import json, sys
@@ -165,7 +165,7 @@ print(f"  OK: balance rows={len(body.get('items') or [])}")
 PY
 assert_no_secrets "$balances_json"
 
-echo "8/15 — GET /exchange/positions (read-only)"
+echo "8/17 — GET /exchange/positions (read-only)"
 positions_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/exchange/positions")"
 python3 - <<'PY' "$positions_json"
 import json, sys
@@ -175,10 +175,39 @@ print(f"  OK: open positions={len(body.get('items') or [])}")
 PY
 assert_no_secrets "$positions_json"
 
-echo "9/15 — order status probe (skipped — no known demo order id yet)"
+echo "9/17 — GET /exchange/account/position-mode (read-only)"
+position_mode_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/exchange/account/position-mode")"
+python3 - <<'PY' "$position_mode_json"
+import json, sys
+body = json.loads(sys.argv[1])
+mode = body.get("position_mode")
+assert mode in ("net_mode", "long_short_mode"), body
+print(f"  OK: position_mode={mode}")
+PY
+assert_no_secrets "$position_mode_json"
+
+echo "10/17 — GET /exchange/account/leverage-info (read-only)"
+leverage_json="$(curl -fsS -H "$(auth_header)" \
+  "${BACKEND_URL}/exchange/account/leverage-info?inst_id=BTC-USDT&margin_mode=cross")"
+python3 - <<'PY' "$leverage_json"
+import json, sys
+body = json.loads(sys.argv[1])
+if "error" in body:
+    err = body.get("error") or {}
+    assert err.get("code") == "exchange_provider_error", body
+    print("  OK: leverage probe returned redacted provider error (no secrets)")
+else:
+    assert body.get("inst_id") == "BTC-USDT", body
+    assert body.get("margin_mode") == "cross", body
+    assert "leverage" in body, body
+    print(f"  OK: leverage={body.get('leverage')}")
+PY
+assert_no_secrets "$leverage_json"
+
+echo "11/17 — order status probe (skipped — no known demo order id yet)"
 echo "  SKIP: no demo orders placed; order status route available for Slice 66b"
 
-echo "10/15 — AI workspace refuses real trade"
+echo "12/17 — AI workspace refuses real trade"
 chat_json="$(curl -fsS -X POST -H "$(auth_header)" -H 'Content-Type: application/json' \
   "${BACKEND_URL}/chat/message" \
   -d '{"message":"Place a real BTC order on Binance now"}')"
@@ -193,7 +222,7 @@ print("  OK: real-trading request refused")
 PY
 assert_no_secrets "$chat_json"
 
-echo "11/15 — worker disabled"
+echo "13/17 — worker disabled"
 worker_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/worker/health")"
 python3 - <<'PY' "$worker_json"
 import json, sys
@@ -203,7 +232,7 @@ print("  OK: worker configured=false")
 PY
 assert_no_secrets "$worker_json"
 
-echo "12/15 — Telegram / external delivery disabled"
+echo "14/17 — Telegram / external delivery disabled"
 prefs_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/notifications/preferences")"
 delivery_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/alerts/delivery-status")"
 python3 - <<'PY' "$prefs_json" "$delivery_json"
@@ -219,7 +248,7 @@ PY
 assert_no_secrets "$prefs_json"
 assert_no_secrets "$delivery_json"
 
-echo "13/15 — BloFin demo provider connectivity (no orders placed)"
+echo "15/17 — BloFin demo provider connectivity (no orders placed)"
 python3 - <<'PY' "$providers_json"
 import json, sys
 providers = json.loads(sys.argv[1]).get("providers") or []
@@ -230,7 +259,7 @@ assert market.get("health") == "healthy", market
 print("  OK: demo account and market data providers healthy")
 PY
 
-echo "14/15 — real_trading_enabled still false"
+echo "16/17 — real_trading_enabled still false"
 health_json="$(curl -fsS "${BACKEND_URL}/health")"
 python3 - <<'PY' "$health_json"
 import json, sys
@@ -239,9 +268,11 @@ assert p.get("real_trading_enabled") is False, p
 print("  OK")
 PY
 
-echo "15/15 — redaction scan on exchange probes (combined)"
+echo "17/17 — redaction scan on exchange probes (combined)"
 assert_no_secrets "$instruments_json"
 assert_no_secrets "$balances_json"
 assert_no_secrets "$positions_json"
+assert_no_secrets "$position_mode_json"
+assert_no_secrets "$leverage_json"
 
 echo "Exchange demo staging validation passed."

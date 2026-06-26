@@ -44,6 +44,19 @@ logger = structlog.get_logger(__name__)
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
+def _first_order_error(data: Any) -> tuple[str | None, str | None]:
+    """Return per-order ``code``/``msg`` from a BloFin batch ``data`` payload."""
+    if isinstance(data, list) and data:
+        row = data[0]
+        if isinstance(row, dict):
+            inner_code = row.get("code")
+            inner_msg = row.get("msg")
+            code = str(inner_code) if inner_code is not None else None
+            msg = str(inner_msg) if inner_msg is not None else None
+            return code, msg
+    return None, None
+
+
 def _now_ms() -> str:
     return str(int(datetime.now(UTC).timestamp() * 1000))
 
@@ -252,17 +265,22 @@ class BloFinClient:
         # BloFin envelope: {"code": "0", "msg": "...", "data": ...}; code 0 == ok.
         code = str(payload.get("code", "0"))
         if code != "0":
-            msg = redact_text(str(payload.get("msg", "")))
+            inner_code, inner_msg = _first_order_error(payload.get("data"))
+            venue_code = inner_code if inner_code is not None else code
+            if inner_msg is not None:
+                venue_msg = redact_text(inner_msg)
+            else:
+                venue_msg = redact_text(str(payload.get("msg", "")))
             details = VenueErrorDetails(
-                venue_error_code=code,
-                venue_error_message=msg or None,
+                venue_error_code=venue_code,
+                venue_error_message=venue_msg or None,
                 http_status=status,
                 endpoint_name=endpoint,
             )
             if code in ("401", "403"):
-                self._last_error = f"BloFin auth error {code}: {msg}"
+                self._last_error = f"BloFin auth error {venue_code}: {venue_msg}"
                 raise ExchangeAuthError(self._last_error, details=details)
-            self._last_error = f"BloFin error {code}: {msg}"
+            self._last_error = f"BloFin error {venue_code}: {venue_msg}"
             raise ExchangeRequestError(self._last_error, details=details)
 
         self._last_success_at = datetime.now(UTC)

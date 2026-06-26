@@ -90,6 +90,21 @@ def _demo_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"code": "0", "data": [{"details": _BALANCES}]})
     if "/account/positions" in path:
         return httpx.Response(200, json={"code": "0", "data": _POSITIONS})
+    if "/account/position-mode" in path:
+        return httpx.Response(200, json={"code": "0", "data": {"positionMode": "net_mode"}})
+    if "/account/leverage-info" in path:
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "data": {
+                    "instId": "BTC-USDT",
+                    "marginMode": "cross",
+                    "leverage": "20",
+                    "positionSide": "net",
+                },
+            },
+        )
     if "/trade/order" in path and request.method == "GET":
         return httpx.Response(200, json={"code": "0", "data": [_ORDER]})
     if "/trade/cancel-order" in path:
@@ -208,6 +223,8 @@ def test_probes_require_owner(demo_client: TestClient) -> None:
         "/exchange/instruments",
         "/exchange/balances",
         "/exchange/positions",
+        "/exchange/account/position-mode",
+        "/exchange/account/leverage-info",
         "/exchange/orders/BTC-USDT/demo-order-1",
     ):
         response = demo_client.get(path)
@@ -220,6 +237,8 @@ def test_probes_return_409_in_paper_internal(internal_client: TestClient) -> Non
         ("GET", "/exchange/instruments"),
         ("GET", "/exchange/balances"),
         ("GET", "/exchange/positions"),
+        ("GET", "/exchange/account/position-mode"),
+        ("GET", "/exchange/account/leverage-info"),
         ("GET", "/exchange/orders/BTC-USDT/demo-order-1"),
         ("POST", "/exchange/orders/BTC-USDT/demo-order-1/cancel"),
     ):
@@ -261,6 +280,31 @@ def test_positions_read_only(demo_client: TestClient) -> None:
     body = response.json()
     assert body["items"][0]["inst_id"] == "BTC-USDT"
     assert body["items"][0]["side"] == "long"
+    _assert_no_secrets(body)
+
+
+def test_position_mode_read_only(demo_client: TestClient) -> None:
+    headers = _register_owner(demo_client)
+    response = demo_client.get("/exchange/account/position-mode", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["position_mode"] == "net_mode"
+    _assert_no_secrets(body)
+
+
+def test_leverage_info_read_only(demo_client: TestClient) -> None:
+    headers = _register_owner(demo_client)
+    response = demo_client.get(
+        "/exchange/account/leverage-info",
+        headers=headers,
+        params={"inst_id": "BTC-USDT", "margin_mode": "cross"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["inst_id"] == "BTC-USDT"
+    assert body["margin_mode"] == "cross"
+    assert body["leverage"] == "20"
+    assert body["position_side"] == "net"
     _assert_no_secrets(body)
 
 
