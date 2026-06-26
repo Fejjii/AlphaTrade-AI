@@ -289,6 +289,8 @@ class ExecutionService:
                     "exchange_order_id": result.exchange_order_id,
                     "venue_client_order_id_prefix": venue_client_order_id[:8],
                     "client_order_id_hash": client_order_id_fingerprint(request.idempotency_key),
+                    "position_mode": result.position_mode,
+                    "position_side": result.position_side,
                 },
             )
         )

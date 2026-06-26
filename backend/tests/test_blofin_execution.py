@@ -15,6 +15,7 @@ import pytest
 
 from app.core.config import Settings
 from app.providers.exchange.base import ExchangeOrderRequest
+from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.blofin_execution import (
     BloFinDemoExecutionProvider,
@@ -53,12 +54,47 @@ def _client(handler, **kwargs) -> BloFinClient:
     )
 
 
-def _provider(handler, **kwargs) -> BloFinDemoExecutionProvider:
+def _handler(
+    *,
+    position_mode: str = "net_mode",
+    order_handler: object | None = None,
+) -> object:
+    """Route mock requests for position-mode probe and order placement."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if "/account/position-mode" in path:
+            return httpx.Response(
+                200,
+                json={"code": "0", "data": {"positionMode": position_mode}},
+            )
+        if order_handler is not None:
+            return order_handler(request)  # type: ignore[operator]
+        return httpx.Response(200, json={"code": "0", "data": [{"orderId": "x"}]})
+
+    return handler
+
+
+def _provider(
+    handler: object | None = None,
+    *,
+    position_mode: str = "net_mode",
+    **kwargs: object,
+) -> BloFinDemoExecutionProvider:
+    if handler is None:
+        routed = _handler(position_mode=position_mode)
+    elif callable(handler):
+        routed = _handler(position_mode=position_mode, order_handler=handler)
+    else:
+        routed = handler
+    client = _client(routed)  # type: ignore[arg-type]
+    account = BloFinAccountProvider(client)
     return BloFinDemoExecutionProvider(
-        _client(handler),
+        client,
+        account,
         real_trading_enabled=False,
         exchange_demo_active=True,
-        **kwargs,
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -78,7 +114,8 @@ def _order_request() -> ExchangeOrderRequest:
 
 def test_refuses_when_real_trading_enabled() -> None:
     provider = BloFinDemoExecutionProvider(
-        _client(lambda r: httpx.Response(200, json={"code": "0", "data": []})),
+        _client(_handler()),
+        BloFinAccountProvider(_client(_handler())),
         real_trading_enabled=True,
         exchange_demo_active=True,
     )
@@ -88,7 +125,8 @@ def test_refuses_when_real_trading_enabled() -> None:
 
 def test_refuses_when_not_demo_mode() -> None:
     provider = BloFinDemoExecutionProvider(
-        _client(lambda r: httpx.Response(200, json={"code": "0", "data": []})),
+        _client(_handler()),
+        BloFinAccountProvider(_client(_handler())),
         real_trading_enabled=False,
         exchange_demo_active=False,
     )
@@ -160,6 +198,8 @@ def test_place_order_sends_signed_body_and_parses_fills() -> None:
     assert len(result.fills) == 1
     assert result.fills[0].fee == Decimal("0.02")
     assert result.fills[0].fee_currency == "USDT"
+    assert result.position_mode == "net_mode"
+    assert result.position_side == "net"
 
 
 def test_place_limit_order_includes_price_and_reduce_only() -> None:
@@ -416,3 +456,95 @@ def test_place_order_envelope_success_with_nested_failure() -> None:
     assert details is not None
     assert details.venue_error_code == "51008"
     assert "allowable range" in (details.venue_error_message or "")
+
+
+# --- hedge mode positionSide ------------------------------------------------
+
+
+def test_hedge_mode_buy_sends_position_side_long() -> None:
+    captured: dict[str, object] = {}
+
+    def order_handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"code": "0", "data": [{"orderId": "hedge-1"}]})
+
+    result = _provider(order_handler, position_mode="long_short_mode").place_order(_order_request())
+    body = captured["body"]
+    assert body["positionSide"] == "long"
+    assert body["marginMode"] == "cross"
+    assert body["side"] == "buy"
+    assert result.position_mode == "long_short_mode"
+    assert result.position_side == "long"
+
+
+def test_hedge_mode_sell_sends_position_side_short() -> None:
+    captured: dict[str, object] = {}
+
+    def order_handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"code": "0", "data": [{"orderId": "hedge-2"}]})
+
+    req = ExchangeOrderRequest(
+        symbol="BTCUSDT",
+        inst_id="BTC-USDT",
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        size=Decimal("0.1"),
+        price=Decimal("90000"),
+    )
+    result = _provider(order_handler, position_mode="long_short_mode").place_order(req)
+    body = captured["body"]
+    assert body["positionSide"] == "short"
+    assert body["marginMode"] == "cross"
+    assert result.position_side == "short"
+
+
+def test_hedge_mode_reduce_only_raises_before_order_post() -> None:
+    calls = {"n": 0}
+
+    def order_handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"code": "0", "data": [{"orderId": "x"}]})
+
+    req = ExchangeOrderRequest(
+        symbol="BTCUSDT",
+        inst_id="BTC-USDT",
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        size=Decimal("0.1"),
+        price=Decimal("90000"),
+        reduce_only=True,
+    )
+    with pytest.raises(ExchangeRequestError, match="reduce-only is not supported"):
+        _provider(order_handler, position_mode="long_short_mode").place_order(req)
+    assert calls["n"] == 0
+
+
+def test_unknown_position_mode_raises_before_order_post() -> None:
+    calls = {"n": 0}
+
+    def order_handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"code": "0", "data": [{"orderId": "x"}]})
+
+    with pytest.raises(ExchangeRequestError, match="unknown BloFin position mode"):
+        _provider(order_handler, position_mode="bogus").place_order(_order_request())
+    assert calls["n"] == 0
+
+
+def test_venue_rejection_carries_position_context() -> None:
+    def order_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": "51008",
+                "msg": "Order price is out of the allowable range",
+                "data": None,
+            },
+        )
+
+    provider = _provider(order_handler, position_mode="long_short_mode")
+    with pytest.raises(ExchangeRequestError) as exc_info:
+        provider.place_order(_limit_order_request())
+    assert exc_info.value.position_mode == "long_short_mode"
+    assert exc_info.value.position_side == "long"

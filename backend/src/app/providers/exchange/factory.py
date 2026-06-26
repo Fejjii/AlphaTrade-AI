@@ -81,6 +81,7 @@ def resolve_exchange_provider(
     market_data = BloFinMarketDataProvider(client)
     execution = BloFinDemoExecutionProvider(
         client,
+        account,
         real_trading_enabled=settings.real_trading_enabled,
         exchange_demo_active=settings.exchange_demo_active,
     )
@@ -109,8 +110,10 @@ def resolve_exchange_execution_provider(
     if settings.real_trading_enabled:  # defense-in-depth; should be impossible
         return None
     client = build_blofin_client(settings, transport=transport)
+    account = BloFinAccountProvider(client)
     return BloFinDemoExecutionProvider(
         client,
+        account,
         real_trading_enabled=settings.real_trading_enabled,
         exchange_demo_active=settings.exchange_demo_active,
     )

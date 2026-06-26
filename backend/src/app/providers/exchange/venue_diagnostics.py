@@ -63,6 +63,8 @@ def build_demo_mirror_failure_metadata(
     exchange_mode: str,
     endpoint_name: str | None = None,
     venue_client_order_id: str | None = None,
+    position_mode: str | None = None,
+    position_side: str | None = None,
 ) -> dict[str, Any]:
     """Build audit-safe metadata for ``exchange_demo_order_failed`` events."""
     details = venue_error_details_from_exception(exc)
@@ -86,6 +88,16 @@ def build_demo_mirror_failure_metadata(
         metadata["client_order_id_hash"] = fingerprint
     if venue_client_order_id:
         metadata["venue_client_order_id_prefix"] = venue_client_order_id[:8]
+
+    resolved_mode = position_mode
+    resolved_side = position_side
+    if isinstance(exc, ExchangeError):
+        resolved_mode = resolved_mode or exc.position_mode
+        resolved_side = resolved_side or exc.position_side
+    if resolved_mode:
+        metadata["position_mode"] = resolved_mode
+    if resolved_side:
+        metadata["position_side"] = resolved_side
 
     if details.venue_error_code:
         metadata["venue_error_code"] = details.venue_error_code

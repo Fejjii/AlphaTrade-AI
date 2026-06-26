@@ -27,9 +27,13 @@ class ExchangeError(Exception):
         message: str,
         *,
         details: VenueErrorDetails | None = None,
+        position_mode: str | None = None,
+        position_side: str | None = None,
     ) -> None:
         super().__init__(message)
         self.details = details
+        self.position_mode = position_mode
+        self.position_side = position_side
 
 
 class ExchangeAuthError(ExchangeError):

@@ -24,8 +24,10 @@ from app.providers.exchange.base import (
     ExchangeOrderRequest,
     ExchangeOrderResult,
 )
+from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.errors import ExchangeRequestError, VenueErrorDetails
+from app.providers.exchange.position_side import resolve_position_side
 
 logger = structlog.get_logger(__name__)
 
@@ -43,11 +45,13 @@ class BloFinDemoExecutionProvider:
     def __init__(
         self,
         client: BloFinClient,
+        account: BloFinAccountProvider,
         *,
         real_trading_enabled: bool,
         exchange_demo_active: bool,
     ) -> None:
         self._client = client
+        self._account = account
         self._real_trading_enabled = real_trading_enabled
         self._exchange_demo_active = exchange_demo_active
 
@@ -65,10 +69,16 @@ class BloFinDemoExecutionProvider:
     def place_order(self, request: ExchangeOrderRequest) -> ExchangeOrderResult:
         """Place a demo order; raises on unsafe config or venue rejection."""
         self._assert_safe()
+        position_mode = self._account.get_position_mode().position_mode
+        position_side = resolve_position_side(
+            position_mode,
+            request.side,
+            reduce_only=request.reduce_only,
+        )
         body: dict[str, Any] = {
             "instId": request.inst_id,
             "marginMode": "cross",
-            "positionSide": "net",
+            "positionSide": position_side,
             "side": request.side.value,
             "orderType": request.order_type.value,
             "size": str(request.size),
@@ -80,8 +90,28 @@ class BloFinDemoExecutionProvider:
         if request.client_order_id:
             body["clientOrderId"] = request.client_order_id
 
-        data = self._client.request("POST", "/api/v1/trade/order", body=body, signed=True)
-        return self._parse_order_result(data, request)
+        try:
+            data = self._client.request("POST", "/api/v1/trade/order", body=body, signed=True)
+            result = self._parse_order_result(data, request)
+        except ExchangeRequestError as exc:
+            if exc.position_mode is None:
+                raise ExchangeRequestError(
+                    str(exc),
+                    details=exc.details,
+                    position_mode=position_mode,
+                    position_side=position_side,
+                ) from exc
+            raise
+        return ExchangeOrderResult(
+            exchange_order_id=result.exchange_order_id,
+            client_order_id=result.client_order_id,
+            status=result.status,
+            filled_size=result.filled_size,
+            average_price=result.average_price,
+            fills=result.fills,
+            position_mode=position_mode,
+            position_side=position_side,
+        )
 
     def get_order(self, *, inst_id: str, exchange_order_id: str) -> ExchangeOrderResult:
         self._assert_safe()

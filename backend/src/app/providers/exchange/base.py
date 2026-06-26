@@ -126,6 +126,8 @@ class ExchangeOrderResult:
     filled_size: Decimal
     average_price: Decimal | None
     fills: tuple[ExchangeFill, ...] = field(default_factory=tuple)
+    position_mode: str | None = None
+    position_side: str | None = None
 
 
 @runtime_checkable

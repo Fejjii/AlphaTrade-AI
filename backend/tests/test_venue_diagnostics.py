@@ -125,3 +125,30 @@ def test_mirror_failure_metadata_redacts_secret_like_messages() -> None:
         exchange_mode="paper_exchange_demo",
     )
     assert "leakedsecret" not in str(metadata)
+
+
+def test_mirror_failure_metadata_includes_position_mode_and_side() -> None:
+    request = PaperOrderRequest(
+        proposal_id="00000000-0000-0000-0000-000000000001",
+        approval_id="00000000-0000-0000-0000-000000000002",
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.LIMIT,
+        size=Decimal("0.1"),
+        price=Decimal("44716.5"),
+        idempotency_key="idem001234",
+    )
+    exc = ExchangeRequestError(
+        "Refusing order: reduce-only is not supported in BloFin hedge mode.",
+        position_mode="long_short_mode",
+    )
+    metadata = build_demo_mirror_failure_metadata(
+        exc=exc,
+        request=request,
+        paper_order_id="paper-order-id",
+        inst_id="BTC-USDT",
+        exchange_mode="paper_exchange_demo",
+    )
+    assert metadata["position_mode"] == "long_short_mode"
+    assert "demo-key" not in str(metadata)
+    assert "demo-secret" not in str(metadata)
