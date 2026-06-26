@@ -66,6 +66,7 @@ class BloFinDemoExecutionProvider:
         body: dict[str, Any] = {
             "instId": request.inst_id,
             "marginMode": "cross",
+            "positionSide": "net",
             "side": request.side.value,
             "orderType": request.order_type.value,
             "size": str(request.size),

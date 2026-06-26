@@ -1393,6 +1393,7 @@ class ExchangeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     size: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
     exchange_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    venue_client_order_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="submitted", nullable=False)
     filled_size: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
     average_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)

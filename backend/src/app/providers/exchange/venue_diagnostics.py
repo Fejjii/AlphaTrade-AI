@@ -62,6 +62,7 @@ def build_demo_mirror_failure_metadata(
     inst_id: str,
     exchange_mode: str,
     endpoint_name: str | None = None,
+    venue_client_order_id: str | None = None,
 ) -> dict[str, Any]:
     """Build audit-safe metadata for ``exchange_demo_order_failed`` events."""
     details = venue_error_details_from_exception(exc)
@@ -83,6 +84,8 @@ def build_demo_mirror_failure_metadata(
     fingerprint = client_order_id_fingerprint(request.idempotency_key)
     if fingerprint:
         metadata["client_order_id_hash"] = fingerprint
+    if venue_client_order_id:
+        metadata["venue_client_order_id_prefix"] = venue_client_order_id[:8]
 
     if details.venue_error_code:
         metadata["venue_error_code"] = details.venue_error_code
@@ -103,6 +106,7 @@ def log_fields_for_mirror_failure(
     inst_id: str,
     request: PaperOrderRequest,
     paper_order_id: str,
+    venue_client_order_id: str | None = None,
 ) -> dict[str, Any]:
     """Fields safe for structlog on demo mirror failure."""
     meta = build_demo_mirror_failure_metadata(
@@ -111,6 +115,7 @@ def log_fields_for_mirror_failure(
         paper_order_id=paper_order_id,
         inst_id=inst_id,
         exchange_mode="paper_exchange_demo",
+        venue_client_order_id=venue_client_order_id,
     )
     # structlog already redacts, but keep messages bounded.
     if "venue_error_message" in meta:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from app.providers.exchange.client_order_id import derive_blofin_venue_client_order_id
 from app.providers.exchange.errors import ExchangeRequestError, VenueErrorDetails
 from app.providers.exchange.venue_diagnostics import (
     build_demo_mirror_failure_metadata,
@@ -58,6 +59,42 @@ def test_mirror_failure_metadata_includes_safe_fields() -> None:
     assert metadata["price"] == "44716.5"
     assert metadata["paper_order_id"] == "849eaac8-0273-4efd-bd60-39dc2a5afd41"
     assert "client_order_id_hash" in metadata
+    assert "slice66b-demo-limit-001" not in str(metadata)
+
+
+def test_mirror_failure_metadata_includes_venue_client_order_id_prefix() -> None:
+    request = PaperOrderRequest(
+        proposal_id="00000000-0000-0000-0000-000000000001",
+        approval_id="00000000-0000-0000-0000-000000000002",
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.LIMIT,
+        size=Decimal("0.1"),
+        price=Decimal("44716.5"),
+        idempotency_key="slice66b-demo-limit-001",
+    )
+    venue_id = derive_blofin_venue_client_order_id("slice66b-demo-limit-001")
+    exc = ExchangeRequestError(
+        "BloFin error 51000: rejected",
+        details=VenueErrorDetails(
+            venue_error_code="51000",
+            venue_error_message="rejected",
+            http_status=200,
+            endpoint_name="POST /api/v1/trade/order",
+        ),
+    )
+    metadata = build_demo_mirror_failure_metadata(
+        exc=exc,
+        request=request,
+        paper_order_id="849eaac8-0273-4efd-bd60-39dc2a5afd41",
+        inst_id="BTC-USDT",
+        exchange_mode="paper_exchange_demo",
+        venue_client_order_id=venue_id,
+    )
+    assert metadata["venue_client_order_id_prefix"] == venue_id[:8]
+    assert metadata["client_order_id_hash"] == client_order_id_fingerprint(
+        "slice66b-demo-limit-001"
+    )
     assert "slice66b-demo-limit-001" not in str(metadata)
 
 

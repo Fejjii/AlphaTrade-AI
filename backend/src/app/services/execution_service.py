@@ -23,9 +23,11 @@ from app.providers.exchange.base import (
     ExchangeOrderRequest,
     ExchangeOrderResult,
 )
+from app.providers.exchange.client_order_id import derive_blofin_venue_client_order_id
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.providers.exchange.venue_diagnostics import (
     build_demo_mirror_failure_metadata,
+    client_order_id_fingerprint,
     endpoint_label,
     log_fields_for_mirror_failure,
 )
@@ -204,6 +206,7 @@ class ExecutionService:
         """
         assert self._exchange_execution is not None  # guarded by caller
         inst_id = to_blofin_inst_id(str(request.symbol))
+        venue_client_order_id = derive_blofin_venue_client_order_id(request.idempotency_key)
         exchange_order = ExchangeOrder(
             internal_order_id=order.id,
             organization_id=order.organization_id,
@@ -215,6 +218,7 @@ class ExecutionService:
             order_type=request.type.value,
             size=request.size,
             price=request.price,
+            venue_client_order_id=venue_client_order_id,
             status="submitted",
         )
         try:
@@ -227,7 +231,7 @@ class ExecutionService:
                     size=request.size,
                     price=request.price,
                     reduce_only=request.reduce_only,
-                    client_order_id=request.idempotency_key,
+                    client_order_id=venue_client_order_id,
                 )
             )
         except Exception as exc:  # demo mirror is best-effort; never break paper
@@ -238,6 +242,7 @@ class ExecutionService:
                 inst_id=inst_id,
                 exchange_mode=_EXCHANGE_DEMO_TAG,
                 endpoint_name=endpoint_label("POST", "/api/v1/trade/order"),
+                venue_client_order_id=venue_client_order_id,
             )
             logger.warning(
                 "exchange_demo_order_failed",
@@ -246,6 +251,7 @@ class ExecutionService:
                     inst_id=inst_id,
                     request=request,
                     paper_order_id=str(order.id),
+                    venue_client_order_id=venue_client_order_id,
                 ),
             )
             exchange_order.status = "failed"
@@ -281,6 +287,8 @@ class ExecutionService:
                     "inst_id": inst_id,
                     "mode": _EXCHANGE_DEMO_TAG,
                     "exchange_order_id": result.exchange_order_id,
+                    "venue_client_order_id_prefix": venue_client_order_id[:8],
+                    "client_order_id_hash": client_order_id_fingerprint(request.idempotency_key),
                 },
             )
         )

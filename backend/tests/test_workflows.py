@@ -33,6 +33,10 @@ from app.providers.exchange.base import (
     ExchangeOrderRequest,
     ExchangeOrderResult,
 )
+from app.providers.exchange.client_order_id import (
+    derive_blofin_venue_client_order_id,
+    is_valid_blofin_venue_client_order_id,
+)
 from app.providers.exchange.errors import ExchangeRequestError, VenueErrorDetails
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.common import (
@@ -736,12 +740,18 @@ def test_demo_execution_mirrors_paper_order(
 
         assert len(fake.calls) == 1
         assert fake.calls[0].inst_id == "BTC-USDT"
+        idem = "demo-idem-001"
+        expected_venue_id = derive_blofin_venue_client_order_id(idem)
+        assert fake.calls[0].client_order_id == expected_venue_id
+        assert is_valid_blofin_venue_client_order_id(expected_venue_id)
+        assert idem not in (fake.calls[0].client_order_id or "")
         assert order.exchange_order_id == "demo-abc"
 
         exchange_orders = session.query(ExchangeOrder).all()
         assert len(exchange_orders) == 1
         assert exchange_orders[0].exchange_mode == "paper_exchange_demo"
         assert exchange_orders[0].status == "filled"
+        assert exchange_orders[0].venue_client_order_id == expected_venue_id
 
         fills = session.query(ExchangeFill).all()
         assert len(fills) == 1
@@ -833,7 +843,16 @@ def test_demo_mirror_failure_persists_sanitized_audit_metadata(
         assert metadata["order_type"] == "limit"
         assert metadata["paper_order_id"]
         assert "client_order_id_hash" in metadata
+        assert (
+            metadata["venue_client_order_id_prefix"]
+            == derive_blofin_venue_client_order_id("slice66b-demo-limit-001")[:8]
+        )
         assert "slice66b-demo-limit-001" not in str(metadata)
+
+        exchange_order = session.query(ExchangeOrder).one()
+        assert exchange_order.venue_client_order_id == derive_blofin_venue_client_order_id(
+            "slice66b-demo-limit-001"
+        )
 
 
 def test_demo_routing_skipped_when_real_trading_would_be_enabled(

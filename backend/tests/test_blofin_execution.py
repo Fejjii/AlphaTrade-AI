@@ -148,6 +148,8 @@ def test_place_order_sends_signed_body_and_parses_fills() -> None:
     assert body["side"] == "buy"
     assert body["orderType"] == "market"
     assert body["size"] == "0.01"
+    assert body["positionSide"] == "net"
+    assert body["marginMode"] == "cross"
     assert body["clientOrderId"] == "idem-123"
     assert captured["headers"]["access-key"] == "demo-key"
 
@@ -180,6 +182,18 @@ def test_place_limit_order_includes_price_and_reduce_only() -> None:
     body = captured["body"]
     assert body["price"] == "3500.5"
     assert body["reduceOnly"] == "true"
+    assert body["positionSide"] == "net"
+
+
+def test_place_order_includes_position_side_net() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"code": "0", "data": [{"orderId": "x"}]})
+
+    _provider(handler).place_order(_order_request())
+    assert captured["body"]["positionSide"] == "net"
 
 
 # --- factory resolution ----------------------------------------------------
