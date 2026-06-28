@@ -360,7 +360,7 @@ export default function SetupAlertReviewPage() {
               alert={alert}
               busy={busy}
               onSave={persistReview}
-              onQuickAction={(alertId, reviewStatus) => void persistReview(alertId, reviewStatus)}
+              onQuickAction={(alertId, reviewStatus) => persistReview(alertId, reviewStatus)}
             />
           ))}
         </div>
