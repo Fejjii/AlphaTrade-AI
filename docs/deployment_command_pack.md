@@ -101,6 +101,21 @@ DEMO_SEED_PASSWORD='...' BACKEND_URL=https://alphatrade-api-staging.onrender.com
 
 Demo login: `demo@alphatrade.ai` · Frontend: https://alpha-trade-ai-eight.vercel.app
 
+### Slice 70 — Telegram manual alert delivery (guarded)
+
+Doc: [slice_70_telegram_alert_delivery_validation.md](slice_70_telegram_alert_delivery_validation.md)
+
+```bash
+# Preflight only (recommended)
+DRY_RUN=true ALERT_ID=a1000061-0000-4000-8000-000000000061 \
+  STAGING_DEMO_PASSWORD='...' \
+  BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+  ./scripts/validate-telegram-delivery-staging.sh
+
+# Read-only /alerts browser smoke (no send)
+STAGING_DEMO_PASSWORD='...' ./scripts/browser-smoke-alerts-staging.sh
+```
+
 Local Docker (cookie mode):
 
 ```bash

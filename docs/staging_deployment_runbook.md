@@ -218,6 +218,11 @@ BASE_URL=https://your-api.onrender.com ./scripts/staging-smoke.sh
 # Safety only
 BASE_URL=https://your-api.onrender.com ./scripts/verify-safety.sh
 
+# Slice 70 — Telegram manual alert delivery (guarded; see slice_70 doc)
+DRY_RUN=true ALERT_ID=<uuid> BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+  STAGING_DEMO_PASSWORD='...' ./scripts/validate-telegram-delivery-staging.sh
+STAGING_DEMO_PASSWORD='...' ./scripts/browser-smoke-alerts-staging.sh
+
 # Optional CORS preflight
 FRONTEND_URL=https://your-app.vercel.app \
 BASE_URL=https://your-api.onrender.com \
@@ -284,6 +289,7 @@ BASE_URL=https://your-api.onrender.com ./scripts/verify-safety.sh
 ## Related docs
 
 - [staging_deployment_checklist.md](staging_deployment_checklist.md) — copy-paste env checklist
+- [slice_70_telegram_alert_delivery_validation.md](slice_70_telegram_alert_delivery_validation.md) — manual Telegram delivery validation
 - [deployment.md](deployment.md) — architecture and monitoring
 - [railway_deployment.md](railway_deployment.md) — Railway alternative
 - [security_checklist.md](security_checklist.md)
