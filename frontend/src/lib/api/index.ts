@@ -70,6 +70,8 @@ import type {
   NotificationPreferences,
   NotificationTestResult,
   MarketWatcherStatus,
+  MarketWatcherSummary,
+  MarketWatcherScanRequest,
   MarketWatcherScanResult,
   MarketWatcherBridgeStatus,
   MarketWatcherBridgeTickResult,
@@ -447,8 +449,13 @@ export const api = {
   },
   marketWatcher: {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),
-    scan: () =>
-      apiFetch<MarketWatcherScanResult>("/market-watcher/scan", { method: "POST", auth: true }),
+    summary: () => apiFetch<MarketWatcherSummary>("/market-watcher/summary", { auth: true }),
+    scan: (body: MarketWatcherScanRequest) =>
+      apiFetch<MarketWatcherScanResult>("/market-watcher/scan", {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify(body),
+      }),
     observations: (params?: { symbol?: string; limit?: number; offset?: number }) =>
       apiFetch<PaginatedMarketWatcherObservations>("/market-watcher/observations", {
         auth: true,

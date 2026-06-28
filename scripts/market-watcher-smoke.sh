@@ -47,14 +47,18 @@ assert p.get("paper_only") is True
 print(f"  OK: env_enabled={p.get('env_enabled')}")
 PY
 
-echo "4/8 — manual watcher scan (or disabled response)"
-scan_json="$(curl -fsS -X POST -H "$(auth_header)" "${BASE_URL}/market-watcher/scan")"
+echo "4/8 — manual watcher scan (dry-run preview)"
+scan_json="$(curl -fsS -X POST -H "$(auth_header)" -H 'Content-Type: application/json' \
+  "${BASE_URL}/market-watcher/scan" \
+  -d '{"confirm":"RUN_READ_ONLY_SCAN","symbols":["BTCUSDT"],"timeframes":["15m"],"dry_run":true}')"
 python3 - <<'PY' "$scan_json"
 import json, sys
 p = json.loads(sys.argv[1])
 assert "decisions" in p
 assert p.get("paper_only") is True
-print(f"  OK: effective_enabled={p.get('effective_enabled')}")
+assert p.get("dry_run") is True
+assert p.get("alerts_created", 0) == 0
+print(f"  OK: status={p.get('status')} candidates={len(p.get('candidates') or [])}")
 PY
 
 echo "5/8 — bridge status"

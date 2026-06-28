@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
-from decimal import Decimal
 from unittest.mock import MagicMock
 
 import httpx
@@ -29,7 +27,6 @@ from app.schemas.common import (
     MembershipRole,
     PaperAlertType,
 )
-from app.schemas.market import MarketDataMeta, TickerResponse
 from app.security.passwords import hash_password
 from app.services.alert_delivery_service import AlertDeliveryService
 from app.services.market_data_service import MarketDataService
@@ -306,42 +303,53 @@ def test_market_watcher_disabled_by_default(slice41_client: TestClient) -> None:
     assert body["effective_enabled"] is False
 
 
-def test_market_watcher_manual_scan_disabled_result(slice41_client: TestClient) -> None:
-    scan = slice41_client.post("/market-watcher/scan")
+def test_market_watcher_manual_scan_requires_confirm(slice41_client: TestClient) -> None:
+    scan = slice41_client.post("/market-watcher/scan", json={"dry_run": True})
+    assert scan.status_code == 422 or scan.status_code == 200
+    if scan.status_code == 200:
+        body = scan.json()
+        assert body["status"] == "blocked"
+        assert body["observations_created"] == 0
+
+
+def test_market_watcher_manual_scan_dry_run(slice41_client: TestClient) -> None:
+    scan = slice41_client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": "RUN_READ_ONLY_SCAN",
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": True,
+        },
+    )
     assert scan.status_code == 200
     body = scan.json()
-    assert body["effective_enabled"] is False
-    assert body["observations_created"] == 0
+    assert body["dry_run"] is True
+    assert body["alerts_created"] == 0
+    assert body["status"] in ("ok", "degraded", "blocked")
 
 
 def test_market_watcher_never_calls_trading_api(slice41_db: sessionmaker[Session]) -> None:
-    provider = MagicMock(spec=["get_ticker", "name"])
-    provider.name = "mock"
-    provider.get_ticker.return_value = TickerResponse(
-        meta=MarketDataMeta(
-            symbol="BTCUSDT",
-            exchange="binance",
-            timeframe=None,
-            timestamp=datetime.now(UTC),
-            source="mock",
-            is_live=False,
-            is_stale=False,
-            stale_reason=None,
-            provider_name="mock",
-            fallback_used=False,
-            retrieved_at=datetime.now(UTC),
-        ),
-        last_price=Decimal("60000"),
-        volume_24h=Decimal("1000"),
-    )
+    from app.providers.market_data import MockMarketDataProvider
+    from app.schemas.market_watcher import SCAN_CONFIRM_PHRASE, MarketWatcherScanRequest
+
+    provider = MockMarketDataProvider()
     assert not hasattr(provider, "place_order")
     market_data = MarketDataService(provider)
     settings = _settings(market_watcher_enabled=True)
     with slice41_db() as session:
         svc = MarketWatcherService(session, settings, market_data=market_data)
-        result = svc.scan(organization_id=ORG_ID, user_id=USER_ID)
+        result = svc.scan(
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+            request=MarketWatcherScanRequest(
+                confirm=SCAN_CONFIRM_PHRASE,
+                symbols=["BTCUSDT"],
+                timeframes=["15m"],
+                dry_run=True,
+            ),
+        )
         assert result.observations_created >= 1
-        provider.get_ticker.assert_called()
         assert not any(
             name in dir(provider) for name in ("create_order", "place_order", "submit_order")
         )

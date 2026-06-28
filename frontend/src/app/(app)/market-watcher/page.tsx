@@ -42,7 +42,12 @@ export default function MarketWatcherPage() {
     setBusy(true);
     setScanResult(null);
     try {
-      const result = await api.marketWatcher.scan();
+      const result = await api.marketWatcher.scan({
+        confirm: "RUN_READ_ONLY_SCAN",
+        symbols: status?.watched_symbols?.length ? status.watched_symbols : ["BTCUSDT"],
+        timeframes: ["15m"],
+        dry_run: true,
+      });
       setScanResult(
         result.effective_enabled
           ? `Scanned ${result.symbols_scanned} symbol(s), ${result.observations_created} observation(s).`

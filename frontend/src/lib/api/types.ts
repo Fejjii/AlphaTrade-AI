@@ -1292,6 +1292,41 @@ export interface MarketWatcherStatus {
   real_trading_enabled: boolean;
 }
 
+export interface MarketWatcherSummary {
+  scanner_enabled: boolean;
+  manual_scan_available: boolean;
+  worker_enabled: boolean;
+  worker_running: boolean;
+  symbols_supported: string[];
+  timeframes_supported: string[];
+  last_scan_at?: string | null;
+  last_scan_status?: "ok" | "blocked" | "degraded" | null;
+  last_scan_alerts_created: number;
+  last_scan_error?: string | null;
+  paper_only: boolean;
+  readiness: "ready" | "degraded" | "blocked";
+  warnings: string[];
+  generated_at: string;
+}
+
+export interface MarketWatcherCandidate {
+  symbol: string;
+  timeframe: string;
+  condition: string;
+  message: string;
+  severity: string;
+  metrics: Record<string, unknown>;
+  created_alert_id?: string | null;
+  deduped?: boolean;
+}
+
+export interface MarketWatcherScanRequest {
+  confirm: string;
+  symbols?: string[];
+  timeframes?: string[];
+  dry_run?: boolean;
+}
+
 export interface MarketWatcherScanResult {
   scanned_at: string;
   env_enabled: boolean;
@@ -1301,6 +1336,12 @@ export interface MarketWatcherScanResult {
   setup_signals: string[];
   decisions: string[];
   paper_only: boolean;
+  dry_run: boolean;
+  status: "ok" | "blocked" | "degraded";
+  candidates: MarketWatcherCandidate[];
+  alerts_created: number;
+  alerts_deduped: number;
+  error?: string | null;
 }
 
 export interface MarketWatcherObservation {

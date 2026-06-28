@@ -1032,9 +1032,17 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
             )
             if blocked is not None:
                 return blocked
+            from app.schemas.market_watcher import MarketWatcherScanRequest, SCAN_CONFIRM_PHRASE
             from app.services.market_watcher_service import MarketWatcherService
 
-            scan = MarketWatcherService(session).scan(organization_id=org, user_id=user)
+            scan = MarketWatcherService(session).scan(
+                organization_id=org,
+                user_id=user,
+                request=MarketWatcherScanRequest(
+                    confirm=SCAN_CONFIRM_PHRASE,
+                    dry_run=True,
+                ),
+            )
             session.commit()
             result = {
                 "summary": (

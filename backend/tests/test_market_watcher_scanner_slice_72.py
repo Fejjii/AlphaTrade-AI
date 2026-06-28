@@ -1,0 +1,342 @@
+"""Tests for read-only market watcher scanner (Slice 72)."""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.config import ExecutionMode, Settings, get_settings
+from app.db.base import Base
+from app.db.models import Membership, Organization, PaperValidationAlert, User
+from app.db.session import get_session
+from app.main import create_app
+from app.providers.market_data import MockMarketDataProvider, OHLCVBar
+from app.schemas.common import (
+    AlertDeliveryChannel,
+    AlertDeliveryStatus,
+    MembershipRole,
+)
+from app.schemas.market_watcher import SCAN_CONFIRM_PHRASE, MarketWatcherScanRequest
+from app.security.passwords import hash_password
+from app.security.rate_limit import reset_rate_limiter
+from app.services.market_data_service import MarketDataService
+from app.services.market_watcher_scanner import detect_candidates
+from app.services.market_watcher_service import MarketWatcherService
+
+ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000007201")
+USER_ID = uuid.UUID("00000000-0000-0000-0000-000000007202")
+OTHER_USER = uuid.UUID("00000000-0000-0000-0000-000000007203")
+
+_BASE = {
+    "environment": "local",
+    "log_json": False,
+    "execution_mode": "paper",
+    "enable_real_trading": False,
+    "database_url": "sqlite+pysqlite:///:memory:",
+    "jwt_secret": "slice72-scanner-secret-minimum-32",
+    "rate_limit_use_redis": False,
+    "access_token_denylist_use_redis": False,
+    "provider_mode": "mock",
+    "market_data_provider": "mock",
+    "alert_delivery_enabled": False,
+    "telegram_alerts_enabled": False,
+    "worker_enabled": False,
+    "market_watcher_enabled": False,
+}
+
+
+@pytest.fixture(autouse=True)
+def _reset_limiter() -> None:
+    reset_rate_limiter()
+
+
+@pytest.fixture
+def slice72_db() -> Iterator[sessionmaker[Session]]:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn: object, _record: object) -> None:
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = Settings(**_BASE)
+    with factory() as session:
+        org = Organization(id=ORG_ID, name="Slice72 Org")
+        owner = User(
+            id=USER_ID,
+            email="owner72@test.example",
+            hashed_password=hash_password("TestPassword123!", settings),
+            email_verified=True,
+        )
+        trader = User(
+            id=OTHER_USER,
+            email="trader72@test.example",
+            hashed_password=hash_password("TestPassword123!", settings),
+            email_verified=True,
+        )
+        session.add(org)
+        session.add(owner)
+        session.add(trader)
+        session.flush()
+        session.add(Membership(user_id=USER_ID, organization_id=ORG_ID, role=MembershipRole.OWNER))
+        session.add(
+            Membership(user_id=OTHER_USER, organization_id=ORG_ID, role=MembershipRole.TRADER)
+        )
+        session.commit()
+    yield factory
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def _client(
+    slice72_db: sessionmaker[Session],
+    *,
+    settings_overrides: dict | None = None,
+    role: MembershipRole = MembershipRole.OWNER,
+) -> TestClient:
+    overrides = dict(_BASE)
+    if settings_overrides:
+        overrides.update(settings_overrides)
+    settings = Settings(**overrides)
+    get_settings.cache_clear()
+    app = create_app(settings=settings)
+
+    def _override_session() -> Iterator[Session]:
+        with slice72_db() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_session
+    client = TestClient(app)
+    email = "owner72@test.example" if role == MembershipRole.OWNER else "trader72@test.example"
+    login = client.post("/auth/login", json={"email": email, "password": "TestPassword123!"})
+    token = login.json()["tokens"]["access_token"]
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    return client
+
+
+def _volatile_bars() -> list[OHLCVBar]:
+    now = datetime.now(UTC)
+    bars: list[OHLCVBar] = []
+    price = 100.0
+    for i in range(60):
+        drift = 0.5 if i > 50 else 0.02
+        price *= 1 + drift / 100
+        volume = 1000.0 if i < 55 else 5000.0
+        bars.append(
+            OHLCVBar(
+                open=price * 0.999,
+                high=price * 1.01,
+                low=price * 0.99,
+                close=price,
+                volume=volume,
+                timestamp=now - timedelta(minutes=15 * (60 - i)),
+            )
+        )
+    return bars
+
+
+def test_detect_candidates_strong_move() -> None:
+    candidates = detect_candidates(symbol="BTCUSDT", timeframe="15m", bars=_volatile_bars())
+    conditions = {c.condition for c in candidates}
+    assert "strong_move" in conditions or "high_volume_move" in conditions
+
+
+def test_summary_readiness_paper_only(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db)
+    resp = client.get("/market-watcher/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["paper_only"] is True
+    assert body["manual_scan_available"] is True
+    assert body["readiness"] == "ready"
+    assert body["worker_enabled"] is False
+
+
+def test_scan_requires_owner(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db, role=MembershipRole.TRADER)
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": SCAN_CONFIRM_PHRASE,
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 403
+
+
+def test_scan_requires_confirmation(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db)
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": "WRONG",
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "blocked"
+
+
+def test_real_trading_blocks_scan(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(
+        slice72_db,
+        settings_overrides={
+            "execution_mode": ExecutionMode.TRADE.value,
+            "enable_real_trading": True,
+        },
+    )
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": SCAN_CONFIRM_PHRASE,
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "blocked"
+
+
+def test_non_paper_execution_blocks_scan(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db, settings_overrides={"execution_mode": ExecutionMode.READ_ONLY.value})
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": SCAN_CONFIRM_PHRASE,
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "blocked"
+
+
+def test_dry_run_returns_candidates_without_alerts(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db)
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": SCAN_CONFIRM_PHRASE,
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dry_run"] is True
+    assert body["alerts_created"] == 0
+    assert body["status"] in ("ok", "degraded")
+    with slice72_db() as session:
+        count = session.scalar(select(func.count()).select_from(PaperValidationAlert))
+        assert count == 0
+
+
+def test_dry_run_false_creates_in_app_alerts_only(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db)
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": SCAN_CONFIRM_PHRASE,
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": False,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dry_run"] is False
+    with slice72_db() as session:
+        rows = list(session.scalars(select(PaperValidationAlert)).all())
+        for row in rows:
+            assert row.delivery_channel == AlertDeliveryChannel.IN_APP
+            assert row.delivery_status in (
+                AlertDeliveryStatus.DISABLED,
+                AlertDeliveryStatus.PENDING,
+                AlertDeliveryStatus.SKIPPED,
+            )
+            assert row.metadata_json.get("source") == "market_watcher"
+
+
+def test_dedupe_prevents_duplicate_alerts(slice72_db: sessionmaker[Session]) -> None:
+    with slice72_db() as session:
+        settings = Settings(**_BASE)
+        provider = MockMarketDataProvider()
+        market_data = MarketDataService(provider)
+        svc = MarketWatcherService(session, settings, market_data=market_data)
+        body = MarketWatcherScanRequest(
+            confirm=SCAN_CONFIRM_PHRASE,
+            symbols=["BTCUSDT"],
+            timeframes=["15m"],
+            dry_run=False,
+        )
+        first = svc.scan(organization_id=ORG_ID, user_id=USER_ID, request=body)
+        session.commit()
+        second = svc.scan(organization_id=ORG_ID, user_id=USER_ID, request=body)
+        session.commit()
+        assert second.alerts_deduped >= first.alerts_deduped
+
+
+def test_provider_failure_returns_degraded(slice72_db: sessionmaker[Session]) -> None:
+    provider = MagicMock()
+    provider.name = "mock"
+    provider.get_ohlcv.side_effect = RuntimeError("provider unavailable")
+    market_data = MarketDataService(provider)
+    with slice72_db() as session:
+        settings = Settings(**_BASE)
+        svc = MarketWatcherService(session, settings, market_data=market_data)
+        result = svc.scan(
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+            request=MarketWatcherScanRequest(
+                confirm=SCAN_CONFIRM_PHRASE,
+                symbols=["BTCUSDT"],
+                timeframes=["15m"],
+                dry_run=True,
+            ),
+        )
+        assert result.status == "degraded"
+        assert result.error is not None
+
+
+def test_no_telegram_service_called(slice72_db: sessionmaker[Session]) -> None:
+    with slice72_db() as session:
+        settings = Settings(**_BASE)
+        provider = MockMarketDataProvider()
+        market_data = MarketDataService(provider)
+        svc = MarketWatcherService(session, settings, market_data=market_data)
+        with patch(
+            "app.services.telegram_alert_delivery_service.TelegramAlertDeliveryService.deliver_alert"
+        ) as deliver:
+            svc.scan(
+                organization_id=ORG_ID,
+                user_id=USER_ID,
+                request=MarketWatcherScanRequest(
+                    confirm=SCAN_CONFIRM_PHRASE,
+                    symbols=["BTCUSDT"],
+                    timeframes=["15m"],
+                    dry_run=False,
+                ),
+            )
+        deliver.assert_not_called()

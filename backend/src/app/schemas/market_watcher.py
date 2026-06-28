@@ -1,14 +1,20 @@
-"""Market watcher schemas (Slice 41 — read-only)."""
+"""Market watcher schemas (Slice 41 — read-only; Slice 72 — scanner)."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
 
 from app.schemas.common import MarketWatcherObservationStatus, StrictModel
+
+SCAN_CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN"
+
+MarketWatcherReadiness = Literal["ready", "degraded", "blocked"]
+MarketWatcherScanStatus = Literal["ok", "blocked", "degraded"]
 
 
 class MarketWatcherStatus(StrictModel):
@@ -38,6 +44,45 @@ class MarketWatcherObservation(StrictModel):
     created_at: datetime
 
 
+class MarketWatcherScanRequest(StrictModel):
+    confirm: str
+    symbols: list[str] = Field(
+        default_factory=lambda: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        min_length=1,
+        max_length=10,
+    )
+    timeframes: list[str] = Field(default_factory=lambda: ["15m", "1h"], min_length=1, max_length=5)
+    dry_run: bool = True
+
+
+class MarketWatcherCandidate(StrictModel):
+    symbol: str
+    timeframe: str
+    condition: str
+    message: str
+    severity: str
+    metrics: dict[str, object] = Field(default_factory=dict)
+    created_alert_id: UUID | None = None
+    deduped: bool = False
+
+
+class MarketWatcherSummary(StrictModel):
+    scanner_enabled: bool
+    manual_scan_available: bool
+    worker_enabled: bool
+    worker_running: bool
+    symbols_supported: list[str] = Field(default_factory=list)
+    timeframes_supported: list[str] = Field(default_factory=list)
+    last_scan_at: datetime | None = None
+    last_scan_status: MarketWatcherScanStatus | None = None
+    last_scan_alerts_created: int = 0
+    last_scan_error: str | None = None
+    paper_only: bool = True
+    readiness: MarketWatcherReadiness = "ready"
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime
+
+
 class MarketWatcherScanResult(StrictModel):
     scanned_at: datetime
     env_enabled: bool
@@ -47,6 +92,12 @@ class MarketWatcherScanResult(StrictModel):
     setup_signals: list[str] = Field(default_factory=list)
     decisions: list[str] = Field(default_factory=list)
     paper_only: bool = True
+    dry_run: bool = True
+    status: MarketWatcherScanStatus = "ok"
+    candidates: list[MarketWatcherCandidate] = Field(default_factory=list)
+    alerts_created: int = 0
+    alerts_deduped: int = 0
+    error: str | None = None
 
 
 class PaginatedMarketWatcherObservations(StrictModel):

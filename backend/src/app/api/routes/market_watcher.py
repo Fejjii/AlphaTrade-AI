@@ -8,8 +8,10 @@ from app.core.dependencies import MarketWatcherBridgeServiceDep, MarketWatcherSe
 from app.schemas.market_watcher import (
     MarketWatcherBridgeStatus,
     MarketWatcherBridgeTickResult,
+    MarketWatcherScanRequest,
     MarketWatcherScanResult,
     MarketWatcherStatus,
+    MarketWatcherSummary,
     PaginatedMarketWatcherBridgeHistory,
     PaginatedMarketWatcherHistory,
     PaginatedMarketWatcherObservations,
@@ -43,6 +45,22 @@ async def market_watcher_status(
     )
 
 
+@router.get(
+    "/summary",
+    response_model=MarketWatcherSummary,
+    summary="Market watcher scanner summary (Slice 72)",
+    dependencies=[_MW_READ_LIMIT],
+)
+async def market_watcher_summary(
+    tenant: ReaderDep,
+    service: MarketWatcherServiceDep,
+) -> MarketWatcherSummary:
+    return service.get_summary(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
 @router.post(
     "/scan",
     response_model=MarketWatcherScanResult,
@@ -51,10 +69,15 @@ async def market_watcher_status(
 )
 async def market_watcher_scan(
     tenant: OwnerDep,
+    body: MarketWatcherScanRequest,
     service: MarketWatcherServiceDep,
     session: SessionDep,
 ) -> MarketWatcherScanResult:
-    result = service.scan(organization_id=tenant.organization_id, user_id=tenant.user_id)
+    result = service.scan(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        request=body,
+    )
     session.commit()
     return result
 
