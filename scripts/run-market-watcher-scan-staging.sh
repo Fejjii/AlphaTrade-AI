@@ -137,13 +137,14 @@ PY
 
 scan_body="$(python3 - <<PY
 import json
+dry_run = True if "${DRY_RUN}" == "true" else False
 body = {
     "confirm": "${CONFIRM}",
     "symbols": json.loads('''${symbols_json}'''),
     "timeframes": json.loads('''${timeframes_json}'''),
-    "dry_run": ${DRY_RUN_JSON},
+    "dry_run": dry_run,
 }
-if not ${DRY_RUN_JSON}:
+if not dry_run:
     body["create_in_app_alerts_confirm"] = "${CREATE_IN_APP_ALERTS_CONFIRM}"
 print(json.dumps(body))
 PY
