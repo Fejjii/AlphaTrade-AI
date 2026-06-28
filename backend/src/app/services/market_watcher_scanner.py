@@ -54,10 +54,48 @@ def _pct_change(closes: list[float], lookback: int = 5) -> float | None:
     return ((end - start) / start) * 100.0
 
 
-def _nearest_level(price: float, levels: tuple[float, ...]) -> float | None:
-    if not levels:
+def _level_price(level: Any) -> float | None:
+    """Extract a numeric price from analyze() Level objects, dicts, or plain numbers."""
+    if level is None:
         return None
-    return min(levels, key=lambda level: abs(level - price))
+    if isinstance(level, (int, float, Decimal)):
+        try:
+            return float(level)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(level, dict):
+        raw = level.get("price")
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+    raw = getattr(level, "price", None)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_level_prices(levels: tuple[Any, ...] | list[Any] | None) -> list[float]:
+    if not levels:
+        return []
+    prices: list[float] = []
+    for level in levels:
+        price = _level_price(level)
+        if price is not None:
+            prices.append(price)
+    return prices
+
+
+def _nearest_level(price: float, levels: tuple[Any, ...] | list[Any] | None) -> float | None:
+    prices = _coerce_level_prices(levels)
+    if not prices:
+        return None
+    return min(prices, key=lambda candidate: abs(candidate - price))
 
 
 def _proximity_pct(price: float, level: float | None) -> float | None:

@@ -292,7 +292,7 @@ class MarketWatcherService:
                         timeframe=timeframe_str,
                         error=redacted,
                     )
-                    decisions.append(f"{symbol} {timeframe_str}: scan degraded.")
+                    decisions.append(f"{symbol} {timeframe_str}: scan degraded ({redacted}).")
                     row = ObservationModel(
                         organization_id=organization_id,
                         symbol=symbol,

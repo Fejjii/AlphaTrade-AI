@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.analysis.types import Level
 from app.core.config import ExecutionMode, Settings, get_settings
 from app.db.base import Base
 from app.db.models import Membership, Organization, PaperValidationAlert, User
@@ -28,7 +29,12 @@ from app.schemas.market_watcher import SCAN_CONFIRM_PHRASE, MarketWatcherScanReq
 from app.security.passwords import hash_password
 from app.security.rate_limit import reset_rate_limiter
 from app.services.market_data_service import MarketDataService
-from app.services.market_watcher_scanner import detect_candidates
+from app.services.market_watcher_scanner import (
+    _coerce_level_prices,
+    _level_price,
+    _nearest_level,
+    detect_candidates,
+)
 from app.services.market_watcher_service import MarketWatcherService
 
 ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000007201")
@@ -156,6 +162,62 @@ def test_detect_candidates_strong_move() -> None:
     assert "strong_move" in conditions or "high_volume_move" in conditions
 
 
+def test_level_price_from_level_object() -> None:
+    assert _level_price(Level(price=101.5, kind="support", touches=2, strength=0.8)) == 101.5
+
+
+def test_level_price_from_numeric() -> None:
+    assert _level_price(99.0) == 99.0
+    assert _level_price(100) == 100.0
+
+
+def test_level_price_from_dict() -> None:
+    assert _level_price({"price": 102.25, "kind": "resistance"}) == 102.25
+
+
+def test_level_price_ignores_invalid() -> None:
+    assert _level_price(None) is None
+    assert _level_price("bad") is None
+    assert _level_price({"kind": "support"}) is None
+    assert _level_price(object()) is None
+
+
+def test_coerce_level_prices_mixed_and_invalid() -> None:
+    levels = (
+        Level(price=100.0, kind="support", touches=1, strength=0.5),
+        101.0,
+        {"price": 102.0},
+        "invalid",
+        None,
+    )
+    assert _coerce_level_prices(levels) == [100.0, 101.0, 102.0]
+
+
+def test_nearest_level_with_level_objects() -> None:
+    levels = (
+        Level(price=100.0, kind="support", touches=2, strength=0.7),
+        Level(price=110.0, kind="support", touches=1, strength=0.4),
+    )
+    assert _nearest_level(101.0, levels) == 100.0
+
+
+def test_nearest_level_with_numeric_levels() -> None:
+    assert _nearest_level(101.0, (100.0, 110.0)) == 100.0
+
+
+def test_detect_candidates_with_real_analyze_levels() -> None:
+    """Real analyze() returns Level objects — candidate detection must not crash."""
+    candidates = detect_candidates(symbol="BTCUSDT", timeframe="15m", bars=_volatile_bars())
+    assert isinstance(candidates, list)
+    for candidate in candidates:
+        assert candidate.metrics.get("support") is None or isinstance(
+            candidate.metrics["support"], (int, float)
+        )
+        assert candidate.metrics.get("resistance") is None or isinstance(
+            candidate.metrics["resistance"], (int, float)
+        )
+
+
 def test_summary_readiness_paper_only(slice72_db: sessionmaker[Session]) -> None:
     client = _client(slice72_db)
     resp = client.get("/market-watcher/summary")
@@ -218,7 +280,10 @@ def test_real_trading_blocks_scan(slice72_db: sessionmaker[Session]) -> None:
 
 
 def test_non_paper_execution_blocks_scan(slice72_db: sessionmaker[Session]) -> None:
-    client = _client(slice72_db, settings_overrides={"execution_mode": ExecutionMode.READ_ONLY.value})
+    client = _client(
+        slice72_db,
+        settings_overrides={"execution_mode": ExecutionMode.READ_ONLY.value},
+    )
     resp = client.post(
         "/market-watcher/scan",
         json={
@@ -247,7 +312,7 @@ def test_dry_run_returns_candidates_without_alerts(slice72_db: sessionmaker[Sess
     body = resp.json()
     assert body["dry_run"] is True
     assert body["alerts_created"] == 0
-    assert body["status"] in ("ok", "degraded")
+    assert body["status"] == "ok"
     with slice72_db() as session:
         count = session.scalar(select(func.count()).select_from(PaperValidationAlert))
         assert count == 0
@@ -340,3 +405,25 @@ def test_no_telegram_service_called(slice72_db: sessionmaker[Session]) -> None:
                 ),
             )
         deliver.assert_not_called()
+
+
+def test_no_execution_service_called(slice72_db: sessionmaker[Session]) -> None:
+    with slice72_db() as session:
+        settings = Settings(**_BASE)
+        provider = MockMarketDataProvider()
+        market_data = MarketDataService(provider)
+        svc = MarketWatcherService(session, settings, market_data=market_data)
+        with patch(
+            "app.services.execution_service.ExecutionService.place_paper_order",
+        ) as place_order:
+            svc.scan(
+                organization_id=ORG_ID,
+                user_id=USER_ID,
+                request=MarketWatcherScanRequest(
+                    confirm=SCAN_CONFIRM_PHRASE,
+                    symbols=["BTCUSDT"],
+                    timeframes=["15m"],
+                    dry_run=True,
+                ),
+            )
+        place_order.assert_not_called()

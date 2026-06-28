@@ -7,6 +7,9 @@
 #     ./scripts/run-market-watcher-scan-staging.sh
 #
 # Never sends Telegram. Never places orders. Never enables worker automation.
+#
+# STAGING_DEMO_PASSWORD must match Render DEMO_SEED_PASSWORD (or your demo login secret).
+# Provide it from Render dashboard / local secret manager — never commit it to the repo.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,7 +42,7 @@ EOF
 fi
 
 if [[ -z "$DEMO_PASSWORD" ]]; then
-  echo "FAIL: STAGING_DEMO_PASSWORD required." >&2
+  echo "FAIL: STAGING_DEMO_PASSWORD required (use Render DEMO_SEED_PASSWORD; do not commit)." >&2
   exit 1
 fi
 
