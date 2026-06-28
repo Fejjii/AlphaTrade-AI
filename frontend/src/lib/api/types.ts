@@ -1637,6 +1637,11 @@ export interface QuietHoursSummary {
 export interface AlertRoutingSummary {
   alerts_enabled: boolean;
   telegram_enabled: boolean;
+  telegram_configured: boolean;
+  telegram_chat_configured: boolean;
+  manual_test_available: boolean;
+  last_test_alert_at?: string | null;
+  last_test_alert_status?: string | null;
   webhook_enabled: boolean;
   external_delivery_enabled: boolean;
   paper_only: boolean;
@@ -1659,6 +1664,17 @@ export interface AlertRoutingSummary {
   readiness: "ready" | "degraded" | "blocked";
   warnings: string[];
   generated_at: string;
+}
+
+export interface TelegramTestAlertResponse {
+  status: "sent" | "skipped_not_configured" | "blocked" | "failed_redacted";
+  telegram_configured: boolean;
+  chat_configured: boolean;
+  paper_only: boolean;
+  external_delivery_enabled: boolean;
+  sent_at?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
 }
 
 export interface LessonSourceMetadata {

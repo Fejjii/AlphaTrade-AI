@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { AlertRoutingCard } from "@/components/AlertRoutingCard";
+import { TelegramTestPanel } from "@/components/TelegramTestPanel";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -144,6 +145,7 @@ export default function AlertsPage() {
       ) : null}
 
       {routing ? <AlertRoutingCard routing={routing} /> : null}
+      {routing ? <TelegramTestPanel routing={routing} /> : null}
 
       <div className="flex flex-wrap gap-2 text-sm">
         <select

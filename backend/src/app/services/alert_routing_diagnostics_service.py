@@ -23,6 +23,10 @@ from app.services.audit_service import AuditService
 from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
 from app.services.market_watcher_service import MarketWatcherService
 from app.services.notifications.preferences_service import NotificationPreferencesService
+from app.services.telegram_test_alert_service import (
+    TelegramTestAlertService,
+    manual_test_available,
+)
 from app.workers.repository import WorkerHeartbeatRepository
 
 ReadinessLevel = Literal["ready", "degraded", "blocked"]
@@ -330,9 +334,25 @@ def build_alert_routing_summary(
     )
     readiness = compute_alert_routing_readiness(inputs)
 
+    telegram_chat_configured = bool((prefs.telegram_chat_id or "").strip()) or bool(
+        settings.telegram_chat_id.strip()
+    )
+    test_service = TelegramTestAlertService(session, settings, audit_service=AuditService(session))
+    last_test_at, last_test_status = test_service.latest_test_summary(
+        organization_id=organization_id,
+    )
+
     return AlertRoutingSummaryResponse(
         alerts_enabled=True,
         telegram_enabled=settings.telegram_alerts_enabled,
+        telegram_configured=delivery_status.telegram_configured,
+        telegram_chat_configured=telegram_chat_configured,
+        manual_test_available=manual_test_available(
+            settings,
+            paper_only=delivery_status.paper_only,
+        ),
+        last_test_alert_at=last_test_at,
+        last_test_alert_status=last_test_status,
         webhook_enabled=settings.alert_webhook_enabled,
         external_delivery_enabled=external_delivery_enabled,
         paper_only=delivery_status.paper_only,

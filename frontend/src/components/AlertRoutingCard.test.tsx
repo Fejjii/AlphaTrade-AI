@@ -7,6 +7,9 @@ import type { AlertRoutingSummary } from "@/lib/api/types";
 const baseRouting: AlertRoutingSummary = {
   alerts_enabled: true,
   telegram_enabled: false,
+  telegram_configured: false,
+  telegram_chat_configured: false,
+  manual_test_available: true,
   webhook_enabled: false,
   external_delivery_enabled: false,
   paper_only: true,

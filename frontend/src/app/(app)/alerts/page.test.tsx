@@ -22,6 +22,9 @@ vi.mock("@/hooks/useAsyncData", () => ({
         data: {
           alerts_enabled: true,
           telegram_enabled: false,
+          telegram_configured: false,
+          telegram_chat_configured: false,
+          manual_test_available: true,
           webhook_enabled: false,
           external_delivery_enabled: false,
           paper_only: true,
@@ -124,6 +127,11 @@ describe("AlertsPage Slice 41", () => {
     render(<AlertsPage />);
     expect(screen.getByTestId("alert-routing-card")).toBeInTheDocument();
     expect(screen.getByText("Telegram disabled")).toBeInTheDocument();
+  });
+
+  it("renders telegram test panel", () => {
+    render(<AlertsPage />);
+    expect(screen.getByTestId("telegram-test-panel")).toBeInTheDocument();
   });
 
   it("renders paper only disclaimer", () => {

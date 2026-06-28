@@ -21,9 +21,11 @@ from app.schemas.alert_delivery import (
 from app.schemas.alert_routing import AlertRoutingSummaryResponse
 from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
 from app.schemas.common import PaperAlertSeverity, PaperAlertType
+from app.schemas.telegram_test_alert import TelegramTestAlertRequest, TelegramTestAlertResponse
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
 from app.services.alert_routing_diagnostics_service import build_alert_routing_summary
+from app.services.telegram_test_alert_service import TelegramTestAlertService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -35,6 +37,14 @@ _ALERTS_WRITE_LIMIT = Depends(
 )
 _ALERTS_DELIVER_LIMIT = Depends(
     tenant_rate_limit_dependency("alerts:deliver", limit=30, window_seconds=3600, user_limit=30)
+)
+_ALERTS_TELEGRAM_TEST_LIMIT = Depends(
+    tenant_rate_limit_dependency(
+        "alerts:telegram-test",
+        limit=10,
+        window_seconds=3600,
+        user_limit=10,
+    )
 )
 
 
@@ -94,6 +104,30 @@ async def alert_routing_summary(
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )
+
+
+@router.post(
+    "/test-telegram",
+    response_model=TelegramTestAlertResponse,
+    summary="Send owner-gated Telegram test alert (paper only, no trades)",
+    dependencies=[_ALERTS_TELEGRAM_TEST_LIMIT],
+)
+async def send_telegram_test_alert(
+    body: TelegramTestAlertRequest,
+    tenant: OwnerDep,
+    settings: SettingsDep,
+    session: SessionDep,
+) -> TelegramTestAlertResponse:
+    """One safe manual Telegram test — requires explicit confirmation; never executes trades."""
+    service = TelegramTestAlertService(session, settings)
+    result = service.send_manual_test(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        confirm=body.confirm,
+        message=body.message,
+    )
+    session.commit()
+    return result
 
 
 @router.get(

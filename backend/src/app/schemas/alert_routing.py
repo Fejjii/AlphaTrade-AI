@@ -27,6 +27,11 @@ class AlertRoutingSummaryResponse(StrictModel):
 
     alerts_enabled: bool
     telegram_enabled: bool
+    telegram_configured: bool = False
+    telegram_chat_configured: bool = False
+    manual_test_available: bool = False
+    last_test_alert_at: datetime | None = None
+    last_test_alert_status: str | None = None
     webhook_enabled: bool
     external_delivery_enabled: bool
     paper_only: bool = True

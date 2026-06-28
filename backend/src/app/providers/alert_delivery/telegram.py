@@ -40,12 +40,24 @@ class TelegramAlertDeliveryProvider:
     def is_configured(self) -> bool:
         return bool(self._settings.telegram_bot_token.strip())
 
-    def deliver(self, payload: AlertDeliveryPayload) -> AlertDeliveryResult:
-        if not self.is_enabled():
+    def deliver(
+        self,
+        payload: AlertDeliveryPayload,
+        *,
+        bypass_enable_check: bool = False,
+    ) -> AlertDeliveryResult:
+        if not bypass_enable_check and not self.is_enabled():
             return AlertDeliveryResult(
                 success=False,
                 channel=self.channel,
                 error="Telegram delivery disabled.",
+                skipped=True,
+            )
+        if bypass_enable_check and not self.is_configured():
+            return AlertDeliveryResult(
+                success=False,
+                channel=self.channel,
+                error="Telegram bot token not configured.",
                 skipped=True,
             )
 
