@@ -33,6 +33,17 @@ const baseRouting: AlertRoutingSummary = {
   worker_enabled: false,
   worker_running: false,
   readiness: "ready",
+  automatic_telegram_delivery_ready: false,
+  automatic_delivery_blockers: ["External delivery is not enabled for this environment."],
+  eligible_pending_telegram_count: 0,
+  already_delivered_telegram_count: 0,
+  next_delivery_preview_count: 0,
+  delivery_limits: {
+    max_preview_limit: 25,
+    default_preview_limit: 5,
+    max_automatic_batch_limit: 10,
+  },
+  dry_run_supported: true,
   warnings: [],
   generated_at: "2026-06-28T12:00:00Z",
 };

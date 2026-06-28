@@ -7,6 +7,7 @@ from datetime import datetime
 from pydantic import Field
 
 from app.schemas.common import StrictModel
+from app.schemas.telegram_automatic_delivery import DeliveryLimits
 
 
 class QuietHoursSummary(StrictModel):
@@ -57,5 +58,12 @@ class AlertRoutingSummaryResponse(StrictModel):
     worker_enabled: bool
     worker_running: bool
     readiness: str
+    automatic_telegram_delivery_ready: bool = False
+    automatic_delivery_blockers: list[str] = Field(default_factory=list)
+    eligible_pending_telegram_count: int = 0
+    already_delivered_telegram_count: int = 0
+    next_delivery_preview_count: int = 0
+    delivery_limits: DeliveryLimits = Field(default_factory=DeliveryLimits)
+    dry_run_supported: bool = True
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime

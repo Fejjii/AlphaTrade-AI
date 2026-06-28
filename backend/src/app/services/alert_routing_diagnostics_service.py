@@ -27,6 +27,7 @@ from app.services.telegram_alert_delivery_service import (
     TelegramAlertDeliveryService,
     telegram_alert_delivery_available,
 )
+from app.services.telegram_automatic_delivery_service import TelegramAutomaticDeliveryService
 from app.services.telegram_test_alert_service import (
     TelegramTestAlertService,
     manual_test_available,
@@ -354,6 +355,16 @@ def build_alert_routing_summary(
         organization_id=organization_id,
     )
 
+    auto_service = TelegramAutomaticDeliveryService(session, settings)
+    auto_readiness = auto_service.readiness(
+        organization_id=organization_id,
+        user_id=user_id,
+        paper_only=delivery_status.paper_only,
+        telegram_configured=delivery_status.telegram_configured,
+        telegram_chat_configured=telegram_chat_configured,
+        external_delivery_enabled=external_delivery_enabled,
+    )
+
     return AlertRoutingSummaryResponse(
         alerts_enabled=True,
         telegram_enabled=settings.telegram_alerts_enabled,
@@ -405,6 +416,13 @@ def build_alert_routing_summary(
         worker_enabled=settings.worker_enabled,
         worker_running=worker_running,
         readiness=readiness,
+        automatic_telegram_delivery_ready=auto_readiness.automatic_telegram_delivery_ready,
+        automatic_delivery_blockers=auto_readiness.automatic_delivery_blockers,
+        eligible_pending_telegram_count=auto_readiness.eligible_pending_telegram_count,
+        already_delivered_telegram_count=auto_readiness.already_delivered_telegram_count,
+        next_delivery_preview_count=auto_readiness.next_delivery_preview_count,
+        delivery_limits=auto_readiness.delivery_limits,
+        dry_run_supported=auto_readiness.dry_run_supported,
         warnings=warnings,
         generated_at=generated_at,
     )

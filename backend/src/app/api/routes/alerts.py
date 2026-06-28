@@ -25,11 +25,16 @@ from app.schemas.telegram_alert_delivery import (
     TelegramAlertDeliveryRequest,
     TelegramAlertDeliveryResponse,
 )
+from app.schemas.telegram_automatic_delivery import (
+    AlertDeliveryPreviewRequest,
+    AlertDeliveryPreviewResponse,
+)
 from app.schemas.telegram_test_alert import TelegramTestAlertRequest, TelegramTestAlertResponse
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
 from app.services.alert_routing_diagnostics_service import build_alert_routing_summary
 from app.services.telegram_alert_delivery_service import TelegramAlertDeliveryService
+from app.services.telegram_automatic_delivery_service import TelegramAutomaticDeliveryService
 from app.services.telegram_test_alert_service import TelegramTestAlertService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -57,6 +62,14 @@ _ALERTS_TELEGRAM_TEST_LIMIT = Depends(
         limit=10,
         window_seconds=3600,
         user_limit=10,
+    )
+)
+_ALERTS_PREVIEW_LIMIT = Depends(
+    tenant_rate_limit_dependency(
+        "alerts:delivery-preview",
+        limit=30,
+        window_seconds=3600,
+        user_limit=30,
     )
 )
 
@@ -114,6 +127,27 @@ async def alert_routing_summary(
     return build_alert_routing_summary(
         settings=settings,
         session=session,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.post(
+    "/delivery/preview",
+    response_model=AlertDeliveryPreviewResponse,
+    summary="Preview eligible alerts for automatic Telegram delivery (read-only)",
+    dependencies=[_ALERTS_PREVIEW_LIMIT],
+)
+async def preview_alert_delivery(
+    body: AlertDeliveryPreviewRequest,
+    tenant: OwnerDep,
+    settings: SettingsDep,
+    session: SessionDep,
+) -> AlertDeliveryPreviewResponse:
+    """Read-only preview — does not send Telegram or mutate alerts."""
+    service = TelegramAutomaticDeliveryService(session, settings)
+    return service.preview(
+        body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )

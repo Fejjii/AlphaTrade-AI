@@ -2,6 +2,10 @@
 
 import { useCallback, useState } from "react";
 
+import {
+  AutomaticTelegramDeliveryReadinessPanel,
+  PreviewTelegramDeliveryButton,
+} from "@/components/AutomaticTelegramDeliveryReadiness";
 import { AlertRoutingCard } from "@/components/AlertRoutingCard";
 import {
   SendAlertToTelegramButton,
@@ -149,6 +153,10 @@ export default function AlertsPage() {
       ) : null}
 
       {routing ? <AlertRoutingCard routing={routing} /> : null}
+      {routing ? <AutomaticTelegramDeliveryReadinessPanel routing={routing} /> : null}
+      {routing ? (
+        <PreviewTelegramDeliveryButton disabled={busy} limit={routing.delivery_limits?.default_preview_limit ?? 5} />
+      ) : null}
       {routing ? <TelegramManualDeliveryPanel routing={routing} /> : null}
       {routing ? <TelegramTestPanel routing={routing} /> : null}
 

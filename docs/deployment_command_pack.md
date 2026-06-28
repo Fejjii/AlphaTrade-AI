@@ -112,9 +112,19 @@ DRY_RUN=true ALERT_ID=a1000061-0000-4000-8000-000000000061 \
   BACKEND_URL=https://alphatrade-api-staging.onrender.com \
   ./scripts/validate-telegram-delivery-staging.sh
 
-# Read-only /alerts browser smoke (no send)
+# Read-only browser smoke (no send)
 STAGING_DEMO_PASSWORD='...' ./scripts/browser-smoke-alerts-staging.sh
 ```
+
+### Slice 71 — Automatic Telegram delivery preview (read-only)
+
+```bash
+DRY_RUN=true PREVIEW_LIMIT=5 STAGING_DEMO_PASSWORD='...' \
+  BACKEND_URL=https://alphatrade-api-staging.onrender.com \
+  ./scripts/preview-telegram-delivery-staging.sh
+```
+
+Live automatic delivery remains disabled (`AUTOMATIC_TELEGRAM_DELIVERY_ENABLED=false`).
 
 Local Docker (cookie mode):
 

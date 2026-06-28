@@ -1667,6 +1667,37 @@ export interface AlertRoutingSummary {
   worker_enabled: boolean;
   worker_running: boolean;
   readiness: "ready" | "degraded" | "blocked";
+  automatic_telegram_delivery_ready: boolean;
+  automatic_delivery_blockers: string[];
+  eligible_pending_telegram_count: number;
+  already_delivered_telegram_count: number;
+  next_delivery_preview_count: number;
+  delivery_limits: {
+    max_preview_limit: number;
+    default_preview_limit: number;
+    max_automatic_batch_limit: number;
+  };
+  dry_run_supported: boolean;
+  warnings: string[];
+  generated_at: string;
+}
+
+export interface AlertDeliveryPreviewItem {
+  alert_id: string;
+  alert_type: string;
+  severity: string;
+  message_preview: string;
+  created_at: string;
+  status: "eligible" | "skipped" | "already_delivered";
+  reason?: string | null;
+}
+
+export interface AlertDeliveryPreviewResponse {
+  channel: string;
+  eligible_count: number;
+  skipped_count: number;
+  already_delivered_count: number;
+  items: AlertDeliveryPreviewItem[];
   warnings: string[];
   generated_at: string;
 }

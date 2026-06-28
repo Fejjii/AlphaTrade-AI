@@ -88,6 +88,7 @@ import type {
   TickerResponse,
   WatchlistItem,
   ExchangeDiagnosticsSummary,
+  AlertDeliveryPreviewResponse,
   AlertRoutingSummary,
   TelegramAlertDeliveryResponse,
   TelegramTestAlertResponse,
@@ -412,6 +413,16 @@ export const api = {
       }),
     deliverTelegram: (id: string, body: { confirm: string }) =>
       apiFetch<TelegramAlertDeliveryResponse>(`/alerts/${id}/deliver-telegram`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    previewDelivery: (body: {
+      channel?: "telegram";
+      limit?: number;
+      severity_min?: string;
+    }) =>
+      apiFetch<AlertDeliveryPreviewResponse>("/alerts/delivery/preview", {
         method: "POST",
         body: JSON.stringify(body),
         auth: true,
