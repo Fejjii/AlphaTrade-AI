@@ -113,3 +113,45 @@ class ExchangeLeverageInfoResponse(StrictModel):
     leverage: Decimal
     position_side: str | None = None
     generated_at: datetime
+
+
+class ExchangeInstrumentSummary(StrictModel):
+    """Compact instrument probe for diagnostics."""
+
+    symbol: str
+    inst_id: str
+    active: bool | None = None
+    probe_ok: bool = True
+
+
+class ExchangeLeverageSummary(StrictModel):
+    """Compact leverage probe for diagnostics."""
+
+    inst_id: str
+    margin_mode: str
+    leverage: Decimal | None = None
+    probe_ok: bool = True
+
+
+class ExchangeDiagnosticsSummaryResponse(StrictModel):
+    """Redacted operator summary of exchange demo readiness and mirror health."""
+
+    exchange_mode: str
+    execution_mode: str
+    real_trading_enabled: bool
+    demo_active: bool
+    provider_health: str | None = None
+    worker_enabled: bool
+    telegram_enabled: bool
+    position_mode: str | None = None
+    leverage: ExchangeLeverageSummary | None = None
+    instrument: ExchangeInstrumentSummary | None = None
+    venue_positions_count: int | None = None
+    last_exchange_order_status: str | None = None
+    last_demo_mirror_result: str | None = None
+    last_demo_mirror_error_code: str | None = None
+    last_demo_mirror_error_message: str | None = None
+    last_cancel_status: str | None = None
+    readiness: str
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime

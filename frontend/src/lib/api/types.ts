@@ -1590,6 +1590,42 @@ export interface PaginatedLessonCandidates {
   offset: number;
 }
 
+export interface ExchangeInstrumentSummary {
+  symbol: string;
+  inst_id: string;
+  active?: boolean | null;
+  probe_ok: boolean;
+}
+
+export interface ExchangeLeverageSummary {
+  inst_id: string;
+  margin_mode: string;
+  leverage?: string | null;
+  probe_ok: boolean;
+}
+
+export interface ExchangeDiagnosticsSummary {
+  exchange_mode: string;
+  execution_mode: string;
+  real_trading_enabled: boolean;
+  demo_active: boolean;
+  provider_health?: string | null;
+  worker_enabled: boolean;
+  telegram_enabled: boolean;
+  position_mode?: string | null;
+  leverage?: ExchangeLeverageSummary | null;
+  instrument?: ExchangeInstrumentSummary | null;
+  venue_positions_count?: number | null;
+  last_exchange_order_status?: string | null;
+  last_demo_mirror_result?: string | null;
+  last_demo_mirror_error_code?: string | null;
+  last_demo_mirror_error_message?: string | null;
+  last_cancel_status?: string | null;
+  readiness: "ready" | "degraded" | "blocked";
+  warnings: string[];
+  generated_at: string;
+}
+
 export interface LessonSourceMetadata {
   lesson_id: string;
   mistake_type: string;

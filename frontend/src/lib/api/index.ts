@@ -87,6 +87,7 @@ import type {
   OHLCVResponse,
   TickerResponse,
   WatchlistItem,
+  ExchangeDiagnosticsSummary,
 } from "@/lib/api/types";
 
 export const api = {
@@ -163,6 +164,10 @@ export const api = {
   },
   providers: {
     status: () => apiFetch<ProviderStatusResponse>("/providers/status", { auth: false }),
+  },
+  exchange: {
+    diagnosticsSummary: () =>
+      apiFetch<ExchangeDiagnosticsSummary>("/exchange/diagnostics/summary", { auth: true }),
   },
   chat: {
     message: (body: { message: string; conversation_id?: string; symbol?: string; timeframe?: string }) =>

@@ -33,9 +33,12 @@ from app.schemas.common import ActorType, AuditEventType
 from app.schemas.exchange import (
     ExchangeBalanceItem,
     ExchangeBalancesResponse,
+    ExchangeDiagnosticsSummaryResponse,
     ExchangeInstrumentItem,
     ExchangeInstrumentsResponse,
+    ExchangeInstrumentSummary,
     ExchangeLeverageInfoResponse,
+    ExchangeLeverageSummary,
     ExchangeOrderCancelResponse,
     ExchangeOrderStatusResponse,
     ExchangePositionItem,
@@ -45,6 +48,7 @@ from app.schemas.exchange import (
 )
 from app.security.rbac import OwnerDep
 from app.services.audit_service import AuditService
+from app.services.exchange_diagnostics_service import build_exchange_diagnostics_summary
 
 router = APIRouter(prefix="/exchange", tags=["exchange"])
 
@@ -83,6 +87,67 @@ def _map_position(item: ExchangePositionData) -> ExchangePositionItem:
         unrealized_pnl=item.unrealized_pnl,
         leverage=item.leverage,
     )
+
+
+def _map_diagnostics_response(snapshot) -> ExchangeDiagnosticsSummaryResponse:
+    leverage = None
+    if snapshot.leverage is not None:
+        leverage = ExchangeLeverageSummary(
+            inst_id=snapshot.leverage.inst_id,
+            margin_mode=snapshot.leverage.margin_mode,
+            leverage=snapshot.leverage.leverage,
+            probe_ok=snapshot.leverage.probe_ok,
+        )
+    instrument = None
+    if snapshot.instrument is not None:
+        instrument = ExchangeInstrumentSummary(
+            symbol=snapshot.instrument.symbol,
+            inst_id=snapshot.instrument.inst_id,
+            active=snapshot.instrument.active,
+            probe_ok=snapshot.instrument.probe_ok,
+        )
+    return ExchangeDiagnosticsSummaryResponse(
+        exchange_mode=snapshot.exchange_mode,
+        execution_mode=snapshot.execution_mode,
+        real_trading_enabled=snapshot.real_trading_enabled,
+        demo_active=snapshot.demo_active,
+        provider_health=snapshot.provider_health,
+        worker_enabled=snapshot.worker_enabled,
+        telegram_enabled=snapshot.telegram_enabled,
+        position_mode=snapshot.position_mode,
+        leverage=leverage,
+        instrument=instrument,
+        venue_positions_count=snapshot.venue_positions_count,
+        last_exchange_order_status=snapshot.last_exchange_order_status,
+        last_demo_mirror_result=snapshot.last_demo_mirror_result,
+        last_demo_mirror_error_code=snapshot.last_demo_mirror_error_code,
+        last_demo_mirror_error_message=snapshot.last_demo_mirror_error_message,
+        last_cancel_status=snapshot.last_cancel_status,
+        readiness=snapshot.readiness,
+        warnings=snapshot.warnings,
+        generated_at=snapshot.generated_at,
+    )
+
+
+@router.get(
+    "/diagnostics/summary",
+    response_model=ExchangeDiagnosticsSummaryResponse,
+    summary="Exchange demo diagnostics summary",
+)
+async def exchange_diagnostics_summary(
+    tenant: OwnerDep,
+    settings: SettingsDep,
+    registry: ProviderRegistryDep,
+    audit_service: AuditServiceDep,
+) -> ExchangeDiagnosticsSummaryResponse:
+    """Read-only operator summary of demo exchange readiness and mirror health."""
+    snapshot = build_exchange_diagnostics_summary(
+        settings=settings,
+        registry=registry,
+        audit_service=audit_service,
+        organization_id=tenant.organization_id,
+    )
+    return _map_diagnostics_response(snapshot)
 
 
 @router.get("/status", response_model=ExchangeStatusResponse, summary="Exchange status")

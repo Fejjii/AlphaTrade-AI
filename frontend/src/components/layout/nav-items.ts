@@ -18,6 +18,7 @@ import {
   Settings,
   Shield,
   Wallet,
+  Radio,
 } from "lucide-react";
 
 export const navItems = [
@@ -38,6 +39,7 @@ export const navItems = [
   { href: "/market-watcher", label: "Market Watcher", icon: Eye },
   { href: "/knowledge", label: "Knowledge Base", icon: ListChecks },
   { href: "/risk", label: "Risk Settings", icon: Shield },
+  { href: "/exchange", label: "Exchange", icon: Radio },
   { href: "/usage", label: "Usage", icon: Gauge },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/invitations", label: "Invitations", icon: ClipboardCheck },
