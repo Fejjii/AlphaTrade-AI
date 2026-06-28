@@ -331,7 +331,13 @@ def test_summary_includes_setup_detector_metadata(slice74_db: sessionmaker[Sessi
     resp = client.get("/market-watcher/summary")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["detectors_enabled"] == ["liquidity_sweep", "sfp", "trend_pullback"]
+    assert body["detectors_enabled"] == [
+        "breakout_retest",
+        "liquidity_sweep",
+        "order_block",
+        "sfp",
+        "trend_pullback",
+    ]
     assert body["detector_versions"]["liquidity_sweep"] == "1.0.0"
 
 

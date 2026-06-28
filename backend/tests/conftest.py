@@ -15,7 +15,11 @@ from app.core.config import Settings
 from app.main import create_app
 from app.security.rate_limit import reset_rate_limiter
 
-pytest_plugins = ("tests.test_workflows",)
+pytest_plugins = (
+    "tests.test_workflows",
+    "tests.test_market_watcher_scanner_slice_74",
+    "tests.test_market_watcher_scanner_slice_75",
+)
 
 
 @pytest.fixture(autouse=True)

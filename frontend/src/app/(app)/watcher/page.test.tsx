@@ -11,11 +11,19 @@ const summary = {
   worker_running: false,
   symbols_supported: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
   timeframes_supported: ["15m", "1h"],
-  detectors_enabled: ["liquidity_sweep", "sfp", "trend_pullback"],
+  detectors_enabled: [
+    "liquidity_sweep",
+    "sfp",
+    "trend_pullback",
+    "order_block",
+    "breakout_retest",
+  ],
   detector_versions: {
     liquidity_sweep: "1.0.0",
     sfp: "1.0.0",
     trend_pullback: "1.0.0",
+    order_block: "1.0.0",
+    breakout_retest: "1.0.0",
   },
   last_scan_at: null,
   last_scan_status: null,
@@ -52,7 +60,7 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-describe("WatcherPage Slice 72/73/74/75", () => {
+describe("WatcherPage Slice 72/73/74/75/76", () => {
   afterEach(() => {
     summary.last_scan_at = null;
     summary.last_scan_status = null;
@@ -144,6 +152,69 @@ describe("WatcherPage Slice 72/73/74/75", () => {
     expect(screen.getByTestId("watcher-candidate-confidence")).toHaveTextContent("68.5");
     expect(screen.getByTestId("watcher-candidate-levels")).toHaveTextContent("Trigger:");
     expect(screen.getByTestId("watcher-candidate-levels")).toHaveTextContent("Invalidation:");
+  });
+
+  it("renders order block and breakout retest setup detector sections", async () => {
+    vi.mocked(api.marketWatcher.scan).mockResolvedValue({
+      scanned_at: new Date().toISOString(),
+      env_enabled: false,
+      effective_enabled: true,
+      symbols_scanned: 1,
+      observations_created: 1,
+      setup_signals: [],
+      decisions: [],
+      paper_only: true,
+      dry_run: true,
+      status: "ok",
+      alerts_created: 0,
+      alerts_deduped: 0,
+      candidates: [
+        {
+          symbol: "BTCUSDT",
+          timeframe: "15m",
+          condition: "order_block",
+          message: "watch",
+          severity: "info",
+          metrics: {},
+          direction: "long",
+          confidence: 71.0,
+          reason: "Bullish order block: down candle before an impulsive up move.",
+          trigger_level: 98.5,
+          invalidation_level: 97.0,
+          source: "market_watcher",
+          detector_version: "1.0.0",
+        },
+        {
+          symbol: "ETHUSDT",
+          timeframe: "1h",
+          condition: "breakout_retest",
+          message: "watch",
+          severity: "info",
+          metrics: {},
+          direction: "long",
+          confidence: 69.0,
+          reason: "Broke resistance then retested it as support.",
+          trigger_level: 3200,
+          invalidation_level: 3180,
+          source: "market_watcher",
+          detector_version: "1.0.0",
+        },
+      ],
+    });
+
+    render(<WatcherPage />);
+    fireEvent.change(screen.getByTestId("watcher-confirm-input"), {
+      target: { value: "RUN_READ_ONLY_SCAN" },
+    });
+    fireEvent.click(screen.getByTestId("watcher-run-scan-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("watcher-setup-order_block")).toBeInTheDocument();
+      expect(screen.getByTestId("watcher-setup-breakout_retest")).toBeInTheDocument();
+    });
+    expect(screen.getAllByTestId("watcher-candidate-confidence")).toHaveLength(2);
+    expect(screen.getAllByTestId("watcher-candidate-reason")).toHaveLength(2);
+    expect(screen.getAllByTestId("watcher-candidate-levels")).toHaveLength(2);
   });
 
   it("does not render Telegram send or order UI controls", () => {

@@ -20,12 +20,20 @@ const CREATE_IN_APP_ALERTS_PHRASE = "CREATE_IN_APP_ALERTS_ONLY";
 const DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 const DEFAULT_TIMEFRAMES = ["15m", "1h"];
 
-const SETUP_DETECTOR_CONDITIONS = ["liquidity_sweep", "sfp", "trend_pullback"] as const;
+const SETUP_DETECTOR_CONDITIONS = [
+  "liquidity_sweep",
+  "sfp",
+  "trend_pullback",
+  "order_block",
+  "breakout_retest",
+] as const;
 
 const SETUP_DETECTOR_LABELS: Record<(typeof SETUP_DETECTOR_CONDITIONS)[number], string> = {
   liquidity_sweep: "Liquidity sweep",
   sfp: "SFP (swing failure pattern)",
   trend_pullback: "Trend pullback",
+  order_block: "Order block",
+  breakout_retest: "Breakout retest",
 };
 
 function formatLevel(value: string | number | null | undefined): string {

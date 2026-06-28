@@ -15,6 +15,8 @@ SETUP_DETECTOR_VERSIONS: dict[str, str] = {
     "liquidity_sweep": "1.0.0",
     "sfp": "1.0.0",
     "trend_pullback": "1.0.0",
+    "order_block": "1.0.0",
+    "breakout_retest": "1.0.0",
 }
 
 WATCHER_SETUP_CONDITIONS: frozenset[str] = frozenset(SETUP_DETECTOR_VERSIONS)
@@ -47,6 +49,21 @@ def _extract_levels(
         return trigger, invalidation
     if detection.name == "trend_pullback":
         return metrics.get("ema_fast"), metrics.get("ema_slow")
+    if detection.name == "order_block":
+        ob_low = metrics.get("ob_low")
+        ob_high = metrics.get("ob_high")
+        if detection.direction == "long":
+            return ob_high, ob_low
+        if detection.direction == "short":
+            return ob_low, ob_high
+        return ob_low, ob_high
+    if detection.name == "breakout_retest":
+        level = metrics.get("level")
+        if detection.direction == "long":
+            return level, last_low
+        if detection.direction == "short":
+            return level, last_high
+        return level, None
     return None, None
 
 
