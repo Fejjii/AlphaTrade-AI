@@ -10,6 +10,7 @@ from app.analysis.engine import analyze
 from app.analysis.types import AnalysisResult
 from app.providers.market_data import OHLCVBar
 from app.schemas.common import PaperAlertSeverity, PaperAlertType, Timeframe
+from app.services.market_watcher_setup_detectors import detect_setup_candidates
 
 SCAN_CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN"
 
@@ -42,6 +43,13 @@ class ScanCandidate:
     alert_type: PaperAlertType
     metrics: dict[str, Any]
     dedup_key: str
+    direction: str | None = None
+    confidence: float | None = None
+    reason: str | None = None
+    trigger_level: float | None = None
+    invalidation_level: float | None = None
+    source: str = "market_watcher"
+    detector_version: str | None = None
 
 
 def _pct_change(closes: list[float], lookback: int = 5) -> float | None:
@@ -254,6 +262,10 @@ def detect_candidates(
                 dedup_key=f"{dedup_prefix}:risk_volatility_warning",
             )
         )
+
+    candidates.extend(
+        detect_setup_candidates(symbol=symbol, timeframe=timeframe, bars=bars, result=result)
+    )
 
     return candidates
 

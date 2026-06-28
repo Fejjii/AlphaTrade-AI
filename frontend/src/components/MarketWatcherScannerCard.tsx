@@ -48,6 +48,14 @@ export function MarketWatcherScannerCard({
             ))}
           </ul>
         ) : null}
+        {summary.detectors_enabled?.length ? (
+          <p className="text-xs text-zinc-500" data-testid="market-watcher-detectors">
+            Setup detectors: {summary.detectors_enabled.join(", ")}
+            {summary.last_scan_conditions_found?.length
+              ? ` · last scan: ${summary.last_scan_conditions_found.join(", ")}`
+              : ""}
+          </p>
+        ) : null}
         <Link href="/watcher" className="text-xs text-sky-400 underline">
           Open watcher scanner
         </Link>

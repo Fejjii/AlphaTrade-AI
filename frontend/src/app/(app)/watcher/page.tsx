@@ -9,12 +9,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import type { MarketWatcherScanResult } from "@/lib/api/types";
+import type { MarketWatcherCandidate, MarketWatcherScanResult } from "@/lib/api/types";
 
 const CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN";
 const CREATE_IN_APP_ALERTS_PHRASE = "CREATE_IN_APP_ALERTS_ONLY";
 const DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 const DEFAULT_TIMEFRAMES = ["15m", "1h"];
+
+const SETUP_DETECTOR_CONDITIONS = ["liquidity_sweep", "sfp", "trend_pullback"] as const;
+
+const SETUP_DETECTOR_LABELS: Record<(typeof SETUP_DETECTOR_CONDITIONS)[number], string> = {
+  liquidity_sweep: "Liquidity sweep",
+  sfp: "SFP (swing failure pattern)",
+  trend_pullback: "Trend pullback",
+};
+
+function formatLevel(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (Number.isFinite(numeric)) return numeric.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return String(value);
+}
 
 export default function WatcherPage() {
   const [busy, setBusy] = useState(false);
@@ -47,6 +62,28 @@ export default function WatcherPage() {
   }, []);
 
   const candidateCount = useMemo(() => scanResult?.candidates.length ?? 0, [scanResult]);
+
+  const setupCandidatesByCondition = useMemo(() => {
+    if (!scanResult) return new Map<string, MarketWatcherCandidate[]>();
+    const grouped = new Map<string, MarketWatcherCandidate[]>();
+    for (const condition of SETUP_DETECTOR_CONDITIONS) {
+      grouped.set(
+        condition,
+        scanResult.candidates.filter((candidate) => candidate.condition === condition),
+      );
+    }
+    return grouped;
+  }, [scanResult]);
+
+  const otherCandidates = useMemo(() => {
+    if (!scanResult) return [];
+    return scanResult.candidates.filter(
+      (candidate) =>
+        !SETUP_DETECTOR_CONDITIONS.includes(
+          candidate.condition as (typeof SETUP_DETECTOR_CONDITIONS)[number],
+        ),
+    );
+  }, [scanResult]);
 
   async function runScan() {
     if (!confirmReady || !createAlertsConfirmReady || scanBlocked) return;
@@ -218,22 +255,80 @@ export default function WatcherPage() {
             ) : null}
 
             {scanResult ? (
-              <div className="space-y-2 rounded border border-zinc-800 p-3" data-testid="watcher-scan-results">
+              <div className="space-y-4 rounded border border-zinc-800 p-3" data-testid="watcher-scan-results">
                 <p data-testid="watcher-scan-status">
                   Status: {scanResult.status} · Candidates: {candidateCount} · Alerts created:{" "}
                   {scanResult.alerts_created} · Deduped: {scanResult.alerts_deduped}
                 </p>
-                <ul className="space-y-2 text-xs text-zinc-400">
-                  {scanResult.candidates.map((candidate) => (
-                    <li key={`${candidate.symbol}-${candidate.timeframe}-${candidate.condition}`}>
-                      <span className="text-zinc-200">
-                        {candidate.symbol} {candidate.timeframe} · {candidate.condition}
-                      </span>
-                      {candidate.deduped ? " (deduped)" : null}
-                      <p>{candidate.message}</p>
-                    </li>
-                  ))}
-                </ul>
+
+                <div className="space-y-3" data-testid="watcher-setup-detectors">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    Setup detectors
+                  </p>
+                  {SETUP_DETECTOR_CONDITIONS.map((condition) => {
+                    const items = setupCandidatesByCondition.get(condition) ?? [];
+                    return (
+                      <div
+                        key={condition}
+                        className="space-y-2 rounded border border-zinc-800/80 p-2"
+                        data-testid={`watcher-setup-${condition}`}
+                      >
+                        <p className="text-sm text-zinc-200">{SETUP_DETECTOR_LABELS[condition]}</p>
+                        {items.length === 0 ? (
+                          <p className="text-xs text-zinc-500">No candidates on this scan.</p>
+                        ) : (
+                          <ul className="space-y-2 text-xs text-zinc-400">
+                            {items.map((candidate) => (
+                              <li
+                                key={`${candidate.symbol}-${candidate.timeframe}-${candidate.condition}-${candidate.direction ?? "none"}`}
+                                data-testid={`watcher-setup-candidate-${condition}`}
+                              >
+                                <span className="text-zinc-200">
+                                  {candidate.symbol} · {candidate.timeframe}
+                                  {candidate.direction ? ` · ${candidate.direction}` : ""}
+                                  {candidate.deduped ? " (deduped)" : ""}
+                                </span>
+                                {candidate.confidence != null ? (
+                                  <p data-testid="watcher-candidate-confidence">
+                                    Confidence: {candidate.confidence.toFixed(1)}
+                                  </p>
+                                ) : null}
+                                {candidate.reason ? (
+                                  <p data-testid="watcher-candidate-reason">{candidate.reason}</p>
+                                ) : (
+                                  <p>{candidate.message}</p>
+                                )}
+                                <p data-testid="watcher-candidate-levels">
+                                  Trigger: {formatLevel(candidate.trigger_level)} · Invalidation:{" "}
+                                  {formatLevel(candidate.invalidation_level)}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {otherCandidates.length ? (
+                  <div className="space-y-2" data-testid="watcher-other-candidates">
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Other watch conditions
+                    </p>
+                    <ul className="space-y-2 text-xs text-zinc-400">
+                      {otherCandidates.map((candidate) => (
+                        <li key={`${candidate.symbol}-${candidate.timeframe}-${candidate.condition}`}>
+                          <span className="text-zinc-200">
+                            {candidate.symbol} {candidate.timeframe} · {candidate.condition}
+                          </span>
+                          {candidate.deduped ? " (deduped)" : null}
+                          <p>{candidate.message}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </CardContent>

@@ -54,6 +54,7 @@ from app.services.market_watcher_scanner import (
     normalize_timeframes,
     parse_timeframe,
 )
+from app.services.market_watcher_setup_detectors import SETUP_DETECTOR_VERSIONS, detectors_enabled
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_observability_service import PaperObservabilityService
 from app.workers.repository import WorkerHeartbeatRepository
@@ -67,6 +68,7 @@ class _LastScanState:
     status: str
     alerts_created: int
     error: str | None
+    conditions_found: list[str]
 
 
 class MarketWatcherService:
@@ -154,9 +156,12 @@ class MarketWatcherService:
             worker_running=worker_running,
             symbols_supported=list(SUPPORTED_SYMBOLS),
             timeframes_supported=list(SUPPORTED_TIMEFRAMES),
+            detectors_enabled=detectors_enabled(),
+            detector_versions=dict(SETUP_DETECTOR_VERSIONS),
             last_scan_at=last.scanned_at if last else None,
             last_scan_status=last.status if last else None,  # type: ignore[arg-type]
             last_scan_alerts_created=last.alerts_created if last else 0,
+            last_scan_conditions_found=last.conditions_found if last else [],
             last_scan_error=last.error if last else None,
             paper_only=True,
             readiness=readiness,  # type: ignore[arg-type]
@@ -406,15 +411,9 @@ class MarketWatcherService:
         raw: ScanCandidate,
         dry_run: bool,
     ) -> MarketWatcherCandidate:
+        base_kwargs = self._candidate_kwargs(raw)
         if dry_run:
-            return MarketWatcherCandidate(
-                symbol=raw.symbol,
-                timeframe=raw.timeframe,
-                condition=raw.condition,
-                message=raw.message,
-                severity=raw.severity.value,
-                metrics=decimal_metrics(raw.metrics),
-            )
+            return MarketWatcherCandidate(**base_kwargs)
 
         created = self._alerts.create(
             organization_id=organization_id,
@@ -423,34 +422,56 @@ class MarketWatcherService:
             severity=raw.severity,
             message=raw.message,
             metadata={
-                "source": PaperAlertSource.MARKET_WATCHER.value,
+                "source": raw.source,
                 "condition": raw.condition,
                 "symbol": raw.symbol,
                 "timeframe": raw.timeframe,
+                "direction": raw.direction,
+                "confidence": raw.confidence,
+                "reason": raw.reason,
+                "trigger_level": (
+                    float(Decimal(str(raw.trigger_level)))
+                    if raw.trigger_level is not None
+                    else None
+                ),
+                "invalidation_level": (
+                    float(Decimal(str(raw.invalidation_level)))
+                    if raw.invalidation_level is not None
+                    else None
+                ),
+                "detector_version": raw.detector_version,
                 "metrics": decimal_metrics(raw.metrics),
             },
             dedup_key=raw.dedup_key,
             source=PaperAlertSource.MARKET_WATCHER,
         )
         if created is None:
-            return MarketWatcherCandidate(
-                symbol=raw.symbol,
-                timeframe=raw.timeframe,
-                condition=raw.condition,
-                message=raw.message,
-                severity=raw.severity.value,
-                metrics=decimal_metrics(raw.metrics),
-                deduped=True,
-            )
-        return MarketWatcherCandidate(
-            symbol=raw.symbol,
-            timeframe=raw.timeframe,
-            condition=raw.condition,
-            message=raw.message,
-            severity=raw.severity.value,
-            metrics=decimal_metrics(raw.metrics),
-            created_alert_id=created.id,
-        )
+            return MarketWatcherCandidate(**base_kwargs, deduped=True)
+        return MarketWatcherCandidate(**base_kwargs, created_alert_id=created.id)
+
+    @staticmethod
+    def _candidate_kwargs(raw: ScanCandidate) -> dict[str, object]:
+        return {
+            "symbol": raw.symbol,
+            "timeframe": raw.timeframe,
+            "condition": raw.condition,
+            "message": raw.message,
+            "severity": raw.severity.value,
+            "metrics": decimal_metrics(raw.metrics),
+            "direction": raw.direction,
+            "confidence": raw.confidence,
+            "reason": raw.reason,
+            "trigger_level": (
+                Decimal(str(round(raw.trigger_level, 6))) if raw.trigger_level is not None else None
+            ),
+            "invalidation_level": (
+                Decimal(str(round(raw.invalidation_level, 6)))
+                if raw.invalidation_level is not None
+                else None
+            ),
+            "source": raw.source,
+            "detector_version": raw.detector_version,
+        }
 
     def _blocked_result(
         self,
@@ -482,11 +503,13 @@ class MarketWatcherService:
         organization_id: uuid.UUID,
         result: MarketWatcherScanResult,
     ) -> None:
+        conditions = sorted({c.condition for c in result.candidates})
         self._last_scan_state[organization_id] = _LastScanState(
             scanned_at=result.scanned_at,
             status=result.status,
             alerts_created=result.alerts_created,
             error=result.error,
+            conditions_found=conditions,
         )
 
     def _worker_running(self) -> bool:

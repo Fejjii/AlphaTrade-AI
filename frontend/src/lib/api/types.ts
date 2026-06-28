@@ -1299,9 +1299,12 @@ export interface MarketWatcherSummary {
   worker_running: boolean;
   symbols_supported: string[];
   timeframes_supported: string[];
+  detectors_enabled: string[];
+  detector_versions: Record<string, string>;
   last_scan_at?: string | null;
   last_scan_status?: "ok" | "blocked" | "degraded" | null;
   last_scan_alerts_created: number;
+  last_scan_conditions_found: string[];
   last_scan_error?: string | null;
   paper_only: boolean;
   readiness: "ready" | "degraded" | "blocked";
@@ -1316,6 +1319,13 @@ export interface MarketWatcherCandidate {
   message: string;
   severity: string;
   metrics: Record<string, unknown>;
+  direction?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  trigger_level?: string | number | null;
+  invalidation_level?: string | number | null;
+  source?: string;
+  detector_version?: string | null;
   created_alert_id?: string | null;
   deduped?: boolean;
 }

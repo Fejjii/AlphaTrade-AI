@@ -64,6 +64,13 @@ class MarketWatcherCandidate(StrictModel):
     message: str
     severity: str
     metrics: dict[str, object] = Field(default_factory=dict)
+    direction: str | None = None
+    confidence: float | None = None
+    reason: str | None = None
+    trigger_level: Decimal | None = None
+    invalidation_level: Decimal | None = None
+    source: str = "market_watcher"
+    detector_version: str | None = None
     created_alert_id: UUID | None = None
     deduped: bool = False
 
@@ -75,9 +82,12 @@ class MarketWatcherSummary(StrictModel):
     worker_running: bool
     symbols_supported: list[str] = Field(default_factory=list)
     timeframes_supported: list[str] = Field(default_factory=list)
+    detectors_enabled: list[str] = Field(default_factory=list)
+    detector_versions: dict[str, str] = Field(default_factory=dict)
     last_scan_at: datetime | None = None
     last_scan_status: MarketWatcherScanStatus | None = None
     last_scan_alerts_created: int = 0
+    last_scan_conditions_found: list[str] = Field(default_factory=list)
     last_scan_error: str | None = None
     paper_only: bool = True
     readiness: MarketWatcherReadiness = "ready"
