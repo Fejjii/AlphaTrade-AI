@@ -66,6 +66,8 @@ import type {
   PaperRuntimeHistoryRecord,
   PaperAlert,
   PaperAlertSummary,
+  SetupAlertReviewItem,
+  SetupAlertReviewSummary,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
@@ -390,6 +392,31 @@ export const api = {
     }) =>
       apiFetch<{ items: PaperAlert[]; total: number }>("/alerts", { query: params, auth: true }),
     summary: () => apiFetch<PaperAlertSummary>("/alerts/summary", { auth: true }),
+    setupReview: (params?: {
+      status?: string;
+      condition?: string;
+      symbol?: string;
+      timeframe?: string;
+      direction?: string;
+      min_confidence?: number;
+      limit?: number;
+      offset?: number;
+    }) =>
+      apiFetch<{ items: SetupAlertReviewItem[]; total: number; limit: number; offset: number }>(
+        "/alerts/setup-review",
+        { query: params, auth: true },
+      ),
+    setupReviewSummary: () =>
+      apiFetch<SetupAlertReviewSummary>("/alerts/setup-review/summary", { auth: true }),
+    updateSetupReview: (
+      id: string,
+      body: { review_status: string; review_notes?: string | null },
+    ) =>
+      apiFetch<SetupAlertReviewItem>(`/alerts/setup-review/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
     routingSummary: () =>
       apiFetch<AlertRoutingSummary>("/alerts/routing/summary", { auth: true }),
     deliveryStatus: () =>

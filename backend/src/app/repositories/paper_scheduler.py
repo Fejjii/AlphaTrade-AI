@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import Float, cast, func, select
 
 from app.db.models import (
     PaperValidationAlert,
@@ -15,7 +15,13 @@ from app.db.models import (
     PaperValidationSchedulerConfig,
 )
 from app.repositories.base import SQLAlchemyRepository
-from app.schemas.common import PaperAlertSeverity, PaperAlertType, PaperRuntimeCycleMode
+from app.schemas.common import (
+    PaperAlertSeverity,
+    PaperAlertSource,
+    PaperAlertType,
+    PaperRuntimeCycleMode,
+    SetupAlertReviewStatus,
+)
 
 
 class PaperSchedulerConfigRepository(SQLAlchemyRepository[PaperValidationSchedulerConfig]):
@@ -221,6 +227,112 @@ class PaperAlertRepository(SQLAlchemyRepository[PaperValidationAlert]):
             )
             counts[status.value] = count
         return counts
+
+    @staticmethod
+    def _setup_review_filters(
+        organization_id: uuid.UUID,
+        *,
+        review_status: SetupAlertReviewStatus | None = None,
+        condition: str | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        direction: str | None = None,
+        min_confidence: float | None = None,
+    ) -> list[object]:
+        filters: list[object] = [
+            PaperValidationAlert.organization_id == organization_id,
+            PaperValidationAlert.alert_type == PaperAlertType.SETUP_SIGNAL_DETECTED,
+            PaperValidationAlert.metadata_json["source"].as_string()
+            == PaperAlertSource.MARKET_WATCHER.value,
+        ]
+        if review_status is not None:
+            filters.append(PaperValidationAlert.review_status == review_status.value)
+        if condition is not None:
+            filters.append(PaperValidationAlert.metadata_json["condition"].as_string() == condition)
+        if symbol is not None:
+            filters.append(PaperValidationAlert.metadata_json["symbol"].as_string() == symbol)
+        if timeframe is not None:
+            filters.append(PaperValidationAlert.metadata_json["timeframe"].as_string() == timeframe)
+        if direction is not None:
+            filters.append(PaperValidationAlert.metadata_json["direction"].as_string() == direction)
+        if min_confidence is not None:
+            confidence_val = cast(
+                PaperValidationAlert.metadata_json["confidence"].as_string(),
+                Float,
+            )
+            filters.append(confidence_val >= min_confidence)
+        return filters
+
+    def list_setup_review(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        review_status: SetupAlertReviewStatus | None = None,
+        condition: str | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        direction: str | None = None,
+        min_confidence: float | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[PaperValidationAlert], int]:
+        filters = self._setup_review_filters(
+            organization_id,
+            review_status=review_status,
+            condition=condition,
+            symbol=symbol,
+            timeframe=timeframe,
+            direction=direction,
+            min_confidence=min_confidence,
+        )
+        total = int(
+            self._session.scalar(
+                select(func.count()).select_from(PaperValidationAlert).where(*filters)
+            )
+            or 0
+        )
+        rows = list(
+            self._session.scalars(
+                select(PaperValidationAlert)
+                .where(*filters)
+                .order_by(PaperValidationAlert.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            ).all()
+        )
+        return rows, total
+
+    def list_setup_review_for_summary(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        limit: int = 500,
+    ) -> list[PaperValidationAlert]:
+        filters = self._setup_review_filters(organization_id)
+        return list(
+            self._session.scalars(
+                select(PaperValidationAlert)
+                .where(*filters)
+                .order_by(PaperValidationAlert.created_at.desc())
+                .limit(limit)
+            ).all()
+        )
+
+    def count_setup_review_by_status(self, organization_id: uuid.UUID) -> dict[str, int]:
+        filters = self._setup_review_filters(organization_id)
+        rows = self._session.execute(
+            select(PaperValidationAlert.review_status, func.count())
+            .where(*filters)
+            .group_by(PaperValidationAlert.review_status)
+        ).all()
+        return {str(status): int(count) for status, count in rows}
+
+    def get_setup_review_alert(
+        self, alert_id: uuid.UUID, *, organization_id: uuid.UUID
+    ) -> PaperValidationAlert | None:
+        filters = self._setup_review_filters(organization_id)
+        filters.append(PaperValidationAlert.id == alert_id)
+        return self._session.scalar(select(PaperValidationAlert).where(*filters))
 
 
 class PaperObservabilityRepository(SQLAlchemyRepository[PaperValidationObservabilityEvent]):

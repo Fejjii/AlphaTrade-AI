@@ -1233,6 +1233,47 @@ export interface PaperAlert {
   created_at: string;
 }
 
+export type SetupAlertReviewStatus = "unreviewed" | "watching" | "ignored" | "important";
+
+export interface SetupAlertReviewItem {
+  alert_id: string;
+  created_at: string;
+  symbol?: string | null;
+  timeframe?: string | null;
+  condition?: string | null;
+  direction?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  trigger_level?: number | null;
+  invalidation_level?: number | null;
+  latest_price?: number | null;
+  delivery_channel: string;
+  delivery_status: string;
+  dedupe_key?: string | null;
+  review_status: SetupAlertReviewStatus;
+  review_notes?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface SetupAlertReviewSummary {
+  total_unreviewed: number;
+  total_watching: number;
+  total_important: number;
+  total_ignored: number;
+  by_condition: Record<string, number>;
+  by_symbol: Record<string, number>;
+  latest_created_at?: string | null;
+  highest_confidence_alerts: Array<{
+    alert_id: string;
+    symbol?: string | null;
+    condition?: string | null;
+    confidence?: number | null;
+    created_at: string;
+  }>;
+}
+
 export interface AlertDeliveryStatusResponse {
   delivery_enabled: boolean;
   webhook_enabled: boolean;

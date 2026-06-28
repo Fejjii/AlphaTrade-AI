@@ -36,6 +36,28 @@ export function alertSourceLabel(source: string | undefined): string {
   return ALERT_SOURCE_LABELS[source] ?? source.replace(/_/g, " ");
 }
 
+const SETUP_CONDITION_LABELS: Record<string, string> = {
+  order_block: "Order block",
+  breakout_retest: "Breakout retest",
+  liquidity_sweep: "Liquidity sweep",
+  sfp: "SFP",
+  trend_pullback: "Trend pullback",
+};
+
+export function setupConditionLabel(condition: string): string {
+  return SETUP_CONDITION_LABELS[condition] ?? condition.replace(/_/g, " ");
+}
+
+export function reviewStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    unreviewed: "Unreviewed",
+    watching: "Watching",
+    ignored: "Ignored",
+    important: "Important",
+  };
+  return labels[status] ?? status.replace(/_/g, " ");
+}
+
 export function severityVariant(severity: string): StrategyBadgeVariant {
   switch (severity.toLowerCase()) {
     case "critical":

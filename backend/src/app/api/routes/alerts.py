@@ -19,8 +19,16 @@ from app.schemas.alert_delivery import (
     AlertDeliverySummary,
 )
 from app.schemas.alert_routing import AlertRoutingSummaryResponse
-from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
-from app.schemas.common import PaperAlertSeverity, PaperAlertType
+from app.schemas.alerts import (
+    PaginatedPaperAlerts,
+    PaginatedSetupAlertReview,
+    PaperAlert,
+    PaperAlertSummary,
+    SetupAlertReviewItem,
+    SetupAlertReviewSummary,
+    SetupAlertReviewUpdate,
+)
+from app.schemas.common import PaperAlertSeverity, PaperAlertType, SetupAlertReviewStatus
 from app.schemas.telegram_alert_delivery import (
     TelegramAlertDeliveryRequest,
     TelegramAlertDeliveryResponse,
@@ -236,6 +244,73 @@ async def mark_all_alerts_read(
     count = service.mark_all_read(tenant.organization_id, user_id=tenant.user_id)
     session.commit()
     return {"marked_read": count}
+
+
+@router.get(
+    "/setup-review",
+    response_model=PaginatedSetupAlertReview,
+    summary="List scanner-created setup alerts for review",
+    dependencies=[_ALERTS_READ_LIMIT],
+)
+async def list_setup_alert_review(
+    tenant: ReaderDep,
+    service: PaperAlertServiceDep,
+    status: SetupAlertReviewStatus | None = Query(default=None, alias="status"),
+    condition: str | None = None,
+    symbol: str | None = None,
+    timeframe: str | None = None,
+    direction: str | None = None,
+    min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedSetupAlertReview:
+    return service.list_setup_review(
+        tenant.organization_id,
+        review_status=status,
+        condition=condition,
+        symbol=symbol,
+        timeframe=timeframe,
+        direction=direction,
+        min_confidence=min_confidence,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/setup-review/summary",
+    response_model=SetupAlertReviewSummary,
+    summary="Setup alert review summary counts",
+    dependencies=[_ALERTS_READ_LIMIT],
+)
+async def setup_alert_review_summary(
+    tenant: ReaderDep,
+    service: PaperAlertServiceDep,
+) -> SetupAlertReviewSummary:
+    return service.setup_review_summary(tenant.organization_id)
+
+
+@router.patch(
+    "/setup-review/{alert_id}",
+    response_model=SetupAlertReviewItem,
+    summary="Update setup alert review state",
+    dependencies=[_ALERTS_WRITE_LIMIT],
+)
+async def update_setup_alert_review(
+    alert_id: uuid.UUID,
+    body: SetupAlertReviewUpdate,
+    tenant: TraderDep,
+    service: PaperAlertServiceDep,
+    session: SessionDep,
+) -> SetupAlertReviewItem:
+    result = service.update_setup_review(
+        alert_id,
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
 
 
 @router.get(

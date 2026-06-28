@@ -16,7 +16,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import { alertTypeLabel, severityRank, severityVariant } from "@/lib/alert-display";
+import { alertTypeLabel, setupConditionLabel, severityRank, severityVariant } from "@/lib/alert-display";
 import { strategyStatusFor } from "@/lib/strategy-status";
 import { formatDecimal } from "@/lib/utils";
 import { buildWorkflowSteps, firstActionableStep } from "@/lib/workflow-steps";
@@ -52,6 +52,7 @@ type DashboardData = {
   exchangeDiagnostics: ExchangeDiagnosticsSummary | null;
   alertRouting: AlertRoutingSummary | null;
   watcherSummary: MarketWatcherSummary | null;
+  setupReviewSummary: Awaited<ReturnType<typeof api.alerts.setupReviewSummary>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -78,14 +79,22 @@ export default function DashboardPage() {
   const { executionMode, realTradingEnabled } = useSafetyPosture();
 
   const loader = useCallback(async (): Promise<DashboardData> => {
-    const [summary, usage, audit, exchangeDiagnostics, alertRouting, watcherSummary] =
-      await Promise.all([
+    const [
+      summary,
+      usage,
+      audit,
+      exchangeDiagnostics,
+      alertRouting,
+      watcherSummary,
+      setupReviewSummary,
+    ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
       settled(api.audit.events({ limit: 5 }), { items: [], total: 0, limit: 5, offset: 0 }),
       settled(api.exchange.diagnosticsSummary(), null),
       settled(api.alerts.routingSummary(), null),
       settled(api.marketWatcher.summary(), null),
+      settled(api.alerts.setupReviewSummary(), null),
     ]);
 
     if (summary) {
@@ -106,6 +115,7 @@ export default function DashboardPage() {
         exchangeDiagnostics,
         alertRouting,
         watcherSummary,
+        setupReviewSummary,
       };
     }
 
@@ -121,6 +131,7 @@ export default function DashboardPage() {
       exchangeDiagnostics,
       alertRouting,
       watcherSummary,
+      setupReviewSummary,
     };
   }, []);
 
@@ -150,6 +161,8 @@ export default function DashboardPage() {
   const pendingLessons = alertsLessons?.pending_lessons ?? 0;
   const unreadAlerts = alertsLessons?.unread_alerts ?? 0;
   const latestAlerts = summary?.alerts_lessons?.latest_high_priority ?? [];
+  const setupReview = data?.setupReviewSummary;
+  const latestSetupCondition = setupReview?.highest_confidence_alerts[0]?.condition;
 
   const activePaper =
     summary?.active_paper_validations ??
@@ -461,6 +474,43 @@ export default function DashboardPage() {
             </p>
             <Link href="/lessons" className="inline-block text-xs text-zinc-400 underline">
               Open Lessons
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="dashboard-setup-alerts-review">
+          <CardHeader>
+            <CardTitle className="text-base">Setup Alerts Review</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-zinc-300">
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <p>
+                Unreviewed:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {setupReview?.total_unreviewed ?? 0}
+                </span>
+              </p>
+              <p>
+                Watching:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {setupReview?.total_watching ?? 0}
+                </span>
+              </p>
+              <p>
+                Important:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {setupReview?.total_important ?? 0}
+                </span>
+              </p>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Latest condition:{" "}
+              {latestSetupCondition
+                ? setupConditionLabel(latestSetupCondition)
+                : "None scanned yet"}
+            </p>
+            <Link href="/alerts/review" className="inline-block text-xs text-zinc-400 underline">
+              Review setup alerts
             </Link>
           </CardContent>
         </Card>

@@ -8,10 +8,20 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationAppError
 from app.db.models import PaperValidationAlert as AlertModel
+from app.guardrails.redaction import redact_mapping
 from app.repositories.paper_scheduler import PaperAlertRepository
-from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
+from app.schemas.alerts import (
+    PaginatedPaperAlerts,
+    PaginatedSetupAlertReview,
+    PaperAlert,
+    PaperAlertSummary,
+    SetupAlertReviewItem,
+    SetupAlertReviewSummary,
+    SetupAlertReviewSummaryItem,
+    SetupAlertReviewUpdate,
+)
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
@@ -21,6 +31,7 @@ from app.schemas.common import (
     PaperAlertSeverity,
     PaperAlertSource,
     PaperAlertType,
+    SetupAlertReviewStatus,
 )
 from app.services.audit_service import AuditService
 
@@ -226,6 +237,164 @@ class PaperAlertService:
             unread=unread,
             by_type=by_type,
             by_severity=by_severity,
+        )
+
+    def list_setup_review(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        review_status: SetupAlertReviewStatus | None = None,
+        condition: str | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        direction: str | None = None,
+        min_confidence: float | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PaginatedSetupAlertReview:
+        rows, total = self._alerts.list_setup_review(
+            organization_id,
+            review_status=review_status,
+            condition=condition,
+            symbol=symbol,
+            timeframe=timeframe,
+            direction=direction,
+            min_confidence=min_confidence,
+            limit=limit,
+            offset=offset,
+        )
+        return PaginatedSetupAlertReview(
+            items=[self._to_setup_review_item(row) for row in rows],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    def setup_review_summary(self, organization_id: uuid.UUID) -> SetupAlertReviewSummary:
+        status_counts = self._alerts.count_setup_review_by_status(organization_id)
+        rows = self._alerts.list_setup_review_for_summary(organization_id)
+        by_condition: dict[str, int] = {}
+        by_symbol: dict[str, int] = {}
+        latest_created_at = rows[0].created_at if rows else None
+        ranked: list[tuple[float, AlertModel]] = []
+        for row in rows:
+            meta = row.metadata_json or {}
+            condition = meta.get("condition")
+            symbol = meta.get("symbol")
+            if isinstance(condition, str):
+                by_condition[condition] = by_condition.get(condition, 0) + 1
+            if isinstance(symbol, str):
+                by_symbol[symbol] = by_symbol.get(symbol, 0) + 1
+            confidence = meta.get("confidence")
+            if isinstance(confidence, (int, float)):
+                ranked.append((float(confidence), row))
+        ranked.sort(key=lambda item: (-item[0], item[1].created_at), reverse=False)
+        highest = [
+            SetupAlertReviewSummaryItem(
+                alert_id=row.id,
+                symbol=(row.metadata_json or {}).get("symbol"),
+                condition=(row.metadata_json or {}).get("condition"),
+                confidence=float(confidence),
+                created_at=row.created_at,
+            )
+            for confidence, row in ranked[:5]
+        ]
+        return SetupAlertReviewSummary(
+            total_unreviewed=status_counts.get(SetupAlertReviewStatus.UNREVIEWED.value, 0),
+            total_watching=status_counts.get(SetupAlertReviewStatus.WATCHING.value, 0),
+            total_important=status_counts.get(SetupAlertReviewStatus.IMPORTANT.value, 0),
+            total_ignored=status_counts.get(SetupAlertReviewStatus.IGNORED.value, 0),
+            by_condition=by_condition,
+            by_symbol=by_symbol,
+            latest_created_at=latest_created_at,
+            highest_confidence_alerts=highest,
+        )
+
+    def update_setup_review(
+        self,
+        alert_id: uuid.UUID,
+        payload: SetupAlertReviewUpdate,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+    ) -> SetupAlertReviewItem:
+        from sqlalchemy import select
+
+        row = self._alerts.get_setup_review_alert(alert_id, organization_id=organization_id)
+        if row is None:
+            generic = self._session.scalar(
+                select(AlertModel).where(
+                    AlertModel.id == alert_id,
+                    AlertModel.organization_id == organization_id,
+                )
+            )
+            if generic is not None:
+                raise ValidationAppError(
+                    "Only scanner-created setup alerts can be reviewed.",
+                    details={"alert_id": str(alert_id)},
+                )
+            raise NotFoundError("Alert not found.")
+        row.review_status = payload.review_status.value
+        row.review_notes = payload.review_notes
+        row.reviewed_at = datetime.now(UTC)
+        row.reviewed_by = user_id
+        self._audit.record(
+            AuditRecordCreate(
+                request_id=f"setup-alert-review-{alert_id}",
+                trace_id=str(uuid.uuid4()),
+                user_id=user_id,
+                organization_id=organization_id,
+                event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+                resource_type="paper_validation_alert",
+                resource_id=str(alert_id),
+                actor_type=ActorType.USER,
+                result=AuditResult.SUCCESS,
+                severity=AuditSeverity.INFO,
+                metadata={
+                    "action": "setup_alert_review",
+                    "review_status": payload.review_status.value,
+                    "has_notes": bool(payload.review_notes),
+                },
+            )
+        )
+        return self._to_setup_review_item(row)
+
+    @staticmethod
+    def _to_setup_review_item(row: AlertModel) -> SetupAlertReviewItem:
+        meta = row.metadata_json or {}
+        metrics = meta.get("metrics") if isinstance(meta.get("metrics"), dict) else {}
+        latest_price = metrics.get("latest_price")
+        if latest_price is None:
+            latest_price = meta.get("latest_price")
+        confidence = meta.get("confidence")
+        trigger_level = meta.get("trigger_level")
+        invalidation_level = meta.get("invalidation_level")
+        try:
+            review_status = SetupAlertReviewStatus(row.review_status)
+        except ValueError:
+            review_status = SetupAlertReviewStatus.UNREVIEWED
+        return SetupAlertReviewItem(
+            alert_id=row.id,
+            created_at=row.created_at,
+            symbol=meta.get("symbol"),
+            timeframe=meta.get("timeframe"),
+            condition=meta.get("condition"),
+            direction=meta.get("direction"),
+            confidence=float(confidence) if isinstance(confidence, (int, float)) else None,
+            reason=meta.get("reason"),
+            trigger_level=float(trigger_level) if isinstance(trigger_level, (int, float)) else None,
+            invalidation_level=(
+                float(invalidation_level) if isinstance(invalidation_level, (int, float)) else None
+            ),
+            latest_price=float(latest_price) if isinstance(latest_price, (int, float)) else None,
+            delivery_channel=row.delivery_channel,
+            delivery_status=row.delivery_status,
+            dedupe_key=row.dedup_key,
+            review_status=review_status,
+            review_notes=row.review_notes,
+            reviewed_at=row.reviewed_at,
+            reviewed_by=row.reviewed_by,
+            metadata=redact_mapping(meta) if meta else None,
         )
 
     @staticmethod

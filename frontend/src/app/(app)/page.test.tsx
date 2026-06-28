@@ -174,6 +174,24 @@ vi.mock("@/hooks/useAsyncData", () => ({
         warnings: [],
         generated_at: "2026-06-28T12:00:00Z",
       },
+      setupReviewSummary: {
+        total_unreviewed: 3,
+        total_watching: 2,
+        total_important: 1,
+        total_ignored: 0,
+        by_condition: { order_block: 2, sfp: 1 },
+        by_symbol: { BTCUSDT: 3 },
+        latest_created_at: "2026-06-28T12:00:00Z",
+        highest_confidence_alerts: [
+          {
+            alert_id: "a1",
+            symbol: "BTCUSDT",
+            condition: "order_block",
+            confidence: 0.91,
+            created_at: "2026-06-28T12:00:00Z",
+          },
+        ],
+      },
     },
     loading: false,
     error: null,
@@ -203,6 +221,14 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("active-paper-validations")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-latest-alerts")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-lessons-pending")).toHaveTextContent("2");
+    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Unreviewed: 3");
+    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Watching: 2");
+    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Important: 1");
+    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Order block");
+    expect(screen.getByRole("link", { name: "Review setup alerts" })).toHaveAttribute(
+      "href",
+      "/alerts/review",
+    );
     expect(screen.getByTestId("what-to-do-next")).toBeInTheDocument();
     expect(screen.getByTestId("next-action-reason")).toHaveTextContent("Green-day protection");
   });

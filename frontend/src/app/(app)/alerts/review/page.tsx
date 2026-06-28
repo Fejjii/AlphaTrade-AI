@@ -1,0 +1,375 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+
+import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAsyncData } from "@/hooks/useAsyncData";
+import { api } from "@/lib/api";
+import { reviewStatusLabel, setupConditionLabel } from "@/lib/alert-display";
+import type { SetupAlertReviewItem, SetupAlertReviewStatus } from "@/lib/api/types";
+
+const REVIEW_STATUSES: SetupAlertReviewStatus[] = [
+  "unreviewed",
+  "watching",
+  "ignored",
+  "important",
+];
+
+function formatLevel(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function formatConfidence(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${Math.round(value * 100)}%`;
+}
+
+type AlertCardProps = {
+  alert: SetupAlertReviewItem;
+  busy: boolean;
+  onSave: (alertId: string, status: SetupAlertReviewStatus, notes: string) => Promise<void>;
+  onQuickAction: (alertId: string, status: SetupAlertReviewStatus) => Promise<void>;
+};
+
+function SetupAlertReviewCard({
+  alert,
+  busy,
+  onSave,
+  onQuickAction,
+}: AlertCardProps) {
+  const [status, setStatus] = useState<SetupAlertReviewStatus>(alert.review_status);
+  const [notes, setNotes] = useState(alert.review_notes ?? "");
+
+  return (
+    <article
+      className="rounded-lg border border-zinc-800 p-4 space-y-3"
+      data-testid={`setup-alert-${alert.alert_id}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="info" data-testid="setup-alert-condition">
+              {setupConditionLabel(alert.condition ?? "unknown")}
+            </Badge>
+            <span className="text-sm font-medium text-zinc-100">
+              {alert.symbol ?? "—"} · {alert.timeframe ?? "—"}
+            </span>
+            <Badge variant="muted">{alert.direction ?? "—"}</Badge>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Created {new Date(alert.created_at).toLocaleString()}
+          </p>
+        </div>
+        <Badge
+          variant={alert.review_status === "important" ? "warning" : "muted"}
+          data-testid="setup-alert-confidence"
+        >
+          {formatConfidence(alert.confidence)}
+        </Badge>
+      </div>
+
+      <p className="text-sm text-zinc-300" data-testid="setup-alert-reason">
+        {alert.reason ?? "No reason provided."}
+      </p>
+
+      <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-3">
+        <p data-testid="setup-alert-trigger">
+          Trigger: <span className="text-zinc-200">{formatLevel(alert.trigger_level)}</span>
+        </p>
+        <p data-testid="setup-alert-invalidation">
+          Invalidation:{" "}
+          <span className="text-zinc-200">{formatLevel(alert.invalidation_level)}</span>
+        </p>
+        <p data-testid="setup-alert-latest-price">
+          Latest: <span className="text-zinc-200">{formatLevel(alert.latest_price)}</span>
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          data-testid="quick-action-watching"
+          onClick={() => void onQuickAction(alert.alert_id, "watching")}
+        >
+          Mark watching
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          data-testid="quick-action-important"
+          onClick={() => void onQuickAction(alert.alert_id, "important")}
+        >
+          Mark important
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          data-testid="quick-action-ignore"
+          onClick={() => void onQuickAction(alert.alert_id, "ignored")}
+        >
+          Ignore
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto] sm:items-end">
+        <label className="space-y-1 text-xs text-zinc-400">
+          Review status
+          <select
+            className="block w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+            value={status}
+            data-testid="setup-alert-review-status"
+            onChange={(event) => setStatus(event.target.value as SetupAlertReviewStatus)}
+          >
+            {REVIEW_STATUSES.map((item) => (
+              <option key={item} value={item}>
+                {reviewStatusLabel(item)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1 text-xs text-zinc-400">
+          Notes
+          <textarea
+            className="block min-h-[72px] w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+            value={notes}
+            data-testid="setup-alert-notes"
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Optional review notes"
+          />
+        </label>
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy}
+          data-testid="setup-alert-save"
+          onClick={() => void onSave(alert.alert_id, status, notes)}
+        >
+          Save
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+export default function SetupAlertReviewPage() {
+  const [filterSymbol, setFilterSymbol] = useState("");
+  const [filterCondition, setFilterCondition] = useState("");
+  const [filterTimeframe, setFilterTimeframe] = useState("");
+  const [filterDirection, setFilterDirection] = useState("");
+  const [filterReviewStatus, setFilterReviewStatus] = useState("");
+  const [filterMinConfidence, setFilterMinConfidence] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const listLoader = useCallback(
+    () =>
+      api.alerts.setupReview({
+        symbol: filterSymbol || undefined,
+        condition: filterCondition || undefined,
+        timeframe: filterTimeframe || undefined,
+        direction: filterDirection || undefined,
+        status: filterReviewStatus || undefined,
+        min_confidence: filterMinConfidence ? Number(filterMinConfidence) : undefined,
+        limit: 50,
+      }),
+    [
+      filterSymbol,
+      filterCondition,
+      filterTimeframe,
+      filterDirection,
+      filterReviewStatus,
+      filterMinConfidence,
+    ],
+  );
+  const summaryLoader = useCallback(() => api.alerts.setupReviewSummary(), []);
+
+  const { data, loading, error, reload } = useAsyncData(listLoader, [
+    filterSymbol,
+    filterCondition,
+    filterTimeframe,
+    filterDirection,
+    filterReviewStatus,
+    filterMinConfidence,
+  ]);
+  const { data: summary, reload: reloadSummary } = useAsyncData(summaryLoader, []);
+
+  const conditionOptions = useMemo(() => {
+    const keys = Object.keys(summary?.by_condition ?? {});
+    return keys.sort();
+  }, [summary?.by_condition]);
+
+  async function persistReview(
+    alertId: string,
+    reviewStatus: SetupAlertReviewStatus,
+    reviewNotes?: string,
+  ) {
+    setBusy(true);
+    setActionMessage(null);
+    try {
+      await api.alerts.updateSetupReview(alertId, {
+        review_status: reviewStatus,
+        review_notes: reviewNotes?.trim() ? reviewNotes.trim() : null,
+      });
+      setActionMessage("Review saved. No Telegram messages or orders were sent.");
+      await Promise.all([reload(), reloadSummary()]);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Review update failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading && !data) return <LoadingState label="Loading setup alerts…" />;
+  if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
+
+  return (
+    <div className="space-y-6" data-testid="setup-alert-review-page">
+      <div>
+        <h1 className="text-2xl font-semibold">Setup Alert Review</h1>
+        <p className="text-sm text-zinc-400">
+          Review scanner-created setup alerts from the market watcher. This page never sends
+          Telegram messages or places orders.
+        </p>
+      </div>
+
+      <Card data-testid="setup-alert-review-summary">
+        <CardHeader>
+          <CardTitle className="text-base">Review summary</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm text-zinc-300 sm:grid-cols-4">
+          <p>
+            Unreviewed:{" "}
+            <span className="font-semibold text-zinc-100">{summary?.total_unreviewed ?? 0}</span>
+          </p>
+          <p>
+            Watching:{" "}
+            <span className="font-semibold text-zinc-100">{summary?.total_watching ?? 0}</span>
+          </p>
+          <p>
+            Important:{" "}
+            <span className="font-semibold text-zinc-100">{summary?.total_important ?? 0}</span>
+          </p>
+          <p>
+            Ignored:{" "}
+            <span className="font-semibold text-zinc-100">{summary?.total_ignored ?? 0}</span>
+          </p>
+        </CardContent>
+      </Card>
+
+      <div
+        className="flex flex-wrap gap-2 text-sm"
+        data-testid="setup-alert-review-filters"
+      >
+        <select
+          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
+          value={filterSymbol}
+          onChange={(event) => setFilterSymbol(event.target.value)}
+          aria-label="Filter by symbol"
+        >
+          <option value="">All symbols</option>
+          {Object.keys(summary?.by_symbol ?? {})
+            .sort()
+            .map((symbol) => (
+              <option key={symbol} value={symbol}>
+                {symbol}
+              </option>
+            ))}
+        </select>
+        <select
+          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
+          value={filterCondition}
+          onChange={(event) => setFilterCondition(event.target.value)}
+          aria-label="Filter by condition"
+        >
+          <option value="">All conditions</option>
+          {conditionOptions.map((condition) => (
+            <option key={condition} value={condition}>
+              {setupConditionLabel(condition)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
+          value={filterTimeframe}
+          onChange={(event) => setFilterTimeframe(event.target.value)}
+          aria-label="Filter by timeframe"
+        >
+          <option value="">All timeframes</option>
+          <option value="15m">15m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+        </select>
+        <select
+          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
+          value={filterDirection}
+          onChange={(event) => setFilterDirection(event.target.value)}
+          aria-label="Filter by direction"
+        >
+          <option value="">All directions</option>
+          <option value="long">Long</option>
+          <option value="short">Short</option>
+        </select>
+        <select
+          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
+          value={filterReviewStatus}
+          onChange={(event) => setFilterReviewStatus(event.target.value)}
+          aria-label="Filter by review status"
+        >
+          <option value="">All review statuses</option>
+          {REVIEW_STATUSES.map((status) => (
+            <option key={status} value={status}>
+              {reviewStatusLabel(status)}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={0}
+          max={1}
+          step={0.05}
+          placeholder="Min confidence"
+          className="w-36 rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
+          value={filterMinConfidence}
+          onChange={(event) => setFilterMinConfidence(event.target.value)}
+          aria-label="Minimum confidence"
+        />
+      </div>
+
+      {actionMessage ? (
+        <p className="text-sm text-zinc-400" data-testid="setup-alert-action-message">
+          {actionMessage}
+        </p>
+      ) : null}
+
+      {data?.items.length ? (
+        <div className="space-y-3" data-testid="setup-alert-review-list">
+          {data.items.map((alert) => (
+            <SetupAlertReviewCard
+              key={alert.alert_id}
+              alert={alert}
+              busy={busy}
+              onSave={persistReview}
+              onQuickAction={(alertId, reviewStatus) => void persistReview(alertId, reviewStatus)}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No setup alerts to review"
+          description="Run a market watcher scan to create in-app setup alerts."
+        />
+      )}
+    </div>
+  );
+}

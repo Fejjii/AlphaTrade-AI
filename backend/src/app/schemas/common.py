@@ -596,6 +596,15 @@ class PaperAlertSource(StrEnum):
     MANUAL_ACTION = "manual_action"
 
 
+class SetupAlertReviewStatus(StrEnum):
+    """Review lifecycle for scanner-created setup alerts (Slice 77)."""
+
+    UNREVIEWED = "unreviewed"
+    WATCHING = "watching"
+    IGNORED = "ignored"
+    IMPORTANT = "important"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 
