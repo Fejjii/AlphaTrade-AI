@@ -2,8 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TelegramTestPanel } from "./TelegramTestPanel";
+import type { AlertRoutingSummary } from "@/lib/api/types";
 
-const baseRouting = {
+const baseRouting: AlertRoutingSummary = {
   alerts_enabled: true,
   telegram_enabled: false,
   telegram_configured: false,
@@ -26,7 +27,18 @@ const baseRouting = {
   bridge_running: false,
   worker_enabled: false,
   worker_running: false,
-  readiness: "ready" as const,
+  readiness: "ready",
+  automatic_telegram_delivery_ready: false,
+  automatic_delivery_blockers: ["External delivery is not enabled for this environment."],
+  eligible_pending_telegram_count: 0,
+  already_delivered_telegram_count: 0,
+  next_delivery_preview_count: 0,
+  delivery_limits: {
+    max_preview_limit: 25,
+    default_preview_limit: 5,
+    max_automatic_batch_limit: 10,
+  },
+  dry_run_supported: true,
   warnings: [],
   generated_at: new Date().toISOString(),
 };

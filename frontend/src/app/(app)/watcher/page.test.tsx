@@ -3,8 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import WatcherPage from "./page";
 import { api } from "@/lib/api";
+import type { MarketWatcherSummary } from "@/lib/api/types";
 
-const summary = {
+const summary: MarketWatcherSummary = {
   scanner_enabled: false,
   manual_scan_available: true,
   worker_enabled: false,
