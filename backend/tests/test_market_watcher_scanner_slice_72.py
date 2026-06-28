@@ -25,7 +25,11 @@ from app.schemas.common import (
     AlertDeliveryStatus,
     MembershipRole,
 )
-from app.schemas.market_watcher import SCAN_CONFIRM_PHRASE, MarketWatcherScanRequest
+from app.schemas.market_watcher import (
+    CREATE_IN_APP_ALERTS_CONFIRM_PHRASE,
+    SCAN_CONFIRM_PHRASE,
+    MarketWatcherScanRequest,
+)
 from app.security.passwords import hash_password
 from app.security.rate_limit import reset_rate_limiter
 from app.services.market_data_service import MarketDataService
@@ -297,6 +301,27 @@ def test_non_paper_execution_blocks_scan(slice72_db: sessionmaker[Session]) -> N
     assert resp.json()["status"] == "blocked"
 
 
+def test_non_dry_run_without_second_confirmation_blocked(slice72_db: sessionmaker[Session]) -> None:
+    client = _client(slice72_db)
+    resp = client.post(
+        "/market-watcher/scan",
+        json={
+            "confirm": SCAN_CONFIRM_PHRASE,
+            "symbols": ["BTCUSDT"],
+            "timeframes": ["15m"],
+            "dry_run": False,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "blocked"
+    assert body["dry_run"] is False
+    assert body["error"] == "create_in_app_alerts_confirmation_required"
+    with slice72_db() as session:
+        count = session.scalar(select(func.count()).select_from(PaperValidationAlert))
+        assert count == 0
+
+
 def test_dry_run_returns_candidates_without_alerts(slice72_db: sessionmaker[Session]) -> None:
     client = _client(slice72_db)
     resp = client.post(
@@ -324,6 +349,7 @@ def test_dry_run_false_creates_in_app_alerts_only(slice72_db: sessionmaker[Sessi
         "/market-watcher/scan",
         json={
             "confirm": SCAN_CONFIRM_PHRASE,
+            "create_in_app_alerts_confirm": CREATE_IN_APP_ALERTS_CONFIRM_PHRASE,
             "symbols": ["BTCUSDT"],
             "timeframes": ["15m"],
             "dry_run": False,
@@ -352,6 +378,7 @@ def test_dedupe_prevents_duplicate_alerts(slice72_db: sessionmaker[Session]) -> 
         svc = MarketWatcherService(session, settings, market_data=market_data)
         body = MarketWatcherScanRequest(
             confirm=SCAN_CONFIRM_PHRASE,
+            create_in_app_alerts_confirm=CREATE_IN_APP_ALERTS_CONFIRM_PHRASE,
             symbols=["BTCUSDT"],
             timeframes=["15m"],
             dry_run=False,
@@ -399,6 +426,7 @@ def test_no_telegram_service_called(slice72_db: sessionmaker[Session]) -> None:
                 user_id=USER_ID,
                 request=MarketWatcherScanRequest(
                     confirm=SCAN_CONFIRM_PHRASE,
+                    create_in_app_alerts_confirm=CREATE_IN_APP_ALERTS_CONFIRM_PHRASE,
                     symbols=["BTCUSDT"],
                     timeframes=["15m"],
                     dry_run=False,

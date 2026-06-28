@@ -12,6 +12,7 @@ from pydantic import Field
 from app.schemas.common import MarketWatcherObservationStatus, StrictModel
 
 SCAN_CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN"
+CREATE_IN_APP_ALERTS_CONFIRM_PHRASE = "CREATE_IN_APP_ALERTS_ONLY"
 
 MarketWatcherReadiness = Literal["ready", "degraded", "blocked"]
 MarketWatcherScanStatus = Literal["ok", "blocked", "degraded"]
@@ -46,6 +47,7 @@ class MarketWatcherObservation(StrictModel):
 
 class MarketWatcherScanRequest(StrictModel):
     confirm: str
+    create_in_app_alerts_confirm: str | None = None
     symbols: list[str] = Field(
         default_factory=lambda: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
         min_length=1,

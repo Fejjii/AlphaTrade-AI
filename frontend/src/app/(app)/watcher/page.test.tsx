@@ -38,7 +38,7 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-describe("WatcherPage Slice 72", () => {
+describe("WatcherPage Slice 72/73", () => {
   afterEach(() => {
     cleanup();
   });
@@ -55,6 +55,21 @@ describe("WatcherPage Slice 72", () => {
     render(<WatcherPage />);
     fireEvent.change(screen.getByTestId("watcher-confirm-input"), {
       target: { value: "RUN_READ_ONLY_SCAN" },
+    });
+    expect(screen.getByTestId("watcher-run-scan-button")).toBeEnabled();
+  });
+
+  it("requires second confirmation when dry-run is off", () => {
+    render(<WatcherPage />);
+    fireEvent.click(screen.getByTestId("watcher-dry-run-toggle").querySelector("input")!);
+    fireEvent.change(screen.getByTestId("watcher-confirm-input"), {
+      target: { value: "RUN_READ_ONLY_SCAN" },
+    });
+    expect(screen.getByTestId("watcher-run-scan-button")).toBeDisabled();
+    expect(screen.getByTestId("watcher-in-app-only-warning")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-create-alerts-confirm-input")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("watcher-create-alerts-confirm-input"), {
+      target: { value: "CREATE_IN_APP_ALERTS_ONLY" },
     });
     expect(screen.getByTestId("watcher-run-scan-button")).toBeEnabled();
   });

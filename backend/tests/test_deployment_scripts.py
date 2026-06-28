@@ -12,6 +12,7 @@ SCRIPTS = (
     "scripts/staging-smoke.sh",
     "scripts/staging-live-smoke.sh",
     "scripts/validate-exchange-demo-staging.sh",
+    "scripts/run-market-watcher-scan-staging.sh",
     "scripts/run-slice66b-controlled-demo-order.sh",
     "scripts/test-seed-path-staging.sh",
     "scripts/run-migrations.sh",

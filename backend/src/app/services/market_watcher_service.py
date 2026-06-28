@@ -31,6 +31,7 @@ from app.schemas.common import (
     PaperValidationStatus,
 )
 from app.schemas.market_watcher import (
+    CREATE_IN_APP_ALERTS_CONFIRM_PHRASE,
     SCAN_CONFIRM_PHRASE,
     MarketWatcherCandidate,
     MarketWatcherObservation,
@@ -178,6 +179,23 @@ class MarketWatcherService:
                 now,
                 decisions=["Confirmation phrase required for manual scan."],
                 error="confirmation_required",
+                dry_run=request.dry_run,
+            )
+            self._record_last_scan(organization_id, result)
+            return result
+
+        if (
+            not request.dry_run
+            and request.create_in_app_alerts_confirm != CREATE_IN_APP_ALERTS_CONFIRM_PHRASE
+        ):
+            result = self._blocked_result(
+                now,
+                decisions=[
+                    "Second confirmation required to create in-app alerts only "
+                    "(no Telegram, no orders)."
+                ],
+                error="create_in_app_alerts_confirmation_required",
+                dry_run=False,
             )
             self._record_last_scan(organization_id, result)
             return result
@@ -187,6 +205,7 @@ class MarketWatcherService:
                 now,
                 decisions=["Real trading is enabled — manual scan blocked."],
                 error="real_trading_enabled",
+                dry_run=request.dry_run,
             )
             self._record_last_scan(organization_id, result)
             return result
@@ -196,6 +215,7 @@ class MarketWatcherService:
                 now,
                 decisions=["Execution mode is not paper — manual scan blocked."],
                 error="execution_mode_not_paper",
+                dry_run=request.dry_run,
             )
             self._record_last_scan(organization_id, result)
             return result
@@ -207,6 +227,7 @@ class MarketWatcherService:
                 now,
                 decisions=["No supported symbols in request."],
                 error="invalid_symbols",
+                dry_run=request.dry_run,
             )
             self._record_last_scan(organization_id, result)
             return result
@@ -215,6 +236,7 @@ class MarketWatcherService:
                 now,
                 decisions=["No supported timeframes in request."],
                 error="invalid_timeframes",
+                dry_run=request.dry_run,
             )
             self._record_last_scan(organization_id, result)
             return result
@@ -436,6 +458,7 @@ class MarketWatcherService:
         *,
         decisions: list[str],
         error: str,
+        dry_run: bool = True,
     ) -> MarketWatcherScanResult:
         return MarketWatcherScanResult(
             scanned_at=now,
@@ -446,7 +469,7 @@ class MarketWatcherService:
             setup_signals=[],
             decisions=decisions,
             paper_only=True,
-            dry_run=True,
+            dry_run=dry_run,
             status="blocked",
             candidates=[],
             alerts_created=0,

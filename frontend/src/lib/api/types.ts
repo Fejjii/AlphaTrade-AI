@@ -1322,6 +1322,7 @@ export interface MarketWatcherCandidate {
 
 export interface MarketWatcherScanRequest {
   confirm: string;
+  create_in_app_alerts_confirm?: string | null;
   symbols?: string[];
   timeframes?: string[];
   dry_run?: boolean;

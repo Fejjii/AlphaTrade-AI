@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import type { MarketWatcherScanResult } from "@/lib/api/types";
 
 const CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN";
+const CREATE_IN_APP_ALERTS_PHRASE = "CREATE_IN_APP_ALERTS_ONLY";
 const DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 const DEFAULT_TIMEFRAMES = ["15m", "1h"];
 
@@ -19,6 +20,7 @@ export default function WatcherPage() {
   const [busy, setBusy] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [confirm, setConfirm] = useState("");
+  const [createAlertsConfirm, setCreateAlertsConfirm] = useState("");
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(DEFAULT_SYMBOLS);
   const [selectedTimeframes, setSelectedTimeframes] = useState<string[]>(DEFAULT_TIMEFRAMES);
   const [scanResult, setScanResult] = useState<MarketWatcherScanResult | null>(null);
@@ -28,6 +30,8 @@ export default function WatcherPage() {
   const { data: summary, loading, error, reload } = useAsyncData(summaryLoader, []);
 
   const confirmReady = confirm.trim() === CONFIRM_PHRASE;
+  const createAlertsConfirmReady =
+    dryRun || createAlertsConfirm.trim() === CREATE_IN_APP_ALERTS_PHRASE;
   const scanBlocked = summary?.readiness === "blocked" || !summary?.manual_scan_available;
 
   const toggleSymbol = useCallback((symbol: string) => {
@@ -45,12 +49,13 @@ export default function WatcherPage() {
   const candidateCount = useMemo(() => scanResult?.candidates.length ?? 0, [scanResult]);
 
   async function runScan() {
-    if (!confirmReady || scanBlocked) return;
+    if (!confirmReady || !createAlertsConfirmReady || scanBlocked) return;
     setBusy(true);
     setScanError(null);
     try {
       const result = await api.marketWatcher.scan({
         confirm: CONFIRM_PHRASE,
+        create_in_app_alerts_confirm: dryRun ? undefined : CREATE_IN_APP_ALERTS_PHRASE,
         symbols: selectedSymbols,
         timeframes: selectedTimeframes,
         dry_run: dryRun,
@@ -99,6 +104,15 @@ export default function WatcherPage() {
                 tone={dryRun ? "healthy" : "warn"}
               />
             </div>
+
+            {!dryRun ? (
+              <div
+                className="rounded border border-amber-900/50 bg-amber-950/20 p-3 text-xs text-amber-200"
+                data-testid="watcher-in-app-only-warning"
+              >
+                Create in-app alerts only. No Telegram. No orders. No worker automation.
+              </div>
+            ) : null}
 
             <div>
               <p className="mb-2 text-zinc-400">Symbols</p>
@@ -159,9 +173,33 @@ export default function WatcherPage() {
               />
             </div>
 
+            {!dryRun ? (
+              <div className="space-y-2">
+                <label className="block text-zinc-400" htmlFor="watcher-create-alerts-confirm-input">
+                  Type{" "}
+                  <span className="font-mono text-zinc-200">{CREATE_IN_APP_ALERTS_PHRASE}</span> to
+                  create in-app alerts only
+                </label>
+                <input
+                  id="watcher-create-alerts-confirm-input"
+                  data-testid="watcher-create-alerts-confirm-input"
+                  className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                  value={createAlertsConfirm}
+                  onChange={(event) => setCreateAlertsConfirm(event.target.value)}
+                  placeholder={CREATE_IN_APP_ALERTS_PHRASE}
+                />
+              </div>
+            ) : null}
+
             <Button
               data-testid="watcher-run-scan-button"
-              disabled={busy || !confirmReady || scanBlocked || selectedSymbols.length === 0}
+              disabled={
+                busy ||
+                !confirmReady ||
+                !createAlertsConfirmReady ||
+                scanBlocked ||
+                selectedSymbols.length === 0
+              }
               onClick={() => void runScan()}
             >
               {dryRun ? "Preview candidates" : "Run scan and create in-app alerts"}
