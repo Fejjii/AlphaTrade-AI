@@ -36,6 +36,25 @@ export function MarketWatcherScannerCard({
             ? `${new Date(summary.last_scan_at).toLocaleString()} (${summary.last_scan_status ?? "unknown"})`
             : "never"}
         </p>
+        {summary.last_scan_at ? (
+          <div className="space-y-1 text-xs text-zinc-400" data-testid="market-watcher-persisted-summary">
+            {summary.last_scan_candidate_count > 0 ? (
+              <p data-testid="market-watcher-candidate-count">
+                Candidates: {summary.last_scan_candidate_count}
+              </p>
+            ) : null}
+            {summary.last_scan_alerts_deduped > 0 ? (
+              <p data-testid="market-watcher-alerts-deduped">
+                Deduped on last scan: {summary.last_scan_alerts_deduped}
+              </p>
+            ) : null}
+            {summary.last_scan_dry_run != null ? (
+              <p data-testid="market-watcher-last-scan-mode">
+                Mode: {summary.last_scan_dry_run ? "dry-run" : "in-app alerts"}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {summary.last_scan_alerts_created > 0 ? (
           <p data-testid="market-watcher-alerts-created">
             In-app alerts created on last scan: {summary.last_scan_alerts_created}

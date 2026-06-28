@@ -15,6 +15,7 @@ from app.schemas.market_watcher import (
     PaginatedMarketWatcherBridgeHistory,
     PaginatedMarketWatcherHistory,
     PaginatedMarketWatcherObservations,
+    PaginatedMarketWatcherRecentScans,
 )
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep
@@ -93,6 +94,20 @@ async def market_watcher_history(
     service: MarketWatcherServiceDep,
 ) -> PaginatedMarketWatcherHistory:
     return service.list_history(tenant.organization_id)
+
+
+@router.get(
+    "/scans/recent",
+    response_model=PaginatedMarketWatcherRecentScans,
+    summary="Recent persisted market watcher scan summaries (Slice 75)",
+    dependencies=[_MW_READ_LIMIT],
+)
+async def market_watcher_recent_scans(
+    tenant: ReaderDep,
+    service: MarketWatcherServiceDep,
+    limit: int = Query(default=10, ge=1, le=25),
+) -> PaginatedMarketWatcherRecentScans:
+    return service.list_recent_scans(tenant.organization_id, limit=limit)
 
 
 @router.get(

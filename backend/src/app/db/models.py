@@ -757,6 +757,28 @@ class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class MarketWatcherScanRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Persisted market watcher scan summary (Slice 75 — cross-instance)."""
+
+    __tablename__ = "market_watcher_scan_records"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    alerts_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    alerts_deduped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    conditions_found: Mapped[list] = mapped_column(JSON, default=list)
+    symbols: Mapped[list] = mapped_column(JSON, default=list)
+    timeframes: Mapped[list] = mapped_column(JSON, default=list)
+    detectors_enabled: Mapped[list] = mapped_column(JSON, default=list)
+    detector_versions: Mapped[dict] = mapped_column(JSON, default=dict)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class MarketWatcherBridgeDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Market watcher → paper validation bridge decision history (Slice 42)."""
 

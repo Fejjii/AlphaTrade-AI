@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketWatcherScannerCard } from "@/components/MarketWatcherScannerCard";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -9,7 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import type { MarketWatcherCandidate, MarketWatcherScanResult } from "@/lib/api/types";
+import type {
+  MarketWatcherCandidate,
+  MarketWatcherScanResult,
+  PaginatedMarketWatcherRecentScans,
+} from "@/lib/api/types";
 
 const CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN";
 const CREATE_IN_APP_ALERTS_PHRASE = "CREATE_IN_APP_ALERTS_ONLY";
@@ -40,9 +44,22 @@ export default function WatcherPage() {
   const [selectedTimeframes, setSelectedTimeframes] = useState<string[]>(DEFAULT_TIMEFRAMES);
   const [scanResult, setScanResult] = useState<MarketWatcherScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [recentScans, setRecentScans] = useState<PaginatedMarketWatcherRecentScans | null>(null);
 
   const summaryLoader = useCallback(() => api.marketWatcher.summary(), []);
   const { data: summary, loading, error, reload } = useAsyncData(summaryLoader, []);
+
+  const loadRecentScans = useCallback(async () => {
+    try {
+      setRecentScans(await api.marketWatcher.recentScans(10));
+    } catch {
+      setRecentScans(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRecentScans();
+  }, [loadRecentScans]);
 
   const confirmReady = confirm.trim() === CONFIRM_PHRASE;
   const createAlertsConfirmReady =
@@ -99,6 +116,7 @@ export default function WatcherPage() {
       });
       setScanResult(result);
       await reload();
+      await loadRecentScans();
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Scan failed.");
     } finally {
@@ -120,6 +138,67 @@ export default function WatcherPage() {
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
 
       {summary ? <MarketWatcherScannerCard summary={summary} /> : null}
+
+      {summary?.last_scan_at ? (
+        <Card data-testid="watcher-persisted-last-scan">
+          <CardHeader>
+            <CardTitle className="text-base">Last persisted scan</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-zinc-300">
+            <p data-testid="watcher-persisted-scan-time">
+              {new Date(summary.last_scan_at).toLocaleString()} · status{" "}
+              {summary.last_scan_status ?? "unknown"}
+            </p>
+            <p data-testid="watcher-persisted-scan-stats">
+              Candidates: {summary.last_scan_candidate_count} · Alerts created:{" "}
+              {summary.last_scan_alerts_created} · Deduped: {summary.last_scan_alerts_deduped}
+            </p>
+            <p data-testid="watcher-persisted-scan-mode">
+              Mode: {summary.last_scan_dry_run ? "dry-run preview" : "in-app alerts only"}
+            </p>
+            {summary.last_scan_conditions_found.length ? (
+              <p data-testid="watcher-persisted-conditions">
+                Conditions: {summary.last_scan_conditions_found.join(", ")}
+              </p>
+            ) : (
+              <p className="text-xs text-zinc-500" data-testid="watcher-persisted-conditions">
+                No conditions recorded on last scan.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card data-testid="watcher-no-prior-scan">
+          <CardContent className="py-4 text-sm text-zinc-500">
+            No prior scan recorded for this organization.
+          </CardContent>
+        </Card>
+      )}
+
+      {recentScans?.items.length ? (
+        <Card data-testid="watcher-recent-scans">
+          <CardHeader>
+            <CardTitle className="text-base">Recent scans</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-xs text-zinc-400">
+              {recentScans.items.map((scan) => (
+                <li key={scan.id} data-testid="watcher-recent-scan-item">
+                  <span className="text-zinc-200">
+                    {new Date(scan.scanned_at).toLocaleString()} · {scan.status}
+                  </span>
+                  {" · "}
+                  {scan.dry_run ? "dry-run" : "in-app"} · candidates {scan.candidate_count} ·
+                  alerts {scan.alerts_created} · deduped {scan.alerts_deduped}
+                  {scan.conditions_found.length
+                    ? ` · ${scan.conditions_found.join(", ")}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {summary ? (
         <Card data-testid="watcher-scan-panel">

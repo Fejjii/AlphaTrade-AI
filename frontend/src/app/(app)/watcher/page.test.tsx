@@ -20,7 +20,12 @@ const summary = {
   last_scan_at: null,
   last_scan_status: null,
   last_scan_alerts_created: 0,
+  last_scan_alerts_deduped: 0,
+  last_scan_candidate_count: 0,
   last_scan_conditions_found: [],
+  last_scan_symbols: [],
+  last_scan_timeframes: [],
+  last_scan_dry_run: null,
   last_scan_error: null,
   paper_only: true,
   readiness: "ready" as const,
@@ -42,12 +47,20 @@ vi.mock("@/lib/api", () => ({
     marketWatcher: {
       summary: vi.fn(),
       scan: vi.fn(),
+      recentScans: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 10 }),
     },
   },
 }));
 
-describe("WatcherPage Slice 72/73/74", () => {
+describe("WatcherPage Slice 72/73/74/75", () => {
   afterEach(() => {
+    summary.last_scan_at = null;
+    summary.last_scan_status = null;
+    summary.last_scan_alerts_created = 0;
+    summary.last_scan_alerts_deduped = 0;
+    summary.last_scan_candidate_count = 0;
+    summary.last_scan_conditions_found = [];
+    summary.last_scan_dry_run = null;
     cleanup();
     vi.clearAllMocks();
   });
@@ -59,6 +72,7 @@ describe("WatcherPage Slice 72/73/74", () => {
     expect(screen.getByTestId("watcher-dry-run-toggle").querySelector("input")).toBeChecked();
     expect(screen.getByTestId("watcher-run-scan-button")).toBeDisabled();
     expect(screen.getByTestId("market-watcher-detectors")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-no-prior-scan")).toBeInTheDocument();
   });
 
   it("requires confirmation before enabling scan", () => {
@@ -137,5 +151,21 @@ describe("WatcherPage Slice 72/73/74", () => {
     expect(screen.queryByTestId("watcher-telegram-send-button")).toBeNull();
     expect(screen.queryByTestId("watcher-place-order-button")).toBeNull();
     expect(screen.queryByTestId("watcher-deliver-telegram-button")).toBeNull();
+  });
+
+  it("renders persisted last scan summary when available", () => {
+    summary.last_scan_at = new Date().toISOString();
+    summary.last_scan_status = "ok";
+    summary.last_scan_candidate_count = 7;
+    summary.last_scan_alerts_created = 0;
+    summary.last_scan_alerts_deduped = 0;
+    summary.last_scan_dry_run = true;
+    summary.last_scan_conditions_found = ["sfp", "trend_pullback", "range_breakout_watch"];
+
+    render(<WatcherPage />);
+    expect(screen.getByTestId("watcher-persisted-last-scan")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-persisted-scan-stats")).toHaveTextContent("Candidates: 7");
+    expect(screen.getByTestId("watcher-persisted-conditions")).toHaveTextContent("sfp");
+    expect(screen.getByTestId("watcher-persisted-scan-mode")).toHaveTextContent("dry-run");
   });
 });

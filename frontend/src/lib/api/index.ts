@@ -73,6 +73,7 @@ import type {
   MarketWatcherSummary,
   MarketWatcherScanRequest,
   MarketWatcherScanResult,
+  PaginatedMarketWatcherRecentScans,
   MarketWatcherBridgeStatus,
   MarketWatcherBridgeTickResult,
   PaginatedMarketWatcherBridgeHistory,
@@ -455,6 +456,11 @@ export const api = {
         method: "POST",
         auth: true,
         body: JSON.stringify(body),
+      }),
+    recentScans: (limit = 10) =>
+      apiFetch<PaginatedMarketWatcherRecentScans>("/market-watcher/scans/recent", {
+        auth: true,
+        query: { limit },
       }),
     observations: (params?: { symbol?: string; limit?: number; offset?: number }) =>
       apiFetch<PaginatedMarketWatcherObservations>("/market-watcher/observations", {

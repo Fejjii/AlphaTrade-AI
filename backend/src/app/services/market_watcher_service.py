@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import re
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -13,11 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import ExecutionMode, Settings, get_settings
 from app.db.models import MarketWatcherObservation as ObservationModel
-from app.db.models import PaperValidationRun, WatchlistItem
+from app.db.models import MarketWatcherScanRecord, PaperValidationRun, WatchlistItem
 from app.guardrails.redaction import redact_text
 from app.providers.factory import resolve_market_data_provider
 from app.providers.market_data import OHLCVBar
 from app.repositories.market_watcher import MarketWatcherObservationRepository
+from app.repositories.market_watcher_scan import MarketWatcherScanRepository
 from app.repositories.paper_validation import PaperValidationRunRepository
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
@@ -37,10 +38,12 @@ from app.schemas.market_watcher import (
     MarketWatcherObservation,
     MarketWatcherScanRequest,
     MarketWatcherScanResult,
+    MarketWatcherScanSummary,
     MarketWatcherStatus,
     MarketWatcherSummary,
     PaginatedMarketWatcherHistory,
     PaginatedMarketWatcherObservations,
+    PaginatedMarketWatcherRecentScans,
 )
 from app.services.audit_service import AuditService
 from app.services.market_data_service import MarketDataService
@@ -62,13 +65,17 @@ from app.workers.repository import WorkerHeartbeatRepository
 logger = structlog.get_logger("market_watcher")
 
 
-@dataclass
-class _LastScanState:
-    scanned_at: datetime
-    status: str
-    alerts_created: int
-    error: str | None
-    conditions_found: list[str]
+def _sanitize_scan_error(error: str | None) -> str | None:
+    if not error:
+        return None
+    text = redact_text(error)
+    text = re.sub(
+        r"(postgresql(?:\+\w+)?|mysql|redis|mongodb)://[^\s'\"]+",
+        r"\1://***REDACTED***",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text[:255]
 
 
 class MarketWatcherService:
@@ -86,6 +93,7 @@ class MarketWatcherService:
         self._session = session
         self._settings = settings or get_settings()
         self._observations = MarketWatcherObservationRepository(session)
+        self._scan_records = MarketWatcherScanRepository(session)
         self._runs = PaperValidationRunRepository(session)
         self._audit = audit_service or AuditService(session)
         self._observability = PaperObservabilityService(session)
@@ -95,8 +103,6 @@ class MarketWatcherService:
             self._market_data = MarketDataService(provider)
         else:
             self._market_data = market_data
-        self._scan_history: dict[uuid.UUID, list[MarketWatcherScanResult]] = {}
-        self._last_scan_state: dict[uuid.UUID, _LastScanState] = {}
 
     def get_status(
         self,
@@ -105,16 +111,17 @@ class MarketWatcherService:
         user_id: uuid.UUID,
     ) -> MarketWatcherStatus:
         symbols = self._resolve_symbols(organization_id, user_id)
-        last_scan = self._observations.latest_for_org(organization_id)
-        if last_scan is None:
-            history = self._scan_history.get(organization_id, [])
-            if history:
-                last_scan = history[-1].scanned_at
+        last_scan = self._scan_records.latest_for_org(organization_id)
+        last_scan_at = (
+            last_scan.scanned_at
+            if last_scan
+            else self._observations.latest_for_org(organization_id)
+        )
         return MarketWatcherStatus(
             env_enabled=self._settings.market_watcher_enabled,
             effective_enabled=self._settings.market_watcher_enabled,
             watched_symbols=symbols,
-            last_scan_at=last_scan,
+            last_scan_at=last_scan_at,
             paper_only=True,
             real_trading_enabled=self._settings.real_trading_enabled,
         )
@@ -127,7 +134,7 @@ class MarketWatcherService:
     ) -> MarketWatcherSummary:
         now = datetime.now(UTC)
         worker_running = self._worker_running()
-        last = self._last_scan_state.get(organization_id)
+        last = self._scan_records.latest_for_org(organization_id)
         warnings: list[str] = []
         readiness: str = "ready"
 
@@ -161,7 +168,12 @@ class MarketWatcherService:
             last_scan_at=last.scanned_at if last else None,
             last_scan_status=last.status if last else None,  # type: ignore[arg-type]
             last_scan_alerts_created=last.alerts_created if last else 0,
-            last_scan_conditions_found=last.conditions_found if last else [],
+            last_scan_alerts_deduped=last.alerts_deduped if last else 0,
+            last_scan_candidate_count=last.candidate_count if last else 0,
+            last_scan_conditions_found=list(last.conditions_found or []) if last else [],
+            last_scan_symbols=list(last.symbols or []) if last else [],
+            last_scan_timeframes=list(last.timeframes or []) if last else [],
+            last_scan_dry_run=last.dry_run if last else None,
             last_scan_error=last.error if last else None,
             paper_only=True,
             readiness=readiness,  # type: ignore[arg-type]
@@ -186,7 +198,12 @@ class MarketWatcherService:
                 error="confirmation_required",
                 dry_run=request.dry_run,
             )
-            self._record_last_scan(organization_id, result)
+            self._persist_scan(
+                organization_id,
+                result,
+                symbols=normalize_symbols(request.symbols),
+                timeframes=normalize_timeframes(request.timeframes),
+            )
             return result
 
         if (
@@ -202,7 +219,12 @@ class MarketWatcherService:
                 error="create_in_app_alerts_confirmation_required",
                 dry_run=False,
             )
-            self._record_last_scan(organization_id, result)
+            self._persist_scan(
+                organization_id,
+                result,
+                symbols=normalize_symbols(request.symbols),
+                timeframes=normalize_timeframes(request.timeframes),
+            )
             return result
 
         if self._settings.real_trading_enabled:
@@ -212,7 +234,12 @@ class MarketWatcherService:
                 error="real_trading_enabled",
                 dry_run=request.dry_run,
             )
-            self._record_last_scan(organization_id, result)
+            self._persist_scan(
+                organization_id,
+                result,
+                symbols=normalize_symbols(request.symbols),
+                timeframes=normalize_timeframes(request.timeframes),
+            )
             return result
 
         if self._settings.execution_mode != ExecutionMode.PAPER:
@@ -222,7 +249,12 @@ class MarketWatcherService:
                 error="execution_mode_not_paper",
                 dry_run=request.dry_run,
             )
-            self._record_last_scan(organization_id, result)
+            self._persist_scan(
+                organization_id,
+                result,
+                symbols=normalize_symbols(request.symbols),
+                timeframes=normalize_timeframes(request.timeframes),
+            )
             return result
 
         symbols = normalize_symbols(request.symbols)
@@ -234,7 +266,7 @@ class MarketWatcherService:
                 error="invalid_symbols",
                 dry_run=request.dry_run,
             )
-            self._record_last_scan(organization_id, result)
+            self._persist_scan(organization_id, result, symbols=[], timeframes=timeframes)
             return result
         if not timeframes:
             result = self._blocked_result(
@@ -243,7 +275,7 @@ class MarketWatcherService:
                 error="invalid_timeframes",
                 dry_run=request.dry_run,
             )
-            self._record_last_scan(organization_id, result)
+            self._persist_scan(organization_id, result, symbols=symbols, timeframes=[])
             return result
 
         candidates: list[MarketWatcherCandidate] = []
@@ -399,8 +431,7 @@ class MarketWatcherService:
             alerts_deduped=alerts_deduped,
             error=None if status == "ok" else "provider_degraded",
         )
-        self._record_history(organization_id, result)
-        self._record_last_scan(organization_id, result)
+        self._persist_scan(organization_id, result, symbols=symbols, timeframes=timeframes)
         return result
 
     def _materialize_candidate(
@@ -498,18 +529,45 @@ class MarketWatcherService:
             error=redact_text(error),
         )
 
-    def _record_last_scan(
+    def _persist_scan(
         self,
         organization_id: uuid.UUID,
         result: MarketWatcherScanResult,
+        *,
+        symbols: list[str] | None = None,
+        timeframes: list[str] | None = None,
     ) -> None:
         conditions = sorted({c.condition for c in result.candidates})
-        self._last_scan_state[organization_id] = _LastScanState(
+        error = _sanitize_scan_error(result.error)
+        row = MarketWatcherScanRecord(
+            organization_id=organization_id,
             scanned_at=result.scanned_at,
             status=result.status,
+            error=error,
             alerts_created=result.alerts_created,
-            error=result.error,
+            alerts_deduped=result.alerts_deduped,
+            candidate_count=len(result.candidates),
             conditions_found=conditions,
+            symbols=list(symbols or []),
+            timeframes=list(timeframes or []),
+            detectors_enabled=detectors_enabled(),
+            detector_versions=dict(SETUP_DETECTOR_VERSIONS),
+            dry_run=result.dry_run,
+        )
+        self._scan_records.add(row)
+
+    def list_recent_scans(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        limit: int = 10,
+    ) -> PaginatedMarketWatcherRecentScans:
+        bounded = max(1, min(limit, 25))
+        rows = self._scan_records.list_recent_for_org(organization_id, limit=bounded)
+        return PaginatedMarketWatcherRecentScans(
+            items=[self._to_scan_summary(row) for row in rows],
+            total=len(rows),
+            limit=bounded,
         )
 
     def _worker_running(self) -> bool:
@@ -548,7 +606,8 @@ class MarketWatcherService:
         )
 
     def list_history(self, organization_id: uuid.UUID) -> PaginatedMarketWatcherHistory:
-        items = self._scan_history.get(organization_id, [])
+        rows = self._scan_records.list_recent_for_org(organization_id, limit=20)
+        items = [self._record_to_scan_result(row) for row in rows]
         return PaginatedMarketWatcherHistory(items=items, total=len(items))
 
     def _resolve_symbols(self, organization_id: uuid.UUID, user_id: uuid.UUID) -> list[str]:
@@ -591,11 +650,44 @@ class MarketWatcherService:
             return None, None
         return row.id, row.strategy_id
 
-    def _record_history(self, organization_id: uuid.UUID, result: MarketWatcherScanResult) -> None:
-        history = self._scan_history.setdefault(organization_id, [])
-        history.append(result)
-        if len(history) > 20:
-            del history[0]
+    @staticmethod
+    def _to_scan_summary(row: MarketWatcherScanRecord) -> MarketWatcherScanSummary:
+        return MarketWatcherScanSummary(
+            id=row.id,
+            organization_id=row.organization_id,
+            scanned_at=row.scanned_at,
+            status=row.status,  # type: ignore[arg-type]
+            error=row.error,
+            alerts_created=row.alerts_created,
+            alerts_deduped=row.alerts_deduped,
+            candidate_count=row.candidate_count,
+            conditions_found=list(row.conditions_found or []),
+            symbols=list(row.symbols or []),
+            timeframes=list(row.timeframes or []),
+            detectors_enabled=list(row.detectors_enabled or []),
+            detector_versions=dict(row.detector_versions or {}),
+            dry_run=row.dry_run,
+            created_at=row.created_at,
+        )
+
+    @staticmethod
+    def _record_to_scan_result(row: MarketWatcherScanRecord) -> MarketWatcherScanResult:
+        return MarketWatcherScanResult(
+            scanned_at=row.scanned_at,
+            env_enabled=False,
+            effective_enabled=row.status != "blocked",
+            symbols_scanned=len(row.symbols or []),
+            observations_created=0,
+            setup_signals=[],
+            decisions=[],
+            paper_only=True,
+            dry_run=row.dry_run,
+            status=row.status,  # type: ignore[arg-type]
+            candidates=[],
+            alerts_created=row.alerts_created,
+            alerts_deduped=row.alerts_deduped,
+            error=row.error,
+        )
 
     @staticmethod
     def _to_schema(row: ObservationModel) -> MarketWatcherObservation:

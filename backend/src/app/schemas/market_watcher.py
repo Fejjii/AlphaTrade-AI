@@ -87,12 +87,41 @@ class MarketWatcherSummary(StrictModel):
     last_scan_at: datetime | None = None
     last_scan_status: MarketWatcherScanStatus | None = None
     last_scan_alerts_created: int = 0
+    last_scan_alerts_deduped: int = 0
+    last_scan_candidate_count: int = 0
     last_scan_conditions_found: list[str] = Field(default_factory=list)
+    last_scan_symbols: list[str] = Field(default_factory=list)
+    last_scan_timeframes: list[str] = Field(default_factory=list)
+    last_scan_dry_run: bool | None = None
     last_scan_error: str | None = None
     paper_only: bool = True
     readiness: MarketWatcherReadiness = "ready"
     warnings: list[str] = Field(default_factory=list)
     generated_at: datetime
+
+
+class MarketWatcherScanSummary(StrictModel):
+    id: UUID
+    organization_id: UUID
+    scanned_at: datetime
+    status: MarketWatcherScanStatus
+    error: str | None = None
+    alerts_created: int = 0
+    alerts_deduped: int = 0
+    candidate_count: int = 0
+    conditions_found: list[str] = Field(default_factory=list)
+    symbols: list[str] = Field(default_factory=list)
+    timeframes: list[str] = Field(default_factory=list)
+    detectors_enabled: list[str] = Field(default_factory=list)
+    detector_versions: dict[str, str] = Field(default_factory=dict)
+    dry_run: bool = True
+    created_at: datetime
+
+
+class PaginatedMarketWatcherRecentScans(StrictModel):
+    items: list[MarketWatcherScanSummary]
+    total: int
+    limit: int
 
 
 class MarketWatcherScanResult(StrictModel):

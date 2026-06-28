@@ -1304,12 +1304,41 @@ export interface MarketWatcherSummary {
   last_scan_at?: string | null;
   last_scan_status?: "ok" | "blocked" | "degraded" | null;
   last_scan_alerts_created: number;
+  last_scan_alerts_deduped: number;
+  last_scan_candidate_count: number;
   last_scan_conditions_found: string[];
+  last_scan_symbols: string[];
+  last_scan_timeframes: string[];
+  last_scan_dry_run?: boolean | null;
   last_scan_error?: string | null;
   paper_only: boolean;
   readiness: "ready" | "degraded" | "blocked";
   warnings: string[];
   generated_at: string;
+}
+
+export interface MarketWatcherScanSummary {
+  id: string;
+  organization_id: string;
+  scanned_at: string;
+  status: "ok" | "blocked" | "degraded";
+  error?: string | null;
+  alerts_created: number;
+  alerts_deduped: number;
+  candidate_count: number;
+  conditions_found: string[];
+  symbols: string[];
+  timeframes: string[];
+  detectors_enabled: string[];
+  detector_versions: Record<string, string>;
+  dry_run: boolean;
+  created_at: string;
+}
+
+export interface PaginatedMarketWatcherRecentScans {
+  items: MarketWatcherScanSummary[];
+  total: number;
+  limit: number;
 }
 
 export interface MarketWatcherCandidate {
