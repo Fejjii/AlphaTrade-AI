@@ -8,7 +8,7 @@ let hookCall = 0;
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => {
     hookCall += 1;
-    const index = (hookCall - 1) % 3;
+    const index = (hookCall - 1) % 4;
     if (index === 1) {
       return {
         data: { unread: 1, total: 2 },
@@ -18,6 +18,34 @@ vi.mock("@/hooks/useAsyncData", () => ({
       };
     }
     if (index === 2) {
+      return {
+        data: {
+          alerts_enabled: true,
+          telegram_enabled: false,
+          webhook_enabled: false,
+          external_delivery_enabled: false,
+          paper_only: true,
+          quiet_hours: { enabled: false, start: null, end: null, timezone: "UTC", source: "none" },
+          severity_filters: ["worker: info+", "user: info+"],
+          pending_alerts_count: 0,
+          delivered_alerts_count: 0,
+          failed_alerts_count: 0,
+          market_watcher_configured: false,
+          market_watcher_running: false,
+          bridge_enabled: false,
+          bridge_running: false,
+          worker_enabled: false,
+          worker_running: false,
+          readiness: "ready",
+          warnings: [],
+          generated_at: new Date().toISOString(),
+        },
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+    }
+    if (index === 3) {
       return {
         data: {
           delivery_enabled: false,
@@ -90,6 +118,12 @@ describe("AlertsPage Slice 41", () => {
     render(<AlertsPage />);
     expect(screen.getByTestId("alert-severity-badge")).toHaveTextContent("info");
     expect(screen.getByTestId("alert-next-action")).toHaveTextContent("never place");
+  });
+
+  it("renders alert routing card", () => {
+    render(<AlertsPage />);
+    expect(screen.getByTestId("alert-routing-card")).toBeInTheDocument();
+    expect(screen.getByText("Telegram disabled")).toBeInTheDocument();
   });
 
   it("renders paper only disclaimer", () => {

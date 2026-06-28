@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 
+import { AlertRoutingCard } from "@/components/AlertRoutingCard";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,9 +33,11 @@ export default function AlertsPage() {
     [filterType, filterSeverity],
   );
   const summaryLoader = useCallback(() => api.alerts.summary(), []);
+  const routingLoader = useCallback(() => api.alerts.routingSummary(), []);
   const deliveryLoader = useCallback(() => api.alerts.deliveryStatus(), []);
   const { data, loading, error, reload } = useAsyncData(loader, [filterType, filterSeverity]);
   const { data: summary, reload: reloadSummary } = useAsyncData(summaryLoader, []);
+  const { data: routing } = useAsyncData(routingLoader, []);
   const { data: deliveryStatus } = useAsyncData(deliveryLoader, []);
 
   async function markRead(alert: PaperAlert) {
@@ -139,6 +142,8 @@ export default function AlertsPage() {
           {actionMessage}
         </p>
       ) : null}
+
+      {routing ? <AlertRoutingCard routing={routing} /> : null}
 
       <div className="flex flex-wrap gap-2 text-sm">
         <select

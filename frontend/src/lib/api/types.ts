@@ -1626,6 +1626,41 @@ export interface ExchangeDiagnosticsSummary {
   generated_at: string;
 }
 
+export interface QuietHoursSummary {
+  enabled: boolean;
+  start?: string | null;
+  end?: string | null;
+  timezone: string;
+  source: string;
+}
+
+export interface AlertRoutingSummary {
+  alerts_enabled: boolean;
+  telegram_enabled: boolean;
+  webhook_enabled: boolean;
+  external_delivery_enabled: boolean;
+  paper_only: boolean;
+  quiet_hours: QuietHoursSummary;
+  severity_filters: string[];
+  last_alert_created_at?: string | null;
+  last_alert_status?: string | null;
+  pending_alerts_count: number;
+  delivered_alerts_count: number;
+  failed_alerts_count: number;
+  market_watcher_configured: boolean;
+  market_watcher_running: boolean;
+  bridge_enabled: boolean;
+  bridge_running: boolean;
+  bridge_last_tick_at?: string | null;
+  bridge_last_decision?: string | null;
+  bridge_last_error?: string | null;
+  worker_enabled: boolean;
+  worker_running: boolean;
+  readiness: "ready" | "degraded" | "blocked";
+  warnings: string[];
+  generated_at: string;
+}
+
 export interface LessonSourceMetadata {
   lesson_id: string;
   mistake_type: string;

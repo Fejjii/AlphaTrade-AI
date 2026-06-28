@@ -88,6 +88,7 @@ import type {
   TickerResponse,
   WatchlistItem,
   ExchangeDiagnosticsSummary,
+  AlertRoutingSummary,
 } from "@/lib/api/types";
 
 export const api = {
@@ -383,6 +384,8 @@ export const api = {
     }) =>
       apiFetch<{ items: PaperAlert[]; total: number }>("/alerts", { query: params, auth: true }),
     summary: () => apiFetch<PaperAlertSummary>("/alerts/summary", { auth: true }),
+    routingSummary: () =>
+      apiFetch<AlertRoutingSummary>("/alerts/routing/summary", { auth: true }),
     deliveryStatus: () =>
       apiFetch<AlertDeliveryStatusResponse>("/alerts/delivery-status", { auth: true }),
     markRead: (id: string) =>

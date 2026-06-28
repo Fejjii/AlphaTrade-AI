@@ -6,17 +6,24 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import AlertDeliveryServiceDep, PaperAlertServiceDep, SessionDep
+from app.core.dependencies import (
+    AlertDeliveryServiceDep,
+    PaperAlertServiceDep,
+    SessionDep,
+    SettingsDep,
+)
 from app.schemas.alert_delivery import (
     AlertDeliverPendingResult,
     AlertDeliverResult,
     AlertDeliveryStatusResponse,
     AlertDeliverySummary,
 )
+from app.schemas.alert_routing import AlertRoutingSummaryResponse
 from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
 from app.schemas.common import PaperAlertSeverity, PaperAlertType
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
+from app.services.alert_routing_diagnostics_service import build_alert_routing_summary
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -67,6 +74,26 @@ async def alerts_summary(
     service: PaperAlertServiceDep,
 ) -> PaperAlertSummary:
     return service.summary(tenant.organization_id)
+
+
+@router.get(
+    "/routing/summary",
+    response_model=AlertRoutingSummaryResponse,
+    summary="Alert routing and market watcher bridge diagnostics",
+    dependencies=[_ALERTS_READ_LIMIT],
+)
+async def alert_routing_summary(
+    tenant: OwnerDep,
+    settings: SettingsDep,
+    session: SessionDep,
+) -> AlertRoutingSummaryResponse:
+    """Read-only operator summary of alert routing and bridge readiness."""
+    return build_alert_routing_summary(
+        settings=settings,
+        session=session,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
 
 
 @router.get(

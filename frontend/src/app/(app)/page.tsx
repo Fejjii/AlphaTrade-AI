@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback } from "react";
 
+import { AlertRoutingCard } from "@/components/AlertRoutingCard";
 import { AuditEventCard } from "@/components/AuditEventCard";
 import { ExchangeDiagnosticsCard } from "@/components/ExchangeDiagnosticsCard";
 import { ProviderStatusCard } from "@/components/ProviderStatusCard";
@@ -18,7 +19,7 @@ import { alertTypeLabel, severityRank, severityVariant } from "@/lib/alert-displ
 import { strategyStatusFor } from "@/lib/strategy-status";
 import { formatDecimal } from "@/lib/utils";
 import { buildWorkflowSteps, firstActionableStep } from "@/lib/workflow-steps";
-import type { DashboardSummary, ExchangeDiagnosticsSummary, UserStrategy } from "@/lib/api/types";
+import type { AlertRoutingSummary, DashboardSummary, ExchangeDiagnosticsSummary, UserStrategy } from "@/lib/api/types";
 
 async function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
   try {
@@ -48,6 +49,7 @@ type DashboardData = {
   legacyRisk: Awaited<ReturnType<typeof api.analytics.riskBehavior>> | null;
   legacyTradesToday: number | null;
   exchangeDiagnostics: ExchangeDiagnosticsSummary | null;
+  alertRouting: AlertRoutingSummary | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -74,11 +76,12 @@ export default function DashboardPage() {
   const { executionMode, realTradingEnabled } = useSafetyPosture();
 
   const loader = useCallback(async (): Promise<DashboardData> => {
-    const [summary, usage, audit, exchangeDiagnostics] = await Promise.all([
+    const [summary, usage, audit, exchangeDiagnostics, alertRouting] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
       settled(api.audit.events({ limit: 5 }), { items: [], total: 0, limit: 5, offset: 0 }),
       settled(api.exchange.diagnosticsSummary(), null),
+      settled(api.alerts.routingSummary(), null),
     ]);
 
     if (summary) {
@@ -97,6 +100,7 @@ export default function DashboardPage() {
         legacyRisk: null,
         legacyTradesToday: null,
         exchangeDiagnostics,
+        alertRouting,
       };
     }
 
@@ -110,6 +114,7 @@ export default function DashboardPage() {
       legacyRisk: legacy.legacyRisk ?? null,
       legacyTradesToday: legacy.legacyTradesToday ?? null,
       exchangeDiagnostics: await settled(api.exchange.diagnosticsSummary(), null),
+      alertRouting: await settled(api.alerts.routingSummary(), null),
     };
   }, []);
 
@@ -315,6 +320,10 @@ export default function DashboardPage() {
 
       {data?.exchangeDiagnostics ? (
         <ExchangeDiagnosticsCard diagnostics={data.exchangeDiagnostics} compact />
+      ) : null}
+
+      {data?.alertRouting ? (
+        <AlertRoutingCard routing={data.alertRouting} compact />
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
