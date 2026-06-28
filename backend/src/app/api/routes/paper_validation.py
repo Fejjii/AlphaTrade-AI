@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import (
     PaperSchedulerServiceDep,
+    PaperValidationCandidateServiceDep,
     PaperValidationDraftServiceDep,
     PaperValidationRuntimeServiceDep,
     SessionDep,
@@ -27,6 +28,14 @@ from app.schemas.paper_validation import (
     PaperTickResult,
     PaperValidationMetrics,
     PaperValidationRun,
+)
+from app.schemas.paper_validation_candidate import (
+    PaginatedPaperValidationCandidates,
+    PaperValidationCandidateItem,
+    PaperValidationCandidateQueueRequest,
+    PaperValidationCandidateQueueResult,
+    PaperValidationCandidateStatusUpdate,
+    PaperValidationCandidateSummary,
 )
 from app.schemas.paper_validation_draft import (
     PaginatedPaperValidationDrafts,
@@ -127,6 +136,12 @@ _PAPER_DRAFT_READ = Depends(
 _PAPER_DRAFT_PREP_WRITE = Depends(
     tenant_rate_limit_dependency("paper-validation:drafts:prep", limit=60, window_seconds=3600)
 )
+_PAPER_CANDIDATE_READ = Depends(
+    tenant_rate_limit_dependency("paper-validation:candidates:read", limit=120, window_seconds=3600)
+)
+_PAPER_CANDIDATE_WRITE = Depends(
+    tenant_rate_limit_dependency("paper-validation:candidates:write", limit=60, window_seconds=3600)
+)
 
 
 @router.get(
@@ -190,6 +205,98 @@ async def update_paper_validation_draft_prep(
 ) -> PaperValidationDraftItem:
     result = service.update_prep(
         draft_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/drafts/{draft_id}/queue",
+    response_model=PaperValidationCandidateQueueResult,
+    summary="Queue a ready paper validation draft as a candidate (no run)",
+    dependencies=[_PAPER_CANDIDATE_WRITE],
+)
+async def queue_paper_validation_candidate(
+    draft_id: uuid.UUID,
+    payload: PaperValidationCandidateQueueRequest,
+    tenant: TraderDep,
+    service: PaperValidationCandidateServiceDep,
+    session: SessionDep,
+) -> PaperValidationCandidateQueueResult:
+    result = service.queue_from_draft(
+        draft_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/candidates/summary",
+    response_model=PaperValidationCandidateSummary,
+    summary="Paper validation candidate queue summary",
+    dependencies=[_PAPER_CANDIDATE_READ],
+)
+async def paper_validation_candidate_summary(
+    tenant: ReaderDep,
+    service: PaperValidationCandidateServiceDep,
+) -> PaperValidationCandidateSummary:
+    return service.candidate_summary(tenant.organization_id)
+
+
+@router.get(
+    "/candidates",
+    response_model=PaginatedPaperValidationCandidates,
+    summary="List paper validation candidates",
+    dependencies=[_PAPER_CANDIDATE_READ],
+)
+async def list_paper_validation_candidates(
+    tenant: ReaderDep,
+    service: PaperValidationCandidateServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedPaperValidationCandidates:
+    return service.list_candidates(
+        tenant.organization_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/candidates/{candidate_id}",
+    response_model=PaperValidationCandidateItem,
+    summary="Get a paper validation candidate",
+    dependencies=[_PAPER_CANDIDATE_READ],
+)
+async def get_paper_validation_candidate(
+    candidate_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: PaperValidationCandidateServiceDep,
+) -> PaperValidationCandidateItem:
+    return service.get_candidate(candidate_id, organization_id=tenant.organization_id)
+
+
+@router.patch(
+    "/candidates/{candidate_id}",
+    response_model=PaperValidationCandidateItem,
+    summary="Update paper validation candidate status (no run)",
+    dependencies=[_PAPER_CANDIDATE_WRITE],
+)
+async def update_paper_validation_candidate_status(
+    candidate_id: uuid.UUID,
+    payload: PaperValidationCandidateStatusUpdate,
+    tenant: TraderDep,
+    service: PaperValidationCandidateServiceDep,
+    session: SessionDep,
+) -> PaperValidationCandidateItem:
+    result = service.update_status(
+        candidate_id,
         payload,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,

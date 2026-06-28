@@ -73,6 +73,9 @@ import type {
   PaperValidationDraftItem,
   PaperValidationDraftPrepStatus,
   PaperValidationDraftSummary,
+  PaperValidationCandidateItem,
+  PaperValidationCandidateQueueResult,
+  PaperValidationCandidateSummary,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
@@ -655,6 +658,29 @@ export const api = {
       }),
     draftSummary: () =>
       apiFetch<PaperValidationDraftSummary>("/paper-validation/drafts/summary", { auth: true }),
+    queueDraft: (id: string, body: { confirm: string }) =>
+      apiFetch<PaperValidationCandidateQueueResult>(`/paper-validation/drafts/${id}/queue`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    candidates: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<{ items: PaperValidationCandidateItem[]; total: number; limit: number; offset: number }>(
+        "/paper-validation/candidates",
+        { query: params, auth: true },
+      ),
+    getCandidate: (id: string) =>
+      apiFetch<PaperValidationCandidateItem>(`/paper-validation/candidates/${id}`, { auth: true }),
+    updateCandidateStatus: (id: string, body: { candidate_status: string }) =>
+      apiFetch<PaperValidationCandidateItem>(`/paper-validation/candidates/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    candidateSummary: () =>
+      apiFetch<PaperValidationCandidateSummary>("/paper-validation/candidates/summary", {
+        auth: true,
+      }),
     testability: (id: string) =>
       apiFetch<StrategyTestability>(`/strategies/${id}/testability`, { auth: true }),
     patchStructuredRules: (id: string, body: Partial<StructuredRules>) =>

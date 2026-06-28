@@ -198,6 +198,14 @@ vi.mock("@/hooks/useAsyncData", () => ({
         latest_created_at: "2026-06-28T12:00:00Z",
         ready_for_validation_count: 1,
       },
+      paperCandidateSummary: {
+        total_queued: 2,
+        total_reviewing: 1,
+        total_archived: 0,
+        by_condition: { order_block: 2 },
+        by_symbol: { BTCUSDT: 2 },
+        latest_created_at: "2026-06-28T12:00:00Z",
+      },
     },
     loading: false,
     error: null,
@@ -240,6 +248,14 @@ describe("DashboardPage", () => {
       "Ready for validation: 1",
     );
     expect(screen.getByTestId("dashboard-paper-drafts")).toHaveTextContent("Breakout retest");
+    expect(screen.getByTestId("dashboard-paper-validation-queue")).toHaveTextContent("Queued: 2");
+    expect(screen.getByTestId("dashboard-paper-validation-queue")).toHaveTextContent(
+      "Reviewing: 1",
+    );
+    expect(screen.getByRole("link", { name: "View validation queue" })).toHaveAttribute(
+      "href",
+      "/paper-validation/candidates",
+    );
     expect(screen.getByRole("link", { name: "View paper drafts" })).toHaveAttribute(
       "href",
       "/paper-validation/drafts",

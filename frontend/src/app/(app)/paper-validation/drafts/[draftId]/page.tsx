@@ -44,6 +44,8 @@ const EMPTY_CHECKLIST: PaperValidationDraftChecklist = {
   news_or_funding_checked: false,
 };
 
+const QUEUE_PAPER_VALIDATION_CANDIDATE = "QUEUE_PAPER_VALIDATION_CANDIDATE";
+
 function formatLevel(value: number | null | undefined): string {
   if (value == null) return "—";
   return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -72,6 +74,10 @@ export default function PaperValidationDraftDetailPage() {
   const [prepDraft, setPrepDraft] = useState<PaperValidationDraftItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [queueConfirm, setQueueConfirm] = useState("");
+  const [queuing, setQueuing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [queuedCandidateId, setQueuedCandidateId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!draft) return;
@@ -104,6 +110,22 @@ export default function PaperValidationDraftDetailPage() {
       setSaveError(err instanceof Error ? err.message : "Failed to save prep.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleQueueCandidate() {
+    setQueuing(true);
+    setQueueError(null);
+    try {
+      const result = await api.strategies.queueDraft(draftId, {
+        confirm: queueConfirm,
+      });
+      setQueuedCandidateId(result.candidate.candidate_id);
+      setQueueConfirm("");
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : "Failed to queue candidate.");
+    } finally {
+      setQueuing(false);
     }
   }
 
@@ -268,6 +290,49 @@ export default function PaperValidationDraftDetailPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {activeDraft.is_ready_for_validation ? (
+        <Card data-testid="paper-draft-queue-section">
+          <CardHeader>
+            <CardTitle className="text-base">Queue for Paper Validation</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-zinc-400" data-testid="paper-draft-queue-safety-copy">
+              Queue only. No run started. No order. No proposal. No approval. No Telegram.
+            </p>
+            <label className="block space-y-1 text-sm">
+              <span className="text-zinc-300">
+                Type <span className="font-mono text-zinc-100">{QUEUE_PAPER_VALIDATION_CANDIDATE}</span>{" "}
+                to confirm
+              </span>
+              <input
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                value={queueConfirm}
+                onChange={(event) => setQueueConfirm(event.target.value)}
+                data-testid="paper-draft-queue-confirm"
+              />
+            </label>
+            {queueError ? <p className="text-sm text-red-400">{queueError}</p> : null}
+            {queuedCandidateId ? (
+              <Link
+                href={`/paper-validation/candidates/${queuedCandidateId}`}
+                className="inline-block text-sm text-emerald-400 underline"
+                data-testid="paper-draft-candidate-link"
+              >
+                View validation candidate
+              </Link>
+            ) : null}
+            <Button
+              type="button"
+              disabled={queuing || queueConfirm !== QUEUE_PAPER_VALIDATION_CANDIDATE}
+              onClick={() => void handleQueueCandidate()}
+              data-testid="paper-draft-queue-submit"
+            >
+              {queuing ? "Queueing…" : "Queue for paper validation"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

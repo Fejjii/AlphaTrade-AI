@@ -54,6 +54,7 @@ type DashboardData = {
   watcherSummary: MarketWatcherSummary | null;
   setupReviewSummary: Awaited<ReturnType<typeof api.alerts.setupReviewSummary>> | null;
   paperDraftSummary: Awaited<ReturnType<typeof api.strategies.draftSummary>> | null;
+  paperCandidateSummary: Awaited<ReturnType<typeof api.strategies.candidateSummary>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -89,6 +90,7 @@ export default function DashboardPage() {
       watcherSummary,
       setupReviewSummary,
       paperDraftSummary,
+      paperCandidateSummary,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -98,6 +100,7 @@ export default function DashboardPage() {
       settled(api.marketWatcher.summary(), null),
       settled(api.alerts.setupReviewSummary(), null),
       settled(api.strategies.draftSummary(), null),
+      settled(api.strategies.candidateSummary(), null),
     ]);
 
     if (summary) {
@@ -120,6 +123,7 @@ export default function DashboardPage() {
         watcherSummary,
         setupReviewSummary,
         paperDraftSummary,
+        paperCandidateSummary,
       };
     }
 
@@ -137,6 +141,7 @@ export default function DashboardPage() {
       watcherSummary,
       setupReviewSummary,
       paperDraftSummary,
+      paperCandidateSummary,
     };
   }, []);
 
@@ -169,6 +174,7 @@ export default function DashboardPage() {
   const setupReview = data?.setupReviewSummary;
   const latestSetupCondition = setupReview?.highest_confidence_alerts[0]?.condition;
   const paperDrafts = data?.paperDraftSummary;
+  const paperCandidates = data?.paperCandidateSummary;
 
   const activePaper =
     summary?.active_paper_validations ??
@@ -547,6 +553,38 @@ export default function DashboardPage() {
               className="inline-block text-xs text-zinc-400 underline"
             >
               View paper drafts
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="dashboard-paper-validation-queue">
+          <CardHeader>
+            <CardTitle className="text-base">Paper Validation Queue</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-zinc-300">
+            <p>
+              Queued:{" "}
+              <span className="font-semibold text-zinc-100">
+                {paperCandidates?.total_queued ?? 0}
+              </span>
+            </p>
+            <p>
+              Reviewing:{" "}
+              <span className="font-semibold text-zinc-100">
+                {paperCandidates?.total_reviewing ?? 0}
+              </span>
+            </p>
+            <p className="text-xs text-zinc-500">
+              Latest condition:{" "}
+              {paperCandidates?.by_condition && Object.keys(paperCandidates.by_condition).length
+                ? setupConditionLabel(Object.keys(paperCandidates.by_condition)[0])
+                : "None queued yet"}
+            </p>
+            <Link
+              href="/paper-validation/candidates"
+              className="inline-block text-xs text-zinc-400 underline"
+            >
+              View validation queue
             </Link>
           </CardContent>
         </Card>

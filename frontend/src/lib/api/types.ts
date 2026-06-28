@@ -1326,6 +1326,44 @@ export interface PaperValidationDraftSummary {
   ready_for_validation_count?: number;
 }
 
+export type PaperValidationCandidateStatus = "queued" | "reviewing" | "archived";
+
+export interface PaperValidationCandidateItem {
+  candidate_id: string;
+  draft_id: string;
+  source_alert_id: string;
+  symbol?: string | null;
+  timeframe?: string | null;
+  condition?: string | null;
+  direction?: string | null;
+  confidence?: number | null;
+  trigger_level?: number | null;
+  invalidation_level?: number | null;
+  latest_price?: number | null;
+  thesis?: string | null;
+  entry_criteria?: string | null;
+  invalidation_criteria?: string | null;
+  risk_notes?: string | null;
+  checklist_snapshot: PaperValidationDraftChecklist;
+  risk_mode: PaperValidationDraftRiskMode;
+  candidate_status: PaperValidationCandidateStatus;
+  created_at: string;
+}
+
+export interface PaperValidationCandidateSummary {
+  total_queued: number;
+  total_reviewing: number;
+  total_archived: number;
+  by_condition?: Record<string, number>;
+  by_symbol?: Record<string, number>;
+  latest_created_at?: string | null;
+}
+
+export interface PaperValidationCandidateQueueResult {
+  candidate: PaperValidationCandidateItem;
+  already_exists: boolean;
+}
+
 export interface SetupAlertDraftCreateResult {
   draft: PaperValidationDraftItem;
   already_exists: boolean;

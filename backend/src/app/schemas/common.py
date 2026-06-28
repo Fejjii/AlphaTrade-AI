@@ -630,6 +630,14 @@ class PaperValidationDraftPrepStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class PaperValidationCandidateStatus(StrEnum):
+    """Non-executable paper validation candidate queue lifecycle (Slice 80)."""
+
+    QUEUED = "queued"
+    REVIEWING = "reviewing"
+    ARCHIVED = "archived"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 

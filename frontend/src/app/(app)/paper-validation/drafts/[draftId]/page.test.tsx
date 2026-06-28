@@ -50,6 +50,7 @@ const baseDraft: PaperValidationDraftItem = {
 
 const mockReload = vi.fn();
 const mockUpdateDraftPrep = vi.fn();
+const mockQueueDraft = vi.fn();
 let draftData: PaperValidationDraftItem = baseDraft;
 
 vi.mock("next/navigation", () => ({
@@ -70,6 +71,7 @@ vi.mock("@/lib/api", () => ({
     strategies: {
       getDraft: vi.fn(),
       updateDraftPrep: (...args: unknown[]) => mockUpdateDraftPrep(...args),
+      queueDraft: (...args: unknown[]) => mockQueueDraft(...args),
     },
   },
 }));
@@ -132,5 +134,49 @@ describe("PaperValidationDraftDetailPage Slice 79", () => {
 
     render(<PaperValidationDraftDetailPage />);
     expect(screen.getByTestId("paper-draft-ready-badge")).toBeInTheDocument();
+  });
+});
+
+describe("PaperValidationDraftDetailPage Slice 80", () => {
+  beforeEach(() => {
+    draftData = {
+      ...baseDraft,
+      is_ready_for_validation: true,
+      prep_status: "ready_for_validation",
+      prep_completion_score: 100,
+      missing_checklist_items: [],
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("shows queue section only when ready", () => {
+    render(<PaperValidationDraftDetailPage />);
+    expect(screen.getByTestId("paper-draft-queue-section")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-draft-queue-safety-copy")).toHaveTextContent(/queue only/i);
+    expect(screen.getByTestId("paper-draft-queue-submit")).toBeDisabled();
+  });
+
+  it("queues candidate with confirmation and shows link", async () => {
+    mockQueueDraft.mockResolvedValue({
+      candidate: { candidate_id: "candidate-1" },
+      already_exists: false,
+    });
+
+    render(<PaperValidationDraftDetailPage />);
+    fireEvent.change(screen.getByTestId("paper-draft-queue-confirm"), {
+      target: { value: "QUEUE_PAPER_VALIDATION_CANDIDATE" },
+    });
+    fireEvent.click(screen.getByTestId("paper-draft-queue-submit"));
+
+    await waitFor(() => {
+      expect(mockQueueDraft).toHaveBeenCalledWith("draft-1", {
+        confirm: "QUEUE_PAPER_VALIDATION_CANDIDATE",
+      });
+    });
+    expect(screen.getByTestId("paper-draft-candidate-link")).toBeInTheDocument();
   });
 });
