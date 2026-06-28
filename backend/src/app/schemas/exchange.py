@@ -84,6 +84,10 @@ class ExchangeOrderStatusResponse(StrictModel):
     status: str
     filled_size: Decimal
     average_price: Decimal | None = None
+    status_source: str = Field(
+        default="venue",
+        description="venue when returned by BloFin; cancel_audit_fallback after audited cancel.",
+    )
     generated_at: datetime
 
 

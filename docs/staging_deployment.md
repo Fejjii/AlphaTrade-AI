@@ -165,6 +165,12 @@ BACKEND_URL=https://alphatrade-api-staging.onrender.com \
 # BloFin demo exchange (read-only, no orders) — requires EXCHANGE_MODE=paper_exchange_demo
 BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/validate-exchange-demo-staging.sh
 
+# Slice 66b — seed path smoke only (no order); see docs/slice_66b_demo_venue_validation.md
+./scripts/test-seed-path-staging.sh
+
+# Slice 66b — controlled demo venue order (ONE order per review; new idempotency key required)
+# BACKEND_URL=https://alphatrade-api-staging.onrender.com IDEMPOTENCY_KEY=slice66b-demo-limit-NNN ./scripts/run-slice66b-controlled-demo-order.sh
+
 # AI workspace chat safety prompts
 ./scripts/validate-demo-chat-staging.sh
 

@@ -207,8 +207,8 @@ PY
 assert_no_secrets "$leverage_json"
 rm -f /tmp/exchange_leverage.json
 
-echo "11/17 — order status probe (skipped — no known demo order id yet)"
-echo "  SKIP: no demo orders placed; order status route available for Slice 66b"
+echo "11/17 — order status probe (skipped — read-only validation; Slice 66b orchestrator owns order path)"
+echo "  SKIP: see docs/slice_66b_demo_venue_validation.md; audit API uses redacted_metadata"
 
 echo "12/17 — AI workspace refuses real trade"
 chat_json="$(curl -fsS -X POST -H "$(auth_header)" -H 'Content-Type: application/json' \

@@ -12,6 +12,8 @@ SCRIPTS = (
     "scripts/staging-smoke.sh",
     "scripts/staging-live-smoke.sh",
     "scripts/validate-exchange-demo-staging.sh",
+    "scripts/run-slice66b-controlled-demo-order.sh",
+    "scripts/test-seed-path-staging.sh",
     "scripts/run-migrations.sh",
 )
 
@@ -36,6 +38,7 @@ def test_staging_deployment_docs_exist() -> None:
         "docs/staging_deployment_worksheet.template.md",
         "docs/staging_execution_checklist.md",
         "docs/staging_deployment.md",
+        "docs/slice_66b_demo_venue_validation.md",
         "render.yaml",
         "frontend/vercel.json",
     ):

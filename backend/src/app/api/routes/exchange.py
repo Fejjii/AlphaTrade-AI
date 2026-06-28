@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query
 
+from app.core.demo_order_status import (
+    cancelled_status_from_cancel_audit,
+    probe_demo_order_status_with_retry,
+)
 from app.core.dependencies import AuditServiceDep, ProviderRegistryDep, SessionDep, SettingsDep
+from app.core.errors import ExchangeProviderError
 from app.core.exchange_demo_access import (
     get_demo_account_provider,
     get_demo_execution_provider,
     run_demo_provider_call,
 )
 from app.core.exchange_readiness import exchange_provider_status
+from app.guardrails.redaction import redact_text
 from app.providers.exchange.base import (
     ExchangeBalance,
     ExchangeInstrument,
+    ExchangeOrderResult,
     ExchangePositionData,
 )
+from app.providers.exchange.errors import ExchangeError
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import ActorType, AuditEventType
@@ -35,6 +44,7 @@ from app.schemas.exchange import (
     ExchangeStatusResponse,
 )
 from app.security.rbac import OwnerDep
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/exchange", tags=["exchange"])
 
@@ -200,6 +210,39 @@ async def get_leverage_info(
     )
 
 
+def _map_order_status_response(
+    *,
+    inst_id: str,
+    result: ExchangeOrderResult,
+    status_source: str = "venue",
+) -> ExchangeOrderStatusResponse:
+    return ExchangeOrderStatusResponse(
+        inst_id=inst_id,
+        exchange_order_id=result.exchange_order_id,
+        client_order_id=result.client_order_id,
+        status=result.status,
+        filled_size=result.filled_size,
+        average_price=result.average_price,
+        status_source=status_source,
+        generated_at=_now(),
+    )
+
+
+def _has_cancel_audit(
+    audit_service: AuditService,
+    *,
+    organization_id: uuid.UUID,
+    exchange_order_id: str,
+) -> bool:
+    records, total = audit_service.list_records(
+        organization_id=organization_id,
+        request_id=f"cancel-{exchange_order_id}",
+        event_type=AuditEventType.EXCHANGE_DEMO_ORDER_CANCELLED,
+        limit=1,
+    )
+    return total > 0 and any(r.resource_id == exchange_order_id for r in records)
+
+
 @router.get(
     "/orders/{inst_id}/{exchange_order_id}",
     response_model=ExchangeOrderStatusResponse,
@@ -208,25 +251,50 @@ async def get_leverage_info(
 async def get_order_status(
     inst_id: str,
     exchange_order_id: str,
-    _tenant: OwnerDep,
+    tenant: OwnerDep,
     settings: SettingsDep,
+    audit_service: AuditServiceDep,
+    after_cancel: bool = Query(
+        default=False,
+        description="When true, retry transient venue probe failures and fall back to "
+        "cancelled if a matching EXCHANGE_DEMO_ORDER_CANCELLED audit exists.",
+    ),
 ) -> ExchangeOrderStatusResponse:
     """Read-only demo order status via the venue (no secrets)."""
     execution = get_demo_execution_provider(settings)
     normalized_inst = to_blofin_inst_id(inst_id) if "-" not in inst_id else inst_id.upper()
-    result = run_demo_provider_call(
-        "order status",
-        lambda: execution.get_order(inst_id=normalized_inst, exchange_order_id=exchange_order_id),
-    )
-    return ExchangeOrderStatusResponse(
-        inst_id=normalized_inst,
-        exchange_order_id=result.exchange_order_id,
-        client_order_id=result.client_order_id,
-        status=result.status,
-        filled_size=result.filled_size,
-        average_price=result.average_price,
-        generated_at=_now(),
-    )
+
+    def get_order() -> ExchangeOrderResult:
+        return execution.get_order(
+            inst_id=normalized_inst,
+            exchange_order_id=exchange_order_id,
+        )
+
+    if after_cancel:
+        try:
+            result = probe_demo_order_status_with_retry(get_order)
+        except ExchangeError as exc:
+            if _has_cancel_audit(
+                audit_service,
+                organization_id=tenant.organization_id,
+                exchange_order_id=exchange_order_id,
+            ):
+                result = cancelled_status_from_cancel_audit(
+                    exchange_order_id=exchange_order_id,
+                )
+                return _map_order_status_response(
+                    inst_id=normalized_inst,
+                    result=result,
+                    status_source="cancel_audit_fallback",
+                )
+            raise ExchangeProviderError(
+                "BloFin demo order status unavailable.",
+                details={"error": redact_text(str(exc))[:200]},
+            ) from exc
+        return _map_order_status_response(inst_id=normalized_inst, result=result)
+
+    result = run_demo_provider_call("order status", get_order)
+    return _map_order_status_response(inst_id=normalized_inst, result=result)
 
 
 @router.post(

@@ -2,6 +2,9 @@
 # Slice 66b — place exactly ONE far-from-market BloFin demo LIMIT order via paper mirroring,
 # verify idempotency, cancel venue order, close internal paper position.
 #
+# COMPLETE: slice66b-demo-limit-003 consumed 2026-06-28 — do not reuse. See
+# docs/slice_66b_demo_venue_validation.md before any future run.
+#
 # Prerequisites:
 #   - Render CLI authenticated (render login OR RENDER_API_KEY), OR DATABASE_URL for staging DB
 #   - Staging at paper_exchange_demo with demo probes healthy
@@ -389,12 +392,20 @@ PY
 
 audit_json="$(curl -fsS -H "$(auth_header)" \
   "${BACKEND_URL}/audit/events?event_type=exchange_demo_order_created&limit=50")"
-python3 - <<'PY' "$audit_json" "$IDEMPOTENCY_KEY"
+python3 - <<'PY' "$audit_json" "$IDEMPOTENCY_KEY" "$EXCHANGE_ORDER_ID"
 import json, sys
 items = json.loads(sys.argv[1]).get("items") or []
-key = sys.argv[2]
-matches = [e for e in items if e.get("metadata", {}).get("exchange_order_id")]
-print(f"  OK: exchange_demo_order_created events visible={len(matches)} (expect >=1)")
+key, eid = sys.argv[2], sys.argv[3]
+matches = [
+    e for e in items
+    if e.get("request_id") == key
+    or (e.get("redacted_metadata") or {}).get("exchange_order_id") == eid
+]
+assert len(matches) >= 1, f"no audit match for key={key}"
+meta = matches[0].get("redacted_metadata") or {}
+assert meta.get("position_mode") == "long_short_mode", meta
+assert meta.get("position_side") == "long", meta
+print(f"  OK: audit position_mode={meta.get('position_mode')} position_side={meta.get('position_side')}")
 PY
 assert_no_secrets "$audit_json"
 
@@ -409,12 +420,14 @@ PY
 assert_no_secrets "$cancel_json"
 
 venue_after_json="$(curl -fsS -H "$(auth_header)" \
-  "${BACKEND_URL}/exchange/orders/${INST_ID}/${EXCHANGE_ORDER_ID}")"
+  "${BACKEND_URL}/exchange/orders/${INST_ID}/${EXCHANGE_ORDER_ID}?after_cancel=true")"
 python3 - <<'PY' "$venue_after_json"
 import json, sys
-status = (json.loads(sys.argv[1]).get("status") or "").lower()
+body = json.loads(sys.argv[1])
+status = (body.get("status") or "").lower()
+source = body.get("status_source") or "venue"
 assert status in ("cancelled", "canceled"), status
-print(f"  OK: venue status after cancel={status}")
+print(f"  OK: venue status after cancel={status} (source={source})")
 PY
 
 positions_after_json="$(curl -fsS -H "$(auth_header)" "${BACKEND_URL}/exchange/positions")"

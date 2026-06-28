@@ -341,6 +341,103 @@ def test_cancel_is_demo_gated_and_audited(demo_client: TestClient) -> None:
     assert any(e["event_type"] == cancelled_type for e in events)
 
 
+def test_order_status_after_cancel_falls_back_to_cancel_audit(
+    demo_client: TestClient,
+) -> None:
+    """Transient venue GET failures after cancel return audited cancelled status."""
+    cancelled = {"done": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if "/trade/cancel-order" in path:
+            cancelled["done"] = True
+            return httpx.Response(200, json={"code": "0", "data": [{"orderId": "demo-order-1"}]})
+        if "/trade/order" in path and request.method == "GET" and cancelled["done"]:
+            return httpx.Response(500, json={"code": "500", "msg": "demo-secret unavailable"})
+        return _demo_handler(request)
+
+    from app.core.config import Settings, get_settings
+    from app.db.session import get_session
+    from app.main import create_app
+    from app.providers.exchange import factory as exchange_factory
+
+    settings = Settings(_env_file=None, **_DEMO_SETTINGS)
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn: object, _record: object) -> None:
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def _override_session() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    original_build = exchange_factory.build_blofin_client
+
+    def _build(settings_obj, *, transport=None, **kwargs):
+        mock_transport = transport or httpx.MockTransport(handler)
+        return original_build(settings_obj, transport=mock_transport, **kwargs)
+
+    get_settings.cache_clear()
+    app = create_app(settings=settings)
+    app.dependency_overrides[get_session] = _override_session
+    exchange_factory.build_blofin_client = _build
+
+    with TestClient(app) as client:
+        headers = _register_owner(client)
+        cancel = client.post("/exchange/orders/BTC-USDT/demo-order-1/cancel", headers=headers)
+        assert cancel.status_code == 200, cancel.text
+
+        status = client.get(
+            "/exchange/orders/BTC-USDT/demo-order-1",
+            headers=headers,
+            params={"after_cancel": "true"},
+        )
+        assert status.status_code == 200, status.text
+        body = status.json()
+        assert body["status"] == "cancelled"
+        assert body["status_source"] == "cancel_audit_fallback"
+        assert body["filled_size"] == "0"
+        _assert_no_secrets(body)
+
+        audit = client.get(
+            "/audit/events",
+            headers=headers,
+            params={"event_type": AuditEventType.EXCHANGE_DEMO_ORDER_CANCELLED.value},
+        )
+        meta = audit.json()["items"][0]["redacted_metadata"]
+        assert "demo-secret" not in json.dumps(meta).lower()
+
+    exchange_factory.build_blofin_client = original_build
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+    engine.dispose()
+
+
+def test_order_status_without_cancel_audit_still_fails_redacted(
+    failing_demo_client: TestClient,
+) -> None:
+    headers = _register_owner(failing_demo_client)
+    response = failing_demo_client.get(
+        "/exchange/orders/BTC-USDT/demo-order-1",
+        headers=headers,
+        params={"after_cancel": "true"},
+    )
+    assert response.status_code == 502, response.text
+    body = response.json()
+    assert body["error"]["code"] == "exchange_provider_error"
+    assert "demo-secret" not in json.dumps(body).lower()
+
+
 def test_provider_failure_redacted(failing_demo_client: TestClient) -> None:
     headers = _register_owner(failing_demo_client)
     response = failing_demo_client.get("/exchange/instruments", headers=headers)
