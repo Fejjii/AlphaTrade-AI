@@ -3,6 +3,10 @@
 import { useCallback, useState } from "react";
 
 import { AlertRoutingCard } from "@/components/AlertRoutingCard";
+import {
+  SendAlertToTelegramButton,
+  TelegramManualDeliveryPanel,
+} from "@/components/TelegramManualDelivery";
 import { TelegramTestPanel } from "@/components/TelegramTestPanel";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -145,6 +149,7 @@ export default function AlertsPage() {
       ) : null}
 
       {routing ? <AlertRoutingCard routing={routing} /> : null}
+      {routing ? <TelegramManualDeliveryPanel routing={routing} /> : null}
       {routing ? <TelegramTestPanel routing={routing} /> : null}
 
       <div className="flex flex-wrap gap-2 text-sm">
@@ -260,6 +265,14 @@ export default function AlertsPage() {
                   >
                     Deliver
                   </Button>
+                ) : null}
+                {routing ? (
+                  <SendAlertToTelegramButton
+                    alert={alert}
+                    routing={routing}
+                    disabled={busy}
+                    onComplete={() => void reload()}
+                  />
                 ) : null}
               </div>
             </article>

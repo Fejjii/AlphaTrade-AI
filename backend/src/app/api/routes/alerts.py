@@ -21,10 +21,15 @@ from app.schemas.alert_delivery import (
 from app.schemas.alert_routing import AlertRoutingSummaryResponse
 from app.schemas.alerts import PaginatedPaperAlerts, PaperAlert, PaperAlertSummary
 from app.schemas.common import PaperAlertSeverity, PaperAlertType
+from app.schemas.telegram_alert_delivery import (
+    TelegramAlertDeliveryRequest,
+    TelegramAlertDeliveryResponse,
+)
 from app.schemas.telegram_test_alert import TelegramTestAlertRequest, TelegramTestAlertResponse
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
 from app.services.alert_routing_diagnostics_service import build_alert_routing_summary
+from app.services.telegram_alert_delivery_service import TelegramAlertDeliveryService
 from app.services.telegram_test_alert_service import TelegramTestAlertService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -37,6 +42,14 @@ _ALERTS_WRITE_LIMIT = Depends(
 )
 _ALERTS_DELIVER_LIMIT = Depends(
     tenant_rate_limit_dependency("alerts:deliver", limit=30, window_seconds=3600, user_limit=30)
+)
+_ALERTS_TELEGRAM_DELIVER_LIMIT = Depends(
+    tenant_rate_limit_dependency(
+        "alerts:telegram-deliver",
+        limit=30,
+        window_seconds=3600,
+        user_limit=30,
+    )
 )
 _ALERTS_TELEGRAM_TEST_LIMIT = Depends(
     tenant_rate_limit_dependency(
@@ -221,6 +234,31 @@ async def mark_alert_read(
         alert_id,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/{alert_id}/deliver-telegram",
+    response_model=TelegramAlertDeliveryResponse,
+    summary="Deliver one in-app alert to Telegram (owner, confirmation required)",
+    dependencies=[_ALERTS_TELEGRAM_DELIVER_LIMIT],
+)
+async def deliver_alert_to_telegram(
+    alert_id: uuid.UUID,
+    body: TelegramAlertDeliveryRequest,
+    tenant: OwnerDep,
+    settings: SettingsDep,
+    session: SessionDep,
+) -> TelegramAlertDeliveryResponse:
+    """Send one selected in-app alert to Telegram — no trades, no bulk delivery."""
+    service = TelegramAlertDeliveryService(session, settings)
+    result = service.deliver_alert(
+        alert_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        confirm=body.confirm,
     )
     session.commit()
     return result

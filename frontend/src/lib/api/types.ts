@@ -1642,6 +1642,11 @@ export interface AlertRoutingSummary {
   manual_test_available: boolean;
   last_test_alert_at?: string | null;
   last_test_alert_status?: string | null;
+  telegram_alert_delivery_available: boolean;
+  telegram_delivered_count: number;
+  telegram_failed_count: number;
+  telegram_last_delivery_at?: string | null;
+  telegram_last_delivery_status?: string | null;
   webhook_enabled: boolean;
   external_delivery_enabled: boolean;
   paper_only: boolean;
@@ -1664,6 +1669,16 @@ export interface AlertRoutingSummary {
   readiness: "ready" | "degraded" | "blocked";
   warnings: string[];
   generated_at: string;
+}
+
+export interface TelegramAlertDeliveryResponse {
+  status: "sent" | "already_delivered" | "skipped_not_configured" | "blocked" | "failed_redacted";
+  alert_id: string;
+  channel: string;
+  sent_at?: string | null;
+  delivery_id?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
 }
 
 export interface TelegramTestAlertResponse {

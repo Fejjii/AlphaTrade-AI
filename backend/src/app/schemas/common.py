@@ -333,6 +333,9 @@ class AuditEventType(StrEnum):
     RISK_SETTINGS_UPDATED = "risk_settings_updated"
     NOTIFICATION_PREFERENCES_UPDATED = "notification_preferences_updated"
     NOTIFICATION_TEST_SENT = "notification_test_sent"
+    ALERT_TELEGRAM_DELIVERY_REQUESTED = "alert_telegram_delivery_requested"
+    ALERT_TELEGRAM_DELIVERY_SENT = "alert_telegram_delivery_sent"
+    ALERT_TELEGRAM_DELIVERY_FAILED = "alert_telegram_delivery_failed"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"

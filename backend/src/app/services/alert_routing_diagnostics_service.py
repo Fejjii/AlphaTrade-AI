@@ -23,6 +23,10 @@ from app.services.audit_service import AuditService
 from app.services.market_watcher_bridge_service import MarketWatcherBridgeService
 from app.services.market_watcher_service import MarketWatcherService
 from app.services.notifications.preferences_service import NotificationPreferencesService
+from app.services.telegram_alert_delivery_service import (
+    TelegramAlertDeliveryService,
+    telegram_alert_delivery_available,
+)
 from app.services.telegram_test_alert_service import (
     TelegramTestAlertService,
     manual_test_available,
@@ -341,6 +345,14 @@ def build_alert_routing_summary(
     last_test_at, last_test_status = test_service.latest_test_summary(
         organization_id=organization_id,
     )
+    delivery_service = TelegramAlertDeliveryService(
+        session,
+        settings,
+        audit_service=AuditService(session),
+    )
+    tg_delivered, tg_failed, tg_last_at, tg_last_status = delivery_service.delivery_summary(
+        organization_id=organization_id,
+    )
 
     return AlertRoutingSummaryResponse(
         alerts_enabled=True,
@@ -353,6 +365,16 @@ def build_alert_routing_summary(
         ),
         last_test_alert_at=last_test_at,
         last_test_alert_status=last_test_status,
+        telegram_alert_delivery_available=telegram_alert_delivery_available(
+            settings,
+            paper_only=delivery_status.paper_only,
+            telegram_configured=delivery_status.telegram_configured,
+            telegram_chat_configured=telegram_chat_configured,
+        ),
+        telegram_delivered_count=tg_delivered,
+        telegram_failed_count=tg_failed,
+        telegram_last_delivery_at=tg_last_at,
+        telegram_last_delivery_status=tg_last_status,
         webhook_enabled=settings.alert_webhook_enabled,
         external_delivery_enabled=external_delivery_enabled,
         paper_only=delivery_status.paper_only,

@@ -89,6 +89,7 @@ import type {
   WatchlistItem,
   ExchangeDiagnosticsSummary,
   AlertRoutingSummary,
+  TelegramAlertDeliveryResponse,
   TelegramTestAlertResponse,
 } from "@/lib/api/types";
 
@@ -405,6 +406,12 @@ export const api = {
       ),
     testTelegram: (body: { confirm: string; message?: string }) =>
       apiFetch<TelegramTestAlertResponse>("/alerts/test-telegram", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    deliverTelegram: (id: string, body: { confirm: string }) =>
+      apiFetch<TelegramAlertDeliveryResponse>(`/alerts/${id}/deliver-telegram`, {
         method: "POST",
         body: JSON.stringify(body),
         auth: true,
