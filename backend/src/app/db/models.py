@@ -764,6 +764,12 @@ class PaperValidationDraft(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     risk_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="conservative")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entry_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invalidation_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checklist_status: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    prep_status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
 
 class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):

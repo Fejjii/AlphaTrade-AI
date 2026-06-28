@@ -1,4 +1,4 @@
-"""Paper validation draft service (Slice 78 — draft only, no execution)."""
+"""Paper validation draft service (Slice 78-79 - draft/prep only, no execution)."""
 
 from __future__ import annotations
 
@@ -17,14 +17,18 @@ from app.schemas.common import (
     AuditEventType,
     AuditResult,
     AuditSeverity,
+    PaperValidationDraftPrepStatus,
     PaperValidationDraftRiskMode,
     PaperValidationDraftStatus,
     SetupAlertReviewStatus,
 )
 from app.schemas.paper_validation_draft import (
     CREATE_PAPER_VALIDATION_DRAFT_CONFIRM,
+    PREP_CHECKLIST_KEYS,
     PaginatedPaperValidationDrafts,
+    PaperValidationDraftChecklist,
     PaperValidationDraftItem,
+    PaperValidationDraftPrepUpdateRequest,
     PaperValidationDraftSummary,
     SetupAlertDraftCreateRequest,
     SetupAlertDraftCreateResult,
@@ -155,6 +159,66 @@ class PaperValidationDraftService:
         )
         return SetupAlertDraftCreateResult(draft=self._to_item(draft), already_exists=False)
 
+    def update_prep(
+        self,
+        draft_id: uuid.UUID,
+        payload: PaperValidationDraftPrepUpdateRequest,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+    ) -> PaperValidationDraftItem:
+        row = self._drafts.get_for_org(draft_id, organization_id=organization_id)
+        if row is None:
+            raise NotFoundError("Draft not found.")
+
+        if row.status != PaperValidationDraftStatus.DRAFT.value:
+            self._record_prep_audit(
+                "paper_draft_prep_blocked",
+                draft_id=draft_id,
+                source_alert_id=row.source_alert_id,
+                organization_id=organization_id,
+                user_id=user_id,
+                metadata={"reason": "draft_not_editable", "status": row.status},
+            )
+            raise ValidationAppError(
+                "Only active drafts can receive prep updates.",
+                details={"draft_id": str(draft_id), "status": row.status},
+            )
+
+        if payload.prep_status is not None:
+            row.prep_status = payload.prep_status.value
+        if payload.thesis is not None:
+            row.thesis = payload.thesis
+        if payload.entry_criteria is not None:
+            row.entry_criteria = payload.entry_criteria
+        if payload.invalidation_criteria is not None:
+            row.invalidation_criteria = payload.invalidation_criteria
+        if payload.risk_notes is not None:
+            row.risk_notes = payload.risk_notes
+        if payload.checklist is not None:
+            row.checklist_status = payload.checklist.model_dump()
+
+        item = self._to_item(row)
+        audit_metadata = self._prep_audit_metadata(item)
+        self._record_prep_audit(
+            "paper_draft_prep_updated",
+            draft_id=draft_id,
+            source_alert_id=row.source_alert_id,
+            organization_id=organization_id,
+            user_id=user_id,
+            metadata=audit_metadata,
+        )
+        if item.is_ready_for_validation:
+            self._record_prep_audit(
+                "paper_draft_marked_ready",
+                draft_id=draft_id,
+                source_alert_id=row.source_alert_id,
+                organization_id=organization_id,
+                user_id=user_id,
+                metadata=audit_metadata,
+            )
+        return item
+
     def list_drafts(
         self,
         organization_id: uuid.UUID,
@@ -187,17 +251,19 @@ class PaperValidationDraftService:
         return self._to_item(row)
 
     def draft_summary(self, organization_id: uuid.UUID) -> PaperValidationDraftSummary:
-        _, total = self._drafts.list_for_org(
+        rows, total = self._drafts.list_for_org(
             organization_id,
             status=PaperValidationDraftStatus.DRAFT,
-            limit=1,
+            limit=500,
             offset=0,
         )
         latest = self._drafts.latest_for_org(organization_id)
+        ready_count = sum(1 for row in rows if self._to_item(row).is_ready_for_validation)
         return PaperValidationDraftSummary(
             total_drafts=total,
             latest_condition=latest.condition if latest is not None else None,
             latest_created_at=latest.created_at if latest is not None else None,
+            ready_for_validation_count=ready_count,
         )
 
     @staticmethod
@@ -235,10 +301,57 @@ class PaperValidationDraftService:
             risk_mode=payload.risk_mode.value,
             status=PaperValidationDraftStatus.DRAFT.value,
             created_by=user_id,
+            prep_status=PaperValidationDraftPrepStatus.DRAFT.value,
         )
 
-    @staticmethod
-    def _to_item(row: DraftModel) -> PaperValidationDraftItem:
+    @classmethod
+    def _parse_checklist(cls, raw: dict[str, object] | None) -> PaperValidationDraftChecklist:
+        values: dict[str, bool] = {}
+        if isinstance(raw, dict):
+            for key in PREP_CHECKLIST_KEYS:
+                value = raw.get(key)
+                if isinstance(value, bool):
+                    values[key] = value
+        return PaperValidationDraftChecklist(**values)
+
+    @classmethod
+    def _compute_readiness(
+        cls,
+        *,
+        prep_status: str,
+        thesis: str | None,
+        entry_criteria: str | None,
+        invalidation_criteria: str | None,
+        checklist: PaperValidationDraftChecklist,
+    ) -> tuple[int, list[str], bool]:
+        missing_checklist = [
+            key for key in PREP_CHECKLIST_KEYS if not getattr(checklist, key, False)
+        ]
+        score_items = [
+            bool(thesis and thesis.strip()),
+            bool(entry_criteria and entry_criteria.strip()),
+            bool(invalidation_criteria and invalidation_criteria.strip()),
+        ] + [getattr(checklist, key, False) for key in PREP_CHECKLIST_KEYS]
+        score = round(sum(score_items) / len(score_items) * 100)
+
+        try:
+            prep = PaperValidationDraftPrepStatus(prep_status)
+        except ValueError:
+            prep = PaperValidationDraftPrepStatus.DRAFT
+
+        is_ready = (
+            prep == PaperValidationDraftPrepStatus.READY_FOR_VALIDATION
+            and bool(thesis and thesis.strip())
+            and bool(entry_criteria and entry_criteria.strip())
+            and bool(invalidation_criteria and invalidation_criteria.strip())
+            and checklist.invalidation_checked
+            and checklist.risk_reward_checked
+            and checklist.higher_timeframe_checked
+        )
+        return score, missing_checklist, is_ready
+
+    @classmethod
+    def _to_item(cls, row: DraftModel) -> PaperValidationDraftItem:
         try:
             risk_mode = PaperValidationDraftRiskMode(row.risk_mode)
         except ValueError:
@@ -247,6 +360,19 @@ class PaperValidationDraftService:
             status = PaperValidationDraftStatus(row.status)
         except ValueError:
             status = PaperValidationDraftStatus.DRAFT
+        try:
+            prep_status = PaperValidationDraftPrepStatus(row.prep_status)
+        except ValueError:
+            prep_status = PaperValidationDraftPrepStatus.DRAFT
+
+        checklist = cls._parse_checklist(row.checklist_status)
+        score, missing_checklist, is_ready = cls._compute_readiness(
+            prep_status=prep_status.value,
+            thesis=row.thesis,
+            entry_criteria=row.entry_criteria,
+            invalidation_criteria=row.invalidation_criteria,
+            checklist=checklist,
+        )
         return PaperValidationDraftItem(
             draft_id=row.id,
             source_alert_id=row.source_alert_id,
@@ -263,7 +389,32 @@ class PaperValidationDraftService:
             status=status,
             created_at=row.created_at,
             created_by=row.created_by,
+            thesis=row.thesis,
+            entry_criteria=row.entry_criteria,
+            invalidation_criteria=row.invalidation_criteria,
+            risk_notes=row.risk_notes,
+            prep_status=prep_status,
+            checklist=checklist,
+            prep_completion_score=score,
+            missing_checklist_items=missing_checklist,
+            is_ready_for_validation=is_ready,
         )
+
+    @staticmethod
+    def _prep_audit_metadata(item: PaperValidationDraftItem) -> dict[str, object]:
+        return {
+            "draft_id": str(item.draft_id),
+            "prep_status": item.prep_status.value,
+            "prep_completion_score": item.prep_completion_score,
+            "is_ready_for_validation": item.is_ready_for_validation,
+            "missing_checklist_count": len(item.missing_checklist_items),
+            "has_thesis": bool(item.thesis and item.thesis.strip()),
+            "has_entry_criteria": bool(item.entry_criteria and item.entry_criteria.strip()),
+            "has_invalidation_criteria": bool(
+                item.invalidation_criteria and item.invalidation_criteria.strip()
+            ),
+            "has_risk_notes": bool(item.risk_notes and item.risk_notes.strip()),
+        }
 
     def _record_audit(
         self,
@@ -287,5 +438,35 @@ class PaperValidationDraftService:
                 result=AuditResult.SUCCESS,
                 severity=AuditSeverity.INFO,
                 metadata={"action": action, **(metadata or {})},
+            )
+        )
+
+    def _record_prep_audit(
+        self,
+        action: str,
+        *,
+        draft_id: uuid.UUID,
+        source_alert_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        self._audit.record(
+            AuditRecordCreate(
+                request_id=f"paper-draft-prep-{draft_id}",
+                trace_id=str(uuid.uuid4()),
+                user_id=user_id,
+                organization_id=organization_id,
+                event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+                resource_type="paper_validation_draft",
+                resource_id=str(draft_id),
+                actor_type=ActorType.USER,
+                result=AuditResult.SUCCESS,
+                severity=AuditSeverity.INFO,
+                metadata={
+                    "action": action,
+                    "source_alert_id": str(source_alert_id),
+                    **(metadata or {}),
+                },
             )
         )

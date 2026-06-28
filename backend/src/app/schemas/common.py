@@ -621,6 +621,15 @@ class PaperValidationDraftRiskMode(StrEnum):
     AGGRESSIVE = "aggressive"
 
 
+class PaperValidationDraftPrepStatus(StrEnum):
+    """Prep lifecycle for paper validation drafts (Slice 79 — planning only)."""
+
+    DRAFT = "draft"
+    NEEDS_REVIEW = "needs_review"
+    READY_FOR_VALIDATION = "ready_for_validation"
+    ARCHIVED = "archived"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 

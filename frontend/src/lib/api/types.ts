@@ -1276,6 +1276,21 @@ export interface SetupAlertReviewSummary {
 
 export type PaperValidationDraftRiskMode = "conservative" | "moderate" | "aggressive";
 export type PaperValidationDraftStatus = "draft" | "archived" | "cancelled";
+export type PaperValidationDraftPrepStatus =
+  | "draft"
+  | "needs_review"
+  | "ready_for_validation"
+  | "archived";
+
+export interface PaperValidationDraftChecklist {
+  trend_checked: boolean;
+  support_resistance_checked: boolean;
+  volume_checked: boolean;
+  risk_reward_checked: boolean;
+  invalidation_checked: boolean;
+  higher_timeframe_checked: boolean;
+  news_or_funding_checked: boolean;
+}
 
 export interface PaperValidationDraftItem {
   draft_id: string;
@@ -1293,12 +1308,22 @@ export interface PaperValidationDraftItem {
   status: PaperValidationDraftStatus;
   created_at: string;
   created_by?: string | null;
+  thesis?: string | null;
+  entry_criteria?: string | null;
+  invalidation_criteria?: string | null;
+  risk_notes?: string | null;
+  prep_status: PaperValidationDraftPrepStatus;
+  checklist: PaperValidationDraftChecklist;
+  prep_completion_score: number;
+  missing_checklist_items: string[];
+  is_ready_for_validation: boolean;
 }
 
 export interface PaperValidationDraftSummary {
   total_drafts: number;
   latest_condition?: string | null;
   latest_created_at?: string | null;
+  ready_for_validation_count?: number;
 }
 
 export interface SetupAlertDraftCreateResult {

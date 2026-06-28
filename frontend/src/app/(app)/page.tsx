@@ -530,6 +530,12 @@ export default function DashboardPage() {
               Draft count:{" "}
               <span className="font-semibold text-zinc-100">{paperDrafts?.total_drafts ?? 0}</span>
             </p>
+            <p>
+              Ready for validation:{" "}
+              <span className="font-semibold text-zinc-100">
+                {paperDrafts?.ready_for_validation_count ?? 0}
+              </span>
+            </p>
             <p className="text-xs text-zinc-500">
               Latest condition:{" "}
               {paperDrafts?.latest_condition

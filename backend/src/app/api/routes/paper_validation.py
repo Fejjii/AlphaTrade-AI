@@ -31,6 +31,7 @@ from app.schemas.paper_validation import (
 from app.schemas.paper_validation_draft import (
     PaginatedPaperValidationDrafts,
     PaperValidationDraftItem,
+    PaperValidationDraftPrepUpdateRequest,
     PaperValidationDraftSummary,
 )
 from app.security.rate_limit import tenant_rate_limit_dependency
@@ -123,6 +124,9 @@ async def list_scheduler_history(
 _PAPER_DRAFT_READ = Depends(
     tenant_rate_limit_dependency("paper-validation:drafts:read", limit=120, window_seconds=3600)
 )
+_PAPER_DRAFT_PREP_WRITE = Depends(
+    tenant_rate_limit_dependency("paper-validation:drafts:prep", limit=60, window_seconds=3600)
+)
 
 
 @router.get(
@@ -169,6 +173,29 @@ async def get_paper_validation_draft(
     service: PaperValidationDraftServiceDep,
 ) -> PaperValidationDraftItem:
     return service.get_draft(draft_id, organization_id=tenant.organization_id)
+
+
+@router.patch(
+    "/drafts/{draft_id}/prep",
+    response_model=PaperValidationDraftItem,
+    summary="Update paper validation draft prep context (planning only)",
+    dependencies=[_PAPER_DRAFT_PREP_WRITE],
+)
+async def update_paper_validation_draft_prep(
+    draft_id: uuid.UUID,
+    payload: PaperValidationDraftPrepUpdateRequest,
+    tenant: TraderDep,
+    service: PaperValidationDraftServiceDep,
+    session: SessionDep,
+) -> PaperValidationDraftItem:
+    result = service.update_prep(
+        draft_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
 
 
 @router.get(

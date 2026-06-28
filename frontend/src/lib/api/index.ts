@@ -69,7 +69,9 @@ import type {
   SetupAlertReviewItem,
   SetupAlertReviewSummary,
   SetupAlertDraftCreateResult,
+  PaperValidationDraftChecklist,
   PaperValidationDraftItem,
+  PaperValidationDraftPrepStatus,
   PaperValidationDraftSummary,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
@@ -635,6 +637,22 @@ export const api = {
       ),
     getDraft: (id: string) =>
       apiFetch<PaperValidationDraftItem>(`/paper-validation/drafts/${id}`, { auth: true }),
+    updateDraftPrep: (
+      id: string,
+      body: {
+        prep_status?: PaperValidationDraftPrepStatus;
+        thesis?: string | null;
+        entry_criteria?: string | null;
+        invalidation_criteria?: string | null;
+        risk_notes?: string | null;
+        checklist?: Partial<PaperValidationDraftChecklist>;
+      },
+    ) =>
+      apiFetch<PaperValidationDraftItem>(`/paper-validation/drafts/${id}/prep`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
     draftSummary: () =>
       apiFetch<PaperValidationDraftSummary>("/paper-validation/drafts/summary", { auth: true }),
     testability: (id: string) =>

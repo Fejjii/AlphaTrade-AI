@@ -35,12 +35,23 @@ function DraftCard({ draft }: { draft: PaperValidationDraftItem }) {
               {draft.symbol ?? "—"} · {draft.timeframe ?? "—"}
             </span>
             <Badge variant="muted">{draft.direction ?? "—"}</Badge>
+            {draft.is_ready_for_validation ? (
+              <Badge variant="default" data-testid={`paper-draft-ready-${draft.draft_id}`}>
+                Ready
+              </Badge>
+            ) : null}
           </div>
           <p className="text-xs text-zinc-500">
             Created {new Date(draft.created_at).toLocaleString()}
           </p>
         </div>
-        <Badge variant="muted">{draft.status}</Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge variant="muted">{draft.status}</Badge>
+          <span className="text-xs text-zinc-500">Prep: {draft.prep_status ?? "draft"}</span>
+          <span className="text-xs text-zinc-500">
+            Score: {draft.prep_completion_score ?? 0}%
+          </span>
+        </div>
       </div>
 
       <p className="text-sm text-zinc-300">{draft.reason ?? "No reason provided."}</p>
