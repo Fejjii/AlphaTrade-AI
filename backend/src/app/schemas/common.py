@@ -605,6 +605,22 @@ class SetupAlertReviewStatus(StrEnum):
     IMPORTANT = "important"
 
 
+class PaperValidationDraftStatus(StrEnum):
+    """Non-executable paper validation draft lifecycle (Slice 78)."""
+
+    DRAFT = "draft"
+    ARCHIVED = "archived"
+    CANCELLED = "cancelled"
+
+
+class PaperValidationDraftRiskMode(StrEnum):
+    """Risk posture captured on a paper validation draft (Slice 78)."""
+
+    CONSERVATIVE = "conservative"
+    MODERATE = "moderate"
+    AGGRESSIVE = "aggressive"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 

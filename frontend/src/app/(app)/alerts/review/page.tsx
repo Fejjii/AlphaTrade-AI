@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
@@ -9,7 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { reviewStatusLabel, setupConditionLabel } from "@/lib/alert-display";
-import type { SetupAlertReviewItem, SetupAlertReviewStatus } from "@/lib/api/types";
+import type { PaperValidationDraftItem, SetupAlertReviewItem, SetupAlertReviewStatus } from "@/lib/api/types";
+
+const CREATE_PAPER_VALIDATION_DRAFT = "CREATE_PAPER_VALIDATION_DRAFT";
 
 const REVIEW_STATUSES: SetupAlertReviewStatus[] = [
   "unreviewed",
@@ -33,16 +36,33 @@ type AlertCardProps = {
   busy: boolean;
   onSave: (alertId: string, status: SetupAlertReviewStatus, notes: string) => Promise<void>;
   onQuickAction: (alertId: string, status: SetupAlertReviewStatus) => Promise<void>;
+  onCreateDraft: (
+    alertId: string,
+    confirm: string,
+    notes: string,
+    riskMode: string,
+  ) => Promise<PaperValidationDraftItem | null>;
 };
+
+function canCreateDraft(status: SetupAlertReviewStatus): boolean {
+  return status === "watching" || status === "important";
+}
 
 function SetupAlertReviewCard({
   alert,
   busy,
   onSave,
   onQuickAction,
+  onCreateDraft,
 }: AlertCardProps) {
   const [status, setStatus] = useState<SetupAlertReviewStatus>(alert.review_status);
   const [notes, setNotes] = useState(alert.review_notes ?? "");
+  const [showDraftForm, setShowDraftForm] = useState(false);
+  const [draftConfirm, setDraftConfirm] = useState("");
+  const [draftNotes, setDraftNotes] = useState("");
+  const [draftRiskMode, setDraftRiskMode] = useState("conservative");
+  const [createdDraftId, setCreatedDraftId] = useState<string | null>(null);
+  const draftEligible = canCreateDraft(alert.review_status);
 
   return (
     <article
@@ -158,6 +178,106 @@ function SetupAlertReviewCard({
           Save
         </Button>
       </div>
+
+      {draftEligible ? (
+        <div className="space-y-2 rounded border border-zinc-800/80 bg-zinc-950/40 p-3">
+          {!showDraftForm && !createdDraftId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              data-testid="setup-alert-create-draft"
+              onClick={() => setShowDraftForm(true)}
+            >
+              Create paper draft
+            </Button>
+          ) : null}
+
+          {showDraftForm && !createdDraftId ? (
+            <div className="space-y-2" data-testid="setup-alert-draft-form">
+              <p className="text-xs text-amber-200" data-testid="setup-alert-draft-warning">
+                Draft only. No order. No Telegram. No execution.
+              </p>
+              <label className="block space-y-1 text-xs text-zinc-400">
+                Type{" "}
+                <span className="font-mono text-zinc-200">{CREATE_PAPER_VALIDATION_DRAFT}</span> to
+                confirm
+                <input
+                  className="block w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+                  value={draftConfirm}
+                  data-testid="setup-alert-draft-confirm"
+                  onChange={(event) => setDraftConfirm(event.target.value)}
+                  placeholder={CREATE_PAPER_VALIDATION_DRAFT}
+                />
+              </label>
+              <label className="block space-y-1 text-xs text-zinc-400">
+                Draft notes (optional)
+                <textarea
+                  className="block min-h-[56px] w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+                  value={draftNotes}
+                  data-testid="setup-alert-draft-notes"
+                  onChange={(event) => setDraftNotes(event.target.value)}
+                />
+              </label>
+              <label className="block space-y-1 text-xs text-zinc-400">
+                Risk mode
+                <select
+                  className="block w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+                  value={draftRiskMode}
+                  data-testid="setup-alert-draft-risk-mode"
+                  onChange={(event) => setDraftRiskMode(event.target.value)}
+                >
+                  <option value="conservative">Conservative</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="aggressive">Aggressive</option>
+                </select>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy || draftConfirm.trim() !== CREATE_PAPER_VALIDATION_DRAFT}
+                  data-testid="setup-alert-draft-submit"
+                  onClick={() =>
+                    void onCreateDraft(
+                      alert.alert_id,
+                      draftConfirm.trim(),
+                      draftNotes,
+                      draftRiskMode,
+                    ).then((draft) => {
+                      if (draft) {
+                        setCreatedDraftId(draft.draft_id);
+                        setShowDraftForm(false);
+                      }
+                    })
+                  }
+                >
+                  Create draft
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => setShowDraftForm(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {createdDraftId ? (
+            <p className="text-xs text-zinc-300" data-testid="setup-alert-draft-link">
+              Paper draft created.{" "}
+              <Link href={`/paper-validation/drafts/${createdDraftId}`} className="underline">
+                View draft
+              </Link>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -225,6 +345,34 @@ export default function SetupAlertReviewPage() {
       await Promise.all([reload(), reloadSummary()]);
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : "Review update failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createPaperDraft(
+    alertId: string,
+    confirm: string,
+    notes: string,
+    riskMode: string,
+  ) {
+    setBusy(true);
+    setActionMessage(null);
+    try {
+      const result = await api.alerts.createSetupDraft(alertId, {
+        confirm,
+        notes: notes.trim() ? notes.trim() : null,
+        risk_mode: riskMode,
+      });
+      setActionMessage(
+        result.already_exists
+          ? "Existing paper draft returned. No order, Telegram, or execution occurred."
+          : "Paper draft created. No order, Telegram, or execution occurred.",
+      );
+      return result.draft;
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Draft creation failed.");
+      return null;
     } finally {
       setBusy(false);
     }
@@ -361,6 +509,7 @@ export default function SetupAlertReviewPage() {
               busy={busy}
               onSave={persistReview}
               onQuickAction={(alertId, reviewStatus) => persistReview(alertId, reviewStatus)}
+              onCreateDraft={createPaperDraft}
             />
           ))}
         </div>

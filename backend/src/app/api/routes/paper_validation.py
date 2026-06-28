@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import (
     PaperSchedulerServiceDep,
+    PaperValidationDraftServiceDep,
     PaperValidationRuntimeServiceDep,
     SessionDep,
 )
@@ -27,8 +28,13 @@ from app.schemas.paper_validation import (
     PaperValidationMetrics,
     PaperValidationRun,
 )
+from app.schemas.paper_validation_draft import (
+    PaginatedPaperValidationDrafts,
+    PaperValidationDraftItem,
+    PaperValidationDraftSummary,
+)
 from app.security.rate_limit import tenant_rate_limit_dependency
-from app.security.rbac import OwnerDep, TraderDep
+from app.security.rbac import OwnerDep, ReaderDep, TraderDep
 
 router = APIRouter(prefix="/paper-validation", tags=["paper-validation"])
 
@@ -112,6 +118,57 @@ async def list_scheduler_history(
         limit=limit,
         offset=offset,
     )
+
+
+_PAPER_DRAFT_READ = Depends(
+    tenant_rate_limit_dependency("paper-validation:drafts:read", limit=120, window_seconds=3600)
+)
+
+
+@router.get(
+    "/drafts/summary",
+    response_model=PaperValidationDraftSummary,
+    summary="Paper validation draft summary",
+    dependencies=[_PAPER_DRAFT_READ],
+)
+async def paper_validation_draft_summary(
+    tenant: ReaderDep,
+    service: PaperValidationDraftServiceDep,
+) -> PaperValidationDraftSummary:
+    return service.draft_summary(tenant.organization_id)
+
+
+@router.get(
+    "/drafts",
+    response_model=PaginatedPaperValidationDrafts,
+    summary="List non-executable paper validation drafts",
+    dependencies=[_PAPER_DRAFT_READ],
+)
+async def list_paper_validation_drafts(
+    tenant: ReaderDep,
+    service: PaperValidationDraftServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedPaperValidationDrafts:
+    return service.list_drafts(
+        tenant.organization_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/drafts/{draft_id}",
+    response_model=PaperValidationDraftItem,
+    summary="Get a paper validation draft",
+    dependencies=[_PAPER_DRAFT_READ],
+)
+async def get_paper_validation_draft(
+    draft_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: PaperValidationDraftServiceDep,
+) -> PaperValidationDraftItem:
+    return service.get_draft(draft_id, organization_id=tenant.organization_id)
 
 
 @router.get(

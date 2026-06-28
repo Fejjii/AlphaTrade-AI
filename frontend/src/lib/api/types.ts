@@ -1274,6 +1274,38 @@ export interface SetupAlertReviewSummary {
   }>;
 }
 
+export type PaperValidationDraftRiskMode = "conservative" | "moderate" | "aggressive";
+export type PaperValidationDraftStatus = "draft" | "archived" | "cancelled";
+
+export interface PaperValidationDraftItem {
+  draft_id: string;
+  source_alert_id: string;
+  symbol?: string | null;
+  timeframe?: string | null;
+  condition?: string | null;
+  direction?: string | null;
+  confidence?: number | null;
+  trigger_level?: number | null;
+  invalidation_level?: number | null;
+  latest_price?: number | null;
+  reason?: string | null;
+  risk_mode: PaperValidationDraftRiskMode;
+  status: PaperValidationDraftStatus;
+  created_at: string;
+  created_by?: string | null;
+}
+
+export interface PaperValidationDraftSummary {
+  total_drafts: number;
+  latest_condition?: string | null;
+  latest_created_at?: string | null;
+}
+
+export interface SetupAlertDraftCreateResult {
+  draft: PaperValidationDraftItem;
+  already_exists: boolean;
+}
+
 export interface AlertDeliveryStatusResponse {
   delivery_enabled: boolean;
   webhook_enabled: boolean;

@@ -68,6 +68,9 @@ import type {
   PaperAlertSummary,
   SetupAlertReviewItem,
   SetupAlertReviewSummary,
+  SetupAlertDraftCreateResult,
+  PaperValidationDraftItem,
+  PaperValidationDraftSummary,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
@@ -417,6 +420,15 @@ export const api = {
         body: JSON.stringify(body),
         auth: true,
       }),
+    createSetupDraft: (
+      id: string,
+      body: { confirm: string; notes?: string | null; risk_mode?: string },
+    ) =>
+      apiFetch<SetupAlertDraftCreateResult>(`/alerts/setup-review/${id}/draft`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
     routingSummary: () =>
       apiFetch<AlertRoutingSummary>("/alerts/routing/summary", { auth: true }),
     deliveryStatus: () =>
@@ -616,6 +628,15 @@ export const api = {
         "/paper-validation/scheduler/history",
         { query: params, auth: true },
       ),
+    drafts: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<{ items: PaperValidationDraftItem[]; total: number; limit: number; offset: number }>(
+        "/paper-validation/drafts",
+        { query: params, auth: true },
+      ),
+    getDraft: (id: string) =>
+      apiFetch<PaperValidationDraftItem>(`/paper-validation/drafts/${id}`, { auth: true }),
+    draftSummary: () =>
+      apiFetch<PaperValidationDraftSummary>("/paper-validation/drafts/summary", { auth: true }),
     testability: (id: string) =>
       apiFetch<StrategyTestability>(`/strategies/${id}/testability`, { auth: true }),
     patchStructuredRules: (id: string, body: Partial<StructuredRules>) =>

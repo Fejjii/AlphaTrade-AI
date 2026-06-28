@@ -731,6 +731,41 @@ class PaperValidationAlert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class PaperValidationDraft(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Non-executable paper validation draft from a reviewed setup alert (Slice 78)."""
+
+    __tablename__ = "paper_validation_drafts"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "source_alert_id",
+            "status",
+            name="uq_paper_validation_drafts_org_alert_status",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    source_alert_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_alerts.id"), nullable=False, index=True
+    )
+    symbol: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    condition: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trigger_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    invalidation_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    user_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="conservative")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
 class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Read-only market watcher observations (Slice 41 — no execution)."""
 

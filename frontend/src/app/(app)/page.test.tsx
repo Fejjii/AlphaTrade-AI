@@ -192,6 +192,11 @@ vi.mock("@/hooks/useAsyncData", () => ({
           },
         ],
       },
+      paperDraftSummary: {
+        total_drafts: 2,
+        latest_condition: "breakout_retest",
+        latest_created_at: "2026-06-28T12:00:00Z",
+      },
     },
     loading: false,
     error: null,
@@ -228,6 +233,12 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("link", { name: "Review setup alerts" })).toHaveAttribute(
       "href",
       "/alerts/review",
+    );
+    expect(screen.getByTestId("dashboard-paper-drafts")).toHaveTextContent("Draft count: 2");
+    expect(screen.getByTestId("dashboard-paper-drafts")).toHaveTextContent("Breakout retest");
+    expect(screen.getByRole("link", { name: "View paper drafts" })).toHaveAttribute(
+      "href",
+      "/paper-validation/drafts",
     );
     expect(screen.getByTestId("what-to-do-next")).toBeInTheDocument();
     expect(screen.getByTestId("next-action-reason")).toHaveTextContent("Green-day protection");

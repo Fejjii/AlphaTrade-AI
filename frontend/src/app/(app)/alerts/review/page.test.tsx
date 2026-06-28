@@ -1,9 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SetupAlertReviewPage from "./page";
 
-const { sampleAlert, summary } = vi.hoisted(() => ({
+const { sampleAlert, watchingAlert, summary } = vi.hoisted(() => ({
   sampleAlert: {
     alert_id: "alert-1",
     created_at: "2026-06-28T12:00:00Z",
@@ -23,6 +23,27 @@ const { sampleAlert, summary } = vi.hoisted(() => ({
     review_notes: null,
     reviewed_at: null,
     reviewed_by: null,
+    metadata: { source: "market_watcher" },
+  },
+  watchingAlert: {
+    alert_id: "alert-2",
+    created_at: "2026-06-28T12:00:00Z",
+    symbol: "ETHUSDT",
+    timeframe: "1h",
+    condition: "breakout_retest",
+    direction: "short",
+    confidence: 0.75,
+    reason: "Retest holding.",
+    trigger_level: 3500,
+    invalidation_level: 3600,
+    latest_price: 3490,
+    delivery_channel: "in_app",
+    delivery_status: "disabled",
+    dedupe_key: "dedupe-2",
+    review_status: "watching" as const,
+    review_notes: "Watching closely",
+    reviewed_at: "2026-06-28T12:00:00Z",
+    reviewed_by: "user-1",
     metadata: { source: "market_watcher" },
   },
   summary: {
@@ -60,7 +81,7 @@ vi.mock("@/hooks/useAsyncData", () => ({
       };
     }
     return {
-      data: { items: [sampleAlert], total: 1, limit: 50, offset: 0 },
+      data: { items: [sampleAlert, watchingAlert], total: 2, limit: 50, offset: 0 },
       loading: false,
       error: null,
       reload: vi.fn(),
@@ -77,6 +98,26 @@ vi.mock("@/lib/api", () => ({
         ...sampleAlert,
         review_status: "watching",
       }),
+      createSetupDraft: vi.fn().mockResolvedValue({
+        already_exists: false,
+        draft: {
+          draft_id: "draft-1",
+          source_alert_id: "alert-2",
+          symbol: "ETHUSDT",
+          timeframe: "1h",
+          condition: "breakout_retest",
+          direction: "short",
+          confidence: 0.75,
+          trigger_level: 3500,
+          invalidation_level: 3600,
+          latest_price: 3490,
+          reason: "Retest holding.",
+          risk_mode: "conservative",
+          status: "draft",
+          created_at: "2026-06-28T12:00:00Z",
+          created_by: "user-1",
+        },
+      }),
     },
   },
 }));
@@ -92,18 +133,19 @@ describe("SetupAlertReviewPage Slice 77", () => {
 
   it("renders review page, filters, and alert card fields", () => {
     render(<SetupAlertReviewPage />);
+    const firstCard = screen.getByTestId("setup-alert-alert-1");
 
     expect(screen.getByTestId("setup-alert-review-page")).toBeInTheDocument();
     expect(screen.getByText("Setup Alert Review")).toBeInTheDocument();
     expect(screen.getByTestId("setup-alert-review-filters")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-alert-condition")).toHaveTextContent("Order block");
-    expect(screen.getByTestId("setup-alert-confidence")).toHaveTextContent("88%");
-    expect(screen.getByTestId("setup-alert-reason")).toHaveTextContent(
+    expect(within(firstCard).getByTestId("setup-alert-condition")).toHaveTextContent("Order block");
+    expect(within(firstCard).getByTestId("setup-alert-confidence")).toHaveTextContent("88%");
+    expect(within(firstCard).getByTestId("setup-alert-reason")).toHaveTextContent(
       "Bullish order block retest.",
     );
-    expect(screen.getByTestId("setup-alert-trigger")).toHaveTextContent("65,000");
-    expect(screen.getByTestId("setup-alert-invalidation")).toHaveTextContent("64,000");
-    expect(screen.getByTestId("setup-alert-latest-price")).toHaveTextContent("65,100");
+    expect(within(firstCard).getByTestId("setup-alert-trigger")).toHaveTextContent("65,000");
+    expect(within(firstCard).getByTestId("setup-alert-invalidation")).toHaveTextContent("64,000");
+    expect(within(firstCard).getByTestId("setup-alert-latest-price")).toHaveTextContent("65,100");
     expect(
       screen.getByText(/never sends Telegram messages or places orders/i),
     ).toBeInTheDocument();
@@ -114,11 +156,12 @@ describe("SetupAlertReviewPage Slice 77", () => {
   it("updates review status via save action", async () => {
     const { api } = await import("@/lib/api");
     render(<SetupAlertReviewPage />);
+    const firstCard = screen.getByTestId("setup-alert-alert-1");
 
-    fireEvent.change(screen.getByTestId("setup-alert-review-status"), {
+    fireEvent.change(within(firstCard).getByTestId("setup-alert-review-status"), {
       target: { value: "watching" },
     });
-    fireEvent.click(screen.getByTestId("setup-alert-save"));
+    fireEvent.click(within(firstCard).getByTestId("setup-alert-save"));
 
     await waitFor(() => {
       expect(api.alerts.updateSetupReview).toHaveBeenCalledWith("alert-1", {
@@ -131,8 +174,9 @@ describe("SetupAlertReviewPage Slice 77", () => {
   it("supports quick review actions", async () => {
     const { api } = await import("@/lib/api");
     render(<SetupAlertReviewPage />);
+    const firstCard = screen.getByTestId("setup-alert-alert-1");
 
-    fireEvent.click(screen.getByTestId("quick-action-important"));
+    fireEvent.click(within(firstCard).getByTestId("quick-action-important"));
 
     await waitFor(() => {
       expect(api.alerts.updateSetupReview).toHaveBeenCalledWith("alert-1", {
@@ -140,5 +184,37 @@ describe("SetupAlertReviewPage Slice 77", () => {
         review_notes: null,
       });
     });
+  });
+
+  it("shows create paper draft only for watching or important alerts", () => {
+    render(<SetupAlertReviewPage />);
+
+    expect(within(screen.getByTestId("setup-alert-alert-1")).queryByTestId("setup-alert-create-draft")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("setup-alert-alert-2")).getByTestId("setup-alert-create-draft")).toBeInTheDocument();
+  });
+
+  it("requires confirmation and shows draft-only warning", async () => {
+    const { api } = await import("@/lib/api");
+    render(<SetupAlertReviewPage />);
+    const watchingCard = screen.getByTestId("setup-alert-alert-2");
+
+    fireEvent.click(within(watchingCard).getByTestId("setup-alert-create-draft"));
+    expect(within(watchingCard).getByTestId("setup-alert-draft-warning")).toHaveTextContent(
+      "Draft only. No order. No Telegram. No execution.",
+    );
+
+    fireEvent.change(within(watchingCard).getByTestId("setup-alert-draft-confirm"), {
+      target: { value: "CREATE_PAPER_VALIDATION_DRAFT" },
+    });
+    fireEvent.click(within(watchingCard).getByTestId("setup-alert-draft-submit"));
+
+    await waitFor(() => {
+      expect(api.alerts.createSetupDraft).toHaveBeenCalledWith("alert-2", {
+        confirm: "CREATE_PAPER_VALIDATION_DRAFT",
+        notes: null,
+        risk_mode: "conservative",
+      });
+    });
+    expect(within(watchingCard).getByTestId("setup-alert-draft-link")).toHaveTextContent("View draft");
   });
 });

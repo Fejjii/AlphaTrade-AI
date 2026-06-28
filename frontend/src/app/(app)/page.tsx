@@ -53,6 +53,7 @@ type DashboardData = {
   alertRouting: AlertRoutingSummary | null;
   watcherSummary: MarketWatcherSummary | null;
   setupReviewSummary: Awaited<ReturnType<typeof api.alerts.setupReviewSummary>> | null;
+  paperDraftSummary: Awaited<ReturnType<typeof api.strategies.draftSummary>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -87,6 +88,7 @@ export default function DashboardPage() {
       alertRouting,
       watcherSummary,
       setupReviewSummary,
+      paperDraftSummary,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -95,6 +97,7 @@ export default function DashboardPage() {
       settled(api.alerts.routingSummary(), null),
       settled(api.marketWatcher.summary(), null),
       settled(api.alerts.setupReviewSummary(), null),
+      settled(api.strategies.draftSummary(), null),
     ]);
 
     if (summary) {
@@ -116,6 +119,7 @@ export default function DashboardPage() {
         alertRouting,
         watcherSummary,
         setupReviewSummary,
+        paperDraftSummary,
       };
     }
 
@@ -132,6 +136,7 @@ export default function DashboardPage() {
       alertRouting,
       watcherSummary,
       setupReviewSummary,
+      paperDraftSummary,
     };
   }, []);
 
@@ -163,6 +168,7 @@ export default function DashboardPage() {
   const latestAlerts = summary?.alerts_lessons?.latest_high_priority ?? [];
   const setupReview = data?.setupReviewSummary;
   const latestSetupCondition = setupReview?.highest_confidence_alerts[0]?.condition;
+  const paperDrafts = data?.paperDraftSummary;
 
   const activePaper =
     summary?.active_paper_validations ??
@@ -511,6 +517,30 @@ export default function DashboardPage() {
             </p>
             <Link href="/alerts/review" className="inline-block text-xs text-zinc-400 underline">
               Review setup alerts
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="dashboard-paper-drafts">
+          <CardHeader>
+            <CardTitle className="text-base">Paper Drafts</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-zinc-300">
+            <p>
+              Draft count:{" "}
+              <span className="font-semibold text-zinc-100">{paperDrafts?.total_drafts ?? 0}</span>
+            </p>
+            <p className="text-xs text-zinc-500">
+              Latest condition:{" "}
+              {paperDrafts?.latest_condition
+                ? setupConditionLabel(paperDrafts.latest_condition)
+                : "None yet"}
+            </p>
+            <Link
+              href="/paper-validation/drafts"
+              className="inline-block text-xs text-zinc-400 underline"
+            >
+              View paper drafts
             </Link>
           </CardContent>
         </Card>
