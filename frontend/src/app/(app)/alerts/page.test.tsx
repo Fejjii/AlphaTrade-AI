@@ -43,6 +43,19 @@ vi.mock("@/hooks/useAsyncData", () => ({
           worker_enabled: false,
           worker_running: false,
           readiness: "ready",
+          automatic_telegram_delivery_ready: false,
+          automatic_delivery_blockers: [
+            "Live automatic Telegram delivery is not enabled (AUTOMATIC_TELEGRAM_DELIVERY_ENABLED=false).",
+          ],
+          eligible_pending_telegram_count: 1,
+          already_delivered_telegram_count: 0,
+          next_delivery_preview_count: 1,
+          delivery_limits: {
+            max_preview_limit: 25,
+            default_preview_limit: 5,
+            max_automatic_batch_limit: 10,
+          },
+          dry_run_supported: true,
           warnings: [],
           generated_at: new Date().toISOString(),
         },
@@ -140,6 +153,12 @@ describe("AlertsPage Slice 41", () => {
   it("renders manual telegram delivery panel", () => {
     render(<AlertsPage />);
     expect(screen.getByTestId("telegram-manual-delivery-panel")).toBeInTheDocument();
+  });
+
+  it("renders automatic telegram readiness panel", () => {
+    render(<AlertsPage />);
+    expect(screen.getByTestId("automatic-telegram-readiness-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-telegram-delivery-button")).toBeInTheDocument();
   });
 
   it("renders paper only disclaimer", () => {
