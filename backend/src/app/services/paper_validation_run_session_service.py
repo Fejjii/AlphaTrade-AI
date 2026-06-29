@@ -347,7 +347,7 @@ class PaperValidationRunSessionService:
                 safe_metadata["notes"] = f"{text[:117]}..."
         self._audit.record(
             AuditRecordCreate(
-                request_id=f"paper-validation-run-session-{plan_id}",
+                request_id=f"pv-run-session-{plan_id}",
                 trace_id=str(uuid.uuid4()),
                 user_id=user_id,
                 organization_id=organization_id,

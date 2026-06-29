@@ -533,7 +533,15 @@ def test_rbac_non_owner_blocked(client: tuple[TestClient, sessionmaker[Session]]
     assert blocked_patch.status_code == 403
 
 
-def test_audit_events_emitted(client: tuple[TestClient, sessionmaker[Session]]) -> None:
+def test_audit_request_id_fits_column_limit() -> None:
+    plan_id = uuid.uuid4()
+    request_id = f"pv-run-session-{plan_id}"
+    assert len(request_id) <= 64
+
+
+def test_start_emits_session_audit_events(
+    client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
     test_client, factory = client
     headers = _auth(test_client, "run-session-a@test.example")
     plan_id = _create_planned_plan(test_client, headers, factory)
