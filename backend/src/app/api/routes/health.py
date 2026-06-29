@@ -13,6 +13,7 @@ from fastapi import APIRouter
 
 from app import __version__
 from app.core.dependencies import ProviderRegistryDep, SettingsDep
+from app.core.deploy_info import resolve_git_sha
 from app.providers.base import ProviderHealth
 from app.schemas.health import HealthResponse, ReadinessResponse
 
@@ -29,6 +30,7 @@ async def health(settings: SettingsDep) -> HealthResponse:
         real_trading_enabled=settings.real_trading_enabled,
         must_verify_email=settings.must_verify_email,
         demo_seed_enabled=settings.demo_seed_enabled,
+        git_sha=resolve_git_sha(),
         timestamp=datetime.now(UTC),
     )
 

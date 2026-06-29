@@ -22,6 +22,7 @@ class HealthResponse(BaseModel):
     real_trading_enabled: bool
     must_verify_email: bool
     demo_seed_enabled: bool = False
+    git_sha: str | None = None
     timestamp: datetime
 
 

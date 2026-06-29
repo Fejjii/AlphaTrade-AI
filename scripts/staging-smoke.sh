@@ -67,7 +67,8 @@ import json, sys
 payload = json.loads(sys.argv[1])
 assert payload.get("execution_mode") == "paper", payload
 assert payload.get("real_trading_enabled") is False, payload
-print("  OK: paper mode, real_trading_enabled=false")
+git_sha = payload.get("git_sha")
+print(f"  OK: paper mode, real_trading_enabled=false, git_sha={git_sha or 'null'}")
 PY
 
 echo "2/12 — /health/ready"

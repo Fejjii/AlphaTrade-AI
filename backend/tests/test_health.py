@@ -26,6 +26,29 @@ def test_health_propagates_inbound_request_id(client: TestClient) -> None:
     assert response.headers["X-Request-ID"] == "test-correlation-id"
 
 
+def test_health_includes_git_sha_when_configured(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("GIT_SHA", "d52588eabc1234567890abcdef1234567890abcd")
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["git_sha"] == "d52588eabc1234567890abcdef1234567890abcd"
+
+
+def test_health_git_sha_null_when_unconfigured(client: TestClient, monkeypatch) -> None:
+    for key in ("GIT_SHA", "RENDER_GIT_COMMIT", "SOURCE_VERSION"):
+        monkeypatch.delenv(key, raising=False)
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["git_sha"] is None
+
+
+def test_health_git_sha_from_render_env(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("GIT_SHA", raising=False)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "089739b")
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["git_sha"] == "089739b"
+
+
 def test_readiness_ready_with_mock_providers(client: TestClient) -> None:
     response = client.get("/health/ready")
     assert response.status_code == 200
