@@ -23,6 +23,18 @@ const CHECKLIST_LABELS: Record<string, string> = {
   news_or_funding_checked: "News or funding checked",
 };
 
+const CREATE_PAPER_VALIDATION_RUN_PLAN = "CREATE_PAPER_VALIDATION_RUN_PLAN";
+
+const DEFAULT_PLAN = {
+  validation_window: "intraday",
+  observation_timeframe: "1h",
+  max_duration_minutes: "240",
+  planned_entry_rule: "Wait for price confirmation around trigger level.",
+  planned_invalidation_rule: "Invalid if price closes beyond invalidation level.",
+  planned_success_criteria: "Price moves toward first target area without invalidation.",
+  planned_failure_criteria: "Invalidation level hit or thesis no longer valid.",
+};
+
 function formatLevel(value: number | null | undefined): string {
   if (value == null) return "—";
   return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -33,6 +45,25 @@ export default function PaperValidationCandidateDetailPage() {
   const candidateId = params.candidateId;
   const [busy, setBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [planConfirm, setPlanConfirm] = useState("");
+  const [planning, setPlanning] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [createdPlanId, setCreatedPlanId] = useState<string | null>(null);
+  const [validationWindow, setValidationWindow] = useState(DEFAULT_PLAN.validation_window);
+  const [observationTimeframe, setObservationTimeframe] = useState(
+    DEFAULT_PLAN.observation_timeframe,
+  );
+  const [maxDurationMinutes, setMaxDurationMinutes] = useState(DEFAULT_PLAN.max_duration_minutes);
+  const [plannedEntryRule, setPlannedEntryRule] = useState(DEFAULT_PLAN.planned_entry_rule);
+  const [plannedInvalidationRule, setPlannedInvalidationRule] = useState(
+    DEFAULT_PLAN.planned_invalidation_rule,
+  );
+  const [plannedSuccessCriteria, setPlannedSuccessCriteria] = useState(
+    DEFAULT_PLAN.planned_success_criteria,
+  );
+  const [plannedFailureCriteria, setPlannedFailureCriteria] = useState(
+    DEFAULT_PLAN.planned_failure_criteria,
+  );
 
   const loader = useCallback(
     () => api.strategies.getCandidate(candidateId),
@@ -50,6 +81,29 @@ export default function PaperValidationCandidateDetailPage() {
       setStatusError(err instanceof Error ? err.message : "Failed to update status.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleCreatePlan() {
+    setPlanning(true);
+    setPlanError(null);
+    try {
+      const result = await api.strategies.createRunPlan(candidateId, {
+        confirm: planConfirm,
+        validation_window: validationWindow,
+        observation_timeframe: observationTimeframe,
+        max_duration_minutes: Number(maxDurationMinutes),
+        planned_entry_rule: plannedEntryRule,
+        planned_invalidation_rule: plannedInvalidationRule,
+        planned_success_criteria: plannedSuccessCriteria,
+        planned_failure_criteria: plannedFailureCriteria,
+      });
+      setCreatedPlanId(result.plan.plan_id);
+      setPlanConfirm("");
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : "Failed to create run plan.");
+    } finally {
+      setPlanning(false);
     }
   }
 
@@ -146,6 +200,116 @@ export default function PaperValidationCandidateDetailPage() {
           {statusError ? <p className="text-sm text-red-400">{statusError}</p> : null}
         </CardContent>
       </Card>
+
+      {candidate.candidate_status === "reviewing" ? (
+        <Card data-testid="paper-candidate-create-plan-section">
+          <CardHeader>
+            <CardTitle className="text-base">Create Run Plan</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-zinc-400" data-testid="paper-candidate-plan-safety-copy">
+              Plan only. No run started. No order. No proposal. No approval. No Telegram.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-1 text-sm">
+                <span className="text-zinc-300">Validation window</span>
+                <input
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={validationWindow}
+                  onChange={(event) => setValidationWindow(event.target.value)}
+                  data-testid="paper-candidate-plan-validation-window"
+                />
+              </label>
+              <label className="block space-y-1 text-sm">
+                <span className="text-zinc-300">Observation timeframe</span>
+                <input
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={observationTimeframe}
+                  onChange={(event) => setObservationTimeframe(event.target.value)}
+                  data-testid="paper-candidate-plan-observation-timeframe"
+                />
+              </label>
+              <label className="block space-y-1 text-sm sm:col-span-2">
+                <span className="text-zinc-300">Max duration (minutes)</span>
+                <input
+                  type="number"
+                  min={1}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={maxDurationMinutes}
+                  onChange={(event) => setMaxDurationMinutes(event.target.value)}
+                  data-testid="paper-candidate-plan-max-duration"
+                />
+              </label>
+              <label className="block space-y-1 text-sm sm:col-span-2">
+                <span className="text-zinc-300">Planned entry rule</span>
+                <textarea
+                  className="min-h-20 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={plannedEntryRule}
+                  onChange={(event) => setPlannedEntryRule(event.target.value)}
+                  data-testid="paper-candidate-plan-entry-rule"
+                />
+              </label>
+              <label className="block space-y-1 text-sm sm:col-span-2">
+                <span className="text-zinc-300">Planned invalidation rule</span>
+                <textarea
+                  className="min-h-20 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={plannedInvalidationRule}
+                  onChange={(event) => setPlannedInvalidationRule(event.target.value)}
+                  data-testid="paper-candidate-plan-invalidation-rule"
+                />
+              </label>
+              <label className="block space-y-1 text-sm sm:col-span-2">
+                <span className="text-zinc-300">Planned success criteria</span>
+                <textarea
+                  className="min-h-20 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={plannedSuccessCriteria}
+                  onChange={(event) => setPlannedSuccessCriteria(event.target.value)}
+                  data-testid="paper-candidate-plan-success-criteria"
+                />
+              </label>
+              <label className="block space-y-1 text-sm sm:col-span-2">
+                <span className="text-zinc-300">Planned failure criteria</span>
+                <textarea
+                  className="min-h-20 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  value={plannedFailureCriteria}
+                  onChange={(event) => setPlannedFailureCriteria(event.target.value)}
+                  data-testid="paper-candidate-plan-failure-criteria"
+                />
+              </label>
+            </div>
+            <label className="block space-y-1 text-sm">
+              <span className="text-zinc-300">
+                Type <span className="font-mono text-zinc-100">{CREATE_PAPER_VALIDATION_RUN_PLAN}</span>{" "}
+                to confirm
+              </span>
+              <input
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                value={planConfirm}
+                onChange={(event) => setPlanConfirm(event.target.value)}
+                data-testid="paper-candidate-plan-confirm"
+              />
+            </label>
+            {planError ? <p className="text-sm text-red-400">{planError}</p> : null}
+            {createdPlanId ? (
+              <Link
+                href={`/paper-validation/run-plans/${createdPlanId}`}
+                className="inline-block text-sm text-emerald-400 underline"
+                data-testid="paper-candidate-plan-link"
+              >
+                View run plan
+              </Link>
+            ) : null}
+            <Button
+              type="button"
+              disabled={planning || planConfirm !== CREATE_PAPER_VALIDATION_RUN_PLAN}
+              onClick={() => void handleCreatePlan()}
+              data-testid="paper-candidate-plan-submit"
+            >
+              {planning ? "Creating plan…" : "Create run plan"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

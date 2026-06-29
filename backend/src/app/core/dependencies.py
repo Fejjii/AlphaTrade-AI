@@ -38,6 +38,7 @@ from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_scheduler_service import PaperSchedulerService
 from app.services.paper_validation_candidate_service import PaperValidationCandidateService
 from app.services.paper_validation_draft_service import PaperValidationDraftService
+from app.services.paper_validation_run_plan_service import PaperValidationRunPlanService
 from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
 from app.services.paper_validation_service import PaperValidationService
 from app.services.performance_service import PerformanceService
@@ -291,6 +292,10 @@ def get_paper_validation_candidate_service(session: SessionDep) -> PaperValidati
     return PaperValidationCandidateService(session)
 
 
+def get_paper_validation_run_plan_service(session: SessionDep) -> PaperValidationRunPlanService:
+    return PaperValidationRunPlanService(session)
+
+
 def get_alert_delivery_service(session: SessionDep, settings: SettingsDep) -> AlertDeliveryService:
     return AlertDeliveryService(session, settings)
 
@@ -351,6 +356,9 @@ PaperValidationDraftServiceDep = Annotated[
 ]
 PaperValidationCandidateServiceDep = Annotated[
     PaperValidationCandidateService, Depends(get_paper_validation_candidate_service)
+]
+PaperValidationRunPlanServiceDep = Annotated[
+    PaperValidationRunPlanService, Depends(get_paper_validation_run_plan_service)
 ]
 AlertDeliveryServiceDep = Annotated[AlertDeliveryService, Depends(get_alert_delivery_service)]
 MarketWatcherServiceDep = Annotated[MarketWatcherService, Depends(get_market_watcher_service)]

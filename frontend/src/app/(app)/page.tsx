@@ -55,6 +55,7 @@ type DashboardData = {
   setupReviewSummary: Awaited<ReturnType<typeof api.alerts.setupReviewSummary>> | null;
   paperDraftSummary: Awaited<ReturnType<typeof api.strategies.draftSummary>> | null;
   paperCandidateSummary: Awaited<ReturnType<typeof api.strategies.candidateSummary>> | null;
+  paperRunPlanSummary: Awaited<ReturnType<typeof api.strategies.runPlanSummary>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -91,6 +92,7 @@ export default function DashboardPage() {
       setupReviewSummary,
       paperDraftSummary,
       paperCandidateSummary,
+      paperRunPlanSummary,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -101,6 +103,7 @@ export default function DashboardPage() {
       settled(api.alerts.setupReviewSummary(), null),
       settled(api.strategies.draftSummary(), null),
       settled(api.strategies.candidateSummary(), null),
+      settled(api.strategies.runPlanSummary(), null),
     ]);
 
     if (summary) {
@@ -124,6 +127,7 @@ export default function DashboardPage() {
         setupReviewSummary,
         paperDraftSummary,
         paperCandidateSummary,
+        paperRunPlanSummary,
       };
     }
 
@@ -142,6 +146,7 @@ export default function DashboardPage() {
       setupReviewSummary,
       paperDraftSummary,
       paperCandidateSummary,
+      paperRunPlanSummary,
     };
   }, []);
 
@@ -175,6 +180,7 @@ export default function DashboardPage() {
   const latestSetupCondition = setupReview?.highest_confidence_alerts[0]?.condition;
   const paperDrafts = data?.paperDraftSummary;
   const paperCandidates = data?.paperCandidateSummary;
+  const paperRunPlans = data?.paperRunPlanSummary;
 
   const activePaper =
     summary?.active_paper_validations ??
@@ -585,6 +591,38 @@ export default function DashboardPage() {
               className="inline-block text-xs text-zinc-400 underline"
             >
               View validation queue
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="dashboard-paper-validation-plans">
+          <CardHeader>
+            <CardTitle className="text-base">Paper Validation Plans</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-zinc-300">
+            <p>
+              Planned:{" "}
+              <span className="font-semibold text-zinc-100">
+                {paperRunPlans?.total_planned ?? 0}
+              </span>
+            </p>
+            <p>
+              Needs revision:{" "}
+              <span className="font-semibold text-zinc-100">
+                {paperRunPlans?.total_needs_revision ?? 0}
+              </span>
+            </p>
+            <p className="text-xs text-zinc-500">
+              Latest condition:{" "}
+              {paperRunPlans?.by_condition && Object.keys(paperRunPlans.by_condition).length
+                ? setupConditionLabel(Object.keys(paperRunPlans.by_condition)[0])
+                : "None planned yet"}
+            </p>
+            <Link
+              href="/paper-validation/run-plans"
+              className="inline-block text-xs text-zinc-400 underline"
+            >
+              View run plans
             </Link>
           </CardContent>
         </Card>

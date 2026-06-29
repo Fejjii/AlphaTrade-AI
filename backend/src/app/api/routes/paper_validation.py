@@ -10,6 +10,7 @@ from app.core.dependencies import (
     PaperSchedulerServiceDep,
     PaperValidationCandidateServiceDep,
     PaperValidationDraftServiceDep,
+    PaperValidationRunPlanServiceDep,
     PaperValidationRuntimeServiceDep,
     SessionDep,
 )
@@ -42,6 +43,14 @@ from app.schemas.paper_validation_draft import (
     PaperValidationDraftItem,
     PaperValidationDraftPrepUpdateRequest,
     PaperValidationDraftSummary,
+)
+from app.schemas.paper_validation_run_plan import (
+    PaginatedPaperValidationRunPlans,
+    PaperValidationRunPlanCreateRequest,
+    PaperValidationRunPlanCreateResult,
+    PaperValidationRunPlanItem,
+    PaperValidationRunPlanStatusUpdate,
+    PaperValidationRunPlanSummary,
 )
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
@@ -141,6 +150,12 @@ _PAPER_CANDIDATE_READ = Depends(
 )
 _PAPER_CANDIDATE_WRITE = Depends(
     tenant_rate_limit_dependency("paper-validation:candidates:write", limit=60, window_seconds=3600)
+)
+_PAPER_RUN_PLAN_READ = Depends(
+    tenant_rate_limit_dependency("paper-validation:run-plans:read", limit=120, window_seconds=3600)
+)
+_PAPER_RUN_PLAN_WRITE = Depends(
+    tenant_rate_limit_dependency("paper-validation:run-plans:write", limit=60, window_seconds=3600)
 )
 
 
@@ -297,6 +312,98 @@ async def update_paper_validation_candidate_status(
 ) -> PaperValidationCandidateItem:
     result = service.update_status(
         candidate_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/candidates/{candidate_id}/plan",
+    response_model=PaperValidationRunPlanCreateResult,
+    summary="Create a paper validation run plan from a reviewing candidate (no run)",
+    dependencies=[_PAPER_RUN_PLAN_WRITE],
+)
+async def create_paper_validation_run_plan(
+    candidate_id: uuid.UUID,
+    payload: PaperValidationRunPlanCreateRequest,
+    tenant: TraderDep,
+    service: PaperValidationRunPlanServiceDep,
+    session: SessionDep,
+) -> PaperValidationRunPlanCreateResult:
+    result = service.create_from_candidate(
+        candidate_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/run-plans/summary",
+    response_model=PaperValidationRunPlanSummary,
+    summary="Paper validation run plan summary",
+    dependencies=[_PAPER_RUN_PLAN_READ],
+)
+async def paper_validation_run_plan_summary(
+    tenant: ReaderDep,
+    service: PaperValidationRunPlanServiceDep,
+) -> PaperValidationRunPlanSummary:
+    return service.plan_summary(tenant.organization_id)
+
+
+@router.get(
+    "/run-plans",
+    response_model=PaginatedPaperValidationRunPlans,
+    summary="List paper validation run plans",
+    dependencies=[_PAPER_RUN_PLAN_READ],
+)
+async def list_paper_validation_run_plans(
+    tenant: ReaderDep,
+    service: PaperValidationRunPlanServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedPaperValidationRunPlans:
+    return service.list_plans(
+        tenant.organization_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/run-plans/{plan_id}",
+    response_model=PaperValidationRunPlanItem,
+    summary="Get a paper validation run plan",
+    dependencies=[_PAPER_RUN_PLAN_READ],
+)
+async def get_paper_validation_run_plan(
+    plan_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: PaperValidationRunPlanServiceDep,
+) -> PaperValidationRunPlanItem:
+    return service.get_plan(plan_id, organization_id=tenant.organization_id)
+
+
+@router.patch(
+    "/run-plans/{plan_id}",
+    response_model=PaperValidationRunPlanItem,
+    summary="Update paper validation run plan status (no run)",
+    dependencies=[_PAPER_RUN_PLAN_WRITE],
+)
+async def update_paper_validation_run_plan_status(
+    plan_id: uuid.UUID,
+    payload: PaperValidationRunPlanStatusUpdate,
+    tenant: TraderDep,
+    service: PaperValidationRunPlanServiceDep,
+    session: SessionDep,
+) -> PaperValidationRunPlanItem:
+    result = service.update_status(
+        plan_id,
         payload,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,

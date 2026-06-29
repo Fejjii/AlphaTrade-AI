@@ -804,6 +804,48 @@ class PaperValidationCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class PaperValidationRunPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Non-executable paper validation run plan from a reviewing candidate (Slice 81)."""
+
+    __tablename__ = "paper_validation_run_plans"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_candidates.id"), nullable=False, index=True
+    )
+    draft_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_drafts.id"), nullable=False, index=True
+    )
+    source_alert_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_alerts.id"), nullable=False
+    )
+    symbol: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    condition: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trigger_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    invalidation_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entry_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invalidation_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checklist_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    risk_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="conservative")
+    plan_status: Mapped[str] = mapped_column(String(20), nullable=False, default="planned")
+    validation_window: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    observation_timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    max_duration_minutes: Mapped[int | None] = mapped_column(nullable=True)
+    planned_entry_rule: Mapped[str | None] = mapped_column(Text, nullable=True)
+    planned_invalidation_rule: Mapped[str | None] = mapped_column(Text, nullable=True)
+    planned_success_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+    planned_failure_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
 class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Read-only market watcher observations (Slice 41 — no execution)."""
 

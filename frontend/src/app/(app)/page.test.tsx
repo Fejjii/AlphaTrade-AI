@@ -206,6 +206,14 @@ vi.mock("@/hooks/useAsyncData", () => ({
         by_symbol: { BTCUSDT: 2 },
         latest_created_at: "2026-06-28T12:00:00Z",
       },
+      paperRunPlanSummary: {
+        total_planned: 1,
+        total_needs_revision: 1,
+        total_archived: 0,
+        by_condition: { order_block: 1 },
+        by_symbol: { BTCUSDT: 1 },
+        latest_created_at: "2026-06-28T12:00:00Z",
+      },
     },
     loading: false,
     error: null,
@@ -255,6 +263,14 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("link", { name: "View validation queue" })).toHaveAttribute(
       "href",
       "/paper-validation/candidates",
+    );
+    expect(screen.getByTestId("dashboard-paper-validation-plans")).toHaveTextContent("Planned: 1");
+    expect(screen.getByTestId("dashboard-paper-validation-plans")).toHaveTextContent(
+      "Needs revision: 1",
+    );
+    expect(screen.getByRole("link", { name: "View run plans" })).toHaveAttribute(
+      "href",
+      "/paper-validation/run-plans",
     );
     expect(screen.getByRole("link", { name: "View paper drafts" })).toHaveAttribute(
       "href",

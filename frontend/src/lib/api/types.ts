@@ -1364,6 +1364,52 @@ export interface PaperValidationCandidateQueueResult {
   already_exists: boolean;
 }
 
+export type PaperValidationRunPlanStatus = "planned" | "needs_revision" | "archived";
+
+export interface PaperValidationRunPlanItem {
+  plan_id: string;
+  candidate_id: string;
+  draft_id: string;
+  source_alert_id: string;
+  symbol?: string | null;
+  timeframe?: string | null;
+  condition?: string | null;
+  direction?: string | null;
+  confidence?: number | null;
+  trigger_level?: number | null;
+  invalidation_level?: number | null;
+  latest_price?: number | null;
+  thesis?: string | null;
+  entry_criteria?: string | null;
+  invalidation_criteria?: string | null;
+  risk_notes?: string | null;
+  checklist_snapshot: PaperValidationDraftChecklist;
+  risk_mode: PaperValidationDraftRiskMode;
+  plan_status: PaperValidationRunPlanStatus;
+  validation_window?: string | null;
+  observation_timeframe?: string | null;
+  max_duration_minutes?: number | null;
+  planned_entry_rule?: string | null;
+  planned_invalidation_rule?: string | null;
+  planned_success_criteria?: string | null;
+  planned_failure_criteria?: string | null;
+  created_at: string;
+}
+
+export interface PaperValidationRunPlanSummary {
+  total_planned: number;
+  total_needs_revision: number;
+  total_archived: number;
+  by_condition?: Record<string, number>;
+  by_symbol?: Record<string, number>;
+  latest_created_at?: string | null;
+}
+
+export interface PaperValidationRunPlanCreateResult {
+  plan: PaperValidationRunPlanItem;
+  already_exists: boolean;
+}
+
 export interface SetupAlertDraftCreateResult {
   draft: PaperValidationDraftItem;
   already_exists: boolean;

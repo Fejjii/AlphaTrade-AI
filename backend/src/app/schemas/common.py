@@ -638,6 +638,14 @@ class PaperValidationCandidateStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class PaperValidationRunPlanStatus(StrEnum):
+    """Non-executable paper validation run plan lifecycle (Slice 81 — planning only)."""
+
+    PLANNED = "planned"
+    NEEDS_REVISION = "needs_revision"
+    ARCHIVED = "archived"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 

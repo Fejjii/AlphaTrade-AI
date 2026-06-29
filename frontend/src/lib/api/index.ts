@@ -76,6 +76,9 @@ import type {
   PaperValidationCandidateItem,
   PaperValidationCandidateQueueResult,
   PaperValidationCandidateSummary,
+  PaperValidationRunPlanCreateResult,
+  PaperValidationRunPlanItem,
+  PaperValidationRunPlanSummary,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
@@ -679,6 +682,44 @@ export const api = {
       }),
     candidateSummary: () =>
       apiFetch<PaperValidationCandidateSummary>("/paper-validation/candidates/summary", {
+        auth: true,
+      }),
+    createRunPlan: (
+      candidateId: string,
+      body: {
+        confirm: string;
+        validation_window: string;
+        observation_timeframe: string;
+        max_duration_minutes: number;
+        planned_entry_rule: string;
+        planned_invalidation_rule: string;
+        planned_success_criteria: string;
+        planned_failure_criteria: string;
+      },
+    ) =>
+      apiFetch<PaperValidationRunPlanCreateResult>(
+        `/paper-validation/candidates/${candidateId}/plan`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
+    runPlans: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<{ items: PaperValidationRunPlanItem[]; total: number; limit: number; offset: number }>(
+        "/paper-validation/run-plans",
+        { query: params, auth: true },
+      ),
+    getRunPlan: (id: string) =>
+      apiFetch<PaperValidationRunPlanItem>(`/paper-validation/run-plans/${id}`, { auth: true }),
+    updateRunPlanStatus: (id: string, body: { plan_status: string }) =>
+      apiFetch<PaperValidationRunPlanItem>(`/paper-validation/run-plans/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    runPlanSummary: () =>
+      apiFetch<PaperValidationRunPlanSummary>("/paper-validation/run-plans/summary", {
         auth: true,
       }),
     testability: (id: string) =>
