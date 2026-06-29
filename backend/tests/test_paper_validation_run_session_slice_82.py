@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -40,7 +43,9 @@ from app.schemas.paper_validation_run_plan import CREATE_PAPER_VALIDATION_RUN_PL
 from app.schemas.paper_validation_run_session import START_PAPER_VALIDATION_RUN_CONFIRM
 from app.security.passwords import hash_password
 from app.security.rate_limit import reset_rate_limiter
+from app.services.audit_service import AuditService
 from app.services.paper_alert_service import PaperAlertService
+from app.services.paper_validation_run_session_service import PaperValidationRunSessionService
 
 ORG_A = uuid.UUID("00000000-0000-0000-0000-000000008201")
 ORG_B = uuid.UUID("00000000-0000-0000-0000-000000008202")
@@ -597,3 +602,138 @@ def test_start_does_not_invoke_runtime_or_create_runs(
         assert (
             session.scalar(select(func.count()).select_from(PaperValidationRunSession)) or 0
         ) == 1
+
+
+def test_sanitize_audit_metadata_converts_non_json_types() -> None:
+    nested_uuid = uuid.uuid4()
+    sanitized = PaperValidationRunSessionService._sanitize_audit_metadata(
+        {
+            "session_id": nested_uuid,
+            "started_at": datetime(2026, 6, 29, 12, 0, tzinfo=UTC),
+            "confidence": Decimal("0.85"),
+            "nested": {"plan_id": nested_uuid},
+        }
+    )
+    assert sanitized["session_id"] == str(nested_uuid)
+    assert sanitized["started_at"] == "2026-06-29T12:00:00+00:00"
+    assert sanitized["confidence"] == 0.85
+    assert sanitized["nested"] == {"plan_id": str(nested_uuid)}
+
+
+def test_session_persists_when_started_audit_record_fails(
+    client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    test_client, factory = client
+    headers = _auth(test_client, "run-session-a@test.example")
+    plan_id = _create_planned_plan(test_client, headers, factory)
+    original_record = AuditService.record
+
+    def _record_with_started_failure(self: AuditService, data: object) -> object:
+        from app.schemas.audit import AuditRecordCreate
+
+        assert isinstance(data, AuditRecordCreate)
+        if data.metadata.get("action") == "paper_validation_run_session_started":
+            if self._session is not None:
+                self._session.rollback()
+            return None
+        return original_record(self, data)  # type: ignore[arg-type]
+
+    with patch.object(AuditService, "record", _record_with_started_failure):
+        response = test_client.post(
+            f"/paper-validation/run-plans/{plan_id}/start",
+            headers=headers,
+            json=dict(_START_PAYLOAD),
+        )
+    assert response.status_code == 200, response.text
+    session_id = uuid.UUID(response.json()["session"]["session_id"])
+
+    with factory() as session:
+        row = session.get(PaperValidationRunSession, session_id)
+        assert row is not None
+        assert row.session_status == "running"
+
+
+def test_start_persists_across_fresh_db_connection(tmp_path: Path) -> None:
+    db_path = tmp_path / "slice82_run_session.db"
+    engine = create_engine(
+        f"sqlite+pysqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn: object, _record: object) -> None:
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = Settings(**_BASE)
+
+    with factory() as session:
+        session.add(Organization(id=ORG_A, name="Run Session Org A"))
+        session.add(
+            User(
+                id=USER_A,
+                email="run-session-file@test.example",
+                hashed_password=hash_password("SecurePass123!", settings),
+                email_verified=True,
+            )
+        )
+        session.flush()
+        session.add(Membership(user_id=USER_A, organization_id=ORG_A, role=MembershipRole.OWNER))
+        session.commit()
+
+    app = create_app(settings=settings)
+
+    def _override_session() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_session
+
+    with TestClient(app) as test_client:
+        headers = _auth(test_client, "run-session-file@test.example")
+        plan_id = _create_planned_plan(test_client, headers, factory)
+        first = test_client.post(
+            f"/paper-validation/run-plans/{plan_id}/start",
+            headers=headers,
+            json=dict(_START_PAYLOAD),
+        )
+        assert first.status_code == 200, first.text
+        session_id = first.json()["session"]["session_id"]
+
+        second = test_client.post(
+            f"/paper-validation/run-plans/{plan_id}/start",
+            headers=headers,
+            json={"confirm": START_PAPER_VALIDATION_RUN_CONFIRM, "notes": "Second attempt."},
+        )
+        assert second.status_code == 200
+        assert second.json()["already_active"] is True
+        assert second.json()["session"]["session_id"] == session_id
+
+        listing = test_client.get("/paper-validation/run-sessions", headers=headers)
+        assert listing.status_code == 200
+        assert listing.json()["total"] == 1
+
+        read = test_client.get(f"/paper-validation/run-sessions/{session_id}", headers=headers)
+        assert read.status_code == 200
+
+    fresh_engine = create_engine(
+        f"sqlite+pysqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    fresh_factory = sessionmaker(bind=fresh_engine, expire_on_commit=False)
+    with fresh_factory() as session:
+        count = session.scalar(select(func.count()).select_from(PaperValidationRunSession)) or 0
+        assert count == 1
+        row = session.scalar(
+            select(PaperValidationRunSession).where(
+                PaperValidationRunSession.id == uuid.UUID(session_id)
+            )
+        )
+        assert row is not None
+        assert row.session_status == "running"
+    fresh_engine.dispose()
+    app.dependency_overrides.clear()
+    engine.dispose()

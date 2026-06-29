@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
+from enum import Enum
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationAppError
@@ -113,23 +116,37 @@ class PaperValidationRunSessionService:
             organization_id=organization_id,
             user_id=user_id,
         )
-        # Duplicate protection: the pre-check above handles the common (sequential)
-        # case; the DB partial-unique active-session index is the backstop for a true
-        # concurrent double-submit. We mirror the Slice 81 plan service (plain add +
-        # route commit); a savepoint here is avoided because it does not persist under
-        # the request-scoped session management.
+        # Persist the session row before audit recording. AuditService.record commits
+        # the shared request session and rolls back on failure, which would discard a
+        # pending flushed session row if audit ran first (Postgres staging behavior).
         self._sessions.add(session_row)
+        try:
+            self._session.flush()
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            duplicate = self._sessions.get_active_for_plan(organization_id, plan_id)
+            if duplicate is None:
+                raise
+            self._record_audit(
+                "paper_validation_run_session_already_active",
+                plan_id=plan_id,
+                organization_id=organization_id,
+                user_id=user_id,
+                metadata={"session_id": str(duplicate.id)},
+            )
+            return PaperValidationRunSessionStartResult(
+                session=self._to_item(duplicate),
+                already_active=True,
+            )
 
+        self._session.refresh(session_row)
         self._record_audit(
             "paper_validation_run_session_started",
             plan_id=plan_id,
             organization_id=organization_id,
             user_id=user_id,
-            metadata={
-                "session_id": str(session_row.id),
-                "condition": session_row.condition,
-                "symbol": session_row.symbol,
-            },
+            metadata=self._started_audit_metadata(session_row),
         )
         return PaperValidationRunSessionStartResult(
             session=self._to_item(session_row),
@@ -282,6 +299,38 @@ class PaperValidationRunSessionService:
             created_at=row.created_at,
         )
 
+    @staticmethod
+    def _started_audit_metadata(row: SessionModel) -> dict[str, object]:
+        return {
+            "session_id": str(row.id),
+            "condition": row.condition,
+            "symbol": row.symbol,
+        }
+
+    @classmethod
+    def _sanitize_audit_value(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, dict):
+            return cls._sanitize_audit_metadata(value)  # type: ignore[arg-type]
+        if isinstance(value, list):
+            return [cls._sanitize_audit_value(item) for item in value]
+        if isinstance(value, tuple):
+            return [cls._sanitize_audit_value(item) for item in value]
+        return value
+
+    @classmethod
+    def _sanitize_audit_metadata(cls, metadata: dict[str, object]) -> dict[str, object]:
+        return {key: cls._sanitize_audit_value(value) for key, value in metadata.items()}
+
     def _record_audit(
         self,
         action: str,
@@ -291,7 +340,7 @@ class PaperValidationRunSessionService:
         user_id: uuid.UUID | None,
         metadata: dict[str, object] | None = None,
     ) -> None:
-        safe_metadata: dict[str, object] = {"action": action, **(metadata or {})}
+        safe_metadata = self._sanitize_audit_metadata({"action": action, **(metadata or {})})
         if "notes" in safe_metadata and isinstance(safe_metadata["notes"], str):
             text = safe_metadata["notes"]
             if len(text) > 120:
