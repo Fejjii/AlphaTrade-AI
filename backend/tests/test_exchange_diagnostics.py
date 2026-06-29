@@ -247,7 +247,6 @@ def _record_mirror_failure(
             next(session_gen)
 
 
-
 def test_diagnostics_requires_owner(demo_client: TestClient) -> None:
     response = demo_client.get("/exchange/diagnostics/summary")
     assert response.status_code == 401

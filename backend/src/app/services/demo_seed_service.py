@@ -277,9 +277,7 @@ class DemoSeedService:
                             OrganizationInvitation.invited_by_user_id == user.id
                         )
                     )
-                    self._session.execute(
-                        delete(Membership).where(Membership.user_id == user.id)
-                    )
+                    self._session.execute(delete(Membership).where(Membership.user_id == user.id))
                     for org_id in org_ids:
                         remaining_members = self._session.scalar(
                             select(func.count())
