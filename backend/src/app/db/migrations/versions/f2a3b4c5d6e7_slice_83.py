@@ -58,7 +58,12 @@ def upgrade() -> None:
         sa.Column("success_criteria_notes", sa.Text(), nullable=True),
         sa.Column("failure_criteria_met", sa.String(length=16), nullable=False),
         sa.Column("failure_criteria_notes", sa.Text(), nullable=True),
-        sa.Column("invalidation_hit", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column(
+            "invalidation_hit",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
         sa.Column("invalidation_notes", sa.Text(), nullable=True),
         sa.Column("entry_assessment", sa.String(length=32), nullable=False),
         sa.Column("discipline_assessment", sa.String(length=32), nullable=False),
@@ -89,8 +94,6 @@ def upgrade() -> None:
         "paper_validation_session_results",
         ["organization_id", "run_session_id"],
         unique=True,
-        sqlite_where=sa.text("1 = 1"),
-        postgresql_where=sa.text("true"),
     )
 
 
