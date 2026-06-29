@@ -13,6 +13,8 @@ from app.core.dependencies import (
     PaperValidationRunPlanServiceDep,
     PaperValidationRunSessionServiceDep,
     PaperValidationRuntimeServiceDep,
+    PaperValidationSessionObservationServiceDep,
+    PaperValidationSessionResultServiceDep,
     SessionDep,
 )
 from app.schemas.common import PaperTradeStatus
@@ -59,6 +61,17 @@ from app.schemas.paper_validation_run_session import (
     PaperValidationRunSessionStartRequest,
     PaperValidationRunSessionStartResult,
     PaperValidationRunSessionStatusUpdate,
+)
+from app.schemas.paper_validation_session_observation import (
+    PaginatedPaperValidationSessionObservations,
+    PaperValidationSessionObservationCreateRequest,
+    PaperValidationSessionObservationItem,
+)
+from app.schemas.paper_validation_session_result import (
+    PaperValidationSessionResultCreateRequest,
+    PaperValidationSessionResultCreateResult,
+    PaperValidationSessionResultItem,
+    PaperValidationSessionResultUpdateRequest,
 )
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
@@ -173,6 +186,16 @@ _PAPER_RUN_SESSION_READ = Depends(
 _PAPER_RUN_SESSION_WRITE = Depends(
     tenant_rate_limit_dependency(
         "paper-validation:run-sessions:write", limit=30, window_seconds=3600
+    )
+)
+_PAPER_SESSION_OBSERVATION_WRITE = Depends(
+    tenant_rate_limit_dependency(
+        "paper-validation:session-observations:write", limit=60, window_seconds=3600
+    )
+)
+_PAPER_SESSION_RESULT_WRITE = Depends(
+    tenant_rate_limit_dependency(
+        "paper-validation:session-results:write", limit=30, window_seconds=3600
     )
 )
 
@@ -500,6 +523,104 @@ async def update_paper_validation_run_session_status(
     session: SessionDep,
 ) -> PaperValidationRunSessionItem:
     result = service.update_status(
+        session_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/run-sessions/{session_id}/observations",
+    response_model=PaginatedPaperValidationSessionObservations,
+    summary="List observations for a paper validation run session",
+    dependencies=[_PAPER_RUN_SESSION_READ],
+)
+async def list_paper_validation_session_observations(
+    session_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: PaperValidationSessionObservationServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedPaperValidationSessionObservations:
+    return service.list_observations(
+        session_id,
+        organization_id=tenant.organization_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/run-sessions/{session_id}/observations",
+    response_model=PaperValidationSessionObservationItem,
+    summary="Record a manual observation for a running session (no engine)",
+    dependencies=[_PAPER_SESSION_OBSERVATION_WRITE],
+)
+async def record_paper_validation_session_observation(
+    session_id: uuid.UUID,
+    payload: PaperValidationSessionObservationCreateRequest,
+    tenant: TraderDep,
+    service: PaperValidationSessionObservationServiceDep,
+) -> PaperValidationSessionObservationItem:
+    return service.record_observation(
+        session_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.get(
+    "/run-sessions/{session_id}/result",
+    response_model=PaperValidationSessionResultItem,
+    summary="Get the outcome result for a paper validation run session",
+    dependencies=[_PAPER_RUN_SESSION_READ],
+)
+async def get_paper_validation_session_result(
+    session_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: PaperValidationSessionResultServiceDep,
+) -> PaperValidationSessionResultItem:
+    return service.get_result(session_id, organization_id=tenant.organization_id)
+
+
+@router.post(
+    "/run-sessions/{session_id}/result",
+    response_model=PaperValidationSessionResultCreateResult,
+    summary="Record the outcome for a running session (no engine)",
+    dependencies=[_PAPER_SESSION_RESULT_WRITE],
+)
+async def record_paper_validation_session_result(
+    session_id: uuid.UUID,
+    payload: PaperValidationSessionResultCreateRequest,
+    tenant: OwnerDep,
+    service: PaperValidationSessionResultServiceDep,
+) -> PaperValidationSessionResultCreateResult:
+    return service.record_result(
+        session_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.patch(
+    "/run-sessions/{session_id}/result",
+    response_model=PaperValidationSessionResultItem,
+    summary="Update the outcome for a running session (no engine)",
+    dependencies=[_PAPER_SESSION_RESULT_WRITE],
+)
+async def update_paper_validation_session_result(
+    session_id: uuid.UUID,
+    payload: PaperValidationSessionResultUpdateRequest,
+    tenant: OwnerDep,
+    service: PaperValidationSessionResultServiceDep,
+    session: SessionDep,
+) -> PaperValidationSessionResultItem:
+    result = service.update_result(
         session_id,
         payload,
         organization_id=tenant.organization_id,

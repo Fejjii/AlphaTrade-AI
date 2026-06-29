@@ -42,6 +42,10 @@ from app.services.paper_validation_run_plan_service import PaperValidationRunPla
 from app.services.paper_validation_run_session_service import PaperValidationRunSessionService
 from app.services.paper_validation_runtime_service import PaperValidationRuntimeService
 from app.services.paper_validation_service import PaperValidationService
+from app.services.paper_validation_session_observation_service import (
+    PaperValidationSessionObservationService,
+)
+from app.services.paper_validation_session_result_service import PaperValidationSessionResultService
 from app.services.performance_service import PerformanceService
 from app.services.position_service import PositionService
 from app.services.position_sizing_service import PositionSizingService
@@ -303,6 +307,18 @@ def get_paper_validation_run_session_service(
     return PaperValidationRunSessionService(session)
 
 
+def get_paper_validation_session_observation_service(
+    session: SessionDep,
+) -> PaperValidationSessionObservationService:
+    return PaperValidationSessionObservationService(session)
+
+
+def get_paper_validation_session_result_service(
+    session: SessionDep,
+) -> PaperValidationSessionResultService:
+    return PaperValidationSessionResultService(session)
+
+
 def get_alert_delivery_service(session: SessionDep, settings: SettingsDep) -> AlertDeliveryService:
     return AlertDeliveryService(session, settings)
 
@@ -369,6 +385,13 @@ PaperValidationRunPlanServiceDep = Annotated[
 ]
 PaperValidationRunSessionServiceDep = Annotated[
     PaperValidationRunSessionService, Depends(get_paper_validation_run_session_service)
+]
+PaperValidationSessionObservationServiceDep = Annotated[
+    PaperValidationSessionObservationService,
+    Depends(get_paper_validation_session_observation_service),
+]
+PaperValidationSessionResultServiceDep = Annotated[
+    PaperValidationSessionResultService, Depends(get_paper_validation_session_result_service)
 ]
 AlertDeliveryServiceDep = Annotated[AlertDeliveryService, Depends(get_alert_delivery_service)]
 MarketWatcherServiceDep = Annotated[MarketWatcherService, Depends(get_market_watcher_service)]

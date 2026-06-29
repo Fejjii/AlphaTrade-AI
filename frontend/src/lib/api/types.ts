@@ -1438,6 +1438,75 @@ export interface PaperValidationRunSessionStartResult {
   already_active: boolean;
 }
 
+export type PaperValidationObservationKind =
+  | "approached_trigger"
+  | "hit_trigger"
+  | "hit_invalidation"
+  | "missed_entry"
+  | "price_moved_without_entry"
+  | "price_update"
+  | "general_note";
+
+export type PaperValidationOutcome =
+  | "success"
+  | "failure"
+  | "invalidated"
+  | "missed_entry"
+  | "no_trade"
+  | "inconclusive";
+
+export type PaperValidationCriteriaMet = "met" | "not_met" | "partial" | "unknown";
+
+export type PaperValidationEntryAssessment =
+  | "entered_as_planned"
+  | "missed_entry"
+  | "price_moved_without_entry"
+  | "no_entry";
+
+export type PaperValidationDisciplineAssessment =
+  | "disciplined"
+  | "should_have_waited"
+  | "should_have_entered"
+  | "should_have_avoided";
+
+export interface PaperValidationSessionObservationItem {
+  observation_id: string;
+  run_session_id: string;
+  run_plan_id: string;
+  observation_kind: PaperValidationObservationKind;
+  observed_price?: number | null;
+  observed_at?: string | null;
+  note?: string | null;
+  created_at: string;
+}
+
+export interface PaperValidationSessionResultItem {
+  result_id: string;
+  run_session_id: string;
+  run_plan_id: string;
+  outcome: PaperValidationOutcome;
+  success_criteria_met: PaperValidationCriteriaMet;
+  success_criteria_notes?: string | null;
+  failure_criteria_met: PaperValidationCriteriaMet;
+  failure_criteria_notes?: string | null;
+  invalidation_hit: boolean;
+  invalidation_notes?: string | null;
+  entry_assessment: PaperValidationEntryAssessment;
+  discipline_assessment: PaperValidationDisciplineAssessment;
+  behaved_as_expected?: boolean | null;
+  lessons?: string | null;
+  recorded_at: string;
+  created_at: string;
+}
+
+export interface PaperValidationSessionResultCreateResult {
+  result: PaperValidationSessionResultItem;
+  already_exists: boolean;
+}
+
+export const RECORD_PAPER_VALIDATION_OBSERVATION = "RECORD_PAPER_VALIDATION_OBSERVATION";
+export const RECORD_PAPER_VALIDATION_OUTCOME = "RECORD_PAPER_VALIDATION_OUTCOME";
+
 export interface SetupAlertDraftCreateResult {
   draft: PaperValidationDraftItem;
   already_exists: boolean;

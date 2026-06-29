@@ -654,6 +654,56 @@ class PaperValidationRunSessionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class PaperValidationObservationKind(StrEnum):
+    """Manual observation kinds for a paper validation run session (Slice 83)."""
+
+    APPROACHED_TRIGGER = "approached_trigger"
+    HIT_TRIGGER = "hit_trigger"
+    HIT_INVALIDATION = "hit_invalidation"
+    MISSED_ENTRY = "missed_entry"
+    PRICE_MOVED_WITHOUT_ENTRY = "price_moved_without_entry"
+    PRICE_UPDATE = "price_update"
+    GENERAL_NOTE = "general_note"
+
+
+class PaperValidationOutcome(StrEnum):
+    """Final outcome classification for a paper validation run session (Slice 83)."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+    INVALIDATED = "invalidated"
+    MISSED_ENTRY = "missed_entry"
+    NO_TRADE = "no_trade"
+    INCONCLUSIVE = "inconclusive"
+
+
+class PaperValidationCriteriaMet(StrEnum):
+    """Whether planned success/failure criteria were met (Slice 83)."""
+
+    MET = "met"
+    NOT_MET = "not_met"
+    PARTIAL = "partial"
+    UNKNOWN = "unknown"
+
+
+class PaperValidationEntryAssessment(StrEnum):
+    """Entry discipline assessment for a paper validation run session (Slice 83)."""
+
+    ENTERED_AS_PLANNED = "entered_as_planned"
+    MISSED_ENTRY = "missed_entry"
+    PRICE_MOVED_WITHOUT_ENTRY = "price_moved_without_entry"
+    NO_ENTRY = "no_entry"
+
+
+class PaperValidationDisciplineAssessment(StrEnum):
+    """Discipline assessment for a paper validation run session (Slice 83)."""
+
+    DISCIPLINED = "disciplined"
+    SHOULD_HAVE_WAITED = "should_have_waited"
+    SHOULD_HAVE_ENTERED = "should_have_entered"
+    SHOULD_HAVE_AVOIDED = "should_have_avoided"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 

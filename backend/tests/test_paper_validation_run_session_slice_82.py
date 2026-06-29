@@ -41,6 +41,7 @@ from app.schemas.paper_validation_candidate import QUEUE_PAPER_VALIDATION_CANDID
 from app.schemas.paper_validation_draft import CREATE_PAPER_VALIDATION_DRAFT_CONFIRM
 from app.schemas.paper_validation_run_plan import CREATE_PAPER_VALIDATION_RUN_PLAN_CONFIRM
 from app.schemas.paper_validation_run_session import START_PAPER_VALIDATION_RUN_CONFIRM
+from app.schemas.paper_validation_session_result import RECORD_PAPER_VALIDATION_OUTCOME_CONFIRM
 from app.security.passwords import hash_password
 from app.security.rate_limit import reset_rate_limiter
 from app.services.audit_service import AuditService
@@ -101,6 +102,18 @@ _PLAN_PAYLOAD = {
 _START_PAYLOAD = {
     "confirm": START_PAPER_VALIDATION_RUN_CONFIRM,
     "notes": "Manual observation start.",
+}
+
+_RESULT_PAYLOAD = {
+    "confirm": RECORD_PAPER_VALIDATION_OUTCOME_CONFIRM,
+    "outcome": "success",
+    "success_criteria_met": "met",
+    "failure_criteria_met": "not_met",
+    "invalidation_hit": False,
+    "entry_assessment": "no_entry",
+    "discipline_assessment": "disciplined",
+    "behaved_as_expected": True,
+    "lessons": "Waited for confirmation.",
 }
 
 
@@ -256,6 +269,30 @@ def _create_planned_plan(
     return plan.json()["plan"]["plan_id"]
 
 
+def _start_session(
+    client: TestClient,
+    headers: dict[str, str],
+    factory: sessionmaker[Session],
+) -> str:
+    plan_id = _create_planned_plan(client, headers, factory)
+    created = client.post(
+        f"/paper-validation/run-plans/{plan_id}/start",
+        headers=headers,
+        json=dict(_START_PAYLOAD),
+    )
+    assert created.status_code == 200, created.text
+    return created.json()["session"]["session_id"]
+
+
+def _record_session_result(client: TestClient, headers: dict[str, str], session_id: str) -> None:
+    response = client.post(
+        f"/paper-validation/run-sessions/{session_id}/result",
+        headers=headers,
+        json=dict(_RESULT_PAYLOAD),
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_exact_confirmation_required(
     client: tuple[TestClient, sessionmaker[Session]],
 ) -> None:
@@ -393,14 +430,17 @@ def test_status_update_complete_and_cancel(
     test_client, factory = client
     headers = _auth(test_client, "run-session-a@test.example")
 
-    # complete
-    plan_id = _create_planned_plan(test_client, headers, factory)
-    created = test_client.post(
-        f"/paper-validation/run-plans/{plan_id}/start",
+    # complete requires outcome result
+    session_id = _start_session(test_client, headers, factory)
+    blocked = test_client.patch(
+        f"/paper-validation/run-sessions/{session_id}",
         headers=headers,
-        json=dict(_START_PAYLOAD),
+        json={"session_status": "completed"},
     )
-    session_id = created.json()["session"]["session_id"]
+    assert blocked.status_code == 422
+    assert "outcome" in blocked.json()["error"]["message"].lower()
+
+    _record_session_result(test_client, headers, session_id)
     completed = test_client.patch(
         f"/paper-validation/run-sessions/{session_id}",
         headers=headers,
@@ -412,14 +452,8 @@ def test_status_update_complete_and_cancel(
     fresh = test_client.get(f"/paper-validation/run-sessions/{session_id}", headers=headers)
     assert fresh.json()["session_status"] == "completed"
 
-    # cancel a second session
-    plan_id_2 = _create_planned_plan(test_client, headers, factory)
-    created_2 = test_client.post(
-        f"/paper-validation/run-plans/{plan_id_2}/start",
-        headers=headers,
-        json=dict(_START_PAYLOAD),
-    )
-    session_id_2 = created_2.json()["session"]["session_id"]
+    # cancel does not require a result
+    session_id_2 = _start_session(test_client, headers, factory)
     cancelled = test_client.patch(
         f"/paper-validation/run-sessions/{session_id_2}",
         headers=headers,
@@ -460,6 +494,7 @@ def test_completing_after_terminal_rejected(
         json=dict(_START_PAYLOAD),
     )
     session_id = created.json()["session"]["session_id"]
+    _record_session_result(test_client, headers, session_id)
     test_client.patch(
         f"/paper-validation/run-sessions/{session_id}",
         headers=headers,
@@ -485,6 +520,7 @@ def test_can_restart_after_session_completed(
         json=dict(_START_PAYLOAD),
     )
     session_id = first.json()["session"]["session_id"]
+    _record_session_result(test_client, headers, session_id)
     test_client.patch(
         f"/paper-validation/run-sessions/{session_id}",
         headers=headers,

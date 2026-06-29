@@ -21,6 +21,7 @@ from app.db.models import PaperValidationRunPlan as PlanModel
 from app.db.models import PaperValidationRunSession as SessionModel
 from app.repositories.paper_validation_run_plan import PaperValidationRunPlanRepository
 from app.repositories.paper_validation_run_session import PaperValidationRunSessionRepository
+from app.repositories.paper_validation_session_result import PaperValidationSessionResultRepository
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
@@ -49,6 +50,7 @@ class PaperValidationRunSessionService:
         self._session = session
         self._plans = PaperValidationRunPlanRepository(session)
         self._sessions = PaperValidationRunSessionRepository(session)
+        self._results = PaperValidationSessionResultRepository(session)
         self._audit = AuditService(session)
 
     def start_from_plan(
@@ -224,6 +226,21 @@ class PaperValidationRunSessionService:
                     "session_status": row.session_status,
                 },
             )
+
+        if payload.session_status == PaperValidationRunSessionStatus.COMPLETED:
+            result = self._results.get_for_session(organization_id, session_id)
+            if result is None:
+                self._record_audit(
+                    "paper_validation_run_session_blocked",
+                    plan_id=row.run_plan_id,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    metadata={"reason": "outcome_required", "session_id": str(session_id)},
+                )
+                raise ValidationAppError(
+                    "A session outcome must be recorded before marking the session completed.",
+                    details={"session_id": str(session_id), "required": "session_result"},
+                )
 
         row.session_status = payload.session_status.value
         row.ended_at = datetime.now(UTC)

@@ -81,6 +81,9 @@ import type {
   PaperValidationRunPlanSummary,
   PaperValidationRunSessionItem,
   PaperValidationRunSessionStartResult,
+  PaperValidationSessionObservationItem,
+  PaperValidationSessionResultCreateResult,
+  PaperValidationSessionResultItem,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
@@ -750,6 +753,60 @@ export const api = {
         body: JSON.stringify(body),
         auth: true,
       }),
+    sessionObservations: (sessionId: string, params?: { limit?: number; offset?: number }) =>
+      apiFetch<{
+        items: PaperValidationSessionObservationItem[];
+        total: number;
+        limit: number;
+        offset: number;
+      }>(`/paper-validation/run-sessions/${sessionId}/observations`, {
+        query: params,
+        auth: true,
+      }),
+    recordObservation: (
+      sessionId: string,
+      body: {
+        confirm: string;
+        observation_kind: string;
+        observed_price?: number | null;
+        observed_at?: string | null;
+        note?: string | null;
+      },
+    ) =>
+      apiFetch<PaperValidationSessionObservationItem>(
+        `/paper-validation/run-sessions/${sessionId}/observations`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
+    getSessionResult: (sessionId: string) =>
+      apiFetch<PaperValidationSessionResultItem>(
+        `/paper-validation/run-sessions/${sessionId}/result`,
+        { auth: true },
+      ),
+    recordSessionResult: (
+      sessionId: string,
+      body: Record<string, unknown> & { confirm: string },
+    ) =>
+      apiFetch<PaperValidationSessionResultCreateResult>(
+        `/paper-validation/run-sessions/${sessionId}/result`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
+    updateSessionResult: (sessionId: string, body: Record<string, unknown>) =>
+      apiFetch<PaperValidationSessionResultItem>(
+        `/paper-validation/run-sessions/${sessionId}/result`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
     testability: (id: string) =>
       apiFetch<StrategyTestability>(`/strategies/${id}/testability`, { auth: true }),
     patchStructuredRules: (id: string, body: Partial<StructuredRules>) =>

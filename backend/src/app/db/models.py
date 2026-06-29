@@ -886,6 +886,62 @@ class PaperValidationRunSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PaperValidationSessionObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Manual observation log for a paper validation run session (Slice 83).
+
+    Append-only record. No FK to ``paper_validation_runs`` or engine paths.
+    """
+
+    __tablename__ = "paper_validation_session_observations"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    run_session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_run_sessions.id"), nullable=False, index=True
+    )
+    run_plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_run_plans.id"), nullable=False
+    )
+    observation_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    observed_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class PaperValidationSessionResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Final outcome for a paper validation run session (Slice 83 — one per session).
+
+    Record-only classification. No FK to ``paper_validation_runs`` or engine paths.
+    """
+
+    __tablename__ = "paper_validation_session_results"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    run_session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_run_sessions.id"), nullable=False, index=True
+    )
+    run_plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_run_plans.id"), nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)
+    success_criteria_met: Mapped[str] = mapped_column(String(16), nullable=False)
+    success_criteria_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_criteria_met: Mapped[str] = mapped_column(String(16), nullable=False)
+    failure_criteria_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invalidation_hit: Mapped[bool] = mapped_column(nullable=False, default=False)
+    invalidation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entry_assessment: Mapped[str] = mapped_column(String(32), nullable=False)
+    discipline_assessment: Mapped[str] = mapped_column(String(32), nullable=False)
+    behaved_as_expected: Mapped[bool | None] = mapped_column(nullable=True)
+    lessons: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Read-only market watcher observations (Slice 41 — no execution)."""
 
