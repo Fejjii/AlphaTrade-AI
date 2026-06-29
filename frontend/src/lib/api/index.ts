@@ -79,6 +79,8 @@ import type {
   PaperValidationRunPlanCreateResult,
   PaperValidationRunPlanItem,
   PaperValidationRunPlanSummary,
+  PaperValidationRunSessionItem,
+  PaperValidationRunSessionStartResult,
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
@@ -720,6 +722,32 @@ export const api = {
       }),
     runPlanSummary: () =>
       apiFetch<PaperValidationRunPlanSummary>("/paper-validation/run-plans/summary", {
+        auth: true,
+      }),
+    startRunSession: (planId: string, body: { confirm: string; notes?: string | null }) =>
+      apiFetch<PaperValidationRunSessionStartResult>(
+        `/paper-validation/run-plans/${planId}/start`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
+    runSessions: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<{
+        items: PaperValidationRunSessionItem[];
+        total: number;
+        limit: number;
+        offset: number;
+      }>("/paper-validation/run-sessions", { query: params, auth: true }),
+    getRunSession: (id: string) =>
+      apiFetch<PaperValidationRunSessionItem>(`/paper-validation/run-sessions/${id}`, {
+        auth: true,
+      }),
+    updateRunSessionStatus: (id: string, body: { session_status: string }) =>
+      apiFetch<PaperValidationRunSessionItem>(`/paper-validation/run-sessions/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
         auth: true,
       }),
     testability: (id: string) =>

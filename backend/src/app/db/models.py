@@ -846,6 +846,46 @@ class PaperValidationRunPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class PaperValidationRunSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Manual paper validation run session from a planned run plan (Slice 82).
+
+    Record-only observation marker. Intentionally carries no strategy, engine,
+    order, exchange, proposal, or approval fields and no FK to ``paper_validation_runs``,
+    so it can never be picked up by the runtime engine or scheduler.
+    """
+
+    __tablename__ = "paper_validation_run_sessions"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    run_plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_run_plans.id"), nullable=False, index=True
+    )
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_candidates.id"), nullable=False
+    )
+    draft_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_drafts.id"), nullable=False
+    )
+    source_alert_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_alerts.id"), nullable=False
+    )
+    symbol: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    condition: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    risk_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="conservative")
+    validation_window: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    observation_timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    max_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    session_status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class MarketWatcherObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Read-only market watcher observations (Slice 41 — no execution)."""
 

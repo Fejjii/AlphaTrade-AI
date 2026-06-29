@@ -646,6 +646,14 @@ class PaperValidationRunPlanStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class PaperValidationRunSessionStatus(StrEnum):
+    """Manual paper validation run session lifecycle (Slice 82 — record only, no engine)."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class PaperObservabilityEventType(StrEnum):
     """Structured paper validation observability events (Slice 40)."""
 

@@ -1410,6 +1410,34 @@ export interface PaperValidationRunPlanCreateResult {
   already_exists: boolean;
 }
 
+export type PaperValidationRunSessionStatus = "running" | "completed" | "cancelled";
+
+export interface PaperValidationRunSessionItem {
+  session_id: string;
+  run_plan_id: string;
+  candidate_id: string;
+  draft_id: string;
+  source_alert_id: string;
+  symbol?: string | null;
+  timeframe?: string | null;
+  condition?: string | null;
+  direction?: string | null;
+  risk_mode: PaperValidationDraftRiskMode;
+  validation_window?: string | null;
+  observation_timeframe?: string | null;
+  max_duration_minutes?: number | null;
+  session_status: PaperValidationRunSessionStatus;
+  notes?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  created_at: string;
+}
+
+export interface PaperValidationRunSessionStartResult {
+  session: PaperValidationRunSessionItem;
+  already_active: boolean;
+}
+
 export interface SetupAlertDraftCreateResult {
   draft: PaperValidationDraftItem;
   already_exists: boolean;

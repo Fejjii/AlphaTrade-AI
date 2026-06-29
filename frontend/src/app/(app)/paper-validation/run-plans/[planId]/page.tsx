@@ -23,6 +23,8 @@ const CHECKLIST_LABELS: Record<string, string> = {
   news_or_funding_checked: "News or funding checked",
 };
 
+const START_PAPER_VALIDATION_RUN = "START_PAPER_VALIDATION_RUN";
+
 function formatLevel(value: number | null | undefined): string {
   if (value == null) return "—";
   return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -33,6 +35,10 @@ export default function PaperValidationRunPlanDetailPage() {
   const planId = params.planId;
   const [busy, setBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [startConfirm, setStartConfirm] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [startedSessionId, setStartedSessionId] = useState<string | null>(null);
 
   const loader = useCallback(() => api.strategies.getRunPlan(planId), [planId]);
   const { data: plan, loading, error, reload } = useAsyncData(loader, [planId]);
@@ -47,6 +53,20 @@ export default function PaperValidationRunPlanDetailPage() {
       setStatusError(err instanceof Error ? err.message : "Failed to update status.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleStartSession() {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const result = await api.strategies.startRunSession(planId, { confirm: startConfirm });
+      setStartedSessionId(result.session.session_id);
+      setStartConfirm("");
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "Failed to start run session.");
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -149,6 +169,51 @@ export default function PaperValidationRunPlanDetailPage() {
           {statusError ? <p className="text-sm text-red-400">{statusError}</p> : null}
         </CardContent>
       </Card>
+
+      {plan.plan_status === "planned" ? (
+        <Card data-testid="paper-run-plan-start-section">
+          <CardHeader>
+            <CardTitle className="text-base">Start paper validation run</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-zinc-400" data-testid="paper-run-session-safety-copy">
+              Record only. No live run. No order. No exchange. No proposal. No approval. No Telegram.
+              No automation.
+            </p>
+            <label className="block space-y-1 text-sm">
+              <span className="text-zinc-300">
+                Type{" "}
+                <span className="font-mono text-zinc-100">{START_PAPER_VALIDATION_RUN}</span> to
+                confirm
+              </span>
+              <input
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                value={startConfirm}
+                onChange={(event) => setStartConfirm(event.target.value)}
+                data-testid="paper-run-session-confirm"
+              />
+            </label>
+            {startError ? <p className="text-sm text-red-400">{startError}</p> : null}
+            {startedSessionId ? (
+              <Link
+                href={`/paper-validation/run-sessions/${startedSessionId}`}
+                className="inline-block text-sm text-emerald-400 underline"
+                data-testid="paper-run-session-link"
+              >
+                View run session
+              </Link>
+            ) : null}
+            <Button
+              type="button"
+              disabled={starting || startConfirm !== START_PAPER_VALIDATION_RUN}
+              onClick={() => void handleStartSession()}
+              data-testid="paper-run-session-submit"
+            >
+              {starting ? "Starting run…" : "Start run session"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

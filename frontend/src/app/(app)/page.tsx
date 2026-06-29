@@ -56,6 +56,7 @@ type DashboardData = {
   paperDraftSummary: Awaited<ReturnType<typeof api.strategies.draftSummary>> | null;
   paperCandidateSummary: Awaited<ReturnType<typeof api.strategies.candidateSummary>> | null;
   paperRunPlanSummary: Awaited<ReturnType<typeof api.strategies.runPlanSummary>> | null;
+  paperRunSessions: Awaited<ReturnType<typeof api.strategies.runSessions>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -93,6 +94,7 @@ export default function DashboardPage() {
       paperDraftSummary,
       paperCandidateSummary,
       paperRunPlanSummary,
+      paperRunSessions,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -104,6 +106,7 @@ export default function DashboardPage() {
       settled(api.strategies.draftSummary(), null),
       settled(api.strategies.candidateSummary(), null),
       settled(api.strategies.runPlanSummary(), null),
+      settled(api.strategies.runSessions({ limit: 50 }), null),
     ]);
 
     if (summary) {
@@ -128,6 +131,7 @@ export default function DashboardPage() {
         paperDraftSummary,
         paperCandidateSummary,
         paperRunPlanSummary,
+        paperRunSessions,
       };
     }
 
@@ -147,6 +151,7 @@ export default function DashboardPage() {
       paperDraftSummary,
       paperCandidateSummary,
       paperRunPlanSummary,
+      paperRunSessions,
     };
   }, []);
 
@@ -181,6 +186,9 @@ export default function DashboardPage() {
   const paperDrafts = data?.paperDraftSummary;
   const paperCandidates = data?.paperCandidateSummary;
   const paperRunPlans = data?.paperRunPlanSummary;
+  const paperRunSessions = data?.paperRunSessions;
+  const runningSessions =
+    paperRunSessions?.items.filter((session) => session.session_status === "running").length ?? 0;
 
   const activePaper =
     summary?.active_paper_validations ??
@@ -623,6 +631,31 @@ export default function DashboardPage() {
               className="inline-block text-xs text-zinc-400 underline"
             >
               View run plans
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="dashboard-paper-validation-sessions">
+          <CardHeader>
+            <CardTitle className="text-base">Paper Validation Sessions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-zinc-300">
+            <p>
+              Running:{" "}
+              <span className="font-semibold text-zinc-100">{runningSessions}</span>
+            </p>
+            <p>
+              Total:{" "}
+              <span className="font-semibold text-zinc-100">{paperRunSessions?.total ?? 0}</span>
+            </p>
+            <p className="text-xs text-zinc-500">
+              Record only — no live run, no orders, no Telegram.
+            </p>
+            <Link
+              href="/paper-validation/run-sessions"
+              className="inline-block text-xs text-zinc-400 underline"
+            >
+              View run sessions
             </Link>
           </CardContent>
         </Card>

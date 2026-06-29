@@ -11,6 +11,7 @@ from app.core.dependencies import (
     PaperValidationCandidateServiceDep,
     PaperValidationDraftServiceDep,
     PaperValidationRunPlanServiceDep,
+    PaperValidationRunSessionServiceDep,
     PaperValidationRuntimeServiceDep,
     SessionDep,
 )
@@ -51,6 +52,13 @@ from app.schemas.paper_validation_run_plan import (
     PaperValidationRunPlanItem,
     PaperValidationRunPlanStatusUpdate,
     PaperValidationRunPlanSummary,
+)
+from app.schemas.paper_validation_run_session import (
+    PaginatedPaperValidationRunSessions,
+    PaperValidationRunSessionItem,
+    PaperValidationRunSessionStartRequest,
+    PaperValidationRunSessionStartResult,
+    PaperValidationRunSessionStatusUpdate,
 )
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep, TraderDep
@@ -156,6 +164,16 @@ _PAPER_RUN_PLAN_READ = Depends(
 )
 _PAPER_RUN_PLAN_WRITE = Depends(
     tenant_rate_limit_dependency("paper-validation:run-plans:write", limit=60, window_seconds=3600)
+)
+_PAPER_RUN_SESSION_READ = Depends(
+    tenant_rate_limit_dependency(
+        "paper-validation:run-sessions:read", limit=120, window_seconds=3600
+    )
+)
+_PAPER_RUN_SESSION_WRITE = Depends(
+    tenant_rate_limit_dependency(
+        "paper-validation:run-sessions:write", limit=30, window_seconds=3600
+    )
 )
 
 
@@ -404,6 +422,85 @@ async def update_paper_validation_run_plan_status(
 ) -> PaperValidationRunPlanItem:
     result = service.update_status(
         plan_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/run-plans/{plan_id}/start",
+    response_model=PaperValidationRunSessionStartResult,
+    summary="Manually start a paper validation run session from a planned run plan (no engine)",
+    dependencies=[_PAPER_RUN_SESSION_WRITE],
+)
+async def start_paper_validation_run_session(
+    plan_id: uuid.UUID,
+    payload: PaperValidationRunSessionStartRequest,
+    tenant: OwnerDep,
+    service: PaperValidationRunSessionServiceDep,
+    session: SessionDep,
+) -> PaperValidationRunSessionStartResult:
+    result = service.start_from_plan(
+        plan_id,
+        payload,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/run-sessions",
+    response_model=PaginatedPaperValidationRunSessions,
+    summary="List paper validation run sessions",
+    dependencies=[_PAPER_RUN_SESSION_READ],
+)
+async def list_paper_validation_run_sessions(
+    tenant: ReaderDep,
+    service: PaperValidationRunSessionServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedPaperValidationRunSessions:
+    return service.list_sessions(
+        tenant.organization_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/run-sessions/{session_id}",
+    response_model=PaperValidationRunSessionItem,
+    summary="Get a paper validation run session",
+    dependencies=[_PAPER_RUN_SESSION_READ],
+)
+async def get_paper_validation_run_session(
+    session_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: PaperValidationRunSessionServiceDep,
+) -> PaperValidationRunSessionItem:
+    return service.get_session(session_id, organization_id=tenant.organization_id)
+
+
+@router.patch(
+    "/run-sessions/{session_id}",
+    response_model=PaperValidationRunSessionItem,
+    summary="Complete or cancel a paper validation run session (no engine)",
+    dependencies=[_PAPER_RUN_SESSION_WRITE],
+)
+async def update_paper_validation_run_session_status(
+    session_id: uuid.UUID,
+    payload: PaperValidationRunSessionStatusUpdate,
+    tenant: OwnerDep,
+    service: PaperValidationRunSessionServiceDep,
+    session: SessionDep,
+) -> PaperValidationRunSessionItem:
+    result = service.update_status(
+        session_id,
         payload,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,

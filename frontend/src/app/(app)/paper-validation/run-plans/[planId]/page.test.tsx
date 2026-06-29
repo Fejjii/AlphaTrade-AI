@@ -59,6 +59,7 @@ vi.mock("@/lib/api", () => ({
     strategies: {
       getRunPlan: vi.fn(),
       updateRunPlanStatus: vi.fn(),
+      startRunSession: vi.fn(),
     },
   },
 }));
@@ -76,7 +77,17 @@ describe("PaperValidationRunPlanDetailPage Slice 81", () => {
     expect(screen.getByTestId("paper-run-plan-safety-copy")).toHaveTextContent(/no run started/i);
     expect(screen.getByText("Entry rule")).toBeInTheDocument();
     expect(screen.getByTestId("paper-run-plan-checklist")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /start run/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /deliver telegram/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the planned-gated start run session section with record-only safety copy", () => {
+    render(<PaperValidationRunPlanDetailPage />);
+
+    expect(screen.getByTestId("paper-run-plan-start-section")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-session-safety-copy")).toHaveTextContent(/record only/i);
+    expect(screen.getByTestId("paper-run-session-safety-copy")).toHaveTextContent(/no live run/i);
+    // Submit stays disabled until the exact confirmation phrase is typed.
+    expect(screen.getByTestId("paper-run-session-submit")).toBeDisabled();
   });
 });
