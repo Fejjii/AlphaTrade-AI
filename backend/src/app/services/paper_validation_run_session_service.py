@@ -11,7 +11,6 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationAppError
@@ -114,26 +113,12 @@ class PaperValidationRunSessionService:
             organization_id=organization_id,
             user_id=user_id,
         )
-        try:
-            with self._session.begin_nested():
-                self._sessions.add(session_row)
-        except IntegrityError:
-            # Concurrent double-submit: the partial unique index rejected the second
-            # running session. Recover the winner instead of surfacing a 500.
-            duplicate = self._sessions.get_active_for_plan(organization_id, plan_id)
-            if duplicate is None:
-                raise
-            self._record_audit(
-                "paper_validation_run_session_already_active",
-                plan_id=plan_id,
-                organization_id=organization_id,
-                user_id=user_id,
-                metadata={"session_id": str(duplicate.id)},
-            )
-            return PaperValidationRunSessionStartResult(
-                session=self._to_item(duplicate),
-                already_active=True,
-            )
+        # Duplicate protection: the pre-check above handles the common (sequential)
+        # case; the DB partial-unique active-session index is the backstop for a true
+        # concurrent double-submit. We mirror the Slice 81 plan service (plain add +
+        # route commit); a savepoint here is avoided because it does not persist under
+        # the request-scoped session management.
+        self._sessions.add(session_row)
 
         self._record_audit(
             "paper_validation_run_session_started",
