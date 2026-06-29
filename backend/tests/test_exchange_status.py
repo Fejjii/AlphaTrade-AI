@@ -89,8 +89,6 @@ def exchange_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
             )
         return httpx.Response(200, json={"code": "0", "data": []})
 
-    transport = httpx.MockTransport(_handler)
-
     from app.providers.exchange import factory as exchange_factory
 
     original_build = exchange_factory.build_blofin_client
