@@ -140,8 +140,14 @@ def test_notifier_quiet_hours_blocks_info_but_not_critical() -> None:
 
 # --- safety: no inbound telegram path --------------------------------------
 
+_ALLOWED_OUTBOUND_TELEGRAM_ROUTE_PATHS = {
+    "/alerts/test-telegram",
+    "/alerts/{alert_id}/deliver-telegram",
+}
+
 
 def test_no_inbound_telegram_route_exists() -> None:
     app = create_app(settings=Settings())
     paths = {getattr(route, "path", "") for route in app.routes}
-    assert not any("telegram" in path.lower() for path in paths)
+    telegram_paths = {path for path in paths if "telegram" in path.lower()}
+    assert telegram_paths <= _ALLOWED_OUTBOUND_TELEGRAM_ROUTE_PATHS

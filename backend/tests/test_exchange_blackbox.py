@@ -28,6 +28,11 @@ from app.providers.registry import ProviderRegistry
 from app.tools.registry import build_default_registry as build_tool_registry
 from app.workers.scanner import build_market_scan_scanner
 
+_ALLOWED_OUTBOUND_TELEGRAM_ROUTE_PATHS = {
+    "/alerts/test-telegram",
+    "/alerts/{alert_id}/deliver-telegram",
+}
+
 _DEMO_HOST = next(iter(BLOFIN_DEMO_HOST_ALLOWLIST))
 _DEMO_REST = f"https://{_DEMO_HOST}"
 _DEMO_OK = {
@@ -204,7 +209,8 @@ def test_blackbox_telegram_cannot_place_orders() -> None:
     assert "setWebhook" not in source
     app = create_app(settings=Settings())
     paths = {getattr(route, "path", "") for route in app.routes}
-    assert not any("telegram" in path.lower() for path in paths)
+    telegram_paths = {path for path in paths if "telegram" in path.lower()}
+    assert telegram_paths <= _ALLOWED_OUTBOUND_TELEGRAM_ROUTE_PATHS
 
 
 def test_blackbox_ai_workspace_cannot_bypass_confirmation() -> None:
