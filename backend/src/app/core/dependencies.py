@@ -24,6 +24,7 @@ from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
 from app.services.journal_rag_sync_service import JournalRagSyncService
 from app.services.journal_service import JournalService
+from app.services.learning_analytics import LearningAnalyticsService
 from app.services.lesson_candidate_service import LessonCandidateService
 from app.services.loss_acceptance_service import LossAcceptanceService
 from app.services.manual_level_service import ManualLevelService
@@ -201,6 +202,15 @@ def get_analytics_facade(session: SessionDep) -> TradingAnalyticsFacade:
 
 
 AnalyticsFacadeDep = Annotated[TradingAnalyticsFacade, Depends(get_analytics_facade)]
+
+
+def get_learning_analytics_service(session: SessionDep) -> LearningAnalyticsService:
+    return LearningAnalyticsService(session)
+
+
+LearningAnalyticsServiceDep = Annotated[
+    LearningAnalyticsService, Depends(get_learning_analytics_service)
+]
 
 
 def get_position_sizing_service() -> PositionSizingService:

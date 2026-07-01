@@ -306,6 +306,156 @@ export interface DisciplineScoreResult {
   improvement_suggestions: string[];
 }
 
+// --- Learning analytics (Slice 84 — read-only, record derived) ---
+
+export type SetupDimension =
+  | "condition"
+  | "timeframe"
+  | "symbol"
+  | "direction"
+  | "confidence_bucket";
+
+export type LearningAnalyticsParams = {
+  start_date?: string;
+  end_date?: string;
+  user_id?: string;
+  min_sample?: number;
+};
+
+interface LearningAnalyticsContext {
+  organization_id: string;
+  user_id?: string | null;
+  date_range: { start?: string | null; end?: string | null };
+  min_sample: number;
+}
+
+export interface LearningAnalyticsFunnel {
+  alerts: number;
+  drafts: number;
+  candidates: number;
+  run_plans: number;
+  run_sessions: number;
+  completed_sessions: number;
+  cancelled_sessions: number;
+  results: number;
+}
+
+export interface OutcomeDistributionItem {
+  outcome: string;
+  count: number;
+  rate?: number | null;
+}
+
+export interface RateMetrics {
+  success_rate?: number | null;
+  failure_rate?: number | null;
+  invalidated_rate?: number | null;
+  missed_entry_rate?: number | null;
+  no_trade_rate?: number | null;
+  inconclusive_rate?: number | null;
+  behaved_as_expected_rate?: number | null;
+  invalidation_hit_rate?: number | null;
+}
+
+export interface ObservationMetrics {
+  total_observations: number;
+  average_per_session?: number | null;
+  by_kind: Record<string, number>;
+}
+
+export interface LearningAnalyticsSummaryResponse extends LearningAnalyticsContext {
+  funnel: LearningAnalyticsFunnel;
+  total_sessions: number;
+  completed_sessions: number;
+  cancelled_sessions: number;
+  results_count: number;
+  outcome_distribution: OutcomeDistributionItem[];
+  rates: RateMetrics;
+  observations: ObservationMetrics;
+  average_minutes_to_outcome?: number | null;
+  lessons_count: number;
+}
+
+export interface SetupPerformanceGroup {
+  dimension_value: string;
+  sample_size: number;
+  insufficient_data: boolean;
+  quality_score?: number | null;
+  success_rate?: number | null;
+  failure_rate?: number | null;
+  invalidation_hit_rate?: number | null;
+  behaved_as_expected_rate?: number | null;
+  outcome_distribution: OutcomeDistributionItem[];
+}
+
+export interface SetupPerformanceResponse extends LearningAnalyticsContext {
+  dimension: SetupDimension;
+  groups: SetupPerformanceGroup[];
+}
+
+export interface DisciplineAnalyticsResponse extends LearningAnalyticsContext {
+  sample_size: number;
+  insufficient_data: boolean;
+  discipline_score?: number | null;
+  discipline_grade: string;
+  discipline_breakdown: Record<string, number>;
+  entry_breakdown: Record<string, number>;
+  issue_frequency: Record<string, number>;
+  positive_behaviors: string[];
+  negative_behaviors: string[];
+  improvement_suggestions: string[];
+}
+
+export interface ConfidenceBucketStat {
+  bucket: string;
+  lower: number;
+  upper: number;
+  sample_size: number;
+  insufficient_data: boolean;
+  success_rate?: number | null;
+}
+
+export interface ConfidenceOutcomeResponse extends LearningAnalyticsContext {
+  buckets: ConfidenceBucketStat[];
+  correlation: string;
+}
+
+export interface BehaviorInsight {
+  code: string;
+  message: string;
+  severity: string;
+  sample_size: number;
+  confidence: string;
+}
+
+export interface BehaviorInsightsResponse extends LearningAnalyticsContext {
+  insights: BehaviorInsight[];
+}
+
+export interface LessonTheme {
+  theme: string;
+  count: number;
+  example_excerpt?: string | null;
+}
+
+export interface LessonThemesResponse extends LearningAnalyticsContext {
+  lessons_count: number;
+  themes: LessonTheme[];
+}
+
+export interface SetupRankingItem {
+  setup_key: string;
+  rank: number;
+  quality_score: number;
+  sample_size: number;
+}
+
+export interface SetupRankingResponse extends LearningAnalyticsContext {
+  dimension: SetupDimension;
+  note: string;
+  ranked: SetupRankingItem[];
+}
+
 export interface RiskBehaviorAnalytics {
   risk_blocks_count: number;
   daily_loss_warnings: number;

@@ -12,6 +12,15 @@ import type {
   RiskBehaviorAnalytics,
   SetupAnalyticsResponse,
   TradeReviewAnalytics,
+  SetupDimension,
+  LearningAnalyticsParams,
+  LearningAnalyticsSummaryResponse,
+  SetupPerformanceResponse,
+  DisciplineAnalyticsResponse,
+  ConfidenceOutcomeResponse,
+  BehaviorInsightsResponse,
+  LessonThemesResponse,
+  SetupRankingResponse,
   MeResponse,
   MessageResponse,
   OrganizationInvitation,
@@ -333,6 +342,36 @@ export const api = {
     tradeReview: () => apiFetch<TradeReviewAnalytics>("/analytics/trade-review"),
     discipline: () => apiFetch<DisciplineScoreResult>("/analytics/discipline"),
     riskBehavior: () => apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior"),
+  },
+  learningAnalytics: {
+    summary: (params?: LearningAnalyticsParams) =>
+      apiFetch<LearningAnalyticsSummaryResponse>("/learning-analytics/summary", {
+        query: params,
+      }),
+    setupPerformance: (params?: LearningAnalyticsParams & { dimension?: SetupDimension }) =>
+      apiFetch<SetupPerformanceResponse>("/learning-analytics/setup-performance", {
+        query: params,
+      }),
+    discipline: (params?: LearningAnalyticsParams) =>
+      apiFetch<DisciplineAnalyticsResponse>("/learning-analytics/discipline", {
+        query: params,
+      }),
+    confidenceOutcome: (params?: LearningAnalyticsParams) =>
+      apiFetch<ConfidenceOutcomeResponse>("/learning-analytics/confidence-outcome", {
+        query: params,
+      }),
+    behaviorInsights: (params?: LearningAnalyticsParams) =>
+      apiFetch<BehaviorInsightsResponse>("/learning-analytics/behavior-insights", {
+        query: params,
+      }),
+    lessons: (params?: LearningAnalyticsParams) =>
+      apiFetch<LessonThemesResponse>("/learning-analytics/lessons", {
+        query: params,
+      }),
+    setupRanking: (params?: LearningAnalyticsParams & { dimension?: SetupDimension }) =>
+      apiFetch<SetupRankingResponse>("/learning-analytics/setup-ranking", {
+        query: params,
+      }),
   },
   dashboard: {
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
