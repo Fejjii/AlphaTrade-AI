@@ -9,6 +9,7 @@ import { AuditEventCard } from "@/components/AuditEventCard";
 import { ExchangeDiagnosticsCard } from "@/components/ExchangeDiagnosticsCard";
 import { ProviderStatusCard } from "@/components/ProviderStatusCard";
 import { TodaysDisciplineCard } from "@/components/TodaysDisciplineCard";
+import { ValidationPriorityDashboardCard } from "@/components/validation-priority/ValidationPriorityDashboardCard";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +58,8 @@ type DashboardData = {
   paperCandidateSummary: Awaited<ReturnType<typeof api.strategies.candidateSummary>> | null;
   paperRunPlanSummary: Awaited<ReturnType<typeof api.strategies.runPlanSummary>> | null;
   paperRunSessions: Awaited<ReturnType<typeof api.strategies.runSessions>> | null;
+  validationPrioritySummary: Awaited<ReturnType<typeof api.validationPriority.summary>> | null;
+  validationPriorityQueue: Awaited<ReturnType<typeof api.validationPriority.queue>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -95,6 +98,8 @@ export default function DashboardPage() {
       paperCandidateSummary,
       paperRunPlanSummary,
       paperRunSessions,
+      validationPrioritySummary,
+      validationPriorityQueue,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -107,6 +112,8 @@ export default function DashboardPage() {
       settled(api.strategies.candidateSummary(), null),
       settled(api.strategies.runPlanSummary(), null),
       settled(api.strategies.runSessions({ limit: 50 }), null),
+      settled(api.validationPriority.summary(), null),
+      settled(api.validationPriority.queue({ limit: 3 }), null),
     ]);
 
     if (summary) {
@@ -132,6 +139,8 @@ export default function DashboardPage() {
         paperCandidateSummary,
         paperRunPlanSummary,
         paperRunSessions,
+        validationPrioritySummary,
+        validationPriorityQueue,
       };
     }
 
@@ -152,6 +161,8 @@ export default function DashboardPage() {
       paperCandidateSummary,
       paperRunPlanSummary,
       paperRunSessions,
+      validationPrioritySummary,
+      validationPriorityQueue,
     };
   }, []);
 
@@ -570,6 +581,11 @@ export default function DashboardPage() {
             </Link>
           </CardContent>
         </Card>
+
+        <ValidationPriorityDashboardCard
+          summary={data?.validationPrioritySummary ?? null}
+          topItems={data?.validationPriorityQueue?.items ?? []}
+        />
 
         <Card data-testid="dashboard-paper-validation-queue">
           <CardHeader>

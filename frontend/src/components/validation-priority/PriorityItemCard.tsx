@@ -1,8 +1,12 @@
 "use client";
 
+import Link from "next/link";
+
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ValidationActionLabel, ValidationPriorityItem } from "@/lib/api/types";
+
+import { validationPriorityItemHref } from "./priority-display";
 
 const ACTION_META: Record<
   ValidationActionLabel,
@@ -17,11 +21,22 @@ const ACTION_META: Record<
 export function PriorityItemCard({ item }: { item: ValidationPriorityItem }) {
   const action = ACTION_META[item.action_label];
   const title = item.condition || item.symbol || item.item_type;
+  const detailHref = validationPriorityItemHref(item);
+  const detailLabel =
+    item.item_type === "run_plan" ? "Open run plan" : "Open candidate";
   return (
     <Card data-testid={`validation-priority-item-${item.item_id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
         <div>
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle className="text-base">
+            <Link
+              href={detailHref}
+              className="hover:underline"
+              data-testid={`validation-priority-item-link-${item.item_id}`}
+            >
+              {title}
+            </Link>
+          </CardTitle>
           <p className="mt-1 text-xs text-zinc-500">
             {item.item_type} · {item.symbol ?? "—"} · {item.timeframe ?? "—"} ·{" "}
             {item.direction ?? "—"}
@@ -75,6 +90,14 @@ export function PriorityItemCard({ item }: { item: ValidationPriorityItem }) {
             </ul>
           </div>
         ) : null}
+
+        <Link
+          href={detailHref}
+          className="inline-block text-xs text-zinc-400 underline"
+          data-testid={`validation-priority-detail-link-${item.item_id}`}
+        >
+          {detailLabel}
+        </Link>
       </CardContent>
     </Card>
   );

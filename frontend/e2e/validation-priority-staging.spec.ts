@@ -52,6 +52,12 @@ test.describe("Staging /validation-priority read-only smoke (Slice 85)", () => {
     await expect(page.getByRole("button", { name: /start run/i })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /automate/i })).toHaveCount(0);
 
+    const firstItemLink = page.getByTestId(/validation-priority-item-link-/).first();
+    if (await firstItemLink.count()) {
+      const href = await firstItemLink.getAttribute("href");
+      expect(href).toMatch(/^\/paper-validation\/(run-plans|candidates)\/.+/);
+    }
+
     const bodyText = await page.locator("body").innerText();
     expect(bodyText).not.toMatch(/bot\d{8,}:/i);
     expect(bodyText.toLowerCase()).not.toContain("telegram_bot_token");
