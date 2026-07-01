@@ -21,6 +21,11 @@ import type {
   BehaviorInsightsResponse,
   LessonThemesResponse,
   SetupRankingResponse,
+  PriorityItemType,
+  ValidationPriorityParams,
+  ValidationPriorityQueueResponse,
+  ValidationPrioritySummaryResponse,
+  ValidationPriorityExplainResponse,
   MeResponse,
   MessageResponse,
   OrganizationInvitation,
@@ -372,6 +377,25 @@ export const api = {
       apiFetch<SetupRankingResponse>("/learning-analytics/setup-ranking", {
         query: params,
       }),
+  },
+  validationPriority: {
+    queue: (params?: ValidationPriorityParams & { item_type?: PriorityItemType; limit?: number }) =>
+      apiFetch<ValidationPriorityQueueResponse>("/validation-priority/queue", {
+        query: params,
+      }),
+    summary: (params?: ValidationPriorityParams) =>
+      apiFetch<ValidationPrioritySummaryResponse>("/validation-priority/summary", {
+        query: params,
+      }),
+    explain: (
+      itemType: PriorityItemType,
+      itemId: string,
+      params?: ValidationPriorityParams,
+    ) =>
+      apiFetch<ValidationPriorityExplainResponse>(
+        `/validation-priority/explain/${itemType}/${itemId}`,
+        { query: params },
+      ),
   },
   dashboard: {
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),

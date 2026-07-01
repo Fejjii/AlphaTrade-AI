@@ -50,6 +50,7 @@ from app.api.routes import (
     strategy_modules,
     tools,
     usage,
+    validation_priority,
     worker,
 )
 from app.core.config import Settings, get_settings
@@ -181,6 +182,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lessons.router,
         analytics.router,
         learning_analytics.router,
+        validation_priority.router,
         performance.router,
         knowledge.router,
         audit.router,

@@ -62,6 +62,7 @@ from app.services.strategy_testability_service import StrategyTestabilityService
 from app.services.structure_from_text_service import StructureFromTextService
 from app.services.structured_rules_service import StructuredRulesService
 from app.services.usage_service import UsageService
+from app.services.validation_priority import ValidationPriorityService
 from app.services.workflow_service import WorkflowService
 from app.strategies.registry import StrategyRegistry, get_strategy_registry
 from app.tools.registry import ToolRegistry, get_tool_registry
@@ -210,6 +211,15 @@ def get_learning_analytics_service(session: SessionDep) -> LearningAnalyticsServ
 
 LearningAnalyticsServiceDep = Annotated[
     LearningAnalyticsService, Depends(get_learning_analytics_service)
+]
+
+
+def get_validation_priority_service(session: SessionDep) -> ValidationPriorityService:
+    return ValidationPriorityService(session)
+
+
+ValidationPriorityServiceDep = Annotated[
+    ValidationPriorityService, Depends(get_validation_priority_service)
 ]
 
 

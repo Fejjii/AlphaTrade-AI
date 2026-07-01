@@ -456,6 +456,94 @@ export interface SetupRankingResponse extends LearningAnalyticsContext {
   ranked: SetupRankingItem[];
 }
 
+// --- Validation prioritization (Slice 85 — read-only, record derived) ---
+
+export type PriorityItemType = "run_plan" | "candidate";
+
+export type ValidationActionLabel =
+  | "prioritize"
+  | "watch"
+  | "collect_more_data"
+  | "avoid_for_now";
+
+export type ReliabilityTier = "none" | "low" | "medium" | "high";
+
+export type FactorDirection = "positive" | "negative" | "neutral";
+
+export type ValidationPriorityParams = {
+  start_date?: string;
+  end_date?: string;
+  user_id?: string;
+  min_sample?: number;
+};
+
+interface ValidationPriorityContext {
+  organization_id: string;
+  user_id?: string | null;
+  date_range: { start?: string | null; end?: string | null };
+  min_sample: number;
+  note: string;
+}
+
+export interface PriorityFactor {
+  code: string;
+  label: string;
+  direction: FactorDirection;
+  contribution: number;
+  detail: string;
+}
+
+export interface ValidationPriorityItem {
+  item_type: PriorityItemType;
+  item_id: string;
+  symbol?: string | null;
+  condition?: string | null;
+  timeframe?: string | null;
+  direction?: string | null;
+  confidence?: number | null;
+  confidence_bucket?: string | null;
+  current_status: string;
+  priority_score: number;
+  action_label: ValidationActionLabel;
+  reliability: ReliabilityTier;
+  matched_dimension: string;
+  matched_key: string;
+  matched_sample_size: number;
+  historical_success_rate?: number | null;
+  historical_invalidation_rate?: number | null;
+  factors: PriorityFactor[];
+  rationale: string[];
+}
+
+export interface ValidationPriorityQueueResponse extends ValidationPriorityContext {
+  item_type_filter?: PriorityItemType | null;
+  limit: number;
+  total_pending: number;
+  items: ValidationPriorityItem[];
+}
+
+export interface ActionLabelCount {
+  action_label: ValidationActionLabel;
+  count: number;
+}
+
+export interface ReliabilityCount {
+  reliability: ReliabilityTier;
+  count: number;
+}
+
+export interface ValidationPrioritySummaryResponse extends ValidationPriorityContext {
+  total_pending: number;
+  run_plans_pending: number;
+  candidates_pending: number;
+  by_action: ActionLabelCount[];
+  by_reliability: ReliabilityCount[];
+}
+
+export interface ValidationPriorityExplainResponse extends ValidationPriorityContext {
+  item: ValidationPriorityItem;
+}
+
 export interface RiskBehaviorAnalytics {
   risk_blocks_count: number;
   daily_loss_warnings: number;
