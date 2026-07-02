@@ -67,8 +67,25 @@ describe("CoachingPromptCard", () => {
         minSample={5}
       />,
     );
-    expect(screen.getByTestId("coaching-in-review-queue")).toHaveAttribute("href", "/lessons");
+    expect(screen.getByTestId("coaching-save-success")).toBeInTheDocument();
+    expect(screen.getByTestId("coaching-in-review-queue")).toHaveAttribute(
+      "href",
+      "/lessons?source=coaching",
+    );
+    expect(screen.getByTestId("coaching-in-review-queue")).toHaveTextContent(/review in lessons/i);
     expect(screen.queryByTestId("coaching-save-button")).not.toBeInTheDocument();
+  });
+
+  it("shows review link after save", async () => {
+    render(<CoachingPromptCard prompt={prompt} minSample={5} />);
+    fireEvent.click(screen.getByTestId("coaching-save-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("coaching-save-success")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("coaching-in-review-queue")).toHaveAttribute(
+      "href",
+      "/lessons?source=coaching",
+    );
   });
 
   it("has no unsafe CTA", () => {

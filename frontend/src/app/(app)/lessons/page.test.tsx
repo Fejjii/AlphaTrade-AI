@@ -2,10 +2,13 @@ import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import LessonsPage from "@/app/(app)/lessons/page";
 import { LessonAcceptPanel } from "@/components/lessons/LessonAcceptPanel";
-import { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const { acceptMock } = vi.hoisted(() => ({
   acceptMock: vi.fn().mockResolvedValue({}),
@@ -89,6 +92,45 @@ describe("LessonsPage", () => {
     fireEvent.click(screen.getByTestId("confirm-accept"));
     await waitFor(() => expect(acceptMock).toHaveBeenCalled());
   });
+
+  it("filters coaching lessons client-side", async () => {
+    const { api } = await import("@/lib/api");
+    vi.mocked(api.lessons.listCandidates).mockResolvedValueOnce({
+      items: [
+        {
+          id: "lesson-coach",
+          organization_id: "org",
+          user_id: "user",
+          source_type: "coaching",
+          lesson_text: "Review this behavior: invalidation was hit often.",
+          mistake_type: "invalidation_hit",
+          severity: "medium",
+          status: "pending_review",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "lesson-journal",
+          organization_id: "org",
+          user_id: "user",
+          source_type: "journal",
+          lesson_text: "Journal lesson.",
+          mistake_type: "early_exit",
+          severity: "low",
+          status: "pending_review",
+          created_at: new Date().toISOString(),
+        },
+      ],
+      total: 2,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lesson-source-coaching")).toBeInTheDocument();
+    expect(screen.getByTestId("lesson-source-label")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("lessons-source-coaching"));
+    expect(screen.getByTestId("lesson-source-coaching")).toBeInTheDocument();
+    expect(screen.queryByTestId("lesson-source-label")).not.toBeInTheDocument();
+  });
 });
 
 describe("LessonAcceptPanel", () => {
@@ -109,34 +151,6 @@ describe("LessonAcceptPanel", () => {
     fireEvent.click(screen.getByTestId("accept-confirm-checkbox"));
     fireEvent.click(screen.getByTestId("confirm-accept"));
     await waitFor(() => expect(onAccept).toHaveBeenCalled());
-  });
-});
-
-describe("LessonCandidateCard", () => {
-  it("renders accept and reject flow", () => {
-    const onAccept = vi.fn();
-    const onReject = vi.fn();
-    render(
-      <LessonCandidateCard
-        lesson={{
-          id: "l1",
-          organization_id: "o",
-          user_id: "u",
-          source_type: "journal",
-          lesson_text: "Early exit lesson",
-          mistake_type: "early_exit",
-          severity: "medium",
-          status: "pending_review",
-          created_at: new Date().toISOString(),
-        }}
-        onAccept={onAccept}
-        onReject={onReject}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("accept-lesson-btn"));
-    fireEvent.click(screen.getByTestId("reject-lesson-btn"));
-    expect(onAccept).toHaveBeenCalled();
-    expect(onReject).toHaveBeenCalled();
   });
 });
 

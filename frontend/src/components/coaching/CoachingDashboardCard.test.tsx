@@ -58,11 +58,30 @@ describe("CoachingDashboardCard", () => {
   it("renders distribution, top items, and links", () => {
     render(<CoachingDashboardCard summary={summary} topPrompts={topPrompts} />);
     expect(screen.getByTestId("dashboard-coaching")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-coaching-stats")).toHaveTextContent("2 open patterns");
     expect(screen.getByTestId("dashboard-coaching-distribution")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-coaching-count-high")).toHaveTextContent("1");
     expect(screen.getByTestId("dashboard-coaching-top-sig-1")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Review coaching" })).toHaveAttribute("href", "/coaching");
-    expect(screen.getByRole("link", { name: "Open review queue" })).toHaveAttribute("href", "/lessons");
+    expect(screen.getByRole("link", { name: "Open lesson review queue" })).toHaveAttribute(
+      "href",
+      "/lessons?source=coaching",
+    );
+  });
+
+  it("renders helpful empty state when no patterns qualify", () => {
+    render(
+      <CoachingDashboardCard
+        summary={{ ...summary, total_open: 0, pending_coaching_lessons: 0 }}
+        topPrompts={[]}
+      />,
+    );
+    expect(screen.getByTestId("dashboard-coaching-empty")).toHaveTextContent(
+      "No coaching patterns yet",
+    );
+    expect(screen.getByTestId("dashboard-coaching-empty")).toHaveTextContent(
+      "Complete paper validation sessions",
+    );
   });
 
   it("has no unsafe CTA", () => {

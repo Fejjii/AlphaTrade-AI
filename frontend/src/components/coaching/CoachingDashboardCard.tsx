@@ -22,15 +22,33 @@ export function CoachingDashboardCard({
   summary: CoachingSummaryResponse | null;
   topPrompts: CoachingPrompt[];
 }) {
+  const openCount = summary?.total_open ?? 0;
+  const pendingLessons = summary?.pending_coaching_lessons ?? 0;
+
   return (
     <Card data-testid="dashboard-coaching">
       <CardHeader>
         <CardTitle className="text-base">Coaching</CardTitle>
         <p className="mt-1 text-xs text-zinc-500">
-          Review repeated behavior patterns before validating more setups. No orders, no automation.
+          Review repeated behavior patterns from paper validation outcomes before validating more
+          setups. Save prompts into Lessons when you want human review — no orders, no automation.
         </p>
       </CardHeader>
       <CardContent className="space-y-4 text-sm text-zinc-300">
+        {summary ? (
+          <p className="text-xs text-zinc-400" data-testid="dashboard-coaching-stats">
+            <strong className="text-zinc-200">{openCount}</strong> open pattern
+            {openCount === 1 ? "" : "s"}
+            {pendingLessons > 0 ? (
+              <>
+                {" "}
+                · <strong className="text-zinc-200">{pendingLessons}</strong> saved for lesson
+                review
+              </>
+            ) : null}
+          </p>
+        ) : null}
+
         {summary ? (
           <div
             className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"
@@ -71,7 +89,16 @@ export function CoachingDashboardCard({
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-zinc-500">No coaching patterns above the sample threshold yet.</p>
+          <div
+            className="rounded border border-dashed border-zinc-800 px-3 py-4 text-xs text-zinc-500"
+            data-testid="dashboard-coaching-empty"
+          >
+            <p className="font-medium text-zinc-400">No coaching patterns yet</p>
+            <p className="mt-1">
+              Complete paper validation sessions with outcomes to surface repeated discipline
+              patterns. When a pattern qualifies, save it to Lessons for review.
+            </p>
+          </div>
         )}
 
         <div className="flex flex-wrap gap-3 text-xs">
@@ -82,8 +109,12 @@ export function CoachingDashboardCard({
           >
             Review coaching
           </Link>
-          <Link href="/lessons" className="text-zinc-400 underline" data-testid="dashboard-coaching-lessons">
-            Open review queue
+          <Link
+            href="/lessons?source=coaching"
+            className="text-zinc-400 underline"
+            data-testid="dashboard-coaching-lessons"
+          >
+            Open lesson review queue
           </Link>
         </div>
       </CardContent>

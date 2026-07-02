@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LessonAcceptPanel, type AcceptPath } from "@/components/lessons/LessonAcceptPanel";
 import { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
 import { EmptyState, LoadingState } from "@/components/states";
@@ -8,17 +10,20 @@ import { api } from "@/lib/api";
 import type { LessonCandidate, ProposedRuleUpdate } from "@/lib/api/types";
 
 type Tab = "pending" | "accepted" | "rejected";
+type SourceFilter = "all" | "coaching";
 
 const TAB_DESCRIPTIONS: Record<Tab, string> = {
-  pending: "Pending observations are not accepted trading rules — review them before they become memory.",
-  accepted: "Accepted lessons are reviewed rules or memories. Accepting can optionally update a strategy version.",
+  pending:
+    "Pending observations are not accepted trading rules — review them before they become memory.",
+  accepted:
+    "Accepted lessons are reviewed rules or memories. Accepting can optionally update a strategy version.",
   rejected: "Rejected lessons are archived as learning context only — they do not affect strategies.",
 };
 
 const EMPTY_STATES: Record<Tab, { title: string; description: string }> = {
   pending: {
     title: "No pending lessons",
-    description: "New learning signals from journaling and analysis will appear here for review.",
+    description: "New learning signals from journaling, analysis, and coaching will appear here for review.",
   },
   accepted: {
     title: "No accepted lessons yet",
@@ -30,14 +35,27 @@ const EMPTY_STATES: Record<Tab, { title: string; description: string }> = {
   },
 };
 
+const COACHING_EMPTY = {
+  title: "No coaching lessons in this view",
+  description: "Save a coaching prompt from the Coaching page to add a lesson candidate here.",
+};
+
 export default function LessonsPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("pending");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [items, setItems] = useState<LessonCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("source") === "coaching") {
+      setSourceFilter("coaching");
+    }
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,6 +79,19 @@ export default function LessonsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const filteredItems = useMemo(
+    () =>
+      sourceFilter === "coaching"
+        ? items.filter((lesson) => lesson.source_type === "coaching")
+        : items,
+    [items, sourceFilter],
+  );
+
+  const coachingCount = useMemo(
+    () => items.filter((lesson) => lesson.source_type === "coaching").length,
+    [items],
+  );
 
   const handleAcceptSubmit = async (
     id: string,
@@ -101,6 +132,11 @@ export default function LessonsPage() {
     }
   };
 
+  const emptyState =
+    sourceFilter === "coaching" && items.length > 0 && filteredItems.length === 0
+      ? COACHING_EMPTY
+      : EMPTY_STATES[tab];
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6" data-testid="lessons-page">
       <div>
@@ -112,7 +148,8 @@ export default function LessonsPage() {
           {TAB_DESCRIPTIONS[tab]}
         </p>
       </div>
-      <div className="flex flex-wrap gap-2" role="tablist">
+
+      <div className="flex flex-wrap items-center gap-2" role="tablist">
         {(["pending", "accepted", "rejected"] as Tab[]).map((t) => (
           <button
             key={t}
@@ -128,19 +165,57 @@ export default function LessonsPage() {
           </button>
         ))}
       </div>
+
+      <div
+        className="flex flex-wrap items-center gap-2 text-xs"
+        role="group"
+        aria-label="Source filter"
+        data-testid="lessons-source-filter"
+      >
+        <span className="text-zinc-500">Show:</span>
+        <button
+          type="button"
+          data-testid="lessons-source-all"
+          aria-pressed={sourceFilter === "all"}
+          className={
+            sourceFilter === "all"
+              ? "rounded bg-zinc-100 px-3 py-1 font-medium text-zinc-900"
+              : "rounded border border-zinc-700 px-3 py-1 text-zinc-300"
+          }
+          onClick={() => setSourceFilter("all")}
+        >
+          All sources
+        </button>
+        <button
+          type="button"
+          data-testid="lessons-source-coaching"
+          aria-pressed={sourceFilter === "coaching"}
+          className={
+            sourceFilter === "coaching"
+              ? "rounded bg-zinc-100 px-3 py-1 font-medium text-zinc-900"
+              : "rounded border border-zinc-700 px-3 py-1 text-zinc-300"
+          }
+          onClick={() => setSourceFilter("coaching")}
+        >
+          From coaching{coachingCount ? ` (${coachingCount})` : ""}
+        </button>
+        {sourceFilter === "coaching" ? (
+          <Link href="/coaching" className="text-zinc-400 underline">
+            Back to coaching
+          </Link>
+        ) : null}
+      </div>
+
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
       {loading ? (
         <LoadingState label="Loading lessons…" />
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <div data-testid={`lessons-empty-${tab}`}>
-          <EmptyState
-            title={EMPTY_STATES[tab].title}
-            description={EMPTY_STATES[tab].description}
-          />
+          <EmptyState title={emptyState.title} description={emptyState.description} />
         </div>
       ) : (
         <div className="space-y-4">
-          {items.map((lesson) => (
+          {filteredItems.map((lesson) => (
             <div key={lesson.id} className="space-y-2">
               {acceptingId === lesson.id ? (
                 <LessonAcceptPanel
@@ -170,11 +245,7 @@ export default function LessonsPage() {
                   <LessonCandidateCard
                     lesson={lesson}
                     busy={busyId === lesson.id}
-                    onAccept={
-                      tab === "pending"
-                        ? () => setAcceptingId(lesson.id)
-                        : undefined
-                    }
+                    onAccept={tab === "pending" ? () => setAcceptingId(lesson.id) : undefined}
                     onReject={tab === "pending" ? () => handleReject(lesson.id) : undefined}
                   />
                 </>

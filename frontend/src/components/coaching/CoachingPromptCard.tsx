@@ -94,13 +94,19 @@ export function CoachingPromptCard({
         </div>
 
         {savedId ? (
-          <Link
-            href="/lessons"
-            className="inline-block text-xs text-zinc-400 underline"
-            data-testid="coaching-in-review-queue"
+          <div
+            className="space-y-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs"
+            data-testid="coaching-save-success"
           >
-            In review queue
-          </Link>
+            <p className="text-emerald-300">Saved to your lesson review queue.</p>
+            <Link
+              href="/lessons?source=coaching"
+              className="inline-block font-medium text-emerald-200 underline"
+              data-testid="coaching-in-review-queue"
+            >
+              Review in Lessons →
+            </Link>
+          </div>
         ) : (
           <Button
             type="button"

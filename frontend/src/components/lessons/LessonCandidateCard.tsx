@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LessonCandidate } from "@/lib/api/types";
 
@@ -11,20 +12,38 @@ type Props = {
   busy?: boolean;
 };
 
+function formatSourceType(sourceType: string): string {
+  return sourceType.replace(/_/g, " ");
+}
+
 export function LessonCandidateCard({ lesson, onAccept, onReject, busy }: Props) {
   const isPending = lesson.status === "pending_review";
+  const isCoaching = lesson.source_type === "coaching";
 
   return (
     <Card data-testid="lesson-candidate-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base capitalize">{lesson.mistake_type.replace(/_/g, " ")}</CardTitle>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <CardTitle className="text-base capitalize">{lesson.mistake_type.replace(/_/g, " ")}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {isCoaching ? (
+              <Badge variant="info" data-testid="lesson-source-coaching">
+                Coaching
+              </Badge>
+            ) : (
+              <span className="text-xs text-zinc-500" data-testid="lesson-source-label">
+                {formatSourceType(lesson.source_type)}
+              </span>
+            )}
+            <Badge variant="muted">{lesson.severity}</Badge>
+          </div>
+        </div>
         <p className="text-xs text-zinc-500">
-          {lesson.source_type} · {lesson.severity} ·{" "}
           {lesson.confidence ? `confidence ${lesson.confidence}` : "confidence n/a"}
         </p>
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-zinc-300">
-        <p>{lesson.lesson_text}</p>
+        <p data-testid="lesson-text">{lesson.lesson_text}</p>
         {lesson.related_strategy_id ? (
           <p className="text-zinc-400">
             Strategy:{" "}
