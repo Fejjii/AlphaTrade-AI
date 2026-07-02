@@ -544,6 +544,137 @@ export interface ValidationPriorityExplainResponse extends ValidationPriorityCon
   item: ValidationPriorityItem;
 }
 
+// --- Strategy quality & detector performance (Slice 89 — read-only) ---
+
+export type DetectorTrustTier = "none" | "low" | "medium" | "high";
+
+export type DetectorVerdict =
+  | "trusted"
+  | "watch"
+  | "improve"
+  | "avoid_for_now"
+  | "needs_more_validation";
+
+export type CalibrationLabel =
+  | "well_calibrated"
+  | "overconfident"
+  | "underconfident"
+  | "insufficient_data";
+
+export type StrategyQualityParams = {
+  start_date?: string;
+  end_date?: string;
+  user_id?: string;
+  min_sample?: number;
+};
+
+interface StrategyQualityContext {
+  organization_id: string;
+  user_id?: string | null;
+  date_range: { start?: string | null; end?: string | null };
+  min_sample: number;
+  note: string;
+}
+
+export interface DetectorFactor {
+  code: string;
+  label: string;
+  direction: FactorDirection;
+  contribution: number;
+  detail: string;
+}
+
+export interface DetectorWarning {
+  code: string;
+  message: string;
+  severity: string;
+}
+
+export interface ConfidenceCalibration {
+  mean_confidence?: number | null;
+  mean_success_rate?: number | null;
+  correlation: string;
+  calibration_label: CalibrationLabel;
+  buckets: ConfidenceBucketStat[];
+}
+
+export interface DetectorTimeframeStat {
+  condition: string;
+  timeframe: string;
+  sample_size: number;
+  insufficient_data: boolean;
+  invalidation_rate?: number | null;
+  success_rate?: number | null;
+}
+
+export interface DetectorQualityReport {
+  condition: string;
+  detector_version?: string | null;
+  sample_size: number;
+  insufficient_data: boolean;
+  trust_tier: DetectorTrustTier;
+  verdict: DetectorVerdict;
+  quality_score?: number | null;
+  raw_quality_score?: number | null;
+  success_rate?: number | null;
+  failure_rate?: number | null;
+  invalidated_rate?: number | null;
+  missed_entry_rate?: number | null;
+  no_trade_rate?: number | null;
+  inconclusive_rate?: number | null;
+  invalidation_hit_rate?: number | null;
+  behaved_as_expected_rate?: number | null;
+  should_have_avoided_rate?: number | null;
+  should_have_waited_rate?: number | null;
+  outcome_distribution: OutcomeDistributionItem[];
+  discipline_breakdown: Record<string, number>;
+  entry_breakdown: Record<string, number>;
+  confidence_calibration: ConfidenceCalibration;
+  warnings: DetectorWarning[];
+  factors: DetectorFactor[];
+  rationale: string[];
+}
+
+export interface StrategyQualityDetectorsResponse extends StrategyQualityContext {
+  condition_filter?: string | null;
+  timeframe_filter?: string | null;
+  detectors: DetectorQualityReport[];
+}
+
+export interface TrustTierCount {
+  trust_tier: DetectorTrustTier;
+  count: number;
+}
+
+export interface VerdictCount {
+  verdict: DetectorVerdict;
+  count: number;
+}
+
+export interface DetectorRankItem {
+  condition: string;
+  rank: number;
+  quality_score: number;
+  sample_size: number;
+  trust_tier: DetectorTrustTier;
+  verdict: DetectorVerdict;
+}
+
+export interface StrategyQualitySummaryResponse extends StrategyQualityContext {
+  total_detectors: number;
+  detectors_with_data: number;
+  total_results: number;
+  by_trust_tier: TrustTierCount[];
+  by_verdict: VerdictCount[];
+  ranked: DetectorRankItem[];
+  warnings: DetectorWarning[];
+}
+
+export interface DetectorExplainResponse extends StrategyQualityContext {
+  report: DetectorQualityReport;
+  timeframes: DetectorTimeframeStat[];
+}
+
 export type CoachingCategory =
   | "missed_entry"
   | "should_have_waited"

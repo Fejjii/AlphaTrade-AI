@@ -181,6 +181,18 @@ else
   echo "9/12 — analytics smoke skipped (set INCLUDE_ANALYTICS=true to enable)"
 fi
 
+if [[ "${INCLUDE_STRATEGY_QUALITY:-false}" == "true" ]]; then
+  echo "9b/12 — strategy quality smoke (INCLUDE_STRATEGY_QUALITY=true)"
+  SKIP_REGISTER=true \
+    SMOKE_ACCESS_TOKEN="${login_token}" \
+    SKIP_SAFETY=true \
+    COOKIE_MODE="${COOKIE_MODE}" \
+    BASE_URL="${BASE_URL}" \
+    ./scripts/strategy-quality-smoke.sh
+else
+  echo "9b/12 — strategy quality smoke skipped (set INCLUDE_STRATEGY_QUALITY=true to enable)"
+fi
+
 echo "10/12 — logout"
 if [[ "$COOKIE_MODE" == "true" ]]; then
   curl_api_cookie -X POST -H "Authorization: Bearer ${login_token}" -H 'Content-Type: application/json' \

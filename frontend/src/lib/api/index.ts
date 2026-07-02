@@ -26,6 +26,10 @@ import type {
   ValidationPriorityQueueResponse,
   ValidationPrioritySummaryResponse,
   ValidationPriorityExplainResponse,
+  StrategyQualityParams,
+  StrategyQualityDetectorsResponse,
+  StrategyQualitySummaryResponse,
+  DetectorExplainResponse,
   CoachingParams,
   CoachingPromptsResponse,
   CoachingSummaryResponse,
@@ -400,6 +404,23 @@ export const api = {
     ) =>
       apiFetch<ValidationPriorityExplainResponse>(
         `/validation-priority/explain/${itemType}/${itemId}`,
+        { query: params },
+      ),
+  },
+  strategyQuality: {
+    detectors: (
+      params?: StrategyQualityParams & { condition?: string; timeframe?: string },
+    ) =>
+      apiFetch<StrategyQualityDetectorsResponse>("/strategy-quality/detectors", {
+        query: params,
+      }),
+    summary: (params?: StrategyQualityParams) =>
+      apiFetch<StrategyQualitySummaryResponse>("/strategy-quality/summary", {
+        query: params,
+      }),
+    explain: (condition: string, params?: StrategyQualityParams) =>
+      apiFetch<DetectorExplainResponse>(
+        `/strategy-quality/detectors/${condition}/explain`,
         { query: params },
       ),
   },

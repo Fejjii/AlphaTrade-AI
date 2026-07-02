@@ -58,6 +58,7 @@ from app.services.rag_service import RagService, build_rag_service
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
 from app.services.strategy_library_service import StrategyLibraryService
+from app.services.strategy_quality import StrategyQualityService
 from app.services.strategy_service import StrategyService
 from app.services.strategy_testability_service import StrategyTestabilityService
 from app.services.structure_from_text_service import StructureFromTextService
@@ -229,6 +230,15 @@ def get_coaching_service(session: SessionDep) -> CoachingService:
 
 
 CoachingServiceDep = Annotated[CoachingService, Depends(get_coaching_service)]
+
+
+def get_strategy_quality_service(session: SessionDep) -> StrategyQualityService:
+    return StrategyQualityService(session)
+
+
+StrategyQualityServiceDep = Annotated[
+    StrategyQualityService, Depends(get_strategy_quality_service)
+]
 
 
 def get_position_sizing_service() -> PositionSizingService:

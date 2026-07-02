@@ -39,6 +39,7 @@ export const navItems = [
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/learning-analytics", label: "Learning Analytics", icon: Brain },
   { href: "/validation-priority", label: "Validation Priority", icon: ListChecks },
+  { href: "/strategy-quality", label: "Strategy Quality", icon: Gauge },
   { href: "/coaching", label: "Coaching", icon: GraduationCap },
   { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/watcher", label: "Watcher Scanner", icon: Radio },
