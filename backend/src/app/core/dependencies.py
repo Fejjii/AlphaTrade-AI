@@ -37,6 +37,7 @@ from app.services.market_watcher_service import MarketWatcherService
 from app.services.notifications.preferences_service import NotificationPreferencesService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
+from app.services.paper_portfolio_service import PaperPortfolioService
 from app.services.paper_scheduler_service import PaperSchedulerService
 from app.services.paper_validation_candidate_service import PaperValidationCandidateService
 from app.services.paper_validation_draft_service import PaperValidationDraftService
@@ -156,7 +157,12 @@ def get_performance_service(session: SessionDep) -> PerformanceService:
     return PerformanceService(session)
 
 
+def get_paper_portfolio_service(session: SessionDep) -> PaperPortfolioService:
+    return PaperPortfolioService(session)
+
+
 PerformanceServiceDep = Annotated[PerformanceService, Depends(get_performance_service)]
+PaperPortfolioServiceDep = Annotated[PaperPortfolioService, Depends(get_paper_portfolio_service)]
 
 
 def get_journal_service(
