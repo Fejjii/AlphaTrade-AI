@@ -236,9 +236,7 @@ def get_strategy_quality_service(session: SessionDep) -> StrategyQualityService:
     return StrategyQualityService(session)
 
 
-StrategyQualityServiceDep = Annotated[
-    StrategyQualityService, Depends(get_strategy_quality_service)
-]
+StrategyQualityServiceDep = Annotated[StrategyQualityService, Depends(get_strategy_quality_service)]
 
 
 def get_position_sizing_service() -> PositionSizingService:
