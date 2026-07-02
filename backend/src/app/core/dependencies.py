@@ -17,6 +17,7 @@ from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.backtest_service import BacktestService
+from app.services.coaching import CoachingService
 from app.services.dashboard_summary_service import DashboardSummaryService
 from app.services.execution_service import ExecutionService
 from app.services.historical_candle_service import HistoricalCandleService
@@ -221,6 +222,13 @@ def get_validation_priority_service(session: SessionDep) -> ValidationPrioritySe
 ValidationPriorityServiceDep = Annotated[
     ValidationPriorityService, Depends(get_validation_priority_service)
 ]
+
+
+def get_coaching_service(session: SessionDep) -> CoachingService:
+    return CoachingService(session)
+
+
+CoachingServiceDep = Annotated[CoachingService, Depends(get_coaching_service)]
 
 
 def get_position_sizing_service() -> PositionSizingService:

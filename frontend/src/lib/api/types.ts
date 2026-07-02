@@ -544,6 +544,104 @@ export interface ValidationPriorityExplainResponse extends ValidationPriorityCon
   item: ValidationPriorityItem;
 }
 
+export type CoachingCategory =
+  | "missed_entry"
+  | "should_have_waited"
+  | "should_have_avoided"
+  | "invalidation_hit"
+  | "low_quality_setup"
+  | "overconfidence"
+  | "weak_confidence_correlation";
+
+export type CoachingLessonSeverity = "low" | "medium" | "high" | "critical";
+
+export type CoachingParams = {
+  start_date?: string;
+  end_date?: string;
+  user_id?: string;
+  min_sample?: number;
+  category?: CoachingCategory;
+  severity?: CoachingLessonSeverity;
+  limit?: number;
+};
+
+interface CoachingContext {
+  organization_id: string;
+  user_id?: string | null;
+  date_range: { start?: string | null; end?: string | null };
+  min_sample: number;
+  note: string;
+}
+
+export interface CoachingSource {
+  matched_dimension: string;
+  matched_key: string;
+  sample_size: number;
+  source_session_ids: string[];
+  analytics_codes: string[];
+  rate?: number | null;
+}
+
+export interface CoachingFactor {
+  code: string;
+  label: string;
+  direction: FactorDirection;
+  contribution: number;
+  detail: string;
+}
+
+export interface CoachingPrompt {
+  signature: string;
+  category: CoachingCategory;
+  title: string;
+  prompt_text: string;
+  severity: CoachingLessonSeverity;
+  reliability: ReliabilityTier;
+  concern_score: number;
+  insufficient_data: boolean;
+  source: CoachingSource;
+  factors: CoachingFactor[];
+  rationale: string[];
+  already_saved_lesson_id?: string | null;
+}
+
+export interface CoachingPromptsResponse extends CoachingContext {
+  total: number;
+  items: CoachingPrompt[];
+}
+
+export interface CategoryCount {
+  category: CoachingCategory;
+  count: number;
+}
+
+export interface SeverityCount {
+  severity: CoachingLessonSeverity;
+  count: number;
+}
+
+export interface CoachingSummaryResponse extends CoachingContext {
+  total_open: number;
+  pending_coaching_lessons: number;
+  by_category: CategoryCount[];
+  by_severity: SeverityCount[];
+  top_prompt?: CoachingPrompt | null;
+}
+
+export interface CoachingExplainResponse extends CoachingContext {
+  prompt: CoachingPrompt;
+}
+
+export interface CoachingSaveRequest {
+  category: CoachingCategory;
+  matched_dimension: string;
+  matched_key: string;
+  min_sample?: number;
+  start_date?: string;
+  end_date?: string;
+  reviewer_note?: string;
+}
+
 export interface RiskBehaviorAnalytics {
   risk_blocks_count: number;
   daily_loss_warnings: number;

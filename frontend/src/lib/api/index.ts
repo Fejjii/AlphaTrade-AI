@@ -26,6 +26,12 @@ import type {
   ValidationPriorityQueueResponse,
   ValidationPrioritySummaryResponse,
   ValidationPriorityExplainResponse,
+  CoachingParams,
+  CoachingPromptsResponse,
+  CoachingSummaryResponse,
+  CoachingExplainResponse,
+  CoachingSaveRequest,
+  CoachingCategory,
   MeResponse,
   MessageResponse,
   OrganizationInvitation,
@@ -396,6 +402,21 @@ export const api = {
         `/validation-priority/explain/${itemType}/${itemId}`,
         { query: params },
       ),
+  },
+  coaching: {
+    prompts: (params?: CoachingParams) =>
+      apiFetch<CoachingPromptsResponse>("/coaching/prompts", { query: params }),
+    summary: (params?: CoachingParams) =>
+      apiFetch<CoachingSummaryResponse>("/coaching/summary", { query: params }),
+    explain: (category: CoachingCategory, matchedKey: string, params?: CoachingParams) =>
+      apiFetch<CoachingExplainResponse>(`/coaching/prompts/${category}/${matchedKey}/explain`, {
+        query: params,
+      }),
+    savePrompt: (body: CoachingSaveRequest) =>
+      apiFetch<LessonCandidate>("/coaching/prompts/save", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   },
   dashboard: {
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),

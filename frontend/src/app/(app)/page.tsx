@@ -10,6 +10,7 @@ import { ExchangeDiagnosticsCard } from "@/components/ExchangeDiagnosticsCard";
 import { ProviderStatusCard } from "@/components/ProviderStatusCard";
 import { TodaysDisciplineCard } from "@/components/TodaysDisciplineCard";
 import { ValidationPriorityDashboardCard } from "@/components/validation-priority/ValidationPriorityDashboardCard";
+import { CoachingDashboardCard } from "@/components/coaching/CoachingDashboardCard";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +61,8 @@ type DashboardData = {
   paperRunSessions: Awaited<ReturnType<typeof api.strategies.runSessions>> | null;
   validationPrioritySummary: Awaited<ReturnType<typeof api.validationPriority.summary>> | null;
   validationPriorityQueue: Awaited<ReturnType<typeof api.validationPriority.queue>> | null;
+  coachingSummary: Awaited<ReturnType<typeof api.coaching.summary>> | null;
+  coachingPrompts: Awaited<ReturnType<typeof api.coaching.prompts>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -100,6 +103,8 @@ export default function DashboardPage() {
       paperRunSessions,
       validationPrioritySummary,
       validationPriorityQueue,
+      coachingSummary,
+      coachingPrompts,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -114,6 +119,8 @@ export default function DashboardPage() {
       settled(api.strategies.runSessions({ limit: 50 }), null),
       settled(api.validationPriority.summary(), null),
       settled(api.validationPriority.queue({ limit: 3 }), null),
+      settled(api.coaching.summary(), null),
+      settled(api.coaching.prompts({ limit: 3 }), null),
     ]);
 
     if (summary) {
@@ -141,6 +148,8 @@ export default function DashboardPage() {
         paperRunSessions,
         validationPrioritySummary,
         validationPriorityQueue,
+        coachingSummary,
+        coachingPrompts,
       };
     }
 
@@ -163,6 +172,8 @@ export default function DashboardPage() {
       paperRunSessions,
       validationPrioritySummary,
       validationPriorityQueue,
+      coachingSummary,
+      coachingPrompts,
     };
   }, []);
 
@@ -585,6 +596,11 @@ export default function DashboardPage() {
         <ValidationPriorityDashboardCard
           summary={data?.validationPrioritySummary ?? null}
           topItems={data?.validationPriorityQueue?.items ?? []}
+        />
+
+        <CoachingDashboardCard
+          summary={data?.coachingSummary ?? null}
+          topPrompts={data?.coachingPrompts?.items ?? []}
         />
 
         <Card data-testid="dashboard-paper-validation-queue">

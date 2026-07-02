@@ -846,6 +846,7 @@ class LessonSourceType(StrEnum):
     JOURNAL = "journal"
     BACKTEST = "backtest"
     AGENT = "agent"
+    COACHING = "coaching"
 
 
 class LessonSeverity(StrEnum):
