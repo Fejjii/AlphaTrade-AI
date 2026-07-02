@@ -30,6 +30,9 @@ import type {
   StrategyQualityDetectorsResponse,
   StrategyQualitySummaryResponse,
   DetectorExplainResponse,
+  PaperPortfolioParams,
+  PaperPortfolioResponse,
+  PerformanceSnapshotListResponse,
   CoachingParams,
   CoachingPromptsResponse,
   CoachingSummaryResponse,
@@ -423,6 +426,18 @@ export const api = {
         `/strategy-quality/detectors/${condition}/explain`,
         { query: params },
       ),
+  },
+  performance: {
+    portfolio: (params?: PaperPortfolioParams) =>
+      apiFetch<PaperPortfolioResponse>("/performance/portfolio", {
+        query: params,
+        auth: true,
+      }),
+    snapshots: (params?: { start_date?: string; end_date?: string; limit?: number }) =>
+      apiFetch<PerformanceSnapshotListResponse>("/performance/snapshots", {
+        query: params,
+        auth: true,
+      }),
   },
   coaching: {
     prompts: (params?: CoachingParams) =>

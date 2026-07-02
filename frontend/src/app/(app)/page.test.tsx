@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
+import { samplePortfolio } from "./portfolio/sample-portfolio";
 
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({
@@ -269,6 +270,7 @@ vi.mock("@/hooks/useAsyncData", () => ({
           },
         ],
       },
+      paperPortfolio: samplePortfolio,
     },
     loading: false,
     error: null,
@@ -337,6 +339,11 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("link", { name: "Open validation priority" })).toHaveAttribute(
       "href",
       "/validation-priority",
+    );
+    expect(screen.getByTestId("dashboard-paper-portfolio")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open paper portfolio" })).toHaveAttribute(
+      "href",
+      "/portfolio",
     );
     expect(screen.getByTestId("what-to-do-next")).toBeInTheDocument();
     expect(screen.getByTestId("next-action-reason")).toHaveTextContent("Green-day protection");

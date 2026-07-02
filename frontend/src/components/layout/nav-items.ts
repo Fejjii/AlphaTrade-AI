@@ -45,6 +45,7 @@ export const navSections: readonly NavSection[] = [
     title: "Overview",
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/portfolio", label: "Paper Portfolio", icon: Wallet },
       { href: "/workspace", label: "AI Workspace", icon: Bot },
     ],
   },

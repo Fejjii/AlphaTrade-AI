@@ -675,6 +675,157 @@ export interface DetectorExplainResponse extends StrategyQualityContext {
   timeframes: DetectorTimeframeStat[];
 }
 
+// --- Paper portfolio (Slice 91B — read-only) ---
+
+export type PortfolioSourceFilter = "all" | "proposal_flow" | "paper_validation";
+
+export type PaperPortfolioParams = {
+  start_date?: string;
+  end_date?: string;
+  source?: PortfolioSourceFilter;
+  symbol?: string;
+  setup?: string;
+  timeframe?: string;
+  timezone?: string;
+};
+
+export interface PaperPortfolioSafetyBanner {
+  execution_mode: string;
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+  disclaimer: string;
+}
+
+export interface PaperPortfolioAccount {
+  starting_balance: string;
+  current_equity: string;
+  cumulative_realized_pnl: string;
+  unrealized_pnl: string | null;
+  open_trade_count: number;
+  closed_trade_count: number;
+  as_of: string;
+  limitations: string[];
+}
+
+export interface PerformanceMetrics {
+  trade_count: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  win_rate: number;
+  net_pnl: string;
+  gross_profit: string;
+  gross_loss: string;
+  total_fees: string;
+  total_funding: string;
+  avg_win: string;
+  avg_loss: string;
+  expectancy: string;
+  profit_factor: number | null;
+  avg_r_multiple: number | null;
+  max_drawdown: string;
+  max_drawdown_pct: number | null;
+  avg_duration_seconds: number | null;
+  violations: number;
+  equity_curve: { index: number; timestamp: string | null; cumulative_pnl: string }[];
+}
+
+export interface PortfolioGroupBreakdown {
+  key: string;
+  metrics: PerformanceMetrics;
+}
+
+export interface DollarEquityPoint {
+  index: number;
+  timestamp: string | null;
+  equity: string;
+  cumulative_realized_pnl: string;
+  unrealized_pnl: string | null;
+  event: "start" | "trade_close" | "live";
+}
+
+export interface DailyPortfolioPoint {
+  date: string;
+  starting_equity: string;
+  ending_equity: string;
+  daily_pnl: string;
+  daily_drawdown: string;
+  daily_drawdown_pct: number | null;
+  trades_closed: number;
+}
+
+export type PortfolioTrendLabel =
+  | "improving"
+  | "flat"
+  | "deteriorating"
+  | "insufficient_data";
+
+export interface PortfolioTrend {
+  label: PortfolioTrendLabel;
+  window_days: number;
+  recent_net_pnl: string | null;
+  prior_net_pnl: string | null;
+  rationale: string;
+}
+
+export interface OpenExposureSummary {
+  open_trade_count: number;
+  proposal_flow_count: number;
+  paper_validation_count: number;
+  unrealized_pnl_total: string | null;
+  notional_exposure: string | null;
+  limitations: string[];
+}
+
+export interface PortfolioFiltersApplied {
+  start_date: string | null;
+  end_date: string | null;
+  source: string;
+  symbol: string | null;
+  setup: string | null;
+  timeframe: string | null;
+  timezone: string;
+}
+
+export interface PortfolioBreakdowns {
+  by_symbol: PortfolioGroupBreakdown[];
+  by_setup: PortfolioGroupBreakdown[];
+  by_timeframe: PortfolioGroupBreakdown[];
+  by_strategy: PortfolioGroupBreakdown[];
+  by_source: PortfolioGroupBreakdown[];
+  by_detector: PortfolioGroupBreakdown[];
+}
+
+export interface PaperPortfolioResponse {
+  safety: PaperPortfolioSafetyBanner;
+  account: PaperPortfolioAccount;
+  metrics: PerformanceMetrics;
+  open_exposure: OpenExposureSummary;
+  equity_curve: DollarEquityPoint[];
+  daily_series: DailyPortfolioPoint[];
+  breakdowns: PortfolioBreakdowns;
+  trend: PortfolioTrend;
+  date_range: { start?: string | null; end?: string | null } | null;
+  filters_applied: PortfolioFiltersApplied;
+}
+
+export interface PerformanceSnapshotListItem {
+  id: string;
+  scope: string;
+  as_of: string;
+  trade_count: number;
+  net_pnl: string;
+  win_rate: number;
+  profit_factor: number | null;
+  max_drawdown: string;
+  max_drawdown_pct: number | null;
+}
+
+export interface PerformanceSnapshotListResponse {
+  items: PerformanceSnapshotListItem[];
+  total: number;
+}
+
 export type CoachingCategory =
   | "missed_entry"
   | "should_have_waited"

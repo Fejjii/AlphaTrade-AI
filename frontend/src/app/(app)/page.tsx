@@ -11,6 +11,7 @@ import { ProviderStatusCard } from "@/components/ProviderStatusCard";
 import { TodaysDisciplineCard } from "@/components/TodaysDisciplineCard";
 import { ValidationPriorityDashboardCard } from "@/components/validation-priority/ValidationPriorityDashboardCard";
 import { CoachingDashboardCard } from "@/components/coaching/CoachingDashboardCard";
+import { PaperPortfolioDashboardCard } from "@/components/portfolio/PaperPortfolioDashboardCard";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,6 +64,7 @@ type DashboardData = {
   validationPriorityQueue: Awaited<ReturnType<typeof api.validationPriority.queue>> | null;
   coachingSummary: Awaited<ReturnType<typeof api.coaching.summary>> | null;
   coachingPrompts: Awaited<ReturnType<typeof api.coaching.prompts>> | null;
+  paperPortfolio: Awaited<ReturnType<typeof api.performance.portfolio>> | null;
 };
 
 async function loadLegacyDashboard(): Promise<Partial<DashboardData>> {
@@ -105,6 +107,7 @@ export default function DashboardPage() {
       validationPriorityQueue,
       coachingSummary,
       coachingPrompts,
+      paperPortfolio,
     ] = await Promise.all([
       settled(api.dashboard.summary(), null),
       settled(api.usage.summary(), null),
@@ -121,6 +124,7 @@ export default function DashboardPage() {
       settled(api.validationPriority.queue({ limit: 3 }), null),
       settled(api.coaching.summary(), null),
       settled(api.coaching.prompts({ limit: 3 }), null),
+      settled(api.performance.portfolio(), null),
     ]);
 
     if (summary) {
@@ -150,6 +154,7 @@ export default function DashboardPage() {
         validationPriorityQueue,
         coachingSummary,
         coachingPrompts,
+        paperPortfolio,
       };
     }
 
@@ -174,6 +179,7 @@ export default function DashboardPage() {
       validationPriorityQueue,
       coachingSummary,
       coachingPrompts,
+      paperPortfolio,
     };
   }, []);
 
@@ -597,6 +603,8 @@ export default function DashboardPage() {
           summary={data?.validationPrioritySummary ?? null}
           topItems={data?.validationPriorityQueue?.items ?? []}
         />
+
+        <PaperPortfolioDashboardCard portfolio={data?.paperPortfolio ?? null} />
 
         <CoachingDashboardCard
           summary={data?.coachingSummary ?? null}
