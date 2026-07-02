@@ -2,6 +2,9 @@
 
 Reviewer-friendly walkthrough for **5–8 minutes**. Use the live staging app or Docker Compose locally.
 
+**Paper-first MVP (slices 84–89):** use the step-by-step operator checklist in
+[paper_first_mvp_demo_checklist.md](paper_first_mvp_demo_checklist.md) for setup review → run sessions → analytics → coaching → strategy quality.
+
 | | |
 |---|---|
 | **Frontend** | https://alpha-trade-ai-eight.vercel.app |
