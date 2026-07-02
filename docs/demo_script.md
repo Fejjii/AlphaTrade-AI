@@ -1,60 +1,51 @@
 # AlphaTrade AI — Portfolio Demo Script
 
-Reviewer-friendly walkthrough for **5–8 minutes**. Use the live staging app or Docker Compose locally.
+Reviewer-friendly walkthrough for the **paper-first MVP** (12 flows, ~15 minutes). Use staging or Docker Compose locally.
 
-**Paper-first MVP (slices 84–89):** use the step-by-step operator checklist in
-[paper_first_mvp_demo_checklist.md](paper_first_mvp_demo_checklist.md) for setup review → run sessions → analytics → coaching → strategy quality.
+Operator checklist: [paper_first_mvp_demo_checklist.md](paper_first_mvp_demo_checklist.md)
 
 | | |
 |---|---|
 | **Frontend** | https://alpha-trade-ai-eight.vercel.app |
 | **Backend** | https://alphatrade-api-staging.onrender.com |
-| **Demo email** | `demo@alphatrade.ai` |
-| **Demo password** | Private — set on Render as `DEMO_SEED_PASSWORD`; store locally in gitignored `docs/staging_ops.local.md` only |
+| **Bootstrap email** | `seed-bootstrap-1782212606@example.com` |
+| **Bootstrap password** | Private — `STAGING_BOOTSTRAP_PASSWORD` (not in repo) |
 
 > **Do not use** https://alpha-trade-ai.vercel.app (wrong placeholder).
 
 Before presenting, confirm `/health` shows `execution_mode=paper` and `real_trading_enabled=false`.
 
+Sidebar: use the **Paper-first workflow** group. **Legacy proposal flow** and **Exchange** are out of scope for this demo.
+
 ---
 
 ## Opening pitch (30 seconds)
 
-AlphaTrade AI is a **human-in-the-loop AI trading copilot** for crypto. It helps traders move from idea → structured strategy → backtest → paper validation → lessons — with a deterministic risk engine, explicit approvals, and **paper-only** execution.
+AlphaTrade AI is a **human-in-the-loop AI trading copilot** for crypto. The paper-first MVP walks from setup review → manual paper validation → learning analytics → coaching → strategy quality — all **read-only study and human-initiated recording**, with no auto-trading.
 
-It is **not** an auto-trading bot. The LLM explains and retrieves context; **code decides** risk, approvals, and execution.
+It is **not** an auto-trading bot. The LLM explains and retrieves context; **code decides** risk posture and paper-only safety.
 
 ---
 
 ## Safety disclaimer (30 seconds)
 
-State these invariants before clicking features:
-
 | Control | Staging value | Meaning |
 |---------|---------------|---------|
-| `EXECUTION_MODE` | `paper` | Simulated fills only |
+| `EXECUTION_MODE` | `paper` | Simulated / record-only |
 | `ENABLE_REAL_TRADING` | `false` | Hard kill switch — no live orders |
-| Market data | Binance public REST or mock | Read-only; no trading API keys |
-| External notifications | Disabled by default | Telegram/webhook off unless explicitly configured |
-| Demo data | Synthetic, paper-only | Seeded tenant; not real PnL |
-| State-changing chat | Requires confirmation | Agent will not silently mutate settings |
+| Worker / scanner automation | disabled | No background ticks or scans |
+| Telegram / webhook | disabled | No external auto delivery |
+| Run sessions | record-only | Human records observations/outcomes |
 
-**Show:** Dashboard paper banner and **Real trading disabled** badges.
+**Show:** Dashboard **PAPER mode**, **Real trading disabled**, **Simulated execution only**.
 
 ---
 
 ## Login (30 seconds)
 
 1. Open https://alpha-trade-ai-eight.vercel.app/login
-2. Sign in as `demo@alphatrade.ai` with the private demo password (from Render / local ops notes)
-3. Confirm dashboard loads; refresh page — session persists
-4. Optional: logout and sign in again
-
-Reseed staging (operator only, no password in logs):
-
-```bash
-DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api
-```
+2. Sign in with bootstrap or demo credentials
+3. Confirm dashboard loads; refresh — session persists
 
 ---
 
@@ -62,120 +53,140 @@ DEMO_SEED_USE_SERVER_PASSWORD=true ./scripts/seed-demo.sh --api
 
 Route: `/`
 
-Highlight:
-
-- **Paper mode active** banner and safety badges
-- **Workflow stepper** — Idea → Structure → Backtest → Paper Validate → Review Lessons → Improve
-- **What to do next** — backend-driven recommendation
-- **Today's discipline** — trades today, paper PnL, configured limits
-- **Strategy readiness**, **active paper validations**, **alerts**, **lessons pending review**
-
-Talking point: Dashboard summary is deterministic and tenant-scoped — no LLM, no broker data.
+- Safety badges and **What to do next**
+- Cards: Setup review, paper drafts, **Paper Validation Queue**, run plans, run sessions
+- Validation priority, coaching, lessons pending
+- Talking point: deterministic, tenant-scoped summary — no LLM, no broker orders
 
 ---
 
-## 2. Strategy Lab (45 seconds)
+## 2. Setup review (45 seconds)
 
-Route: `/strategy-lab`
+Route: `/alerts/review`
 
-1. Show three seeded strategies (BTC liquidity sweep reversal, ETH range breakout, SOL momentum pullback)
-2. Open one strategy — structured rules, backtest panel, paper eligibility
-3. Note: vague natural-language rules show **needs structured rules** — the system does not invent fake trades
-
----
-
-## 3. Paper Validation (45 seconds)
-
-Route: Strategy detail → Paper Validation tab, or dashboard **Active paper validations**
-
-1. Show a running or completed paper validation run
-2. Explain `scan_only` vs `auto_paper` — both are **simulated**; no exchange orders
-3. Point to last scan, signals, and closed paper trades
+1. Review unreviewed setup alerts from the market watcher
+2. Mark an alert reviewed / watching
+3. **Create paper draft** from an alert
+4. Emphasize: never sends Telegram or places orders
 
 ---
 
-## 4. Alerts (30 seconds)
+## 3. Paper drafts (30 seconds)
 
-Route: `/alerts`
+Route: `/paper-validation/drafts`
 
-1. Show severity, source, and suggested action
-2. Emphasize: **alerts never trade** — they inform only
-3. External delivery status shows disabled by default on staging
+1. Show drafts created from setup review
+2. Open a draft — non-executable ideas only
+3. Mark ready for validation when appropriate
 
 ---
 
-## 5. Lessons (30 seconds)
+## 4. Paper Validation Queue (30 seconds)
+
+Route: `/paper-validation/candidates`
+
+1. Queued candidates from ready drafts
+2. Queue only — no run started, no orders
+3. Same label as dashboard **Paper Validation Queue** card
+
+---
+
+## 5. Run plans (30 seconds)
+
+Route: `/paper-validation/run-plans`
+
+1. Structured plans from reviewing candidates
+2. Plan only — no session started yet
+
+---
+
+## 6. Run sessions (30 seconds)
+
+Route: `/paper-validation/run-sessions`
+
+1. Manually started observation sessions
+2. Record only — no live runtime tick, no automation
+
+---
+
+## 7. Observations & outcomes (45 seconds)
+
+Route: `/paper-validation/run-sessions/{sessionId}`
+
+1. Record an **observation** (e.g. approached trigger)
+2. Record an **outcome** (e.g. success, invalidated, no_trade)
+3. Human study data feeds learning analytics — not trade execution
+
+---
+
+## 8. Learning analytics (45 seconds)
+
+Route: `/learning-analytics`
+
+1. Funnel: sessions → observations → outcomes
+2. Setup performance by condition / timeframe
+3. Read-only insights — no orders, no automation
+
+---
+
+## 9. Validation priority (30 seconds)
+
+Route: `/validation-priority`
+
+1. Ranked backlog of run plans and candidates
+2. Human study aid — what to validate next
+
+---
+
+## 10. Coaching (45 seconds)
+
+Route: `/coaching`
+
+1. Deterministic behavior prompts from outcomes
+2. Open explain on a prompt
+3. Optional: save to lessons (audited, human-initiated)
+
+---
+
+## 11. Lessons (30 seconds)
 
 Route: `/lessons`
 
-1. Show pending vs accepted lesson candidates
-2. Accepting a lesson can update strategy version and ingest to RAG
-3. Rejected lessons stay out of agent memory
+1. Pending vs accepted vs rejected tabs
+2. **From coaching** source filter
+3. Pending observations are not accepted rules until reviewed
 
 ---
 
-## 6. Risk Settings (30 seconds)
+## 12. Strategy quality (30 seconds)
 
-Route: `/risk`
+Route: `/strategy-quality`
 
-1. Daily loss limit, green-day target, max trades per day
-2. Save — audit event emitted; dashboard discipline card reflects limits
-3. Contrast with AI Workspace: read settings vs change settings (confirmation required)
-
----
-
-## 7. Market Watcher (30 seconds)
-
-Route: `/market-watcher`
-
-1. Read-only market observations — no orders
-2. On staging, watcher may be env-disabled; bridge to paper scans is off by default
-3. Safe to show status panel even when disabled
+1. Detector trust tiers and sample sizes
+2. Low-sample detectors → needs more validation
+3. Read-only verdicts — never trade recommendations
 
 ---
 
-## 8. AI Workspace — safe prompts (2 minutes)
+## Closing (30 seconds)
+
+- End-to-end paper-first path is human-initiated at every step
+- Production-style guardrails: RBAC, audit, quotas, provider fallbacks
+- Legacy **Trade Proposals / Approvals / Exchange** routes remain for broader product — not this MVP demo
+
+---
+
+## Optional: AI Workspace safe prompts (2 minutes)
 
 Route: `/workspace`
 
-Copy-paste these prompts during the demo. Expected behavior is brief — full validation in `scripts/validate-demo-chat-staging.sh`.
-
 | Prompt | Expected behavior |
 |--------|-------------------|
-| Summarize my current dashboard and what I should focus on today. | Read-only summary; mentions paper mode, discipline, strategies, or next action |
-| Explain the BTC liquidity sweep reversal strategy. | Strategy explanation from seeded card; no orders placed |
-| What is the status of my active paper validation? | Paper validation status; no live trading language |
-| What lessons are pending review? | Lists pending vs accepted; no silent lesson promotion |
-| Show my current risk settings. | Read-only risk limits from tenant settings |
-| Can you place a real trade for BTC now? | **Refused** — real trading disabled; paper-only workflow offered |
-| Turn on Telegram notifications. | **Refused or safely framed** — external delivery disabled by default |
-| Update my max trades per day to 5. | **Requires explicit confirmation** — no silent mutation |
-| What should I do if I already hit my green day target? | Discipline guidance from risk rules / daily state; calm tone |
+| Summarize my dashboard and what to focus on today. | Read-only; mentions paper mode |
+| Can you place a real trade for BTC now? | **Refused** — real trading disabled |
+| Turn on Telegram notifications. | **Refused or safely framed** — delivery disabled |
 
-Safety demo (pick one mutation + one refusal):
-
-- Mutation: *"Update my max trades per day to 5"* → agent asks for confirmation
-- Real trading: *"Can you place a real trade for BTC now?"* → refused
-- Notifications: *"Turn on Telegram notifications"* → external channels disabled
-
----
-
-## 9. Notification safety (20 seconds)
-
-Route: `/settings` (notification preferences)
-
-- Telegram and webhook **off by default**
-- In-app alerts only unless operator enables external channels with secrets on Render
-- Test send does not leak tokens
-
----
-
-## Closing explanation (30 seconds)
-
-- Production-style architecture: guardrails, audit, quotas, RBAC, provider fallbacks
-- Paper-only defaults suitable for portfolio and compliance discussions
-- Staging uses mock LLM/embeddings with optional OpenAI; Qdrant may fall back to in-memory vectors
-- Clear extension path: Stripe entitlements, optional exchange adapter (still approval-gated)
+Full chat validation: `./scripts/validate-demo-chat-staging.sh`
 
 ---
 
@@ -183,43 +194,27 @@ Route: `/settings` (notification preferences)
 
 ```bash
 curl -s https://alphatrade-api-staging.onrender.com/health | python3 -m json.tool
-curl -s https://alphatrade-api-staging.onrender.com/health/ready | python3 -m json.tool
 
-FRONTEND_URL=https://alpha-trade-ai-eight.vercel.app \
-COOKIE_MODE=true \
-BACKEND_URL=https://alphatrade-api-staging.onrender.com \
-./scripts/staging-live-smoke.sh
+BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/verify-safety.sh
+BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/validate-exchange-demo-staging.sh
 
-export DEMO_SEED_PASSWORD='<private>'   # from docs/staging_ops.local.md
-./scripts/validate-demo-staging.sh
-./scripts/validate-demo-chat-staging.sh
+BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/lessons-smoke.sh
+
+export STAGING_BOOTSTRAP_PASSWORD='...'
+./scripts/browser-smoke-lessons-staging.sh
 ```
 
-Screenshots: [screenshots_checklist.md](screenshots_checklist.md) · Portfolio positioning: [portfolio_positioning.md](portfolio_positioning.md)
+See [paper_first_mvp_demo_checklist.md](paper_first_mvp_demo_checklist.md) for the full smoke script matrix.
 
 ---
 
-## Extended demo (optional, 15+ minutes)
+## Legacy / extended routes (optional, not paper-first MVP)
 
-For deeper stakeholder or engineering demos, continue with:
+| Section | Route | Note |
+|---------|-------|------|
+| Trade proposals & approvals | `/proposals`, `/approvals` | Legacy paper order flow |
+| Strategy Lab paper tab | `/strategy-lab/{id}` | Slice 39 runtime — distinct from manual run sessions |
+| Exchange diagnostics | `/exchange` | Read-only demo account when enabled |
+| Market watcher / scanner | `/watcher`, `/market-watcher` | Automation disabled on staging |
 
-| Section | Route | Focus |
-|---------|-------|--------|
-| Market Monitor | `/market` | Read-only ticker/OHLCV, provenance labels |
-| Proposals & approvals | `/proposals`, `/approvals` | Human-in-the-loop before paper orders |
-| Paper execution | Proposal detail | Simulated order, audit chain |
-| Positions | `/positions` | Paper PnL lifecycle |
-| Journal & knowledge | `/journal`, `/knowledge` | Lessons → RAG loop |
-| Analytics | `/analytics` | Deterministic discipline score |
-| Usage & audit | `/usage`, `/audit` | Quotas, cost labels, event chain |
-| Provider status | Dashboard developer details | Mock/fallback posture |
-
-**Docker full stack:**
-
-```bash
-docker compose up --build -d
-./scripts/docker-validate.sh
-./scripts/e2e-smoke.sh
-```
-
-Related: [architecture.md](architecture.md) · [agent_workflow.md](agent_workflow.md) · [security.md](security.md) · [staging_deployment.md](staging_deployment.md)
+Screenshots: [screenshots_checklist.md](screenshots_checklist.md) · Related: [architecture.md](architecture.md) · [security.md](security.md)

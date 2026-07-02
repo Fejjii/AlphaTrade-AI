@@ -70,7 +70,7 @@ export default function PaperValidationCandidatesPage() {
   );
   const { data, loading, error, reload } = useAsyncData(loader, []);
 
-  if (loading && !data) return <LoadingState label="Loading validation queue…" />;
+  if (loading && !data) return <LoadingState label="Loading paper validation queue…" />;
   if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
 
   return (

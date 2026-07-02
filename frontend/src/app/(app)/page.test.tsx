@@ -315,7 +315,7 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-paper-validation-queue")).toHaveTextContent(
       "Reviewing: 1",
     );
-    expect(screen.getByRole("link", { name: "View validation queue" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View paper validation queue" })).toHaveAttribute(
       "href",
       "/paper-validation/candidates",
     );

@@ -115,7 +115,7 @@ export default function PaperValidationCandidateDetailPage() {
     <div className="space-y-6" data-testid="paper-validation-candidate-detail">
       <div>
         <Link href="/paper-validation/candidates" className="text-xs text-zinc-400 underline">
-          Back to validation queue
+          Back to paper validation queue
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Validation Candidate</h1>
         <p className="text-sm text-zinc-400" data-testid="paper-candidate-safety-copy">

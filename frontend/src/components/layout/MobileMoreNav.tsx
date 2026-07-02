@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { navItems } from "./nav-items";
+import { navItems, navSections } from "./nav-items";
 
 const primaryMobileHrefs = new Set(["/", "/workspace", "/market", "/proposals", "/journal"]);
 
@@ -64,24 +64,44 @@ export function BottomNav() {
             onClick={(event) => event.stopPropagation()}
           >
             <p className="mb-3 text-xs uppercase tracking-wider text-zinc-500">More pages</p>
-            <div className="grid grid-cols-2 gap-2">
-              {moreItems.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href;
+            <div className="space-y-4">
+              {navSections.map((section) => {
+                const sectionItems = section.items.filter((item) => !primaryMobileHrefs.has(item.href));
+                if (sectionItems.length === 0) return null;
                 return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setMoreOpen(false)}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm",
-                      active
-                        ? "bg-emerald-500/10 text-emerald-300"
-                        : "text-zinc-300 hover:bg-zinc-900",
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{label}</span>
-                  </Link>
+                  <div key={section.title} className="space-y-2">
+                    <p
+                      className={cn(
+                        "text-[10px] font-semibold uppercase tracking-wider",
+                        section.title === "Legacy proposal flow"
+                          ? "text-amber-600/80"
+                          : "text-zinc-600",
+                      )}
+                    >
+                      {section.title}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {sectionItems.map(({ href, label, icon: Icon }) => {
+                        const active = pathname === href;
+                        return (
+                          <Link
+                            key={href}
+                            href={href}
+                            onClick={() => setMoreOpen(false)}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm",
+                              active
+                                ? "bg-emerald-500/10 text-emerald-300"
+                                : "text-zinc-300 hover:bg-zinc-900",
+                            )}
+                          >
+                            <Icon className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </div>

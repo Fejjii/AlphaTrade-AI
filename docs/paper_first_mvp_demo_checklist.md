@@ -1,6 +1,6 @@
 # Paper-First MVP Demo Checklist (Slice 90)
 
-Quick operator checklist for staging or local demos. Baseline: **f732063+**, paper-only, automation disabled.
+Quick operator checklist for staging or local demos. Baseline: **1b707e0+**, paper-only, automation disabled.
 
 | | |
 |---|---|
@@ -11,7 +11,7 @@ Quick operator checklist for staging or local demos. Baseline: **f732063+**, pap
 
 Before demo: confirm `/health` shows `execution_mode=paper` and `real_trading_enabled=false`.
 
-Longer narrative walkthrough: [demo_script.md](demo_script.md)
+Narrative walkthrough: [demo_script.md](demo_script.md)
 
 ---
 
@@ -27,26 +27,28 @@ Longer narrative walkthrough: [demo_script.md](demo_script.md)
 
 Show dashboard badges: **PAPER mode**, **Real trading disabled**, **Simulated execution only**.
 
+Sidebar: demo from **Paper-first workflow** section. Skip **Legacy proposal flow** and **Exchange** unless explaining broader product scope.
+
 ---
 
 ## Main flow checklist (12 steps)
 
-Use dashboard cards as the home base; sidebar now includes paper-first routes.
+| # | Flow | Route | Nav label | Staging smoke |
+|---|------|-------|-----------|---------------|
+| 1 | Dashboard | `/` | Dashboard | `staging-smoke.sh`, `staging-live-smoke.sh` |
+| 2 | Setup review | `/alerts/review` | Setup Review | `browser-smoke-setup-review-staging.sh`, `browser-smoke-setup-alert-draft-staging.sh` |
+| 3 | Paper drafts | `/paper-validation/drafts` | Paper Drafts | via setup-alert-draft browser smoke |
+| 4 | Paper Validation Queue | `/paper-validation/candidates` | Paper Validation Queue | `paper-validation-smoke.sh` |
+| 5 | Run plans | `/paper-validation/run-plans` | Run Plans | `validate-validation-priority-staging.sh` |
+| 6 | Run sessions | `/paper-validation/run-sessions` | Run Sessions | `validate-run-sessions-staging.sh`, `browser-smoke-run-sessions-staging.sh` |
+| 7 | Observations & outcomes | `/paper-validation/run-sessions/{id}` | (session detail) | `validate-session-observations-staging.sh`, `browser-smoke-session-observations-staging.sh` |
+| 8 | Learning analytics | `/learning-analytics` | Learning Analytics | `validate-learning-analytics-staging.sh`, `browser-smoke-learning-analytics-staging.sh` |
+| 9 | Validation priority | `/validation-priority` | Validation Priority | `validate-validation-priority-staging.sh`, `browser-smoke-validation-priority-staging.sh` |
+| 10 | Coaching | `/coaching` | Coaching | `validate-coaching-staging.sh`, `browser-smoke-coaching-staging.sh` |
+| 11 | Lessons | `/lessons` | Lessons | `lessons-smoke.sh`, `browser-smoke-lessons-staging.sh` |
+| 12 | Strategy quality | `/strategy-quality` | Strategy Quality | `strategy-quality-smoke.sh`, `browser-smoke-strategy-quality-staging.sh` |
 
-| # | Flow | Route | What to show | Staging smoke |
-|---|------|-------|--------------|---------------|
-| 1 | Dashboard | `/` | Safety badges, workflow stepper, paper cards, next action | `staging-smoke.sh`, `staging-live-smoke.sh` |
-| 2 | Setup review | `/alerts/review` | Review setup alerts; create draft from alert | `browser-smoke-setup-review-staging.sh`, `browser-smoke-setup-alert-draft-staging.sh` |
-| 3 | Paper drafts | `/paper-validation/drafts` | Non-executable drafts from reviewed alerts | via setup-alert-draft browser smoke |
-| 4 | Validation candidates | `/paper-validation/candidates` | Queued candidates (no run started) | `paper-validation-smoke.sh` (legacy runtime path) |
-| 5 | Run plans | `/paper-validation/run-plans` | Planned sessions from candidates | `validate-validation-priority-staging.sh` |
-| 6 | Run sessions | `/paper-validation/run-sessions` | Manual record-only sessions | `validate-run-sessions-staging.sh`, `browser-smoke-run-sessions-staging.sh` |
-| 7 | Observations & outcomes | `/paper-validation/run-sessions/{id}` | Record observation + outcome on session detail | `validate-session-observations-staging.sh`, `browser-smoke-session-observations-staging.sh` |
-| 8 | Learning analytics | `/learning-analytics` | Funnel, setup performance, discipline | `validate-learning-analytics-staging.sh`, `browser-smoke-learning-analytics-staging.sh`, `analytics-smoke.sh` |
-| 9 | Validation priority | `/validation-priority` | Read-only ranking of what to validate next | `validate-validation-priority-staging.sh`, `browser-smoke-validation-priority-staging.sh` |
-| 10 | Coaching | `/coaching` | Behavior prompts from outcomes | `validate-coaching-staging.sh`, `browser-smoke-coaching-staging.sh` |
-| 11 | Lessons | `/lessons` | Pending / accepted / rejected candidates | `strategy-smoke.sh`, `validate-demo-staging.sh` |
-| 12 | Strategy quality | `/strategy-quality` | Detector trust tiers, calibration | `strategy-quality-smoke.sh`, `browser-smoke-strategy-quality-staging.sh` |
+Label alignment: dashboard card, page title, nav, and links all use **Paper Validation Queue** for `/paper-validation/candidates`.
 
 ---
 
@@ -55,29 +57,27 @@ Use dashboard cards as the home base; sidebar now includes paper-first routes.
 1. **Dashboard** — confirm paper posture and open setup review card.
 2. **Setup review** → mark alert → **create draft**.
 3. **Paper draft detail** → mark ready → **queue candidate**.
-4. **Candidate detail** → create **run plan**.
+4. **Paper Validation Queue** → open candidate → create **run plan**.
 5. **Run plan detail** → start **run session** (record-only).
 6. **Session detail** → record **observation** and **outcome**.
 7. **Learning analytics** — show funnel moved by new outcomes.
 8. **Validation priority** — show item surfaced from backlog.
 9. **Coaching** — open explain prompt; optional save to lessons.
-10. **Lessons** — accept or reject candidate.
+10. **Lessons** — use **From coaching** filter; accept or reject candidate.
 11. **Strategy quality** — show detector sample size / trust tier / read-only verdict.
 
 Talking point: every step is human-initiated study — no auto-trading, no Telegram sends, no exchange orders.
 
 ---
 
-## Pages to avoid implying live trading
+## Pages outside the paper-first demo path
 
-These routes exist for the broader product but are **not** the paper-first MVP demo path:
-
-| Route | Note |
-|-------|------|
-| `/proposals`, `/approvals` | Legacy proposal → approval → paper order flow (still paper-only) |
-| `/exchange` | Demo account read-only diagnostics when enabled |
-| `/watcher`, `/market-watcher` | Scanner tooling; automation disabled on staging |
-| `/strategy-lab` Paper Validation tab | Legacy Slice 39 runtime panel (scan/tick) — distinct from manual run sessions |
+| Route | Sidebar section | Note |
+|-------|-----------------|------|
+| `/proposals`, `/approvals`, `/positions` | Legacy proposal flow | Paper-only but not the MVP demo chain |
+| `/exchange` | Platform | Demo account read-only diagnostics when enabled |
+| `/watcher`, `/market-watcher` | Market & tools | Scanner tooling; automation disabled on staging |
+| `/strategy-lab` Paper Validation tab | Strategy & journal | Legacy Slice 39 runtime — distinct from manual run sessions |
 
 Do not demo Telegram preview buttons unless explaining they are **disabled by default**.
 
@@ -92,19 +92,25 @@ BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/verify-safety.sh
 # Exchange demo read-only posture
 BACKEND_URL=https://alphatrade-api-staging.onrender.com ./scripts/validate-exchange-demo-staging.sh
 
-# Optional bundled staging smoke (set flags for analytics / strategy quality)
+# Lessons read-only API smoke
+BASE_URL=https://alphatrade-api-staging.onrender.com ./scripts/lessons-smoke.sh
+
+# Optional bundled staging smoke
 INCLUDE_ANALYTICS=true INCLUDE_STRATEGY_QUALITY=true \
   BASE_URL=https://alphatrade-api-staging.onrender.com \
   ./scripts/staging-smoke.sh
+
+# Browser smokes (require STAGING_BOOTSTRAP_PASSWORD)
+export STAGING_BOOTSTRAP_PASSWORD='...'
+./scripts/browser-smoke-lessons-staging.sh
 ```
 
 ---
 
-## Known MVP gaps (document, do not fix in demo)
+## Remaining polish (non-blocking)
 
-- Sidebar is long; mobile uses **More** menu for most paper-first routes.
-- Dashboard card **Paper Validation Queue** vs nav **Validation Queue** — same `/paper-validation/candidates` route.
 - Legacy workflow stepper (Strategy Lab backtest path) coexists with manual paper validation chain.
-- `demo_script.md` extended section still references older Strategy Lab paper validation tab — use this checklist for slices 84–89 flows.
+- Mobile uses **More** menu with grouped sections for long nav.
+- Duplicate icons in Platform section (cosmetic only).
 
 Related: [limitations_roadmap.md](limitations_roadmap.md) · [paper_validation.md](paper_validation.md)

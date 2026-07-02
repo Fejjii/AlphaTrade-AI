@@ -630,7 +630,7 @@ export default function DashboardPage() {
               href="/paper-validation/candidates"
               className="inline-block text-xs text-zinc-400 underline"
             >
-              View validation queue
+              View paper validation queue
             </Link>
           </CardContent>
         </Card>
