@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+import { obtainPortfolioSmokeAccessToken } from "./helpers/staging-smoke-auth";
+
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-const DEMO_EMAIL = process.env.STAGING_DEMO_EMAIL ?? "demo@alphatrade.ai";
-const DEMO_PASSWORD = process.env.STAGING_DEMO_PASSWORD ?? "";
 
 test.describe("Staging /portfolio read-only smoke (Slice 91B)", () => {
   test.skip(
@@ -10,18 +10,14 @@ test.describe("Staging /portfolio read-only smoke (Slice 91B)", () => {
     "Set PLAYWRIGHT_STAGING_PORTFOLIO_SMOKE=1 for staging browser smoke",
   );
 
-  test.skip(!DEMO_PASSWORD, "STAGING_DEMO_PASSWORD required");
-
   test("portfolio page loads, shows safety copy, exposes no secrets or order/automation UI", async ({
     page,
     request,
   }) => {
-    const login = await request.post(`${API_URL}/auth/login`, {
-      data: { email: DEMO_EMAIL, password: DEMO_PASSWORD },
-    });
-    expect(login.ok()).toBeTruthy();
-    const auth = await login.json();
-    const accessToken = auth.tokens.access_token as string;
+    const { accessToken, loginStatus } = await obtainPortfolioSmokeAccessToken(request, API_URL);
+    if (loginStatus !== null) {
+      console.log(`POST /auth/login — HTTP ${loginStatus}`);
+    }
 
     await page.addInitScript((token: string) => {
       sessionStorage.setItem("alphatrade_access_token", token);
@@ -30,11 +26,17 @@ test.describe("Staging /portfolio read-only smoke (Slice 91B)", () => {
     await page.goto("/portfolio");
 
     await expect(page.getByTestId("paper-portfolio-page")).toBeVisible();
-    await expect(page.getByTestId("paper-portfolio-safety-banner")).toBeVisible();
+    const safetyBanner = page.getByTestId("paper-portfolio-safety-banner");
+    await expect(safetyBanner).toBeVisible();
     await expect(page.getByTestId("paper-portfolio-summary-cards")).toBeVisible();
-    await expect(page.getByText(/paper-only simulated portfolio/i)).toBeVisible();
-    await expect(page.getByText(/not live trading/i)).toBeVisible();
-    await expect(page.getByText(/not investment advice/i)).toBeVisible();
+    await expect(safetyBanner.getByTestId("paper-portfolio-paper-only")).toBeVisible();
+    await expect(safetyBanner.getByText(/not live trading/i)).toBeVisible();
+    await expect(
+      safetyBanner.getByText(
+        "Not investment advice. Does not indicate readiness for real money.",
+        { exact: true },
+      ),
+    ).toBeVisible();
 
     const portfolio = await request.get(`${API_URL}/performance/portfolio`, {
       headers: { Authorization: `Bearer ${accessToken}` },

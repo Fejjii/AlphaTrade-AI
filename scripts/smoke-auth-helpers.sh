@@ -2,6 +2,37 @@
 # Shared auth helpers for staging/e2e smoke scripts.
 # Callers must define curl_api / curl_api_cookie and set BASE_URL, EMAIL, PASSWORD.
 
+# Reject obvious placeholder passwords before hitting staging auth.
+reject_smoke_password_placeholder() {
+  local password="$1"
+  local lowered
+  lowered="$(printf '%s' "$password" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ -z "$password" ]]; then
+    echo "SMOKE_PASSWORD must not be empty." >&2
+    return 1
+  fi
+
+  local markers=(
+    paste_password_here
+    your_real_password
+    replace_with
+    your-chosen-demo-password
+    your_chosen
+    changeme
+    change-me
+    password_here
+    insert_password
+  )
+  local marker
+  for marker in "${markers[@]}"; do
+    if [[ "$lowered" == *"$marker"* ]]; then
+      echo "SMOKE_PASSWORD looks like a placeholder ($marker); set a real value." >&2
+      return 1
+    fi
+  done
+}
+
 smoke_login_after_register() {
   # Usage: smoke_login_after_register "$register_json"
   # Sets SMOKE_ACCESS_TOKEN and SMOKE_SESSION_JSON (login body or register json).
