@@ -11,8 +11,22 @@ from uuid import UUID
 import structlog
 
 from app.providers.base import BaseMockProvider, ProviderHealth, ProviderKind, ProviderStatus
+from app.providers.embedding_dimensions import MOCK_EMBEDDINGS_DIMENSIONS
 
 logger = structlog.get_logger(__name__)
+
+
+class VectorDimensionMismatchError(RuntimeError):
+    """Raised when vectors do not match an existing Qdrant collection size."""
+
+    def __init__(self, *, collection: str, expected: int, actual: int) -> None:
+        self.collection = collection
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"Qdrant collection '{collection}' has vector size {actual}, "
+            f"but embeddings produce {expected}. Recreate the collection and reingest."
+        )
 
 
 @dataclass(frozen=True)
@@ -123,6 +137,8 @@ class InMemoryVectorStore:
         for point in bucket.values():
             if not _matches_filters(point.payload, filters):
                 continue
+            if len(point.vector) != len(vector):
+                continue
             raw = _cosine_similarity(vector, point.vector)
             hits.append(
                 VectorSearchHit(
@@ -183,6 +199,25 @@ def _build_qdrant_filter(filters: VectorSearchFilters) -> dict[str, Any] | None:
     return {"must": must}
 
 
+def _collection_vector_size_from_info(info: Any) -> int | None:
+    """Extract vector size from a qdrant_client collection info object."""
+    try:
+        params = info.config.params
+        vectors = params.vectors
+        if hasattr(vectors, "size"):
+            return int(vectors.size)
+        if isinstance(vectors, dict):
+            # Named vectors — use the first entry.
+            first = next(iter(vectors.values()), None)
+            if first is not None and hasattr(first, "size"):
+                return int(first.size)
+            if isinstance(first, dict) and "size" in first:
+                return int(first["size"])
+    except Exception:
+        return None
+    return None
+
+
 class QdrantVectorStore:
     """Real Qdrant client with in-memory fallback on failure."""
 
@@ -192,28 +227,65 @@ class QdrantVectorStore:
         self,
         url: str,
         *,
+        api_key: str | None = None,
         fallback: InMemoryVectorStore | None = None,
-        vector_size: int = 384,
+        vector_size: int = MOCK_EMBEDDINGS_DIMENSIONS,
     ) -> None:
+        if vector_size < 1:
+            raise ValueError("vector_size must be >= 1")
         self._url = url
+        self._api_key = (api_key or "").strip() or None
         self._fallback = fallback or InMemoryVectorStore()
         self._vector_size = vector_size
         self._client = None
         self._using_qdrant = False
+        self._dimension_mismatch: tuple[str, int, int] | None = None
         self._connect()
+
+    @property
+    def vector_size(self) -> int:
+        return self._vector_size
+
+    @property
+    def using_qdrant(self) -> bool:
+        return self._using_qdrant
 
     def _connect(self) -> None:
         try:
             from qdrant_client import QdrantClient
 
-            client = QdrantClient(url=self._url, timeout=5.0)
+            kwargs: dict[str, Any] = {"url": self._url, "timeout": 5.0}
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+            client = QdrantClient(**kwargs)
             client.get_collections()
             self._client = client
             self._using_qdrant = True
         except Exception as exc:
-            logger.warning("qdrant_connect_failed", url=self._url, error=str(exc))
+            logger.warning("qdrant_connect_failed", error=str(exc))
             self._client = None
             self._using_qdrant = False
+
+    def collection_vector_size(self, collection: str) -> int | None:
+        """Return existing collection vector size, or None if missing/unreachable."""
+        if not self._using_qdrant or self._client is None:
+            return None
+        try:
+            info = self._client.get_collection(collection)
+        except Exception:
+            return None
+        return _collection_vector_size_from_info(info)
+
+    def assert_compatible(self, collection: str, vector_size: int) -> None:
+        """Raise if an existing collection has a different vector size."""
+        existing = self.collection_vector_size(collection)
+        if existing is not None and existing != vector_size:
+            self._dimension_mismatch = (collection, vector_size, existing)
+            raise VectorDimensionMismatchError(
+                collection=collection,
+                expected=vector_size,
+                actual=existing,
+            )
 
     def _ensure_collection(self, collection: str, *, vector_size: int | None = None) -> None:
         if self._client is None:
@@ -221,18 +293,59 @@ class QdrantVectorStore:
         from qdrant_client.http import models as qmodels
 
         size = vector_size or self._vector_size
+        existing = self.collection_vector_size(collection)
+        if existing is not None:
+            if existing != size:
+                raise VectorDimensionMismatchError(
+                    collection=collection,
+                    expected=size,
+                    actual=existing,
+                )
+            return
+        self._client.create_collection(
+            collection_name=collection,
+            vectors_config=qmodels.VectorParams(size=size, distance=qmodels.Distance.COSINE),
+        )
+        self._dimension_mismatch = None
+
+    def recreate_collection(self, collection: str, *, vector_size: int | None = None) -> None:
+        """Delete and recreate a single collection with the configured vector size.
+
+        Operator-only helper. Does not touch trading state or other collections.
+        """
+        if not self._using_qdrant or self._client is None:
+            raise RuntimeError("Qdrant is not connected; cannot recreate collection.")
+        from qdrant_client.http import models as qmodels
+
+        size = vector_size or self._vector_size
         try:
-            self._client.get_collection(collection)
-        except Exception:
-            self._client.create_collection(
-                collection_name=collection,
-                vectors_config=qmodels.VectorParams(size=size, distance=qmodels.Distance.COSINE),
-            )
+            self._client.delete_collection(collection_name=collection)
+        except Exception as exc:
+            logger.info("qdrant_delete_collection_skipped", collection=collection, error=str(exc))
+        self._client.create_collection(
+            collection_name=collection,
+            vectors_config=qmodels.VectorParams(size=size, distance=qmodels.Distance.COSINE),
+        )
+        self._dimension_mismatch = None
+        logger.info("qdrant_collection_recreated", collection=collection, vector_size=size)
 
     def upsert(self, collection: str, points: list[VectorPoint]) -> None:
         if not points:
             return
         vector_size = len(points[0].vector)
+        if any(len(point.vector) != vector_size for point in points):
+            raise ValueError("All points in an upsert batch must share the same vector size.")
+        if vector_size != self._vector_size:
+            # Never write dimension-mismatched vectors into Qdrant.
+            self._dimension_mismatch = (collection, self._vector_size, vector_size)
+            logger.error(
+                "qdrant_upsert_rejected_provider_size",
+                collection=collection,
+                expected=self._vector_size,
+                actual=vector_size,
+            )
+            self._fallback.upsert(collection, points)
+            return
         if not self._using_qdrant or self._client is None:
             self._fallback.upsert(collection, points)
             return
@@ -249,6 +362,17 @@ class QdrantVectorStore:
                 for point in points
             ]
             self._client.upsert(collection_name=collection, points=qdrant_points)
+            self._dimension_mismatch = None
+        except VectorDimensionMismatchError as exc:
+            self._dimension_mismatch = (exc.collection, exc.expected, exc.actual)
+            logger.error(
+                "qdrant_upsert_dimension_mismatch",
+                collection=exc.collection,
+                expected=exc.expected,
+                actual=exc.actual,
+            )
+            # Never write incompatible vectors into Qdrant.
+            self._fallback.upsert(collection, points)
         except Exception as exc:
             logger.warning("qdrant_upsert_fallback", error=str(exc))
             self._fallback.upsert(collection, points)
@@ -261,6 +385,14 @@ class QdrantVectorStore:
         filters: VectorSearchFilters,
         top_k: int,
     ) -> list[VectorSearchHit]:
+        if len(vector) != self._vector_size:
+            logger.error(
+                "qdrant_search_rejected_provider_size",
+                collection=collection,
+                expected=self._vector_size,
+                actual=len(vector),
+            )
+            return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
         if not self._using_qdrant or self._client is None:
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
         try:
@@ -289,7 +421,17 @@ class QdrantVectorStore:
                         payload=payload,
                     )
                 )
+            self._dimension_mismatch = None
             return hits
+        except VectorDimensionMismatchError as exc:
+            self._dimension_mismatch = (exc.collection, exc.expected, exc.actual)
+            logger.error(
+                "qdrant_search_dimension_mismatch",
+                collection=exc.collection,
+                expected=exc.expected,
+                actual=exc.actual,
+            )
+            return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
         except Exception as exc:
             logger.warning("qdrant_search_fallback", error=str(exc))
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
@@ -298,6 +440,20 @@ class QdrantVectorStore:
         # The hosted Qdrant URL is intentionally omitted from `detail`: this
         # status is served publicly via the unauthenticated /providers/status
         # endpoint. The endpoint is logged server-side at connect time instead.
+        if self._dimension_mismatch is not None:
+            collection, expected, actual = self._dimension_mismatch
+            return ProviderStatus(
+                name=self.name,
+                kind=ProviderKind.VECTOR,
+                health=ProviderHealth.DEGRADED,
+                using_fallback=True,
+                is_mock=False,
+                detail=(
+                    f"Qdrant collection '{collection}' is {actual}-d but embeddings "
+                    f"are {expected}-d. Recreate collection and reingest; "
+                    f"incompatible vectors are not written to Qdrant."
+                ),
+            )
         if self._using_qdrant:
             return ProviderStatus(
                 name=self.name,
@@ -305,7 +461,7 @@ class QdrantVectorStore:
                 health=ProviderHealth.HEALTHY,
                 using_fallback=False,
                 is_mock=False,
-                detail="Qdrant connected.",
+                detail=f"Qdrant connected (configured {self._vector_size}-d).",
             )
         return ProviderStatus(
             name=self.name,

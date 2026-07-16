@@ -21,6 +21,12 @@ services:
         value: false
       - key: PROVIDER_MODE
         value: fallback
+      - key: EXCHANGE_MODE
+        value: paper_internal
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: EMBEDDINGS_MODEL
+        value: text-embedding-3-small
       - key: BILLING_ENABLED
         value: false
       - key: ALERT_DELIVERY_ENABLED

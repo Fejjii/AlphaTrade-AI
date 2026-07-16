@@ -1,0 +1,26 @@
+[
+  {
+    "source_type": "risk_policy",
+    "title": "Risk Policy — Capital Preservation",
+    "text": "Capital preservation first. Every trade requires a stop loss. No position without defined invalidation. Risk per trade must stay within organization limits. Revenge trading and emotional sizing are forbidden.",
+    "risk_tag": "stop_loss"
+  },
+  {
+    "source_type": "trading_playbook",
+    "title": "Trading Playbook — Approval Gate",
+    "text": "Human approval is required before any executable order. The agent must not bypass approval or risk checks. Paper mode is the default. Real trading remains disabled unless operators explicitly change deployment safety settings.",
+    "source_uri": "seed://trading_playbook/approval_gate"
+  },
+  {
+    "source_type": "strategy_template",
+    "title": "HTF Trend Pullback Template",
+    "text": "Pullback entry rules: trade only with higher timeframe trend alignment. Wait for pullback into value. Confirm invalidation before sizing. Prefer BTC and major pairs with liquid books.",
+    "strategy_tag": "htf_trend_pullback",
+    "symbol_tag": "BTCUSDT"
+  },
+  {
+    "source_type": "mistakes_database",
+    "title": "Mistakes Database — FOMO",
+    "text": "Common mistake: chasing green candles due to FOMO. Apply green day guard before adding risk. After a loss, enforce cooldown before the next setup."
+  }
+]

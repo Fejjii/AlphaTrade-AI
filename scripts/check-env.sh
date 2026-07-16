@@ -69,6 +69,12 @@ if settings.environment.value in ("staging", "production"):
             print(f"  [FAIL] {name}={actual} (required {expected})", file=sys.stderr)
             failed = True
     print(f"  provider_mode={settings.provider_mode} (staging recommended: fallback)")
+    print(
+        f"  openai_configured={bool(settings.openai_api_key.strip())} "
+        f"qdrant_api_key_configured={bool(settings.qdrant_api_key.strip())} "
+        f"embeddings_model={settings.embeddings_model} "
+        f"embeddings_dimensions={settings.embeddings_dimensions}"
+    )
     if settings.environment.value == "staging" and settings.auth_cookie_samesite != "none":
         print(
             "  [WARN] AUTH_COOKIE_SAMESITE is not 'none' — cross-domain Vercel+Render needs 'none'",

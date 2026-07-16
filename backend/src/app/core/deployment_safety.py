@@ -127,4 +127,7 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "debug": settings.debug,
         "openai_configured": bool(settings.openai_api_key.strip()),
         "qdrant_configured": bool(settings.qdrant_url.strip()),
+        "qdrant_api_key_configured": bool(settings.qdrant_api_key.strip()),
+        "embeddings_model": settings.embeddings_model,
+        "embeddings_dimensions": settings.embeddings_dimensions,
     }

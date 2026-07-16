@@ -108,7 +108,7 @@
 - LLM narrative uses mock provider without `OPENAI_API_KEY`; real LLM only when configured.
 - Usage metering records both `agent_chat` (light) and `agent_narrative` features.
 - Binance public API may rate-limit or block; mock fallback is automatic.
-- Qdrant vectors use 384 dimensions for mock embeddings; OpenAI `text-embedding-3-small` may differ — re-index when switching embedding providers.
+- Embedding dimensions are resolved automatically (384 mock / 1536 for `text-embedding-3-small`). Switching providers requires recreating `alphatrade_knowledge` and reingesting (see [rag_system.md](rag_system.md)).
 - LangSmith tracing provider remains a mock placeholder.
 
 ### Frontend

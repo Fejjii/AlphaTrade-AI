@@ -16,6 +16,9 @@ SCRIPTS = (
     "scripts/run-slice66b-controlled-demo-order.sh",
     "scripts/test-seed-path-staging.sh",
     "scripts/run-migrations.sh",
+    "scripts/provider-validation-smoke.sh",
+    "scripts/recreate-rag-collection.sh",
+    "scripts/reingest-knowledge-base.sh",
 )
 
 

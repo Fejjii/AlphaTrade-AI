@@ -124,11 +124,18 @@ def test_production_rejects_debug_mode() -> None:
 
 
 def test_deployment_posture_excludes_secrets() -> None:
-    settings = Settings(**_STAGING_BASE, openai_api_key="sk-secret")
+    settings = Settings(
+        **_STAGING_BASE,
+        openai_api_key="sk-secret",
+        qdrant_api_key="qdrant-secret",
+    )
     posture = deployment_posture(settings)
     assert "sk-secret" not in str(posture)
+    assert "qdrant-secret" not in str(posture)
     assert posture["openai_configured"] is True
+    assert posture["qdrant_api_key_configured"] is True
     assert "jwt_secret" not in posture
+    assert "qdrant_api_key" not in posture
 
 
 def test_validate_deployment_skips_local() -> None:

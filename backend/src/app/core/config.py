@@ -158,6 +158,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade"
     redis_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
 
     # --- Providers (blank credentials -> mock/fallback providers) ---
     provider_mode: str = "mock"  # mock | fallback | live
@@ -165,6 +166,8 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     embeddings_model: str = "text-embedding-3-small"
+    # None = auto (384 mock; OpenAI model native size when key configured).
+    embeddings_dimensions: int | None = Field(default=None, ge=1)
 
     # --- Market data (read-only; Binance public API, no key required) ---
     market_data_enabled: bool = True

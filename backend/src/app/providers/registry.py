@@ -25,7 +25,7 @@ from app.providers.factory import resolve_market_data_provider, resolve_provider
 from app.providers.infrastructure import RedisInfrastructureProvider
 from app.providers.llm import LLMProvider, MockLLMProvider
 from app.providers.market_data import MarketDataProvider
-from app.providers.qdrant import MockQdrantProvider, QdrantVectorStore
+from app.providers.qdrant import MockQdrantProvider, VectorStore
 
 logger = structlog.get_logger(__name__)
 
@@ -101,9 +101,9 @@ class _LLMProviderAdapter:
 
 
 class _VectorStoreAdapter:
-    def __init__(self, inner: QdrantVectorStore | MockQdrantProvider) -> None:
+    def __init__(self, inner: VectorStore) -> None:
         self._inner = inner
-        self.name = inner.name if hasattr(inner, "name") else "qdrant"
+        self.name = getattr(inner, "name", "qdrant")
         self.kind = ProviderKind.VECTOR
 
     def status(self) -> ProviderStatus:
@@ -149,14 +149,8 @@ def build_default_registry(settings: Settings) -> ProviderRegistry:
     registry.register(_EmbeddingsProviderAdapter(resolved.embeddings))
 
     if should_use_qdrant(settings):
-        registry.register(
-            _VectorStoreAdapter(
-                QdrantVectorStore(
-                    settings.qdrant_url.strip(),
-                    fallback=resolved.fallback_vector_store,
-                )
-            )
-        )
+        # Reuse the same store instance as RAG (auth + dimension config).
+        registry.register(_VectorStoreAdapter(resolved.vector_store))
     else:
         registry.register(MockQdrantProvider(store=resolved.fallback_vector_store))
 

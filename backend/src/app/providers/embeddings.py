@@ -13,6 +13,10 @@ import httpx
 import structlog
 
 from app.providers.base import BaseMockProvider, ProviderHealth, ProviderKind, ProviderStatus
+from app.providers.embedding_dimensions import (
+    MOCK_EMBEDDINGS_DIMENSIONS,
+    model_supports_dimensions_param,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +29,7 @@ class EmbeddingResult:
     input_tokens: int = 0
     latency_ms: float = 0.0
     fallback_used: bool = False
+    dimensions: int = 0
 
 
 @runtime_checkable
@@ -33,6 +38,11 @@ class EmbeddingsProvider(Protocol):
 
     name: str
     kind: ProviderKind
+
+    @property
+    def dimensions(self) -> int:
+        """Vector size produced by this provider (including fallback)."""
+        ...
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return one embedding vector per input text."""
@@ -45,7 +55,9 @@ class EmbeddingsProvider(Protocol):
     def status(self) -> ProviderStatus: ...
 
 
-def _deterministic_vector(text: str, *, dimensions: int = 384) -> list[float]:
+def _deterministic_vector(
+    text: str, *, dimensions: int = MOCK_EMBEDDINGS_DIMENSIONS
+) -> list[float]:
     """Hash text into a stable unit-length vector for mock retrieval."""
     digest = hashlib.sha256(text.encode()).digest()
     values: list[float] = []
@@ -65,13 +77,19 @@ def _deterministic_vector(text: str, *, dimensions: int = 384) -> list[float]:
 class MockEmbeddingsProvider(BaseMockProvider):
     """Deterministic embeddings for offline tests and local development."""
 
-    def __init__(self, *, dimensions: int = 384) -> None:
+    def __init__(self, *, dimensions: int = MOCK_EMBEDDINGS_DIMENSIONS) -> None:
+        if dimensions < 1:
+            raise ValueError("dimensions must be >= 1")
         super().__init__(
             "mock-embeddings",
             ProviderKind.EMBEDDINGS,
-            detail="Deterministic hash-based embeddings for tests.",
+            detail=f"Deterministic hash-based embeddings ({dimensions}-d) for tests.",
         )
         self._dimensions = dimensions
+
+    @property
+    def dimensions(self) -> int:
+        return self._dimensions
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self.embed_with_metadata(texts).vectors
@@ -85,6 +103,7 @@ class MockEmbeddingsProvider(BaseMockProvider):
             input_tokens=max(sum(len(t) for t in texts) // 4, len(texts)),
             latency_ms=1.0,
             fallback_used=True,
+            dimensions=self._dimensions,
         )
 
 
@@ -100,14 +119,27 @@ class OpenAIEmbeddingsProvider:
         model: str,
         api_key: str,
         base_url: str,
+        dimensions: int,
         fallback: MockEmbeddingsProvider | None = None,
         timeout_seconds: float = 30.0,
     ) -> None:
+        if dimensions < 1:
+            raise ValueError("dimensions must be >= 1")
         self._model = model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
-        self._fallback = fallback or MockEmbeddingsProvider()
+        self._dimensions = dimensions
+        self._fallback = fallback or MockEmbeddingsProvider(dimensions=dimensions)
         self._timeout = timeout_seconds
+        if self._fallback.dimensions != dimensions:
+            raise ValueError(
+                "OpenAI embeddings fallback dimensions must match provider dimensions "
+                f"({self._fallback.dimensions} != {dimensions})"
+            )
+
+    @property
+    def dimensions(self) -> int:
+        return self._dimensions
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self.embed_with_metadata(texts).vectors
@@ -118,20 +150,16 @@ class OpenAIEmbeddingsProvider:
                 vectors=[],
                 model=self._model,
                 provider=self.name,
+                dimensions=self._dimensions,
             )
         if not self._api_key:
-            result = self._fallback.embed_with_metadata(texts)
-            return EmbeddingResult(
-                vectors=result.vectors,
-                model=self._model,
-                provider=self.name,
-                input_tokens=result.input_tokens,
-                latency_ms=result.latency_ms,
-                fallback_used=True,
-            )
+            return self._fallback_result(texts, latency_ms=0.0)
 
         started = time.perf_counter()
         try:
+            body: dict[str, object] = {"model": self._model, "input": texts}
+            if model_supports_dimensions_param(self._model):
+                body["dimensions"] = self._dimensions
             with httpx.Client(timeout=self._timeout) as client:
                 response = client.post(
                     f"{self._base_url}/embeddings",
@@ -139,25 +167,32 @@ class OpenAIEmbeddingsProvider:
                         "Authorization": f"Bearer {self._api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={"model": self._model, "input": texts},
+                    json=body,
                 )
                 response.raise_for_status()
                 payload = response.json()
         except Exception as exc:
             logger.warning("openai_embeddings_fallback", error=str(exc))
-            result = self._fallback.embed_with_metadata(texts)
-            return EmbeddingResult(
-                vectors=result.vectors,
-                model=self._model,
-                provider=self.name,
-                input_tokens=result.input_tokens,
+            return self._fallback_result(
+                texts,
                 latency_ms=round((time.perf_counter() - started) * 1000, 2),
-                fallback_used=True,
             )
 
         data = payload.get("data") or []
         ordered = sorted(data, key=lambda row: row.get("index", 0))
         vectors = [list(row["embedding"]) for row in ordered]
+        if vectors and len(vectors[0]) != self._dimensions:
+            logger.warning(
+                "openai_embeddings_dimension_mismatch",
+                expected=self._dimensions,
+                actual=len(vectors[0]),
+                model=self._model,
+            )
+            return self._fallback_result(
+                texts,
+                latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+
         usage = payload.get("usage") or {}
         return EmbeddingResult(
             vectors=vectors,
@@ -166,6 +201,19 @@ class OpenAIEmbeddingsProvider:
             input_tokens=int(usage.get("prompt_tokens") or usage.get("total_tokens") or 0),
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
             fallback_used=False,
+            dimensions=self._dimensions,
+        )
+
+    def _fallback_result(self, texts: list[str], *, latency_ms: float) -> EmbeddingResult:
+        result = self._fallback.embed_with_metadata(texts)
+        return EmbeddingResult(
+            vectors=result.vectors,
+            model=self._model,
+            provider=self.name,
+            input_tokens=result.input_tokens,
+            latency_ms=latency_ms or result.latency_ms,
+            fallback_used=True,
+            dimensions=self._dimensions,
         )
 
     def status(self) -> ProviderStatus:
@@ -176,7 +224,10 @@ class OpenAIEmbeddingsProvider:
                 health=ProviderHealth.UNAVAILABLE,
                 using_fallback=True,
                 is_mock=False,
-                detail="OPENAI_API_KEY not configured — using mock-embeddings fallback.",
+                detail=(
+                    f"OPENAI_API_KEY not configured — using mock-embeddings fallback "
+                    f"({self._dimensions}-d)."
+                ),
             )
         try:
             with httpx.Client(timeout=5.0) as client:
@@ -191,7 +242,9 @@ class OpenAIEmbeddingsProvider:
                         health=ProviderHealth.HEALTHY,
                         using_fallback=False,
                         is_mock=False,
-                        detail=f"OpenAI-compatible embeddings ({self._model}).",
+                        detail=(
+                            f"OpenAI-compatible embeddings ({self._model}, {self._dimensions}-d)."
+                        ),
                     )
         except Exception as exc:
             logger.debug("openai_embeddings_status_degraded", error=str(exc))
@@ -201,5 +254,7 @@ class OpenAIEmbeddingsProvider:
             health=ProviderHealth.DEGRADED,
             using_fallback=True,
             is_mock=False,
-            detail="OpenAI embeddings API unreachable — mock fallback active at runtime.",
+            detail=(
+                f"OpenAI embeddings API unreachable — mock fallback active ({self._dimensions}-d)."
+            ),
         )

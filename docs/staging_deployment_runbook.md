@@ -122,13 +122,20 @@ Paste from [`.env.staging.example`](../.env.staging.example). Required staging v
 | `MARKET_DATA_ENABLED` | `true` |
 | `RATE_LIMIT_USE_REDIS` | `true` |
 | `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK` | `false` |
-| `OPENAI_API_KEY` | Optional |
+| `OPENAI_API_KEY` | Optional — enables `openai-llm` / `openai-embeddings` |
+| `QDRANT_API_KEY` | Required for Qdrant Cloud / authenticated clusters |
+| `EMBEDDINGS_MODEL` | Default `text-embedding-3-small` (1536-d when key set) |
+| `EMBEDDINGS_DIMENSIONS` | Optional override; recreate collection after changing |
 
 Validate locally before save:
 
 ```bash
 ENV_FILE=.env.staging ./scripts/check-env.sh
+./scripts/provider-validation-smoke.sh local
 ```
+
+After enabling OpenAI on a cluster that previously used mock embeddings, recreate
+`alphatrade_knowledge` and reingest (see [rag_system.md](rag_system.md)).
 
 Deploy backend; note **HTTPS URL** → `https://alphatrade-api.onrender.com` (example).
 

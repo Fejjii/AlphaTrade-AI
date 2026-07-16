@@ -64,6 +64,7 @@ def test_openai_embeddings_status_without_key() -> None:
         model="text-embedding-3-small",
         api_key="",
         base_url="https://api.openai.com/v1",
+        dimensions=1536,
     )
     status = provider.status()
     assert status.using_fallback is True
