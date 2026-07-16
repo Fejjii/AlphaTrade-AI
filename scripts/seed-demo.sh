@@ -51,14 +51,14 @@ PY
         return 0
       fi
     fi
-    # Reuse a known bootstrap owner when register would fail on duplicate org name.
+    # Reuse bootstrap owner when register would fail on duplicate org name.
     LEGACY_BOOT_EMAIL="${DEMO_BOOTSTRAP_EMAIL:-seed-bootstrap-1782212606@example.com}"
-    LEGACY_BOOT_PASS="${DEMO_BOOTSTRAP_PASSWORD:-SecurePass-SeedBootstrap-1}"
-    LEGACY_LOGIN="$(curl -fsS -X POST "${BACKEND_URL}/auth/login" \
-      -H 'Content-Type: application/json' \
-      -d "{\"email\":\"${LEGACY_BOOT_EMAIL}\",\"password\":\"${LEGACY_BOOT_PASS}\"}" 2>/dev/null || true)"
-    if [[ -n "$LEGACY_LOGIN" ]]; then
-      DEMO_OWNER_TOKEN="$(python3 - <<'PY' "$LEGACY_LOGIN"
+    if [[ -n "${DEMO_BOOTSTRAP_PASSWORD:-}" ]]; then
+      LEGACY_LOGIN="$(curl -fsS -X POST "${BACKEND_URL}/auth/login" \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"${LEGACY_BOOT_EMAIL}\",\"password\":\"${DEMO_BOOTSTRAP_PASSWORD}\"}" 2>/dev/null || true)"
+      if [[ -n "$LEGACY_LOGIN" ]]; then
+        DEMO_OWNER_TOKEN="$(python3 - <<'PY' "$LEGACY_LOGIN"
 import json, sys
 try:
     print(json.loads(sys.argv[1])["tokens"]["access_token"])
@@ -66,9 +66,13 @@ except (KeyError, json.JSONDecodeError):
     pass
 PY
 )"
-    fi
-    if [[ -n "${DEMO_OWNER_TOKEN:-}" ]]; then
-      return 0
+      fi
+      if [[ -n "${DEMO_OWNER_TOKEN:-}" ]]; then
+        return 0
+      fi
+    else
+      echo "Note: DEMO_BOOTSTRAP_PASSWORD unset — skipping bootstrap owner login fallback." >&2
+      echo "      Set DEMO_BOOTSTRAP_PASSWORD (same as STAGING_BOOTSTRAP_PASSWORD) or DEMO_OWNER_TOKEN." >&2
     fi
     BOOT_EMAIL="demo-seed-bootstrap-$(date +%s)@example.com"
     BOOT_PASS="SecurePass-DemoSeedBootstrap-1"
