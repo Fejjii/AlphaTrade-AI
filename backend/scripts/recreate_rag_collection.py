@@ -50,8 +50,7 @@ def main() -> int:
     args = _parse_args()
     if not args.i_understand_this_deletes_vectors and not args.dry_run:
         print(
-            "Refusing to run without --i-understand-this-deletes-vectors "
-            "(or use --dry-run).",
+            "Refusing to run without --i-understand-this-deletes-vectors (or use --dry-run).",
             file=sys.stderr,
         )
         return 2
@@ -79,8 +78,7 @@ def main() -> int:
 
     if not should_use_qdrant(settings):
         print(
-            "Refusing: Qdrant is not active "
-            "(set QDRANT_URL and PROVIDER_MODE=fallback|live).",
+            "Refusing: Qdrant is not active (set QDRANT_URL and PROVIDER_MODE=fallback|live).",
             file=sys.stderr,
         )
         return 4

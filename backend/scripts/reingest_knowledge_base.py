@@ -79,7 +79,10 @@ def _run_local(docs: list[dict[str, Any]], organization_id: str, user_id: str) -
     from app.services.rag_service import build_rag_service
 
     if not organization_id.strip():
-        print("Refusing: --organization-id / ORGANIZATION_ID required for --local.", file=sys.stderr)
+        print(
+            "Refusing: --organization-id / ORGANIZATION_ID required for --local.",
+            file=sys.stderr,
+        )
         return 2
 
     get_settings.cache_clear()
@@ -133,7 +136,7 @@ def _api_post(base_url: str, token: str, body: dict[str, Any]) -> dict[str, Any]
             "Accept": "application/json",
         },
     )
-    with urlopen(req, timeout=60) as resp:  # noqa: S310 — operator tool, URL from env
+    with urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
