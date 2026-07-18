@@ -1,0 +1,11 @@
+---
+description: Documentation truthfulness
+alwaysApply: true
+---
+
+# Documentation truthfulness
+
+- Use only verified repository facts. Mark unknowns explicitly as UNKNOWN.
+- Never invent test results, metrics, endpoints, or capabilities.
+- Keep docs consistent with actual behavior; update docs when behavior/config changes.
+- Do not overstate capability (no "autonomous", "guaranteed", or live-trading claims).

@@ -1,0 +1,18 @@
+---
+description: Trading safety and paper-first behavior (safety-critical)
+alwaysApply: true
+---
+
+# Trading safety (NON-NEGOTIABLE)
+
+- Paper first. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`,
+  `EXCHANGE_MODE=paper_internal`, `PROVIDER_MODE=fallback` (staging). Never weaken these.
+- No automatic live orders, withdrawals, transfers, leverage changes, or exchange account
+  mutations. `real_trading_enabled` stays false unless a separate task explicitly enables it.
+- Any sensitive future action requires: explicit human approval, audit logs, idempotency,
+  conservative validation, and a kill switch.
+- Risk calculations must be deterministic and tested. The risk engine's `BLOCK` is final.
+- Market data must carry source + freshness (`is_live`, `fallback_used`). Missing, stale,
+  conflicting, or degraded data must trigger conservative behavior.
+- Never imply guaranteed returns or autonomous profitability.
+- Respect `core/deployment_safety.py` and `core/exchange_safety.py` invariants.

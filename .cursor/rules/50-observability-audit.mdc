@@ -1,0 +1,11 @@
+---
+description: Observability and auditability
+alwaysApply: false
+---
+
+# Observability & auditability
+
+- Use structured logging (structlog). Never log secrets or raw credentials.
+- Preserve audit events for sensitive actions; keep usage metering and quota accounting intact.
+- Record provider provenance and fallback status; surface degraded states, don't hide them.
+- Any new sensitive path must be observable and auditable (who, what, when, idempotency key).

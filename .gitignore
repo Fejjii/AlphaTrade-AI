@@ -46,3 +46,9 @@ frontend/.env*.local
 *.db
 logs/
 .vercel
+
+# AI collaboration layer
+#   - Durable governance IS version-controlled: .ai/ and .cursor/rules/
+#   - Generated handoff artifacts stay private (local working tree + iCloud mirror only)
+HANDOFF.md
+CHANGELOG_SESSION.md

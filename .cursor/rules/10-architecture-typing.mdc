@@ -1,0 +1,14 @@
+---
+description: Modular architecture and strong typing standards
+alwaysApply: true
+---
+
+# Architecture & typing
+
+- Backend is Python 3.12 + FastAPI + Pydantic v2 + SQLAlchemy 2.0, managed with `uv`.
+- Use type hints everywhere (mypy --strict friendly). Prefer dataclasses/Pydantic models.
+- Small, focused functions; minimal nesting (guard clauses); no duplication or dead code.
+- Separate concerns: business logic / IO & APIs / data access / external services.
+- Provider integrations go through the existing factory + registry abstractions with
+  explicit mock fallbacks. Do not bypass provider boundaries.
+- Follow Ruff config (line-length 100, py312). No hardcoded values where config belongs.

@@ -1,0 +1,17 @@
+---
+description: Mandatory end-of-task handoff generation and sync verification
+alwaysApply: true
+---
+
+# End-of-task handoff (mandatory)
+
+At the end of every task:
+
+1. Regenerate root `HANDOFF.md` and `CHANGELOG_SESSION.md` from verified facts using the
+   templates in `.ai/HANDOFF_TEMPLATE.md` and `.ai/SESSION_TEMPLATE.md`.
+   - Each begins with the machine-readable metadata block.
+   - Update the timestamp/SHA256 ONLY when content is materially regenerated, not on mere reads.
+2. Run the sync: `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
+3. Verify the iCloud destination SHA256 matches the repo source and exit status is 0.
+4. `HANDOFF.md` stays a compact current-state snapshot; `CHANGELOG_SESSION.md` holds only
+   the latest session. Durable decisions go to `.ai/DECISIONS.md`; work items to `.ai/TASKS.md`.
