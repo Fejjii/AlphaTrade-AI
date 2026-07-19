@@ -1,0 +1,23 @@
+---
+description: Mandatory iCloud mobile sync and verification for handoff documents
+alwaysApply: true
+---
+
+# Mobile sync & verification
+
+Authoritative standard: `.ai/MASTER_WORKFLOW.md` (§4, §12, §16).
+
+- After regenerating `HANDOFF.md` / `CHANGELOG_SESSION.md`, run the sync script:
+  `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
+- The sync copies ONLY those two files to the iCloud destination. It must never copy the
+  repository, `.git`, dependencies, virtualenvs, caches, datasets, model artifacts, logs,
+  secrets, or build output, and must not delete unrelated iCloud content.
+- The script must: use absolute quoted paths and strict shell mode; compare content and skip
+  identical files without rewriting mtimes; copy atomically (temp + rename); preserve source
+  mtime; set readable permissions; verify the destination with ordinary SHA256 **and**
+  `cmp`/`diff`; log concisely without secrets; return nonzero on failure; be idempotent.
+- Verify after every sync: source SHA256, destination SHA256, `cmp`/`diff` success, expected
+  destination paths, and a zero exit status. Treat verification failure as a blocker.
+- Sync **immediately** on any blocker, review, or failure — do not wait for task completion.
+- The LaunchAgent uses `WatchPaths` for the two files, `RunAtLoad`, and a low-frequency fallback
+  interval. Preserve the existing script/LaunchAgent when they already meet this standard.

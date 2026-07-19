@@ -1,5 +1,9 @@
 # Workflow: REFACTOR (no behavior change)
 
+> Authoritative rules: `.ai/MASTER_WORKFLOW.md`. Statuses: `IN_PROGRESS`, `REVIEW_REQUIRED`,
+> `BLOCKED`, `FAILED`, `READY` (no `DRAFT`). Sync the handoff at start, phase boundaries,
+> blockers/reviews/failures, and completion.
+
 ## Rules
 - Behavior must be preserved exactly. Public APIs and outputs unchanged.
 - No functional or safety changes. Keep diffs scoped; no unrelated edits.

@@ -16,3 +16,13 @@ alwaysApply: true
   conflicting, or degraded data must trigger conservative behavior.
 - Never imply guaranteed returns or autonomous profitability.
 - Respect `core/deployment_safety.py` and `core/exchange_safety.py` invariants.
+
+## Broker/exchange operating modes (`.ai/MASTER_WORKFLOW.md` §7)
+- **A — none (default):** internal paper portfolio, public market data, mocks, backtests. No
+  external account reads/mutations, no live orders.
+- **B — read-only:** balances/positions/history/market data only, read-only credentials, no
+  withdrawal or trade permission, source+freshness timestamps, graceful degradation.
+- **C — paper/demo:** clearly labeled demo, separate credentials, full audit trail, no route to
+  production trading.
+- **D — real execution:** disabled by default; cannot be enabled by an ordinary implementation
+  task — requires a separate, explicitly authorized safety/risk/approval/rollback program.

@@ -7,11 +7,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 
 ---
 
-## AT-000 — Bootstrap AI collaboration + handoff workflow
-- Priority: P1 · Status: DONE · Dependencies: none · Risk: Low
-- Validation: `.ai/` and `.cursor/rules/` tracked; `.gitignore` ignores `HANDOFF.md`,
-  `CHANGELOG_SESSION.md`, and `*.local.md`; sync script + LaunchAgent installed;
-  iCloud SHA256 matches source.
+## AT-000 — Bootstrap + install Master Workflow v2.0
+- Priority: P1 · Status: DONE (v1) / REVIEW_REQUIRED (v2.0 commit pending) · Dependencies: none · Risk: Low
+- Validation: `.ai/` and `.cursor/rules/` tracked; `.ai/MASTER_WORKFLOW.md` present and
+  authoritative from `.ai/MASTER.md`; five-status model (no `DRAFT`); normalized self-hash;
+  `.gitignore` ignores `HANDOFF.md`, `CHANGELOG_SESSION.md`, `*.local.md`, `.ai/local/`,
+  `.ai/private/`; sync script + LaunchAgent validated; iCloud SHA256 + `cmp` match source.
 - Recommended model: Opus 4.8
 
 ---

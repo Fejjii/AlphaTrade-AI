@@ -5,6 +5,16 @@
 > Generated handoff artifacts (`HANDOFF.md`, `CHANGELOG_SESSION.md`) stay gitignored/local.
 > Purpose: give any AI assistant (Cursor / ChatGPT) a consistent, truthful entry point.
 
+## Authoritative workflow standard
+
+**`.ai/MASTER_WORKFLOW.md` (v2.0) is the single source of truth for the ChatGPT ↔ Cursor
+workflow.** It supersedes any earlier catch-up prompt or blocker addendum. When this index or
+any workflow doc conflicts with `MASTER_WORKFLOW.md`, follow `MASTER_WORKFLOW.md` and update the
+other file. It defines the task lifecycle, the five-status model, mandatory sync moments, the
+handoff/changelog formats, the normalized self-hash rule, Git/security/broker-exchange safety,
+and cleanup policy. Machine-local or sensitive material lives under ignored `.ai/local/` or
+`.ai/private/`.
+
 ## Project identity
 
 | Field | Value |
@@ -20,7 +30,8 @@
 
 1. Read `PROJECT_CONTEXT.md` for what the system is and hard safety rules.
 2. Read `ARCHITECTURE.md` for the verified technical map.
-3. Pick the workflow doc for the task type:
+3. Read `MASTER_WORKFLOW.md` for the authoritative lifecycle, statuses, and sync rules.
+4. Pick the workflow doc for the task type:
    - `AUDIT.md` — inspect / report only
    - `IMPLEMENT.md` — build a feature (paper-safe)
    - `BUGFIX.md` — fix a defect
@@ -28,10 +39,13 @@
    - `SECURITY.md` — security / trading-safety hardening
    - `RELEASE.md` — release / deploy validation
    - `LINKEDIN_DEMO.md` — portfolio / demo packaging
-4. Track durable decisions in `DECISIONS.md` (AT-ADR-XXX).
-5. Track work in `TASKS.md` (AT-XXX).
-6. End every task by regenerating root `HANDOFF.md` + `CHANGELOG_SESSION.md`
-   and running the handoff sync (see `RELEASE.md` / repo rules).
+5. Track durable decisions in `DECISIONS.md` (AT-ADR-XXX).
+6. Track work in `TASKS.md` (AT-XXX).
+7. Use the handoff status model: `IN_PROGRESS`, `REVIEW_REQUIRED`, `BLOCKED`, `FAILED`, `READY`
+   (no `DRAFT`). Sync at task start, every phase boundary, every blocker/review/failure, and
+   completion — never only at the end.
+8. End every task by regenerating root `HANDOFF.md` + `CHANGELOG_SESSION.md` (per templates)
+   and running the handoff sync, then verifying source/destination SHA256 + `cmp`.
 
 ## Non-negotiable safety (summary — full text in PROJECT_CONTEXT.md)
 

@@ -1,6 +1,7 @@
 # Workflow: RELEASE / DEPLOY validation
 
-> Only commit/push/deploy when the task explicitly authorizes it.
+> Authoritative rules: `.ai/MASTER_WORKFLOW.md`. Only commit/push/deploy when the task explicitly
+> authorizes it; otherwise stop at `REVIEW_REQUIRED` before the protected action.
 
 ## Pre-commit gate
 ```
@@ -24,6 +25,10 @@ npm run lint && npm run typecheck && npm run test && npm run build
 - Confirm providers remain mock until an operator manually configures keys.
 
 ## Handoff (mandatory end of task)
-1. Regenerate `HANDOFF.md` + `CHANGELOG_SESSION.md` (update metadata only on material change).
-2. Run `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
-3. Verify iCloud destination SHA256 matches source; confirm exit status 0.
+1. Regenerate `HANDOFF.md` + `CHANGELOG_SESSION.md` from the `.ai/` templates; set the correct
+   status (`READY`, or `REVIEW_REQUIRED`/`BLOCKED`/`FAILED` as applicable — never `DRAFT`).
+2. Recompute the normalized `Source File SHA256` (hash of each doc with its own
+   `Source File SHA256:` line removed) and write it back.
+3. Run `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
+4. Verify the iCloud destination matches source via SHA256 **and** `cmp`/`diff`; confirm exit
+   status 0. Sync immediately on any blocker/review/failure — never wait for task end.

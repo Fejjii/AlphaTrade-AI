@@ -50,5 +50,9 @@ logs/
 # AI collaboration layer
 #   - Durable governance IS version-controlled: .ai/ and .cursor/rules/
 #   - Generated handoff artifacts stay private (local working tree + iCloud mirror only)
+#   - Machine-local / sensitive material stays private: .ai/local/, .ai/private/, *.local.md
 HANDOFF.md
 CHANGELOG_SESSION.md
+.ai/local/
+.ai/private/
+*.local.md

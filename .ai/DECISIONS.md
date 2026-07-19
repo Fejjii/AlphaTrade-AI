@@ -33,3 +33,24 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `EXCHANGE_MODE=paper_internal`, `PROVIDER_MODE=fallback` (staging) are invariants.
   Any change requires a separate, explicitly authorized task.
 - **Consequences:** Enforced in `deployment_safety.py` / `exchange_safety.py` and CI.
+
+## AT-ADR-004 — Adopt Master Workflow v2.0 as the authoritative standard
+- **Date:** 2026-07-19
+- **Status:** Accepted (supersedes the workflow portions of AT-ADR-001/002)
+- **Context:** A consolidated v2.0 standard (`ALPHATRADE_AI_MASTER_WORKFLOW.md`) unifies the
+  earlier catch-up prompt and mobile-blocker addendum into one governance document.
+- **Decision:** Save it as `.ai/MASTER_WORKFLOW.md` and make it authoritative from `.ai/MASTER.md`.
+  Adopt the five-status model (`IN_PROGRESS`, `REVIEW_REQUIRED`, `BLOCKED`, `FAILED`, `READY`;
+  no `DRAFT`), the Mobile Status block + Schema Version 2.0 metadata, the normalized
+  `Source File SHA256` self-hash (hash of the doc with its own hash line removed), mandatory
+  sync at every phase/blocker/review/failure, and broker/exchange modes A–D (D disabled).
+  Keep `HANDOFF.md`/`CHANGELOG_SESSION.md`/`*.local.md` and `.ai/local//.ai/private/` ignored.
+- **Alternatives considered:** Keep the v1 ad-hoc handoff format (rejected: no blocker/review
+  states, hardcoded timezone, body-only hash); embed private material in tracked files (rejected:
+  use ignored `.ai/private/` / `.ai/local/`).
+- **Safety impact:** None to application behavior; strengthens blocker/review/failure handling and
+  reaffirms paper-only posture and disabled real execution (mode D).
+- **Consequences:** Templates and Cursor rules updated; installation stops at `REVIEW_REQUIRED`
+  before any commit until a human authorizes it.
+- **Validation:** `bash -n` sync script, `plutil -lint` LaunchAgent, SHA256 + `cmp`, idempotent
+  second sync, secret scan of tracked governance, no app-code changes.

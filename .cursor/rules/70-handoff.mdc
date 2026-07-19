@@ -1,17 +1,24 @@
 ---
-description: Mandatory end-of-task handoff generation and sync verification
+description: Mandatory end-of-task and phase-boundary handoff generation (v2.0)
 alwaysApply: true
 ---
 
-# End-of-task handoff (mandatory)
+# Handoff generation (mandatory)
 
-At the end of every task:
+Authoritative standard: `.ai/MASTER_WORKFLOW.md` (§8–§14).
 
-1. Regenerate root `HANDOFF.md` and `CHANGELOG_SESSION.md` from verified facts using the
-   templates in `.ai/HANDOFF_TEMPLATE.md` and `.ai/SESSION_TEMPLATE.md`.
-   - Each begins with the machine-readable metadata block.
-   - Update the timestamp/SHA256 ONLY when content is materially regenerated, not on mere reads.
-2. Run the sync: `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
-3. Verify the iCloud destination SHA256 matches the repo source and exit status is 0.
-4. `HANDOFF.md` stays a compact current-state snapshot; `CHANGELOG_SESSION.md` holds only
-   the latest session. Durable decisions go to `.ai/DECISIONS.md`; work items to `.ai/TASKS.md`.
+- Regenerate root `HANDOFF.md` and `CHANGELOG_SESSION.md` from `.ai/HANDOFF_TEMPLATE.md` and
+  `.ai/SESSION_TEMPLATE.md` at: task start, every major phase boundary, every blocker, every
+  review/approval requirement, every failed validation, before/after any destructive action,
+  and final completion. Never wait for the final response to create or sync the handoff.
+- `HANDOFF.md` is a compact current-state snapshot with a top **Mobile Status block**
+  (Status, Last Updated, Task, Current Phase, Progress, Blocker, Human Action Needed, Next Step;
+  use `None`, never blanks) followed by the machine-readable METADATA block (Schema Version 2.0).
+- Use only these statuses: `IN_PROGRESS`, `REVIEW_REQUIRED`, `BLOCKED`, `FAILED`, `READY`.
+  Never use `DRAFT`.
+- Use the host's actual IANA timezone in metadata; do not hardcode a timezone that is not the host's.
+- **Normalized self-hash (§13.3):** compute `Source File SHA256` over the document content with
+  the entire `Source File SHA256:` line removed; generator and verifier use the same algorithm:
+  `grep -v '^Source File SHA256:' <file> | shasum -a 256`.
+- Durable decisions go to `.ai/DECISIONS.md`; the persistent backlog to `.ai/TASKS.md`.
+- `HANDOFF.md` and `CHANGELOG_SESSION.md` are gitignored; never stage them.

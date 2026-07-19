@@ -1,8 +1,13 @@
 # Workflow: IMPLEMENT (paper-safe feature work)
 
+> Authoritative rules: `.ai/MASTER_WORKFLOW.md`. Statuses: `IN_PROGRESS`, `REVIEW_REQUIRED`,
+> `BLOCKED`, `FAILED`, `READY` (no `DRAFT`). Regenerate `HANDOFF.md`/`CHANGELOG_SESSION.md` and
+> sync at task start, every phase boundary, every blocker/review/failure, and completion.
+
 ## Preconditions
 - A task exists in `TASKS.md` (AT-XXX) with scope, risk, and validation criteria.
 - Change must not enable real trading or external account actions.
+- Set `HANDOFF.md` to `IN_PROGRESS` and sync once before implementation.
 
 ## Rules
 - Small, focused, typed changes. Follow existing project conventions.
@@ -28,4 +33,7 @@ uv run pytest
 Frontend (from `frontend/`): `npm run lint && npm run typecheck && npm run test && npm run build`.
 
 ## Definition of done
-- Tests green, lint/format/type clean, docs updated, safety invariants intact, handoff synced.
+- Tests green, lint/format/type clean, docs updated, safety invariants intact.
+- `HANDOFF.md` set to `READY` (or `REVIEW_REQUIRED` if a protected action such as commit/push/
+  deploy/secret entry is pending), regenerated with the normalized self-hash, synced, and the
+  iCloud copy verified via SHA256 + `cmp`/`diff`.
