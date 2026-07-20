@@ -17,20 +17,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 ---
 
 ## AT-009 — Staging OpenAI + Qdrant provider activation (paper-only)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: none · Risk: Medium (ops + provider config)
-- Goal: Resume interrupted staging activation of real OpenAI LLM/embeddings and Qdrant while
-  preserving all paper-only safety invariants.
-- Progress (2026-07-20):
-  - Demo password synced for `demo@alphatrade.ai`; login HTTP 200 verified.
-  - Knowledge fixtures reingested (4 docs); Qdrant has 1536-d points + payload indexes.
-  - Providers healthy: `gpt-5.6-sol`, `text-embedding-3-large` 1536-d, Qdrant; paper-only;
-    `EXCHANGE_MODE=paper_exchange_demo` on staging.
-  - Safety / portfolio / exchange-demo smokes passed.
-  - Remaining: commit+deploy Qdrant client fix (`query_points` + payload indexes) so staging
-    `/knowledge/search` returns chunks; then re-run `--remote --ingest`.
-- Safety classification: ops/config + small provider compatibility fix — no live trading.
-- Validation: login-page provider badges show real providers; `/providers/status` healthy;
-  embedding dimensions compatible; light ingest/retrieve succeeds; all safety smokes pass.
+- Priority: P0 · Status: DONE · Dependencies: none · Risk: Medium (ops + provider config)
+- Validation: Staging OpenAI + Qdrant active (paper-only). Commit `5f2d7cf` deployed;
+  `/knowledge/search` returns semantic chunks; `provider-validation --remote --ingest` OK;
+  verify-safety / portfolio / exchange-demo smokes OK. Providers: `gpt-5.6-sol`,
+  `text-embedding-3-large` 1536-d, Qdrant healthy; `execution_mode=paper`,
+  `real_trading=false`, `EXCHANGE_MODE=paper_exchange_demo`.
 - Recommended model: Opus 4.8
 
 ---
