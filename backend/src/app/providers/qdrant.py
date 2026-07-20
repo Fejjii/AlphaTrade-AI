@@ -240,6 +240,7 @@ class QdrantVectorStore:
         self._client = None
         self._using_qdrant = False
         self._dimension_mismatch: tuple[str, int, int] | None = None
+        self._payload_indexes_ready: set[str] = set()
         self._connect()
 
     @property
@@ -287,6 +288,39 @@ class QdrantVectorStore:
                 actual=existing,
             )
 
+    _PAYLOAD_INDEX_FIELDS: tuple[str, ...] = (
+        "organization_id",
+        "user_id",
+        "source_type",
+        "strategy_tag",
+        "symbol_tag",
+        "timeframe_tag",
+        "risk_tag",
+    )
+
+    def _ensure_payload_indexes(self, collection: str) -> None:
+        """Create keyword payload indexes required for filtered Qdrant Cloud queries."""
+        if self._client is None or collection in self._payload_indexes_ready:
+            return
+        from qdrant_client.http import models as qmodels
+
+        for field_name in self._PAYLOAD_INDEX_FIELDS:
+            try:
+                self._client.create_payload_index(
+                    collection_name=collection,
+                    field_name=field_name,
+                    field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                )
+            except Exception as exc:
+                # Index already exists or server rejected a duplicate — safe to continue.
+                logger.debug(
+                    "qdrant_payload_index_ensure",
+                    collection=collection,
+                    field=field_name,
+                    error=str(exc),
+                )
+        self._payload_indexes_ready.add(collection)
+
     def _ensure_collection(self, collection: str, *, vector_size: int | None = None) -> None:
         if self._client is None:
             return
@@ -301,11 +335,13 @@ class QdrantVectorStore:
                     expected=size,
                     actual=existing,
                 )
+            self._ensure_payload_indexes(collection)
             return
         self._client.create_collection(
             collection_name=collection,
             vectors_config=qmodels.VectorParams(size=size, distance=qmodels.Distance.COSINE),
         )
+        self._ensure_payload_indexes(collection)
         self._dimension_mismatch = None
 
     def recreate_collection(self, collection: str, *, vector_size: int | None = None) -> None:
@@ -326,6 +362,8 @@ class QdrantVectorStore:
             collection_name=collection,
             vectors_config=qmodels.VectorParams(size=size, distance=qmodels.Distance.COSINE),
         )
+        self._payload_indexes_ready.discard(collection)
+        self._ensure_payload_indexes(collection)
         self._dimension_mismatch = None
         logger.info("qdrant_collection_recreated", collection=collection, vector_size=size)
 
@@ -377,6 +415,40 @@ class QdrantVectorStore:
             logger.warning("qdrant_upsert_fallback", error=str(exc))
             self._fallback.upsert(collection, points)
 
+    def _query_vector_points(
+        self,
+        *,
+        collection: str,
+        vector: list[float],
+        query_filter: Any,
+        top_k: int,
+    ) -> list[Any]:
+        """Run a dense vector query across qdrant-client API generations.
+
+        qdrant-client>=1.16 removed ``QdrantClient.search`` in favor of
+        ``query_points``. Prefer ``query_points``, fall back to ``search``.
+        """
+        client = self._client
+        assert client is not None
+        if hasattr(client, "query_points"):
+            response = client.query_points(
+                collection_name=collection,
+                query=vector,
+                query_filter=query_filter,
+                limit=top_k,
+                with_payload=True,
+            )
+            return list(getattr(response, "points", []) or [])
+        return list(
+            client.search(
+                collection_name=collection,
+                query_vector=vector,
+                query_filter=query_filter,
+                limit=top_k,
+                with_payload=True,
+            )
+        )
+
     def search(
         self,
         collection: str,
@@ -401,12 +473,11 @@ class QdrantVectorStore:
             self._ensure_collection(collection, vector_size=len(vector))
             q_filter = _build_qdrant_filter(filters)
             query_filter = qmodels.Filter.model_validate(q_filter) if q_filter else None
-            results = self._client.search(
-                collection_name=collection,
-                query_vector=vector,
+            results = self._query_vector_points(
+                collection=collection,
+                vector=vector,
                 query_filter=query_filter,
-                limit=top_k,
-                with_payload=True,
+                top_k=top_k,
             )
             hits: list[VectorSearchHit] = []
             for row in results:

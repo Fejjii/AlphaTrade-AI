@@ -30,6 +30,7 @@ def _connected_store(
     store._client = MagicMock()
     store._using_qdrant = True
     store._dimension_mismatch = None
+    store._payload_indexes_ready = set()
 
     if existing_size is None:
 
@@ -158,3 +159,46 @@ def test_status_omits_api_key_and_url() -> None:
     detail = store.status().detail or ""
     assert "secret" not in detail
     assert "qdrant.example" not in detail
+
+
+def test_search_uses_query_points_when_search_missing() -> None:
+    """qdrant-client>=1.16 removed Client.search; query_points is required."""
+    store = _connected_store(existing_size=1536, configured_size=1536)
+    store._payload_indexes_ready = {RAG_COLLECTION}
+
+    point = MagicMock()
+    point.id = "00000000-0000-0000-0000-000000000001"
+    point.score = 0.91
+    point.payload = {"chunk_id": "chunk-1", "organization_id": "org-1"}
+    response = MagicMock()
+    response.points = [point]
+
+    class QueryPointsOnlyClient:
+        def __init__(self) -> None:
+            self.query_points = MagicMock(return_value=response)
+            self.get_collection = store._client.get_collection
+            self.create_payload_index = MagicMock()
+
+    store._client = QueryPointsOnlyClient()  # type: ignore[assignment]
+
+    hits = store.search(
+        RAG_COLLECTION,
+        [0.1] * 1536,
+        filters=VectorSearchFilters(),
+        top_k=3,
+    )
+    assert len(hits) == 1
+    assert hits[0].point_id == "chunk-1"
+    assert hits[0].score == 0.91
+    store._client.query_points.assert_called_once()
+    store._client.create_payload_index.assert_not_called()
+
+
+def test_ensure_collection_creates_payload_indexes() -> None:
+    store = _connected_store(existing_size=None, configured_size=1536)
+    store._payload_indexes_ready = set()
+    store._ensure_collection(RAG_COLLECTION, vector_size=1536)
+    assert store._client.create_payload_index.call_count == len(
+        QdrantVectorStore._PAYLOAD_INDEX_FIELDS
+    )
+    assert RAG_COLLECTION in store._payload_indexes_ready

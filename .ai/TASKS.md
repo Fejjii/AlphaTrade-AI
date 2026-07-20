@@ -8,11 +8,29 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 ---
 
 ## AT-000 — Bootstrap + install Master Workflow v2.0
-- Priority: P1 · Status: DONE (v1) / REVIEW_REQUIRED (v2.0 commit pending) · Dependencies: none · Risk: Low
-- Validation: `.ai/` and `.cursor/rules/` tracked; `.ai/MASTER_WORKFLOW.md` present and
-  authoritative from `.ai/MASTER.md`; five-status model (no `DRAFT`); normalized self-hash;
-  `.gitignore` ignores `HANDOFF.md`, `CHANGELOG_SESSION.md`, `*.local.md`, `.ai/local/`,
-  `.ai/private/`; sync script + LaunchAgent validated; iCloud SHA256 + `cmp` match source.
+- Priority: P1 · Status: DONE · Dependencies: none · Risk: Low
+- Validation: `.ai/MASTER_WORKFLOW.md` tracked and authoritative; five-status model; normalized
+  self-hash; `.gitignore` ignores handoffs + `.ai/local/` + `.ai/private/`; sync validated.
+  Committed `057ef11`, CI run 29669825825 success.
+- Recommended model: Opus 4.8
+
+---
+
+## AT-009 — Staging OpenAI + Qdrant provider activation (paper-only)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: none · Risk: Medium (ops + provider config)
+- Goal: Resume interrupted staging activation of real OpenAI LLM/embeddings and Qdrant while
+  preserving all paper-only safety invariants.
+- Progress (2026-07-20):
+  - Demo password synced for `demo@alphatrade.ai`; login HTTP 200 verified.
+  - Knowledge fixtures reingested (4 docs); Qdrant has 1536-d points + payload indexes.
+  - Providers healthy: `gpt-5.6-sol`, `text-embedding-3-large` 1536-d, Qdrant; paper-only;
+    `EXCHANGE_MODE=paper_exchange_demo` on staging.
+  - Safety / portfolio / exchange-demo smokes passed.
+  - Remaining: commit+deploy Qdrant client fix (`query_points` + payload indexes) so staging
+    `/knowledge/search` returns chunks; then re-run `--remote --ingest`.
+- Safety classification: ops/config + small provider compatibility fix — no live trading.
+- Validation: login-page provider badges show real providers; `/providers/status` healthy;
+  embedding dimensions compatible; light ingest/retrieve succeeds; all safety smokes pass.
 - Recommended model: Opus 4.8
 
 ---
