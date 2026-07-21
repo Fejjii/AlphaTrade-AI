@@ -97,7 +97,11 @@ async def reset_risk_settings(
 
 
 @router.post("/check", response_model=RiskCheckResult, summary="Run deterministic risk check")
-async def check_risk(request: RiskCheckRequest, risk_service: RiskServiceDep) -> RiskCheckResult:
+async def check_risk(
+    request: RiskCheckRequest,
+    risk_service: RiskServiceDep,
+    _tenant: TraderDep,
+) -> RiskCheckResult:
     return risk_service.check(request)
 
 
@@ -105,6 +109,7 @@ async def check_risk(request: RiskCheckRequest, risk_service: RiskServiceDep) ->
 async def calculate_position_size(
     request: PositionSizingRequest,
     sizing_service: PositionSizingServiceDep,
+    _tenant: TraderDep,
 ) -> PositionSizingResult:
     return sizing_service.calculate(request)
 
@@ -117,6 +122,7 @@ async def calculate_position_size(
 async def evaluate_loss_acceptance(
     request: LossAcceptanceRequest,
     loss_service: LossAcceptanceServiceDep,
+    _tenant: TraderDep,
 ) -> LossAcceptanceResult:
     return loss_service.evaluate(
         planned_loss_amount=request.planned_loss_amount,
