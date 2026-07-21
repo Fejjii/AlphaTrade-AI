@@ -54,3 +54,21 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   before any commit until a human authorizes it.
 - **Validation:** `bash -n` sync script, `plutil -lint` LaunchAgent, SHA256 + `cmp`, idempotent
   second sync, secret scan of tracked governance, no app-code changes.
+
+## AT-ADR-005 — Real-money (Mode D) requires phased program; paper Criticals first
+- **Date:** 2026-07-21
+- **Status:** Accepted
+- **Context:** AT-010 readiness audit found paper-MVP/staging readiness with Critical/High
+  gaps (unauth tools, soft data degradation, under-wired risk/kill switch). A real-money
+  program must not bypass paper hardening.
+- **Decision:**
+  1. Keep `main` paper-first; short-lived feature branches only; no long-lived live-trading branch.
+  2. Close paper Critical findings (AT-011…AT-014, AT-007) before sandbox execution work.
+  3. Mode D follows Phases 0–4 in `docs/AT010_real_money_safety_roadmap.md`; Phase 3–4 require
+     separate explicit human authorization beyond ordinary implementation tasks.
+  4. Never merge changes that weaken `EXECUTION_MODE=paper` / `ENABLE_REAL_TRADING=false` defaults.
+- **Alternatives considered:** Long-lived live branch (rejected: drift + accidental merge risk);
+  implement sandbox immediately (rejected: Critical paper gaps remain).
+- **Safety impact:** Strengthens fail-closed path to any future capital; no live trading enabled now.
+- **Consequences:** Backlog AT-011…AT-024 added; next slice is AT-011 authz.
+- **Validation:** AT-010 deliverables reviewed; staging verify-safety remains paper-only.
