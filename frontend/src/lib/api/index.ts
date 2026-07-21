@@ -687,7 +687,7 @@ export const api = {
         body: JSON.stringify(body),
         auth: true,
       }),
-    modules: () => apiFetch<string[]>("/strategies/modules", { auth: false }),
+    modules: () => apiFetch<string[]>("/strategies/modules", { auth: true }),
     update: (id: string, body: { name?: string; card?: Record<string, unknown> }) =>
       apiFetch<UserStrategy>(`/strategies/${id}`, {
         method: "PATCH",

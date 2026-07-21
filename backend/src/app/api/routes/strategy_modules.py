@@ -7,19 +7,25 @@ from fastapi import APIRouter
 from app.core.dependencies import StrategyServiceDep
 from app.schemas.common import StrategyId
 from app.schemas.strategy import StrategyEvaluateRequest, StrategyEvaluateResponse
+from app.security.rbac import ReaderDep, TraderDep
 from app.strategies.base import StrategyEvaluationInput
 
 router = APIRouter(prefix="/strategies", tags=["strategy-modules"])
 
 
 @router.get("/modules", summary="List registered strategy modules")
-async def list_strategy_modules(service: StrategyServiceDep) -> list[StrategyId]:
+async def list_strategy_modules(
+    service: StrategyServiceDep,
+    _tenant: ReaderDep,
+) -> list[StrategyId]:
     return service.list_strategy_ids()
 
 
 @router.post("/evaluate", response_model=StrategyEvaluateResponse, summary="Evaluate a strategy")
 async def evaluate_strategy(
-    body: StrategyEvaluateRequest, service: StrategyServiceDep
+    body: StrategyEvaluateRequest,
+    service: StrategyServiceDep,
+    _tenant: TraderDep,
 ) -> StrategyEvaluateResponse:
     data = StrategyEvaluationInput(
         symbol=body.symbol,

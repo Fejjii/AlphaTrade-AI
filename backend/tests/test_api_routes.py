@@ -87,7 +87,8 @@ def test_usage_events_and_summary(client_with_db: tuple[TestClient, object]) -> 
     assert summary.json()["cost_is_placeholder"] is True
 
 
-def test_risk_check_endpoint(client: TestClient) -> None:
+def test_risk_check_endpoint(client_with_db: tuple[TestClient, object]) -> None:
+    client, _factory = client_with_db
     response = client.post(
         "/risk/check",
         json={
@@ -104,7 +105,8 @@ def test_risk_check_endpoint(client: TestClient) -> None:
     assert response.json()["action"] in {"allow", "warn", "block"}
 
 
-def test_strategies_list_and_evaluate(client: TestClient) -> None:
+def test_strategies_list_and_evaluate(client_with_db: tuple[TestClient, object]) -> None:
+    client, _factory = client_with_db
     listing = client.get("/strategies/modules")
     assert listing.status_code == 200
     assert len(listing.json()) == 7
@@ -124,7 +126,8 @@ def test_strategies_list_and_evaluate(client: TestClient) -> None:
     assert response.json()["signal"] is not None
 
 
-def test_tools_list(client: TestClient) -> None:
+def test_tools_list(client_with_db: tuple[TestClient, object]) -> None:
+    client, _factory = client_with_db
     response = client.get("/tools")
     assert response.status_code == 200
     assert len(response.json()) >= 10
