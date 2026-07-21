@@ -161,8 +161,12 @@ class RiskSettingsService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         day: date,
-    ) -> DailyRiskState | None:
-        """Initialize today's daily risk state from persisted settings when missing."""
+    ) -> DailyRiskState:
+        """Get or create today's daily risk state for server-side accounting (AT-012).
+
+        Always creates a row so trade_count / realized PnL can be persisted even when
+        an absolute daily loss limit is unset (nullable ``daily_loss_limit``).
+        """
         existing = self._session.scalar(
             select(DailyRiskState).where(
                 DailyRiskState.organization_id == organization_id,
@@ -174,20 +178,23 @@ class RiskSettingsService:
             return existing
 
         settings_row = self._load_row(organization_id=organization_id, user_id=user_id)
-        if settings_row is None:
-            return None
-
-        daily_loss_limit = settings_row.daily_loss_limit
-        if daily_loss_limit is None:
-            return None
+        defaults = SYSTEM_RISK_DEFAULTS
+        if settings_row is not None:
+            daily_loss_limit = settings_row.daily_loss_limit
+            daily_target = settings_row.daily_target
+            max_trades_per_day = settings_row.max_trades_per_day
+        else:
+            daily_loss_limit = defaults.daily_loss_limit
+            daily_target = defaults.daily_target
+            max_trades_per_day = defaults.max_trades_per_day
 
         row = DailyRiskState(
             organization_id=organization_id,
             user_id=user_id,
             day=day,
             daily_loss_limit=daily_loss_limit,
-            daily_target=settings_row.daily_target,
-            max_trades_per_day=settings_row.max_trades_per_day,
+            daily_target=daily_target,
+            max_trades_per_day=max_trades_per_day,
         )
         self._session.add(row)
         self._session.flush()

@@ -293,31 +293,32 @@ class PaperValidationRuntimeService:
                 evaluation.stop_loss,
                 config,
             )
-            fee_rate = config.fees_bps / Decimal("10000")
-            slip_rate = config.slippage_bps / Decimal("10000")
-            open_state = self._engine.open_trade_state(
-                direction=rules.direction,
-                entry_time=candle_rows[-1].close_time,
-                entry_price=evaluation.entry_price,
-                stop_loss=evaluation.stop_loss,
-                size=size,
-                rules=rules,
-                fee_rate=fee_rate,
-                slip_rate=slip_rate,
-            )
-            trade_row = self._create_trade_from_state(
-                run,
-                open_state,
-                signal_row=signal_row,
-                rules=rules,
-                engine_source=engine_source,
-                organization_id=organization_id,
-                user_id=user_id,
-                config=config,
-            )
-            signal_row.status = PaperSignalStatus.CONSUMED
-            self._record_event(trade_row.id, "opened", {"mode": "auto_paper"})
-            trade_created = True
+            if size > 0:
+                fee_rate = config.fees_bps / Decimal("10000")
+                slip_rate = config.slippage_bps / Decimal("10000")
+                open_state = self._engine.open_trade_state(
+                    direction=rules.direction,
+                    entry_time=candle_rows[-1].close_time,
+                    entry_price=evaluation.entry_price,
+                    stop_loss=evaluation.stop_loss,
+                    size=size,
+                    rules=rules,
+                    fee_rate=fee_rate,
+                    slip_rate=slip_rate,
+                )
+                trade_row = self._create_trade_from_state(
+                    run,
+                    open_state,
+                    signal_row=signal_row,
+                    rules=rules,
+                    engine_source=engine_source,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    config=config,
+                )
+                signal_row.status = PaperSignalStatus.CONSUMED
+                self._record_event(trade_row.id, "opened", {"mode": "auto_paper"})
+                trade_created = True
 
         scan_result = {
             "triggered": triggered,
@@ -764,7 +765,8 @@ class PaperValidationRuntimeService:
         risk_capital = config.initial_capital * (config.risk_per_trade_pct / Decimal("100"))
         risk_per_unit = abs(entry - stop)
         if risk_per_unit <= 0:
-            return Decimal("0.001")
+            # Fail closed — never open a tiny size on invalid stop distance (AT-012).
+            return Decimal("0")
         return risk_capital / risk_per_unit
 
     def _create_trade_from_state(

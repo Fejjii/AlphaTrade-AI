@@ -57,7 +57,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: commit `6908124`, merge `3217c18`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/1
 
 ### AT-012 — Fresh risk + eligibility at paper execution; bind size/price; fail-closed zero stop
-- Priority: P0 · Status: TODO · Dependencies: AT-011 · Risk: Medium (safety-critical)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-011 · Risk: Medium (safety-critical)
 - Safety classification: Trading safety / paper-only
 - Goal: Re-evaluate RiskEngine at `place_paper_order` with DailyRiskState + settings +
   kill switch; refuse missing risk_result; call eligibility; bind order size/price to

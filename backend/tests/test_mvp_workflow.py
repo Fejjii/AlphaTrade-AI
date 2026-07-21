@@ -37,6 +37,15 @@ from app.services.rag_service import build_rag_service
 from tests.test_workflows import ORG_ID, USER_ID, _exit
 
 
+def _default_allow_risk() -> RiskCheckResult:
+    return RiskCheckResult(
+        action=RiskAction.ALLOW,
+        severity=RiskSeverity.LOW,
+        explanation="mvp allow",
+        approval_required=True,
+    )
+
+
 def _create_proposal_with_approval(
     session: Session,
     *,
@@ -55,14 +64,14 @@ def _create_proposal_with_approval(
             timeframe="4h",
             direction="long",
             entry_price=Decimal("60000"),
-            position_size=Decimal("0.01"),
+            position_size=Decimal("0.005"),
             leverage=Decimal("3"),
             exit=_exit(),
             confidence=0.7,
             risk_level=RiskSeverity.MEDIUM,
             rationale="MVP workflow test",
             approval_required=True,
-            risk_result=risk_result,
+            risk_result=_default_allow_risk() if risk_result is None else risk_result,
         )
     )
     approval = approvals.create_for_proposal(
@@ -92,7 +101,7 @@ def test_full_proposal_approval_paper_flow(
                 symbol="BTCUSDT",
                 side="buy",
                 type="market",
-                size=Decimal("0.01"),
+                size=Decimal("0.005"),
                 idempotency_key="mvp-flow-001",
             )
         )
@@ -135,7 +144,7 @@ def test_rejected_approval_cannot_execute(
                     symbol="BTCUSDT",
                     side="buy",
                     type="market",
-                    size=Decimal("0.01"),
+                    size=Decimal("0.005"),
                     idempotency_key="mvp-reject-001",
                 )
             )
@@ -163,7 +172,7 @@ def test_needs_more_analysis_cannot_execute(
                     symbol="BTCUSDT",
                     side="buy",
                     type="market",
-                    size=Decimal("0.01"),
+                    size=Decimal("0.005"),
                     idempotency_key="mvp-nma-001",
                 )
             )
@@ -204,7 +213,7 @@ def test_risk_blocked_proposal_cannot_execute(
                     symbol="BTCUSDT",
                     side="buy",
                     type="market",
-                    size=Decimal("0.01"),
+                    size=Decimal("0.005"),
                     idempotency_key="mvp-risk-001",
                 )
             )

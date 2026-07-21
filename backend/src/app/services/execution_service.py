@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.errors import NotFoundError, TradingPolicyError
-from app.db.models import ExchangeFill, ExchangeOrder, Order, Position
+from app.db.models import ExchangeFill, ExchangeOrder, Order, Position, TradeProposal
 from app.providers.exchange.base import (
     ExchangeExecutionProvider,
     ExchangeOrderRequest,
@@ -35,20 +35,25 @@ from app.repositories.approvals import ApprovalRepository
 from app.repositories.exchange_orders import ExchangeFillRepository, ExchangeOrderRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.proposals import ProposalRepository
+from app.schemas.approval import ApprovalRequest
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
     ApprovalStatus,
     AuditEventType,
     ExecutionMode,
+    OrderSide,
     OrderStatus,
     PositionStatus,
-    RiskAction,
     TradeDirection,
 )
 from app.schemas.execution import PaperOrder, PaperOrderRequest
-from app.schemas.risk import RiskCheckResult
 from app.services.audit_service import AuditService
+from app.services.market_data_service import MarketDataService
+from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
+from app.services.risk.daily_risk_accounting import DailyRiskAccounting
+from app.services.risk.settings_service import RiskSettingsService
+from app.services.risk_service import RiskService
 
 logger = structlog.get_logger(__name__)
 
@@ -63,6 +68,9 @@ class ExecutionService:
         audit_service: AuditService,
         *,
         exchange_execution: ExchangeExecutionProvider | None = None,
+        risk_service: RiskService | None = None,
+        risk_settings: RiskSettingsService | None = None,
+        market_data_service: MarketDataService | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -73,6 +81,14 @@ class ExecutionService:
         self._exchange_fills = ExchangeFillRepository(session)
         self._exchange_execution = exchange_execution
         self._audit = audit_service
+        self._risk_service = risk_service or RiskService()
+        self._risk_settings = risk_settings or RiskSettingsService(session, audit_service)
+        self._market_data = market_data_service
+        self._daily_risk = DailyRiskAccounting(session, self._risk_settings)
+        self._risk_gate = PaperExecutionRiskGate(
+            risk_service=self._risk_service,
+            daily_risk=self._daily_risk,
+        )
 
     def place_paper_order(self, request: PaperOrderRequest) -> PaperOrder:
         if self._settings.real_trading_enabled:
@@ -100,27 +116,38 @@ class ExecutionService:
             self._audit_reject(request, reason="approval_required")
             raise TradingPolicyError("Approval is required before paper execution.")
 
-        if proposal.risk_result:
-            risk = RiskCheckResult.model_validate(proposal.risk_result)
-            if risk.action is RiskAction.BLOCK:
-                self._audit_reject(request, reason="risk_blocked")
-                raise TradingPolicyError(
-                    "Paper execution blocked by risk engine.",
-                    details={"risk_action": risk.action.value},
-                )
-        elif self._demo_routing_enabled():
-            self._audit_reject(request, reason="demo_mirror_risk_result_required")
-            raise TradingPolicyError(
-                "Demo venue mirroring requires a risk engine result on the proposal.",
-                details={"exchange_mode": self._settings.exchange_mode.value},
-            )
-
+        # Idempotent replay must short-circuit before fresh risk (open exposure already
+        # includes the prior fill for this key).
         existing = self._orders.get_by_idempotency_key(request.idempotency_key)
         if existing is not None:
             return self._to_schema(existing)
 
+        approval_schema = ApprovalRequest.model_validate(approval, from_attributes=True)
+        try:
+            bound = self._risk_gate.evaluate(
+                proposal=proposal,
+                approval=approval_schema,
+                request=request,
+            )
+        except TradingPolicyError as exc:
+            reason = str(exc.details.get("reason", "risk_gate_blocked"))
+            self._audit_reject(
+                request,
+                reason=reason,
+                extra={
+                    k: str(v) for k, v in exc.details.items() if k != "reason" and v is not None
+                },
+            )
+            raise
+
+        self._assert_market_data_usable(bound.symbol, request=request)
+
         organization_id = proposal.organization_id
         user_id = proposal.user_id
+
+        # Persist fresh risk evidence on the proposal for auditability.
+        proposal.risk_result = bound.risk_result.model_dump(mode="json")
+        self._proposals.add(proposal)
 
         row = Order(
             organization_id=organization_id,
@@ -129,20 +156,23 @@ class ExecutionService:
             proposal_id=request.proposal_id,
             approval_id=request.approval_id,
             mode=ExecutionMode.PAPER,
-            symbol=str(request.symbol),
-            side=request.side,
+            symbol=bound.symbol,
+            side=OrderSide(bound.side),
             order_type=request.type,
-            size=request.size,
-            price=request.price,
+            size=bound.size,
+            price=bound.price,
             status=OrderStatus.FILLED,
             reduce_only=request.reduce_only,
             idempotency_key=request.idempotency_key,
             exchange_order_id=f"paper-{uuid.uuid4().hex[:12]}",
         )
         self._orders.add(row)
-        self._create_or_update_position(proposal=proposal, order=row)
-        proposal.status = proposal.status  # touch
-        self._proposals.add(proposal)
+        self._create_or_update_position(proposal=proposal, order=row, bound=bound)
+        # Persist trade_count / open exposure before any subsequent place_paper_order.
+        post_fill = self._daily_risk.record_after_paper_fill(
+            organization_id=organization_id,
+            user_id=user_id,
+        )
 
         mode_tag = _EXCHANGE_DEMO_TAG if self._demo_routing_enabled() else "paper"
         self._audit.record(
@@ -155,12 +185,25 @@ class ExecutionService:
                 organization_id=organization_id,
                 user_id=user_id,
                 actor_type=ActorType.USER,
-                metadata={"symbol": str(request.symbol), "mode": mode_tag},
+                metadata={
+                    "symbol": bound.symbol,
+                    "side": bound.side,
+                    "mode": mode_tag,
+                    "bound_size": str(bound.size),
+                    "bound_price": str(bound.price) if bound.price is not None else None,
+                    "bound_stop_loss": str(bound.stop_loss),
+                    "risk_action": bound.risk_result.action.value,
+                    "account_equity": str(bound.account_equity),
+                    "open_exposure_before": str(bound.open_exposure_notional),
+                    "realized_pnl_today": str(bound.realized_pnl_today),
+                    "trade_count_today": str(post_fill.trade_count),
+                    "open_exposure_after": str(post_fill.open_exposure_notional),
+                },
             )
         )
 
         if mode_tag == _EXCHANGE_DEMO_TAG:
-            self._mirror_to_demo_venue(request=request, order=row)
+            self._mirror_to_demo_venue(request=request, order=row, bound=bound)
 
         return self._to_schema(row)
 
@@ -198,38 +241,89 @@ class ExecutionService:
             and self._exchange_execution is not None
         )
 
-    def _mirror_to_demo_venue(self, *, request: PaperOrderRequest, order: Order) -> None:
+    def _assert_market_data_usable(self, symbol: str, *, request: PaperOrderRequest) -> None:
+        """Fail closed on stale/degraded market data when live data is expected.
+
+        Mock / intentional-fallback provider modes skip this gate so paper tests and
+        local mock runs remain usable. When ``provider_mode`` or market provider is
+        configured for live/fallback-to-live, stale or fallback tickers refuse placement.
+        """
+        if self._market_data is None:
+            return
+        provider_mode = (self._settings.provider_mode or "").lower()
+        market_provider = (self._settings.market_data_provider or "").lower()
+        if provider_mode == "mock" or market_provider == "mock":
+            return
+
+        try:
+            ticker = self._market_data.get_ticker(symbol)
+        except Exception:
+            self._audit_reject(request, reason="market_data_unavailable")
+            raise TradingPolicyError(
+                "Market data is unavailable; paper execution refused.",
+                details={"reason": "market_data_unavailable", "symbol": symbol},
+            ) from None
+
+        meta = ticker.meta
+        if meta.is_stale or meta.fallback_used:
+            self._audit_reject(
+                request,
+                reason="market_data_degraded",
+                extra={
+                    "is_stale": str(meta.is_stale),
+                    "fallback_used": str(meta.fallback_used),
+                },
+            )
+            raise TradingPolicyError(
+                "Market data is stale or degraded; paper execution refused.",
+                details={
+                    "reason": "market_data_degraded",
+                    "symbol": symbol,
+                    "is_stale": str(meta.is_stale),
+                    "fallback_used": str(meta.fallback_used),
+                },
+            )
+
+    def _mirror_to_demo_venue(
+        self,
+        *,
+        request: PaperOrderRequest,
+        order: Order,
+        bound: BoundPaperPlacement,
+    ) -> None:
         """Best-effort mirror of the paper fill onto the BloFin demo venue.
 
         Failures are audited and swallowed: the internal paper order remains the
         source of truth, and a demo-venue outage must not break paper trading.
         """
         assert self._exchange_execution is not None  # guarded by caller
-        inst_id = to_blofin_inst_id(str(request.symbol))
+
+        inst_id = to_blofin_inst_id(bound.symbol)
         venue_client_order_id = derive_blofin_venue_client_order_id(request.idempotency_key)
+        bound_side = OrderSide(bound.side)
         exchange_order = ExchangeOrder(
             internal_order_id=order.id,
             organization_id=order.organization_id,
             exchange="blofin-demo",
             exchange_mode=_EXCHANGE_DEMO_TAG,
             inst_id=inst_id,
-            symbol=str(request.symbol),
-            side=request.side.value,
+            symbol=bound.symbol,
+            side=bound.side,
             order_type=request.type.value,
-            size=request.size,
-            price=request.price,
+            size=bound.size,
+            price=bound.price,
             venue_client_order_id=venue_client_order_id,
             status="submitted",
         )
         try:
             result = self._exchange_execution.place_order(
                 ExchangeOrderRequest(
-                    symbol=str(request.symbol),
+                    symbol=bound.symbol,
                     inst_id=inst_id,
-                    side=request.side,
+                    side=bound_side,
                     order_type=request.type,
-                    size=request.size,
-                    price=request.price,
+                    size=bound.size,
+                    price=bound.price,
                     reduce_only=request.reduce_only,
                     client_order_id=venue_client_order_id,
                 )
@@ -315,7 +409,13 @@ class ExecutionService:
                 )
             )
 
-    def _create_or_update_position(self, *, proposal, order: Order) -> None:
+    def _create_or_update_position(
+        self,
+        *,
+        proposal: TradeProposal,
+        order: Order,
+        bound: BoundPaperPlacement,
+    ) -> None:
         direction = TradeDirection.LONG if order.side.value == "buy" else TradeDirection.SHORT
         position = Position(
             organization_id=order.organization_id,
@@ -324,15 +424,17 @@ class ExecutionService:
             linked_proposal_id=proposal.id,
             symbol=str(order.symbol),
             direction=direction,
-            size=order.size,
-            entry_price=order.price or proposal.entry_price,
+            size=bound.size,
+            entry_price=bound.price or bound.entry_price,
             leverage=proposal.leverage,
-            stop_loss=proposal.stop_loss,
+            stop_loss=bound.stop_loss,
             take_profits=proposal.take_profits or [],
             risk_state={
                 "source": "paper_execution",
                 "proposal_id": str(proposal.id),
                 "setup_type": proposal.strategy_id.value,
+                "risk_action": bound.risk_result.action.value,
+                "account_equity": str(bound.account_equity),
             },
             status=PositionStatus.OPEN,
             opened_at=datetime.now(UTC),
@@ -340,7 +442,16 @@ class ExecutionService:
         self._session.add(position)
         self._session.flush()
 
-    def _audit_reject(self, request: PaperOrderRequest, *, reason: str) -> None:
+    def _audit_reject(
+        self,
+        request: PaperOrderRequest,
+        *,
+        reason: str,
+        extra: dict[str, str] | None = None,
+    ) -> None:
+        metadata: dict[str, object] = {"reason": reason, "mode": "paper"}
+        if extra:
+            metadata.update(extra)
         self._audit.record(
             AuditRecordCreate(
                 request_id=request.idempotency_key,
@@ -349,7 +460,7 @@ class ExecutionService:
                 resource_type="paper_order",
                 resource_id=str(request.proposal_id),
                 actor_type=ActorType.SYSTEM,
-                metadata={"reason": reason, "mode": "paper"},
+                metadata=metadata,
             )
         )
 
