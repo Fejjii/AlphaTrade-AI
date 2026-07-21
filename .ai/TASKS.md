@@ -63,8 +63,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   kill switch; refuse missing risk_result; call eligibility; bind order size/price to
   proposal (or re-risk); BLOCK on zero stop distance (no `0.001` fail-open).
 - Branch: `feat/at-012-paper-risk-at-execution`
-- Validation: Unit tests for missing risk / BLOCK / oversize / zero-stop; no live trading.
+- Validation: Merged PR #2 (`992e954`). CI run 29799284663 success on `ffa975e`.
+  Fresh risk at place_paper_order; DailyRiskState portfolio sync; proposal binding;
+  sequential exposure/daily-loss regression tests; paper-only unchanged.
 - Recommended model: Grok 4.5
+- Completion evidence: commit `7ebe3b0`, merge `992e954`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/2
 
 ### AT-013 — RAG fail-closed (no mock embeddings into Qdrant; no split-brain ingest)
 - Priority: P0 · Status: TODO · Dependencies: AT-010 · Risk: Medium (data integrity)
