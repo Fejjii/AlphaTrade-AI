@@ -1198,6 +1198,28 @@ class Position(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 # --------------------------------------------------------------------------- #
 
 
+class KillSwitchState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Organization-scoped persistent kill switch (AT-014).
+
+    One row per organization. When ``active`` is true, paper (and future sandbox /
+    real) execution adapters must refuse new side effects after a live DB read.
+    """
+
+    __tablename__ = "kill_switch_states"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_kill_switch_organization"),)
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deactivated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
 class DailyRiskState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "daily_risk_states"
     __table_args__ = (

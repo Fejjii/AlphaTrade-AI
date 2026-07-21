@@ -11,6 +11,8 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import structlog
+
 from app.agents.response_builder import build_trading_analysis, format_reply_from_analysis
 from app.agents.runtime import AgentRuntime
 from app.agents.state_utils import dump_partial, parse_state, patch_state
@@ -40,6 +42,8 @@ from app.schemas.usage import UsageEvent
 from app.services.narrative_service import format_reply_with_narrative
 from app.services.risk.rules import RiskEvaluationContext
 from app.strategies.base import StrategyEvaluationInput
+
+logger = structlog.get_logger(__name__)
 
 
 def receive_request(state: dict, runtime: AgentRuntime) -> dict:
@@ -1412,9 +1416,13 @@ def deterministic_risk_gate(state: dict, runtime: AgentRuntime) -> dict:
     tool_out = runtime.tool_registry.execute(
         "risk_checker", {"request": request.model_dump(mode="json")}
     )
+    kill_switch_active = _resolve_kill_switch_active(runtime, agent.organization_id)
     result = runtime.risk_service.check(
         request,
-        context=RiskEvaluationContext(is_weekend=False, kill_switch_active=False),
+        context=RiskEvaluationContext(
+            is_weekend=False,
+            kill_switch_active=kill_switch_active,
+        ),
     )
     severity = result.severity
     risk_audit = runtime.observability.emit_risk_checked(
@@ -1713,3 +1721,34 @@ def _extract_symbol(message: str) -> str | None:
         token = match.group(1)
         return f"{token}USDT"
     return None
+
+
+def _resolve_kill_switch_active(
+    runtime: AgentRuntime,
+    organization_id: uuid.UUID | None,
+) -> bool:
+    """Resolve kill-switch for agent risk context (AT-014).
+
+    Global env override applies without a DB session. When organization is known
+    but session is absent (unit tests / analysis-only graphs), treat as inactive
+    here — paper execution remains fail-closed in ExecutionService. When a
+    session exists and storage cannot be evaluated, fail closed.
+    """
+    if runtime.settings.global_kill_switch_active:
+        return True
+    if organization_id is None:
+        return False
+    if runtime.session is None:
+        return False
+    from app.services.risk.kill_switch import KillSwitchService
+
+    try:
+        evaluation = KillSwitchService(
+            runtime.session,
+            runtime.audit_service,
+            runtime.settings,
+        ).evaluate(organization_id=organization_id)
+    except Exception:
+        logger.exception("agent_kill_switch_lookup_failed")
+        return True
+    return evaluation.blocked

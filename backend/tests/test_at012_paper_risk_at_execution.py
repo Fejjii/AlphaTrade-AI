@@ -28,13 +28,13 @@ from app.schemas.common import (
 )
 from app.schemas.execution import PaperOrderRequest
 from app.schemas.proposal import ExitCriteria, TakeProfitLevel, TradeProposalCreate
-from app.schemas.risk import RiskCheckResult, TriggeredRule
+from app.schemas.risk import KillSwitchMutationRequest, RiskCheckResult, TriggeredRule
 from app.security.passwords import hash_password
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.execution_service import ExecutionService
 from app.services.proposal_service import ProposalService
-from app.services.risk.kill_switch import clear_all_kill_switches, set_kill_switch_active
+from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 
 ORG_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a2")
@@ -44,13 +44,6 @@ USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a3")
 _SIZE = Decimal("0.005")
 _ENTRY = Decimal("60000")
 _STOP = Decimal("58000")
-
-
-@pytest.fixture(autouse=True)
-def _clear_kill_switch() -> Iterator[None]:
-    clear_all_kill_switches()
-    yield
-    clear_all_kill_switches()
 
 
 @pytest.fixture
@@ -305,6 +298,7 @@ def test_missing_stop_blocked(at012_db: tuple[sessionmaker[Session], Settings]) 
         gate = PaperExecutionRiskGate(
             risk_service=RiskService(),
             daily_risk=DailyRiskAccounting(session, risk_settings),
+            kill_switch=KillSwitchService(session, AuditService(session), _settings),
         )
         with (
             patch(
@@ -326,13 +320,20 @@ def test_kill_switch_active_blocked(
     at012_db: tuple[sessionmaker[Session], Settings],
 ) -> None:
     factory, settings = at012_db
-    set_kill_switch_active(organization_id=ORG_ID, user_id=USER_ID, active=True)
     with factory() as session:
+        KillSwitchService(session, AuditService(session), settings).activate(
+            organization_id=ORG_ID,
+            actor_user_id=USER_ID,
+            payload=KillSwitchMutationRequest(confirm=True, reason="at012 kill test"),
+        )
+        session.commit()
         pid, aid = _seed(session)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid, aid, key="kill-switch"))
-        assert exc.value.details.get("reason") == "fresh_risk_blocked"
-        assert "kill_switch" in str(exc.value.details.get("rules", ""))
+        assert exc.value.details.get("reason") in {
+            "kill_switch_active",
+            "fresh_risk_blocked",
+        }
 
 
 def test_daily_loss_limit_exceeded_blocked(

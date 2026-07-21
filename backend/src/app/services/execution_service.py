@@ -52,6 +52,7 @@ from app.services.audit_service import AuditService
 from app.services.market_data_service import MarketDataService
 from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
+from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
 
@@ -71,6 +72,7 @@ class ExecutionService:
         risk_service: RiskService | None = None,
         risk_settings: RiskSettingsService | None = None,
         market_data_service: MarketDataService | None = None,
+        kill_switch: KillSwitchService | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -84,10 +86,12 @@ class ExecutionService:
         self._risk_service = risk_service or RiskService()
         self._risk_settings = risk_settings or RiskSettingsService(session, audit_service)
         self._market_data = market_data_service
+        self._kill_switch = kill_switch or KillSwitchService(session, audit_service, settings)
         self._daily_risk = DailyRiskAccounting(session, self._risk_settings)
         self._risk_gate = PaperExecutionRiskGate(
             risk_service=self._risk_service,
             daily_risk=self._daily_risk,
+            kill_switch=self._kill_switch,
         )
 
     def place_paper_order(self, request: PaperOrderRequest) -> PaperOrder:
@@ -122,6 +126,22 @@ class ExecutionService:
         if existing is not None:
             return self._to_schema(existing)
 
+        organization_id = proposal.organization_id
+        user_id = proposal.user_id
+
+        # Authoritative kill switch before any new execution side effect (AT-014).
+        try:
+            self._kill_switch.assert_execution_allowed(
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        except TradingPolicyError as exc:
+            self._audit_reject(
+                request,
+                reason=str(exc.details.get("reason", "kill_switch_active")),
+            )
+            raise
+
         approval_schema = ApprovalRequest.model_validate(approval, from_attributes=True)
         try:
             bound = self._risk_gate.evaluate(
@@ -142,8 +162,18 @@ class ExecutionService:
 
         self._assert_market_data_usable(bound.symbol, request=request)
 
-        organization_id = proposal.organization_id
-        user_id = proposal.user_id
+        # Re-check immediately before fill — covers mid-request activation.
+        try:
+            self._kill_switch.assert_execution_allowed(
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        except TradingPolicyError as exc:
+            self._audit_reject(
+                request,
+                reason=str(exc.details.get("reason", "kill_switch_active")),
+            )
+            raise
 
         # Persist fresh risk evidence on the proposal for auditability.
         proposal.risk_result = bound.risk_result.model_dump(mode="json")

@@ -82,6 +82,8 @@ import type {
   UserStrategy,
   UserRiskSettings,
   UserRiskSettingsUpdate,
+  KillSwitchStatus,
+  KillSwitchMutationRequest,
   BacktestRun,
   PaginatedBacktestRuns,
   PaginatedBacktestTrades,
@@ -993,6 +995,19 @@ export const api = {
       }),
     lossAcceptance: (body: { planned_loss_amount: string; accepted: boolean }) =>
       apiFetch<{ can_execute_paper: boolean; recommendation: string }>("/risk/loss-acceptance", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    killSwitch: () => apiFetch<KillSwitchStatus>("/risk/kill-switch", { auth: true }),
+    activateKillSwitch: (body: KillSwitchMutationRequest) =>
+      apiFetch<KillSwitchStatus>("/risk/kill-switch/activate", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    deactivateKillSwitch: (body: KillSwitchMutationRequest) =>
+      apiFetch<KillSwitchStatus>("/risk/kill-switch/deactivate", {
         method: "POST",
         body: JSON.stringify(body),
         auth: true,

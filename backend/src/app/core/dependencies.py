@@ -56,6 +56,7 @@ from app.services.pretrade_analysis_service import PreTradeAnalysisService
 from app.services.proposal_service import ProposalService
 from app.services.quota_service import QuotaService
 from app.services.rag_service import RagService, build_rag_service
+from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
 from app.services.strategy_library_service import StrategyLibraryService
@@ -142,6 +143,7 @@ def get_execution_service(
     market_data_service: MarketDataServiceDep,
     risk_service: RiskServiceDep,
     risk_settings: RiskSettingsServiceDep,
+    kill_switch: KillSwitchServiceDep,
 ) -> ExecutionService:
     exchange_execution = resolve_exchange_execution_provider(settings)
     return ExecutionService(
@@ -152,6 +154,7 @@ def get_execution_service(
         risk_service=risk_service,
         risk_settings=risk_settings,
         market_data_service=market_data_service,
+        kill_switch=kill_switch,
     )
 
 
@@ -501,3 +504,14 @@ def get_risk_settings_service(
 
 
 RiskSettingsServiceDep = Annotated[RiskSettingsService, Depends(get_risk_settings_service)]
+
+
+def get_kill_switch_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+    settings: SettingsDep,
+) -> KillSwitchService:
+    return KillSwitchService(session, audit_service, settings)
+
+
+KillSwitchServiceDep = Annotated[KillSwitchService, Depends(get_kill_switch_service)]
