@@ -195,7 +195,14 @@ def test_execution_paper_order(client_with_db: tuple[TestClient, sessionmaker[Se
     from decimal import Decimal
 
     from app.db.models import ApprovalRequest, TradeProposal
-    from app.schemas.common import ApprovalStatus, RiskSeverity, StrategyId, TradeDirection
+    from app.schemas.common import (
+        ApprovalStatus,
+        RiskAction,
+        RiskSeverity,
+        StrategyId,
+        TradeDirection,
+    )
+    from app.schemas.risk import RiskCheckResult
 
     client, factory = client_with_db
     me = client.get("/auth/me").json()
@@ -210,7 +217,7 @@ def test_execution_paper_order(client_with_db: tuple[TestClient, sessionmaker[Se
             timeframe="4h",
             direction=TradeDirection.LONG,
             entry_price=Decimal("60000"),
-            position_size=Decimal("0.01"),
+            position_size=Decimal("0.005"),
             leverage=Decimal("3"),
             stop_loss=Decimal("58000"),
             take_profits=[{"price": "62000", "size_fraction": 0.5}],
@@ -218,6 +225,12 @@ def test_execution_paper_order(client_with_db: tuple[TestClient, sessionmaker[Se
             confidence=0.7,
             risk_level=RiskSeverity.MEDIUM,
             rationale="test",
+            risk_result=RiskCheckResult(
+                action=RiskAction.ALLOW,
+                severity=RiskSeverity.LOW,
+                explanation="api route allow",
+                approval_required=True,
+            ).model_dump(mode="json"),
         )
         session.add(proposal)
         session.flush()
@@ -242,7 +255,7 @@ def test_execution_paper_order(client_with_db: tuple[TestClient, sessionmaker[Se
             "symbol": "BTCUSDT",
             "side": "buy",
             "type": "market",
-            "size": "0.01",
+            "size": "0.005",
             "idempotency_key": "test-key-001",
         },
     )

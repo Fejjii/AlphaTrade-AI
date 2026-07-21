@@ -139,6 +139,9 @@ def get_execution_service(
     session: SessionDep,
     settings: SettingsDep,
     audit_service: AuditServiceDep,
+    market_data_service: MarketDataServiceDep,
+    risk_service: RiskServiceDep,
+    risk_settings: RiskSettingsServiceDep,
 ) -> ExecutionService:
     exchange_execution = resolve_exchange_execution_provider(settings)
     return ExecutionService(
@@ -146,11 +149,26 @@ def get_execution_service(
         settings,
         audit_service,
         exchange_execution=exchange_execution,
+        risk_service=risk_service,
+        risk_settings=risk_settings,
+        market_data_service=market_data_service,
     )
 
 
-def get_position_service(session: SessionDep, audit_service: AuditServiceDep) -> PositionService:
-    return PositionService(session, audit_service)
+def get_position_service(
+    session: SessionDep,
+    settings: SettingsDep,
+    audit_service: AuditServiceDep,
+    risk_settings: RiskSettingsServiceDep,
+    market_data_service: MarketDataServiceDep,
+) -> PositionService:
+    return PositionService(
+        session,
+        audit_service,
+        settings=settings,
+        risk_settings=risk_settings,
+        market_data_service=market_data_service,
+    )
 
 
 def get_performance_service(session: SessionDep) -> PerformanceService:

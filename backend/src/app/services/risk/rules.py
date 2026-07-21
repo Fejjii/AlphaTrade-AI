@@ -31,6 +31,8 @@ class RiskEvaluationContext:
     kill_switch_active: bool = False
     overtrading: bool = False
     is_weekend: bool = False
+    # Sum of open paper position notionals (size * entry) before this order.
+    open_exposure_notional: Decimal = Decimal("0")
 
 
 def _rule(
@@ -68,6 +70,21 @@ def check_no_stop_loss(
     return None
 
 
+def check_invalid_stop_loss(
+    req: RiskCheckRequest, _limits: RiskLimits, _ctx: RiskEvaluationContext
+) -> TriggeredRule | None:
+    if req.stop_loss is None:
+        return None
+    if abs(req.entry_price - req.stop_loss) <= 0:
+        return _rule(
+            RiskRuleId.INVALID_STOP_LOSS,
+            RiskAction.BLOCK,
+            RiskSeverity.CRITICAL,
+            "Stop loss distance must be greater than zero.",
+        )
+    return None
+
+
 def check_max_leverage(
     req: RiskCheckRequest, limits: RiskLimits, ctx: RiskEvaluationContext
 ) -> TriggeredRule | None:
@@ -87,7 +104,7 @@ def check_max_leverage(
 
 
 def check_max_position_size(
-    req: RiskCheckRequest, limits: RiskLimits, _ctx: RiskEvaluationContext
+    req: RiskCheckRequest, limits: RiskLimits, ctx: RiskEvaluationContext
 ) -> TriggeredRule | None:
     notional = req.position_size * req.entry_price
     max_notional = req.account_equity * (limits.max_position_pct_of_equity / Decimal("100"))
@@ -97,6 +114,17 @@ def check_max_position_size(
             RiskAction.BLOCK,
             RiskSeverity.HIGH,
             f"Position notional {notional} exceeds {limits.max_position_pct_of_equity}% of equity.",
+        )
+    total_exposure = ctx.open_exposure_notional + notional
+    if total_exposure > max_notional:
+        return _rule(
+            RiskRuleId.MAX_POSITION_SIZE,
+            RiskAction.BLOCK,
+            RiskSeverity.HIGH,
+            (
+                f"Open exposure {total_exposure} would exceed "
+                f"{limits.max_position_pct_of_equity}% of equity."
+            ),
         )
     return None
 
@@ -268,6 +296,7 @@ def default_is_weekend() -> bool:
 ALL_RULES: tuple[RuleFn, ...] = (
     check_kill_switch,
     check_no_stop_loss,
+    check_invalid_stop_loss,
     check_max_leverage,
     check_max_position_size,
     check_daily_loss_lock,

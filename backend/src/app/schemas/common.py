@@ -183,6 +183,7 @@ class RiskRuleId(StrEnum):
     MAX_DAILY_LOSS = "max_daily_loss"
     MAX_WEEKLY_LOSS = "max_weekly_loss"
     NO_STOP_LOSS = "no_stop_loss"
+    INVALID_STOP_LOSS = "invalid_stop_loss"
     UNSUPPORTED_COIN = "unsupported_coin"
     COUNTERTREND_REDUCED_SIZE = "countertrend_reduced_size"
     VOLATILE_ALTCOIN_REDUCED_SIZE = "volatile_altcoin_reduced_size"

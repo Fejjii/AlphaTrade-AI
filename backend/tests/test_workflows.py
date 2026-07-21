@@ -179,7 +179,7 @@ def _seed_approved_proposal(session: Session, settings: Settings) -> tuple[uuid.
             timeframe="4h",
             direction="long",
             entry_price=Decimal("60000"),
-            position_size=Decimal("0.01"),
+            position_size=Decimal("0.005"),
             leverage=Decimal("3"),
             exit=_exit(),
             confidence=0.7,
@@ -300,7 +300,7 @@ def test_approval_decisions_via_api(workflow_db: tuple[sessionmaker[Session], Se
                 timeframe="4h",
                 direction="long",
                 entry_price=Decimal("60000"),
-                position_size=Decimal("0.01"),
+                position_size=Decimal("0.005"),
                 leverage=Decimal("3"),
                 exit=_exit(),
                 confidence=0.7,
@@ -353,7 +353,7 @@ def test_approval_decisions_via_api(workflow_db: tuple[sessionmaker[Session], Se
                     timeframe="4h",
                     direction="long",
                     entry_price=Decimal("60000"),
-                    position_size=Decimal("0.01"),
+                    position_size=Decimal("0.005"),
                     leverage=Decimal("3"),
                     exit=_exit(),
                     confidence=0.7,
@@ -393,7 +393,7 @@ def test_paper_execution_success_and_idempotency(
             symbol="BTCUSDT",
             side="buy",
             type="market",
-            size=Decimal("0.01"),
+            size=Decimal("0.005"),
             idempotency_key="idem-key-001",
         )
         order1 = execution.place_paper_order(request)
@@ -420,7 +420,7 @@ def test_paper_execution_blocked_without_approval(
                 timeframe="4h",
                 direction="long",
                 entry_price=Decimal("60000"),
-                position_size=Decimal("0.01"),
+                position_size=Decimal("0.005"),
                 leverage=Decimal("3"),
                 exit=_exit(),
                 confidence=0.7,
@@ -444,7 +444,7 @@ def test_paper_execution_blocked_without_approval(
                     symbol="BTCUSDT",
                     side="buy",
                     type="market",
-                    size=Decimal("0.01"),
+                    size=Decimal("0.005"),
                     idempotency_key="idem-key-002",
                 )
             )
@@ -482,7 +482,7 @@ def test_paper_execution_blocked_by_risk(
                 timeframe="4h",
                 direction="long",
                 entry_price=Decimal("60000"),
-                position_size=Decimal("0.01"),
+                position_size=Decimal("0.005"),
                 leverage=Decimal("3"),
                 exit=_exit(),
                 confidence=0.7,
@@ -508,7 +508,7 @@ def test_paper_execution_blocked_by_risk(
                     symbol="BTCUSDT",
                     side="buy",
                     type="market",
-                    size=Decimal("0.01"),
+                    size=Decimal("0.005"),
                     idempotency_key="idem-key-003",
                 )
             )
@@ -525,7 +525,7 @@ def test_position_list_and_close(workflow_db: tuple[sessionmaker[Session], Setti
                 symbol="BTCUSDT",
                 side="buy",
                 type="market",
-                size=Decimal("0.01"),
+                size=Decimal("0.005"),
                 idempotency_key="idem-pos-001",
             )
         )
@@ -621,7 +621,7 @@ def test_audit_events_emitted(workflow_db: tuple[sessionmaker[Session], Settings
                 timeframe="4h",
                 direction="long",
                 entry_price=Decimal("60000"),
-                position_size=Decimal("0.01"),
+                position_size=Decimal("0.005"),
                 leverage=Decimal("3"),
                 exit=_exit(),
                 confidence=0.7,
@@ -732,7 +732,7 @@ def test_demo_execution_mirrors_paper_order(
                 symbol="BTCUSDT",
                 side="buy",
                 type="market",
-                size=Decimal("0.01"),
+                size=Decimal("0.005"),
                 idempotency_key="demo-idem-001",
             )
         )
@@ -780,7 +780,7 @@ def test_demo_execution_failure_does_not_break_paper_order(
                 symbol="BTCUSDT",
                 side="buy",
                 type="market",
-                size=Decimal("0.01"),
+                size=Decimal("0.005"),
                 idempotency_key="demo-idem-002",
             )
         )
@@ -824,8 +824,8 @@ def test_demo_mirror_failure_persists_sanitized_audit_metadata(
                 symbol="BTCUSDT",
                 side="buy",
                 type="limit",
-                size=Decimal("0.1"),
-                price=Decimal("44716.5"),
+                size=Decimal("0.005"),
+                price=Decimal("60000"),
                 idempotency_key="slice66b-demo-limit-001",
             )
         )
@@ -876,7 +876,7 @@ def test_demo_routing_skipped_when_real_trading_would_be_enabled(
                 symbol="BTCUSDT",
                 side="buy",
                 type="market",
-                size=Decimal("0.01"),
+                size=Decimal("0.005"),
                 idempotency_key="demo-idem-003",
             )
         )
@@ -910,7 +910,7 @@ def test_demo_mirror_idempotency_one_exchange_order(
                 timeframe="4h",
                 direction="long",
                 entry_price=Decimal("60000"),
-                position_size=Decimal("0.01"),
+                position_size=Decimal("0.005"),
                 leverage=Decimal("3"),
                 exit=_exit(),
                 confidence=0.7,
@@ -943,7 +943,7 @@ def test_demo_mirror_idempotency_one_exchange_order(
             symbol="BTCUSDT",
             side="buy",
             type="market",
-            size=Decimal("0.01"),
+            size=Decimal("0.005"),
             idempotency_key="demo-idem-dup-001",
         )
         order1 = execution.place_paper_order(request)
@@ -976,7 +976,7 @@ def test_demo_mirror_requires_risk_result(
                 timeframe="4h",
                 direction="long",
                 entry_price=Decimal("60000"),
-                position_size=Decimal("0.01"),
+                position_size=Decimal("0.005"),
                 leverage=Decimal("3"),
                 exit=_exit(),
                 confidence=0.7,
@@ -1000,7 +1000,7 @@ def test_demo_mirror_requires_risk_result(
             audit,
             exchange_execution=fake,
         )
-        with pytest.raises(TradingPolicyError, match="risk engine result"):
+        with pytest.raises(TradingPolicyError, match="prior risk evaluation"):
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal_id,
@@ -1008,7 +1008,7 @@ def test_demo_mirror_requires_risk_result(
                     symbol="BTCUSDT",
                     side="buy",
                     type="market",
-                    size=Decimal("0.01"),
+                    size=Decimal("0.005"),
                     idempotency_key="demo-no-risk-001",
                 )
             )
