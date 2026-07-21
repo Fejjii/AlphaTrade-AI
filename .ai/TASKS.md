@@ -45,14 +45,16 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 ## Paper hardening (from AT-010) — implement before any sandbox/live program
 
 ### AT-011 — Authz for compute surfaces (`/tools`, `/risk/*`, strategy evaluate) + gate `/docs`
-- Priority: P0 · Status: TODO · Dependencies: AT-010 · Risk: Medium
+- Priority: P0 · Status: DONE · Dependencies: AT-010 · Risk: Medium
 - Safety classification: Security / paper-safe
 - Goal: Require auth on `/tools` (incl. execute), `/risk/*`, strategy evaluate; gate
   OpenAPI `/docs` outside local; keep paper-only.
 - Branch: `feat/at-011-authz-tools-risk`
-- Validation: Staging/local unauth → 401/403; authed paths OK; pytest + ruff green;
-  `verify-safety.sh` still pass; no trading-flag changes.
+- Validation: Merged PR #1 (`3217c18`). CI run 29794325773 success. Unauth → 401;
+  VIEWER → 403 on trader compute; trader/owner → 200; docs gated outside local;
+  `/tools/execute` binds JWT tenant. Paper defaults unchanged.
 - Recommended model: Composer 2.5 (impl) · Grok 4.5 (review)
+- Completion evidence: commit `6908124`, merge `3217c18`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/1
 
 ### AT-012 — Fresh risk + eligibility at paper execution; bind size/price; fail-closed zero stop
 - Priority: P0 · Status: TODO · Dependencies: AT-011 · Risk: Medium (safety-critical)
