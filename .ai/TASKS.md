@@ -79,11 +79,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Grok 4.5
 
 ### AT-014 — Server-side kill switch (persist + enforce + UI wire-up)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-012 · Risk: Medium (safety-critical)
+- Priority: P0 · Status: DONE · Dependencies: AT-012 · Risk: Medium (safety-critical)
 - Safety classification: Trading safety
 - Goal: Persist org kill switch; enforce in RiskEngine + execution; replace cosmetic
   frontend toggle with API-backed control.
-- Branch: `feat/at-014-persistent-kill-switch`
+- Branch: `feat/at-014-persistent-kill-switch` (merged via PR #3)
 - Validation: Toggle → paper place refused; UI reflects server; agent cannot hardcode false.
 - Recommended model: Grok 4.5
 
