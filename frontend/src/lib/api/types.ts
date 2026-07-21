@@ -1061,6 +1061,26 @@ export interface UserRiskSettingsUpdate {
   notes?: string | null;
 }
 
+export interface KillSwitchStatus {
+  organization_id: string;
+  active: boolean;
+  reason: string | null;
+  activated_by: string | null;
+  activated_at: string | null;
+  deactivated_by: string | null;
+  deactivated_at: string | null;
+  version: number;
+  scope: string;
+  global_active: boolean;
+  execution_blocked: boolean;
+}
+
+export interface KillSwitchMutationRequest {
+  confirm: boolean;
+  reason: string;
+  expected_version?: number | null;
+}
+
 export interface AlertSummaryItem {
   alert_type: string;
   severity: string;

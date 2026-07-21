@@ -5,12 +5,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.dependencies import (
+    KillSwitchServiceDep,
     LossAcceptanceServiceDep,
     PositionSizingServiceDep,
     RiskServiceDep,
     RiskSettingsServiceDep,
     SessionDep,
 )
+from app.core.errors import ConflictError, ValidationAppError
 from app.schemas.position_sizing import (
     LossAcceptanceRequest,
     LossAcceptanceResult,
@@ -18,13 +20,15 @@ from app.schemas.position_sizing import (
     PositionSizingResult,
 )
 from app.schemas.risk import (
+    KillSwitchMutationRequest,
+    KillSwitchStatus,
     RiskCheckRequest,
     RiskCheckResult,
     UserRiskSettingsResponse,
     UserRiskSettingsUpdate,
 )
 from app.security.rate_limit import tenant_rate_limit_dependency
-from app.security.rbac import ReaderDep, TraderDep
+from app.security.rbac import OwnerDep, ReaderDep, TraderDep
 
 router = APIRouter(prefix="/risk", tags=["risk"])
 
@@ -36,6 +40,16 @@ _RISK_SETTINGS_READ = Depends(
 _RISK_SETTINGS_WRITE = Depends(
     tenant_rate_limit_dependency(
         "risk:settings:write", limit=30, window_seconds=3600, user_limit=30
+    )
+)
+_KILL_SWITCH_READ = Depends(
+    tenant_rate_limit_dependency(
+        "risk:kill-switch:read", limit=120, window_seconds=3600, user_limit=120
+    )
+)
+_KILL_SWITCH_WRITE = Depends(
+    tenant_rate_limit_dependency(
+        "risk:kill-switch:write", limit=20, window_seconds=3600, user_limit=20
     )
 )
 
@@ -94,6 +108,72 @@ async def reset_risk_settings(
     )
     session.commit()
     return result
+
+
+@router.get(
+    "/kill-switch",
+    response_model=KillSwitchStatus,
+    summary="Get organization kill switch status",
+    dependencies=[_KILL_SWITCH_READ],
+)
+async def get_kill_switch(
+    tenant: ReaderDep,
+    service: KillSwitchServiceDep,
+) -> KillSwitchStatus:
+    """Read-only; available while execution is blocked."""
+    return service.get_status(organization_id=tenant.organization_id)
+
+
+@router.post(
+    "/kill-switch/activate",
+    response_model=KillSwitchStatus,
+    summary="Activate organization kill switch",
+    dependencies=[_KILL_SWITCH_WRITE],
+)
+async def activate_kill_switch(
+    payload: KillSwitchMutationRequest,
+    tenant: OwnerDep,
+    service: KillSwitchServiceDep,
+    session: SessionDep,
+) -> KillSwitchStatus:
+    try:
+        result = service.activate(
+            organization_id=tenant.organization_id,
+            actor_user_id=tenant.user_id,
+            payload=payload,
+        )
+        session.commit()
+        return result
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/kill-switch/deactivate",
+    response_model=KillSwitchStatus,
+    summary="Deactivate organization kill switch",
+    dependencies=[_KILL_SWITCH_WRITE],
+)
+async def deactivate_kill_switch(
+    payload: KillSwitchMutationRequest,
+    tenant: OwnerDep,
+    service: KillSwitchServiceDep,
+    session: SessionDep,
+) -> KillSwitchStatus:
+    try:
+        result = service.deactivate(
+            organization_id=tenant.organization_id,
+            actor_user_id=tenant.user_id,
+            payload=payload,
+        )
+        session.commit()
+        return result
+    except ValidationAppError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/check", response_model=RiskCheckResult, summary="Run deterministic risk check")

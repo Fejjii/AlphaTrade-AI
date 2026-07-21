@@ -67,6 +67,13 @@ class ForbiddenError(AppError):
     code = "forbidden"
 
 
+class ConflictError(AppError):
+    """Raised when a mutation conflicts with concurrent state (e.g. version mismatch)."""
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "conflict"
+
+
 class TradingPolicyError(AppError):
     """Raised when an action violates a hard trading-safety policy."""
 

@@ -1412,9 +1412,13 @@ def deterministic_risk_gate(state: dict, runtime: AgentRuntime) -> dict:
     tool_out = runtime.tool_registry.execute(
         "risk_checker", {"request": request.model_dump(mode="json")}
     )
+    kill_switch_active = _resolve_kill_switch_active(runtime, agent.organization_id)
     result = runtime.risk_service.check(
         request,
-        context=RiskEvaluationContext(is_weekend=False, kill_switch_active=False),
+        context=RiskEvaluationContext(
+            is_weekend=False,
+            kill_switch_active=kill_switch_active,
+        ),
     )
     severity = result.severity
     risk_audit = runtime.observability.emit_risk_checked(
@@ -1713,3 +1717,28 @@ def _extract_symbol(message: str) -> str | None:
         token = match.group(1)
         return f"{token}USDT"
     return None
+
+
+def _resolve_kill_switch_active(
+    runtime: AgentRuntime,
+    organization_id: uuid.UUID | None,
+) -> bool:
+    """Authoritative kill-switch for agent risk context (AT-014).
+
+    Fail closed when organization is known but the DB session is missing, or when
+    kill-switch storage cannot be evaluated.
+    """
+    if runtime.settings.global_kill_switch_active:
+        return True
+    if organization_id is None:
+        return False
+    if runtime.session is None:
+        return True
+    from app.services.risk.kill_switch import KillSwitchService
+
+    evaluation = KillSwitchService(
+        runtime.session,
+        runtime.audit_service,
+        runtime.settings,
+    ).evaluate(organization_id=organization_id)
+    return evaluation.blocked

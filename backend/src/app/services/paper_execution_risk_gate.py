@@ -19,7 +19,7 @@ from app.schemas.risk import RiskCheckRequest, RiskCheckResult
 from app.services.execution_eligibility import paper_execution_eligibility
 from app.services.mappers.proposal_mapper import proposal_to_schema
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
-from app.services.risk.kill_switch import is_kill_switch_active
+from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.rules import RiskEvaluationContext, default_is_weekend
 from app.services.risk_service import RiskService
 
@@ -49,9 +49,11 @@ class PaperExecutionRiskGate:
         *,
         risk_service: RiskService,
         daily_risk: DailyRiskAccounting,
+        kill_switch: KillSwitchService,
     ) -> None:
         self._risk = risk_service
         self._daily_risk = daily_risk
+        self._kill_switch = kill_switch
 
     def evaluate(
         self,
@@ -146,10 +148,13 @@ class PaperExecutionRiskGate:
             user_id=proposal.user_id,
         )
 
-        kill_active = is_kill_switch_active(
-            organization_id=proposal.organization_id,
-            user_id=proposal.user_id,
-        )
+        kill_eval = self._kill_switch.evaluate(organization_id=proposal.organization_id)
+        if kill_eval.reason_code == "kill_switch_unavailable":
+            raise self._reject(
+                "kill_switch_unavailable",
+                "Kill switch state is unavailable; paper execution refused.",
+            )
+        kill_active = kill_eval.blocked
 
         overtrading = False
         if user_settings.overtrading_guard_enabled:

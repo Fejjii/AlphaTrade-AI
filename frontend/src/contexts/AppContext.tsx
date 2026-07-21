@@ -2,15 +2,20 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
-import type { HealthResponse, ProviderStatus, ProviderStatusResponse } from "@/lib/api/types";
+import { api, ApiError } from "@/lib/api";
+import type { HealthResponse, KillSwitchStatus, ProviderStatus, ProviderStatusResponse } from "@/lib/api/types";
 import { appConfig } from "@/lib/config";
+import { isAuthenticated } from "@/lib/auth/session";
 
 interface AppContextValue {
   health: HealthResponse | null;
   providers: ProviderStatusResponse | null;
   killSwitchActive: boolean;
-  toggleKillSwitch: () => void;
+  killSwitchStatus: KillSwitchStatus | null;
+  killSwitchError: string | null;
+  killSwitchBusy: boolean;
+  refreshKillSwitch: () => Promise<void>;
+  setKillSwitchActive: (active: boolean, reason: string) => Promise<void>;
   refreshStatus: () => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -21,9 +26,26 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [providers, setProviders] = useState<ProviderStatusResponse | null>(null);
-  const [killSwitchActive, setKillSwitchActive] = useState(false);
+  const [killSwitchStatus, setKillSwitchStatus] = useState<KillSwitchStatus | null>(null);
+  const [killSwitchError, setKillSwitchError] = useState<string | null>(null);
+  const [killSwitchBusy, setKillSwitchBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshKillSwitch = useCallback(async () => {
+    if (!isAuthenticated()) {
+      setKillSwitchStatus(null);
+      return;
+    }
+    try {
+      const status = await api.risk.killSwitch();
+      setKillSwitchStatus(status);
+      setKillSwitchError(null);
+    } catch (err) {
+      // Read failures must not invent an inactive local state.
+      setKillSwitchError(err instanceof Error ? err.message : "Failed to load kill switch");
+    }
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     setLoading(true);
@@ -35,28 +57,74 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ]);
       setHealth(healthRes);
       setProviders(providersRes);
+      await refreshKillSwitch();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load backend status");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshKillSwitch]);
 
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
 
+  const setKillSwitchActive = useCallback(
+    async (active: boolean, reason: string) => {
+      setKillSwitchBusy(true);
+      setKillSwitchError(null);
+      try {
+        const body = {
+          confirm: true,
+          reason,
+          expected_version: killSwitchStatus?.version ?? null,
+        };
+        const status = active
+          ? await api.risk.activateKillSwitch(body)
+          : await api.risk.deactivateKillSwitch(body);
+        setKillSwitchStatus(status);
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Kill switch update failed";
+        setKillSwitchError(message);
+        throw err;
+      } finally {
+        setKillSwitchBusy(false);
+      }
+    },
+    [killSwitchStatus?.version],
+  );
+
   const value = useMemo<AppContextValue>(
     () => ({
       health,
       providers,
-      killSwitchActive,
-      toggleKillSwitch: () => setKillSwitchActive((prev) => !prev),
+      killSwitchActive: Boolean(killSwitchStatus?.execution_blocked),
+      killSwitchStatus,
+      killSwitchError,
+      killSwitchBusy,
+      refreshKillSwitch,
+      setKillSwitchActive,
       refreshStatus,
       loading,
       error,
     }),
-    [health, providers, killSwitchActive, refreshStatus, loading, error],
+    [
+      health,
+      providers,
+      killSwitchStatus,
+      killSwitchError,
+      killSwitchBusy,
+      refreshKillSwitch,
+      setKillSwitchActive,
+      refreshStatus,
+      loading,
+      error,
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

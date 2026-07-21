@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import Field
@@ -149,3 +150,44 @@ class UserRiskSettingsUpdate(StrictModel):
     one_loss_stop_enabled: bool | None = None
     overtrading_guard_enabled: bool | None = None
     notes: str | None = None
+
+
+class KillSwitchScope(StrEnum):
+    """Kill-switch scope labels (organization is the durable API scope)."""
+
+    ORGANIZATION = "organization"
+    GLOBAL = "global"
+
+
+class KillSwitchStatus(StrictModel):
+    """Authoritative kill-switch status for an organization."""
+
+    organization_id: UUID
+    active: bool
+    reason: str | None = None
+    activated_by: UUID | None = None
+    activated_at: datetime | None = None
+    deactivated_by: UUID | None = None
+    deactivated_at: datetime | None = None
+    version: int = 1
+    scope: str = KillSwitchScope.ORGANIZATION
+    global_active: bool = Field(
+        default=False,
+        description="True when the process-level GLOBAL_KILL_SWITCH_ACTIVE env gate is on.",
+    )
+    execution_blocked: bool = Field(
+        default=False,
+        description="True when organization and/or global kill switch blocks execution.",
+    )
+
+
+class KillSwitchMutationRequest(StrictModel):
+    """Activate or deactivate the organization kill switch."""
+
+    confirm: bool = Field(description="Must be true; explicit confirmation of the mutation.")
+    reason: str = Field(min_length=3, max_length=500)
+    expected_version: int | None = Field(
+        default=None,
+        ge=1,
+        description="Optional optimistic concurrency token from the last GET.",
+    )

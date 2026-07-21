@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # --- Trading safety ---
     execution_mode: ExecutionMode = ExecutionMode.PAPER
     enable_real_trading: bool = False
+    # Ops emergency gate (AT-014). Independent of org DB kill switch; fail-closed
+    # when true. No UI — set via GLOBAL_KILL_SWITCH_ACTIVE env for incident response.
+    global_kill_switch_active: bool = False
 
     # --- Exchange connectivity (Slice 56A — demo only, disabled by default) ---
     # Independent from execution_mode; see ``ExchangeMode``. Defaults keep the
