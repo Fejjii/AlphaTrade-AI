@@ -118,9 +118,8 @@ class PaperValidationRunSessionService:
             organization_id=organization_id,
             user_id=user_id,
         )
-        # Persist the session row before audit recording. AuditService.record commits
-        # the shared request session and rolls back on failure, which would discard a
-        # pending flushed session row if audit ran first (Postgres staging behavior).
+        # AT-016: flush then commit business row before audit so a catastrophic audit
+        # rollback cannot discard the started session (see slice-82 audit-failure test).
         self._sessions.add(session_row)
         try:
             self._session.flush()

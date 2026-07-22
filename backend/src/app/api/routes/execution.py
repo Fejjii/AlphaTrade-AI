@@ -50,9 +50,9 @@ async def place_paper_order(
     proposal = proposal_service.get(body.proposal_id)
     ensure_same_organization(proposal.organization_id, tenant)
     result = execution_service.place_paper_order(body)
-    session.commit()
     from app.schemas.usage import UsageEventCreate
 
+    # One authoritative commit: business + audit (flushed in service) + usage.
     usage_service.record(
         UsageEventCreate(
             request_id=str(body.idempotency_key),
@@ -65,6 +65,7 @@ async def place_paper_order(
             provider_metadata={"cost_source": "unavailable"},
         )
     )
+    session.commit()
     return result
 
 

@@ -65,6 +65,7 @@ class PaperValidationDraftService:
                 organization_id=organization_id,
                 user_id=user_id,
                 metadata={"reason": "confirmation_required"},
+                durable=True,
             )
             raise ValidationAppError(
                 "Exact confirmation required to create a paper validation draft.",
@@ -99,6 +100,7 @@ class PaperValidationDraftService:
                     organization_id=organization_id,
                     user_id=user_id,
                     metadata={"reason": "non_market_watcher_alert"},
+                    durable=True,
                 )
                 raise ValidationAppError(
                     "Only scanner-created setup alerts can be converted to drafts.",
@@ -121,6 +123,7 @@ class PaperValidationDraftService:
                     "reason": "review_status_not_draftable",
                     "review_status": review_status.value,
                 },
+                durable=True,
             )
             raise ValidationAppError(
                 "Only watching or important setup alerts can be converted to drafts.",
@@ -179,6 +182,7 @@ class PaperValidationDraftService:
                 organization_id=organization_id,
                 user_id=user_id,
                 metadata={"reason": "draft_not_editable", "status": row.status},
+                durable=True,
             )
             raise ValidationAppError(
                 "Only active drafts can receive prep updates.",
@@ -424,22 +428,25 @@ class PaperValidationDraftService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID | None,
         metadata: dict[str, object] | None = None,
+        durable: bool = False,
     ) -> None:
-        self._audit.record(
-            AuditRecordCreate(
-                request_id=f"setup-alert-draft-{alert_id}",
-                trace_id=str(uuid.uuid4()),
-                user_id=user_id,
-                organization_id=organization_id,
-                event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
-                resource_type="paper_validation_draft",
-                resource_id=str(alert_id),
-                actor_type=ActorType.USER,
-                result=AuditResult.SUCCESS,
-                severity=AuditSeverity.INFO,
-                metadata={"action": action, **(metadata or {})},
-            )
+        payload = AuditRecordCreate(
+            request_id=f"setup-alert-draft-{alert_id}",
+            trace_id=str(uuid.uuid4()),
+            user_id=user_id,
+            organization_id=organization_id,
+            event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+            resource_type="paper_validation_draft",
+            resource_id=str(alert_id),
+            actor_type=ActorType.USER,
+            result=AuditResult.SUCCESS,
+            severity=AuditSeverity.INFO,
+            metadata={"action": action, **(metadata or {})},
         )
+        if durable:
+            self._audit.record_durable_isolated(payload)
+        else:
+            self._audit.record(payload)
 
     def _record_prep_audit(
         self,
@@ -450,23 +457,26 @@ class PaperValidationDraftService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID | None,
         metadata: dict[str, object] | None = None,
+        durable: bool = False,
     ) -> None:
-        self._audit.record(
-            AuditRecordCreate(
-                request_id=f"paper-draft-prep-{draft_id}",
-                trace_id=str(uuid.uuid4()),
-                user_id=user_id,
-                organization_id=organization_id,
-                event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
-                resource_type="paper_validation_draft",
-                resource_id=str(draft_id),
-                actor_type=ActorType.USER,
-                result=AuditResult.SUCCESS,
-                severity=AuditSeverity.INFO,
-                metadata={
-                    "action": action,
-                    "source_alert_id": str(source_alert_id),
-                    **(metadata or {}),
-                },
-            )
+        payload = AuditRecordCreate(
+            request_id=f"paper-draft-prep-{draft_id}",
+            trace_id=str(uuid.uuid4()),
+            user_id=user_id,
+            organization_id=organization_id,
+            event_type=AuditEventType.PAPER_VALIDATION_RUNTIME,
+            resource_type="paper_validation_draft",
+            resource_id=str(draft_id),
+            actor_type=ActorType.USER,
+            result=AuditResult.SUCCESS,
+            severity=AuditSeverity.INFO,
+            metadata={
+                "action": action,
+                "source_alert_id": str(source_alert_id),
+                **(metadata or {}),
+            },
         )
+        if durable:
+            self._audit.record_durable_isolated(payload)
+        else:
+            self._audit.record(payload)

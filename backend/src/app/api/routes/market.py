@@ -85,6 +85,7 @@ async def analyze_market(
     tenant: TraderDep,
     market_data: MarketDataServiceDep,
     usage_service: UsageServiceDep,
+    session: SessionDep,
     request: Request,
 ) -> MarketAnalyzeResponse:
     import uuid
@@ -105,6 +106,7 @@ async def analyze_market(
             provider_metadata={"cost_source": "unavailable"},
         )
     )
+    session.commit()
     return result
 
 

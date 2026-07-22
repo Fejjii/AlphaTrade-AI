@@ -118,8 +118,8 @@ class PaperValidationSessionResultService:
         row = self._build_result(parent, payload, organization_id=organization_id, user_id=user_id)
         self._results.add(row)
         try:
+            # AT-016: flush only; route commits business + audit together.
             self._session.flush()
-            self._session.commit()
         except IntegrityError:
             self._session.rollback()
             duplicate = self._results.get_for_session(organization_id, session_id)

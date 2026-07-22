@@ -72,20 +72,40 @@ Status card reads this endpoint.
 
 Use during deploy smoke tests to confirm fallback/mock posture.
 
+## RED metrics (AT-016)
+
+Baseline Prometheus/OpenMetrics scrape at `GET /metrics` (separate from
+`/health` and `/health/ready`).
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `METRICS_ENABLED` | `false` | Must be explicitly enabled |
+| `METRICS_SCRAPE_TOKEN` | empty | Required outside `local`; send as `Authorization: Bearer <token>` |
+
+Series (low-cardinality labels only: `method`, `route`, `status_class`):
+
+- `http_requests_total`
+- `http_request_duration_seconds`
+- `http_requests_in_progress`
+
+Never labeled with user/org/symbol/request IDs, raw paths with query strings,
+prompts, or exception text. The `/metrics` path itself is not observed.
+
 ## Future integrations
 
 | Integration | Status | Enable when |
 |-------------|--------|-------------|
 | **LangSmith** | Placeholder provider | `LANGSMITH_API_KEY` set; tracing wired in future slice |
-| **OpenTelemetry** | Not wired | Export traces/metrics to Honeycomb, Datadog, etc. |
+| **OpenTelemetry** | Not wired | Export traces to Honeycomb, Datadog, etc. |
 | **Log shipping** | Platform stdout | Configure Render/Railway log drain to your SIEM |
 
 Recommended next steps after staging is stable:
 
 1. External uptime monitor on `/health`
 2. Log drain with JSON parsing
-3. LangSmith for LLM trace debugging (optional)
-4. OpenTelemetry SDK + OTLP exporter when traffic warrants it
+3. Enable gated `/metrics` scrape with a secret token
+4. LangSmith for LLM trace debugging (optional)
+5. OpenTelemetry SDK + OTLP exporter when traffic warrants it
 
 ## Local debugging
 

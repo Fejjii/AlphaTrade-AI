@@ -8,7 +8,7 @@ effects (important for tests that use their own SQLite engine).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -19,7 +19,7 @@ _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
-def _connect_args(database_url: str) -> dict:
+def _connect_args(database_url: str) -> dict[str, bool]:
     # SQLite (tests) needs this flag when shared across threads.
     if database_url.startswith("sqlite"):
         return {"check_same_thread": False}
@@ -55,3 +55,39 @@ def get_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def _dbapi_connection_in_transaction(session: Session) -> bool | None:
+    """Return DBAPI in-transaction flag when available, else None."""
+    try:
+        dbapi = session.connection().connection.dbapi_connection
+    except Exception:
+        return None
+    flag = getattr(dbapi, "in_transaction", None)
+    if callable(flag):
+        return bool(flag())
+    if isinstance(flag, bool):
+        return flag
+    return None
+
+
+def run_in_savepoint_when_active[T](session: Session, work: Callable[[], T]) -> T:
+    """Run ``work`` under a nested savepoint when safe; otherwise run directly.
+
+    Nested savepoints isolate flush failures so fail-open audit/usage cannot wipe
+    already-flushed business rows. On SQLite/pysqlite, ``RELEASE`` of a SAVEPOINT
+    that *started* the DB transaction commits it — so we only nest when the DBAPI
+    connection already has an open transaction (typically after prior DML/flush
+    in this unit-of-work). PostgreSQL and other dialects nest whenever the
+    Session already has a transaction.
+    """
+    dbapi_active = _dbapi_connection_in_transaction(session)
+    if dbapi_active is True:
+        with session.begin_nested():
+            return work()
+    if dbapi_active is False:
+        return work()
+    if session.in_transaction():
+        with session.begin_nested():
+            return work()
+    return work()

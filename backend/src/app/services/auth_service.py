@@ -112,6 +112,8 @@ class AuthService:
             if row.replaced_by_id is not None:
                 membership = self._memberships.get_primary_for_user(row.user_id)
                 revoked_count = self._refresh_tokens.revoke_all_active_for_user(row.user_id)
+                # Persist revokes before raise; audit is durable-isolated.
+                self._session.commit()
                 self._record_auth_event(
                     AuditEventType.AUTH_REFRESH_REUSE,
                     user_id=row.user_id,
@@ -249,7 +251,7 @@ class AuthService:
         metadata: dict[str, object] | None = None,
         severity: AuditSeverity = AuditSeverity.MEDIUM,
     ) -> None:
-        self._audit.record(
+        self._audit.record_durable_isolated(
             AuditRecordCreate(
                 request_id="auth",
                 trace_id="auth",

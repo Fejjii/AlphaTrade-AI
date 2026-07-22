@@ -482,7 +482,8 @@ class ExecutionService:
         metadata: dict[str, object] = {"reason": reason, "mode": "paper"}
         if extra:
             metadata.update(extra)
-        self._audit.record(
+        # Durable outside the business UoW — reject paths raise before route commit.
+        self._audit.record_durable_isolated(
             AuditRecordCreate(
                 request_id=request.idempotency_key,
                 trace_id=request.idempotency_key,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from app.core.dependencies import QuotaServiceDep, UsageServiceDep
+from app.core.dependencies import QuotaServiceDep, SessionDep, UsageServiceDep
 from app.schemas.usage import (
     OrganizationQuotaUpdate,
     PaginatedUsageEvents,
@@ -82,10 +82,12 @@ async def update_usage_quota(
     body: OrganizationQuotaUpdate,
     tenant: OwnerDep,
     quota_service: QuotaServiceDep,
+    session: SessionDep,
 ) -> QuotaStatus:
     quota_service.update_quota(
         tenant.organization_id,
         body,
         actor_user_id=tenant.user_id,
     )
+    session.commit()
     return quota_service.get_status(tenant.organization_id)

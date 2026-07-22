@@ -564,13 +564,16 @@ async def record_paper_validation_session_observation(
     payload: PaperValidationSessionObservationCreateRequest,
     tenant: TraderDep,
     service: PaperValidationSessionObservationServiceDep,
+    session: SessionDep,
 ) -> PaperValidationSessionObservationItem:
-    return service.record_observation(
+    result = service.record_observation(
         session_id,
         payload,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )
+    session.commit()
+    return result
 
 
 @router.get(
@@ -598,13 +601,16 @@ async def record_paper_validation_session_result(
     payload: PaperValidationSessionResultCreateRequest,
     tenant: OwnerDep,
     service: PaperValidationSessionResultServiceDep,
+    session: SessionDep,
 ) -> PaperValidationSessionResultCreateResult:
-    return service.record_result(
+    result = service.record_result(
         session_id,
         payload,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )
+    session.commit()
+    return result
 
 
 @router.patch(
