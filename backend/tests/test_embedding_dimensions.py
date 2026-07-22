@@ -39,6 +39,19 @@ def test_openai_key_selects_model_native_dimensions() -> None:
     assert resolved.embeddings.dimensions == 1536
 
 
+def test_mock_mode_with_key_keeps_mock_dimensions() -> None:
+    settings = Settings(
+        openai_api_key="sk-test",
+        embeddings_model="text-embedding-3-large",
+        log_json=False,
+        provider_mode="mock",
+    )
+    assert resolve_embeddings_dimensions(settings) == MOCK_EMBEDDINGS_DIMENSIONS
+    resolved = resolve_providers(settings)
+    assert resolved.embeddings.name == "mock-embeddings"
+    assert resolved.embeddings_dimensions == MOCK_EMBEDDINGS_DIMENSIONS
+
+
 def test_explicit_embeddings_dimensions_override() -> None:
     settings = Settings(
         openai_api_key="sk-test",

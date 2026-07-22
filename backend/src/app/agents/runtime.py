@@ -14,6 +14,7 @@ from app.providers.llm import LLMProvider
 from app.services.audit_service import AuditService
 from app.services.market_data_service import MarketDataService
 from app.services.narrative_service import NarrativeService
+from app.services.quota_service import QuotaService
 from app.services.rag_service import RagService, build_rag_service
 from app.services.risk_service import RiskService
 from app.services.strategy_service import StrategyService
@@ -37,6 +38,7 @@ class AgentRuntime:
     guardrails: GuardrailService = field(default_factory=GuardrailService)
     audit_service: AuditService = field(default_factory=AuditService)
     usage_service: UsageService = field(default_factory=UsageService)
+    quota_service: QuotaService | None = None
     observability: ObservabilityEmitter | None = None
     workflow_persistence: WorkflowPersistenceService | None = None
     session: Session | None = None
@@ -97,6 +99,7 @@ class AgentRuntime:
                 strategy_service=strategy_service,
             )
         workflow = WorkflowPersistenceService(session, audit)
+        quota = QuotaService(session, audit_service=audit)
         return cls(
             settings=settings,
             risk_service=risk_service,
@@ -106,6 +109,7 @@ class AgentRuntime:
             rag_service=rag,
             audit_service=audit,
             usage_service=usage,
+            quota_service=quota,
             workflow_persistence=workflow,
             session=session,
             observability=ObservabilityEmitter(audit_service=audit, usage_service=usage),

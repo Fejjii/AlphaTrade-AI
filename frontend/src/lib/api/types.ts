@@ -1163,6 +1163,10 @@ export interface RagSearchResponse {
   query: string;
   chunks: RetrievedChunk[];
   citations: Citation[];
+  degraded?: boolean;
+  fallback_used?: boolean;
+  vector_backend?: string | null;
+  detail?: string | null;
 }
 
 export interface IngestDocumentResponse {

@@ -39,7 +39,8 @@ class ResolvedProviders:
 def resolve_providers(settings: Settings) -> ResolvedProviders:
     """Select real providers when credentials exist.
 
-    Local keeps deterministic mock fallbacks. Staging/production (AT-013) never
+    Local ``PROVIDER_MODE=mock`` forces mock LLM/embeddings even when an API key
+    is present (AT-015). Staging/production reject mock mode (AT-013) and never
     silently substitute mock LLM/embeddings or in-memory Qdrant when real
     providers are required.
     """
@@ -48,11 +49,16 @@ def resolve_providers(settings: Settings) -> ResolvedProviders:
     mock_embeddings = MockEmbeddingsProvider(dimensions=dimensions)
     fallback_store = get_process_vector_store()
     fail_closed = provider_fail_closed(settings)
+    force_mock = settings.provider_mode.strip().lower() == "mock"
 
     openai_key = settings.openai_api_key.strip()
     llm: LLMProvider
     embeddings: EmbeddingsProvider
-    if openai_key or requires_configured_openai(settings):
+    if force_mock:
+        # Explicit mock mode wins over key presence (local/dev only).
+        llm = mock_llm
+        embeddings = mock_embeddings
+    elif openai_key or requires_configured_openai(settings):
         # Staging/production always construct OpenAI providers (even with an empty
         # key) so status reports UNAVAILABLE instead of a healthy silent mock.
         llm = OpenAILLMProvider(
