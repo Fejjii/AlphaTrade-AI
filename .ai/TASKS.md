@@ -79,6 +79,24 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Grok 4.5
 - Completion evidence: merge `b523c70`, commit `92d48bf`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/4
 
+### AT-013B — GPT-5.6 Sol Responses API + staging chat reliability
+- Priority: P0 · Status: DONE · Dependencies: AT-013 · Risk: Medium (provider)
+- Safety classification: Provider / chat
+- Goal: Route `gpt-5.6-sol` through OpenAI Responses API; generation health probe must
+  reflect real generation; `/chat/message` must not 503 on staging.
+- Branch: `feat/at-013b-gpt56-sol-responses-api` (merged via PR #5)
+- Validation: PR #5 CI run 29922248754 success; merged `19d53a4`; post-merge main CI
+  29930805870 success; staging deploy `4956aa4`; `/health/ready` ready=true;
+  LLM `openai-llm` healthy via responses (no mock); embeddings + Qdrant healthy;
+  provider-validation `--remote` + `--remote --ingest` OK; verify-safety / portfolio /
+  validate-exchange-demo-staging OK; chat HTTP 200 (5/5 flake retest); paper posture
+  preserved (`execution_mode=paper`, `real_trading_enabled=false`,
+  `EXCHANGE_MODE=paper_exchange_demo`, `LLM_MODEL=gpt-5.6-sol`).
+- Recommended model: Composer 2.5
+- Completion evidence: merge `19d53a4`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/5;
+  follow-up main commits `5c7c9a7`, `d71bd20`, `4956aa4` (probe + usage-tracking token
+  budgets for reasoning models); staging API `git_sha=4956aa4`.
+
 ### AT-014 — Server-side kill switch (persist + enforce + UI wire-up)
 - Priority: P0 · Status: DONE · Dependencies: AT-012 · Risk: Medium (safety-critical)
 - Safety classification: Trading safety
