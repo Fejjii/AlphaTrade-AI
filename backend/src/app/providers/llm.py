@@ -615,7 +615,7 @@ class OpenAILLMProvider:
                 payload = self._post_responses(
                     request,
                     model=model,
-                    reasoning_effort="none",
+                    reasoning_effort="low",
                     timeout_seconds=_GENERATION_PROBE_TIMEOUT_SECONDS,
                     max_retries=_GENERATION_PROBE_MAX_RETRIES,
                 )

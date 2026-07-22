@@ -353,7 +353,7 @@ class TestGenerationReadiness:
         body = client.post.call_args.kwargs["json"]
         assert client.post.call_args.args[0].endswith("/responses")
         assert body["max_output_tokens"] == llm_mod._GENERATION_PROBE_MAX_OUTPUT_TOKENS
-        assert body["reasoning"]["effort"] == "none"
+        assert body["reasoning"]["effort"] == "low"
         assert body["input"][0]["content"] == llm_mod._GENERATION_PROBE_PROMPT
         assert body["store"] is False
 
