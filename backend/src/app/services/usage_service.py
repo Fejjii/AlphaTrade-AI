@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from sqlalchemy.orm import Session
 
 from app.db.models import UsageEvent as UsageEventModel
+from app.db.session import run_in_savepoint_when_active
 from app.repositories.usage import UsageRepository
 from app.schemas.common import CostSource
 from app.schemas.usage import (
@@ -38,7 +40,12 @@ def day_start(reference: datetime | None = None) -> datetime:
 
 
 class UsageService:
-    """Record and query metered usage."""
+    """Record and query metered usage.
+
+    AT-016 / AT-ADR-008: ``record`` flushes into the caller's unit-of-work and
+    never calls ``session.commit()``. Callers own the authoritative commit.
+    Persistence failures are fail-open unless ``strict_mode`` is enabled.
+    """
 
     def __init__(
         self,
@@ -51,7 +58,7 @@ class UsageService:
         self._strict_mode = strict_mode
 
     def record(self, data: UsageEventCreate) -> UsageEvent:
-        """Persist usage with resolved cost source and provider metadata."""
+        """Flush usage into the caller's session (no hidden commit)."""
         timestamp = data.timestamp or datetime.now(UTC)
         input_tokens = _tokens_from_provider(
             data.provider_metadata,
@@ -119,13 +126,14 @@ class UsageService:
             status=event.status,
             event_at=event.timestamp,
         )
+        repo = self._repo
         try:
-            self._repo.add(entity)
+            # Savepoint only when an outer DB txn is already active (AT-ADR-008).
             if self._session is not None:
-                self._session.commit()
+                run_in_savepoint_when_active(self._session, lambda: repo.add(entity))
+            else:
+                repo.add(entity)
         except Exception as exc:
-            if self._session is not None:
-                self._session.rollback()
             logger.warning("usage_persist_failed", error_type=type(exc).__name__)
             if self._strict_mode:
                 raise UsagePersistenceError(str(exc)) from exc
@@ -211,7 +219,7 @@ class UsageService:
         )
 
 
-def _tokens_from_provider(metadata: dict, key: str, fallback: int) -> int:
+def _tokens_from_provider(metadata: dict[str, Any], key: str, fallback: int) -> int:
     raw = metadata.get(key)
     if isinstance(raw, int) and raw >= 0:
         return raw

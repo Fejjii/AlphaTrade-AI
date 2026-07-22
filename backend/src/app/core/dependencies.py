@@ -93,7 +93,13 @@ StrategyServiceDep = Annotated[StrategyService, Depends(get_strategy_service)]
 
 
 def get_audit_service(session: SessionDep, settings: SettingsDep) -> AuditService:
-    return AuditService(session, strict_mode=settings.observability_strict_mode)
+    from app.db.session import get_session_factory
+
+    return AuditService(
+        session,
+        strict_mode=settings.observability_strict_mode,
+        session_factory=get_session_factory(),
+    )
 
 
 def get_usage_service(session: SessionDep, settings: SettingsDep) -> UsageService:

@@ -99,9 +99,48 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `REVIEW_REQUIRED` before commit/push/deploy.
 - **Validation:** Scoped ruff/mypy + AT-013/provider/RAG/deployment/health tests (see handoff).
 
-## AT-ADR-007 — Honor PROVIDER_MODE + narrative quota + search opacity (AT-015)
+## AT-ADR-008 — Audit/usage unit-of-work + gated RED metrics (AT-016)
 - **Date:** 2026-07-22
 - **Status:** Accepted (implementation pending review/commit authorization)
+- **Context:** AT010-H6 / RR-10 — `AuditService.record` and `UsageService.record`
+  called `session.commit()` mid-request on the shared FastAPI Session, splitting
+  business durability from audit/usage. No scrapeable RED metrics existed.
+- **Decision:**
+  1. **Caller / UoW owns commit.** Routes (or application services that already
+     commit) perform the authoritative `session.commit()` after business mutation,
+     audit flush, and usage flush.
+  2. **Audit and usage flush only.** `record()` adds + flushes so IDs (e.g.
+     `audit_event_id`) are available before commit; no hidden service-level commit.
+     Flush failures that must not wipe prior business rows use a nested savepoint
+     via `run_in_savepoint_when_active` — nested only when the DBAPI connection
+     already has an open transaction. (SQLite: `RELEASE` of a SAVEPOINT that
+     *started* the transaction would otherwise commit.)
+  3. **No global auto-commit on `get_session()`** — existing explicit commits remain;
+     a blanket teardown commit would surprise tool/worker paths.
+  4. **Durable rejected/security events** use explicitly named
+     `AuditService.record_durable_isolated()` (dedicated short-lived session +
+     commit) after or outside the business transaction — rate-limit, quota block,
+     paper reject, kill-switch trigger, auth security events.
+  5. **Usage persistence** stays fail-open unless `observability_strict_mode`;
+     strict audit flush failures raise and prevent the caller commit.
+  6. **RED metrics** via `prometheus-client`: `http_requests_total`,
+     `http_request_duration_seconds`, `http_requests_in_progress` with labels
+     `method` / `route` (template) / `status_class` only. `METRICS_ENABLED=false`
+     by default; outside local, `METRICS_SCRAPE_TOKEN` is required. `/metrics` is
+     not observed recursively. Health/ready stay separate.
+- **Alternatives considered:** Global commit-on-success in `get_session()` (rejected
+  for this slice — too many existing commits); unrestricted public `/metrics`
+  (rejected — Render scrape surface); embedding org/user labels (rejected — cardinality
+  + privacy).
+- **Safety impact:** Stronger atomicity for paper execution/approvals; durable
+  security audits preserved; no trading-mode change.
+- **Consequences:** Branch `feat/at-016-audit-uow-metrics`; stop at `REVIEW_REQUIRED`.
+- **Validation:** `tests/test_at016_audit_uow_metrics.py` + audit/usage/execution/
+  approval/risk/auth regressions.
+
+## AT-ADR-007 — Honor PROVIDER_MODE + narrative quota + search opacity (AT-015)
+- **Date:** 2026-07-22
+- **Status:** Accepted
 - **Context:** AT-010 H5/H10 — factory ignored `PROVIDER_MODE=mock` for LLM/embeddings
   when a key was set; `limit_agent_narrative` was unused; search opacity needed UI/tests.
 - **Decision:**

@@ -144,10 +144,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Composer 2.5
 
 ### AT-016 — Audit unit-of-work + baseline metrics
-- Priority: P1 · Status: TODO · Dependencies: AT-010 · Risk: Low
+- Priority: P1 · Status: REVIEW_REQUIRED · Dependencies: AT-010 · Risk: Low
 - Branch: `feat/at-016-audit-uow-metrics`
 - Validation: No mid-request audit commit splitting business txn; RED metrics scrapeable.
-- Recommended model: GPT-5.4 / Sonnet 4.6
+- Recommended model: Grok 4.5 (architecture/safety) · Composer 2.5 (tests/PR)
+- ADR: AT-ADR-008
+- Note: Implementation complete on branch; awaiting human commit/push authorization.
 
 ### AT-017 — Frontend auth boundary + security headers
 - Priority: P1 · Status: TODO · Dependencies: AT-011 · Risk: Medium

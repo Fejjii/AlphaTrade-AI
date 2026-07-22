@@ -163,7 +163,8 @@ def _audit_rate_limit_violation(
 ) -> None:
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     trace_id = getattr(request.state, "trace_id", request_id)
-    audit_service.record(
+    # Dedicated durable write — avoid committing unrelated shared-session state.
+    audit_service.record_durable_isolated(
         AuditRecordCreate(
             request_id=request_id,
             trace_id=trace_id,
@@ -181,7 +182,7 @@ def _audit_rate_limit_violation(
             },
         )
     )
-    session.commit()
+    _ = session  # request session intentionally not committed here
     logger.warning(
         "rate_limit_exceeded",
         scope=scope,

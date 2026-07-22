@@ -38,6 +38,7 @@ from app.api.routes import (
     manual_levels,
     market,
     market_watcher,
+    metrics,
     notifications,
     organizations,
     paper_validation,
@@ -149,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RequestContextMiddleware,
         request_id_header=settings.request_id_header,
         trace_id_header=settings.trace_id_header,
+        metrics_enabled=settings.metrics_enabled,
     )
 
     register_exception_handlers(app)
@@ -162,6 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for r in (
         health.router,
+        metrics.router,
         providers.router,
         auth.router,
         organizations.router,

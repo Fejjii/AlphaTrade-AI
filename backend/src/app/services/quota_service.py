@@ -354,7 +354,7 @@ class QuotaService:
         request_id: str | None,
         user_id: uuid.UUID | None,
     ) -> QuotaCheckResult:
-        self._audit.record(
+        self._audit.record_durable_isolated(
             AuditRecordCreate(
                 request_id=request_id or "quota-block",
                 trace_id=request_id or "quota-block",

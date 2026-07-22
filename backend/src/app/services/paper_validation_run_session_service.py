@@ -118,13 +118,10 @@ class PaperValidationRunSessionService:
             organization_id=organization_id,
             user_id=user_id,
         )
-        # Persist the session row before audit recording. AuditService.record commits
-        # the shared request session and rolls back on failure, which would discard a
-        # pending flushed session row if audit ran first (Postgres staging behavior).
+        # AT-016: flush business state; route owns the authoritative commit with audit.
         self._sessions.add(session_row)
         try:
             self._session.flush()
-            self._session.commit()
         except IntegrityError:
             self._session.rollback()
             duplicate = self._sessions.get_active_for_plan(organization_id, plan_id)

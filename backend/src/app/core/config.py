@@ -184,6 +184,9 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     observability_strict_mode: bool = False
     trace_id_header: str = "X-Trace-ID"
+    # AT-016 RED metrics — disabled by default; scrape token required outside local.
+    metrics_enabled: bool = False
+    metrics_scrape_token: str = ""
 
     # --- Authentication ---
     jwt_secret: str = Field(
@@ -347,6 +350,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"jwt_secret must be at least {self.jwt_secret_min_length} bytes in "
                 f"{self.environment.value} environments."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_metrics_scrape_gate(self) -> Settings:
+        """Refuse unrestricted public metrics outside local."""
+        if (
+            self.metrics_enabled
+            and self.environment is not Environment.LOCAL
+            and not self.metrics_scrape_token.strip()
+        ):
+            raise ValueError(
+                "metrics_enabled=true outside local requires metrics_scrape_token "
+                "(METRICS_SCRAPE_TOKEN). Unrestricted public scrape is not allowed."
             )
         return self
 

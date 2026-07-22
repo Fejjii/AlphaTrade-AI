@@ -369,7 +369,8 @@ class KillSwitchService:
         user_id: uuid.UUID | None,
         reason: str,
     ) -> None:
-        self._audit.record(
+        # Block path raises before the route commits — keep the trigger durable.
+        self._audit.record_durable_isolated(
             AuditRecordCreate(
                 request_id="kill-switch",
                 trace_id="kill-switch",

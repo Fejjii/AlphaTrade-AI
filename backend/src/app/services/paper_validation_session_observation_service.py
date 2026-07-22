@@ -120,8 +120,8 @@ class PaperValidationSessionObservationService:
             recorded_by=user_id,
         )
         self._observations.add(row)
+        # AT-016: flush only; route commits business + audit together.
         self._session.flush()
-        self._session.commit()
         self._session.refresh(row)
 
         self._record_audit(
