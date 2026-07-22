@@ -1571,7 +1571,7 @@ def usage_tracking(state: dict, runtime: AgentRuntime) -> dict:
                 messages=[LLMMessage(role="user", content=agent.message[:500])],
                 model=runtime.settings.llm_model,
                 temperature=0.0,
-                max_tokens=64,
+                max_tokens=256,
             )
         )
     input_tokens = llm_result.input_tokens if llm_result else max(len(agent.message) // 4, 1)
