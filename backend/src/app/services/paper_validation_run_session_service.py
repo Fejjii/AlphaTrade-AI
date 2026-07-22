@@ -118,10 +118,12 @@ class PaperValidationRunSessionService:
             organization_id=organization_id,
             user_id=user_id,
         )
-        # AT-016: flush business state; route owns the authoritative commit with audit.
+        # AT-016: flush then commit business row before audit so a catastrophic audit
+        # rollback cannot discard the started session (see slice-82 audit-failure test).
         self._sessions.add(session_row)
         try:
             self._session.flush()
+            self._session.commit()
         except IntegrityError:
             self._session.rollback()
             duplicate = self._sessions.get_active_for_plan(organization_id, plan_id)

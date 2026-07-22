@@ -125,6 +125,7 @@ class AccountService:
                 AuditEventType.AUTH_EMAIL_VERIFICATION_FAILED,
                 result=AuditResult.FAILURE,
                 metadata={"reason": "token_not_found"},
+                durable=True,
             )
             raise AuthError("Invalid or expired verification link.")
         if row.consumed_at is not None:
@@ -185,6 +186,7 @@ class AccountService:
                 AuditEventType.AUTH_PASSWORD_RESET_FAILED,
                 result=AuditResult.FAILURE,
                 metadata={"reason": "token_not_found"},
+                durable=True,
             )
             raise AuthError("Invalid or expired reset link.")
         if row.consumed_at is not None:
@@ -391,6 +393,7 @@ class AccountService:
             user_id=user_id,
             result=AuditResult.FAILURE,
             metadata={"reason": reason},
+            durable=True,
         )
 
     def _fail_reset(self, user_id: uuid.UUID, reason: str) -> None:
@@ -399,6 +402,7 @@ class AccountService:
             user_id=user_id,
             result=AuditResult.FAILURE,
             metadata={"reason": reason},
+            durable=True,
         )
 
     def _record_event(
@@ -410,21 +414,24 @@ class AccountService:
         result: AuditResult = AuditResult.BLOCKED,
         metadata: dict[str, object] | None = None,
         severity: AuditSeverity = AuditSeverity.MEDIUM,
+        durable: bool = False,
     ) -> None:
-        self._audit.record(
-            AuditRecordCreate(
-                request_id="account",
-                trace_id="account",
-                event_type=event_type,
-                resource_type="account",
-                actor_type=ActorType.SYSTEM,
-                user_id=user_id,
-                organization_id=organization_id,
-                result=result,
-                severity=severity,
-                metadata=metadata or {},
-            )
+        payload = AuditRecordCreate(
+            request_id="account",
+            trace_id="account",
+            event_type=event_type,
+            resource_type="account",
+            actor_type=ActorType.SYSTEM,
+            user_id=user_id,
+            organization_id=organization_id,
+            result=result,
+            severity=severity,
+            metadata=metadata or {},
         )
+        if durable:
+            self._audit.record_durable_isolated(payload)
+        else:
+            self._audit.record(payload)
 
     @staticmethod
     def _ensure_aware(value: datetime) -> datetime:
