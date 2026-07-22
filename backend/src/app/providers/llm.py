@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
 # Public /providers/status is unauthenticated — keep generation probes cheap and rare.
 _GENERATION_PROBE_TTL_SECONDS = 300.0
 _GENERATION_PROBE_TIMEOUT_SECONDS = 10.0
-_GENERATION_PROBE_MAX_OUTPUT_TOKENS = 8
+_GENERATION_PROBE_MAX_OUTPUT_TOKENS = 64
 _GENERATION_PROBE_PROMPT = "Reply with OK"
 _GENERATION_PROBE_MAX_RETRIES = 0
 _MAX_RETRIES = 2
