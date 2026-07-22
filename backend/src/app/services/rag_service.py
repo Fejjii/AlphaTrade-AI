@@ -11,12 +11,15 @@ import structlog
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.errors import ServiceUnavailableError
+from app.core.provider_policy import provider_fail_closed, requires_authoritative_qdrant
 from app.db.models import Chunk as ChunkModel
 from app.db.models import Document as DocumentModel
 from app.providers.embeddings import EmbeddingsProvider, MockEmbeddingsProvider
 from app.providers.factory import resolve_providers
 from app.providers.qdrant import (
     InMemoryVectorStore,
+    QdrantVectorStore,
     VectorPoint,
     VectorSearchFilters,
     VectorStore,
@@ -143,8 +146,13 @@ class RagService:
         self._documents.add(document)
 
         text_chunks = chunk_text(data.text)
-        embed_result = self._embeddings.embed_with_metadata(text_chunks)
+        try:
+            embed_result = self._embeddings.embed_with_metadata(text_chunks)
+        except ServiceUnavailableError:
+            self._session.rollback()
+            raise
         vectors = embed_result.vectors
+        self._assert_ingest_embeddings_allowed(embed_result.fallback_used)
         self._record_embedding_usage(
             organization_id=data.organization_id,
             user_id=data.user_id,
@@ -198,7 +206,18 @@ class RagService:
                 )
             )
 
-        self._vector_store.upsert(RAG_COLLECTION, vector_points)
+        try:
+            self._assert_vector_backend_for_ingest()
+            self._vector_store.upsert(RAG_COLLECTION, vector_points)
+        except ServiceUnavailableError:
+            self._session.rollback()
+            raise
+        except Exception as exc:
+            self._session.rollback()
+            raise ServiceUnavailableError(
+                "Knowledge ingestion failed: vector store unavailable.",
+                details={"reason": "vector_upsert_failed"},
+            ) from exc
         self._session.commit()
         logger.info(
             "rag_ingest_complete",
@@ -212,6 +231,8 @@ class RagService:
             chunk_count=len(text_chunks),
             duplicate=False,
             version=data.version,
+            vector_backend=self._vector_store.name,
+            fallback_used=embed_result.fallback_used,
         )
 
     def upsert_linked_document(self, data: IngestDocumentRequest) -> IngestDocumentResponse:
@@ -266,8 +287,13 @@ class RagService:
 
         now = datetime.now(UTC)
         text_chunks = chunk_text(data.text)
-        embed_result = self._embeddings.embed_with_metadata(text_chunks)
+        try:
+            embed_result = self._embeddings.embed_with_metadata(text_chunks)
+        except ServiceUnavailableError:
+            self._session.rollback()
+            raise
         vectors = embed_result.vectors
+        self._assert_ingest_embeddings_allowed(embed_result.fallback_used)
         self._record_embedding_usage(
             organization_id=data.organization_id,
             user_id=data.user_id,
@@ -321,7 +347,18 @@ class RagService:
                 )
             )
 
-        self._vector_store.upsert(RAG_COLLECTION, vector_points)
+        try:
+            self._assert_vector_backend_for_ingest()
+            self._vector_store.upsert(RAG_COLLECTION, vector_points)
+        except ServiceUnavailableError:
+            self._session.rollback()
+            raise
+        except Exception as exc:
+            self._session.rollback()
+            raise ServiceUnavailableError(
+                "Knowledge ingestion failed: vector store unavailable.",
+                details={"reason": "vector_upsert_failed"},
+            ) from exc
         self._session.commit()
         document = self._documents.get(document_id)
         version = document.version if document is not None else data.version
@@ -331,12 +368,20 @@ class RagService:
             chunk_count=len(text_chunks),
             duplicate=False,
             version=version,
+            vector_backend=self._vector_store.name,
+            fallback_used=embed_result.fallback_used,
         )
 
     def search(self, query: RagQuery, *, request_id: str | None = None) -> RagSearchResponse:
         """Retrieve ranked chunks with citation metadata."""
         embed_result = self._embeddings.embed_with_metadata([query.query])
         vectors = embed_result.vectors
+        if provider_fail_closed(self._settings) and embed_result.fallback_used:
+            raise ServiceUnavailableError(
+                "Knowledge search is unavailable: embeddings degraded.",
+                details={"reason": "embeddings_fallback_used"},
+            )
+        self._assert_vector_backend_for_search()
         self._record_embedding_usage(
             organization_id=query.organization_id,
             user_id=query.user_id,
@@ -357,12 +402,22 @@ class RagService:
             timeframe_tag=query.timeframe_tag,
             risk_tag=query.risk_tag,
         )
-        hits = self._vector_store.search(
-            RAG_COLLECTION,
-            vectors[0],
-            filters=filters,
-            top_k=query.top_k,
-        )
+        try:
+            hits = self._vector_store.search(
+                RAG_COLLECTION,
+                vectors[0],
+                filters=filters,
+                top_k=query.top_k,
+            )
+        except ServiceUnavailableError:
+            raise
+        except Exception as exc:
+            if provider_fail_closed(self._settings):
+                raise ServiceUnavailableError(
+                    "Knowledge search is unavailable: vector store failed.",
+                    details={"reason": "vector_search_failed"},
+                ) from exc
+            raise
 
         chunk_ids = [UUID(hit.point_id) for hit in hits]
         chunk_map: dict[UUID, ChunkModel] = {}
@@ -393,7 +448,49 @@ class RagService:
             )
             citations.append(_citation_from_chunk(chunk, metadata, score=hit.score))
 
-        return RagSearchResponse(query=query.query, chunks=retrieved, citations=citations)
+        vector_status = self._vector_store.status()
+        degraded = bool(
+            embed_result.fallback_used
+            or vector_status.using_fallback
+            or vector_status.health.value != "healthy"
+        )
+        return RagSearchResponse(
+            query=query.query,
+            chunks=retrieved,
+            citations=citations,
+            degraded=degraded,
+            fallback_used=embed_result.fallback_used or vector_status.using_fallback,
+            vector_backend=self._vector_store.name,
+            detail=vector_status.detail if degraded else None,
+        )
+
+    def _assert_ingest_embeddings_allowed(self, fallback_used: bool) -> None:
+        if not provider_fail_closed(self._settings):
+            return
+        if fallback_used:
+            if self._session is not None:
+                self._session.rollback()
+            raise ServiceUnavailableError(
+                "Knowledge ingestion refused: embeddings fallback is not allowed.",
+                details={"reason": "embeddings_fallback_used"},
+            )
+
+    def _assert_vector_backend_for_ingest(self) -> None:
+        self._assert_authoritative_qdrant(action="ingestion")
+
+    def _assert_vector_backend_for_search(self) -> None:
+        self._assert_authoritative_qdrant(action="search")
+
+    def _assert_authoritative_qdrant(self, *, action: str) -> None:
+        if not requires_authoritative_qdrant(self._settings):
+            return
+        store = self._vector_store
+        if isinstance(store, QdrantVectorStore) and store.using_qdrant:
+            return
+        raise ServiceUnavailableError(
+            f"Knowledge {action} refused: authoritative Qdrant is unavailable.",
+            details={"reason": "qdrant_unavailable", "provider": store.name},
+        )
 
     def retrieve_for_agent(
         self,

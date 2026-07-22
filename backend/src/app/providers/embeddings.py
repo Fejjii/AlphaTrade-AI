@@ -108,7 +108,7 @@ class MockEmbeddingsProvider(BaseMockProvider):
 
 
 class OpenAIEmbeddingsProvider:
-    """OpenAI-compatible embeddings via HTTP with mock fallback."""
+    """OpenAI-compatible embeddings via HTTP with optional mock fallback."""
 
     name = "openai-embeddings"
     kind = ProviderKind.EMBEDDINGS
@@ -122,6 +122,7 @@ class OpenAIEmbeddingsProvider:
         dimensions: int,
         fallback: MockEmbeddingsProvider | None = None,
         timeout_seconds: float = 30.0,
+        fail_closed: bool = False,
     ) -> None:
         if dimensions < 1:
             raise ValueError("dimensions must be >= 1")
@@ -129,9 +130,12 @@ class OpenAIEmbeddingsProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._dimensions = dimensions
-        self._fallback = fallback or MockEmbeddingsProvider(dimensions=dimensions)
+        self._fail_closed = fail_closed
+        self._fallback = (
+            None if fail_closed else (fallback or MockEmbeddingsProvider(dimensions=dimensions))
+        )
         self._timeout = timeout_seconds
-        if self._fallback.dimensions != dimensions:
+        if self._fallback is not None and self._fallback.dimensions != dimensions:
             raise ValueError(
                 "OpenAI embeddings fallback dimensions must match provider dimensions "
                 f"({self._fallback.dimensions} != {dimensions})"
@@ -145,6 +149,8 @@ class OpenAIEmbeddingsProvider:
         return self.embed_with_metadata(texts).vectors
 
     def embed_with_metadata(self, texts: list[str]) -> EmbeddingResult:
+        from app.core.errors import ServiceUnavailableError
+
         if not texts:
             return EmbeddingResult(
                 vectors=[],
@@ -153,6 +159,11 @@ class OpenAIEmbeddingsProvider:
                 dimensions=self._dimensions,
             )
         if not self._api_key:
+            if self._fail_closed or self._fallback is None:
+                raise ServiceUnavailableError(
+                    "Embeddings provider is unavailable.",
+                    details={"reason": "openai_api_key_missing", "provider": self.name},
+                )
             return self._fallback_result(texts, latency_ms=0.0)
 
         started = time.perf_counter()
@@ -172,7 +183,12 @@ class OpenAIEmbeddingsProvider:
                 response.raise_for_status()
                 payload = response.json()
         except Exception as exc:
-            logger.warning("openai_embeddings_fallback", error=str(exc))
+            logger.warning("openai_embeddings_request_failed", error=type(exc).__name__)
+            if self._fail_closed or self._fallback is None:
+                raise ServiceUnavailableError(
+                    "Embeddings provider is unavailable.",
+                    details={"reason": "openai_embeddings_unavailable", "provider": self.name},
+                ) from exc
             return self._fallback_result(
                 texts,
                 latency_ms=round((time.perf_counter() - started) * 1000, 2),
@@ -188,6 +204,16 @@ class OpenAIEmbeddingsProvider:
                 actual=len(vectors[0]),
                 model=self._model,
             )
+            if self._fail_closed or self._fallback is None:
+                raise ServiceUnavailableError(
+                    "Embeddings provider returned incompatible dimensions.",
+                    details={
+                        "reason": "embedding_dimension_mismatch",
+                        "provider": self.name,
+                        "expected": self._dimensions,
+                        "actual": len(vectors[0]),
+                    },
+                )
             return self._fallback_result(
                 texts,
                 latency_ms=round((time.perf_counter() - started) * 1000, 2),
@@ -205,6 +231,7 @@ class OpenAIEmbeddingsProvider:
         )
 
     def _fallback_result(self, texts: list[str], *, latency_ms: float) -> EmbeddingResult:
+        assert self._fallback is not None
         result = self._fallback.embed_with_metadata(texts)
         return EmbeddingResult(
             vectors=result.vectors,
@@ -222,11 +249,15 @@ class OpenAIEmbeddingsProvider:
                 name=self.name,
                 kind=self.kind,
                 health=ProviderHealth.UNAVAILABLE,
-                using_fallback=True,
+                using_fallback=not self._fail_closed,
                 is_mock=False,
                 detail=(
-                    f"OPENAI_API_KEY not configured — using mock-embeddings fallback "
-                    f"({self._dimensions}-d)."
+                    "OPENAI_API_KEY not configured."
+                    if self._fail_closed
+                    else (
+                        f"OPENAI_API_KEY not configured — using mock-embeddings fallback "
+                        f"({self._dimensions}-d)."
+                    )
                 ),
             )
         try:
@@ -251,10 +282,15 @@ class OpenAIEmbeddingsProvider:
         return ProviderStatus(
             name=self.name,
             kind=self.kind,
-            health=ProviderHealth.DEGRADED,
-            using_fallback=True,
+            health=(ProviderHealth.UNAVAILABLE if self._fail_closed else ProviderHealth.DEGRADED),
+            using_fallback=not self._fail_closed,
             is_mock=False,
             detail=(
-                f"OpenAI embeddings API unreachable — mock fallback active ({self._dimensions}-d)."
+                "OpenAI embeddings API unreachable."
+                if self._fail_closed
+                else (
+                    f"OpenAI embeddings unreachable — mock-embeddings fallback "
+                    f"({self._dimensions}-d) active."
+                ),
             ),
         )

@@ -25,6 +25,7 @@ def _connected_store(
     store = QdrantVectorStore.__new__(QdrantVectorStore)
     store._url = "https://qdrant.example"
     store._api_key = "secret-not-asserted-in-status"
+    store._fail_closed = False
     store._fallback = InMemoryVectorStore()
     store._vector_size = configured_size
     store._client = MagicMock()

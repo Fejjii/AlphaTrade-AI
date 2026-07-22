@@ -180,15 +180,24 @@ class OpenAILLMProvider:
         model: str,
         fallback: MockLLMProvider | None = None,
         timeout_seconds: float = 30.0,
+        fail_closed: bool = False,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._default_model = model
-        self._fallback = fallback or MockLLMProvider()
+        self._fail_closed = fail_closed
+        self._fallback = None if fail_closed else (fallback or MockLLMProvider())
         self._timeout = timeout_seconds
 
     def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+        from app.core.errors import ServiceUnavailableError
+
         if not self._api_key:
+            if self._fail_closed or self._fallback is None:
+                raise ServiceUnavailableError(
+                    "LLM provider is unavailable.",
+                    details={"reason": "openai_api_key_missing", "provider": self.name},
+                )
             return self._fallback.complete(request)
 
         started = time.perf_counter()
@@ -214,7 +223,12 @@ class OpenAILLMProvider:
                 response.raise_for_status()
                 payload = response.json()
         except Exception as exc:
-            logger.warning("openai_llm_fallback", error=str(exc))
+            logger.warning("openai_llm_request_failed", error=type(exc).__name__)
+            if self._fail_closed or self._fallback is None:
+                raise ServiceUnavailableError(
+                    "LLM provider is unavailable.",
+                    details={"reason": "openai_llm_unavailable", "provider": self.name},
+                ) from exc
             result = self._fallback.complete(request)
             return LLMCompletionResult(
                 content=result.content,
@@ -250,9 +264,13 @@ class OpenAILLMProvider:
                 name=self.name,
                 kind=self.kind,
                 health=ProviderHealth.UNAVAILABLE,
-                using_fallback=True,
+                using_fallback=not self._fail_closed,
                 is_mock=False,
-                detail="OPENAI_API_KEY not configured — using mock-llm fallback.",
+                detail=(
+                    "OPENAI_API_KEY not configured."
+                    if self._fail_closed
+                    else "OPENAI_API_KEY not configured — using mock-llm fallback."
+                ),
             )
         try:
             with httpx.Client(timeout=5.0) as client:
@@ -274,10 +292,14 @@ class OpenAILLMProvider:
         return ProviderStatus(
             name=self.name,
             kind=self.kind,
-            health=ProviderHealth.DEGRADED,
-            using_fallback=True,
+            health=(ProviderHealth.UNAVAILABLE if self._fail_closed else ProviderHealth.DEGRADED),
+            using_fallback=not self._fail_closed,
             is_mock=False,
-            detail="OpenAI API unreachable — mock-llm fallback active at runtime.",
+            detail=(
+                "OpenAI API unreachable."
+                if self._fail_closed
+                else "OpenAI API unreachable — mock-llm fallback active at runtime."
+            ),
         )
 
 
