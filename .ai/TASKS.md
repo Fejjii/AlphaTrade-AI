@@ -107,17 +107,41 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Grok 4.5
 
 ### AT-015 — Honor PROVIDER_MODE for LLM/embeddings + wire narrative quota + search opacity
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-013 · Risk: Low
-- Branch: `feat/at-015-provider-mode-quotas`
-- Validation: `PROVIDER_MODE=mock` with key set → mock only; narrative quota enforced;
-  search returns fallback/degraded flags.
+- Priority: P1 · Status: DONE · Dependencies: AT-013 · Risk: Low
+- Branch: `feat/at-015-provider-mode-quotas` (merged via PR #6)
+- Validation: `PROVIDER_MODE=mock` with key set → mock only (local); staging rejects
+  `provider_mode=mock`; narrative `agent_narrative` hard block → deterministic fallback
+  (`provider=quota`, no LLM); search exposes `degraded` / `fallback_used` / `vector_backend`.
 - Recommended model: Composer 2.5 (impl) · Grok 4.5 (architecture/safety review)
-- Non-blocking follow-ups (post-merge):
-  - Sessionless `AgentRuntime` (no DB session) skips narrative quota — wire quota for
-    off-session graphs or document intentional skip.
-  - Soft narrative quota warnings audited but not exposed in `narrative_metadata` / UI.
-  - Frontend `RagSearchResponse` opacity fields optional — tighten to required booleans
-    when API contract is stable.
+- Completion evidence: PR #6 CI run 29944975929 success; merged `1f3dde0`; post-merge main
+  CI run 29949893898 success; staging API `git_sha=1f3dde0`; `/health` + `/health/ready`
+  pass; `/providers/status` openai-llm (gpt-5.6-sol), openai-embeddings, qdrant healthy
+  (`is_mock=false`, no fallback); verify-safety / provider-validation `--remote` +
+  `--remote --ingest` / portfolio-smoke / validate-exchange-demo-staging (17/17) OK;
+  isolated staging narrative quota test (limit_agent_narrative=0 → quota fallback, restore →
+  LLM path); staging RAG search `degraded=false`, `fallback_used=false`, `vector_backend=qdrant`;
+  local pytest `test_at015_provider_mode_quotas.py` + `test_deployment_safety.py` +
+  `test_at013_provider_fail_closed.py` pass; paper posture preserved
+  (`EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `EXCHANGE_MODE=paper_exchange_demo`,
+  `LLM_MODEL=gpt-5.6-sol`).
+
+### AT-025 — Wire narrative quota for sessionless AgentRuntime
+- Priority: P2 · Status: TODO · Dependencies: AT-015 · Risk: Low
+- Goal: Sessionless `AgentRuntime` (no DB session) currently skips narrative quota — wire
+  quota for off-session graphs or document intentional skip.
+- Recommended model: Composer 2.5
+
+### AT-026 — Expose soft narrative quota warnings in metadata/UI
+- Priority: P2 · Status: TODO · Dependencies: AT-015 · Risk: Low
+- Goal: Soft narrative quota warnings are audited but not exposed in `narrative_metadata`
+  or workspace UI.
+- Recommended model: Composer 2.5
+
+### AT-027 — Require RAG opacity fields in frontend RagSearchResponse
+- Priority: P2 · Status: TODO · Dependencies: AT-015 · Risk: Low
+- Goal: Frontend `RagSearchResponse` opacity fields are optional — tighten to required
+  booleans when API contract is stable.
+- Recommended model: Composer 2.5
 
 ### AT-016 — Audit unit-of-work + baseline metrics
 - Priority: P1 · Status: TODO · Dependencies: AT-010 · Risk: Low
