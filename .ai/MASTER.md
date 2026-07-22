@@ -64,3 +64,12 @@ Generated per session; gitignored (never committed):
   - iCloud mirror folder under `~/Library/Mobile Documents/com~apple~CloudDocs/...`
   - Sync script: `~/.local/bin/sync-alphatrade-ai-handoff.sh`
   - LaunchAgent: `~/Library/LaunchAgents/<your-label>.alphatrade-ai-handoff-sync.plist`
+    (expected: `WatchPaths` on the two handoff files, `RunAtLoad`, low-frequency
+    `StartInterval` fallback)
+
+Normalized self-hash for operational docs (§13.3 of `MASTER_WORKFLOW.md`):
+
+```bash
+grep -v '^Source File SHA256:' HANDOFF.md | shasum -a 256
+grep -v '^Source File SHA256:' CHANGELOG_SESSION.md | shasum -a 256
+```

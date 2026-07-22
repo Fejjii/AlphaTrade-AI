@@ -6,7 +6,9 @@ alwaysApply: true
 # Trading safety (NON-NEGOTIABLE)
 
 - Paper first. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`,
-  `EXCHANGE_MODE=paper_internal`, `PROVIDER_MODE=fallback` (staging). Never weaken these.
+  `PROVIDER_MODE=fallback` (staging). `EXCHANGE_MODE` stays non-live: safe default
+  `paper_internal` (Mode A); Mode C `paper_exchange_demo` only when explicitly configured;
+  Mode D real execution remains disabled. Never weaken these.
 - No automatic live orders, withdrawals, transfers, leverage changes, or exchange account
   mutations. `real_trading_enabled` stays false unless a separate task explicitly enables it.
 - Any sensitive future action requires: explicit human approval, audit logs, idempotency,

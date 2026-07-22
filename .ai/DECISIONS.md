@@ -54,6 +54,10 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   before any commit until a human authorizes it.
 - **Validation:** `bash -n` sync script, `plutil -lint` LaunchAgent, SHA256 + `cmp`, idempotent
   second sync, secret scan of tracked governance, no app-code changes.
+- **Reaffirmation (2026-07-22, AT-000B):** Supplied
+  `ALPHATRADE_AI_MASTER_WORKFLOW.md` reinstalled byte-identical
+  (SHA256 `4255f52c…`) as `.ai/MASTER_WORKFLOW.md`. Governance reconciled
+  (`PROJECT_CONTEXT`, `MASTER.md`, trading-safety Mode A/C wording). No app-code changes.
 
 ## AT-ADR-005 — Real-money (Mode D) requires phased program; paper Criticals first
 - **Date:** 2026-07-21

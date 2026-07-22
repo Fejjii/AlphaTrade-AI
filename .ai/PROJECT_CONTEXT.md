@@ -1,5 +1,9 @@
 # AlphaTrade AI — Project Context
 
+> Authoritative ChatGPT ↔ Cursor workflow: `.ai/MASTER_WORKFLOW.md` (v2.0).
+> Handoff statuses: `IN_PROGRESS`, `REVIEW_REQUIRED`, `BLOCKED`, `FAILED`, `READY`
+> (never `DRAFT`). See `.ai/MASTER.md` for the governance index.
+
 ## What it is
 
 Human-in-the-loop AI trading **copilot** for crypto markets. It produces structured
@@ -43,9 +47,9 @@ Release line: `v0.1.0-paper-mvp` (built in vertical slices 1–~91A per `docs/`)
 | Setting | Value |
 |---------|-------|
 | `EXECUTION_MODE` | `paper` |
-| `ENABLE_REAL_TRADING` | `false` |
-| `PROVIDER_MODE` | `mock` (repo default) / `fallback` (staging) |
-| `EXCHANGE_MODE` | `paper_internal` (staging) |
+| `ENABLE_REAL_TRADING` | `false` (Mode D real execution remains disabled) |
+| `PROVIDER_MODE` | `mock` (repo/local default) / `fallback` (staging) |
+| `EXCHANGE_MODE` | Safe default `paper_internal` (Mode A). Staging may run Mode C `paper_exchange_demo` when demo credentials are configured; never live. |
 | `BILLING_ENABLED` | `false` |
 | Notifications (Telegram/webhook) | disabled by default |
 | Worker / scanner / scheduler automation | disabled by default |
