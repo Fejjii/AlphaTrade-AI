@@ -144,12 +144,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Composer 2.5
 
 ### AT-016 — Audit unit-of-work + baseline metrics
-- Priority: P1 · Status: REVIEW_REQUIRED · Dependencies: AT-010 · Risk: Low
-- Branch: `feat/at-016-audit-uow-metrics`
+- Priority: P1 · Status: DONE · Dependencies: AT-010 · Risk: Low
+- Branch: merged via PR #7 → `main` @ `bf7f78b`
 - Validation: No mid-request audit commit splitting business txn; RED metrics scrapeable.
 - Recommended model: Grok 4.5 (architecture/safety) · Composer 2.5 (tests/PR)
 - ADR: AT-ADR-008
-- Note: Implementation complete on branch; awaiting human commit/push authorization.
+- Completed: 2026-07-23 — merged to main; post-merge staging validation recommended separately.
 
 ### AT-017 — Frontend auth boundary + security headers
 - Priority: P1 · Status: TODO · Dependencies: AT-011 · Risk: Medium
