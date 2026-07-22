@@ -1653,6 +1653,36 @@ def narrative_enhancement(state: dict, runtime: AgentRuntime) -> dict:
 
     analysis = agent.analysis_detail
 
+    # AT-015: enforce agent_narrative quota before any polish LLM call.
+    if runtime.quota_service is not None and agent.organization_id is not None:
+        narrative_quota = runtime.quota_service.check_feature(
+            agent.organization_id,
+            "agent_narrative",
+            request_id=agent.request_id,
+            user_id=agent.user_id,
+        )
+        if narrative_quota.hard_blocked:
+            from app.schemas.narrative import NarrativeMetadata
+
+            fallback = runtime.narrative_service.narrative_from_deterministic(analysis, agent)
+            meta = NarrativeMetadata(
+                source="deterministic_fallback",
+                provider="quota",
+                model="none",
+                fallback_used=True,
+                validation_passed=True,
+                latency_ms=None,
+            )
+            answer = format_reply_with_narrative(analysis, fallback, meta)
+            return patch_state(
+                state,
+                {
+                    "narrative_detail": dump_partial(fallback),
+                    "narrative_metadata": dump_partial(meta),
+                    "final_answer": answer,
+                },
+            )
+
     def _persist(agent_state: AgentState, *, llm_result: object, feature: str) -> None:
         from app.providers.llm import LLMCompletionResult
 

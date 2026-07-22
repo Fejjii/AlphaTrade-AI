@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { EmptyState, ErrorState } from "@/components/states";
+import { StatusBadge } from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import type { RagSearchResponse } from "@/lib/api/types";
 
@@ -23,7 +24,7 @@ export default function KnowledgePage() {
     setBusy(true);
     setError(null);
     try {
-      const result =       await api.knowledge.ingest({
+      const result = await api.knowledge.ingest({
         title,
         text,
         source_type: "trading_playbook",
@@ -92,7 +93,20 @@ export default function KnowledgePage() {
 
       {search ? (
         <div className="space-y-4">
-          <h2 className="text-lg font-medium">Results for “{search.query}”</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-medium">Results for “{search.query}”</h2>
+            {search.degraded ? <StatusBadge label="Degraded" tone="warn" /> : null}
+            {search.fallback_used ? <StatusBadge label="Fallback" tone="warn" /> : null}
+            {search.vector_backend ? (
+              <span className="text-xs text-zinc-500">backend: {search.vector_backend}</span>
+            ) : null}
+          </div>
+          {search.degraded || search.fallback_used ? (
+            <p className="text-sm text-amber-200/90" data-testid="knowledge-search-degraded-note">
+              Search used a degraded or fallback retrieval path
+              {search.detail ? ` — ${search.detail}` : ""}. Treat results as lower confidence.
+            </p>
+          ) : null}
           {search.chunks.length ? (
             search.chunks.map((chunk) => (
               <Card key={chunk.chunk_id}>

@@ -94,3 +94,21 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `feat/at-013-rag-provider-fail-closed`; stop at
   `REVIEW_REQUIRED` before commit/push/deploy.
 - **Validation:** Scoped ruff/mypy + AT-013/provider/RAG/deployment/health tests (see handoff).
+
+## AT-ADR-007 — Honor PROVIDER_MODE + narrative quota + search opacity (AT-015)
+- **Date:** 2026-07-22
+- **Status:** Accepted (implementation pending review/commit authorization)
+- **Context:** AT-010 H5/H10 — factory ignored `PROVIDER_MODE=mock` for LLM/embeddings
+  when a key was set; `limit_agent_narrative` was unused; search opacity needed UI/tests.
+- **Decision:**
+  1. Local `PROVIDER_MODE=mock` forces mock LLM/embeddings (and mock dims) even with key.
+  2. Staging/production continue to reject `PROVIDER_MODE=mock` (AT-ADR-006 unchanged).
+  3. Narrative polish checks `agent_narrative` quota before LLM; hard block → deterministic
+     fallback (chat analysis still succeeds; no narrative LLM spend).
+  4. Search continues to return `degraded`/`fallback_used`/`vector_backend`; frontend surfaces them.
+- **Alternatives considered:** Hard-429 the entire chat on narrative quota (rejected: optional
+  polish must not block deterministic analysis); allow mock in staging (rejected: AT-013).
+- **Safety impact:** Reduces unexpected OpenAI spend in mock mode; cost control for narrative;
+  no trading-mode change.
+- **Consequences:** Branch `feat/at-015-provider-mode-quotas`; stop at `REVIEW_REQUIRED`.
+- **Validation:** `tests/test_at015_provider_mode_quotas.py` + provider/embedding/AT-013 regressions.

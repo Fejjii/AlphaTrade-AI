@@ -142,12 +142,26 @@ def test_usage_metadata_from_mock_llm_provider() -> None:
     assert response.usage.input_tokens >= 1
 
 
-def test_registry_with_openai_key_registers_openai_providers() -> None:
+def test_registry_with_openai_key_and_fallback_registers_openai_providers() -> None:
+    get_settings.cache_clear()
+    registry = build_default_registry(
+        Settings(openai_api_key="test-key", log_json=False, provider_mode="fallback")
+    )
+    names = {p.name for p in registry.all()}
+    assert "openai-llm" in names
+    assert "openai-embeddings" in names
+    get_settings.cache_clear()
+
+
+def test_registry_mock_mode_with_key_registers_mock_only() -> None:
+    """AT-015: PROVIDER_MODE=mock wins over OpenAI key presence."""
     get_settings.cache_clear()
     registry = build_default_registry(
         Settings(openai_api_key="test-key", log_json=False, provider_mode="mock")
     )
     names = {p.name for p in registry.all()}
-    assert "openai-llm" in names
-    assert "openai-embeddings" in names
+    assert "mock-llm" in names
+    assert "mock-embeddings" in names
+    assert "openai-llm" not in names
+    assert "openai-embeddings" not in names
     get_settings.cache_clear()

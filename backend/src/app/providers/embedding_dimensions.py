@@ -30,11 +30,15 @@ def resolve_embeddings_dimensions(settings: Settings) -> int:
 
     Priority:
     1. Explicit ``EMBEDDINGS_DIMENSIONS``
-    2. OpenAI model native size when ``OPENAI_API_KEY`` is set
-    3. Mock default (384)
+    2. Mock default when ``PROVIDER_MODE=mock`` (even if an API key is set)
+    3. OpenAI model native size when ``OPENAI_API_KEY`` is set
+    4. Mock default (384)
     """
     if settings.embeddings_dimensions is not None:
         return int(settings.embeddings_dimensions)
+    # AT-015: mock mode must not silently adopt OpenAI native dimensions from a key.
+    if settings.provider_mode.strip().lower() == "mock":
+        return MOCK_EMBEDDINGS_DIMENSIONS
     if settings.openai_api_key.strip():
         model = settings.embeddings_model.strip().lower()
         return OPENAI_EMBEDDING_MODEL_DIMENSIONS.get(model, _DEFAULT_OPENAI_DIMENSIONS)

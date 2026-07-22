@@ -107,11 +107,17 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Grok 4.5
 
 ### AT-015 — Honor PROVIDER_MODE for LLM/embeddings + wire narrative quota + search opacity
-- Priority: P1 · Status: TODO · Dependencies: AT-013 · Risk: Low
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-013 · Risk: Low
 - Branch: `feat/at-015-provider-mode-quotas`
 - Validation: `PROVIDER_MODE=mock` with key set → mock only; narrative quota enforced;
   search returns fallback/degraded flags.
-- Recommended model: Composer 2.5
+- Recommended model: Composer 2.5 (impl) · Grok 4.5 (architecture/safety review)
+- Non-blocking follow-ups (post-merge):
+  - Sessionless `AgentRuntime` (no DB session) skips narrative quota — wire quota for
+    off-session graphs or document intentional skip.
+  - Soft narrative quota warnings audited but not exposed in `narrative_metadata` / UI.
+  - Frontend `RagSearchResponse` opacity fields optional — tighten to required booleans
+    when API contract is stable.
 
 ### AT-016 — Audit unit-of-work + baseline metrics
 - Priority: P1 · Status: TODO · Dependencies: AT-010 · Risk: Low

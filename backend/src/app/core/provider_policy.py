@@ -1,8 +1,9 @@
-"""Provider fail-closed policy for non-local environments (AT-013).
+"""Provider fail-closed policy for non-local environments (AT-013 / AT-015).
 
-Local (and explicit mock PROVIDER_MODE) may use deterministic mocks and soft
+Local (and explicit ``PROVIDER_MODE=mock``) may use deterministic mocks and soft
 fallbacks. Staging and production must never silently substitute mock LLM /
 embeddings or in-memory vector backends when real providers are configured.
+``PROVIDER_MODE=mock`` remains rejected in staging/production by deployment safety.
 """
 
 from __future__ import annotations
