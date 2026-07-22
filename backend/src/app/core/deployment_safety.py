@@ -77,10 +77,19 @@ def validate_deployment_settings(settings: Settings) -> None:
     elif _url_uses_localhost(settings.redis_url):
         errors.append("redis_url must point to managed Redis (not localhost)")
 
+    if not settings.openai_api_key.strip():
+        errors.append("openai_api_key is required in staging/production (AT-013 fail-closed)")
+
+    provider_mode = settings.provider_mode.strip().lower()
+    if provider_mode == "mock":
+        errors.append(
+            "provider_mode=mock is not allowed in staging/production (AT-013 fail-closed)"
+        )
+
     qdrant = settings.qdrant_url.strip()
     if not qdrant:
-        if settings.environment is Environment.PRODUCTION:
-            errors.append("qdrant_url is required in production")
+        # Staging and production both require hosted Qdrant for authoritative RAG.
+        errors.append("qdrant_url is required in staging/production (AT-013 fail-closed)")
     elif _url_uses_localhost(qdrant):
         errors.append("qdrant_url must point to hosted Qdrant (not localhost)")
 

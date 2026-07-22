@@ -72,3 +72,25 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Strengthens fail-closed path to any future capital; no live trading enabled now.
 - **Consequences:** Backlog AT-011…AT-024 added; next slice is AT-011 authz.
 - **Validation:** AT-010 deliverables reviewed; staging verify-safety remains paper-only.
+
+## AT-ADR-006 — Staging/production RAG providers fail closed (AT-013)
+- **Date:** 2026-07-22
+- **Status:** Accepted (implementation pending review/commit authorization)
+- **Context:** Silent mock LLM/embeddings and Qdrant→in-memory substitutes created
+  split-brain knowledge behavior and false readiness in non-local environments.
+- **Decision:**
+  1. `provider_fail_closed` for `ENVIRONMENT` in `{staging, production}`.
+  2. Staging/production require configured `OPENAI_API_KEY` and hosted `QDRANT_URL`;
+     reject `PROVIDER_MODE=mock`.
+  3. OpenAI LLM/embeddings and Qdrant refuse silent mock/memory substitutes when
+     fail-closed; ingest/search raise clear `ServiceUnavailableError` (no secrets).
+  4. Readiness treats critical LLM/embeddings/vector as not ready when unavailable,
+     degraded+fallback, or accidentally mock.
+  5. Local (and pytest default local settings) retain explicit mocks/soft fallback.
+- **Alternatives considered:** Soft degrade with warnings only (rejected: false healthy);
+  ban mocks in all environments (rejected: blocks offline local/dev).
+- **Safety impact:** Strengthens knowledge integrity; no trading-mode change;
+  `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` preserved.
+- **Consequences:** Branch `feat/at-013-rag-provider-fail-closed`; stop at
+  `REVIEW_REQUIRED` before commit/push/deploy.
+- **Validation:** Scoped ruff/mypy + AT-013/provider/RAG/deployment/health tests (see handoff).

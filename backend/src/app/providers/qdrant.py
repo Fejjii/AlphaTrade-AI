@@ -219,7 +219,7 @@ def _collection_vector_size_from_info(info: Any) -> int | None:
 
 
 class QdrantVectorStore:
-    """Real Qdrant client with in-memory fallback on failure."""
+    """Real Qdrant client with optional in-memory fallback on failure."""
 
     name = "qdrant"
 
@@ -230,11 +230,13 @@ class QdrantVectorStore:
         api_key: str | None = None,
         fallback: InMemoryVectorStore | None = None,
         vector_size: int = MOCK_EMBEDDINGS_DIMENSIONS,
+        fail_closed: bool = False,
     ) -> None:
         if vector_size < 1:
             raise ValueError("vector_size must be >= 1")
         self._url = url
         self._api_key = (api_key or "").strip() or None
+        self._fail_closed = fail_closed
         self._fallback = fallback or InMemoryVectorStore()
         self._vector_size = vector_size
         self._client = None
@@ -242,6 +244,18 @@ class QdrantVectorStore:
         self._dimension_mismatch: tuple[str, int, int] | None = None
         self._payload_indexes_ready: set[str] = set()
         self._connect()
+
+    def _refuse_memory_substitute(self, *, reason: str, collection: str) -> None:
+        from app.core.errors import ServiceUnavailableError
+
+        raise ServiceUnavailableError(
+            "Vector store is unavailable.",
+            details={
+                "reason": reason,
+                "provider": self.name,
+                "collection": collection,
+            },
+        )
 
     @property
     def vector_size(self) -> int:
@@ -382,9 +396,19 @@ class QdrantVectorStore:
                 expected=self._vector_size,
                 actual=vector_size,
             )
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="embedding_dimension_mismatch",
+                    collection=collection,
+                )
             self._fallback.upsert(collection, points)
             return
         if not self._using_qdrant or self._client is None:
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="qdrant_unavailable",
+                    collection=collection,
+                )
             self._fallback.upsert(collection, points)
             return
         try:
@@ -409,10 +433,20 @@ class QdrantVectorStore:
                 expected=exc.expected,
                 actual=exc.actual,
             )
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="qdrant_dimension_mismatch",
+                    collection=collection,
+                )
             # Never write incompatible vectors into Qdrant.
             self._fallback.upsert(collection, points)
         except Exception as exc:
-            logger.warning("qdrant_upsert_fallback", error=str(exc))
+            logger.warning("qdrant_upsert_failed", error=type(exc).__name__)
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="qdrant_upsert_failed",
+                    collection=collection,
+                )
             self._fallback.upsert(collection, points)
 
     def _query_vector_points(
@@ -464,8 +498,18 @@ class QdrantVectorStore:
                 expected=self._vector_size,
                 actual=len(vector),
             )
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="embedding_dimension_mismatch",
+                    collection=collection,
+                )
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
         if not self._using_qdrant or self._client is None:
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="qdrant_unavailable",
+                    collection=collection,
+                )
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
         try:
             from qdrant_client.http import models as qmodels
@@ -502,9 +546,19 @@ class QdrantVectorStore:
                 expected=exc.expected,
                 actual=exc.actual,
             )
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="qdrant_dimension_mismatch",
+                    collection=collection,
+                )
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
         except Exception as exc:
-            logger.warning("qdrant_search_fallback", error=str(exc))
+            logger.warning("qdrant_search_failed", error=type(exc).__name__)
+            if self._fail_closed:
+                self._refuse_memory_substitute(
+                    reason="qdrant_search_failed",
+                    collection=collection,
+                )
             return self._fallback.search(collection, vector, filters=filters, top_k=top_k)
 
     def status(self) -> ProviderStatus:
@@ -537,10 +591,14 @@ class QdrantVectorStore:
         return ProviderStatus(
             name=self.name,
             kind=ProviderKind.VECTOR,
-            health=ProviderHealth.DEGRADED,
-            using_fallback=True,
+            health=ProviderHealth.UNAVAILABLE if self._fail_closed else ProviderHealth.DEGRADED,
+            using_fallback=not self._fail_closed,
             is_mock=True,
-            detail="Qdrant unavailable — in-memory vector fallback active.",
+            detail=(
+                "Qdrant unavailable."
+                if self._fail_closed
+                else "Qdrant unavailable — in-memory vector fallback active."
+            ),
         )
 
 

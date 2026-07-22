@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.config import Settings
+from app.core.provider_policy import provider_fail_closed, requires_configured_openai
 from app.providers.embedding_dimensions import resolve_embeddings_dimensions
 from app.providers.embeddings import (
     EmbeddingsProvider,
@@ -36,36 +37,51 @@ class ResolvedProviders:
 
 
 def resolve_providers(settings: Settings) -> ResolvedProviders:
-    """Select real providers when credentials exist; always keep deterministic fallbacks."""
+    """Select real providers when credentials exist.
+
+    Local keeps deterministic mock fallbacks. Staging/production (AT-013) never
+    silently substitute mock LLM/embeddings or in-memory Qdrant when real
+    providers are required.
+    """
     dimensions = resolve_embeddings_dimensions(settings)
     mock_llm = MockLLMProvider()
     mock_embeddings = MockEmbeddingsProvider(dimensions=dimensions)
     fallback_store = get_process_vector_store()
+    fail_closed = provider_fail_closed(settings)
 
-    if settings.openai_api_key.strip():
-        llm: LLMProvider = OpenAILLMProvider(
-            api_key=settings.openai_api_key.strip(),
+    openai_key = settings.openai_api_key.strip()
+    llm: LLMProvider
+    embeddings: EmbeddingsProvider
+    if openai_key or requires_configured_openai(settings):
+        # Staging/production always construct OpenAI providers (even with an empty
+        # key) so status reports UNAVAILABLE instead of a healthy silent mock.
+        llm = OpenAILLMProvider(
+            api_key=openai_key,
             base_url=settings.openai_base_url,
             model=settings.llm_model,
-            fallback=mock_llm,
+            fallback=None if fail_closed else mock_llm,
+            fail_closed=fail_closed,
         )
-        embeddings: EmbeddingsProvider = OpenAIEmbeddingsProvider(
+        embeddings = OpenAIEmbeddingsProvider(
             model=settings.embeddings_model,
-            api_key=settings.openai_api_key.strip(),
+            api_key=openai_key,
             base_url=settings.openai_base_url,
             dimensions=dimensions,
-            fallback=mock_embeddings,
+            fallback=None if fail_closed else mock_embeddings,
+            fail_closed=fail_closed,
         )
     else:
         llm = mock_llm
         embeddings = mock_embeddings
 
-    if should_use_qdrant(settings):
-        vector_store: VectorStore = QdrantVectorStore(
+    vector_store: VectorStore
+    if should_use_qdrant(settings) or (fail_closed and bool(settings.qdrant_url.strip())):
+        vector_store = QdrantVectorStore(
             settings.qdrant_url.strip(),
             api_key=settings.qdrant_api_key.strip() or None,
             fallback=fallback_store,
             vector_size=dimensions,
+            fail_closed=fail_closed,
         )
     else:
         vector_store = fallback_store

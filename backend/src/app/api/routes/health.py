@@ -36,9 +36,21 @@ async def health(settings: SettingsDep) -> HealthResponse:
 
 
 @router.get("/health/ready", response_model=ReadinessResponse, summary="Readiness probe")
-async def readiness(registry: ProviderRegistryDep) -> ReadinessResponse:
+async def readiness(registry: ProviderRegistryDep, settings: SettingsDep) -> ReadinessResponse:
+    from app.core.provider_policy import provider_fail_closed
+
     statuses = registry.statuses()
     unavailable = sum(1 for s in statuses if s.health is ProviderHealth.UNAVAILABLE)
+    if provider_fail_closed(settings):
+        # Staging/production: authoritative LLM/embeddings/vector must not be
+        # silently degraded onto mocks or in-memory substitutes.
+        critical = {"llm", "embeddings", "vector"}
+        unavailable += sum(
+            1
+            for s in statuses
+            if s.kind.value in critical
+            and (s.is_mock or (s.health is ProviderHealth.DEGRADED and s.using_fallback))
+        )
     ready = unavailable == 0
     return ReadinessResponse(
         status="ready" if ready else "degraded",

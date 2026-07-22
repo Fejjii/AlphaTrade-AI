@@ -14,12 +14,14 @@ _STAGING_BASE = {
     "database_url": "postgresql+psycopg://user:pass@db.example.com:5432/alphatrade",
     "redis_url": "redis://redis.example.com:6379/0",
     "qdrant_url": "https://qdrant.example.com",
+    "openai_api_key": "sk-test-not-a-real-key",
     "cors_origins": "https://app.example.com",
     "auth_refresh_cookie_enabled": True,
     "auth_cookie_secure": True,
     "auth_cookie_samesite": "none",
     "enable_real_trading": False,
     "execution_mode": "paper",
+    "provider_mode": "fallback",
     "rate_limit_use_redis": True,
     "debug": False,
 }
@@ -99,10 +101,14 @@ def test_staging_accepts_provider_fallback_mode() -> None:
     validate_deployment_settings(settings)
 
 
-def test_staging_allows_empty_qdrant_for_in_memory_fallback() -> None:
-    settings = Settings(**{**_STAGING_BASE, "qdrant_url": ""})
-    validate_deployment_settings(settings)
-    assert deployment_posture(settings)["qdrant_configured"] is False
+def test_staging_requires_qdrant_url() -> None:
+    with pytest.raises(ValidationError, match="qdrant_url"):
+        Settings(**{**_STAGING_BASE, "qdrant_url": ""})
+
+
+def test_staging_requires_openai_api_key() -> None:
+    with pytest.raises(ValidationError, match="openai_api_key"):
+        Settings(**{**_STAGING_BASE, "openai_api_key": ""})
 
 
 def test_production_requires_qdrant_url() -> None:
@@ -125,9 +131,11 @@ def test_production_rejects_debug_mode() -> None:
 
 def test_deployment_posture_excludes_secrets() -> None:
     settings = Settings(
-        **_STAGING_BASE,
-        openai_api_key="sk-secret",
-        qdrant_api_key="qdrant-secret",
+        **{
+            **_STAGING_BASE,
+            "openai_api_key": "sk-secret",
+            "qdrant_api_key": "qdrant-secret",
+        }
     )
     posture = deployment_posture(settings)
     assert "sk-secret" not in str(posture)
@@ -136,6 +144,11 @@ def test_deployment_posture_excludes_secrets() -> None:
     assert posture["qdrant_api_key_configured"] is True
     assert "jwt_secret" not in posture
     assert "qdrant_api_key" not in posture
+
+
+def test_staging_rejects_provider_mode_mock() -> None:
+    with pytest.raises(ValidationError, match="provider_mode=mock"):
+        Settings(**{**_STAGING_BASE, "provider_mode": "mock"})
 
 
 def test_validate_deployment_skips_local() -> None:

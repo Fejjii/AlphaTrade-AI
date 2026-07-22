@@ -125,6 +125,11 @@ class IngestDocumentResponse(ORMModel):
     chunk_count: int = Field(ge=0)
     duplicate: bool = False
     version: int = Field(ge=1)
+    vector_backend: str | None = Field(
+        default=None,
+        description="Authoritative vector backend used for upsert (e.g. qdrant, in-memory-vector).",
+    )
+    fallback_used: bool = False
 
 
 class RetrievedChunk(ORMModel):
@@ -147,6 +152,10 @@ class RagSearchResponse(StrictModel):
     query: str
     chunks: list[RetrievedChunk]
     citations: list[Citation]
+    degraded: bool = False
+    fallback_used: bool = False
+    vector_backend: str | None = None
+    detail: str | None = None
 
 
 class PaginatedRagDocuments(StrictModel):
