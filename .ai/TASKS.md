@@ -70,13 +70,14 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: commit `7ebe3b0`, merge `992e954`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/2
 
 ### AT-013 — RAG fail-closed (no mock embeddings into Qdrant; no split-brain ingest)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-010 · Risk: Medium (data integrity)
+- Priority: P0 · Status: DONE · Dependencies: AT-010 · Risk: Medium (data integrity)
 - Safety classification: Provider / knowledge
 - Goal: Fail ingest when embeddings `fallback_used` or Qdrant degraded; never upsert mock
   vectors to remote; avoid Postgres-success / Qdrant-miss silent success; delete orphans.
-- Branch: `feat/at-013-rag-provider-fail-closed`
+- Branch: `feat/at-013-rag-provider-fail-closed` (merged via PR #4)
 - Validation: Forced provider failures → ingest errors; search exposes degraded flags.
 - Recommended model: Grok 4.5
+- Completion evidence: merge `b523c70`, commit `92d48bf`, PR https://github.com/Fejjii/AlphaTrade-AI/pull/4
 
 ### AT-014 — Server-side kill switch (persist + enforce + UI wire-up)
 - Priority: P0 · Status: DONE · Dependencies: AT-012 · Risk: Medium (safety-critical)
