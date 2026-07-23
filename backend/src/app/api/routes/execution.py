@@ -52,21 +52,24 @@ async def place_paper_order(
     placement = execution_service.place_paper_order(body)
     from app.schemas.usage import UsageEventCreate
 
-    # One authoritative commit: business + audit (flushed in service) + usage.
-    # Idempotent replay short-circuits in the service — skip metered side effects.
-    if placement.created_new:
-        usage_service.record(
-            UsageEventCreate(
-                request_id=str(body.idempotency_key),
-                organization_id=tenant.organization_id,
-                user_id=tenant.user_id,
-                feature="paper_execution",
-                provider="paper-engine",
-                input_tokens=0,
-                output_tokens=0,
-                provider_metadata={"cost_source": "unavailable"},
-            )
+    # Replays and concurrent losers have no new unit-of-work to commit. The
+    # convergence path already rolled back its dedicated request session.
+    if not placement.created_new:
+        return placement.order
+
+    usage_service.record(
+        UsageEventCreate(
+            request_id=str(body.idempotency_key),
+            organization_id=tenant.organization_id,
+            user_id=tenant.user_id,
+            feature="paper_execution",
+            provider="paper-engine",
+            input_tokens=0,
+            output_tokens=0,
+            provider_metadata={"cost_source": "unavailable"},
         )
+    )
+    # One authoritative commit: business + audit (flushed in service) + usage.
     session.commit()
     return placement.order
 
