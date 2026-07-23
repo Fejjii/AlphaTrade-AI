@@ -167,6 +167,9 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Composer 2.5 · Grok 4.5 (transaction review)
 - Completed: 2026-07-23 — merged via PR #9 → `main` @ `1225b49` (feature commit `ee573c3`);
   CI run 30020394617 green (1173 passed, 1 skipped; PostgreSQL 16 concurrency tests pass).
+- Hotfix: 2026-07-23 — concurrent-loser HTTP 500 fixed via PR #10 → `main` @ merge `9d5b7c5`
+  (commit `48846cd`); quota dependency savepoint convergence + loser/replay no-commit route;
+  CI run 30032319345 green (1180 passed, 1 skipped). Staging validation pending separately.
 
 ### AT-029 — Fix pre-existing mypy Depends typing on `/execution/paper` route
 - Priority: P3 · Status: TODO · Dependencies: none · Risk: Low
