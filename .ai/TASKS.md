@@ -150,9 +150,9 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Grok 4.5 (architecture/safety) · Composer 2.5 (tests/PR)
 - ADR: AT-ADR-008
 - Completed: 2026-07-23 — merged to main; post-merge staging validation recommended separately.
-- Follow-up (usage metering on replay): branch `fix/at-016-idempotent-paper-usage` —
-  `PaperOrderPlacementResult.created_new` gates route usage; sequential replay does not
-  double-count. Concurrent first-writer unique-conflict recovery deferred to AT-028.
+- Follow-up (usage metering on replay): **DONE** — merged via PR #8 → `main` @ `5bac87e`
+  (`PaperOrderPlacementResult.created_new` gates route usage; sequential replay does not
+  double-count). Concurrent first-writer unique-conflict recovery remains **AT-028** (TODO).
 
 ### AT-028 — Server-side concurrent paper-order idempotency convergence (Postgres)
 - Priority: P1 · Status: TODO · Dependencies: AT-016 · Risk: Medium
