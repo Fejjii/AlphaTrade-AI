@@ -40,9 +40,30 @@ Cookie settings:
 
 The frontend sends `credentials: include` in cookie mode so refresh works without JS-readable refresh tokens.
 
-On `401`, the client attempts one refresh (cookie or body); if refresh fails, it clears the session and redirects to `/login`.
+On `401`, the client attempts one refresh (cookie or body, single-flight across concurrent requests); if refresh fails, it clears the session and redirects to `/login?next=<original path>`.
 
 **Never log cookies or tokens.** Redaction patterns strip bearer tokens, refresh tokens, and authorization headers from logs and audit metadata.
+
+### Frontend auth boundary (AT-017)
+
+- **Edge middleware** (`frontend/src/middleware.ts`) redirects unauthenticated visitors from
+  protected app routes to `/login?next=<path>` before any shell HTML is served. Public routes:
+  `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`.
+- The middleware keys off a **non-sensitive session marker cookie** (`alphatrade_session=1`,
+  frontend origin, `SameSite=Lax`, no token material) set/cleared alongside the sessionStorage
+  tokens. It is defense in depth only: a forged marker yields an empty shell whose API calls
+  all return 401 — the backend remains the sole authorization authority.
+- The app layout **fails closed**: protected content is never rendered while unauthenticated,
+  eliminating the protected-content flash.
+- `next` redirect targets are sanitized (`sanitizeNextPath`) — internal paths only, no open
+  redirects.
+- **Security headers** (CSP with `connect-src 'self' <API origin>`, `frame-ancestors 'none'`,
+  `X-Content-Type-Options`, `X-Frame-Options DENY`, `Referrer-Policy`, `Permissions-Policy`,
+  COOP, HSTS in production) are emitted for all routes via `next.config.ts`
+  (`frontend/src/lib/security-headers.ts`).
+- **Paper banners follow `/health` truth**: the UI claims "Paper mode active" only after the
+  backend reports `execution_mode=paper` and `real_trading_enabled=false`; otherwise it shows
+  an "unverified" or alert state. No hardcoded paper claims from build-time env vars.
 
 ## Token behavior
 

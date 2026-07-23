@@ -13,6 +13,14 @@ function ProtectedShell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+  // Fail closed: never render protected content while the redirect to /login runs.
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+        <LoadingState label="Redirecting to sign in…" />
+      </div>
+    );
+  }
   return <AppShell>{children}</AppShell>;
 }
 

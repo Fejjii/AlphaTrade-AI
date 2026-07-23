@@ -1,7 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PaperModeBanner } from "@/components/PaperModeBanner";
+
+const posture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "mock",
+  postureKnown: true,
+};
 
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({
@@ -28,15 +35,21 @@ vi.mock("@/contexts/AppContext", () => ({
     loading: false,
     error: null,
   }),
-  useSafetyPosture: () => ({
-    executionMode: "paper",
-    realTradingEnabled: false,
-    providerMode: "mock",
-  }),
+  useSafetyPosture: () => posture,
 }));
 
 describe("PaperModeBanner", () => {
-  it("shows paper mode and real trading disabled badges", () => {
+  beforeEach(() => {
+    posture.executionMode = "paper";
+    posture.realTradingEnabled = false;
+    posture.postureKnown = true;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows paper mode and real trading disabled badges when /health confirms paper", () => {
     render(<PaperModeBanner />);
     expect(screen.getByText(/paper mode active/i)).toBeInTheDocument();
     expect(screen.getByText(/real trading disabled/i)).toBeInTheDocument();
@@ -46,5 +59,30 @@ describe("PaperModeBanner", () => {
     render(<PaperModeBanner />);
     expect(screen.queryByText(/place real order/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/execute live/i)).not.toBeInTheDocument();
+  });
+
+  it("never claims paper mode before /health is loaded", () => {
+    posture.executionMode = null;
+    posture.realTradingEnabled = null;
+    posture.postureKnown = false;
+    render(<PaperModeBanner />);
+    expect(screen.queryByText(/paper mode active/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/execution mode unverified/i)).toBeInTheDocument();
+  });
+
+  it("alerts instead of claiming paper mode when /health reports real trading enabled", () => {
+    posture.realTradingEnabled = true;
+    render(<PaperModeBanner />);
+    expect(screen.queryByText(/paper mode active/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/paper-only posture not confirmed/i)).toBeInTheDocument();
+    expect(screen.getByText(/real trading enabled/i)).toBeInTheDocument();
+  });
+
+  it("alerts when /health reports a non-paper execution mode", () => {
+    posture.executionMode = "live";
+    render(<PaperModeBanner />);
+    expect(screen.queryByText(/paper mode active/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/paper-only posture not confirmed/i)).toBeInTheDocument();
+    expect(screen.getByText("LIVE")).toBeInTheDocument();
   });
 });

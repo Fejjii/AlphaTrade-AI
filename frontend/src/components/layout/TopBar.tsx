@@ -27,10 +27,25 @@ export function TopBar() {
           </p>
         </div>
         <div className="flex max-w-full flex-wrap items-center gap-1.5 sm:gap-2">
-          <StatusBadge label={`${executionMode.toUpperCase()}`} tone="paper" />
           <StatusBadge
-            label={realTradingEnabled ? "Real ON" : "Real OFF"}
-            tone={realTradingEnabled ? "blocked" : "success"}
+            label={(executionMode ?? "unverified").toUpperCase()}
+            tone={executionMode === "paper" ? "paper" : "warn"}
+          />
+          <StatusBadge
+            label={
+              realTradingEnabled === true
+                ? "Real ON"
+                : realTradingEnabled === false
+                  ? "Real OFF"
+                  : "Real ?"
+            }
+            tone={
+              realTradingEnabled === true
+                ? "blocked"
+                : realTradingEnabled === false
+                  ? "success"
+                  : "warn"
+            }
           />
           <span className="hidden sm:inline-flex">
             <StatusBadge label={`${mockCount} mock`} tone="info" />

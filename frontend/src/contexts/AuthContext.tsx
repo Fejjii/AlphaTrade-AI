@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 
 import { api, ApiError } from "@/lib/api";
 import type { AuthResponse, MeResponse } from "@/lib/api/types";
+import { sanitizeNextPath } from "@/lib/auth/boundary";
 import { clearTokens, getRefreshToken, isAuthenticated, setTokens } from "@/lib/auth/session";
 
 interface AuthContextValue {
@@ -19,7 +20,7 @@ interface AuthContextValue {
   organization: MeResponse["organization"] | null;
   loading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, nextPath?: string) => Promise<void>;
   register: (email: string, password: string, organizationName: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -73,13 +74,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, nextPath?: string) => {
       const response = await api.auth.login({ email, password });
       await applyAuthResponse(response);
       if (mustVerifyEmail && !response.user.email_verified) {
         router.replace("/verify-email");
       } else {
-        router.replace("/");
+        router.replace(sanitizeNextPath(nextPath));
       }
     },
     [applyAuthResponse, mustVerifyEmail, router],
@@ -141,7 +142,8 @@ export function useRequireAuth() {
 
   useEffect(() => {
     if (!auth.loading && !isAuthenticated()) {
-      router.replace("/login");
+      const next = sanitizeNextPath(window.location.pathname + window.location.search);
+      router.replace(next !== "/" ? `/login?next=${encodeURIComponent(next)}` : "/login");
     }
   }, [auth.loading, router]);
 

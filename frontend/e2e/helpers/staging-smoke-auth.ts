@@ -1,4 +1,9 @@
-import { APIRequestContext, APIResponse, expect } from "@playwright/test";
+import { APIRequestContext, APIResponse, Page, expect } from "@playwright/test";
+
+import {
+  SESSION_MARKER_COOKIE,
+  SESSION_MARKER_VALUE,
+} from "../../src/lib/auth/boundary";
 
 const PLACEHOLDER_PASSWORD_MARKERS = [
   "paste_password_here",
@@ -12,6 +17,21 @@ const PLACEHOLDER_PASSWORD_MARKERS = [
   "insert_password",
   "xxx",
 ] as const;
+
+/**
+ * Install an authenticated browser session for smoke specs: the sessionStorage
+ * access token plus the frontend-origin session marker cookie required by the
+ * AT-017 edge middleware. Call before the first page.goto().
+ */
+export async function installSmokeSession(page: Page, accessToken: string): Promise<void> {
+  const base = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+  await page.context().addCookies([
+    { name: SESSION_MARKER_COOKIE, value: SESSION_MARKER_VALUE, url: base },
+  ]);
+  await page.addInitScript((token: string) => {
+    sessionStorage.setItem("alphatrade_access_token", token);
+  }, accessToken);
+}
 
 export function resolveSmokeEmail(): string {
   return process.env.SMOKE_EMAIL ?? `portfolio-smoke-${Date.now()}@example.com`;

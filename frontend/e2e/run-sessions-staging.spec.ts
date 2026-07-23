@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { installSmokeSession } from "./helpers/staging-smoke-auth";
+
 import {
   STAGING_API_URL,
   assertNonPlannedStartBlocked,
@@ -42,9 +44,7 @@ test.describe("Staging paper run sessions smoke (Slice 82)", () => {
     const secondPlanId = await findOrCreateSecondPlannedPlan(request, accessToken, planId);
     await assertNonPlannedStartBlocked(request, accessToken, secondPlanId);
 
-    await page.addInitScript((token: string) => {
-      sessionStorage.setItem("alphatrade_access_token", token);
-    }, accessToken);
+    await installSmokeSession(page, accessToken);
 
     await page.goto("/paper-validation/run-plans");
     await expect(page.getByTestId("paper-validation-run-plans-page")).toBeVisible();

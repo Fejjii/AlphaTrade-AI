@@ -21,7 +21,9 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(email, password);
+      // Read at submit time (not render) so no Suspense boundary is needed.
+      const next = new URLSearchParams(window.location.search).get("next");
+      await login(email, password, next ?? undefined);
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {

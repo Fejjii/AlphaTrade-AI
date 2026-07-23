@@ -53,8 +53,8 @@ export default function SettingsPage() {
           <span>API URL: {appConfig.apiBaseUrl}</span>
           <span>Signed in as: {user?.email ?? "—"}</span>
           <span>Organization: {organization?.name ?? "—"}</span>
-          <span>Execution mode: {appConfig.executionMode}</span>
-          <span>Provider mode: {appConfig.providerMode}</span>
+          <span>Execution mode (build config): {appConfig.executionMode}</span>
+          <span>Provider mode (build config): {appConfig.providerMode}</span>
         </CardContent>
       </Card>
       <Card>

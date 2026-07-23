@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { obtainPortfolioSmokeAccessToken } from "./helpers/staging-smoke-auth";
+import { installSmokeSession, obtainPortfolioSmokeAccessToken } from "./helpers/staging-smoke-auth";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 
@@ -19,9 +19,7 @@ test.describe("Staging /portfolio read-only smoke (Slice 91B)", () => {
       console.log(`POST /auth/login — HTTP ${loginStatus}`);
     }
 
-    await page.addInitScript((token: string) => {
-      sessionStorage.setItem("alphatrade_access_token", token);
-    }, accessToken);
+    await installSmokeSession(page, accessToken);
 
     await page.goto("/portfolio");
 
