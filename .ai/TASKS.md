@@ -181,11 +181,15 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Composer 2.5
 
 ### AT-017 — Frontend auth boundary + security headers
-- Priority: P1 · Status: TODO · Dependencies: AT-011 · Risk: Medium
+- Priority: P1 · Status: DONE · Dependencies: AT-011 · Risk: Medium
 - Branch: `feat/at-017-frontend-auth-headers`
 - Validation: Unauth app routes redirect via middleware; CSP/headers present; paper banners
   follow `/health` truth (no hardcoded “paper active” when real would be on).
 - Recommended model: Sonnet 4.6
+- Completed: 2026-07-23 — merged via PR #11 → `main` @ merge `1946471` (commit `47f891f`);
+  pre-merge CI run 30040774513 green; post-merge CI run 30042962867 green (1180 passed,
+  1 skipped). Edge middleware marker-cookie auth boundary, CSP + security headers,
+  health-truth paper banners, fail-closed app layout, single-flight refresh.
 
 ### AT-018 — Proxy trust + Redis-required rate limits in staging/prod
 - Priority: P1 · Status: TODO · Dependencies: AT-010 · Risk: Medium
