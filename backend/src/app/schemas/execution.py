@@ -61,6 +61,17 @@ class PaperOrder(ORMModel):
     created_at: datetime
 
 
+class PaperOrderPlacementResult(StrictModel):
+    """Service outcome for paper placement — distinguishes new fills from idempotent replay."""
+
+    order: PaperOrder
+    created_new: bool
+
+    @property
+    def idempotent_replay(self) -> bool:
+        return not self.created_new
+
+
 class PaginatedPaperOrders(StrictModel):
     items: list[PaperOrder]
     total: int

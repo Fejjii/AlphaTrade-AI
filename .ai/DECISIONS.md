@@ -137,6 +137,13 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `feat/at-016-audit-uow-metrics`; stop at `REVIEW_REQUIRED`.
 - **Validation:** `tests/test_at016_audit_uow_metrics.py` + audit/usage/execution/
   approval/risk/auth regressions.
+- **Amendment (2026-07-23 — idempotent usage metering):** Route meters
+  `paper_execution` only when `PaperOrderPlacementResult.created_new` is true.
+  Sequential idempotent replay returns the existing order without a second usage
+  row or creation audit. Concurrent first-writers may still race past the lookup
+  and hit unique constraints; current contract is unique-conflict + client retry
+  (proven in `test_concurrent_identical_requests_remain_safe`). Server-side
+  Postgres convergence is AT-028 — not part of this amendment.
 
 ## AT-ADR-007 — Honor PROVIDER_MODE + narrative quota + search opacity (AT-015)
 - **Date:** 2026-07-22

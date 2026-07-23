@@ -194,7 +194,7 @@ def test_valid_fresh_risk_allows_paper_placement(
     factory, settings = at012_db
     with factory() as session:
         pid, aid = _seed(session)
-        order = _execution(session, settings).place_paper_order(_request(pid, aid))
+        order = _execution(session, settings).place_paper_order(_request(pid, aid)).order
         session.commit()
         assert order.mode.value == "paper"
         assert order.size == _SIZE
@@ -545,8 +545,10 @@ def test_sequential_orders_cannot_bypass_exposure_with_stale_state(
     # Each order: 0.005 * 60000 = 300 (3% of 10k). Two open → 600 > 5% cap.
     with factory() as session:
         pid1, aid1 = _seed(session)
-        first = _execution(session, settings).place_paper_order(
-            _request(pid1, aid1, key="seq-ord-1")
+        first = (
+            _execution(session, settings)
+            .place_paper_order(_request(pid1, aid1, key="seq-ord-1"))
+            .order
         )
         session.commit()
         assert first.size == _SIZE
