@@ -19,7 +19,7 @@ Legend — Likelihood / Impact: L / M / H. Status: Open / Mitigated / Accepted /
 | RR-10 | Audit nested commit + no metrics | High | M | M | Open | AT-016 | Incident blindness |
 | RR-11 | SPA auth / sessionStorage access JWT | High | M | H | Open | AT-017 | XSS amplifies |
 | RR-12 | XFF trust + memory rate-limit fallback | High | M | H | Open | AT-018 | Multi-replica bypass |
-| RR-13 | CI mypy/supply-chain + backup UNKNOWN | High | M | H | Open | AT-001/004/019 | Restore drill missing |
+| RR-13 | CI mypy/supply-chain + backup UNKNOWN | High | M | H | Partial | AT-001/004/019 | AT-019: local restore drill + RPO/RTO docs done; managed/staging drill + AT-001/004 still open |
 | RR-14 | Narrative quota / RAG opacity | High | M | M | Open | AT-015 | Cost + silent degrade |
 | RR-15 | Always-on OpenAPI `/docs` | Medium | H | M | Open | AT-011 | Surface disclosure |
 | RR-16 | Idempotency race → 500 | Medium | L | M | Open | AT-012 | Unique key exists |

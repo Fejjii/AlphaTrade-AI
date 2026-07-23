@@ -202,3 +202,26 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Validation:** `tests/test_rate_limit.py` (proxy trust + spoof regression),
   `tests/test_token_denylist.py`, `tests/test_deployment_safety.py` (AT-018 invariants),
   full backend suite + scoped strict mypy + ruff.
+
+## AT-ADR-010 — Backup/restore RPO/RTO targets for paper staging (AT-019)
+- **Date:** 2026-07-23
+- **Status:** Accepted
+- **Context:** AT010-H9 / RR-13 — backup/restore RPO/RTO was UNKNOWN; no verified restore
+  drill. Postgres is the system of record; Redis is ephemeral; Qdrant is rebuildable.
+- **Decision:**
+  1. **Postgres RPO ≤ 24h** (stretch ≤ 1h if platform PITR enabled); **RTO ≤ 4h** for
+     scratch restore + validation + cutover on staging/paper-MVP.
+  2. **Qdrant RPO ≤ 24h or rebuild-from-SoR**; **RTO ≤ 4h** via snapshot or re-ingest.
+  3. **Redis:** no logical backup; **RTO ≤ 15m** recreate empty instance.
+  4. Local Compose drills are the default verification path; managed/staging restores
+     require explicit human approval and prefer scratch DB over in-place overwrite.
+  5. Evidence in git must be sanitized (sizes, hashes, durations, pass/fail only).
+  6. AT-005 (deploy rollback + smoke gate) remains a separate concern — not duplicated.
+- **Alternatives considered:** Require staging restore before closing AT-019 (deferred:
+  approval-gated); treat Redis as SoR (rejected: intentionally ephemeral).
+- **Safety impact:** Improves recovery preparedness; no trading-mode change; no live
+  execution; scripts refuse non-local targets.
+- **Consequences:** Runbook + inventory + drill docs under `docs/`; local helpers under
+  `scripts/*postgres-local*` / `drill-backup-restore-local.sh`; dumps in `.ai/local/`.
+- **Validation:** Tier A local drill passed 2026-07-23; see
+  `docs/backup_restore_drill_evidence.md`.

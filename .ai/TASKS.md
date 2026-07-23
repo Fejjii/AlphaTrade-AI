@@ -198,10 +198,15 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: GPT-5.4
 
 ### AT-019 — Backup/restore runbook + restore drill evidence
-- Priority: P1 · Status: TODO · Dependencies: AT-005 · Risk: Medium (ops)
-- Branch: `feat/at-019-backup-restore-runbook`
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-005 · Risk: Medium (ops)
+- Branch: `feat/at-019-backup-restore-drill` (operator lane name; backlog alias was
+  `feat/at-019-backup-restore-runbook`)
 - Validation: Documented RPO/RTO; successful restore drill recorded (no secrets in docs).
-- Recommended model: Sonnet 4.6
+- Recommended model: Grok 4.5 (operator assignment; backlog previously Sonnet 4.6)
+- Progress (2026-07-23): Docs + local-only scripts authored; Tier A local Compose restore
+  drill **passed** (sanitized evidence in `docs/backup_restore_drill_evidence.md`).
+  Managed/staging Tier B restore deferred pending human approval. Stop at
+  `REVIEW_REQUIRED` before commit/push/deploy. AT-005 remains TODO (cross-referenced).
 
 ---
 
