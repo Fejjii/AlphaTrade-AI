@@ -1,10 +1,12 @@
-"""Rate limiting tests (Redis-backed with in-memory fallback)."""
+"""Rate limiting tests (Redis-backed with in-memory fallback, proxy trust)."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,6 +20,7 @@ from app.security.rate_limit import (
     InMemoryRateLimiter,
     RateLimitExceededError,
     RedisRateLimiter,
+    client_ip,
     get_rate_limiter,
     reset_rate_limiter,
 )
@@ -40,8 +43,8 @@ def limit_settings() -> Settings:
     )
 
 
-@pytest.fixture
-def limit_client(limit_settings: Settings) -> Iterator[TestClient]:
+@contextmanager
+def _client_for(settings: Settings) -> Iterator[TestClient]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -62,16 +65,23 @@ def limit_client(limit_settings: Settings) -> Iterator[TestClient]:
             yield session
 
     get_settings.cache_clear()
-    app = create_app(settings=limit_settings)
+    app = create_app(settings=settings)
     app.dependency_overrides[get_session] = _override_session
 
-    with TestClient(app) as client:
-        yield client
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
-    app.dependency_overrides.clear()
-    get_settings.cache_clear()
-    Base.metadata.drop_all(engine)
-    engine.dispose()
+
+@pytest.fixture
+def limit_client(limit_settings: Settings) -> Iterator[TestClient]:
+    with _client_for(limit_settings) as client:
+        yield client
 
 
 def test_in_memory_limiter_allows_under_limit() -> None:
@@ -199,3 +209,119 @@ def test_redis_required_without_fallback_raises(limit_settings: Settings) -> Non
     reset_rate_limiter()
     with pytest.raises(RuntimeError, match="Redis rate limiting is required"):
         get_rate_limiter(settings)
+
+
+# --- AT-018: proxy trust for client IP resolution ---
+
+_PEER = "203.0.113.10"
+
+
+def _make_request(
+    *,
+    client_host: str | None = _PEER,
+    forwarded_for: str | None = None,
+) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
+    if forwarded_for is not None:
+        headers.append((b"x-forwarded-for", forwarded_for.encode()))
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": headers,
+        "query_string": b"",
+        "client": (client_host, 40000) if client_host else None,
+    }
+    return Request(scope)
+
+
+def test_client_ip_ignores_spoofed_xff_with_zero_trusted_hops(limit_settings: Settings) -> None:
+    request = _make_request(forwarded_for="6.6.6.6, 7.7.7.7")
+    assert client_ip(request, limit_settings) == _PEER
+
+
+def test_client_ip_trusts_rightmost_entry_with_one_hop(limit_settings: Settings) -> None:
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 1})
+    request = _make_request(forwarded_for="6.6.6.6, 198.51.100.7")
+    assert client_ip(request, settings) == "198.51.100.7"
+
+
+def test_client_ip_selects_entry_by_trusted_hop_count(limit_settings: Settings) -> None:
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 2})
+    request = _make_request(forwarded_for="6.6.6.6, 198.51.100.7, 192.0.2.1")
+    assert client_ip(request, settings) == "198.51.100.7"
+
+
+def test_client_ip_falls_back_to_peer_when_header_shorter_than_hops(
+    limit_settings: Settings,
+) -> None:
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 2})
+    request = _make_request(forwarded_for="198.51.100.7")
+    assert client_ip(request, settings) == _PEER
+
+
+def test_client_ip_falls_back_to_peer_on_malformed_entry(limit_settings: Settings) -> None:
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 1})
+    request = _make_request(forwarded_for="6.6.6.6, not-an-ip")
+    assert client_ip(request, settings) == _PEER
+
+
+def test_client_ip_without_header_uses_peer(limit_settings: Settings) -> None:
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 1})
+    request = _make_request()
+    assert client_ip(request, settings) == _PEER
+
+
+def test_client_ip_accepts_ipv6_forwarded_entry(limit_settings: Settings) -> None:
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 1})
+    request = _make_request(forwarded_for="2001:db8::1")
+    assert client_ip(request, settings) == "2001:db8::1"
+
+
+def test_client_ip_unknown_when_no_peer(limit_settings: Settings) -> None:
+    request = _make_request(client_host=None)
+    assert client_ip(request, limit_settings) == "unknown"
+
+
+def test_spoofed_xff_does_not_bypass_register_rate_limit(limit_client: TestClient) -> None:
+    """With zero trusted hops (default), unique spoofed XFF values share one bucket."""
+    for index in range(10):
+        response = limit_client.post(
+            "/auth/register",
+            json={
+                "email": f"spoof-{index}@example.com",
+                "password": "secure-password-1",
+                "organization_name": f"Spoof Org {index}",
+            },
+            headers={"X-Forwarded-For": f"6.6.6.{index}"},
+        )
+        assert response.status_code == 201, response.text
+
+    blocked = limit_client.post(
+        "/auth/register",
+        json={
+            "email": "spoof-overflow@example.com",
+            "password": "secure-password-1",
+            "organization_name": "Spoof Org overflow",
+        },
+        headers={"X-Forwarded-For": "6.6.6.255"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "rate_limit_exceeded"
+
+
+def test_trusted_proxy_hop_separates_clients_by_forwarded_ip(limit_settings: Settings) -> None:
+    """With one trusted hop, distinct proxy-appended client IPs get distinct buckets."""
+    settings = limit_settings.model_copy(update={"trusted_proxy_hops": 1})
+    with _client_for(settings) as client:
+        for index in range(11):
+            response = client.post(
+                "/auth/register",
+                json={
+                    "email": f"proxied-{index}@example.com",
+                    "password": "secure-password-1",
+                    "organization_name": f"Proxied Org {index}",
+                },
+                headers={"X-Forwarded-For": f"198.51.100.{index}"},
+            )
+            assert response.status_code == 201, response.text

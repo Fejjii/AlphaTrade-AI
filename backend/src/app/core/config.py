@@ -85,6 +85,12 @@ class Settings(BaseSettings):
         NoDecode,
     ] = Field(default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"])
     request_id_header: str = "X-Request-ID"
+    # Number of reverse proxies in front of the app whose appended
+    # X-Forwarded-For entries are trusted (AT-018). 0 ignores the header
+    # entirely, so a client can never choose its own IP identity. Render
+    # deployments sit behind exactly one proxy and must set this to 1
+    # (enforced in deployment_safety for staging/production).
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=10)
 
     # --- Trading safety ---
     execution_mode: ExecutionMode = ExecutionMode.PAPER

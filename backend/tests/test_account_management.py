@@ -179,6 +179,8 @@ def test_must_verify_email_true_for_staging_environment() -> None:
         auth_refresh_cookie_enabled=True,
         auth_cookie_secure=True,
         rate_limit_use_redis=True,
+        rate_limit_allow_in_memory_fallback=False,
+        trusted_proxy_hops=1,
     )
     assert settings.must_verify_email is True
 

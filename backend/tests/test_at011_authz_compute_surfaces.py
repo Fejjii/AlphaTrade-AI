@@ -17,7 +17,7 @@ from app.db.models import Membership
 from app.db.session import get_session
 from app.main import create_app
 from app.schemas.common import MembershipRole
-from app.security.rate_limit import reset_rate_limiter
+from app.security.rate_limit import get_rate_limiter, reset_rate_limiter
 
 _STAGING_BASE = {
     "environment": "staging",
@@ -34,6 +34,8 @@ _STAGING_BASE = {
     "execution_mode": "paper",
     "provider_mode": "fallback",
     "rate_limit_use_redis": True,
+    "rate_limit_allow_in_memory_fallback": False,
+    "trusted_proxy_hops": 1,
     "debug": False,
 }
 
@@ -313,6 +315,10 @@ def test_openapi_docs_available_in_local_environment() -> None:
 
 def test_openapi_docs_disabled_outside_local_environment() -> None:
     settings = Settings(**_STAGING_BASE)
+    # AT-018: staging startup hard-requires reachable Redis for rate limiting.
+    # Pre-seed the process-wide limiter with a non-Redis instance so lifespan
+    # warmup does not attempt a real connection in this offline test.
+    get_rate_limiter(settings.model_copy(update={"rate_limit_use_redis": False}))
     app = create_app(settings=settings)
     with TestClient(app) as client:
         docs = client.get("/docs")

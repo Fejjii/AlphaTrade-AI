@@ -59,10 +59,16 @@ services:
         value: true
       - key: ACCESS_TOKEN_DENYLIST_USE_REDIS
         value: true
+      - key: ACCESS_TOKEN_DENYLIST_FAIL_CLOSED
+        value: true
       - key: RATE_LIMIT_USE_REDIS
         value: true
+      # AT-018: Redis is required outside local; no in-memory fallback.
       - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
-        value: true
+        value: false
+      # AT-018: exactly one trusted reverse proxy (Render) in front of the app.
+      - key: TRUSTED_PROXY_HOPS
+        value: 1
       - key: REQUIRE_EMAIL_VERIFIED
         value: false
       - key: DEMO_SEED_ENABLED
@@ -115,8 +121,12 @@ services:
         value: true
       - key: RATE_LIMIT_USE_REDIS
         value: true
+      # AT-018: Redis is required outside local; no in-memory fallback.
       - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
-        value: true
+        value: false
+      # AT-018: settings invariant; the worker serves no HTTP but shares Settings.
+      - key: TRUSTED_PROXY_HOPS
+        value: 1
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL

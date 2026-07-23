@@ -107,6 +107,24 @@ def validate_deployment_settings(settings: Settings) -> None:
 
     if not settings.rate_limit_use_redis:
         errors.append("rate_limit_use_redis must be true in staging/production")
+    if settings.rate_limit_allow_in_memory_fallback:
+        errors.append(
+            "rate_limit_allow_in_memory_fallback must be false in staging/production "
+            "(AT-018: rate limiting requires shared Redis state)"
+        )
+
+    if not settings.access_token_denylist_enabled:
+        errors.append("access_token_denylist_enabled must be true in staging/production")
+    if not settings.access_token_denylist_use_redis:
+        errors.append("access_token_denylist_use_redis must be true in staging/production")
+    if not settings.access_token_denylist_fail_closed:
+        errors.append("access_token_denylist_fail_closed must be true in staging/production")
+
+    if settings.trusted_proxy_hops < 1:
+        errors.append(
+            "trusted_proxy_hops must be >= 1 in staging/production (AT-018: requests "
+            "arrive via a trusted reverse proxy; 0 would rate-limit all clients as one)"
+        )
 
     if settings.environment is Environment.PRODUCTION and settings.debug:
         errors.append("debug must be false in production")
@@ -131,6 +149,10 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "auth_cookie_secure": _cookie_secure_resolved(settings),
         "auth_cookie_samesite": settings.auth_cookie_samesite,
         "rate_limit_use_redis": settings.rate_limit_use_redis,
+        "rate_limit_allow_in_memory_fallback": settings.rate_limit_allow_in_memory_fallback,
+        "access_token_denylist_enabled": settings.access_token_denylist_enabled,
+        "access_token_denylist_fail_closed": settings.access_token_denylist_fail_closed,
+        "trusted_proxy_hops": settings.trusted_proxy_hops,
         "cors_origin_count": len(settings.cors_origins),
         "log_json": settings.log_json,
         "debug": settings.debug,
