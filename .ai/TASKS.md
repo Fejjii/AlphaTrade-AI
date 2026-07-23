@@ -152,10 +152,10 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completed: 2026-07-23 — merged to main; post-merge staging validation recommended separately.
 - Follow-up (usage metering on replay): **DONE** — merged via PR #8 → `main` @ `5bac87e`
   (`PaperOrderPlacementResult.created_new` gates route usage; sequential replay does not
-  double-count). Concurrent first-writer unique-conflict recovery remains **AT-028** (TODO).
+  double-count). Concurrent first-writer unique-conflict recovery: **DONE** via AT-028.
 
 ### AT-028 — Server-side concurrent paper-order idempotency convergence (Postgres)
-- Priority: P1 · Status: TODO · Dependencies: AT-016 · Risk: Medium
+- Priority: P1 · Status: DONE · Dependencies: AT-016 · Risk: Medium
 - Safety classification: Paper accounting / concurrency
 - Goal: On concurrent identical `idempotency_key` first-writers, recover from unique
   conflicts with a bounded savepoint/unique-conflict path so the losing request converges
@@ -165,8 +165,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `PAPER_ORDER_CREATED`, one `paper_execution` usage; no service-level commits;
   AT-ADR-008 UoW preserved; paper-only posture unchanged.
 - Recommended model: Composer 2.5 · Grok 4.5 (transaction review)
-- Notes: Current contract documents unique-constraint + client-retry; see
-  `test_concurrent_identical_requests_remain_safe`.
+- Completed: 2026-07-23 — merged via PR #9 → `main` @ `1225b49` (feature commit `ee573c3`);
+  CI run 30020394617 green (1173 passed, 1 skipped; PostgreSQL 16 concurrency tests pass).
 
 ### AT-029 — Fix pre-existing mypy Depends typing on `/execution/paper` route
 - Priority: P3 · Status: TODO · Dependencies: none · Risk: Low
