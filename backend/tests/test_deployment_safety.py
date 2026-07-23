@@ -23,6 +23,8 @@ _STAGING_BASE = {
     "execution_mode": "paper",
     "provider_mode": "fallback",
     "rate_limit_use_redis": True,
+    "rate_limit_allow_in_memory_fallback": False,
+    "trusted_proxy_hops": 1,
     "debug": False,
 }
 
@@ -149,6 +151,57 @@ def test_deployment_posture_excludes_secrets() -> None:
 def test_staging_rejects_provider_mode_mock() -> None:
     with pytest.raises(ValidationError, match="provider_mode=mock"):
         Settings(**{**_STAGING_BASE, "provider_mode": "mock"})
+
+
+# --- AT-018: proxy trust + Redis-required rate limits + fail-closed denylist ---
+
+
+def test_staging_rejects_in_memory_rate_limit_fallback() -> None:
+    with pytest.raises(ValidationError, match="rate_limit_allow_in_memory_fallback"):
+        Settings(**{**_STAGING_BASE, "rate_limit_allow_in_memory_fallback": True})
+
+
+def test_production_rejects_in_memory_rate_limit_fallback() -> None:
+    with pytest.raises(ValidationError, match="rate_limit_allow_in_memory_fallback"):
+        Settings(**{**_PRODUCTION_BASE, "rate_limit_allow_in_memory_fallback": True})
+
+
+def test_staging_rejects_zero_trusted_proxy_hops() -> None:
+    with pytest.raises(ValidationError, match="trusted_proxy_hops"):
+        Settings(**{**_STAGING_BASE, "trusted_proxy_hops": 0})
+
+
+def test_staging_rejects_denylist_disabled() -> None:
+    with pytest.raises(ValidationError, match="access_token_denylist_enabled"):
+        Settings(**{**_STAGING_BASE, "access_token_denylist_enabled": False})
+
+
+def test_staging_rejects_denylist_without_redis() -> None:
+    with pytest.raises(ValidationError, match="access_token_denylist_use_redis"):
+        Settings(**{**_STAGING_BASE, "access_token_denylist_use_redis": False})
+
+
+def test_staging_rejects_denylist_fail_open() -> None:
+    with pytest.raises(ValidationError, match="access_token_denylist_fail_closed"):
+        Settings(**{**_STAGING_BASE, "access_token_denylist_fail_closed": False})
+
+
+def test_local_allows_memory_fallback_and_zero_proxy_hops() -> None:
+    settings = Settings(
+        environment="local",
+        rate_limit_allow_in_memory_fallback=True,
+        trusted_proxy_hops=0,
+    )
+    validate_deployment_settings(settings)  # no raise
+
+
+def test_deployment_posture_reports_at018_hardening() -> None:
+    settings = Settings(**_STAGING_BASE)
+    posture = deployment_posture(settings)
+    assert posture["rate_limit_allow_in_memory_fallback"] is False
+    assert posture["access_token_denylist_enabled"] is True
+    assert posture["access_token_denylist_fail_closed"] is True
+    assert posture["trusted_proxy_hops"] == 1
 
 
 def test_validate_deployment_skips_local() -> None:

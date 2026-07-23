@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import time
 import uuid
 from collections import defaultdict, deque
@@ -142,13 +143,52 @@ def get_rate_limiter(settings: Settings | None = None) -> RateLimiter:
     return _limiter
 
 
-def client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+def _peer_ip(request: Request) -> str:
     if request.client and request.client.host:
         return request.client.host
     return "unknown"
+
+
+def _request_settings(request: Request) -> Settings:
+    app = request.scope.get("app")
+    settings = getattr(getattr(app, "state", None), "settings", None)
+    if isinstance(settings, Settings):
+        return settings
+    from app.core.config import get_settings
+
+    return get_settings()
+
+
+def client_ip(request: Request, settings: Settings | None = None) -> str:
+    """Resolve the client IP with explicit proxy trust (AT-018).
+
+    Only the rightmost ``trusted_proxy_hops`` entries of ``X-Forwarded-For``
+    are trusted, because those were appended by our own reverse proxies. With
+    zero trusted hops the header is ignored entirely, so a client can never
+    spoof its rate-limit identity. Missing, short, or malformed header data
+    conservatively falls back to the socket peer address.
+    """
+    if settings is None:
+        settings = _request_settings(request)
+    peer = _peer_ip(request)
+    hops = settings.trusted_proxy_hops
+    if hops <= 0:
+        return peer
+    entries = [
+        entry.strip()
+        for entry in request.headers.get("X-Forwarded-For", "").split(",")
+        if entry.strip()
+    ]
+    if len(entries) < hops:
+        # Fewer entries than trusted proxies: direct hit or misconfiguration.
+        return peer
+    candidate = entries[-hops]
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        logger.warning("client_ip_invalid_forwarded_entry", peer=peer)
+        return peer
+    return candidate
 
 
 def _audit_rate_limit_violation(

@@ -162,3 +162,43 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   no trading-mode change.
 - **Consequences:** Branch `feat/at-015-provider-mode-quotas`; stop at `REVIEW_REQUIRED`.
 - **Validation:** `tests/test_at015_provider_mode_quotas.py` + provider/embedding/AT-013 regressions.
+
+## AT-ADR-009 — Proxy trust, Redis-required rate limits, fail-closed denylist (AT-018)
+- **Date:** 2026-07-23
+- **Status:** Accepted (implementation pending review/commit authorization)
+- **Context:** AT010-H8 / RR-12 — `client_ip()` trusted the leftmost (client-supplied)
+  `X-Forwarded-For` entry and uvicorn ran with `--forwarded-allow-ips="*"`, so rate-limit
+  identity was spoofable. Staging allowed silent in-memory rate-limit fallback, and the
+  token denylist could silently fall back to a process-local store (no cross-instance
+  revocation).
+- **Decision:**
+  1. **Rightmost-hops proxy trust.** New `TRUSTED_PROXY_HOPS` setting (default 0). Only the
+     rightmost N `X-Forwarded-For` entries — appended by our own reverse proxies — are
+     trusted; entry `[-N]` is the client. 0 ignores the header entirely. Malformed or
+     too-short header data falls back to the socket peer address. Staging/production
+     require `>= 1` (Render sits behind exactly one proxy); local defaults to 0.
+  2. **Uvicorn no longer trusts `*`.** `--forwarded-allow-ips` defaults to loopback and is
+     overridable via `FORWARDED_ALLOW_IPS`; client-IP resolution happens in-app.
+  3. **Redis-required rate limits outside local.** Staging/production reject
+     `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true` at startup. Runtime Redis errors without
+     fallback keep failing closed (HTTP 429), and startup fails fast when Redis is
+     unreachable.
+  4. **Fail-closed denylist.** Staging/production require the denylist enabled, on Redis,
+     and `ACCESS_TOKEN_DENYLIST_FAIL_CLOSED=true`. Outside local, denylist construction
+     failure raises (no silent in-memory substitute), revocation writes that cannot be
+     persisted raise `TokenDenylistUnavailableError` (HTTP 503), and revocation checks on
+     Redis error continue to treat tokens as revoked. Local keeps developer-friendly
+     fallback.
+- **Alternatives considered:** CIDR allowlist for proxies (rejected: Render proxy IPs are
+  not stable/published; hop count is deterministic); trusting uvicorn `--proxy-headers`
+  resolution (rejected: with `*` it takes the spoofable leftmost entry); swallowing
+  denylist write failures (rejected: a revoked token would silently stay valid).
+- **Safety impact:** Rate-limit identity is no longer client-controlled; revocation is
+  enforced or explicitly unavailable. No trading-mode change; paper posture preserved.
+- **Consequences:** Branch `feat/at-018-proxy-trust-redis`; `render.yaml` staging sets
+  `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=false`, `TRUSTED_PROXY_HOPS=1`,
+  `ACCESS_TOKEN_DENYLIST_FAIL_CLOSED=true` (staging Redis must be reachable at deploy);
+  stop at `REVIEW_REQUIRED`.
+- **Validation:** `tests/test_rate_limit.py` (proxy trust + spoof regression),
+  `tests/test_token_denylist.py`, `tests/test_deployment_safety.py` (AT-018 invariants),
+  full backend suite + scoped strict mypy + ruff.

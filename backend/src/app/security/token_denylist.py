@@ -1,4 +1,4 @@
-"""Optional access-token denylist (Redis with in-memory fallback)."""
+"""Optional access-token denylist (Redis; in-memory fallback only in local)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,17 @@ from typing import Protocol
 
 import structlog
 
-from app.core.config import Settings
+from app.core.config import Environment, Settings
+from app.core.errors import AppError
 
 logger = structlog.get_logger(__name__)
+
+
+class TokenDenylistUnavailableError(AppError):
+    """Raised when a revocation write cannot be persisted in fail-closed mode."""
+
+    status_code = 503
+    code = "token_denylist_unavailable"
 
 
 class AccessTokenDenylist(Protocol):
@@ -55,11 +63,26 @@ class _RedisDenylist:
         )
         self._prefix = "auth:deny:"
 
+    def _fail_closed_active(self) -> bool:
+        return (
+            self._settings.access_token_denylist_fail_closed
+            and self._settings.environment is not Environment.LOCAL
+        )
+
     def add(self, jti: str, *, ttl_seconds: int) -> None:
         try:
             self._client.setex(f"{self._prefix}{jti}", max(ttl_seconds, 1), "1")
         except Exception as exc:
-            logger.warning("access_token_denylist_add_failed", error_type=type(exc).__name__)
+            logger.error(
+                "access_token_denylist_add_failed",
+                error_type=type(exc).__name__,
+                fail_closed=self._fail_closed_active(),
+            )
+            if self._fail_closed_active():
+                # Silently succeeding would leave the revoked token usable.
+                raise TokenDenylistUnavailableError(
+                    "Token revocation is temporarily unavailable. Please retry."
+                ) from exc
 
     def is_denied(self, jti: str) -> bool:
         try:
@@ -70,12 +93,7 @@ class _RedisDenylist:
                 error_type=type(exc).__name__,
                 fail_closed=self._settings.access_token_denylist_fail_closed,
             )
-            if self._settings.access_token_denylist_fail_closed:
-                from app.core.config import Environment
-
-                if self._settings.environment is not Environment.LOCAL:
-                    return True
-            return False
+            return self._fail_closed_active()
 
 
 class NoOpDenylist:
@@ -104,7 +122,14 @@ def get_access_token_denylist(settings: Settings) -> AccessTokenDenylist:
                 logger.info("access_token_denylist_backend", backend="redis")
                 return _denylist
             except Exception as exc:
-                if not settings.rate_limit_allow_in_memory_fallback:
+                # Fail closed outside local: a process-local denylist cannot
+                # provide cross-instance revocation, so it is never an
+                # acceptable substitute in staging/production (AT-018).
+                fallback_allowed = (
+                    settings.environment is Environment.LOCAL
+                    and settings.rate_limit_allow_in_memory_fallback
+                )
+                if not fallback_allowed:
                     raise
                 logger.warning(
                     "access_token_denylist_redis_unavailable",

@@ -60,6 +60,8 @@ _STAGING_BASE = {
     "execution_mode": "paper",
     "provider_mode": "fallback",
     "rate_limit_use_redis": True,
+    "rate_limit_allow_in_memory_fallback": False,
+    "trusted_proxy_hops": 1,
     "debug": False,
     "log_json": False,
 }

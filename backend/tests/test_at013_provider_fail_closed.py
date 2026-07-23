@@ -63,6 +63,8 @@ _STAGING_SAFE: dict[str, Any] = {
     "execution_mode": "paper",
     "exchange_mode": "paper_internal",
     "rate_limit_use_redis": True,
+    "rate_limit_allow_in_memory_fallback": False,
+    "trusted_proxy_hops": 1,
     "debug": False,
     "provider_mode": "fallback",
     "log_json": False,
