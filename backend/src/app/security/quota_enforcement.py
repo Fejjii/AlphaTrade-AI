@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
+from fastapi.params import Depends as DependsMarker
 
 from app.core.dependencies import QuotaServiceDep
 from app.core.errors import QuotaExceededError
@@ -14,7 +14,7 @@ from app.security.rbac import TraderDep
 from app.services.quota_service import QuotaCheckResult
 
 
-def require_quota(feature: str) -> Callable[..., QuotaCheckResult]:
+def require_quota(feature: str) -> DependsMarker:
     """Return a dependency that enforces organization quotas for ``feature``."""
 
     def _dependency(
@@ -38,7 +38,7 @@ def require_quota(feature: str) -> Callable[..., QuotaCheckResult]:
             request.state.quota_warning = result.message
         return result
 
-    return Depends(_dependency)
+    return DependsMarker(_dependency)
 
 
 QuotaCheckDep = Annotated[QuotaCheckResult, Depends]
