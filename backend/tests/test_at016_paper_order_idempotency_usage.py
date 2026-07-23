@@ -10,7 +10,6 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -409,17 +408,7 @@ def test_concurrent_identical_requests_remain_safe(
     idem_db: tuple[sessionmaker[Session], Settings],
     tmp_path: object,
 ) -> None:
-    """Concurrent first-writers may hit unique conflicts; client retry converges.
-
-    Current product contract (AT-016 follow-up):
-    - Unique constraint on ``orders.idempotency_key`` (and related daily-risk
-      uniqueness) can raise ``IntegrityError`` when multiple requests race past
-      the pre-insert idempotency lookup.
-    - Callers must retry; retry re-enters the lookup and returns
-      ``created_new=False`` without a second usage or creation audit.
-    - Server-side Postgres convergence (savepoint / unique-conflict recovery) is
-      deferred to AT-028 — not implemented here.
-    """
+    """Concurrent first-writers converge server-side without client retry (AT-028)."""
     from pathlib import Path
 
     _factory, settings = idem_db
@@ -470,49 +459,36 @@ def test_concurrent_identical_requests_remain_safe(
     )
     results: list[uuid.UUID] = []
     errors: list[BaseException] = []
-    conflict_retries = 0
     created_new_flags: list[bool] = []
     lock = threading.Lock()
-    # Align first attempts so unique-conflict races are exercised (not silent serial).
     start_barrier = threading.Barrier(4)
 
     def _route_place() -> None:
-        nonlocal conflict_retries
         start_barrier.wait(timeout=10)
-        for attempt in range(5):
-            try:
-                with factory() as session:
-                    svc = ExecutionService(session, settings, AuditService(session))
-                    usage = UsageService(session)
-                    placement = svc.place_paper_order(req)
-                    if placement.created_new:
-                        usage.record(
-                            UsageEventCreate(
-                                request_id=req.idempotency_key,
-                                organization_id=ORG_ID,
-                                user_id=USER_ID,
-                                feature="paper_execution",
-                                provider="paper-engine",
-                                input_tokens=0,
-                                output_tokens=0,
-                            )
+        try:
+            with factory() as session:
+                svc = ExecutionService(session, settings, AuditService(session))
+                usage = UsageService(session)
+                placement = svc.place_paper_order(req)
+                if placement.created_new:
+                    usage.record(
+                        UsageEventCreate(
+                            request_id=req.idempotency_key,
+                            organization_id=ORG_ID,
+                            user_id=USER_ID,
+                            feature="paper_execution",
+                            provider="paper-engine",
+                            input_tokens=0,
+                            output_tokens=0,
                         )
-                    session.commit()
-                    with lock:
-                        results.append(placement.order.id)
-                        created_new_flags.append(placement.created_new)
-                    return
-            except IntegrityError:
+                    )
+                session.commit()
                 with lock:
-                    conflict_retries += 1
-                if attempt == 4:
-                    with lock:
-                        errors.append(RuntimeError("exhausted retries after unique conflicts"))
-                continue
-            except BaseException as exc:
-                with lock:
-                    errors.append(exc)
-                return
+                    results.append(placement.order.id)
+                    created_new_flags.append(placement.created_new)
+        except BaseException as exc:
+            with lock:
+                errors.append(exc)
 
     threads = [threading.Thread(target=_route_place) for _ in range(4)]
     for thread in threads:
@@ -523,13 +499,8 @@ def test_concurrent_identical_requests_remain_safe(
     assert errors == [], errors
     assert len(results) == 4
     assert len(set(results)) == 1
-    # Exactly one winning first-write meters; losing writers retry into replay.
     assert created_new_flags.count(True) == 1
     assert created_new_flags.count(False) == 3
-    # Prove the unique-conflict + client-retry path was exercised (AT-028 deferred).
-    assert conflict_retries >= 1, (
-        "expected at least one unique-conflict retry under concurrent first-writers"
-    )
 
     with factory() as session:
         assert _order_count(session) == 1

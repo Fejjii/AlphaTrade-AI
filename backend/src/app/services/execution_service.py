@@ -13,10 +13,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import structlog
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.errors import NotFoundError, TradingPolicyError
+from app.core.errors import IdempotencyConvergenceError, NotFoundError, TradingPolicyError
 from app.db.models import ExchangeFill, ExchangeOrder, Order, Position, TradeProposal
 from app.providers.exchange.base import (
     ExchangeExecutionProvider,
@@ -51,6 +53,10 @@ from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOr
 from app.services.audit_service import AuditService
 from app.services.market_data_service import MarketDataService
 from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
+from app.services.paper_order_idempotency import (
+    is_order_idempotency_unique_violation,
+    wait_for_committed_order_by_idempotency_key,
+)
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
@@ -59,6 +65,13 @@ from app.services.risk_service import RiskService
 logger = structlog.get_logger(__name__)
 
 _EXCHANGE_DEMO_TAG = "paper_exchange_demo"
+
+
+def _session_engine(session: Session) -> Engine:
+    bind = session.get_bind()
+    if isinstance(bind, Engine):
+        return bind
+    return bind.engine
 
 
 class ExecutionService:
@@ -122,10 +135,7 @@ class ExecutionService:
 
         # Idempotent replay must short-circuit before fresh risk (open exposure already
         # includes the prior fill for this key). Concurrent first-writers with the same
-        # key can still race past this lookup and hit the unique constraint on
-        # ``orders.idempotency_key`` (or related daily-risk uniqueness). Current
-        # contract: surface IntegrityError; clients retry and converge via this
-        # lookup. Server-side Postgres convergence is tracked separately (AT-028).
+        # key recover inside a bounded nested savepoint (AT-028).
         existing = self._orders.get_by_idempotency_key(request.idempotency_key)
         if existing is not None:
             return PaperOrderPlacementResult(
@@ -182,7 +192,83 @@ class ExecutionService:
             )
             raise
 
-        # Persist fresh risk evidence on the proposal for auditability.
+        return self._create_or_converge_paper_order(
+            request=request,
+            proposal=proposal,
+            organization_id=organization_id,
+            user_id=user_id,
+            bound=bound,
+        )
+
+    def _create_or_converge_paper_order(
+        self,
+        *,
+        request: PaperOrderRequest,
+        proposal: TradeProposal,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        bound: BoundPaperPlacement,
+    ) -> PaperOrderPlacementResult:
+        """Persist a new paper order or converge after a concurrent idempotency conflict."""
+        mode_tag = _EXCHANGE_DEMO_TAG if self._demo_routing_enabled() else "paper"
+        row: Order | None = None
+        nested = self._session.begin_nested()
+        try:
+            row = self._persist_new_paper_order(
+                request=request,
+                proposal=proposal,
+                organization_id=organization_id,
+                user_id=user_id,
+                bound=bound,
+                mode_tag=mode_tag,
+            )
+            self._session.flush()
+        except IntegrityError as exc:
+            nested.rollback()
+            if not is_order_idempotency_unique_violation(exc):
+                raise
+            converged = wait_for_committed_order_by_idempotency_key(
+                _session_engine(self._session),
+                request.idempotency_key,
+            )
+            if converged is None:
+                self._session.rollback()
+                raise IdempotencyConvergenceError(
+                    "Concurrent paper order could not converge; retry the request.",
+                    details={
+                        "idempotency_key": request.idempotency_key,
+                        "reason": "idempotency_convergence_exhausted",
+                    },
+                ) from exc
+            # Loser must not commit partial winner writes or poisoned flush state.
+            self._session.rollback()
+            return PaperOrderPlacementResult(
+                order=self._to_schema(converged),
+                created_new=False,
+            )
+        else:
+            nested.commit()
+
+        assert row is not None
+        if mode_tag == _EXCHANGE_DEMO_TAG:
+            self._mirror_to_demo_venue(request=request, order=row, bound=bound)
+
+        return PaperOrderPlacementResult(
+            order=self._to_schema(row),
+            created_new=True,
+        )
+
+    def _persist_new_paper_order(
+        self,
+        *,
+        request: PaperOrderRequest,
+        proposal: TradeProposal,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        bound: BoundPaperPlacement,
+        mode_tag: str,
+    ) -> Order:
+        """Winner-only writes isolated inside the nested savepoint (AT-028)."""
         proposal.risk_result = bound.risk_result.model_dump(mode="json")
         self._proposals.add(proposal)
 
@@ -204,14 +290,12 @@ class ExecutionService:
             exchange_order_id=f"paper-{uuid.uuid4().hex[:12]}",
         )
         self._orders.add(row)
+        self._session.flush()
         self._create_or_update_position(proposal=proposal, order=row, bound=bound)
-        # Persist trade_count / open exposure before any subsequent place_paper_order.
         post_fill = self._daily_risk.record_after_paper_fill(
             organization_id=organization_id,
             user_id=user_id,
         )
-
-        mode_tag = _EXCHANGE_DEMO_TAG if self._demo_routing_enabled() else "paper"
         self._audit.record(
             AuditRecordCreate(
                 request_id=request.idempotency_key,
@@ -238,14 +322,7 @@ class ExecutionService:
                 },
             )
         )
-
-        if mode_tag == _EXCHANGE_DEMO_TAG:
-            self._mirror_to_demo_venue(request=request, order=row, bound=bound)
-
-        return PaperOrderPlacementResult(
-            order=self._to_schema(row),
-            created_new=True,
-        )
+        return row
 
     def get_order(self, order_id: uuid.UUID) -> PaperOrder:
         row = self._orders.get(order_id)
