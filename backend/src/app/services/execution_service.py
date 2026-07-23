@@ -47,7 +47,7 @@ from app.schemas.common import (
     PositionStatus,
     TradeDirection,
 )
-from app.schemas.execution import PaperOrder, PaperOrderRequest
+from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOrderRequest
 from app.services.audit_service import AuditService
 from app.services.market_data_service import MarketDataService
 from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
@@ -94,7 +94,7 @@ class ExecutionService:
             kill_switch=self._kill_switch,
         )
 
-    def place_paper_order(self, request: PaperOrderRequest) -> PaperOrder:
+    def place_paper_order(self, request: PaperOrderRequest) -> PaperOrderPlacementResult:
         if self._settings.real_trading_enabled:
             raise TradingPolicyError(
                 "Real trading is disabled in this environment.",
@@ -121,10 +121,17 @@ class ExecutionService:
             raise TradingPolicyError("Approval is required before paper execution.")
 
         # Idempotent replay must short-circuit before fresh risk (open exposure already
-        # includes the prior fill for this key).
+        # includes the prior fill for this key). Concurrent first-writers with the same
+        # key can still race past this lookup and hit the unique constraint on
+        # ``orders.idempotency_key`` (or related daily-risk uniqueness). Current
+        # contract: surface IntegrityError; clients retry and converge via this
+        # lookup. Server-side Postgres convergence is tracked separately (AT-028).
         existing = self._orders.get_by_idempotency_key(request.idempotency_key)
         if existing is not None:
-            return self._to_schema(existing)
+            return PaperOrderPlacementResult(
+                order=self._to_schema(existing),
+                created_new=False,
+            )
 
         organization_id = proposal.organization_id
         user_id = proposal.user_id
@@ -235,7 +242,10 @@ class ExecutionService:
         if mode_tag == _EXCHANGE_DEMO_TAG:
             self._mirror_to_demo_venue(request=request, order=row, bound=bound)
 
-        return self._to_schema(row)
+        return PaperOrderPlacementResult(
+            order=self._to_schema(row),
+            created_new=True,
+        )
 
     def get_order(self, order_id: uuid.UUID) -> PaperOrder:
         row = self._orders.get(order_id)

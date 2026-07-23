@@ -396,8 +396,8 @@ def test_paper_execution_success_and_idempotency(
             size=Decimal("0.005"),
             idempotency_key="idem-key-001",
         )
-        order1 = execution.place_paper_order(request)
-        order2 = execution.place_paper_order(request)
+        order1 = execution.place_paper_order(request).order
+        order2 = execution.place_paper_order(request).order
         assert order1.id == order2.id
         session.commit()
 
@@ -735,7 +735,7 @@ def test_demo_execution_mirrors_paper_order(
                 size=Decimal("0.005"),
                 idempotency_key="demo-idem-001",
             )
-        )
+        ).order
         session.commit()
 
         assert len(fake.calls) == 1
@@ -783,7 +783,7 @@ def test_demo_execution_failure_does_not_break_paper_order(
                 size=Decimal("0.005"),
                 idempotency_key="demo-idem-002",
             )
-        )
+        ).order
         session.commit()
 
         # Internal paper order still succeeds (source of truth).
@@ -946,8 +946,8 @@ def test_demo_mirror_idempotency_one_exchange_order(
             size=Decimal("0.005"),
             idempotency_key="demo-idem-dup-001",
         )
-        order1 = execution.place_paper_order(request)
-        order2 = execution.place_paper_order(request)
+        order1 = execution.place_paper_order(request).order
+        order2 = execution.place_paper_order(request).order
         session.commit()
 
         assert order1.id == order2.id

@@ -150,6 +150,32 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Recommended model: Grok 4.5 (architecture/safety) · Composer 2.5 (tests/PR)
 - ADR: AT-ADR-008
 - Completed: 2026-07-23 — merged to main; post-merge staging validation recommended separately.
+- Follow-up (usage metering on replay): branch `fix/at-016-idempotent-paper-usage` —
+  `PaperOrderPlacementResult.created_new` gates route usage; sequential replay does not
+  double-count. Concurrent first-writer unique-conflict recovery deferred to AT-028.
+
+### AT-028 — Server-side concurrent paper-order idempotency convergence (Postgres)
+- Priority: P1 · Status: TODO · Dependencies: AT-016 · Risk: Medium
+- Safety classification: Paper accounting / concurrency
+- Goal: On concurrent identical `idempotency_key` first-writers, recover from unique
+  conflicts with a bounded savepoint/unique-conflict path so the losing request converges
+  to the existing order (`created_new=False`) without client retry, and never double-meters
+  usage or creation audits. Target Postgres; keep SQLite test coverage honest.
+- Validation: Concurrent identical requests (no client retry) → one order, one
+  `PAPER_ORDER_CREATED`, one `paper_execution` usage; no service-level commits;
+  AT-ADR-008 UoW preserved; paper-only posture unchanged.
+- Recommended model: Composer 2.5 · Grok 4.5 (transaction review)
+- Notes: Current contract documents unique-constraint + client-retry; see
+  `test_concurrent_identical_requests_remain_safe`.
+
+### AT-029 — Fix pre-existing mypy Depends typing on `/execution/paper` route
+- Priority: P3 · Status: TODO · Dependencies: none · Risk: Low
+- Goal: `backend/src/app/api/routes/execution.py` reports a pre-existing strict-mypy
+  `list-item` error: `require_quota(...)` typed as `Callable[..., QuotaCheckResult]`
+  where FastAPI `dependencies=` expects `Depends`. Do not suppress or broaden typing
+  rules; fix the dependency typing helper / annotation properly.
+- Validation: `uv run mypy --strict src/app/api/routes/execution.py` clean.
+- Recommended model: Composer 2.5
 
 ### AT-017 — Frontend auth boundary + security headers
 - Priority: P1 · Status: TODO · Dependencies: AT-011 · Risk: Medium

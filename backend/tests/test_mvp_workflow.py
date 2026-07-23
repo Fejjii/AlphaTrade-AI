@@ -104,7 +104,7 @@ def test_full_proposal_approval_paper_flow(
                 size=Decimal("0.005"),
                 idempotency_key="mvp-flow-001",
             )
-        )
+        ).order
         session.commit()
         assert order.mode.value == "paper"
 

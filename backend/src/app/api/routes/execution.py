@@ -49,24 +49,26 @@ async def place_paper_order(
 ) -> PaperOrder:
     proposal = proposal_service.get(body.proposal_id)
     ensure_same_organization(proposal.organization_id, tenant)
-    result = execution_service.place_paper_order(body)
+    placement = execution_service.place_paper_order(body)
     from app.schemas.usage import UsageEventCreate
 
     # One authoritative commit: business + audit (flushed in service) + usage.
-    usage_service.record(
-        UsageEventCreate(
-            request_id=str(body.idempotency_key),
-            organization_id=tenant.organization_id,
-            user_id=tenant.user_id,
-            feature="paper_execution",
-            provider="paper-engine",
-            input_tokens=0,
-            output_tokens=0,
-            provider_metadata={"cost_source": "unavailable"},
+    # Idempotent replay short-circuits in the service — skip metered side effects.
+    if placement.created_new:
+        usage_service.record(
+            UsageEventCreate(
+                request_id=str(body.idempotency_key),
+                organization_id=tenant.organization_id,
+                user_id=tenant.user_id,
+                feature="paper_execution",
+                provider="paper-engine",
+                input_tokens=0,
+                output_tokens=0,
+                provider_metadata={"cost_source": "unavailable"},
+            )
         )
-    )
     session.commit()
-    return result
+    return placement.order
 
 
 @router.get("/orders", response_model=PaginatedPaperOrders, summary="List paper orders")
