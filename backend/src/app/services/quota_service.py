@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import structlog
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import OrganizationQuota as OrganizationQuotaModel
@@ -24,6 +25,7 @@ from app.services.audit_service import AuditService
 from app.services.usage_service import day_start, month_start
 
 logger = structlog.get_logger(__name__)
+_ORGANIZATION_QUOTA_CONSTRAINT = "uq_organization_quotas_organization_id"
 
 FEATURE_LIMIT_FIELDS: dict[str, str] = {
     "agent_chat": "limit_agent_chat",
@@ -44,6 +46,23 @@ class QuotaCheckResult:
     warnings: tuple[str, ...] = ()
 
 
+def _is_organization_quota_unique_violation(exc: IntegrityError) -> bool:
+    """Return whether ``exc`` targets the authoritative per-organization quota key."""
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return False
+    diag = getattr(orig, "diag", None)
+    if diag is not None:
+        constraint = getattr(diag, "constraint_name", None)
+        if constraint == _ORGANIZATION_QUOTA_CONSTRAINT:
+            return True
+    message = str(orig).lower()
+    return (
+        _ORGANIZATION_QUOTA_CONSTRAINT in message
+        or "organization_quotas.organization_id" in message
+    )
+
+
 class QuotaService:
     """Manage organization quotas and enforce limits."""
 
@@ -60,10 +79,29 @@ class QuotaService:
 
     def get_or_create_quota(self, organization_id: uuid.UUID) -> OrganizationQuotaConfig:
         row = self._quotas.get_by_organization(organization_id)
-        if row is None:
-            row = OrganizationQuotaModel(organization_id=organization_id)
+        if row is not None:
+            return _to_config(row)
+
+        row = OrganizationQuotaModel(organization_id=organization_id)
+        if self._session.get_bind().dialect.name == "sqlite":
+            # SQLite may commit when releasing a SAVEPOINT that performed the
+            # transaction's first write. Preserve the existing flush-only UoW;
+            # PostgreSQL is the authoritative concurrent deployment target.
             self._quotas.add(row)
-            self._session.flush()
+            return _to_config(row)
+
+        nested = self._session.begin_nested()
+        try:
+            self._quotas.add(row)
+        except IntegrityError as exc:
+            nested.rollback()
+            if not _is_organization_quota_unique_violation(exc):
+                raise
+            row = self._quotas.get_by_organization(organization_id)
+            if row is None:
+                raise
+        else:
+            nested.commit()
         return _to_config(row)
 
     def update_quota(

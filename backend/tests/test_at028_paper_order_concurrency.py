@@ -11,26 +11,37 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from app.core.config import Settings
+import app.core.dependencies as dependencies
+from app.core.config import ExchangeMode, Settings
 from app.core.errors import IdempotencyConvergenceError
 from app.db.base import Base
 from app.db.models import (
     AuditLog,
     DailyRiskState,
+    ExchangeOrder,
     Membership,
     Order,
     Organization,
+    OrganizationQuota,
     Position,
     TradeProposal,
     UsageEvent,
     User,
     UserRiskSettings,
 )
+from app.db.session import get_session
+from app.main import create_app
+from app.providers.exchange.base import (
+    ExchangeOrderRequest,
+    ExchangeOrderResult,
+)
+from app.repositories.quota import QuotaRepository
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.common import (
     ApprovalAction,
@@ -44,10 +55,12 @@ from app.schemas.execution import PaperOrderRequest
 from app.schemas.proposal import ExitCriteria, TakeProfitLevel, TradeProposalCreate
 from app.schemas.risk import RiskCheckResult
 from app.schemas.usage import UsageEventCreate
+from app.security.passwords import hash_password
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.execution_service import ExecutionService
 from app.services.proposal_service import ProposalService
+from app.services.quota_service import QuotaService
 from app.services.usage_service import UsageService
 
 ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000000028")
@@ -58,6 +71,42 @@ POSTGRES_URL = os.environ.get(
     "AT028_POSTGRES_URL",
     "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test",
 )
+_HTTP_PASSWORD = "AT028-Test-Password-123!"
+
+
+class _TrackingSession(Session):
+    """Count route-owned commits after test setup completes."""
+
+    commit_count = 0
+    commit_lock = threading.Lock()
+
+    def commit(self) -> None:
+        with self.commit_lock:
+            _TrackingSession.commit_count += 1
+        super().commit()
+
+
+class _FakeDemoExecution:
+    """Thread-safe demo provider proving winner-only mirror attempts."""
+
+    name = "at028-fake-demo"
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.calls: list[str | None] = []
+
+    def place_order(self, request: ExchangeOrderRequest) -> ExchangeOrderResult:
+        with self._lock:
+            self.calls.append(request.client_order_id)
+        return ExchangeOrderResult(
+            exchange_order_id="at028-demo-order",
+            client_order_id=request.client_order_id,
+            status="submitted",
+            filled_size=Decimal("0"),
+            average_price=None,
+            position_mode="long_short_mode",
+            position_side="long",
+        )
 
 
 def _postgres_available() -> bool:
@@ -296,6 +345,66 @@ def postgres_db() -> Iterator[tuple[sessionmaker[Session], Settings]]:
     engine.dispose()
 
 
+@pytest.fixture
+def postgres_http_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[
+    tuple[
+        sessionmaker[_TrackingSession],
+        Settings,
+        TestClient,
+        _FakeDemoExecution,
+    ]
+]:
+    engine = create_engine(POSTGRES_URL, poolclass=NullPool)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(
+        bind=engine,
+        class_=_TrackingSession,
+        expire_on_commit=False,
+    )
+    settings = _settings(database_url=POSTGRES_URL).model_copy(
+        update={"exchange_mode": ExchangeMode.PAPER_EXCHANGE_DEMO}
+    )
+    with factory() as session:
+        _seed_org_user(session)
+        user = session.get(User, USER_ID)
+        assert user is not None
+        user.hashed_password = hash_password(_HTTP_PASSWORD, settings)
+        session.commit()
+
+    fake_demo = _FakeDemoExecution()
+    monkeypatch.setattr(
+        dependencies,
+        "resolve_exchange_execution_provider",
+        lambda _settings: fake_demo,
+    )
+    monkeypatch.setattr(
+        "app.main.run_exchange_demo_startup_check",
+        lambda _settings, _registry: None,
+    )
+
+    def _override_session() -> Iterator[_TrackingSession]:
+        with factory() as session:
+            yield session
+
+    app = create_app(settings=settings)
+    app.dependency_overrides[get_session] = _override_session
+    with TestClient(app, raise_server_exceptions=False) as client:
+        login = client.post(
+            "/auth/login",
+            json={"email": "at028@test.example", "password": _HTTP_PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        client.headers.update({"Authorization": f"Bearer {login.json()['tokens']['access_token']}"})
+        _TrackingSession.commit_count = 0
+        yield factory, settings, client, fake_demo
+
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
 def _run_concurrent_placements(
     factory: sessionmaker[Session],
     settings: Settings,
@@ -326,6 +435,77 @@ def _run_concurrent_placements(
     for thread in threads:
         thread.join()
     return results, created_flags, errors
+
+
+def _run_concurrent_http_placements(
+    client: TestClient,
+    payload: dict[str, object],
+    *,
+    workers: int,
+) -> list[tuple[int, dict[str, object]]]:
+    results: list[tuple[int, dict[str, object]]] = []
+    lock = threading.Lock()
+    start_barrier = threading.Barrier(workers)
+
+    def _worker() -> None:
+        start_barrier.wait(timeout=10)
+        response = client.post("/execution/paper", json=payload)
+        with lock:
+            results.append((response.status_code, response.json()))
+
+    threads = [threading.Thread(target=_worker) for _ in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert all(not thread.is_alive() for thread in threads)
+    return results
+
+
+def _http_payload(
+    proposal_id: uuid.UUID,
+    approval_id: uuid.UUID,
+    *,
+    key: str,
+) -> dict[str, object]:
+    return {
+        "proposal_id": str(proposal_id),
+        "approval_id": str(approval_id),
+        "symbol": "BTCUSDT",
+        "side": "buy",
+        "type": "market",
+        "size": "0.005",
+        "reduce_only": False,
+        "idempotency_key": key,
+    }
+
+
+def _assert_singleton_http_effects(
+    factory: sessionmaker[_TrackingSession],
+    *,
+    request_id: str,
+) -> None:
+    with factory() as session:
+        assert _order_count(session) == 1
+        assert _usage_count(session) == 1
+        assert _creation_audit_count(session, request_id=request_id) == 1
+        assert _position_count(session) == 1
+        assert _daily_risk_trade_count(session) == 1
+        assert int(session.scalar(select(func.count()).select_from(ExchangeOrder)) or 0) == 1
+        assert (
+            int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(AuditLog)
+                    .where(
+                        AuditLog.request_id == request_id,
+                        AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
+                    )
+                )
+                or 0
+            )
+            == 1
+        )
 
 
 def test_two_concurrent_identical_requests_converge_sqlite(
@@ -394,6 +574,222 @@ def test_five_concurrent_identical_requests_converge_postgres(
         assert _order_count(session) == 1
         assert _usage_count(session) == 1
         assert _creation_audit_count(session, request_id=req.idempotency_key) == 1
+
+
+@requires_postgres
+def test_two_concurrent_http_requests_converge_with_fresh_quota_postgres(
+    postgres_http_db: tuple[
+        sessionmaker[_TrackingSession],
+        Settings,
+        TestClient,
+        _FakeDemoExecution,
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory, _settings, client, fake_demo = postgres_http_db
+    with factory() as session:
+        pid, aid = _seed_approved(session)
+
+    lookup_barrier = threading.Barrier(2)
+    lookup_state = threading.local()
+    original_get = QuotaRepository.get_by_organization
+
+    def _synchronized_get(
+        repository: QuotaRepository,
+        organization_id: uuid.UUID,
+    ) -> OrganizationQuota | None:
+        row = original_get(repository, organization_id)
+        first_lookup = not getattr(lookup_state, "seen", False)
+        lookup_state.seen = True
+        if first_lookup and row is None:
+            lookup_barrier.wait(timeout=10)
+        return row
+
+    monkeypatch.setattr(QuotaRepository, "get_by_organization", _synchronized_get)
+    key = "at028-http-two-fresh-quota"
+    _TrackingSession.commit_count = 0
+    results = _run_concurrent_http_placements(
+        client,
+        _http_payload(pid, aid, key=key),
+        workers=2,
+    )
+
+    assert [status_code for status_code, _body in results] == [200, 200]
+    order_ids = {body["id"] for _status, body in results}
+    assert len(order_ids) == 1
+    assert all(body["idempotency_key"] == key for _status, body in results)
+    _assert_singleton_http_effects(factory, request_id=key)
+    assert len(fake_demo.calls) == 1
+    assert _TrackingSession.commit_count == 1
+
+
+@requires_postgres
+def test_five_concurrent_http_requests_serialize_and_converge_postgres(
+    postgres_http_db: tuple[
+        sessionmaker[_TrackingSession],
+        Settings,
+        TestClient,
+        _FakeDemoExecution,
+    ],
+) -> None:
+    factory, _settings, client, fake_demo = postgres_http_db
+    with factory() as session:
+        pid, aid = _seed_approved(session)
+        QuotaService(session).get_or_create_quota(ORG_ID)
+        session.commit()
+
+    key = "at028-http-five-existing-quota"
+    _TrackingSession.commit_count = 0
+    results = _run_concurrent_http_placements(
+        client,
+        _http_payload(pid, aid, key=key),
+        workers=5,
+    )
+
+    assert [status_code for status_code, _body in results] == [200] * 5
+    order_ids = {body["id"] for _status, body in results}
+    assert len(order_ids) == 1
+    required_fields = {
+        "id",
+        "organization_id",
+        "user_id",
+        "proposal_id",
+        "approval_id",
+        "mode",
+        "symbol",
+        "side",
+        "type",
+        "size",
+        "status",
+        "idempotency_key",
+        "exchange_order_id",
+        "created_at",
+    }
+    assert all(required_fields <= body.keys() for _status, body in results)
+    _assert_singleton_http_effects(factory, request_id=key)
+    assert len(fake_demo.calls) == 1
+    assert _TrackingSession.commit_count == 1
+
+
+@requires_postgres
+def test_http_replay_skips_commit_and_different_key_creates_postgres(
+    postgres_http_db: tuple[
+        sessionmaker[_TrackingSession],
+        Settings,
+        TestClient,
+        _FakeDemoExecution,
+    ],
+) -> None:
+    factory, _settings, client, fake_demo = postgres_http_db
+    with factory() as session:
+        first_pid, first_aid = _seed_approved(session)
+        second_pid, second_aid = _seed_approved(session)
+        QuotaService(session).get_or_create_quota(ORG_ID)
+        session.commit()
+
+    first_payload = _http_payload(first_pid, first_aid, key="at028-http-replay")
+    _TrackingSession.commit_count = 0
+    first = client.post("/execution/paper", json=first_payload)
+    commits_after_first = _TrackingSession.commit_count
+    replay = client.post("/execution/paper", json=first_payload)
+    commits_after_replay = _TrackingSession.commit_count
+    other = client.post(
+        "/execution/paper",
+        json=_http_payload(second_pid, second_aid, key="at028-http-independent"),
+    )
+
+    assert first.status_code == replay.status_code == other.status_code == 200
+    assert first.json()["id"] == replay.json()["id"]
+    assert other.json()["id"] != first.json()["id"]
+    assert commits_after_first == 1
+    assert commits_after_replay == commits_after_first
+    assert _TrackingSession.commit_count == 2
+    assert len(fake_demo.calls) == 2
+    with factory() as session:
+        assert _order_count(session) == 2
+        assert _usage_count(session) == 2
+        assert _creation_audit_count(session, request_id="at028-http-replay") == 1
+        assert _creation_audit_count(session, request_id="at028-http-independent") == 1
+
+
+@requires_postgres
+def test_http_convergence_exhaustion_is_sanitized_409_postgres(
+    postgres_http_db: tuple[
+        sessionmaker[_TrackingSession],
+        Settings,
+        TestClient,
+        _FakeDemoExecution,
+    ],
+) -> None:
+    factory, _settings, client, _fake_demo = postgres_http_db
+    with factory() as session:
+        pid, aid = _seed_approved(session)
+        QuotaService(session).get_or_create_quota(ORG_ID)
+        session.commit()
+
+    unique_error = IntegrityError(
+        "insert",
+        {},
+        Exception("uq_orders_idempotency_key"),
+    )
+    _TrackingSession.commit_count = 0
+    with (
+        patch.object(
+            ExecutionService,
+            "_persist_new_paper_order",
+            side_effect=unique_error,
+        ),
+        patch(
+            "app.services.execution_service.wait_for_committed_order_by_idempotency_key",
+            return_value=None,
+        ),
+    ):
+        response = client.post(
+            "/execution/paper",
+            json=_http_payload(pid, aid, key="at028-http-exhaustion"),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_convergence_exhausted"
+    assert _TrackingSession.commit_count == 0
+    with factory() as session:
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+
+
+@requires_postgres
+def test_http_unrelated_integrity_error_remains_internal_failure_postgres(
+    postgres_http_db: tuple[
+        sessionmaker[_TrackingSession],
+        Settings,
+        TestClient,
+        _FakeDemoExecution,
+    ],
+) -> None:
+    factory, _settings, client, _fake_demo = postgres_http_db
+    with factory() as session:
+        pid, aid = _seed_approved(session)
+        QuotaService(session).get_or_create_quota(ORG_ID)
+        session.commit()
+
+    unrelated_error = IntegrityError("insert", {}, Exception("unrelated constraint"))
+    _TrackingSession.commit_count = 0
+    with patch.object(
+        ExecutionService,
+        "_persist_new_paper_order",
+        side_effect=unrelated_error,
+    ):
+        response = client.post(
+            "/execution/paper",
+            json=_http_payload(pid, aid, key="at028-http-unrelated"),
+        )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "internal_error"
+    assert _TrackingSession.commit_count == 0
+    with factory() as session:
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
 
 
 def test_different_idempotency_keys_create_independent_orders(
@@ -586,3 +982,37 @@ def test_is_order_idempotency_unique_violation_detects_constraint_name() -> None
         diag = _Diag()
 
     assert is_order_idempotency_unique_violation(IntegrityError("stmt", {}, _Orig())) is True
+
+
+def test_quota_creation_does_not_swallow_unrelated_integrity_error(
+    sqlite_file_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, _settings = sqlite_file_db
+    with factory() as session:
+        service = QuotaService(session)
+        unrelated = IntegrityError("insert", {}, Exception("unrelated constraint"))
+        with (
+            patch.object(service._quotas, "add", side_effect=unrelated),
+            pytest.raises(IntegrityError) as exc_info,
+        ):
+            service.get_or_create_quota(ORG_ID)
+        assert exc_info.value is unrelated
+        session.rollback()
+
+
+@requires_postgres
+def test_postgres_quota_creation_does_not_swallow_unrelated_integrity_error(
+    postgres_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, _settings = postgres_db
+    with factory() as session:
+        service = QuotaService(session)
+        unrelated = IntegrityError("insert", {}, Exception("unrelated constraint"))
+        with (
+            patch.object(service._quotas, "add", side_effect=unrelated),
+            pytest.raises(IntegrityError) as exc_info,
+        ):
+            service.get_or_create_quota(ORG_ID)
+        assert exc_info.value is unrelated
+        assert session.is_active is True
+        session.rollback()
