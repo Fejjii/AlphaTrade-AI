@@ -74,6 +74,12 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class IdempotencyConvergenceError(ConflictError):
+    """Raised when concurrent idempotent writers could not converge within bounded retries."""
+
+    code = "idempotency_convergence_exhausted"
+
+
 class TradingPolicyError(AppError):
     """Raised when an action violates a hard trading-safety policy."""
 

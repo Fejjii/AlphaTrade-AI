@@ -9,6 +9,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import DailyRiskState, UserRiskSettings
@@ -196,9 +197,24 @@ class RiskSettingsService:
             daily_target=daily_target,
             max_trades_per_day=max_trades_per_day,
         )
-        self._session.add(row)
-        self._session.flush()
-        return row
+        nested = self._session.begin_nested()
+        try:
+            self._session.add(row)
+            self._session.flush()
+            nested.commit()
+            return row
+        except IntegrityError:
+            nested.rollback()
+            existing = self._session.scalar(
+                select(DailyRiskState).where(
+                    DailyRiskState.organization_id == organization_id,
+                    DailyRiskState.user_id == user_id,
+                    DailyRiskState.day == day,
+                )
+            )
+            if existing is None:
+                raise
+            return existing
 
     def _load_row(
         self,
