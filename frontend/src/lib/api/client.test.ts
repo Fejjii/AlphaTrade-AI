@@ -50,4 +50,35 @@ describe("api client deployment config", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
+
+  it("deduplicates concurrent token refreshes (single-flight)", async () => {
+    sessionStorage.setItem("alphatrade_access_token", "stale-token");
+    sessionStorage.setItem("alphatrade_refresh_token", "refresh-token");
+
+    let refreshCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/auth/refresh")) {
+        refreshCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: "fresh-token" }),
+          text: async () => JSON.stringify({ access_token: "fresh-token" }),
+        };
+      }
+      const token = sessionStorage.getItem("alphatrade_access_token");
+      if (token === "fresh-token") {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) };
+      }
+      return { ok: false, status: 401, text: async () => "" };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { apiFetch } = await import("@/lib/api/client");
+    await Promise.all([apiFetch("/proposals"), apiFetch("/positions")]);
+
+    expect(refreshCalls).toBe(1);
+    sessionStorage.clear();
+  });
 });

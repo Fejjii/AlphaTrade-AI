@@ -292,17 +292,26 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2" data-testid="dashboard-safety-status">
-        <Badge variant="success" data-testid="dashboard-paper-only">
-          {(summary?.safety.execution_mode ?? executionMode).toUpperCase()} mode
+        <Badge
+          variant={(summary?.safety.execution_mode ?? executionMode) === "paper" ? "success" : "warning"}
+          data-testid="dashboard-paper-only"
+        >
+          {(summary?.safety.execution_mode ?? executionMode ?? "unverified").toUpperCase()} mode
         </Badge>
         <Badge
           variant={
-            (summary?.safety.real_trading_enabled ?? realTradingEnabled) ? "danger" : "success"
+            (summary?.safety.real_trading_enabled ?? realTradingEnabled) === false
+              ? "success"
+              : "danger"
           }
           data-testid="dashboard-real-trading-status"
         >
           Real trading{" "}
-          {(summary?.safety.real_trading_enabled ?? realTradingEnabled) ? "enabled" : "disabled"}
+          {(summary?.safety.real_trading_enabled ?? realTradingEnabled) === false
+            ? "disabled"
+            : (summary?.safety.real_trading_enabled ?? realTradingEnabled)
+              ? "enabled"
+              : "unverified"}
         </Badge>
         <Badge variant="muted">Simulated execution only</Badge>
       </div>

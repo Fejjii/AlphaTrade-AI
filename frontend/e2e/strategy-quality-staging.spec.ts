@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { installSmokeSession } from "./helpers/staging-smoke-auth";
+
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const DEMO_EMAIL = process.env.STAGING_DEMO_EMAIL ?? "demo@alphatrade.ai";
 const DEMO_PASSWORD = process.env.STAGING_DEMO_PASSWORD ?? "";
@@ -23,9 +25,7 @@ test.describe("Staging /strategy-quality read-only smoke (Slice 89)", () => {
     const auth = await login.json();
     const accessToken = auth.tokens.access_token as string;
 
-    await page.addInitScript((token: string) => {
-      sessionStorage.setItem("alphatrade_access_token", token);
-    }, accessToken);
+    await installSmokeSession(page, accessToken);
 
     await page.goto("/strategy-quality");
 

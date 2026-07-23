@@ -1,4 +1,5 @@
 import { appConfig } from "@/lib/config";
+import { sanitizeNextPath } from "@/lib/auth/boundary";
 import { clearTokens, getAccessToken, getRefreshToken, setTokens, usesCookieRefresh } from "@/lib/auth/session";
 
 export class ApiError extends Error {
@@ -40,7 +41,7 @@ function parseErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+async function requestRefreshedTokens(): Promise<boolean> {
   const refreshToken = getRefreshToken();
   const body = refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : JSON.stringify({});
   const response = await fetch(buildUrl("/auth/refresh"), {
@@ -60,6 +61,26 @@ async function refreshAccessToken(): Promise<boolean> {
   };
   setTokens(payload.access_token, payload.refresh_token);
   return true;
+}
+
+// Single-flight guard: concurrent 401s share one refresh call so token rotation
+// (which invalidates the old refresh token) cannot race against itself.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = requestRefreshedTokens().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+function sessionExpiredLoginPath(): string {
+  const { pathname, search } = window.location;
+  if (pathname.startsWith("/login")) return "/login";
+  const next = sanitizeNextPath(`${pathname}${search}`);
+  return next !== "/" ? `/login?next=${encodeURIComponent(next)}` : "/login";
 }
 
 export async function apiFetch<T>(
@@ -103,7 +124,7 @@ export async function apiFetch<T>(
     }
     if (typeof window !== "undefined") {
       clearTokens();
-      window.location.assign("/login");
+      window.location.assign(sessionExpiredLoginPath());
     }
     throw new ApiError("Session expired", 401, null);
   }

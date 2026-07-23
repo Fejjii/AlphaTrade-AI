@@ -141,11 +141,22 @@ export function useMockProviders(): ProviderStatus[] {
   return providers?.providers ?? [];
 }
 
-export function useSafetyPosture() {
+export interface SafetyPosture {
+  /** Execution mode reported by backend /health, or null until verified. */
+  executionMode: string | null;
+  /** Real-trading flag reported by backend /health, or null until verified. */
+  realTradingEnabled: boolean | null;
+  providerMode: string;
+  /** True only after /health has been loaded — never inferred from build config. */
+  postureKnown: boolean;
+}
+
+export function useSafetyPosture(): SafetyPosture {
   const { health } = useAppContext();
   return {
-    executionMode: health?.execution_mode ?? appConfig.executionMode,
-    realTradingEnabled: health?.real_trading_enabled ?? false,
+    executionMode: health?.execution_mode ?? null,
+    realTradingEnabled: health?.real_trading_enabled ?? null,
     providerMode: appConfig.providerMode,
+    postureKnown: health != null,
   };
 }

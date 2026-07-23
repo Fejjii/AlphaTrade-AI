@@ -151,11 +151,11 @@ test.describe("Browser happy path (local optional)", () => {
     await expect(page).toHaveURL("/");
 
     await expect(page.getByText(/paper mode active/i)).toBeVisible();
-    await expect(page.getByText(/real trading disabled/i)).toBeVisible();
+    await expect(page.getByText(/real trading disabled/i).first()).toBeVisible();
 
     await page.goto("/workspace");
     await expect(page.getByRole("heading", { name: /ai trading workspace/i })).toBeVisible();
-    await expect(page.getByText(/real trading disabled/i)).toBeVisible();
+    await expect(page.getByText(/real trading disabled/i).first()).toBeVisible();
 
     await page.getByRole("button", { name: /log out/i }).click();
     await expect(page).toHaveURL(/login/);

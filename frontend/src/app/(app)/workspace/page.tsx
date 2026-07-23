@@ -57,12 +57,18 @@ export default function WorkspacePage() {
             Chat with the agent. Sensitive actions require approval. Paper mode only.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <StatusBadge label={`${executionMode} mode`} tone="paper" />
+            <StatusBadge
+              label={`${executionMode ?? "unverified"} mode`}
+              tone={executionMode === "paper" ? "paper" : "warn"}
+            />
             <StatusBadge label={`providers: ${providerMode}`} tone="muted" />
-            {realTradingEnabled ? (
-              <StatusBadge label="Real trading enabled" tone="blocked" />
-            ) : (
+            {realTradingEnabled === false ? (
               <StatusBadge label="Real trading disabled" tone="healthy" />
+            ) : (
+              <StatusBadge
+                label={realTradingEnabled ? "Real trading enabled" : "Real trading unverified"}
+                tone="blocked"
+              />
             )}
           </div>
         </div>

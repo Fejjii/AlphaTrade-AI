@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { installSmokeSession } from "./helpers/staging-smoke-auth";
+
 import {
   STAGING_API_URL,
   loginBootstrapOwner,
@@ -47,9 +49,7 @@ test.describe("Staging paper session observations smoke (Slice 83)", () => {
     expect(start.ok()).toBeTruthy();
     const sessionId = (await start.json()).session.session_id as string;
 
-    await page.addInitScript((token: string) => {
-      sessionStorage.setItem("alphatrade_access_token", token);
-    }, accessToken);
+    await installSmokeSession(page, accessToken);
 
     await page.goto(`/paper-validation/run-sessions/${sessionId}`);
     await expect(page.getByTestId("paper-validation-run-session-detail")).toBeVisible();

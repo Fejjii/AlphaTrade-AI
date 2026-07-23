@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { installSmokeSession } from "./helpers/staging-smoke-auth";
+
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "https://alphatrade-api-staging.onrender.com";
 const DEMO_EMAIL = process.env.STAGING_DEMO_EMAIL ?? "demo@alphatrade.ai";
 const DEMO_PASSWORD = process.env.STAGING_DEMO_PASSWORD ?? "";
@@ -63,9 +65,7 @@ test.describe("Staging setup alert review smoke (Slice 77)", () => {
     });
     expect(summary.ok()).toBeTruthy();
 
-    await page.addInitScript((token: string) => {
-      sessionStorage.setItem("alphatrade_access_token", token);
-    }, accessToken);
+    await installSmokeSession(page, accessToken);
 
     await page.goto("/alerts/review");
     await expect(page.getByTestId("setup-alert-review-page")).toBeVisible();

@@ -1,13 +1,63 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 
+/**
+ * Safety banner driven exclusively by backend /health truth (AT-017).
+ *
+ * Three states: posture unverified (health not loaded), paper-only not confirmed
+ * (real trading enabled or non-paper mode), and paper mode confirmed. The banner
+ * never claims "paper mode active" from build-time configuration.
+ */
 export function PaperModeBanner() {
-  const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
+  const { executionMode, realTradingEnabled, providerMode, postureKnown } = useSafetyPosture();
   const { providers, health } = useAppContext();
+
+  if (!postureKnown) {
+    return (
+      <div
+        className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 py-3"
+        data-testid="paper-mode-banner-unverified"
+      >
+        <div className="flex items-center gap-2 text-zinc-300">
+          <ShieldAlert className="h-4 w-4" />
+          <span className="text-sm font-medium">Execution mode unverified</span>
+        </div>
+        <p className="mt-2 text-sm text-zinc-400">
+          Waiting for backend health status. Trading posture is confirmed only from the live
+          backend, never from build configuration.
+        </p>
+      </div>
+    );
+  }
+
+  const paperConfirmed = executionMode === "paper" && realTradingEnabled === false;
+  if (!paperConfirmed) {
+    return (
+      <div
+        className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3"
+        data-testid="paper-mode-banner-alert"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-red-300">
+            <ShieldAlert className="h-4 w-4" />
+            <span className="text-sm font-medium">Paper-only posture not confirmed</span>
+          </div>
+          <Badge variant="danger">{(executionMode ?? "unknown").toUpperCase()}</Badge>
+          <Badge variant={realTradingEnabled ? "danger" : "success"}>
+            Real trading {realTradingEnabled ? "enabled" : "disabled"}
+          </Badge>
+        </div>
+        <p className="mt-2 text-sm text-red-200/80">
+          Backend health does not report paper-only execution. Verify the deployment
+          configuration before continuing.
+        </p>
+      </div>
+    );
+  }
 
   const marketProvider = providers?.providers.find((p) => p.kind === "market_data");
   const llmProvider = providers?.providers.find((p) => p.kind === "llm");
@@ -23,9 +73,7 @@ export function PaperModeBanner() {
           <span className="text-sm font-medium">Paper mode active</span>
         </div>
         <Badge variant="success">{executionMode.toUpperCase()}</Badge>
-        <Badge variant={realTradingEnabled ? "danger" : "success"}>
-          Real trading {realTradingEnabled ? "enabled" : "disabled"}
-        </Badge>
+        <Badge variant="success">Real trading disabled</Badge>
         <Badge variant="info">Provider mode: {providerMode}</Badge>
       </div>
       <p className="mt-2 text-sm text-zinc-400">
