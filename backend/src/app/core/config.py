@@ -225,6 +225,13 @@ class Settings(BaseSettings):
     journal_replay_max_candles: int = Field(default=5000, ge=10, le=50_000)
     journal_replay_batch_max: int = Field(default=100, ge=1, le=1000)
 
+    # --- Auto-journal hooks (AT-033) — opt-in, default off ---
+    # When enabled, closing a paper position / paper-validation trade also
+    # creates a canonical journal trade (entry_method=auto). Journaling
+    # failures never block the close itself.
+    journal_auto_from_position_close: bool = False
+    journal_auto_from_paper_validation: bool = False
+
     # --- Journal attachments (AT-033) — DB-backed, size/MIME/quota capped ---
     journal_attachment_max_bytes: int = Field(default=5_242_880, ge=1024, le=26_214_400)
     journal_attachment_allowed_types: Annotated[list[str], NoDecode] = Field(

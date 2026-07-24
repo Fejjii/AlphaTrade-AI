@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -33,6 +34,7 @@ from app.schemas.common import (
     AuditSeverity,
     BacktestRunStatus,
     BacktestStatus,
+    JournalEntryMethod,
     PaperAlertSeverity,
     PaperAlertType,
     PaperObservabilityEventType,
@@ -62,6 +64,7 @@ from app.schemas.strategy_library import StrategyCard
 from app.schemas.structured_rules import StructuredRules
 from app.services.audit_service import AuditService
 from app.services.historical_candle_service import HistoricalCandleService
+from app.services.journal_trade_service import JournalTradeService
 from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_bot_engine import PaperBotEngine, _OpenPaperTrade
 from app.services.paper_eligibility_service import PaperEligibilityService
@@ -73,6 +76,8 @@ from app.services.paper_validation_promotion import (
     sort_closed_trades_chronologically,
 )
 from app.services.structured_rule_resolver import resolve_backtest_rules
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -536,6 +541,7 @@ class PaperValidationRuntimeService:
                 strategy_id=run.strategy_id,
                 metadata={"exit_reason": close.exit_reason},
             )
+        self._auto_journal_closed_trades(closed_details, run)
         if metrics.paper_trades_count > 50 and metrics.win_rate < 0.3:
             self._alerts.create(
                 organization_id=organization_id,
@@ -897,6 +903,40 @@ class PaperValidationRuntimeService:
                 payload=payload,
             )
         )
+
+    def _auto_journal_closed_trades(
+        self,
+        closed_details: list[tuple[PaperTradeModel, object]],
+        run: PaperValidationRunModel,
+    ) -> None:
+        """Opt-in AT-033 hook: journal every trade closed this tick.
+
+        Attributed to the validation run owner and marked ``entry_method=auto``.
+        Reuses the idempotent ``create_from_paper_trade`` prefill, so already
+        journaled trades are never duplicated. Each trade runs in its own
+        savepoint and every error is swallowed after a warning log: journaling
+        must never break the paper runtime loop.
+        """
+        if not closed_details or not self._settings.journal_auto_from_paper_validation:
+            return
+        journal = JournalTradeService(self._session, self._audit)
+        for trade_row, _close in closed_details:
+            try:
+                with self._session.begin_nested():
+                    journal.create_from_paper_trade(
+                        trade_row.id,
+                        organization_id=run.organization_id,
+                        user_id=run.user_id,
+                        entry_method=JournalEntryMethod.AUTO,
+                        action="auto_journal_paper_validation",
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "auto_journal_paper_validation_failed",
+                    paper_trade_id=str(trade_row.id),
+                    run_id=str(run.id),
+                    error_type=type(exc).__name__,
+                )
 
     def _aggregate_metrics(
         self,
