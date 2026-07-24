@@ -244,8 +244,9 @@ export default function StrategyDetailPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <BacktestPanel
           strategyId={id}
-          onRun={(assumptions) => api.strategies.requestBacktest(id, { assumptions })}
+          onRun={(body) => api.strategies.requestBacktest(id, body)}
           onLoadTrades={(runId) => api.strategies.listBacktestTrades(runId)}
+          onListRuns={() => api.strategies.listBacktests(id)}
         />
         <PaperValidationPanel
           summary={paperSummary}

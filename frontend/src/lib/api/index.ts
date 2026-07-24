@@ -91,6 +91,14 @@ import type {
   KillSwitchStatus,
   KillSwitchMutationRequest,
   BacktestRun,
+  BacktestRunCreate,
+  BacktestVerifyResult,
+  BacktestJournalRequest,
+  BacktestJournalResult,
+  JournalComparisonParams,
+  JournalComparisonResponse,
+  SetupEvidenceParams,
+  SetupEvidenceResponse,
   PaginatedBacktestRuns,
   PaginatedBacktestTrades,
   PaperValidationMetrics,
@@ -372,6 +380,10 @@ export const api = {
     listImports: (params?: { limit?: number; offset?: number }) =>
       apiFetch<PaginatedJournalImportBatches>("/journal/imports", { query: params }),
     getImport: (id: string) => apiFetch<JournalImportBatch>(`/journal/imports/${id}`),
+    comparison: (params?: JournalComparisonParams) =>
+      apiFetch<JournalComparisonResponse>("/journal/comparison", { query: params }),
+    setupEvidence: (params?: SetupEvidenceParams) =>
+      apiFetch<SetupEvidenceResponse>("/journal/setup-evidence", { query: params }),
   },
   analytics: {
     setups: () => apiFetch<SetupAnalyticsResponse>("/analytics/setups"),
@@ -718,7 +730,7 @@ export const api = {
         body: JSON.stringify(body),
         auth: true,
       }),
-    requestBacktest: (id: string, body?: Record<string, unknown>) =>
+    requestBacktest: (id: string, body?: BacktestRunCreate) =>
       apiFetch<BacktestRun>(`/strategies/${id}/backtests`, {
         method: "POST",
         body: JSON.stringify(body ?? {}),
@@ -726,8 +738,11 @@ export const api = {
       }),
     listBacktests: (id: string) =>
       apiFetch<PaginatedBacktestRuns>(`/strategies/${id}/backtests`, { auth: true }),
-    listBacktestTrades: (runId: string) =>
-      apiFetch<PaginatedBacktestTrades>(`/backtests/${runId}/trades`, { auth: true }),
+    listBacktestTrades: (runId: string, params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedBacktestTrades>(`/backtests/${runId}/trades`, {
+        auth: true,
+        query: params,
+      }),
     listVersions: (id: string) =>
       apiFetch<PaginatedUserStrategyVersions>(`/strategies/${id}/versions`, { auth: true }),
     paperEligibility: (id: string) =>
@@ -1043,6 +1058,21 @@ export const api = {
         lessons_generated: string[];
         lesson_candidate_ids: string[];
       }>(`/journal/entries/${journalId}/discipline-analysis`, { auth: true }),
+  },
+  backtests: {
+    get: (id: string) => apiFetch<BacktestRun>(`/backtests/${id}`, { auth: true }),
+    listTrades: (id: string, params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedBacktestTrades>(`/backtests/${id}/trades`, { auth: true, query: params }),
+    cancel: (id: string) =>
+      apiFetch<BacktestRun>(`/backtests/${id}/cancel`, { method: "POST", auth: true }),
+    verify: (id: string) =>
+      apiFetch<BacktestVerifyResult>(`/backtests/${id}/verify`, { method: "POST", auth: true }),
+    journalTrades: (id: string, body: BacktestJournalRequest) =>
+      apiFetch<BacktestJournalResult>(`/backtests/${id}/journal-trades`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
   },
   lessons: {
     listCandidates: (params?: { status?: string; mistake_type?: string }) => {
