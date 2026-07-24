@@ -214,7 +214,9 @@ describe("SetupAlertReviewPage Slice 77", () => {
         notes: null,
         risk_mode: "conservative",
       });
+      expect(within(watchingCard).getByTestId("setup-alert-draft-link")).toHaveTextContent(
+        "View draft",
+      );
     });
-    expect(within(watchingCard).getByTestId("setup-alert-draft-link")).toHaveTextContent("View draft");
   });
 });
