@@ -256,16 +256,12 @@ class JournalExcursionReplayService:
                 "Incomplete candle coverage for trade window — metrics are best-effort."
             )
         if len(raw) >= max_candles:
-            limitations.append(
-                f"Candle fetch hit journal_replay_max_candles={max_candles}."
-            )
+            limitations.append(f"Candle fetch hit journal_replay_max_candles={max_candles}.")
 
         freshness_note: str | None = None
         is_stale = calc.any_stale or not window_complete
         if is_stale:
-            freshness_note = (
-                "Stale or incomplete HistoricalCandle coverage for trade window."
-            )
+            freshness_note = "Stale or incomplete HistoricalCandle coverage for trade window."
 
         computed_at = datetime.now(UTC)
         provenance = JournalExcursionProvenance(
@@ -388,10 +384,7 @@ class JournalExcursionReplayService:
         if policy == ExcursionOverwritePolicy.FORCE:
             return None
         if source in _PROTECTED_SOURCES:
-            return (
-                f"Protected excursion_source={source!r}; "
-                "use overwrite_policy=force to replace."
-            )
+            return f"Protected excursion_source={source!r}; use overwrite_policy=force to replace."
         # Unknown non-empty source is also protected under skip_protected.
         return (
             f"Existing excursion_source={source!r} is protected; "

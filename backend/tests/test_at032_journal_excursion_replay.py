@@ -336,10 +336,7 @@ def _seed_trade(
 def test_replay_requires_auth(client: tuple[TestClient, sessionmaker[Session]]) -> None:
     test_client, _ = client
     fake = uuid.uuid4()
-    assert (
-        test_client.post(f"/journal/trades/{fake}/replay-excursions", json={}).status_code
-        == 401
-    )
+    assert test_client.post(f"/journal/trades/{fake}/replay-excursions", json={}).status_code == 401
 
 
 def test_viewer_cannot_replay(client: tuple[TestClient, sessionmaker[Session]]) -> None:
