@@ -6,7 +6,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-001 — Adopt private `.ai/` collaboration + iCloud handoff workflow
 - **Date:** 2026-07-19
-- **Status:** Accepted
+- **Status:** Proposed (pending merge of AT-034 workstreams)
 - **Context:** Standardize the ChatGPT ↔ Cursor workflow already used for OnePilot AI.
 - **Decision:** Add a version-controlled `.ai/` layer and Cursor project rules, plus
   per-session `HANDOFF.md` + `CHANGELOG_SESSION.md` (gitignored) and a content-aware macOS
@@ -16,7 +16,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-002 — Version-control governance; keep generated handoffs private
 - **Date:** 2026-07-19
-- **Status:** Accepted
+- **Status:** Proposed (pending merge of AT-034 workstreams)
 - **Context:** Durable governance (`.ai/`, `.cursor/rules/`) must reach every clone, but
   per-session handoffs contain evolving state and should not pollute Git history.
 - **Decision:** Track `.ai/` and `.cursor/rules/` in Git. Keep `HANDOFF.md`,
@@ -61,7 +61,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-005 — Real-money (Mode D) requires phased program; paper Criticals first
 - **Date:** 2026-07-21
-- **Status:** Accepted
+- **Status:** Proposed (pending merge of AT-034 workstreams)
 - **Context:** AT-010 readiness audit found paper-MVP/staging readiness with Critical/High
   gaps (unauth tools, soft data degradation, under-wired risk/kill switch). A real-money
   program must not bypass paper hardening.
@@ -147,7 +147,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-007 — Honor PROVIDER_MODE + narrative quota + search opacity (AT-015)
 - **Date:** 2026-07-22
-- **Status:** Accepted
+- **Status:** Proposed (pending merge of AT-034 workstreams)
 - **Context:** AT-010 H5/H10 — factory ignored `PROVIDER_MODE=mock` for LLM/embeddings
   when a key was set; `limit_agent_narrative` was unused; search opacity needed UI/tests.
 - **Decision:**
@@ -205,7 +205,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-010 — Backup/restore RPO/RTO targets for paper staging (AT-019)
 - **Date:** 2026-07-23
-- **Status:** Accepted
+- **Status:** Proposed (pending merge of AT-034 workstreams)
 - **Context:** AT010-H9 / RR-13 — backup/restore RPO/RTO was UNKNOWN; no verified restore
   drill. Postgres is the system of record; Redis is ephemeral; Qdrant is rebuildable.
 - **Decision:**
@@ -434,3 +434,46 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   rejected, NULLs unconstrained); 44 new backend tests (import 14, backfill 6,
   attachments 12, auto-journal 9, integration 3) plus AT-030/031/032 regression
   green; frontend 267 tests + typecheck + build green; ruff clean. No deploy.
+
+## AT-ADR-016 — Deterministic backtesting v1: snapshot+hash reproducibility, conservative intra-bar rule, evidence tiers, bounded orchestration without new queue infra (AT-034)
+- **Date:** 2026-07-24
+- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Context:** AT-030–033 established canonical journal trades, statistics, excursion
+  replay, and bulk import. Slice 35 introduced a simpler backtest engine. AT-034
+  needs reproducible historical simulation that journals into the canonical trade
+  store, supports walk-forward evaluation, and surfaces advisory evidence — without
+  new async infrastructure, live trading paths, or parameter-optimization loops.
+- **Decision:**
+  1. **Frozen config + dataset snapshots.** On create, persist `config_snapshot`,
+     `config_hash`, and link an immutable `backtest_datasets` row by `dataset_hash`.
+     Candles are hash-referenced, not copied per run.
+  2. **Pure engine + `result_hash`.** `BacktestEngineService` (v2,
+     `ENGINE_VERSION=at034-2.0.0`) is deterministic; `result_hash` is canonical JSON
+     SHA-256. `POST /backtests/{id}/verify` re-runs with `persist=False` and
+     compares hashes after dataset integrity check.
+  3. **Conservative intra-bar rule.** When stop and TP both touch in one bar, stop
+     wins.
+  4. **Walk-forward v1 only.** Holdout and rolling splits evaluate independent
+     segments with per-split and OOS metrics — no parameter optimization across
+     windows.
+  5. **Bounded orchestration.** Sync path when `total_bars <= backtest_sync_max_bars`;
+     otherwise `QUEUED` with existing worker loop (1 run/cycle) plus BackgroundTasks
+     fallback when worker disabled. Refuse `total_bars > backtest_max_bars` (no
+     truncation). Cancel every 2000 bars; idempotency keys; active-run cap per org.
+  6. **Bulk journal + comparison + advisory tiers.** `POST /backtests/{id}/journal-trades`
+     creates `source=backtest` rows with dedup `external_ref`. `GET /journal/comparison`
+     exposes human/paper_system/backtest cohorts. `GET /journal/setup-evidence` assigns
+     tier1/tier2/tier3 from configurable OOS and confirmation thresholds — advisory
+     only, never execution authority.
+- **Alternatives considered:** Celery/dedicated queue (rejected: existing worker +
+  BackgroundTasks suffice for bounded workloads); storing full candle copies per run
+  (rejected: immutable hash-referenced datasets); parameter-optimizing walk-forward
+  (rejected for v1: windowed evaluation only); using backtest tiers to gate live
+  trading (rejected: record-only, risk engine untouched).
+- **Safety impact:** Record-only throughout; paper posture unchanged; advisory tiers
+  never feed execution or risk; mutations `TraderDep`; tenant-scoped; no live orders.
+- **Consequences:** Alembic head moves to `m9b0c1d2e3f4`. Docs rewritten in
+  `docs/backtesting.md`. Integration tests in `test_at034_integration.py`.
+- **Validation:** `tests/test_at034_engine.py`, `tests/test_at034_api.py`,
+  `tests/test_at034_integration.py`; backend pytest + ruff; frontend WS3 tests
+  (separate branch). No deploy.

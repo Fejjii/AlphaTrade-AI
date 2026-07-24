@@ -321,11 +321,13 @@ additionally user-scoped. New audit events: `JOURNAL_IMPORT_COMPLETED`,
    `HumanVsSystemService` analyzers over `linked_proposal_id`/`linked_position_id`;
    rule-check auto-suggestions from `UserStrategyVersion.structured_rules`; lesson
    candidate generation from violated rule checks.
-2. **Backtesting integration slice.** Journal backtest trades in bulk per
-   `BacktestRun`, compare live/paper cohort vs backtest cohort per strategy version
-   using the AT-031 grouping dimensions (`source=backtest` vs `paper_*`). Full
-   deterministic backtesting still needs complete candle ingest coverage, regime
-   auto-labelling, and bulk journal-from-backtest wiring.
+2. **Backtesting integration slice (delivered — AT-034).** Deterministic backtest v2
+   (`ENGINE_VERSION=at034-2.0.0`) with frozen `config_snapshot`/`config_hash`,
+   immutable `backtest_datasets`, walk-forward holdout/rolling splits, long+short
+   structured-rule entries, bulk journal-from-backtest (`source=backtest`,
+   dedup via `external_ref`), `GET /journal/comparison` three-cohort analytics,
+   and advisory `GET /journal/setup-evidence` tiers. Record-only — never feeds
+   execution or risk. See [backtesting.md](backtesting.md).
 3. **Rollup feeds (optional).** Feed `SetupPerformance` and `StrategyPerformanceDaily`
    rollups from canonical trades once auto-journaling ensures coverage.
 4. **Journal completion follow-ups.** See §6.8 (attachment upload UI, per-user

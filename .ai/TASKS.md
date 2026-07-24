@@ -341,8 +341,32 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (backend, frontend, deployment-safety, docker-build, evaluation, e2e-smoke,
   Vercel preview green). No deploy; auto-journal flags remain default off.
 - Follow-ups: attachment upload UI (needs trades detail page), per-user auto-journal
-  preference, failed/dry-run import batch persistence, human-vs-system endpoint,
-  backtest bulk journal (docs roadmap §7).
+  preference, failed/dry-run import batch persistence, human-vs-system endpoint.
+
+### AT-034 — Deterministic Backtesting v2 (engine, orchestration, frontend, tests/docs)
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-030, AT-031, AT-032, AT-033,
+  Slice 35 · Risk: Low (record-only; no execution path; advisory tiers only)
+- Safety classification: Paper-safe / record-only
+- Goal: Deterministic backtest v2 with frozen config/dataset snapshots,
+  `result_hash` reproducibility, walk-forward holdout/rolling splits, long+short
+  entry modes (pullback_ema/breakout/liquidity_sweep), funding accrual, in-loop
+  MFE/MAE/capture, bounded orchestration (sync vs queued, cancel, idempotency,
+  active-run cap), bulk journal-from-backtest, journal comparison cohorts, advisory
+  setup evidence tiers, frontend backtest UI, integration tests and v2 docs.
+- Branches: `feat/at-034-backtest-domain-engine`, `feat/at-034-backtest-api-orchestration`,
+  `feat/at-034-backtest-frontend`, `feat/at-034-backtest-tests-docs`
+- Deliverables: migration `m9b0c1d2e3f4`; `backtest_engine_service` (v2),
+  `backtest_dataset_service`, `backtest_hashing`, `backtest_service`,
+  `backtest_journal_service`, `setup_evidence_service`; routes
+  `POST/GET /strategies/{id}/backtests`, `GET/POST /backtests/{id}/*`,
+  `GET /journal/comparison`, `GET /journal/setup-evidence`; settings `backtest_*`;
+  frontend backtest pages; `tests/test_at034_engine.py`, `tests/test_at034_api.py`,
+  `tests/test_at034_integration.py`; `docs/backtesting.md` v2; ADR-016.
+- Validation: `tests/test_at034_integration.py` green; full backend pytest + ruff
+  clean; frontend tests/typecheck/build (WS3); operator flips Status to DONE after
+  final merge. No deploy; no live trading.
+- Recommended model: Grok 4.5 (WS1/WS2) + Composer 2.5 (WS3/WS4)
+- ADR: AT-ADR-016 · Docs: `docs/backtesting.md`
 
 ---
 
