@@ -305,9 +305,10 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Sonnet 4.6 (backlog) · Grok 4.5 (this lane)
 - ADR: AT-ADR-011
 - Completed: 2026-07-24 — merged via PR #15 → `main` @ merge `f145599` (commit `4d2617c`);
-  CI run 30057647347 success (backend, deployment-safety, frontend, docker-build,
-  evaluation, e2e-smoke all green). Gate profiles: safety / standard / extended; exit
-  `1` documented as rollback trigger. Live staging gate run deferred to next authorized deploy.
+  CI run 30057647347 success (backend 1210 passed, 1 skipped; deployment-safety,
+  frontend, docker-build, evaluation, e2e-smoke all green). Gate profiles: safety /
+  standard / extended; exit `1` documented as rollback trigger. Live staging gate run
+  deferred to next authorized deploy.
 
 ### AT-006 — Cost/usage guardrail alerting
 - Priority: P2 · Status: TODO · Dependencies: AT-002 · Risk: Low
