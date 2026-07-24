@@ -6,7 +6,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-001 — Adopt private `.ai/` collaboration + iCloud handoff workflow
 - **Date:** 2026-07-19
-- **Status:** Accepted (merged via PRs #20–#23 → `main` @ `8f9a84b`)
+- **Status:** Accepted
 - **Context:** Standardize the ChatGPT ↔ Cursor workflow already used for OnePilot AI.
 - **Decision:** Add a version-controlled `.ai/` layer and Cursor project rules, plus
   per-session `HANDOFF.md` + `CHANGELOG_SESSION.md` (gitignored) and a content-aware macOS
@@ -16,7 +16,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-002 — Version-control governance; keep generated handoffs private
 - **Date:** 2026-07-19
-- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Status:** Accepted
 - **Context:** Durable governance (`.ai/`, `.cursor/rules/`) must reach every clone, but
   per-session handoffs contain evolving state and should not pollute Git history.
 - **Decision:** Track `.ai/` and `.cursor/rules/` in Git. Keep `HANDOFF.md`,
@@ -61,7 +61,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-005 — Real-money (Mode D) requires phased program; paper Criticals first
 - **Date:** 2026-07-21
-- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Status:** Accepted
 - **Context:** AT-010 readiness audit found paper-MVP/staging readiness with Critical/High
   gaps (unauth tools, soft data degradation, under-wired risk/kill switch). A real-money
   program must not bypass paper hardening.
@@ -147,7 +147,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-007 — Honor PROVIDER_MODE + narrative quota + search opacity (AT-015)
 - **Date:** 2026-07-22
-- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Status:** Accepted
 - **Context:** AT-010 H5/H10 — factory ignored `PROVIDER_MODE=mock` for LLM/embeddings
   when a key was set; `limit_agent_narrative` was unused; search opacity needed UI/tests.
 - **Decision:**
@@ -205,7 +205,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-010 — Backup/restore RPO/RTO targets for paper staging (AT-019)
 - **Date:** 2026-07-23
-- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Status:** Accepted
 - **Context:** AT010-H9 / RR-13 — backup/restore RPO/RTO was UNKNOWN; no verified restore
   drill. Postgres is the system of record; Redis is ephemeral; Qdrant is rebuildable.
 - **Decision:**
@@ -437,7 +437,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-016 — Deterministic backtesting v1: snapshot+hash reproducibility, conservative intra-bar rule, evidence tiers, bounded orchestration without new queue infra (AT-034)
 - **Date:** 2026-07-24
-- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Status:** Accepted (merged via PRs #20–#23 → `main` @ `8f9a84b`)
 - **Context:** AT-030–033 established canonical journal trades, statistics, excursion
   replay, and bulk import. Slice 35 introduced a simpler backtest engine. AT-034
   needs reproducible historical simulation that journals into the canonical trade
