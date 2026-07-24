@@ -1,4 +1,5 @@
-"""Canonical journal trade persistence (AT-030) and statistics queries (AT-031)."""
+"""Canonical journal trade persistence (AT-030), statistics queries (AT-031),
+and import/attachment persistence (AT-033)."""
 
 from __future__ import annotations
 
@@ -10,13 +11,16 @@ from decimal import Decimal
 from sqlalchemy import ColumnElement, func, or_, select
 
 from app.db.models import (
+    JournalImportBatch,
     JournalTrade,
+    JournalTradeAttachment,
     JournalTradeEvidence,
     JournalTradeObservation,
     JournalTradeRuleCheck,
 )
 from app.repositories.base import SQLAlchemyRepository
 from app.schemas.common import (
+    JournalEntryMethod,
     JournalTradeSource,
     JournalTradeStatus,
     MarketRegime,
@@ -36,6 +40,7 @@ class JournalTradeStatsRow:
 
     id: uuid.UUID
     source: JournalTradeSource
+    entry_method: JournalEntryMethod
     symbol: str
     timeframe: str
     market_regime: MarketRegime
@@ -122,6 +127,36 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             stmt = stmt.where(JournalTrade.linked_paper_trade_id == linked_paper_trade_id)
         return self._session.scalar(stmt.limit(1))
 
+    def find_by_external_ref(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        external_ref: str,
+    ) -> JournalTrade | None:
+        stmt = select(JournalTrade).where(
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.external_ref == external_ref,
+        )
+        return self._session.scalar(stmt.limit(1))
+
+    def existing_external_refs(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        external_refs: list[str],
+    ) -> dict[str, uuid.UUID]:
+        """Map already-present external refs to their journal trade ids (AT-033).
+
+        One bounded IN-query per import batch instead of a lookup per row.
+        """
+        if not external_refs:
+            return {}
+        stmt = select(JournalTrade.external_ref, JournalTrade.id).where(
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.external_ref.in_(external_refs),
+        )
+        return {ref: trade_id for ref, trade_id in self._session.execute(stmt).all() if ref}
+
     def list_replay_candidates(
         self,
         *,
@@ -174,6 +209,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         source: JournalTradeSource | None,
+        entry_method: JournalEntryMethod | None,
         symbol: str | None,
         timeframe: str | None,
         market_regime: MarketRegime | None,
@@ -200,6 +236,8 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         ]
         if source is not None:
             filters.append(JournalTrade.source == source)
+        if entry_method is not None:
+            filters.append(JournalTrade.entry_method == entry_method)
         if symbol is not None:
             filters.append(JournalTrade.symbol == symbol)
         if timeframe is not None:
@@ -224,6 +262,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         source: JournalTradeSource | None = None,
+        entry_method: JournalEntryMethod | None = None,
         symbol: str | None = None,
         timeframe: str | None = None,
         market_regime: MarketRegime | None = None,
@@ -243,6 +282,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             organization_id=organization_id,
             user_id=user_id,
             source=source,
+            entry_method=entry_method,
             symbol=symbol,
             timeframe=timeframe,
             market_regime=market_regime,
@@ -259,6 +299,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             select(
                 JournalTrade.id,
                 JournalTrade.source,
+                JournalTrade.entry_method,
                 JournalTrade.symbol,
                 JournalTrade.timeframe,
                 JournalTrade.market_regime,
@@ -292,6 +333,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         source: JournalTradeSource | None = None,
+        entry_method: JournalEntryMethod | None = None,
         symbol: str | None = None,
         timeframe: str | None = None,
         market_regime: MarketRegime | None = None,
@@ -310,6 +352,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             organization_id=organization_id,
             user_id=user_id,
             source=source,
+            entry_method=entry_method,
             symbol=symbol,
             timeframe=timeframe,
             market_regime=market_regime,
@@ -365,3 +408,80 @@ class JournalTradeObservationRepository(SQLAlchemyRepository[JournalTradeObserva
             .order_by(JournalTradeObservation.created_at.asc())
         )
         return list(self._session.scalars(stmt).all())
+
+
+class JournalImportBatchRepository(SQLAlchemyRepository[JournalImportBatch]):
+    """Committed import batches for reconciliation history (AT-033)."""
+
+    model = JournalImportBatch
+
+    def list_scoped(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[JournalImportBatch], int]:
+        filters = [
+            JournalImportBatch.organization_id == organization_id,
+            JournalImportBatch.user_id == user_id,
+        ]
+        count_stmt = select(func.count()).select_from(JournalImportBatch).where(*filters)
+        list_stmt = (
+            select(JournalImportBatch)
+            .where(*filters)
+            .order_by(JournalImportBatch.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        total = int(self._session.scalar(count_stmt) or 0)
+        return list(self._session.scalars(list_stmt).all()), total
+
+    def get_scoped(
+        self,
+        batch_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> JournalImportBatch | None:
+        stmt = select(JournalImportBatch).where(
+            JournalImportBatch.id == batch_id,
+            JournalImportBatch.organization_id == organization_id,
+            JournalImportBatch.user_id == user_id,
+        )
+        return self._session.scalar(stmt)
+
+
+class JournalTradeAttachmentRepository(SQLAlchemyRepository[JournalTradeAttachment]):
+    """Binary evidence attachments for journal trades (AT-033)."""
+
+    model = JournalTradeAttachment
+
+    def list_for_trade(self, journal_trade_id: uuid.UUID) -> list[JournalTradeAttachment]:
+        stmt = (
+            select(JournalTradeAttachment)
+            .where(JournalTradeAttachment.journal_trade_id == journal_trade_id)
+            .order_by(JournalTradeAttachment.created_at.asc())
+        )
+        return list(self._session.scalars(stmt).all())
+
+    def count_for_trade(self, journal_trade_id: uuid.UUID) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(JournalTradeAttachment)
+            .where(JournalTradeAttachment.journal_trade_id == journal_trade_id)
+        )
+        return int(self._session.scalar(stmt) or 0)
+
+    def get_scoped(
+        self,
+        attachment_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+    ) -> JournalTradeAttachment | None:
+        stmt = select(JournalTradeAttachment).where(
+            JournalTradeAttachment.id == attachment_id,
+            JournalTradeAttachment.organization_id == organization_id,
+        )
+        return self._session.scalar(stmt)
