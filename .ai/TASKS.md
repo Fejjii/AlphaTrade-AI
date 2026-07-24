@@ -247,12 +247,10 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   CI run 30064982141 success (backend 1223 passed / 1 skipped; deployment-safety, frontend,
   evaluation, e2e-smoke, docker-build all green). No deploy.
 - Follow-up slices (see docs roadmap): journal completion (import/backfill/auto-journal),
-  statistics, replay (deterministic MFE/MAE), human-vs-system journal endpoint,
-  backtesting integration.
+  replay (deterministic MFE/MAE), human-vs-system journal endpoint, backtesting integration.
 
 ### AT-031 — Journal Statistics & Setup Analytics v1 (journal domain, slice 2)
-- Priority: P1 · Status: REVIEW_REQUIRED (implemented + validated; awaiting commit/push
-  authorization) · Dependencies: AT-030 · Risk: Low (read-only aggregates, no execution path)
+- Priority: P1 · Status: DONE · Dependencies: AT-030 · Risk: Low (read-only aggregates, no execution path)
 - Safety classification: Paper-safe / record-only / read-only endpoint
 - Goal: Deterministic tenant-scoped statistics over canonical `journal_trades`, grouped and
   filterable by setup/setup version, strategy/strategy version, symbol, timeframe, market
@@ -262,18 +260,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (recorded values only), available-vs-realized profit; per-family sample counts,
   confidence labels, warnings, date-range filter, bucket pagination, bounded scans
   (`journal_stats_max_rows`).
-- Branch: `cursor/at-031-journal-statistics-fea2`
+- Branch: `cursor/at-031-journal-statistics-fea2` (merged)
 - Deliverables: `schemas/journal_statistics.py`; statistics queries on
   `repositories/journal_trades.py`; `services/journal_statistics_service.py`;
   `GET /journal/statistics` (ReaderDep); migration `j6e7f8a9b0c1` (indexes only);
   frontend `/journal/statistics` page + API client/types + nav entry;
   `tests/test_at031_journal_statistics.py` (19 tests); docs section + roadmap update.
 - Validation: migration `j6e7f8a9b0c1` upgrade/downgrade/upgrade on Postgres 16 (scratch DB);
-  AT-031 tests 19 passed; ruff clean; strict mypy clean on new modules; frontend
-  `tsc --noEmit`, eslint, and page test green. Full-suite results recorded in HANDOFF at
-  REVIEW_REQUIRED.
+  `tests/test_at031_journal_statistics.py` (19 tests); full backend suite exit 0; ruff clean;
+  strict mypy clean on new modules; frontend lint/typecheck/tests/build green.
 - Recommended model: Fable 5
 - ADR: AT-ADR-013 · Docs: `docs/journal_intelligence_foundation.md` (§4)
+- Completion evidence: commits `2412c56`, `99d7f7f` (CI flake fix), merge `8020558`, PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/17; CI run 30092110777 success (backend
+  1242 passed / 1 skipped; deployment-safety, frontend, evaluation, e2e-smoke,
+  docker-build all green). No deploy.
 - Follow-up slices: replay (deterministic MFE/MAE from `HistoricalCandle`), journal
   completion (import/backfill/auto-journal), human-vs-system journal endpoint,
   backtesting integration (see docs roadmap §5).

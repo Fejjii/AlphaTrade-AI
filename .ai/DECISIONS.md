@@ -251,7 +251,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-012 — Canonical journal trade domain links existing records (AT-030)
 - **Date:** 2026-07-24
-- **Status:** Accepted (implementation at REVIEW_REQUIRED — not yet committed)
+- **Status:** Accepted (merged via PR #16)
 - **Context:** Trade data is fragmented across proposal-flow positions, paper-validation
   trades, backtest trades, and manual session records; the legacy `journals` table is
   reflection-only and typed to the built-in `StrategyId` enum. There was no canonical
@@ -291,7 +291,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-013 — Journal statistics: deterministic aggregates over recorded values (AT-031)
 - **Date:** 2026-07-24
-- **Status:** Accepted (implementation at REVIEW_REQUIRED — not yet committed)
+- **Status:** Accepted (merged via PR #17)
 - **Context:** AT-030 established canonical `journal_trades` but there were no statistics
   over it. Statistics must be trustworthy on small, partially populated samples: paper
   tenants have few trades, and MFE/MAE, planned risk, fees, and available-profit are only
