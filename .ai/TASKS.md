@@ -250,6 +250,34 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   statistics, replay (deterministic MFE/MAE), human-vs-system journal endpoint,
   backtesting integration.
 
+### AT-031 — Journal Statistics & Setup Analytics v1 (journal domain, slice 2)
+- Priority: P1 · Status: REVIEW_REQUIRED (implemented + validated; awaiting commit/push
+  authorization) · Dependencies: AT-030 · Risk: Low (read-only aggregates, no execution path)
+- Safety classification: Paper-safe / record-only / read-only endpoint
+- Goal: Deterministic tenant-scoped statistics over canonical `journal_trades`, grouped and
+  filterable by setup/setup version, strategy/strategy version, symbol, timeframe, market
+  regime, source, rule compliance (worst-assessment classification), and human-vs-system
+  execution; metrics: trade count, W/L/BE, win rate, expectancy, average R, average
+  winner/loser, profit factor, net PnL, fees/funding/slippage impact, MFE/MAE aggregates
+  (recorded values only), available-vs-realized profit; per-family sample counts,
+  confidence labels, warnings, date-range filter, bucket pagination, bounded scans
+  (`journal_stats_max_rows`).
+- Branch: `cursor/at-031-journal-statistics-fea2`
+- Deliverables: `schemas/journal_statistics.py`; statistics queries on
+  `repositories/journal_trades.py`; `services/journal_statistics_service.py`;
+  `GET /journal/statistics` (ReaderDep); migration `j6e7f8a9b0c1` (indexes only);
+  frontend `/journal/statistics` page + API client/types + nav entry;
+  `tests/test_at031_journal_statistics.py` (19 tests); docs section + roadmap update.
+- Validation: migration `j6e7f8a9b0c1` upgrade/downgrade/upgrade on Postgres 16 (scratch DB);
+  AT-031 tests 19 passed; ruff clean; strict mypy clean on new modules; frontend
+  `tsc --noEmit`, eslint, and page test green. Full-suite results recorded in HANDOFF at
+  REVIEW_REQUIRED.
+- Recommended model: Fable 5
+- ADR: AT-ADR-013 · Docs: `docs/journal_intelligence_foundation.md` (§4)
+- Follow-up slices: replay (deterministic MFE/MAE from `HistoricalCandle`), journal
+  completion (import/backfill/auto-journal), human-vs-system journal endpoint,
+  backtesting integration (see docs roadmap §5).
+
 ---
 
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)

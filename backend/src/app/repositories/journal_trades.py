@@ -1,10 +1,13 @@
-"""Canonical journal trade persistence (AT-030)."""
+"""Canonical journal trade persistence (AT-030) and statistics queries (AT-031)."""
 
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 
 from app.db.models import (
     JournalTrade,
@@ -13,7 +16,43 @@ from app.db.models import (
     JournalTradeRuleCheck,
 )
 from app.repositories.base import SQLAlchemyRepository
-from app.schemas.common import JournalTradeSource, JournalTradeStatus
+from app.schemas.common import (
+    JournalTradeSource,
+    JournalTradeStatus,
+    MarketRegime,
+    RuleComplianceStatus,
+    TradeResult,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class JournalTradeStatsRow:
+    """Minimal per-trade projection used for deterministic statistics (AT-031).
+
+    Only recorded values are carried — no derived or fetched data. Loading a
+    narrow projection instead of full ORM rows keeps the bounded statistics
+    scan cheap even when trades hold long free-text fields.
+    """
+
+    id: uuid.UUID
+    source: JournalTradeSource
+    symbol: str
+    timeframe: str
+    market_regime: MarketRegime
+    setup_id: uuid.UUID | None
+    user_strategy_id: uuid.UUID | None
+    strategy_version_id: uuid.UUID | None
+    result: TradeResult
+    net_pnl: Decimal | None
+    gross_pnl: Decimal | None
+    fees: Decimal | None
+    funding: Decimal | None
+    slippage: Decimal | None
+    planned_risk_amount: Decimal | None
+    mfe_amount: Decimal | None
+    mae_amount: Decimal | None
+    available_profit: Decimal | None
+    realized_vs_available_pct: float | None
 
 
 class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
@@ -82,6 +121,172 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         if linked_paper_trade_id is not None:
             stmt = stmt.where(JournalTrade.linked_paper_trade_id == linked_paper_trade_id)
         return self._session.scalar(stmt.limit(1))
+
+    # ------------------------------------------------------------------ #
+    # Statistics queries (AT-031) — closed trades only, bounded scans
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _stats_filters(
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        source: JournalTradeSource | None,
+        symbol: str | None,
+        timeframe: str | None,
+        market_regime: MarketRegime | None,
+        setup_id: uuid.UUID | None,
+        user_strategy_id: uuid.UUID | None,
+        strategy_version_id: uuid.UUID | None,
+        date_from: datetime | None,
+        date_to: datetime | None,
+    ) -> list[ColumnElement[bool]]:
+        """Shared WHERE clauses for the statistics row and rule-check scans.
+
+        Statistics cover CLOSED trades only: outcome metrics (expectancy, win
+        rate, profit factor) are undefined for planned/open/cancelled rows.
+        The date range applies to the effective trade time — exit time when
+        recorded, else entry time, else the row creation time.
+        """
+        effective_time = func.coalesce(
+            JournalTrade.exit_time, JournalTrade.entry_time, JournalTrade.created_at
+        )
+        filters: list[ColumnElement[bool]] = [
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.user_id == user_id,
+            JournalTrade.status == JournalTradeStatus.CLOSED,
+        ]
+        if source is not None:
+            filters.append(JournalTrade.source == source)
+        if symbol is not None:
+            filters.append(JournalTrade.symbol == symbol)
+        if timeframe is not None:
+            filters.append(JournalTrade.timeframe == timeframe)
+        if market_regime is not None:
+            filters.append(JournalTrade.market_regime == market_regime)
+        if setup_id is not None:
+            filters.append(JournalTrade.setup_id == setup_id)
+        if user_strategy_id is not None:
+            filters.append(JournalTrade.user_strategy_id == user_strategy_id)
+        if strategy_version_id is not None:
+            filters.append(JournalTrade.strategy_version_id == strategy_version_id)
+        if date_from is not None:
+            filters.append(effective_time >= date_from)
+        if date_to is not None:
+            filters.append(effective_time <= date_to)
+        return filters
+
+    def fetch_stats_rows(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        source: JournalTradeSource | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        market_regime: MarketRegime | None = None,
+        setup_id: uuid.UUID | None = None,
+        user_strategy_id: uuid.UUID | None = None,
+        strategy_version_id: uuid.UUID | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        max_rows: int,
+    ) -> tuple[list[JournalTradeStatsRow], bool]:
+        """Fetch a bounded, deterministic projection of closed trades.
+
+        Returns ``(rows, truncated)``. Ordering is stable (effective time,
+        then id) so a truncated result always covers the same oldest window.
+        """
+        filters = self._stats_filters(
+            organization_id=organization_id,
+            user_id=user_id,
+            source=source,
+            symbol=symbol,
+            timeframe=timeframe,
+            market_regime=market_regime,
+            setup_id=setup_id,
+            user_strategy_id=user_strategy_id,
+            strategy_version_id=strategy_version_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        effective_time = func.coalesce(
+            JournalTrade.exit_time, JournalTrade.entry_time, JournalTrade.created_at
+        )
+        stmt = (
+            select(
+                JournalTrade.id,
+                JournalTrade.source,
+                JournalTrade.symbol,
+                JournalTrade.timeframe,
+                JournalTrade.market_regime,
+                JournalTrade.setup_id,
+                JournalTrade.user_strategy_id,
+                JournalTrade.strategy_version_id,
+                JournalTrade.result,
+                JournalTrade.net_pnl,
+                JournalTrade.gross_pnl,
+                JournalTrade.fees,
+                JournalTrade.funding,
+                JournalTrade.slippage,
+                JournalTrade.planned_risk_amount,
+                JournalTrade.mfe_amount,
+                JournalTrade.mae_amount,
+                JournalTrade.available_profit,
+                JournalTrade.realized_vs_available_pct,
+            )
+            .where(*filters)
+            .order_by(effective_time.asc(), JournalTrade.id.asc())
+            .limit(max_rows + 1)
+        )
+        raw = self._session.execute(stmt).all()
+        truncated = len(raw) > max_rows
+        rows = [JournalTradeStatsRow(*row) for row in raw[:max_rows]]
+        return rows, truncated
+
+    def fetch_rule_check_status_pairs(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        source: JournalTradeSource | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        market_regime: MarketRegime | None = None,
+        setup_id: uuid.UUID | None = None,
+        user_strategy_id: uuid.UUID | None = None,
+        strategy_version_id: uuid.UUID | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> list[tuple[uuid.UUID, RuleComplianceStatus]]:
+        """Distinct (journal_trade_id, rule status) pairs for the same trade scope.
+
+        Grouped in SQL so the result is bounded by trades x distinct statuses
+        (at most 5 per trade), never by the raw rule-check row count.
+        """
+        filters = self._stats_filters(
+            organization_id=organization_id,
+            user_id=user_id,
+            source=source,
+            symbol=symbol,
+            timeframe=timeframe,
+            market_regime=market_regime,
+            setup_id=setup_id,
+            user_strategy_id=user_strategy_id,
+            strategy_version_id=strategy_version_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        stmt = (
+            select(JournalTradeRuleCheck.journal_trade_id, JournalTradeRuleCheck.status)
+            .join(JournalTrade, JournalTradeRuleCheck.journal_trade_id == JournalTrade.id)
+            .where(
+                JournalTradeRuleCheck.organization_id == organization_id,
+                *filters,
+            )
+            .group_by(JournalTradeRuleCheck.journal_trade_id, JournalTradeRuleCheck.status)
+        )
+        return [(row[0], row[1]) for row in self._session.execute(stmt).all()]
 
 
 class JournalTradeEvidenceRepository(SQLAlchemyRepository[JournalTradeEvidence]):

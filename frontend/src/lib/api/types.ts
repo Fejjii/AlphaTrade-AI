@@ -2775,3 +2775,128 @@ export interface PaperEligibilityReport {
   real_trading_enabled: boolean;
   limitations: string[];
 }
+
+// --------------------------------------------------------------------------
+// Journal statistics (AT-031) — deterministic aggregates over journal trades
+// --------------------------------------------------------------------------
+
+export type JournalStatsGroupBy =
+  | "overall"
+  | "setup"
+  | "setup_version"
+  | "strategy"
+  | "strategy_version"
+  | "symbol"
+  | "timeframe"
+  | "market_regime"
+  | "source"
+  | "rule_compliance"
+  | "execution_actor";
+
+export type JournalTradeSource =
+  | "manual"
+  | "paper_execution"
+  | "paper_validation"
+  | "backtest"
+  | "imported"
+  | "system";
+
+export type MarketRegime =
+  | "trending_up"
+  | "trending_down"
+  | "ranging"
+  | "volatile"
+  | "quiet"
+  | "unknown";
+
+export type TradeRuleCompliance = "compliant" | "partial" | "violated" | "unassessed";
+export type ExecutionActor = "human" | "system";
+export type SampleConfidence = "insufficient" | "low" | "moderate" | "high";
+
+export interface JournalStatsWarning {
+  code: string;
+  message: string;
+}
+
+export interface JournalTradeStatsMetrics {
+  trade_count: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  win_rate: number | null;
+  pnl_sample_count: number;
+  net_pnl_total: string | null;
+  gross_pnl_total: string | null;
+  expectancy: string | null;
+  average_winner: string | null;
+  average_loser: string | null;
+  profit_factor: number | null;
+  r_sample_count: number;
+  average_r: number | null;
+  cost_sample_count: number;
+  fees_total: string | null;
+  funding_total: string | null;
+  slippage_total: string | null;
+  total_costs: string | null;
+  mfe_sample_count: number;
+  average_mfe_amount: string | null;
+  mae_sample_count: number;
+  average_mae_amount: string | null;
+  capture_sample_count: number;
+  available_profit_total: string | null;
+  realized_on_available_total: string | null;
+  average_realized_vs_available_pct: number | null;
+  confidence: SampleConfidence;
+  warnings: JournalStatsWarning[];
+}
+
+export interface JournalStatsBucket {
+  key: string;
+  group_id?: string | null;
+  label: string;
+  metrics: JournalTradeStatsMetrics;
+}
+
+export interface JournalStatsFilters {
+  source?: JournalTradeSource | null;
+  symbol?: string | null;
+  timeframe?: string | null;
+  market_regime?: MarketRegime | null;
+  setup_id?: string | null;
+  user_strategy_id?: string | null;
+  strategy_version_id?: string | null;
+  rule_compliance?: TradeRuleCompliance | null;
+  execution_actor?: ExecutionActor | null;
+  date_from?: string | null;
+  date_to?: string | null;
+}
+
+export interface JournalStatsResponse {
+  group_by: JournalStatsGroupBy;
+  filters: JournalStatsFilters;
+  overall: JournalTradeStatsMetrics;
+  buckets: JournalStatsBucket[];
+  total_buckets: number;
+  limit: number;
+  offset: number;
+  truncated: boolean;
+  max_rows: number;
+  generated_at: string;
+}
+
+export type JournalStatsParams = {
+  group_by?: JournalStatsGroupBy;
+  source?: JournalTradeSource;
+  symbol?: string;
+  timeframe?: string;
+  market_regime?: MarketRegime;
+  setup_id?: string;
+  user_strategy_id?: string;
+  strategy_version_id?: string;
+  rule_compliance?: TradeRuleCompliance;
+  execution_actor?: ExecutionActor;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+};

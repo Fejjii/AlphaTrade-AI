@@ -25,6 +25,7 @@ from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
 from app.services.journal_rag_sync_service import JournalRagSyncService
 from app.services.journal_service import JournalService
+from app.services.journal_statistics_service import JournalStatisticsService
 from app.services.journal_trade_service import JournalTradeService
 from app.services.learning_analytics import LearningAnalyticsService
 from app.services.lesson_candidate_service import LessonCandidateService
@@ -210,6 +211,13 @@ def get_journal_trade_service(
     return JournalTradeService(session, audit_service)
 
 
+def get_journal_statistics_service(
+    session: SessionDep,
+    settings: SettingsDep,
+) -> JournalStatisticsService:
+    return JournalStatisticsService(session, max_rows=settings.journal_stats_max_rows)
+
+
 def get_workflow_service(
     proposal_service: ProposalServiceDep,
     approval_service: ApprovalServiceDep,
@@ -239,6 +247,9 @@ ExecutionServiceDep = Annotated[ExecutionService, Depends(get_execution_service)
 PositionServiceDep = Annotated[PositionService, Depends(get_position_service)]
 JournalServiceDep = Annotated[JournalService, Depends(get_journal_service)]
 JournalTradeServiceDep = Annotated[JournalTradeService, Depends(get_journal_trade_service)]
+JournalStatisticsServiceDep = Annotated[
+    JournalStatisticsService, Depends(get_journal_statistics_service)
+]
 WorkflowServiceDep = Annotated[WorkflowService, Depends(get_workflow_service)]
 
 

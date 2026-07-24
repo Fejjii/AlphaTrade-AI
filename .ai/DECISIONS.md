@@ -288,3 +288,49 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   domain — see `docs/journal_intelligence_foundation.md`.
 - **Validation:** Migration upgrade/downgrade/upgrade on Postgres 16; 13 new API tests;
   full backend suite exit 0; ruff clean; strict mypy clean on all new modules.
+
+## AT-ADR-013 — Journal statistics: deterministic aggregates over recorded values (AT-031)
+- **Date:** 2026-07-24
+- **Status:** Accepted (implementation at REVIEW_REQUIRED — not yet committed)
+- **Context:** AT-030 established canonical `journal_trades` but there were no statistics
+  over it. Statistics must be trustworthy on small, partially populated samples: paper
+  tenants have few trades, and MFE/MAE, planned risk, fees, and available-profit are only
+  sometimes recorded.
+- **Decision:**
+  1. **Extend the AT-030 journal architecture** — statistics queries live on
+     `JournalTradeRepository`, computation in a dedicated `JournalStatisticsService`,
+     one authorized endpoint `GET /journal/statistics` on the journal router. No separate
+     analytics system, no rollup tables in this slice.
+  2. **Closed trades only; recorded values only.** SQL selects a bounded narrow
+     projection (`journal_stats_max_rows`, default 5000, stable oldest-first ordering
+     with truncation flagging); metric arithmetic runs in Python with `Decimal` for
+     deterministic, dialect-independent precision (SQLite tests ≙ Postgres prod).
+  3. **Per-family sample counts + confidence.** Every metric family (PnL, R, costs,
+     MFE/MAE, available-vs-realized) aggregates only trades that recorded those values
+     and reports its own sample count; `None` is never silently reported as zero.
+     Coarse confidence labels (<5 insufficient, <20 low, <50 moderate, ≥50 high) and
+     machine-readable warnings accompany every result.
+  4. **Derived dimensions are conservative.** Rule compliance per trade = worst recorded
+     assessment (`violated` > `partial` > `compliant`; no checks ⇒ `unassessed`, never
+     compliant). Human-vs-system = decision authority mapping from `source`
+     (`manual`/`imported`/`paper_execution` ⇒ human; `paper_validation`/`backtest`/
+     `system` ⇒ system).
+  5. **Win/loss classification**: recorded `result` wins; closed trades left at
+     `result=open` fall back to the recorded `net_pnl` sign (the same arithmetic AT-030
+     applies at close); win rate = wins / (wins + losses), breakeven excluded.
+- **Alternatives considered:** Pure SQL conditional aggregation (rejected: float
+  arithmetic on SQLite diverges from Postgres `numeric`, and per-family sample logic
+  becomes unreadable); extending `UnifiedTradeLoader` (rejected for this slice: it loads
+  positions/paper trades, not canonical journal trades — journal statistics must read the
+  canonical table so all sources are covered uniformly); precomputed rollup tables
+  (rejected: premature — bounded on-demand scans suffice at current volumes and cannot
+  drift from source data).
+- **Safety impact:** Read-only endpoint (`ReaderDep`), tenant-scoped (org + user); no
+  execution-path changes; no live market I/O; reads not audited, mutations remain audited
+  via AT-030; paper posture unchanged.
+- **Consequences:** Alembic head moves to `j6e7f8a9b0c1` (index-only migration). Replay
+  slice (deterministic MFE/MAE from candles) will raise excursion coverage; backtest
+  integration reuses these grouping dimensions.
+- **Validation:** Migration upgrade/downgrade/upgrade on Postgres 16 scratch DB; 19 new
+  API tests; ruff clean; strict mypy clean on new modules; frontend tsc + eslint + page
+  test green.
