@@ -279,7 +279,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   human-vs-system journal endpoint, backtesting integration (see docs roadmap §6).
 
 ### AT-032 — Journal Excursion Replay (deterministic MFE/MAE from HistoricalCandle)
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-030, AT-031 · Risk: Low
+- Priority: P1 · Status: DONE · Dependencies: AT-030, AT-031 · Risk: Low
   (record-only replay; no execution path)
 - Safety classification: Paper-safe / record-only
 - Goal: Deterministic in-trade MFE/MAE, available profit, and profit-capture for
@@ -289,15 +289,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   analysis via `RunnerAndMissedProfitAnalyzer`; feed AT-031 statistics; handle missing
   candles, gaps, incomplete windows, invalid trade windows safely; tenant isolation +
   RBAC + audit; bounded candle/batch queries.
-- Branch: `feat/at-032-journal-excursion-replay`
+- Branch: `feat/at-032-journal-excursion-replay` (merged)
 - Deliverables: migration `k7f8a9b0c1d2`; calculator + replay service; schemas; routes
   `POST /journal/trades/{id}/replay-excursions` and batch
   `POST /journal/trades/replay-excursions`; config bounds; tests; docs §5; ADR-014.
-- Validation: (pending REVIEW_REQUIRED) migration upgrade/downgrade/upgrade on Postgres 16;
-  `tests/test_at032_journal_excursion_replay.py`; ruff; strict mypy on new modules;
-  AT-030/031 regression; paper posture unchanged. No deploy.
+- Validation: migration `k7f8a9b0c1d2` upgrade/downgrade/upgrade on Postgres 16 (scratch DB);
+  `tests/test_at032_journal_excursion_replay.py` (17 tests); ruff clean; strict mypy clean
+  on new modules; AT-030/031 regression green; CI run 30105918952 success (backend 1259
+  passed / 1 skipped; deployment-safety, frontend, evaluation, e2e-smoke, docker-build all
+  green). No deploy.
 - Recommended model: Fable 5
 - ADR: AT-ADR-014 · Docs: `docs/journal_intelligence_foundation.md` (§5)
+- Completion evidence: commits `460a994`, `e237d96` (ruff format), merge `b164c14`, PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/18; CI run 30105918952 success. No deploy.
+- Follow-up slices: journal completion (import/backfill/auto-journal), human-vs-system
+  journal endpoint, backtesting integration (see docs roadmap §6).
 
 ---
 

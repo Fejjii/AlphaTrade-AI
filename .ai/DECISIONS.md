@@ -337,7 +337,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-014 — Journal excursion replay from HistoricalCandle (AT-032)
 - **Date:** 2026-07-24
-- **Status:** Proposed (implementation complete; awaiting REVIEW_REQUIRED authorization)
+- **Status:** Accepted (merged via PR #18)
 - **Context:** AT-030 stored excursion columns but values were only manual; AT-031
   aggregates recorded MFE/MAE / available-profit with per-family sample counts, so
   coverage stays low until a deterministic fill path exists. Live market fetches at
@@ -370,4 +370,6 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Alembic head moves to `k7f8a9b0c1d2`. Remaining journal slices:
   completion/import, human-vs-system endpoint, backtest bulk journal + full
   deterministic backtesting coverage.
-- **Validation:** See AT-032 task entry / handoff (tests + migration evidence).
+- **Validation:** Migration upgrade/downgrade/upgrade on Postgres 16 scratch DB; 17 new
+  API tests; ruff clean; strict mypy clean on new modules; CI run 30105918952 success
+  (backend 1259 passed / 1 skipped).
