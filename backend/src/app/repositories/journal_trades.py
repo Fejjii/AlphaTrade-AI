@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 
 from app.db.models import (
     JournalTrade,
@@ -121,6 +121,48 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         if linked_paper_trade_id is not None:
             stmt = stmt.where(JournalTrade.linked_paper_trade_id == linked_paper_trade_id)
         return self._session.scalar(stmt.limit(1))
+
+    def list_replay_candidates(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        symbol: str | None = None,
+        overwrite_policy: str = "skip_protected",
+        limit: int = 50,
+    ) -> list[JournalTrade]:
+        """Closed trades eligible for HistoricalCandle excursion replay (AT-032).
+
+        Under ``skip_protected``, only rows with no excursion source or
+        ``excursion_source='replay'`` are returned so manual/system values are
+        never silently selected. ``force`` returns all closed trades with a
+        usable window (entry/exit timestamps present).
+        """
+        filters: list[ColumnElement[bool]] = [
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.user_id == user_id,
+            JournalTrade.status == JournalTradeStatus.CLOSED,
+            JournalTrade.entry_time.is_not(None),
+            JournalTrade.exit_time.is_not(None),
+            JournalTrade.entry_price.is_not(None),
+        ]
+        if symbol is not None:
+            filters.append(JournalTrade.symbol == symbol)
+        if overwrite_policy != "force":
+            filters.append(
+                or_(
+                    JournalTrade.excursion_source.is_(None),
+                    JournalTrade.excursion_source == "",
+                    JournalTrade.excursion_source == "replay",
+                )
+            )
+        stmt = (
+            select(JournalTrade)
+            .where(*filters)
+            .order_by(JournalTrade.exit_time.asc(), JournalTrade.id.asc())
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt).all())
 
     # ------------------------------------------------------------------ #
     # Statistics queries (AT-031) — closed trades only, bounded scans

@@ -23,6 +23,7 @@ from app.services.execution_service import ExecutionService
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
+from app.services.journal_excursion_replay_service import JournalExcursionReplayService
 from app.services.journal_rag_sync_service import JournalRagSyncService
 from app.services.journal_service import JournalService
 from app.services.journal_statistics_service import JournalStatisticsService
@@ -218,6 +219,14 @@ def get_journal_statistics_service(
     return JournalStatisticsService(session, max_rows=settings.journal_stats_max_rows)
 
 
+def get_journal_excursion_replay_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+    settings: SettingsDep,
+) -> JournalExcursionReplayService:
+    return JournalExcursionReplayService(session, audit_service, settings)
+
+
 def get_workflow_service(
     proposal_service: ProposalServiceDep,
     approval_service: ApprovalServiceDep,
@@ -249,6 +258,9 @@ JournalServiceDep = Annotated[JournalService, Depends(get_journal_service)]
 JournalTradeServiceDep = Annotated[JournalTradeService, Depends(get_journal_trade_service)]
 JournalStatisticsServiceDep = Annotated[
     JournalStatisticsService, Depends(get_journal_statistics_service)
+]
+JournalExcursionReplayServiceDep = Annotated[
+    JournalExcursionReplayService, Depends(get_journal_excursion_replay_service)
 ]
 WorkflowServiceDep = Annotated[WorkflowService, Depends(get_workflow_service)]
 

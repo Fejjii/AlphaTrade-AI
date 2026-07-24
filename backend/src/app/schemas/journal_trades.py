@@ -1,8 +1,8 @@
-"""Canonical journal trade schemas (AT-030 — Journal Intelligence Foundation).
+"""Canonical journal trade schemas (AT-030/AT-032 — Journal Intelligence).
 
 Record-only intelligence layer: these schemas never carry execution authority.
 Excursion metrics (MFE/MAE, available vs realized profit) are deterministic
-values supplied by callers or later replay slices — no live market I/O.
+values supplied by callers or HistoricalCandle replay — no live market I/O.
 """
 
 from __future__ import annotations
@@ -186,6 +186,13 @@ class JournalTradeRead(ORMModel):
     available_profit: Decimal | None = None
     realized_vs_available_pct: float | None = None
     excursion_source: str | None = None
+    excursion_data_source: str | None = None
+    excursion_is_stale: bool | None = None
+    excursion_freshness_note: str | None = None
+    excursion_candle_count: int | None = None
+    excursion_gaps_detected: int | None = None
+    excursion_window_complete: bool | None = None
+    excursion_computed_at: datetime | None = None
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     linked_position_id: UUID | None = None
