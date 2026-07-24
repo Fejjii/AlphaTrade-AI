@@ -172,13 +172,17 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   CI run 30032319345 green (1180 passed, 1 skipped). Staging validation pending separately.
 
 ### AT-029 — Fix pre-existing mypy Depends typing on `/execution/paper` route
-- Priority: P3 · Status: TODO · Dependencies: none · Risk: Low
+- Priority: P3 · Status: DONE · Dependencies: none · Risk: Low
 - Goal: `backend/src/app/api/routes/execution.py` reports a pre-existing strict-mypy
   `list-item` error: `require_quota(...)` typed as `Callable[..., QuotaCheckResult]`
   where FastAPI `dependencies=` expects `Depends`. Do not suppress or broaden typing
   rules; fix the dependency typing helper / annotation properly.
 - Validation: `uv run mypy --strict src/app/api/routes/execution.py` clean.
 - Recommended model: Composer 2.5
+- Completed: 2026-07-24 — merged via PR #12 → `main` @ merge `cfdfe48` (commit `fb33f66`);
+  CI run 30050995688 green. `require_quota` now returns `fastapi.params.Depends`
+  (`DependsMarker`); typing-only, no runtime change. Pre-merge: scoped strict mypy + ruff
+  clean, 23 quota tests passed.
 
 ### AT-017 — Frontend auth boundary + security headers
 - Priority: P1 · Status: DONE · Dependencies: AT-011 · Risk: Medium
@@ -192,21 +196,32 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   health-truth paper banners, fail-closed app layout, single-flight refresh.
 
 ### AT-018 — Proxy trust + Redis-required rate limits in staging/prod
-- Priority: P1 · Status: TODO · Dependencies: AT-010 · Risk: Medium
-- Branch: `feat/at-018-rate-limit-proxy-trust`
+- Priority: P1 · Status: DONE · Dependencies: AT-010 · Risk: Medium
+- Branch: `feat/at-018-proxy-trust-redis` (operator lane name; backlog alias was
+  `feat/at-018-rate-limit-proxy-trust`)
 - Validation: Spoofed XFF ignored; memory fallback false outside local; denylist fail-closed.
-- Recommended model: GPT-5.4
+- Recommended model: GPT-5.4 (backlog); implemented via Fable 5 (operator assignment)
+- ADR: AT-ADR-009
+- Completed: 2026-07-24 — merged via PR #13 → `main` @ merge `22afcda` (commit `265348e`);
+  CI run 30053223730 green. Rightmost-hops `TRUSTED_PROXY_HOPS` client-IP trust (default 0),
+  uvicorn forwarded-ips no longer `*`, staging/prod reject in-memory rate-limit fallback,
+  fail-closed token denylist (503 on unpersistable revocation writes). Pre-merge (after
+  rebase onto `cfdfe48`): ruff + scoped strict mypy clean; full backend suite exit 0
+  (includes 25 new AT-018 tests); targeted rerun 88 passed. Deploy note: staging boot now
+  fails fast if `REDIS_URL` unreachable (intended; `render.yaml` carries the new flags).
 
 ### AT-019 — Backup/restore runbook + restore drill evidence
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-005 · Risk: Medium (ops)
+- Priority: P1 · Status: DONE · Dependencies: AT-005 · Risk: Medium (ops)
 - Branch: `feat/at-019-backup-restore-drill` (operator lane name; backlog alias was
   `feat/at-019-backup-restore-runbook`)
 - Validation: Documented RPO/RTO; successful restore drill recorded (no secrets in docs).
 - Recommended model: Grok 4.5 (operator assignment; backlog previously Sonnet 4.6)
-- Progress (2026-07-23): Docs + local-only scripts authored; Tier A local Compose restore
-  drill **passed** (sanitized evidence in `docs/backup_restore_drill_evidence.md`).
-  Managed/staging Tier B restore deferred pending human approval. Stop at
-  `REVIEW_REQUIRED` before commit/push/deploy. AT-005 remains TODO (cross-referenced).
+- ADR: AT-ADR-010 (drafted in-lane as AT-ADR-009; renumbered — AT-018 landed AT-ADR-009)
+- Completed: 2026-07-24 — merged via PR #14 → `main` @ merge `a31a05c` (commit `ca4ff70`);
+  CI run 30054203698 green. Runbook (RPO/RTO), inventory, drill plan + sanitized Tier A
+  local Compose drill evidence (passed 2026-07-23); local-only backup/restore/drill
+  scripts (`CONFIRM=yes` gate, no remote targets). RR-13 moved to Partial. Managed/staging
+  Tier B restore remains approval-gated; AT-005 rollback automation still TODO.
 
 ---
 
