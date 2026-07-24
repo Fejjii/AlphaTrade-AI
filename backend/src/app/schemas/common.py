@@ -350,6 +350,12 @@ class AuditEventType(StrEnum):
     JOURNAL_BACKFILL_COMPLETED = "journal_backfill_completed"
     JOURNAL_ATTACHMENT_ADDED = "journal_attachment_added"
     JOURNAL_ATTACHMENT_DELETED = "journal_attachment_deleted"
+    BACKTEST_RUN_CREATED = "backtest_run_created"
+    BACKTEST_RUN_CANCELLED = "backtest_run_cancelled"
+    BACKTEST_RUN_COMPLETED = "backtest_run_completed"
+    BACKTEST_RUN_FAILED = "backtest_run_failed"
+    BACKTEST_RUN_VERIFIED = "backtest_run_verified"
+    BACKTEST_JOURNALED = "backtest_journaled"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"

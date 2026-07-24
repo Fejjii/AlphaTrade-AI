@@ -241,6 +241,17 @@ class Settings(BaseSettings):
 
     # --- Backtest engine (AT-034) — bounded workload; truncate not allowed ---
     backtest_max_bars: int = Field(default=20_000, ge=100, le=100_000)
+    # Sync path for small datasets (preserves Slice 35 UX); larger runs stay QUEUED.
+    backtest_sync_max_bars: int = Field(default=6000, ge=10, le=100_000)
+    backtest_max_active_runs_per_org: int = Field(default=2, ge=1, le=50)
+    backtest_journal_bulk_max: int = Field(default=1000, ge=1, le=10_000)
+    # Setup evidence tiers (AT-034) — advisory only; never feeds execution/risk.
+    backtest_tier1_oos_min_trades: int = Field(default=30, ge=1, le=10_000)
+    backtest_tier1_oos_min_profit_factor: float = Field(default=1.3, ge=0.0, le=100.0)
+    backtest_tier1_min_confirm_trades: int = Field(default=20, ge=1, le=10_000)
+    backtest_tier2_min_trades: int = Field(default=30, ge=1, le=10_000)
+    backtest_tier2_oos_min_trades: int = Field(default=15, ge=1, le=10_000)
+    backtest_tier2_oos_min_profit_factor: float = Field(default=1.1, ge=0.0, le=100.0)
 
     # --- LLM narrative polish (Slice 21 — explanation only, not decision authority) ---
     narrative_llm_enabled: bool = True

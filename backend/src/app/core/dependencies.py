@@ -16,6 +16,7 @@ from app.services.alert_delivery_service import AlertDeliveryService
 from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
+from app.services.backtest_journal_service import BacktestJournalService
 from app.services.backtest_service import BacktestService
 from app.services.coaching import CoachingService
 from app.services.dashboard_summary_service import DashboardSummaryService
@@ -65,6 +66,7 @@ from app.services.rag_service import RagService, build_rag_service
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
+from app.services.setup_evidence_service import SetupEvidenceService
 from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_quality import StrategyQualityService
 from app.services.strategy_service import StrategyService
@@ -387,8 +389,20 @@ def get_structure_from_text_service() -> StructureFromTextService:
     return StructureFromTextService()
 
 
-def get_backtest_service(session: SessionDep, settings: SettingsDep) -> BacktestService:
-    return BacktestService(session, settings)
+def get_backtest_service(
+    session: SessionDep, settings: SettingsDep, audit_service: AuditServiceDep
+) -> BacktestService:
+    return BacktestService(session, settings, audit_service)
+
+
+def get_backtest_journal_service(
+    session: SessionDep, settings: SettingsDep, audit_service: AuditServiceDep
+) -> BacktestJournalService:
+    return BacktestJournalService(session, audit_service, settings)
+
+
+def get_setup_evidence_service(session: SessionDep, settings: SettingsDep) -> SetupEvidenceService:
+    return SetupEvidenceService(session, settings)
 
 
 def get_paper_validation_service(session: SessionDep) -> PaperValidationService:
@@ -489,6 +503,8 @@ StructureFromTextServiceDep = Annotated[
     StructureFromTextService, Depends(get_structure_from_text_service)
 ]
 BacktestServiceDep = Annotated[BacktestService, Depends(get_backtest_service)]
+BacktestJournalServiceDep = Annotated[BacktestJournalService, Depends(get_backtest_journal_service)]
+SetupEvidenceServiceDep = Annotated[SetupEvidenceService, Depends(get_setup_evidence_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]
 PaperValidationRuntimeServiceDep = Annotated[
     PaperValidationRuntimeService, Depends(get_paper_validation_runtime_service)
