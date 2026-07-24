@@ -222,10 +222,14 @@ Rollback:
 |-------|--------|
 | Backend | Revert to previous deploy revision in Render/Railway/Fly |
 | Frontend | Redeploy previous Vercel deployment (Instant Rollback) |
-| Database | `alembic downgrade -1` if safe; else restore snapshot |
+| Database | `alembic downgrade -1` if safe; else restore snapshot — see [backup_restore_runbook.md](backup_restore_runbook.md) |
 | Secrets | Rotate `JWT_SECRET` only with planned session invalidation |
 
 Keep previous revision available for 24–48 hours after staging deploy.
+
+Full backup inventory, RPO/RTO targets, and restore-drill evidence: [backup_restore_runbook.md](backup_restore_runbook.md),
+[backup_inventory.md](backup_inventory.md), [backup_restore_drill_evidence.md](backup_restore_drill_evidence.md).
+Deploy rollback automation / smoke gating is tracked separately as **AT-005**.
 
 ## Monitoring plan
 

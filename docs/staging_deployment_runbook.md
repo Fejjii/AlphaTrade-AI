@@ -289,12 +289,18 @@ BASE_URL=https://your-api.onrender.com ./scripts/verify-safety.sh
 |-------|--------|
 | Backend | Render → rollback to previous deploy |
 | Frontend | Vercel Instant Rollback |
-| Database | `alembic downgrade -1` only if reversible; else restore snapshot |
+| Database | `alembic downgrade -1` only if reversible; else restore snapshot — see [backup_restore_runbook.md](backup_restore_runbook.md) (AT-019) |
+
+Application rollback detail and automated post-deploy smoke gating remain **AT-005** (TODO).
+Data backup/restore RPO/RTO, inventory, and drill evidence: **AT-019** docs linked below.
 
 ---
 
 ## Related docs
 
+- [backup_restore_runbook.md](backup_restore_runbook.md) — RPO/RTO + restore procedures (AT-019)
+- [backup_inventory.md](backup_inventory.md) — what to back up (AT-019)
+- [backup_restore_drill_plan.md](backup_restore_drill_plan.md) / [backup_restore_drill_evidence.md](backup_restore_drill_evidence.md) — drill plan + sanitized evidence
 - [staging_deployment_checklist.md](staging_deployment_checklist.md) — copy-paste env checklist
 - [slice_70_telegram_alert_delivery_validation.md](slice_70_telegram_alert_delivery_validation.md) — manual Telegram delivery validation
 - [deployment.md](deployment.md) — architecture and monitoring
