@@ -368,7 +368,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - ADR: AT-ADR-016 · Docs: `docs/backtesting.md`
 - Completion evidence: merged PR #20 (`095e490`, CI 30126077064), PR #21
   (`a46d863`, CI 30126107532), PR #22 (`fb26dea`, CI 30130869273), PR #23
-  (`8f9a84b`, CI 30130870524) → `main` @ `8f9a84b` (+ governance `376c06b`). Post-merge local validation:
+  (`8f9a84b`, CI 30130870524) → `main` @ `8f9a84b` (governance tip `79971fa`). Post-merge local validation:
   AT-034 + slice-35 pytest 43 passed; frontend page tests 7 passed; ruff clean.
   No deploy; paper posture unchanged.
 
