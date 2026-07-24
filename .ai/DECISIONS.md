@@ -373,3 +373,64 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Validation:** Migration upgrade/downgrade/upgrade on Postgres 16 scratch DB; 17 new
   API tests; ruff clean; strict mypy clean on new modules; CI run 30105918952 success
   (backend 1259 passed / 1 skipped).
+
+## AT-ADR-015 — Journal completion: import dedup, backfill, auto-journal, attachments (AT-033)
+- **Date:** 2026-07-24
+- **Status:** Proposed (PR open, pending review/merge)
+- **Context:** AT-030/031/032 built the canonical journal, statistics, and excursion
+  replay, but records only entered via manual API calls. The completion slice needs
+  bulk history import, legacy `TradeJournal` migration, automatic journaling on paper
+  closes, and a storage answer for screenshots/evidence — with idempotency, tenant
+  isolation, audit, and human-vs-system analytics preserved.
+- **Decision:**
+  1. **DB-enforced dedup via partial unique index.** `(organization_id, external_ref)
+     WHERE external_ref IS NOT NULL` on `journal_trades`. App-level checks give
+     friendly per-row `duplicate` outcomes; the index is the race-proof backstop.
+     Import rows without a ref get a deterministic `fp-sha256:` fingerprint over
+     normalized identity fields, so re-imports are idempotent either way.
+  2. **All-or-nothing import commit as the recovery model.** `mode=dry_run` previews
+     per-row outcomes; `mode=commit` persists nothing when any row is invalid
+     (single unit of work). Recovery is "fix and re-run" — duplicates skip safely.
+     Committed batches persist to `journal_import_batches` for reconciliation
+     history and audit (`JOURNAL_IMPORT_COMPLETED`).
+  3. **`entry_method` column for human-vs-system analytics.**
+     `manual|auto|import|backfill`, orthogonal to `source` (a human from-position
+     record and an auto-hook record share `source=paper_execution` but differ in
+     entry_method). First-class AT-031 filter + `group_by` dimension.
+  4. **Backfill is a CLI script, dry-run by default.**
+     `scripts/backfill_journal_entries.py` maps legacy rows to
+     `source=imported`/`entry_method=backfill` with
+     `external_ref='legacy-journal:<id>'` + `linked_journal_entry_id`; legacy rows
+     are never mutated (link-never-copy, AT-ADR-012 upheld).
+  5. **Auto-journal hooks are opt-in global Settings flags, fail-safe for the
+     close.** `journal_auto_from_position_close` /
+     `journal_auto_from_paper_validation`, both default false. Hooks reuse the
+     idempotent `create_from_*` prefills inside a savepoint and swallow all errors
+     after a warning log — journaling can never block or roll back a close.
+     Paper-validation records attribute to the run owner.
+  6. **Attachments are DB-backed behind an interface.** Bytes live in
+     `journal_trade_attachments.content` (Postgres) with strict caps (5 MiB, MIME
+     whitelist, 20/trade) because no durable object store exists and Render disks
+     are ephemeral; existing DB backups cover them. `AttachmentStorage` keeps an
+     S3-style swap schema-free. Uploads auto-link `JournalTradeEvidence`
+     (`ref='attachment:<id>'`).
+- **Alternatives considered:** Per-row partial import commits (rejected: ambiguous
+  recovery semantics; idempotent re-run is simpler); per-user auto-journal preference
+  (rejected for now: no preferences model exists — would be scope creep; global flags
+  documented as deferred work); local-filesystem or S3 attachment storage (rejected:
+  ephemeral Render disk loses data / no object store provisioned; interface keeps the
+  door open); making `external_ref` globally unique across sources only for
+  `imported` (rejected: org-wide partial index gives idempotency to backfill and
+  future integrations too).
+- **Safety impact:** Record-only throughout; no execution-path change; new flags
+  default off; mutations `TraderDep`, reads `ReaderDep`; org-scoped fail-closed
+  lookups; attachment validation fail-closed; paper posture unchanged; no live
+  trading.
+- **Consequences:** Alembic head moves to `l8a9b0c1d2e3`. Deferred: attachment upload
+  UI (needs a trades detail page), per-user auto-journal opt-in, persisting
+  failed/dry-run batches (enum values reserved).
+- **Validation:** Migration upgrade/downgrade/upgrade round-trip on disposable
+  Postgres 16 (docker); partial unique index verified on Postgres (duplicate
+  rejected, NULLs unconstrained); 44 new backend tests (import 14, backfill 6,
+  attachments 12, auto-journal 9, integration 3) plus AT-030/031/032 regression
+  green; frontend 267 tests + typecheck + build green; ruff clean. No deploy.

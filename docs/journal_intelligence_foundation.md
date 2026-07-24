@@ -1,7 +1,8 @@
-# Journal Intelligence Foundation (AT-030, AT-031, AT-032)
+# Journal Intelligence Foundation (AT-030, AT-031, AT-032, AT-033)
 
 Status: slices 1 (canonical journal trades, AT-030), 2 (journal statistics & setup
-analytics v1, AT-031), and 3 (deterministic excursion replay, AT-032) implemented.
+analytics v1, AT-031), 3 (deterministic excursion replay, AT-032), and 4 (journal
+completion — import/backfill/auto-journal/attachments, AT-033) implemented.
 Paper-only; record-only; no execution authority. This document contains the repository
 audit, the canonical domain design, what each slice ships, and the roadmap for the
 remaining slices.
@@ -202,22 +203,133 @@ Semantics (deterministic, conservative — see AT-ADR-014):
 - **AT-031 feed.** Persisted amounts are recorded values — statistics aggregates pick
   them up automatically (raising excursion coverage).
 
-## 6. Roadmap — remaining slices
+## 6. Journal completion slice (AT-033 — implemented)
 
-1. **Journal completion slice.** Bulk import (`imported` source with `external_ref`
-   dedup), auto-journal hooks (opt-in) when positions close or paper trades close,
-   `TradeJournal` → `journal_trades` backfill command, evidence upload storage strategy.
-2. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
+Bulk import, legacy backfill, opt-in auto-journal hooks, and DB-backed evidence
+attachments. Record-only — nothing here places orders or feeds execution/risk gates.
+
+| Layer | Artifact |
+|---|---|
+| Migration | `l8a9b0c1d2e3_at033_journal_completion.py` (head after `k7f8a9b0c1d2`); partial unique index, `entry_method`, `journal_import_batches`, `journal_trade_attachments` |
+| Import | `services/journal_import_service.py`, `schemas/journal_import.py` |
+| Backfill | `services/journal_backfill_service.py`, `scripts/backfill_journal_entries.py` |
+| Attachments | `services/journal_attachment_service.py`, `services/journal_attachment_storage.py`, `schemas/journal_attachments.py` |
+| Auto-journal | Hooks in `services/position_service.py` (`close_paper`) and `services/paper_validation_runtime_service.py` (tick close loop) |
+| API | `POST /journal/trades/import`, `GET /journal/imports[/{id}]`, `POST/GET /journal/trades/{id}/attachments`, `GET /journal/attachments/{id}/content`, `DELETE /journal/attachments/{id}` |
+| Config | `journal_auto_from_position_close`, `journal_auto_from_paper_validation` (both default **false**); `journal_attachment_max_bytes` (5 MiB), `journal_attachment_allowed_types` (png/jpeg/webp/pdf), `journal_attachment_max_per_trade` (20) |
+| Frontend | `/journal/import` — CSV parse + column mapping + dry-run reconciliation + all-or-nothing commit + batch history |
+| Tests | `tests/test_at033_journal_import.py`, `test_at033_journal_backfill.py`, `test_at033_journal_attachments.py`, `test_at033_auto_journal.py`, `test_at033_integration.py` |
+
+### 6.1 Deduplication & idempotency (`external_ref`)
+
+- Partial unique index `uq_journal_trades_org_external_ref` on
+  `(organization_id, external_ref) WHERE external_ref IS NOT NULL` — the database
+  backstop for all import/backfill dedup. NULL refs remain unconstrained.
+- Import rows without an explicit `external_ref` get a deterministic fingerprint
+  `fp-sha256:<hex>` over normalized `(symbol, direction, entry_time, entry_price,
+  size)`, so re-importing the same file is idempotent either way.
+- Backfilled rows use `external_ref='legacy-journal:<id>'` plus
+  `linked_journal_entry_id`; entries already linked manually are skipped.
+
+### 6.2 Import API contract
+
+`POST /journal/trades/import` (`TraderDep`), max **500** raw row objects per request:
+
+- `mode=dry_run` (default) validates each row individually and previews per-row
+  outcomes without persisting anything.
+- `mode=commit` is **all-or-nothing in one unit of work**: any invalid row downgrades
+  the request to a validation report (`committed=false`, nothing written). Duplicate
+  rows (existing or repeated within the batch) are skipped idempotently.
+- Per-row outcomes: `created` / `would_create` / `duplicate` (with the existing trade
+  id) / `invalid` (readable field errors). Rows become `journal_trades` with
+  `source=imported`, `entry_method=import`; `result` falls back to the net-PnL sign
+  for closed rows. Internal record links are intentionally not importable.
+- Committed batches persist to `journal_import_batches` (counts + row report) —
+  reconciliation history via `GET /journal/imports` and `GET /journal/imports/{id}`
+  (`ReaderDep`, org+user scoped).
+- **Recovery model:** a failed commit persists nothing; fixing the input and
+  re-running is always safe because dedup skips already-imported rows.
+
+### 6.3 Backfill command
+
+```bash
+cd backend
+uv run python scripts/backfill_journal_entries.py            # dry-run (default)
+uv run python scripts/backfill_journal_entries.py --commit   # apply
+uv run python scripts/backfill_journal_entries.py --org <uuid>
+```
+
+Maps legacy `TradeJournal` (`journals`) rows to canonical trades
+(`source=imported`, `entry_method=backfill`): thesis ← entry rationale; notes fold
+exit rationale/lessons/improvement rule/emotions/mistakes; `screenshot_refs` become
+`screenshot` evidence rows; proposal/position links copied. Legacy rows are never
+modified or deleted. Commit records a `JOURNAL_BACKFILL_COMPLETED` audit event per
+organization.
+
+### 6.4 Auto-journal hooks (opt-in, default off)
+
+- `journal_auto_from_position_close=true`: `PositionService.close_paper` also calls
+  the idempotent `create_from_position` with `entry_method=auto`.
+- `journal_auto_from_paper_validation=true`: the paper-validation tick journals each
+  closed trade via `create_from_paper_trade`, attributed to the **run owner**.
+- **Failure isolation guarantee:** each hook runs in a savepoint and swallows every
+  error after a warning log — journaling can never block, fail, or roll back the
+  close itself. Link-based idempotency prevents duplicates when a trade was already
+  journaled manually.
+
+### 6.5 Attachment storage strategy
+
+Bytes live in Postgres (`journal_trade_attachments.content`) behind the
+`AttachmentStorage` interface (`storage_backend='db'`). Rationale: the platform has
+no durable object store and Render disks are ephemeral, so DB storage is the only
+backend covered by existing backups; strict caps keep it safe (5 MiB/file, MIME
+whitelist png/jpeg/webp/pdf, 20 attachments/trade, filename sanitized to a
+basename). An S3-style backend can replace it later by adding an implementation and
+switching the factory — no schema change. Uploads auto-create a linked
+`JournalTradeEvidence` row (`ref='attachment:<id>'`) so attachments appear in the
+existing evidence timeline; downloads stream with `X-Content-Type-Options: nosniff`.
+
+### 6.6 Human-vs-system analytics readiness
+
+New `entry_method` column (`manual` / `auto` / `import` / `backfill`) is orthogonal
+to `source` and is a first-class statistics filter and `group_by=entry_method`
+dimension (AT-031 service). This distinguishes human-created from system-created
+journal records even when both share `source=paper_execution`.
+
+### 6.7 RBAC, tenancy, audit
+
+Mutations (`import`, attachments upload/delete) require `TraderDep`; reads
+(`imports`, attachment list/content) require `ReaderDep`. All lookups are
+organization-scoped and fail closed (404, no existence leak); import batches are
+additionally user-scoped. New audit events: `JOURNAL_IMPORT_COMPLETED`,
+`JOURNAL_BACKFILL_COMPLETED`, `JOURNAL_ATTACHMENT_ADDED`,
+`JOURNAL_ATTACHMENT_DELETED`; auto-journal reuses `JOURNAL_TRADE_CREATED` with
+`action=auto_journal_position_close|auto_journal_paper_validation`.
+
+### 6.8 Deferred work
+
+- Attachment upload **UI** (needs a canonical trades detail page first — not built).
+- Per-user/per-org auto-journal preference (flags are global `Settings` today; no
+  preferences model exists).
+- Persisting failed/dry-run import batches (`journal_import_batches.status` already
+  supports `dry_run`/`failed` for forward compatibility; only `committed` rows are
+  written today).
+
+## 7. Roadmap — remaining slices
+
+1. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
    `HumanVsSystemService` analyzers over `linked_proposal_id`/`linked_position_id`;
    rule-check auto-suggestions from `UserStrategyVersion.structured_rules`; lesson
    candidate generation from violated rule checks.
-3. **Backtesting integration slice.** Journal backtest trades in bulk per
+2. **Backtesting integration slice.** Journal backtest trades in bulk per
    `BacktestRun`, compare live/paper cohort vs backtest cohort per strategy version
    using the AT-031 grouping dimensions (`source=backtest` vs `paper_*`). Full
    deterministic backtesting still needs complete candle ingest coverage, regime
    auto-labelling, and bulk journal-from-backtest wiring.
-4. **Rollup feeds (optional).** Feed `SetupPerformance` and `StrategyPerformanceDaily`
+3. **Rollup feeds (optional).** Feed `SetupPerformance` and `StrategyPerformanceDaily`
    rollups from canonical trades once auto-journaling ensures coverage.
+4. **Journal completion follow-ups.** See §6.8 (attachment upload UI, per-user
+   auto-journal preference, failed/dry-run batch persistence).
 
 Each slice follows the established pattern: migration → models → strict schemas →
 repository → audited service → RBAC routes → tests → docs, with `REVIEW_REQUIRED` before
