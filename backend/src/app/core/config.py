@@ -218,6 +218,9 @@ class Settings(BaseSettings):
     # --- Journal → RAG (optional learning loop) ---
     journal_rag_sync_enabled: bool = True
 
+    # --- Journal statistics (AT-031) — bounded aggregate scans ---
+    journal_stats_max_rows: int = Field(default=5000, ge=100, le=50_000)
+
     # --- LLM narrative polish (Slice 21 — explanation only, not decision authority) ---
     narrative_llm_enabled: bool = True
 

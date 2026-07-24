@@ -82,6 +82,7 @@ export const navSections: readonly NavSection[] = [
     items: [
       { href: "/strategy-lab", label: "Strategy Lab", icon: FlaskConical },
       { href: "/journal", label: "Journal", icon: BookOpen },
+      { href: "/journal/statistics", label: "Journal Statistics", icon: BarChart3 },
       { href: "/analytics", label: "Analytics", icon: BarChart3 },
     ],
   },

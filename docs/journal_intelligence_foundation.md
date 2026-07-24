@@ -1,8 +1,9 @@
-# Journal Intelligence Foundation (AT-030)
+# Journal Intelligence Foundation (AT-030, AT-031)
 
-Status: first vertical slice implemented (canonical journal trades). Paper-only; record-only;
-no execution authority. This document contains the repository audit, the canonical domain
-design, what the first slice ships, and the roadmap for the remaining slices.
+Status: slices 1 (canonical journal trades, AT-030) and 2 (journal statistics & setup
+analytics v1, AT-031) implemented. Paper-only; record-only; no execution authority. This
+document contains the repository audit, the canonical domain design, what each slice ships,
+and the roadmap for the remaining slices.
 
 ## 1. Repository audit (what already existed)
 
@@ -123,25 +124,67 @@ Safety posture: no execution-path changes; no new config; paper-only invariants
 untouched (`EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, non-live
 `EXCHANGE_MODE`); no provider I/O; no secrets.
 
-## 4. Roadmap — remaining slices
+## 4. Statistics slice (AT-031 — implemented)
+
+Journal Statistics & Setup Analytics v1: deterministic, tenant-scoped, grouped/filterable
+aggregates over canonical `journal_trades`. Extends the AT-030 architecture — no separate
+analytics system.
+
+| Layer | Artifact |
+|---|---|
+| Migration | `j6e7f8a9b0c1_at031_journal_stats_indexes.py` (head after `i5d6e7f8a9b0`); composite indexes on `journal_trades` (org+user+status+exit_time; org+setup; org+strategy; org+strategy-version) and `journal_trade_rule_checks` (org+status); validated on Postgres 16: upgrade → downgrade → upgrade |
+| Schemas | `schemas/journal_statistics.py` — `JournalStatsGroupBy`, `TradeRuleCompliance`, `ExecutionActor`, `SampleConfidence`, warning codes, `JournalTradeStatsMetrics`, `JournalStatsBucket`, `JournalStatsResponse` |
+| Repository | `repositories/journal_trades.py` — `fetch_stats_rows` (bounded projection of closed trades, stable ordering, `max_rows + 1` truncation detection), `fetch_rule_check_status_pairs` (SQL-grouped per-trade rule statuses); shared filter builder |
+| Service | `services/journal_statistics_service.py` — pure `Decimal` metric computation, grouping, label resolution (setup name+version, strategy name+version), derived dimensions, confidence + warnings |
+| API | `GET /journal/statistics` on the journal router — `ReaderDep` (viewer can read), tenant-scoped (org + user), bucket pagination (`limit`/`offset`), 422 on invalid date range |
+| Config | `journal_stats_max_rows` (default 5000) bounds every statistics scan |
+| Frontend | `/journal/statistics` page — group-by + filters (source, symbol, timeframe, regime, compliance, execution, date range), overall card, bucket cards with confidence badges and warnings, truncation banner, bucket pagination |
+| Tests | `tests/test_at031_journal_statistics.py` — 19 tests: auth/RBAC, exact metric values, result fallback, profit-factor edge, excursion/capture coverage, grouping (setup/setup-version/strategy/strategy-version/symbol/regime/source), all filters, date range, rule-compliance classification, execution-actor mapping, tenant isolation, empty samples, truncation |
+
+Semantics (deterministic, conservative — see AT-ADR-013):
+
+- **Closed trades only.** Outcome metrics are undefined for planned/open/cancelled rows.
+  The date-range filter applies to `coalesce(exit_time, entry_time, created_at)`.
+- **Win/loss/breakeven** uses the recorded `result`; a closed trade left at `result=open`
+  falls back to the sign of its recorded `net_pnl` (same arithmetic AT-030 applies at
+  close); otherwise the trade stays undecided. Win rate = wins / (wins + losses).
+- **Metric families carry their own sample counts** (PnL, R-multiple, costs, MFE/MAE,
+  available-vs-realized). `None` means "not computable from recorded data" — never a
+  silent zero. MFE/MAE aggregates exist only where deterministic recorded values exist.
+- **Rule compliance per trade** is the worst recorded assessment: `violated` > `partial` >
+  `compliant` (any `followed`) > `unassessed`. No checks ⇒ `unassessed`, never compliant.
+- **Human vs system execution** is derived from `source` by decision authority: `manual`,
+  `imported`, `paper_execution` (human-approved proposal flow) ⇒ `human`;
+  `paper_validation`, `backtest`, `system` ⇒ `system`.
+- **Confidence labels**: `insufficient` (<5 closed trades), `low` (<20), `moderate` (<50),
+  `high` (≥50), plus explicit warnings (low sample, missing PnL/risk, no losing trades,
+  partial excursion/capture coverage, truncation).
+- **Bounded scans.** Every computation reads at most `journal_stats_max_rows` closed
+  trades (stable oldest-first window); truncation is flagged in the response and as a
+  warning. Reads are not audited (consistent with existing journal reads); all
+  journal-trade mutations remain audited via AT-030.
+
+## 5. Roadmap — remaining slices
 
 1. **Journal completion slice.** Bulk import (`imported` source with `external_ref`
    dedup), auto-journal hooks (opt-in) when positions close or paper trades close,
    `TradeJournal` → `journal_trades` backfill command, evidence upload storage strategy.
-2. **Statistics slice.** Extend `UnifiedTradeLoader` with a journal-trades lane; setup- and
-   strategy-version-level expectancy, MFE/MAE efficiency (realized vs available), rule
-   compliance rates, regime breakdowns; feed `SetupPerformance` and
-   `StrategyPerformanceDaily` rollups from canonical trades.
-3. **Replay slice.** Deterministic excursion computation from `HistoricalCandle`
+2. **Replay slice.** Deterministic excursion computation from `HistoricalCandle`
    (`excursion_source="replay"`), post-exit runner replay reusing
    `RunnerAndMissedProfitAnalyzer`, market-regime auto-labelling from indicator
-   snapshots; strictly read-only market data with freshness provenance.
-4. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
+   snapshots; strictly read-only market data with freshness provenance. This unlocks
+   MFE/MAE and available-vs-realized coverage for trades that lack manual excursion
+   entries, feeding directly into the AT-031 statistics.
+3. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
    `HumanVsSystemService` analyzers over `linked_proposal_id`/`linked_position_id`;
    rule-check auto-suggestions from `UserStrategyVersion.structured_rules`; lesson
    candidate generation from violated rule checks.
-5. **Backtesting integration slice.** Journal backtest trades in bulk per
-   `BacktestRun`, compare live/paper cohort vs backtest cohort per strategy version.
+4. **Backtesting integration slice.** Journal backtest trades in bulk per
+   `BacktestRun`, compare live/paper cohort vs backtest cohort per strategy version
+   using the AT-031 grouping dimensions (`source=backtest` vs `paper_*`).
+5. **Rollup feeds (optional).** Feed `SetupPerformance` and `StrategyPerformanceDaily`
+   rollups from canonical trades once auto-journaling ensures coverage.
 
-Each slice follows this one's pattern: migration → models → strict schemas → repository →
-audited service → RBAC routes → tests → docs, with `REVIEW_REQUIRED` before any commit.
+Each slice follows the established pattern: migration → models → strict schemas →
+repository → audited service → RBAC routes → tests → docs, with `REVIEW_REQUIRED` before
+any commit.

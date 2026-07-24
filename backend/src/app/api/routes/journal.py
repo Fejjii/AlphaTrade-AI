@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Query
 
@@ -10,11 +11,12 @@ from app.core.auth import TenantDep
 from app.core.dependencies import (
     HumanVsSystemServiceDep,
     JournalServiceDep,
+    JournalStatisticsServiceDep,
     JournalTradeServiceDep,
     LessonCandidateServiceDep,
     SessionDep,
 )
-from app.schemas.common import JournalTradeSource, JournalTradeStatus
+from app.schemas.common import JournalTradeSource, JournalTradeStatus, MarketRegime
 from app.schemas.human_vs_system import DisciplineAnalysis
 from app.schemas.journal import (
     JournalEntry,
@@ -22,6 +24,13 @@ from app.schemas.journal import (
     JournalEntryPrefill,
     JournalEntryUpdate,
     PaginatedJournalEntries,
+)
+from app.schemas.journal_statistics import (
+    ExecutionActor,
+    JournalStatsFilters,
+    JournalStatsGroupBy,
+    JournalStatsResponse,
+    TradeRuleCompliance,
 )
 from app.schemas.journal_trades import (
     JournalTradeCreate,
@@ -252,6 +261,53 @@ async def list_journal_trades(
         offset=offset,
     )
     return PaginatedJournalTrades(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get(
+    "/statistics",
+    response_model=JournalStatsResponse,
+    summary="Grouped statistics over canonical journal trades (AT-031)",
+)
+async def journal_trade_statistics(
+    tenant: ReaderDep,
+    service: JournalStatisticsServiceDep,
+    group_by: JournalStatsGroupBy = Query(default=JournalStatsGroupBy.OVERALL),
+    source: JournalTradeSource | None = Query(default=None),
+    symbol: str | None = Query(default=None, max_length=30),
+    timeframe: str | None = Query(default=None, max_length=8),
+    market_regime: MarketRegime | None = Query(default=None),
+    setup_id: uuid.UUID | None = Query(default=None),
+    user_strategy_id: uuid.UUID | None = Query(default=None),
+    strategy_version_id: uuid.UUID | None = Query(default=None),
+    rule_compliance: TradeRuleCompliance | None = Query(default=None),
+    execution_actor: ExecutionActor | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> JournalStatsResponse:
+    """Deterministic, record-only aggregates over the caller's closed journal trades."""
+    filters = JournalStatsFilters(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        market_regime=market_regime,
+        setup_id=setup_id,
+        user_strategy_id=user_strategy_id,
+        strategy_version_id=strategy_version_id,
+        rule_compliance=rule_compliance,
+        execution_actor=execution_actor,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return service.compute(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        group_by=group_by,
+        filters=filters,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(

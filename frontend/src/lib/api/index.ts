@@ -9,6 +9,8 @@ import type {
   DisciplineScoreResult,
   DashboardSummary,
   JournalEntry,
+  JournalStatsParams,
+  JournalStatsResponse,
   RiskBehaviorAnalytics,
   SetupAnalyticsResponse,
   TradeReviewAnalytics,
@@ -356,6 +358,8 @@ export const api = {
       }),
     delete: (id: string) =>
       apiFetch<void>(`/journal/entries/${id}`, { method: "DELETE" }),
+    statistics: (params?: JournalStatsParams) =>
+      apiFetch<JournalStatsResponse>("/journal/statistics", { query: params }),
   },
   analytics: {
     setups: () => apiFetch<SetupAnalyticsResponse>("/analytics/setups"),
