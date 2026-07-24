@@ -1658,6 +1658,62 @@ export interface UserStrategy {
   updated_at: string;
 }
 
+// --------------------------------------------------------------------------
+// Backtest engine v2 (AT-034) — deterministic historical simulation
+// --------------------------------------------------------------------------
+
+export type BacktestRunStatus =
+  | "not_started"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancel_requested"
+  | "cancelled";
+
+export type BacktestSplitMode = "none" | "holdout" | "rolling";
+
+export type BacktestSplitLabel = "in_sample" | "out_of_sample";
+
+export type BacktestRecommendation =
+  | "needs_structured_rules"
+  | "needs_more_sample_size"
+  | "needs_review"
+  | "backtested"
+  | "paper_eligible"
+  | "restricted"
+  | "unreliable_data";
+
+export interface BacktestSplitConfig {
+  mode: BacktestSplitMode;
+  oos_fraction: number;
+  window_bars?: number | null;
+  step_bars?: number | null;
+}
+
+export interface BacktestAssumptions {
+  symbol: string;
+  exchange: string;
+  timeframe: Timeframe;
+  start_date?: string | null;
+  end_date?: string | null;
+  initial_capital: string;
+  fees_bps: string;
+  slippage_bps: string;
+  funding_assumption?: string;
+  funding_rate_bps_per_8h?: string;
+  runner_trail_pct?: string;
+  split_config?: BacktestSplitConfig | null;
+  risk_per_trade_pct: string;
+  max_trades?: number | null;
+  sample_size?: number;
+}
+
+export interface EquityCurvePoint {
+  timestamp: string;
+  equity: string;
+}
+
 export interface BacktestMetrics {
   trade_count: number;
   win_rate: number;
@@ -1672,49 +1728,240 @@ export interface BacktestMetrics {
   average_time_in_trade_bars: number;
   total_fees: string;
   total_slippage: string;
+  total_funding?: string;
   net_pnl: string;
   return_pct: number;
   ending_equity: string;
+  equity_curve?: EquityCurvePoint[];
   symbol: string;
   timeframe: string;
 }
 
+export interface BacktestSplitMetrics {
+  split_label: BacktestSplitLabel;
+  split_index: number;
+  start_time: string;
+  end_time: string;
+  trade_count: number;
+  win_rate: number;
+  profit_factor: number;
+  expectancy: string;
+  net_pnl: string;
+  max_drawdown_pct: number;
+}
+
+export interface BacktestDatasetSummary {
+  dataset_hash: string;
+  candle_count: number;
+  gap_count: number;
+  stale_count: number;
+  first_open_time?: string | null;
+  last_open_time?: string | null;
+  source_counts: Record<string, number>;
+}
+
 export interface BacktestResult {
   metrics: BacktestMetrics;
-  recommendation: string;
+  trades?: BacktestTradeRecord[];
+  recommendation: BacktestRecommendation | string;
   meets_success_criteria?: boolean;
   limitations?: string[];
   data_quality?: string;
+  rule_engine_source?: string;
   note?: string;
+  result_hash?: string | null;
+  engine_version?: string | null;
+  split_metrics?: BacktestSplitMetrics[] | null;
+  oos_metrics?: BacktestSplitMetrics | null;
+  dataset_summary?: BacktestDatasetSummary | null;
+  cancelled?: boolean;
+  processed_bars?: number | null;
+  total_bars?: number | null;
 }
 
-export interface BacktestTrade {
+export interface BacktestTradeRecord {
+  id?: string | null;
   entry_time: string;
   exit_time: string;
-  direction: string;
+  direction: TradeDirection;
   entry_price: string;
   exit_price: string;
+  stop_loss: string;
+  size: string;
+  fees: string;
+  slippage_cost: string;
+  gross_pnl: string;
   net_pnl: string;
+  tp_hit_status: string;
   exit_reason: string;
+  rule_notes?: string | null;
+  mfe_price?: string | null;
+  mae_price?: string | null;
+  mfe_amount?: string | null;
+  mae_amount?: string | null;
+  available_profit?: string | null;
+  capture_pct?: string | null;
+  funding_cost?: string;
+  split_label?: BacktestSplitLabel;
+  split_index?: number;
+  sequence?: number | null;
 }
+
+/** @deprecated Use BacktestTradeRecord */
+export type BacktestTrade = BacktestTradeRecord;
 
 export interface BacktestRun {
   id: string;
   strategy_id: string;
-  status: string;
-  assumptions: Record<string, unknown>;
+  strategy_version_id?: string | null;
+  organization_id: string;
+  user_id: string;
+  status: BacktestRunStatus;
+  assumptions: BacktestAssumptions;
   result?: BacktestResult | null;
   error_message?: string | null;
+  config_hash?: string | null;
+  dataset_id?: string | null;
+  engine_version?: string | null;
+  result_hash?: string | null;
+  idempotency_key?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  cancel_requested_at?: string | null;
+  processed_bars?: number | null;
+  total_bars?: number | null;
   created_at: string;
   updated_at: string;
 }
 
+export interface BacktestRunCreate {
+  assumptions?: Partial<BacktestAssumptions>;
+  strategy_version_id?: string | null;
+  idempotency_key?: string | null;
+}
+
 export interface PaginatedBacktestTrades {
-  items: BacktestTrade[];
+  items: BacktestTradeRecord[];
   total: number;
   limit: number;
   offset: number;
 }
+
+export interface BacktestVerifyResult {
+  run_id: string;
+  result_hash_stored?: string | null;
+  result_hash_recomputed?: string | null;
+  match: boolean;
+  dataset_ok: boolean;
+  detail?: string | null;
+}
+
+export type BacktestJournalRowOutcome = "created" | "would_create" | "duplicate" | "invalid";
+
+export interface BacktestJournalRequest {
+  dry_run: boolean;
+}
+
+export interface BacktestJournalRowResult {
+  index: number;
+  backtest_trade_id?: string | null;
+  outcome: BacktestJournalRowOutcome;
+  external_ref?: string | null;
+  journal_trade_id?: string | null;
+  errors: string[];
+}
+
+export interface BacktestJournalResult {
+  run_id: string;
+  dry_run: boolean;
+  committed: boolean;
+  total_rows: number;
+  created_count: number;
+  duplicate_count: number;
+  invalid_count: number;
+  results: BacktestJournalRowResult[];
+}
+
+export type JournalComparisonCohort = "human" | "paper_system" | "backtest";
+
+export interface JournalComparisonFilters {
+  strategy_id?: string | null;
+  strategy_version_id?: string | null;
+  setup_id?: string | null;
+  symbol?: string | null;
+  timeframe?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+}
+
+export interface JournalComparisonCohortResult {
+  cohort: JournalComparisonCohort;
+  metrics: JournalTradeStatsMetrics;
+  sample_count: number;
+  truncated: boolean;
+}
+
+export interface JournalComparisonResponse {
+  filters: JournalComparisonFilters;
+  cohorts: JournalComparisonCohortResult[];
+  max_rows: number;
+  generated_at: string;
+  note: string;
+}
+
+export type SetupEvidenceTier = "tier1" | "tier2" | "tier3";
+
+export interface SetupEvidenceThresholds {
+  tier1_oos_min_trades: number;
+  tier1_oos_min_profit_factor: number;
+  tier1_min_confirm_trades: number;
+  tier2_min_trades: number;
+  tier2_oos_min_trades: number;
+  tier2_oos_min_profit_factor: number;
+}
+
+export interface SetupEvidenceMeasured {
+  oos_trade_count: number;
+  oos_profit_factor?: number | null;
+  oos_expectancy?: string | null;
+  confirm_trade_count: number;
+  confirm_expectancy?: string | null;
+  total_backtest_trades: number;
+  backtest_run_id?: string | null;
+}
+
+export interface SetupEvidenceItem {
+  strategy_id: string;
+  strategy_version_id: string;
+  strategy_name: string;
+  version: number;
+  tier: SetupEvidenceTier;
+  measured: SetupEvidenceMeasured;
+  thresholds: SetupEvidenceThresholds;
+  note: string;
+}
+
+export interface SetupEvidenceResponse {
+  items: SetupEvidenceItem[];
+  generated_at: string;
+  note: string;
+}
+
+export type JournalComparisonParams = {
+  strategy_id?: string;
+  strategy_version_id?: string;
+  setup_id?: string;
+  symbol?: string;
+  timeframe?: string;
+  date_from?: string;
+  date_to?: string;
+};
+
+export type SetupEvidenceParams = {
+  strategy_id?: string;
+  strategy_version_id?: string;
+  setup_id?: string;
+};
 
 export interface PaperValidationMetrics {
   paper_trades_count: number;
