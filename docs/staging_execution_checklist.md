@@ -16,7 +16,7 @@ One-page click order for **Slice 30**. Fill URLs in [staging_live_deployment_not
 | 10 | Vercel | Import repo · root `frontend` · env vars §3 | ☐ |
 | 11 | Vercel | Deploy → copy **frontend URL** | ☐ |
 | 12 | Render | Set `CORS_ORIGINS` = Vercel URL → **redeploy backend** | ☐ |
-| 13 | Terminal | Smoke + safety scripts (§7 in live notes) | ☐ |
+| 13 | Terminal | `./scripts/post-deploy-smoke-gate.sh` (AT-005; exit 0 required) | ☐ |
 | 14 | Browser | Login → workspace → paper banner → logout | ☐ |
 
 **Safety defaults (do not change):** `EXECUTION_MODE=paper` · `ENABLE_REAL_TRADING=false` · `BILLING_ENABLED=false` · `PROVIDER_MODE=fallback`

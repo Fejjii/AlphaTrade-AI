@@ -194,12 +194,20 @@ docker compose up --build
 Platform probes should use `/health` for liveness. Use `/health/ready` for
 readiness when you want to drain traffic during provider degradation.
 
-Post-deploy smoke:
+Post-deploy smoke (**mandatory gate — AT-005**):
 
 ```bash
+BASE_URL=https://your-api.example.com \
+FRONTEND_URL=https://your-app.example.com \
+COOKIE_MODE=true \
+./scripts/post-deploy-smoke-gate.sh
+
+# Or individually:
 BASE_URL=https://your-api.example.com ./scripts/staging-smoke.sh
-./scripts/verify-safety.sh
+BASE_URL=https://your-api.example.com ./scripts/verify-safety.sh
 ```
+
+Rollback triggers and steps: [deploy_rollback_runbook.md](deploy_rollback_runbook.md).
 
 ## Database migration process
 
@@ -229,7 +237,7 @@ Keep previous revision available for 24–48 hours after staging deploy.
 
 Full backup inventory, RPO/RTO targets, and restore-drill evidence: [backup_restore_runbook.md](backup_restore_runbook.md),
 [backup_inventory.md](backup_inventory.md), [backup_restore_drill_evidence.md](backup_restore_drill_evidence.md).
-Deploy rollback automation / smoke gating is tracked separately as **AT-005**.
+Deploy rollback procedure and automated post-deploy smoke gate: [deploy_rollback_runbook.md](deploy_rollback_runbook.md) (AT-005).
 
 ## Monitoring plan
 
@@ -299,10 +307,11 @@ ENV_FILE=.env.staging ./scripts/check-env.sh
 # Apply migrations
 ./scripts/run-migrations.sh
 
-# Post-deploy smoke
-BASE_URL=https://api.example.com ./scripts/staging-smoke.sh
+# Post-deploy smoke gate (AT-005 — mandatory)
+BASE_URL=https://api.example.com ./scripts/post-deploy-smoke-gate.sh
 
-# Safety invariants only
+# Individual smokes
+BASE_URL=https://api.example.com ./scripts/staging-smoke.sh
 BASE_URL=https://api.example.com ./scripts/verify-safety.sh
 
 # Local Docker stack

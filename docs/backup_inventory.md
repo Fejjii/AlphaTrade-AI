@@ -29,7 +29,7 @@ recovery. No secrets, connection strings, or personal financial data are recorde
 | **Qdrant collection `alphatrade_knowledge`** | Rebuildable | Qdrant Cloud or local Compose | Vectors + payload for RAG | Daily snapshot if available; else rebuild | Prefer re-ingest from Postgres knowledge rows + fixtures (`scripts/reingest-knowledge-base.sh`) after DB restore. |
 | **Redis** | Ephemeral | Upstash / Render Redis | Rate-limit windows, JWT access-token denylist | None | Recreate empty instance. Users may need re-login if denylist lost mid-compromise response; acceptable for paper staging. |
 | **Platform env / secrets** | Config | Render / Vercel / Qdrant dashboards | `JWT_SECRET`, `DATABASE_URL`, `REDIS_URL`, `QDRANT_*`, `OPENAI_API_KEY`, CORS/cookie flags, safety flags | Platform history / sealed ops notes (`*.local.md`, gitignored) | **Never** commit values. Backup = documented variable *names* + sealed operator worksheet. |
-| **Render / Vercel deploy revisions** | Config | Platform | Prior Docker image / frontend deployment | Keep prior revision ≥ 48h after promote | Application rollback ≠ data restore. AT-005 owns fuller deploy rollback + smoke gating (still TODO). |
+| **Render / Vercel deploy revisions** | Config | Platform | Prior Docker image / frontend deployment | Keep prior revision ≥ 48h after promote | Application rollback ≠ data restore. See [deploy_rollback_runbook.md](deploy_rollback_runbook.md) (AT-005). |
 | **Object/file storage** | Out of scope | N/A today | — | — | No durable blob store in current architecture. |
 | **Exchange account state** | Out of scope | BloFin demo (Mode C) when configured | Demo venue positions | Venue-owned | Not restored from AlphaTrade backups. Paper-internal Mode A state lives in Postgres. |
 | **LLM provider state** | Out of scope | OpenAI | — | — | Stateless from our side; usage meters live in Postgres. |
@@ -59,8 +59,9 @@ Groupings for restore verification — not an exhaustive schema dump:
 - No backup of live exchange production accounts (Mode D disabled; not in scope).
 - No commitment of dump files, snapshot IDs with account numbers, or connection URLs.
 - No Redis AOF/RDB as durability strategy (Compose intentionally disables Redis persistence).
-- AT-005 deploy rollback runbook / automated post-deploy smoke gate — separate task; this
-  inventory only notes deploy revisions as a related config asset.
+- AT-005 deploy rollback runbook / automated post-deploy smoke gate —
+  [deploy_rollback_runbook.md](deploy_rollback_runbook.md); this inventory only notes
+  deploy revisions as a related config asset.
 
 ---
 
@@ -73,4 +74,4 @@ Before a real restore, confirm sealed access to:
 - [ ] Platform env worksheet (`docs/staging_deployment_worksheet.local.md` or equivalent, gitignored)
 - [ ] Qdrant Cloud console (or decision to rebuild via re-ingest)
 - [ ] Redis recreate path
-- [ ] Post-restore smoke: `./scripts/verify-safety.sh` (+ AT-005 gate when available)
+- [ ] Post-restore smoke: `./scripts/post-deploy-smoke-gate.sh` (or `verify-safety.sh` minimum)

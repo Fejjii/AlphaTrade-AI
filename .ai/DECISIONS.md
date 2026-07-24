@@ -225,3 +225,26 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `scripts/*postgres-local*` / `drill-backup-restore-local.sh`; dumps in `.ai/local/`.
 - **Validation:** Tier A local drill passed 2026-07-23; see
   `docs/backup_restore_drill_evidence.md`.
+
+## AT-ADR-011 — Post-deploy smoke gate + deploy rollback procedure (AT-005)
+- **Date:** 2026-07-24
+- **Status:** Accepted (implementation pending merge)
+- **Context:** Rollback was informal checklist rows; no automated fail-closed post-deploy
+  gate. AT-019 covers data restore; app revision rollback and smoke gating were still open.
+- **Decision:**
+  1. Mandatory post-deploy command is `scripts/post-deploy-smoke-gate.sh`, which always
+     runs `verify-safety.sh` and (default `GATE_PROFILE=standard`) `staging-smoke.sh`.
+  2. Gate exit codes: `0` pass, `1` rollback trigger, `2` misconfiguration.
+  3. Document exact triggers/steps/verification/failure handling in
+     `docs/deploy_rollback_runbook.md`; wire into staging checklist/runbook/`RELEASE.md`.
+  4. CI `deployment-safety` job asserts the gate is executable and `--self-check` passes
+     (no network / no staging deploy from CI).
+  5. The gate never deploys, never enables real trading, and never mutates platform services.
+- **Alternatives considered:** Rely on manual `verify-safety` only (rejected: easy to skip);
+  auto-rollback via Render API from CI (rejected: requires credentials + deploy authority
+  outside ordinary impl tasks).
+- **Safety impact:** Stronger fail-closed deploy acceptance; paper-only invariants unchanged.
+- **Consequences:** Operators must treat gate exit `1` as a hard rollback trigger; data
+  restore remains AT-019.
+- **Validation:** `post-deploy-smoke-gate.sh --self-check`; unit tests in
+  `tests/test_deployment_scripts.py`; docs present and cross-linked.

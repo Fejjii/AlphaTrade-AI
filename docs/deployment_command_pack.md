@@ -56,17 +56,32 @@ alembic upgrade head
 
 ---
 
-## 4. Verify safety (deployed backend)
+## 4. Post-deploy smoke gate (mandatory — AT-005)
 
 ```bash
-BASE_URL=<BACKEND_URL> ./scripts/verify-safety.sh
+BASE_URL=<BACKEND_URL> \
+FRONTEND_URL=<FRONTEND_URL> \
+COOKIE_MODE=true \
+./scripts/post-deploy-smoke-gate.sh
 ```
 
-Expect: `execution_mode=paper`, `real_trading_enabled=false`, exchange mock/paper-only.
+Exit `0` = keep deploy. Exit `1` = rollback
+([deploy_rollback_runbook.md](deploy_rollback_runbook.md)). Exit `2` = fix operator inputs.
+
+Safety-only profile:
+
+```bash
+GATE_PROFILE=safety BASE_URL=<BACKEND_URL> ./scripts/post-deploy-smoke-gate.sh
+```
+
+Expect via `verify-safety.sh` (always run by the gate): `execution_mode=paper`,
+`real_trading_enabled=false`, exchange mock/paper-only.
 
 ---
 
 ## 5. Staging smoke (backend + optional frontend CORS)
+
+Individual scripts (also invoked by the standard gate):
 
 ```bash
 BASE_URL=<BACKEND_URL> ./scripts/verify-safety.sh

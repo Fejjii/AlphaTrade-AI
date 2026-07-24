@@ -218,6 +218,18 @@ COOKIE_MODE=true BASE_URL=https://your-api.onrender.com ./scripts/staging-smoke.
 
 ## 10. Run smoke tests
 
+**Mandatory post-deploy gate (AT-005)** — fail-closed; exit `1` is a rollback trigger
+([deploy_rollback_runbook.md](deploy_rollback_runbook.md)):
+
+```bash
+BASE_URL=https://your-api.onrender.com \
+FRONTEND_URL=https://your-app.vercel.app \
+COOKIE_MODE=true \
+./scripts/post-deploy-smoke-gate.sh
+```
+
+Optional individual scripts:
+
 ```bash
 # Backend invariants + auth + chat
 BASE_URL=https://your-api.onrender.com ./scripts/staging-smoke.sh
@@ -285,19 +297,23 @@ BASE_URL=https://your-api.onrender.com ./scripts/verify-safety.sh
 
 ## 13. Rollback
 
+Full procedure (triggers, steps, verification, failure handling):
+**[deploy_rollback_runbook.md](deploy_rollback_runbook.md)** (AT-005).
+
 | Layer | Action |
 |-------|--------|
-| Backend | Render → rollback to previous deploy |
+| Backend | Render → rollback to last known good deploy |
 | Frontend | Vercel Instant Rollback |
 | Database | `alembic downgrade -1` only if reversible; else restore snapshot — see [backup_restore_runbook.md](backup_restore_runbook.md) (AT-019) |
+| Verify | `./scripts/post-deploy-smoke-gate.sh` must exit `0` |
 
-Application rollback detail and automated post-deploy smoke gating remain **AT-005** (TODO).
 Data backup/restore RPO/RTO, inventory, and drill evidence: **AT-019** docs linked below.
 
 ---
 
 ## Related docs
 
+- [deploy_rollback_runbook.md](deploy_rollback_runbook.md) — rollback triggers/steps + smoke gate (AT-005)
 - [backup_restore_runbook.md](backup_restore_runbook.md) — RPO/RTO + restore procedures (AT-019)
 - [backup_inventory.md](backup_inventory.md) — what to back up (AT-019)
 - [backup_restore_drill_plan.md](backup_restore_drill_plan.md) / [backup_restore_drill_evidence.md](backup_restore_drill_evidence.md) — drill plan + sanitized evidence
