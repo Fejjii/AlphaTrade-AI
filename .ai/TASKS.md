@@ -225,6 +225,30 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 
 ---
 
+## Journal intelligence program
+
+### AT-030 — Journal Intelligence Foundation (canonical journal domain, slice 1)
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: none · Risk: Low (record-only, no execution path)
+- Safety classification: Paper-safe / record-only
+- Goal: Canonical tenant-scoped journal domain (`journal_trades` + evidence, rule-check,
+  observation children) unifying manual, paper, imported, backtest, and system trades;
+  links (never duplicates) positions, paper trades, proposals, orders, backtest trades,
+  legacy journal entries, and immutable setup/strategy versions; plan (thesis, trigger,
+  entry, invalidation, stop, targets, runner), execution (leverage, fees, funding,
+  slippage), MFE/MAE + available-vs-realized profit, market regime.
+- Branch: `cursor/at-030-journal-intelligence-foundation-b68a`
+- Validation: migration `i5d6e7f8a9b0` upgrade/downgrade/upgrade on Postgres 16;
+  `tests/test_at030_journal_trades.py` (13 tests); full backend suite exit 0; ruff clean;
+  scoped strict mypy clean on new modules (`db/models.py` stays at its pre-existing
+  62-error strict baseline); paper posture unchanged.
+- Recommended model: Fable 5
+- ADR: AT-ADR-012 · Docs: `docs/journal_intelligence_foundation.md`
+- Follow-up slices (see docs roadmap): journal completion (import/backfill/auto-journal),
+  statistics, replay (deterministic MFE/MAE), human-vs-system journal endpoint,
+  backtesting integration.
+
+---
+
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)
 
 ### AT-020 — Phase 0: Mode D safety specification (docs/ADRs only)

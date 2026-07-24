@@ -248,3 +248,43 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   restore remains AT-019.
 - **Validation:** `post-deploy-smoke-gate.sh --self-check`; unit tests in
   `tests/test_deployment_scripts.py`; docs present and cross-linked.
+
+## AT-ADR-012 — Canonical journal trade domain links existing records (AT-030)
+- **Date:** 2026-07-24
+- **Status:** Accepted (implementation at REVIEW_REQUIRED — not yet committed)
+- **Context:** Trade data is fragmented across proposal-flow positions, paper-validation
+  trades, backtest trades, and manual session records; the legacy `journals` table is
+  reflection-only and typed to the built-in `StrategyId` enum. There was no canonical
+  trade identity, no first-class MFE/MAE or available-vs-realized profit, and no
+  structured rule-compliance or behavioral-observation records.
+- **Decision:**
+  1. **One canonical entity, `journal_trades`**, tenant-scoped, covering all sources
+     (`manual`, `paper_execution`, `paper_validation`, `backtest`, `imported`, `system`)
+     with plan fields (thesis, trigger, entry plan, invalidation, stop, targets, runner),
+     execution fields (entry/exit, size, leverage, fees, funding, slippage, PnL), market
+     regime, and excursion metrics (MFE/MAE, available vs realized).
+  2. **Link, never copy.** FKs to positions, paper trades, proposals, orders, backtest
+     trades, paper validation runs, and legacy journal entries; setup/strategy provenance
+     via existing immutable `SetupDefinition` (name+version) and `UserStrategyVersion`.
+     All links validated against the caller's organization; mismatches return 404
+     (fail closed, no existence leak).
+  3. **Child tables** for evidence (`journal_trade_evidence`), rule compliance
+     (`journal_trade_rule_checks`), and behavioral observations
+     (`journal_trade_observations`) instead of free-text lists.
+  4. **Record-only.** No execution authority: never read by the engine, scheduler, or
+     risk gates; excursion metrics accept deterministic inputs only (manual now, candle
+     replay later) — no live market I/O in the journal path.
+  5. **Legacy `/journal/entries` API and RAG sync stay unchanged**; canonical trades
+     mount on the same router under `/journal/trades`.
+- **Alternatives considered:** Extending `TradeJournal` in place (rejected: schema is
+  reflection-shaped, enum-typed to legacy strategies, and widely consumed); a separate
+  standalone journal service/app (rejected: would disconnect from tenancy, audit, RBAC,
+  and existing records); computing MFE/MAE live at read time (rejected: nondeterministic,
+  provider-dependent, violates freshness/conservatism rules).
+- **Safety impact:** No trading-mode change; paper posture preserved; all mutations
+  audited (`JOURNAL_TRADE_*` events); no new secrets or providers.
+- **Consequences:** Alembic head moves to `i5d6e7f8a9b0`; follow-up slices (statistics,
+  replay, human-vs-system endpoint, backtest integration, import/backfill) build on this
+  domain — see `docs/journal_intelligence_foundation.md`.
+- **Validation:** Migration upgrade/downgrade/upgrade on Postgres 16; 13 new API tests;
+  full backend suite exit 0; ruff clean; strict mypy clean on all new modules.

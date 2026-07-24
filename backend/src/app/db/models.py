@@ -49,8 +49,13 @@ from app.schemas.common import (
     DocumentSourceType,
     ExchangeAccountStatus,
     ExecutionMode,
+    JournalEvidenceKind,
+    JournalObservationCategory,
+    JournalTradeSource,
+    JournalTradeStatus,
     LossAcceptanceStatus,
     ManualLevelType,
+    MarketRegime,
     MarketWatcherBridgeDecisionType,
     MarketWatcherObservationStatus,
     MembershipRole,
@@ -72,6 +77,7 @@ from app.schemas.common import (
     RiskProfile,
     RiskRuleId,
     RiskSeverity,
+    RuleComplianceStatus,
     SetupCategory,
     StrategyId,
     StrategyValidationStatus,
@@ -1344,6 +1350,179 @@ class TradeJournal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     linked_position_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("positions.id"), nullable=True
     )
+
+
+# --------------------------------------------------------------------------- #
+# Canonical journal trades (AT-030 — record-only, no execution authority)
+# --------------------------------------------------------------------------- #
+
+
+class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Canonical journal trade unifying manual, paper, imported, and system trades.
+
+    Record-only intelligence layer: rows never place orders and are never read by
+    the execution engine, scheduler, or risk gates. Links reference existing
+    records (positions, paper trades, proposals, orders, backtest trades, legacy
+    journal entries) instead of duplicating them. Plan fields capture the trade
+    thesis before entry; execution fields capture what actually happened; the
+    excursion fields (MFE/MAE, available vs realized) are deterministic values
+    supplied by callers or later replay slices — never live market I/O here.
+    """
+
+    __tablename__ = "journal_trades"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    source: Mapped[JournalTradeSource] = mapped_column(_enum(JournalTradeSource), nullable=False)
+    status: Mapped[JournalTradeStatus] = mapped_column(
+        _enum(JournalTradeStatus), default=JournalTradeStatus.PLANNED, nullable=False
+    )
+
+    # Instrument & context
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    exchange: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    market_regime: Mapped[MarketRegime] = mapped_column(
+        _enum(MarketRegime), default=MarketRegime.UNKNOWN, nullable=False
+    )
+    regime_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Setup & strategy provenance (immutable versions linked, never copied)
+    setup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("setup_definitions.id"), nullable=True
+    )
+    user_strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    strategy_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    # Plan (thesis before entry)
+    direction: Mapped[TradeDirection] = mapped_column(_enum(TradeDirection), nullable=False)
+    thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trigger: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entry_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invalidation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    planned_entry_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    planned_stop_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    planned_targets: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    runner_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    runner_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+    planned_risk_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+
+    # Execution (what actually happened)
+    entry_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    entry_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    exit_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    size: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    leverage: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    fees: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    funding: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    slippage: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    gross_pnl: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    net_pnl: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    result: Mapped[TradeResult] = mapped_column(_enum(TradeResult), default=TradeResult.OPEN)
+
+    # Excursions & available-vs-realized profit (deterministic inputs only)
+    mfe_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    mae_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    mfe_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    mae_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    available_profit: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    realized_vs_available_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    excursion_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    # Reflection
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    # Links to existing records (never duplicated, always tenant-checked)
+    linked_position_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("positions.id"), nullable=True
+    )
+    linked_paper_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_trades.id"), nullable=True
+    )
+    linked_proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("trade_proposals.id"), nullable=True
+    )
+    linked_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orders.id"), nullable=True
+    )
+    linked_backtest_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("backtest_trades.id"), nullable=True
+    )
+    linked_journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journals.id"), nullable=True
+    )
+    linked_paper_validation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_runs.id"), nullable=True
+    )
+    external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class JournalTradeEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Screenshot/chart/note/link evidence attached to a journal trade (AT-030)."""
+
+    __tablename__ = "journal_trade_evidence"
+
+    journal_trade_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    kind: Mapped[JournalEvidenceKind] = mapped_column(_enum(JournalEvidenceKind), nullable=False)
+    ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class JournalTradeRuleCheck(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Per-rule compliance assessment for a journal trade (AT-030)."""
+
+    __tablename__ = "journal_trade_rule_checks"
+
+    journal_trade_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    rule_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    rule_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[RuleComplianceStatus] = mapped_column(
+        _enum(RuleComplianceStatus), default=RuleComplianceStatus.UNASSESSED, nullable=False
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assessed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    assessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class JournalTradeObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Behavioral/process observation recorded against a journal trade (AT-030)."""
+
+    __tablename__ = "journal_trade_observations"
+
+    journal_trade_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    category: Mapped[JournalObservationCategory] = mapped_column(
+        _enum(JournalObservationCategory), nullable=False
+    )
+    observation: Mapped[str] = mapped_column(Text, nullable=False)
+    emotion_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # --------------------------------------------------------------------------- #
