@@ -344,7 +344,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   preference, failed/dry-run import batch persistence, human-vs-system endpoint.
 
 ### AT-034 — Deterministic Backtesting v2 (engine, orchestration, frontend, tests/docs)
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-030, AT-031, AT-032, AT-033,
+- Priority: P1 · Status: DONE · Dependencies: AT-030, AT-031, AT-032, AT-033,
   Slice 35 · Risk: Low (record-only; no execution path; advisory tiers only)
 - Safety classification: Paper-safe / record-only
 - Goal: Deterministic backtest v2 with frozen config/dataset snapshots,
@@ -363,10 +363,14 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   frontend backtest pages; `tests/test_at034_engine.py`, `tests/test_at034_api.py`,
   `tests/test_at034_integration.py`; `docs/backtesting.md` v2; ADR-016.
 - Validation: `tests/test_at034_integration.py` green; full backend pytest + ruff
-  clean; frontend tests/typecheck/build (WS3); operator flips Status to DONE after
-  final merge. No deploy; no live trading.
+  clean; frontend tests/typecheck/build (WS3); Status DONE after final merge. No deploy; no live trading.
 - Recommended model: Grok 4.5 (WS1/WS2) + Composer 2.5 (WS3/WS4)
 - ADR: AT-ADR-016 · Docs: `docs/backtesting.md`
+- Completion evidence: merged PR #20 (`095e490`, CI 30126077064), PR #21
+  (`a46d863`, CI 30126107532), PR #22 (`fb26dea`, CI 30130869273), PR #23
+  (`8f9a84b`, CI 30130870524) → `main` @ `8f9a84b`. Post-merge local validation:
+  AT-034 + slice-35 pytest 43 passed; frontend page tests 7 passed; ruff clean.
+  No deploy; paper posture unchanged.
 
 ---
 

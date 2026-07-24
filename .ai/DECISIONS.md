@@ -6,7 +6,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-001 — Adopt private `.ai/` collaboration + iCloud handoff workflow
 - **Date:** 2026-07-19
-- **Status:** Proposed (pending merge of AT-034 workstreams)
+- **Status:** Accepted (merged via PRs #20–#23 → `main` @ `8f9a84b`)
 - **Context:** Standardize the ChatGPT ↔ Cursor workflow already used for OnePilot AI.
 - **Decision:** Add a version-controlled `.ai/` layer and Cursor project rules, plus
   per-session `HANDOFF.md` + `CHANGELOG_SESSION.md` (gitignored) and a content-aware macOS
@@ -474,6 +474,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   never feed execution or risk; mutations `TraderDep`; tenant-scoped; no live orders.
 - **Consequences:** Alembic head moves to `m9b0c1d2e3f4`. Docs rewritten in
   `docs/backtesting.md`. Integration tests in `test_at034_integration.py`.
-- **Validation:** `tests/test_at034_engine.py`, `tests/test_at034_api.py`,
-  `tests/test_at034_integration.py`; backend pytest + ruff; frontend WS3 tests
-  (separate branch). No deploy.
+- **Validation:** Merged PRs #20–#23 (CI runs 30126077064, 30126107532,
+  30130869273, 30130870524 all success). Post-merge on `main` @ `8f9a84b`:
+  AT-034 + slice-35 pytest 43 passed; frontend page tests 7 passed; ruff clean.
+  No deploy.
