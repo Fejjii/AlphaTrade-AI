@@ -35,6 +35,12 @@ from sqlalchemy.orm import Session
 from app.core.errors import ValidationAppError
 from app.db.models import SetupDefinition, UserStrategy, UserStrategyVersion
 from app.repositories.journal_trades import JournalTradeRepository, JournalTradeStatsRow
+from app.schemas.backtest import (
+    JournalComparisonCohort,
+    JournalComparisonCohortResult,
+    JournalComparisonFilters,
+    JournalComparisonResponse,
+)
 from app.schemas.common import JournalTradeSource, RuleComplianceStatus, TradeResult
 from app.schemas.journal_statistics import (
     ExecutionActor,
@@ -66,6 +72,29 @@ _EXECUTION_ACTOR_BY_SOURCE: Final[dict[JournalTradeSource, ExecutionActor]] = {
     JournalTradeSource.BACKTEST: ExecutionActor.SYSTEM,
     JournalTradeSource.SYSTEM: ExecutionActor.SYSTEM,
 }
+
+_COMPARISON_COHORTS: Final[
+    tuple[tuple[JournalComparisonCohort, frozenset[JournalTradeSource]], ...]
+] = (
+    (
+        JournalComparisonCohort.HUMAN,
+        frozenset(
+            {
+                JournalTradeSource.MANUAL,
+                JournalTradeSource.IMPORTED,
+                JournalTradeSource.PAPER_EXECUTION,
+            }
+        ),
+    ),
+    (
+        JournalComparisonCohort.PAPER_SYSTEM,
+        frozenset({JournalTradeSource.PAPER_VALIDATION}),
+    ),
+    (
+        JournalComparisonCohort.BACKTEST,
+        frozenset({JournalTradeSource.BACKTEST}),
+    ),
+)
 
 
 class JournalStatisticsService:
@@ -153,6 +182,78 @@ class JournalStatisticsService:
             max_rows=self._max_rows,
             generated_at=datetime.now(UTC),
         )
+
+    def compare_cohorts(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        filters: JournalComparisonFilters,
+    ) -> JournalComparisonResponse:
+        """Three-cohort comparison reusing AT-031 metric math (AT-034)."""
+        if (
+            filters.date_from is not None
+            and filters.date_to is not None
+            and filters.date_from > filters.date_to
+        ):
+            raise ValidationAppError("date_from must not be after date_to.")
+
+        cohorts: list[JournalComparisonCohortResult] = []
+        for cohort, sources in _COMPARISON_COHORTS:
+            metrics, truncated = self._metrics_for_sources(
+                organization_id=organization_id,
+                user_id=user_id,
+                sources=sources,
+                filters=filters,
+            )
+            cohorts.append(
+                JournalComparisonCohortResult(
+                    cohort=cohort,
+                    metrics=metrics,
+                    sample_count=metrics.trade_count,
+                    truncated=truncated,
+                )
+            )
+        return JournalComparisonResponse(
+            filters=filters,
+            cohorts=cohorts,
+            max_rows=self._max_rows,
+            generated_at=datetime.now(UTC),
+        )
+
+    def _metrics_for_sources(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        sources: frozenset[JournalTradeSource],
+        filters: JournalComparisonFilters,
+    ) -> tuple[JournalTradeStatsMetrics, bool]:
+        rows, truncated = self._trades.fetch_stats_rows(
+            organization_id=organization_id,
+            user_id=user_id,
+            sources=sources,
+            symbol=filters.symbol,
+            timeframe=filters.timeframe,
+            setup_id=filters.setup_id,
+            user_strategy_id=filters.strategy_id,
+            strategy_version_id=filters.strategy_version_id,
+            date_from=filters.date_from,
+            date_to=filters.date_to,
+            max_rows=self._max_rows,
+        )
+        metrics = _compute_metrics(rows)
+        if truncated:
+            metrics.warnings.append(
+                JournalStatsWarning(
+                    code=JournalStatsWarningCode.RESULT_TRUNCATED,
+                    message=(
+                        f"Result capped at {self._max_rows} closed trades; aggregates cover "
+                        "only the oldest trades in range. Narrow the date range or filters."
+                    ),
+                )
+            )
+        return metrics, truncated
 
     # ------------------------------------------------------------------ #
     # Internals

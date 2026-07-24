@@ -22,6 +22,7 @@ from app.schemas.common import (
     Timeframe,
     TradeDirection,
 )
+from app.schemas.journal_statistics import JournalTradeStatsMetrics
 
 
 class BacktestSplitMode(StrEnum):
@@ -184,6 +185,16 @@ class BacktestRun(ORMModel):
     assumptions: BacktestAssumptions
     result: BacktestResult | None = None
     error_message: str | None = None
+    config_hash: str | None = None
+    dataset_id: UUID | None = None
+    engine_version: str | None = None
+    result_hash: str | None = None
+    idempotency_key: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
+    processed_bars: int | None = None
+    total_bars: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -191,6 +202,7 @@ class BacktestRun(ORMModel):
 class BacktestRunCreate(StrictModel):
     assumptions: BacktestAssumptions | None = None
     strategy_version_id: UUID | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class PaginatedBacktestRuns(StrictModel):
@@ -205,3 +217,126 @@ class PaginatedBacktestTrades(StrictModel):
     total: int
     limit: int
     offset: int
+
+
+class BacktestVerifyResult(StrictModel):
+    """Deterministic re-execution check against a frozen config + dataset."""
+
+    run_id: UUID
+    result_hash_stored: str | None = None
+    result_hash_recomputed: str | None = None
+    match: bool
+    dataset_ok: bool
+    detail: str | None = None
+
+
+class BacktestJournalMode(StrEnum):
+    DRY_RUN = "dry_run"
+    COMMIT = "commit"
+
+
+class BacktestJournalRowOutcome(StrEnum):
+    CREATED = "created"
+    WOULD_CREATE = "would_create"
+    DUPLICATE = "duplicate"
+    INVALID = "invalid"
+
+
+class BacktestJournalRequest(StrictModel):
+    dry_run: bool = True
+
+
+class BacktestJournalRowResult(StrictModel):
+    index: int
+    backtest_trade_id: UUID | None = None
+    outcome: BacktestJournalRowOutcome
+    external_ref: str | None = None
+    journal_trade_id: UUID | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
+class BacktestJournalResult(StrictModel):
+    run_id: UUID
+    dry_run: bool
+    committed: bool
+    total_rows: int
+    created_count: int
+    duplicate_count: int
+    invalid_count: int
+    results: list[BacktestJournalRowResult] = Field(default_factory=list)
+
+
+class JournalComparisonCohort(StrEnum):
+    HUMAN = "human"
+    PAPER_SYSTEM = "paper_system"
+    BACKTEST = "backtest"
+
+
+class JournalComparisonFilters(StrictModel):
+    strategy_id: UUID | None = None
+    strategy_version_id: UUID | None = None
+    setup_id: UUID | None = None
+    symbol: str | None = Field(default=None, max_length=30)
+    timeframe: str | None = Field(default=None, max_length=8)
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+
+
+class JournalComparisonCohortResult(StrictModel):
+    cohort: JournalComparisonCohort
+    metrics: JournalTradeStatsMetrics
+    sample_count: int = Field(ge=0)
+    truncated: bool = False
+
+
+class JournalComparisonResponse(StrictModel):
+    filters: JournalComparisonFilters
+    cohorts: list[JournalComparisonCohortResult]
+    max_rows: int
+    generated_at: datetime
+    note: str = (
+        "Record-only cohort comparison over canonical journal trades. "
+        "Advisory only — never feeds execution or risk decisions."
+    )
+
+
+class SetupEvidenceTier(StrEnum):
+    TIER1 = "tier1"
+    TIER2 = "tier2"
+    TIER3 = "tier3"
+
+
+class SetupEvidenceThresholds(StrictModel):
+    tier1_oos_min_trades: int
+    tier1_oos_min_profit_factor: float
+    tier1_min_confirm_trades: int
+    tier2_min_trades: int
+    tier2_oos_min_trades: int
+    tier2_oos_min_profit_factor: float
+
+
+class SetupEvidenceMeasured(StrictModel):
+    oos_trade_count: int = 0
+    oos_profit_factor: float | None = None
+    oos_expectancy: Decimal | None = None
+    confirm_trade_count: int = 0
+    confirm_expectancy: Decimal | None = None
+    total_backtest_trades: int = 0
+    backtest_run_id: UUID | None = None
+
+
+class SetupEvidenceItem(StrictModel):
+    strategy_id: UUID
+    strategy_version_id: UUID
+    strategy_name: str
+    version: int
+    tier: SetupEvidenceTier
+    measured: SetupEvidenceMeasured
+    thresholds: SetupEvidenceThresholds
+    note: str = "Advisory only — never feeds execution or risk decisions."
+
+
+class SetupEvidenceResponse(StrictModel):
+    items: list[SetupEvidenceItem]
+    generated_at: datetime
+    note: str = "Advisory only — never feeds execution or risk decisions."

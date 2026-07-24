@@ -124,6 +124,7 @@ class BacktestEngineService:
         start_date: date | None = None,
         end_date: date | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        persist: bool = True,
     ) -> BacktestResult:
         assumptions = BacktestAssumptions.model_validate(run.assumptions or {})
         resolved = resolve_backtest_rules(card, setup_type, structured_rules)  # type: ignore[arg-type]
@@ -142,6 +143,7 @@ class BacktestEngineService:
                     rule_engine_source=engine_source,
                     engine_version=ENGINE_VERSION,
                 ),
+                persist=persist,
             )
 
         # Freeze dates once at call boundary (no wall-clock inside the bar loop).
@@ -152,14 +154,20 @@ class BacktestEngineService:
         if resolved_end is None:
             resolved_end = datetime.now(UTC).date()
 
-        dataset, candle_rows, data_limitations = self._datasets.ensure_dataset(
-            symbol=assumptions.symbol,
-            exchange=assumptions.exchange,
-            timeframe=assumptions.timeframe,
-            start_date=resolved_start,
-            end_date=resolved_end,
-        )
-        run.dataset_id = dataset.id
+        # Verify path (persist=False + existing dataset_id): reuse the frozen
+        # dataset window without creating new dataset rows.
+        if not persist and run.dataset_id is not None:
+            dataset, candle_rows, data_limitations = self._load_existing_dataset(run.dataset_id)
+        else:
+            dataset, candle_rows, data_limitations = self._datasets.ensure_dataset(
+                symbol=assumptions.symbol,
+                exchange=assumptions.exchange,
+                timeframe=assumptions.timeframe,
+                start_date=resolved_start,
+                end_date=resolved_end,
+            )
+            if persist:
+                run.dataset_id = dataset.id
         dataset_summary = BacktestDatasetSummary(
             dataset_hash=dataset.dataset_hash,
             candle_count=dataset.candle_count,
@@ -172,7 +180,8 @@ class BacktestEngineService:
         data_quality = "ok" if not data_limitations else "degraded"
         max_bars = self._settings.backtest_max_bars
         total_bars = len(candle_rows)
-        run.total_bars = total_bars
+        if persist:
+            run.total_bars = total_bars
 
         if total_bars > max_bars:
             limitations = [
@@ -194,6 +203,7 @@ class BacktestEngineService:
                     processed_bars=0,
                     total_bars=total_bars,
                 ),
+                persist=persist,
             )
 
         if total_bars < self.WARMUP_BARS + 10:
@@ -212,6 +222,7 @@ class BacktestEngineService:
                     processed_bars=0,
                     total_bars=total_bars,
                 ),
+                persist=persist,
             )
 
         split_config = assumptions.split_config or BacktestSplitConfig()
@@ -323,45 +334,82 @@ class BacktestEngineService:
             total_bars=total_bars,
         )
 
-        for trade in state.trades:
-            self._trades.add(
-                BacktestTradeModel(
-                    backtest_run_id=run.id,
-                    entry_time=trade.entry_time,
-                    exit_time=trade.exit_time,
-                    direction=trade.direction.value,
-                    entry_price=trade.entry_price,
-                    exit_price=trade.exit_price,
-                    stop_loss=trade.stop_loss,
-                    size=trade.size,
-                    fees=trade.fees,
-                    slippage_cost=trade.slippage_cost,
-                    gross_pnl=trade.gross_pnl,
-                    net_pnl=trade.net_pnl,
-                    tp_hit_status=trade.tp_hit_status,
-                    exit_reason=trade.exit_reason,
-                    rule_notes=trade.rule_notes,
-                    mfe_price=trade.mfe_price,
-                    mae_price=trade.mae_price,
-                    mfe_amount=trade.mfe_amount,
-                    mae_amount=trade.mae_amount,
-                    available_profit=trade.available_profit,
-                    capture_pct=trade.capture_pct,
-                    funding_cost=trade.funding_cost,
-                    split_label=trade.split_label.value,
-                    split_index=trade.split_index,
-                    sequence=trade.sequence,
+        if persist:
+            for trade in state.trades:
+                self._trades.add(
+                    BacktestTradeModel(
+                        backtest_run_id=run.id,
+                        entry_time=trade.entry_time,
+                        exit_time=trade.exit_time,
+                        direction=trade.direction.value,
+                        entry_price=trade.entry_price,
+                        exit_price=trade.exit_price,
+                        stop_loss=trade.stop_loss,
+                        size=trade.size,
+                        fees=trade.fees,
+                        slippage_cost=trade.slippage_cost,
+                        gross_pnl=trade.gross_pnl,
+                        net_pnl=trade.net_pnl,
+                        tp_hit_status=trade.tp_hit_status,
+                        exit_reason=trade.exit_reason,
+                        rule_notes=trade.rule_notes,
+                        mfe_price=trade.mfe_price,
+                        mae_price=trade.mae_price,
+                        mfe_amount=trade.mfe_amount,
+                        mae_amount=trade.mae_amount,
+                        available_profit=trade.available_profit,
+                        capture_pct=trade.capture_pct,
+                        funding_cost=trade.funding_cost,
+                        split_label=trade.split_label.value,
+                        split_index=trade.split_index,
+                        sequence=trade.sequence,
+                    )
                 )
-            )
 
-        run.result = result.model_dump(mode="json")
-        run.result_hash = result_hash
-        run.engine_version = ENGINE_VERSION
-        run.processed_bars = state.processed_bars
-        run.total_bars = total_bars
+            run.result = result.model_dump(mode="json")
+            run.result_hash = result_hash
+            run.engine_version = ENGINE_VERSION
+            run.processed_bars = state.processed_bars
+            run.total_bars = total_bars
         return result
 
-    def _finalize_early(self, run: BacktestRunModel, result: BacktestResult) -> BacktestResult:
+    def _load_existing_dataset(
+        self, dataset_id: object
+    ) -> tuple[Any, list[HistoricalCandleModel], list[str]]:
+        """Load an already-frozen dataset and its candle window (verify path)."""
+        from app.db.models import BacktestDataset as BacktestDatasetModel
+
+        dataset = self._session.get(BacktestDatasetModel, dataset_id)
+        if dataset is None:
+            raise ValueError("Backtest dataset not found for verification.")
+        from datetime import UTC as _UTC
+
+        start_dt = datetime.combine(dataset.start_date, datetime.min.time(), tzinfo=_UTC)
+        end_dt = datetime.combine(dataset.end_date, datetime.max.time(), tzinfo=_UTC)
+        from sqlalchemy import select as _select
+
+        rows = list(
+            self._session.scalars(
+                _select(HistoricalCandleModel)
+                .where(
+                    HistoricalCandleModel.symbol == dataset.symbol,
+                    HistoricalCandleModel.exchange == dataset.exchange,
+                    HistoricalCandleModel.timeframe == dataset.timeframe,
+                    HistoricalCandleModel.open_time >= start_dt,
+                    HistoricalCandleModel.open_time <= end_dt,
+                )
+                .order_by(HistoricalCandleModel.open_time.asc())
+            ).all()
+        )
+        return dataset, rows, []
+
+    def _finalize_early(
+        self,
+        run: BacktestRunModel,
+        result: BacktestResult,
+        *,
+        persist: bool = True,
+    ) -> BacktestResult:
         result_hash = self._hash_result(result.trades, result.metrics)
         result = result.model_copy(
             update={
@@ -369,13 +417,14 @@ class BacktestEngineService:
                 "engine_version": ENGINE_VERSION,
             }
         )
-        run.result = result.model_dump(mode="json")
-        run.result_hash = result_hash
-        run.engine_version = ENGINE_VERSION
-        if result.processed_bars is not None:
-            run.processed_bars = result.processed_bars
-        if result.total_bars is not None:
-            run.total_bars = result.total_bars
+        if persist:
+            run.result = result.model_dump(mode="json")
+            run.result_hash = result_hash
+            run.engine_version = ENGINE_VERSION
+            if result.processed_bars is not None:
+                run.processed_bars = result.processed_bars
+            if result.total_bars is not None:
+                run.total_bars = result.total_bars
         return result
 
     def _simulate_segment(

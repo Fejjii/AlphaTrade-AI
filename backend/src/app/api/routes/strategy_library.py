@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, Query
 
 from app.core.dependencies import (
     BacktestServiceDep,
     PaperEligibilityServiceDep,
     PaperValidationServiceDep,
     SessionDep,
+    SettingsDep,
     StrategyLibraryServiceDep,
     StrategyTestabilityServiceDep,
     StructuredRulesServiceDep,
@@ -156,7 +157,7 @@ async def list_strategy_versions(
 @router.post(
     "/{strategy_id}/backtests",
     response_model=BacktestRun,
-    summary="Run strategy backtest v1 (historical simulation)",
+    summary="Queue or run a strategy backtest (historical simulation)",
 )
 async def create_backtest(
     strategy_id: uuid.UUID,
@@ -164,7 +165,11 @@ async def create_backtest(
     tenant: TraderDep,
     service: BacktestServiceDep,
     session: SessionDep,
+    settings: SettingsDep,
+    background_tasks: BackgroundTasks,
 ) -> BacktestRun:
+    from app.api.routes.backtests import enqueue_backtest_if_needed
+
     result = service.create(
         strategy_id,
         body,
@@ -172,6 +177,12 @@ async def create_backtest(
         user_id=tenant.user_id,
     )
     session.commit()
+    enqueue_backtest_if_needed(
+        result=result,
+        session=session,
+        settings=settings,
+        background_tasks=background_tasks,
+    )
     return result
 
 

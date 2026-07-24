@@ -98,6 +98,8 @@ class WorkerService:
                 latency_ms=latency_ms,
             )
             self._beat(status="running", increment=True)
+            # Bounded backtest drain: at most one QUEUED run per successful cycle.
+            self._drain_one_backtest()
             result = ScanResult(status="success", symbols_scanned=symbols, setups_detected=setups)
             self._emit(result)
             return result
@@ -119,6 +121,27 @@ class WorkerService:
             return result
         finally:
             self._lock.release(token)
+
+    def _drain_one_backtest(self) -> None:
+        """Execute at most one QUEUED backtest; never raise into the scan cycle."""
+        try:
+            with self._session_factory() as session:
+                from app.repositories.backtest import BacktestRunRepository
+                from app.services.backtest_service import BacktestService
+
+                queued = BacktestRunRepository(session).next_queued()
+                if queued is None:
+                    return
+                BacktestService(session).execute_run(
+                    queued.id, organization_id=queued.organization_id
+                )
+                session.commit()
+        except Exception as exc:
+            logger.warning(
+                "backtest_drain_failed",
+                worker=self._worker_name,
+                error=redact_text(str(exc))[:200],
+            )
 
     def _emit(self, result: ScanResult) -> None:
         if self._on_cycle is None:

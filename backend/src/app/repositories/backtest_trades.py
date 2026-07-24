@@ -31,3 +31,20 @@ class BacktestTradeRepository(SQLAlchemyRepository[BacktestTrade]):
         )
         total = int(self._session.scalar(count_stmt) or 0)
         return list(self._session.scalars(list_stmt).all()), total
+
+    def count_for_run(self, run_id: uuid.UUID) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(BacktestTrade)
+            .where(BacktestTrade.backtest_run_id == run_id)
+        )
+        return int(self._session.scalar(stmt) or 0)
+
+    def list_all_for_run(self, run_id: uuid.UUID, *, limit: int) -> list[BacktestTrade]:
+        stmt = (
+            select(BacktestTrade)
+            .where(BacktestTrade.backtest_run_id == run_id)
+            .order_by(BacktestTrade.sequence.asc().nulls_last(), BacktestTrade.entry_time.asc())
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt).all())

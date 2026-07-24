@@ -4,6 +4,7 @@ and import/attachment persistence (AT-033)."""
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -208,16 +209,17 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
-        source: JournalTradeSource | None,
-        entry_method: JournalEntryMethod | None,
-        symbol: str | None,
-        timeframe: str | None,
-        market_regime: MarketRegime | None,
-        setup_id: uuid.UUID | None,
-        user_strategy_id: uuid.UUID | None,
-        strategy_version_id: uuid.UUID | None,
-        date_from: datetime | None,
-        date_to: datetime | None,
+        source: JournalTradeSource | None = None,
+        sources: Collection[JournalTradeSource] | None = None,
+        entry_method: JournalEntryMethod | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        market_regime: MarketRegime | None = None,
+        setup_id: uuid.UUID | None = None,
+        user_strategy_id: uuid.UUID | None = None,
+        strategy_version_id: uuid.UUID | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> list[ColumnElement[bool]]:
         """Shared WHERE clauses for the statistics row and rule-check scans.
 
@@ -234,7 +236,9 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             JournalTrade.user_id == user_id,
             JournalTrade.status == JournalTradeStatus.CLOSED,
         ]
-        if source is not None:
+        if sources is not None:
+            filters.append(JournalTrade.source.in_(tuple(sources)))
+        elif source is not None:
             filters.append(JournalTrade.source == source)
         if entry_method is not None:
             filters.append(JournalTrade.entry_method == entry_method)
@@ -262,6 +266,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         source: JournalTradeSource | None = None,
+        sources: Collection[JournalTradeSource] | None = None,
         entry_method: JournalEntryMethod | None = None,
         symbol: str | None = None,
         timeframe: str | None = None,
@@ -282,6 +287,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             organization_id=organization_id,
             user_id=user_id,
             source=source,
+            sources=sources,
             entry_method=entry_method,
             symbol=symbol,
             timeframe=timeframe,

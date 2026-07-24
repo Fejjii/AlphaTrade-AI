@@ -18,6 +18,12 @@ from app.core.dependencies import (
     JournalTradeServiceDep,
     LessonCandidateServiceDep,
     SessionDep,
+    SetupEvidenceServiceDep,
+)
+from app.schemas.backtest import (
+    JournalComparisonFilters,
+    JournalComparisonResponse,
+    SetupEvidenceResponse,
 )
 from app.schemas.common import (
     JournalEntryMethod,
@@ -333,6 +339,59 @@ async def journal_trade_statistics(
         filters=filters,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/comparison",
+    response_model=JournalComparisonResponse,
+    summary="Compare human / paper-system / backtest journal cohorts (AT-034)",
+)
+async def journal_comparison(
+    tenant: ReaderDep,
+    service: JournalStatisticsServiceDep,
+    strategy_id: uuid.UUID | None = Query(default=None),
+    strategy_version_id: uuid.UUID | None = Query(default=None),
+    setup_id: uuid.UUID | None = Query(default=None),
+    symbol: str | None = Query(default=None, max_length=30),
+    timeframe: str | None = Query(default=None, max_length=8),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+) -> JournalComparisonResponse:
+    filters = JournalComparisonFilters(
+        strategy_id=strategy_id,
+        strategy_version_id=strategy_version_id,
+        setup_id=setup_id,
+        symbol=symbol,
+        timeframe=timeframe,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return service.compare_cohorts(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        filters=filters,
+    )
+
+
+@router.get(
+    "/setup-evidence",
+    response_model=SetupEvidenceResponse,
+    summary="Advisory setup evidence tiers from backtest OOS + journal confirmation (AT-034)",
+)
+async def journal_setup_evidence(
+    tenant: ReaderDep,
+    service: SetupEvidenceServiceDep,
+    strategy_id: uuid.UUID | None = Query(default=None),
+    strategy_version_id: uuid.UUID | None = Query(default=None),
+    setup_id: uuid.UUID | None = Query(default=None),
+) -> SetupEvidenceResponse:
+    return service.evaluate(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        strategy_id=strategy_id,
+        strategy_version_id=strategy_version_id,
+        setup_id=setup_id,
     )
 
 
