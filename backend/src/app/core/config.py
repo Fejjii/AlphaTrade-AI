@@ -239,6 +239,9 @@ class Settings(BaseSettings):
     )
     journal_attachment_max_per_trade: int = Field(default=20, ge=1, le=100)
 
+    # --- Backtest engine (AT-034) — bounded workload; truncate not allowed ---
+    backtest_max_bars: int = Field(default=20_000, ge=100, le=100_000)
+
     # --- LLM narrative polish (Slice 21 — explanation only, not decision authority) ---
     narrative_llm_enabled: bool = True
 

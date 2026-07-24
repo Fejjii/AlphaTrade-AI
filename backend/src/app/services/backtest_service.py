@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import suppress
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -47,6 +48,7 @@ class BacktestService:
         self._engine = BacktestEngineService(
             session,
             HistoricalCandleService(session, provider, self._settings),
+            self._settings,
         )
 
     def create(
@@ -93,16 +95,31 @@ class BacktestService:
                 with suppress(Exception):
                     structured = StructuredRules.model_validate(version.structured_rules)
 
+            # Freeze dates once at the call boundary (engine simulation is wall-clock free).
+            from datetime import UTC, datetime, timedelta
+
+            frozen_start = assumptions.start_date or (datetime.now(UTC) - timedelta(days=90)).date()
+            frozen_end = assumptions.end_date or datetime.now(UTC).date()
+
             result = self._engine.run(
                 run=run,
                 card=card,
                 setup_type=strategy.setup_type,
                 structured_rules=structured,
+                start_date=frozen_start,
+                end_date=frozen_end,
             )
             run.result = result.model_dump(mode="json")
-            run.status = BacktestRunStatus.COMPLETED
+            if result.cancelled:
+                run.status = BacktestRunStatus.CANCELLED
+            else:
+                run.status = BacktestRunStatus.COMPLETED
             needs_rules = BacktestRecommendation.NEEDS_STRUCTURED_RULES
-            if version is not None and result.recommendation != needs_rules:
+            if (
+                version is not None
+                and result.recommendation != needs_rules
+                and not result.cancelled
+            ):
                 promotion = evaluate_promotion(
                     metrics=result.metrics,
                     machine_readable=(
@@ -171,6 +188,8 @@ class BacktestService:
         if row is None:
             raise NotFoundError("Backtest run not found.")
         rows, total = self._trades.list_for_run(run_id, limit=limit, offset=offset)
+        from app.schemas.common import BacktestSplitLabel
+
         items = [
             BacktestTradeRecord(
                 id=trade.id,
@@ -188,6 +207,20 @@ class BacktestService:
                 tp_hit_status=trade.tp_hit_status,
                 exit_reason=trade.exit_reason,
                 rule_notes=trade.rule_notes,
+                mfe_price=trade.mfe_price,
+                mae_price=trade.mae_price,
+                mfe_amount=trade.mfe_amount,
+                mae_amount=trade.mae_amount,
+                available_profit=trade.available_profit,
+                capture_pct=trade.capture_pct,
+                funding_cost=trade.funding_cost or Decimal("0"),
+                split_label=(
+                    BacktestSplitLabel(trade.split_label)
+                    if trade.split_label
+                    else BacktestSplitLabel.IN_SAMPLE
+                ),
+                split_index=trade.split_index if trade.split_index is not None else 0,
+                sequence=trade.sequence,
             )
             for trade in rows
         ]
