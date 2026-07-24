@@ -10,9 +10,11 @@ from app.core.auth import TenantDep
 from app.core.dependencies import (
     HumanVsSystemServiceDep,
     JournalServiceDep,
+    JournalTradeServiceDep,
     LessonCandidateServiceDep,
     SessionDep,
 )
+from app.schemas.common import JournalTradeSource, JournalTradeStatus
 from app.schemas.human_vs_system import DisciplineAnalysis
 from app.schemas.journal import (
     JournalEntry,
@@ -21,8 +23,21 @@ from app.schemas.journal import (
     JournalEntryUpdate,
     PaginatedJournalEntries,
 )
+from app.schemas.journal_trades import (
+    JournalTradeCreate,
+    JournalTradeDetail,
+    JournalTradeEvidenceCreate,
+    JournalTradeEvidenceRead,
+    JournalTradeObservationCreate,
+    JournalTradeObservationRead,
+    JournalTradeRead,
+    JournalTradeRuleCheckCreate,
+    JournalTradeRuleCheckRead,
+    JournalTradeUpdate,
+    PaginatedJournalTrades,
+)
 from app.schemas.lesson import LessonCandidate
-from app.security.rbac import TraderDep
+from app.security.rbac import ReaderDep, TraderDep
 from app.security.tenant import ensure_same_organization
 
 router = APIRouter(prefix="/journal", tags=["journal"])
@@ -139,6 +154,222 @@ async def journal_discipline_analysis(
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Canonical journal trades (AT-030 — record-only, no execution authority)
+# --------------------------------------------------------------------------- #
+
+
+@router.post(
+    "/trades",
+    response_model=JournalTradeRead,
+    status_code=201,
+    summary="Create canonical journal trade",
+)
+async def create_journal_trade(
+    body: JournalTradeCreate,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeRead:
+    result = service.create(
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/trades/from-position/{position_id}",
+    response_model=JournalTradeRead,
+    status_code=201,
+    summary="Create journal trade prefilled from a paper position",
+)
+async def create_journal_trade_from_position(
+    position_id: uuid.UUID,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeRead:
+    result = service.create_from_position(
+        position_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/trades/from-paper-trade/{paper_trade_id}",
+    response_model=JournalTradeRead,
+    status_code=201,
+    summary="Create journal trade prefilled from a paper-validation trade",
+)
+async def create_journal_trade_from_paper_trade(
+    paper_trade_id: uuid.UUID,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeRead:
+    result = service.create_from_paper_trade(
+        paper_trade_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/trades",
+    response_model=PaginatedJournalTrades,
+    summary="List canonical journal trades",
+)
+async def list_journal_trades(
+    tenant: ReaderDep,
+    service: JournalTradeServiceDep,
+    source: JournalTradeSource | None = Query(default=None),
+    status: JournalTradeStatus | None = Query(default=None),
+    symbol: str | None = Query(default=None, max_length=30),
+    user_strategy_id: uuid.UUID | None = Query(default=None),
+    setup_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedJournalTrades:
+    items, total = service.list_trades(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        source=source,
+        status=status,
+        symbol=symbol,
+        user_strategy_id=user_strategy_id,
+        setup_id=setup_id,
+        limit=limit,
+        offset=offset,
+    )
+    return PaginatedJournalTrades(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get(
+    "/trades/{journal_trade_id}",
+    response_model=JournalTradeDetail,
+    summary="Get journal trade with evidence, rule checks, and observations",
+)
+async def get_journal_trade(
+    journal_trade_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: JournalTradeServiceDep,
+) -> JournalTradeDetail:
+    return service.get_detail(journal_trade_id, organization_id=tenant.organization_id)
+
+
+@router.patch(
+    "/trades/{journal_trade_id}",
+    response_model=JournalTradeRead,
+    summary="Update canonical journal trade",
+)
+async def update_journal_trade(
+    journal_trade_id: uuid.UUID,
+    body: JournalTradeUpdate,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeRead:
+    result = service.update(
+        journal_trade_id,
+        body,
+        organization_id=tenant.organization_id,
+    )
+    session.commit()
+    return result
+
+
+@router.delete(
+    "/trades/{journal_trade_id}",
+    status_code=204,
+    summary="Delete canonical journal trade",
+)
+async def delete_journal_trade(
+    journal_trade_id: uuid.UUID,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> None:
+    service.delete(journal_trade_id, organization_id=tenant.organization_id)
+    session.commit()
+
+
+@router.post(
+    "/trades/{journal_trade_id}/evidence",
+    response_model=JournalTradeEvidenceRead,
+    status_code=201,
+    summary="Attach evidence to a journal trade",
+)
+async def add_journal_trade_evidence(
+    journal_trade_id: uuid.UUID,
+    body: JournalTradeEvidenceCreate,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeEvidenceRead:
+    result = service.add_evidence(
+        journal_trade_id,
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/trades/{journal_trade_id}/rule-checks",
+    response_model=JournalTradeRuleCheckRead,
+    status_code=201,
+    summary="Record a rule-compliance check for a journal trade",
+)
+async def add_journal_trade_rule_check(
+    journal_trade_id: uuid.UUID,
+    body: JournalTradeRuleCheckCreate,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeRuleCheckRead:
+    result = service.add_rule_check(
+        journal_trade_id,
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/trades/{journal_trade_id}/observations",
+    response_model=JournalTradeObservationRead,
+    status_code=201,
+    summary="Record a behavioral observation for a journal trade",
+)
+async def add_journal_trade_observation(
+    journal_trade_id: uuid.UUID,
+    body: JournalTradeObservationCreate,
+    tenant: TraderDep,
+    service: JournalTradeServiceDep,
+    session: SessionDep,
+) -> JournalTradeObservationRead:
+    result = service.add_observation(
+        journal_trade_id,
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
 
 
 @router.post(

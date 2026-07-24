@@ -339,6 +339,12 @@ class AuditEventType(StrEnum):
     ALERT_TELEGRAM_DELIVERY_REQUESTED = "alert_telegram_delivery_requested"
     ALERT_TELEGRAM_DELIVERY_SENT = "alert_telegram_delivery_sent"
     ALERT_TELEGRAM_DELIVERY_FAILED = "alert_telegram_delivery_failed"
+    JOURNAL_TRADE_CREATED = "journal_trade_created"
+    JOURNAL_TRADE_UPDATED = "journal_trade_updated"
+    JOURNAL_TRADE_DELETED = "journal_trade_deleted"
+    JOURNAL_TRADE_EVIDENCE_ADDED = "journal_trade_evidence_added"
+    JOURNAL_TRADE_RULE_CHECKED = "journal_trade_rule_checked"
+    JOURNAL_TRADE_OBSERVED = "journal_trade_observed"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"
@@ -408,6 +414,68 @@ class MarketType(StrEnum):
     FOREX = "forex"
     EQUITIES = "equities"
     COMMODITIES = "commodities"
+
+
+class JournalTradeSource(StrEnum):
+    """Origin of a canonical journal trade (AT-030)."""
+
+    MANUAL = "manual"
+    PAPER_EXECUTION = "paper_execution"
+    PAPER_VALIDATION = "paper_validation"
+    BACKTEST = "backtest"
+    IMPORTED = "imported"
+    SYSTEM = "system"
+
+
+class JournalTradeStatus(StrEnum):
+    """Lifecycle of a canonical journal trade (AT-030)."""
+
+    PLANNED = "planned"
+    OPEN = "open"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
+class MarketRegime(StrEnum):
+    """Coarse market-regime label recorded on a journal trade (AT-030)."""
+
+    TRENDING_UP = "trending_up"
+    TRENDING_DOWN = "trending_down"
+    RANGING = "ranging"
+    VOLATILE = "volatile"
+    QUIET = "quiet"
+    UNKNOWN = "unknown"
+
+
+class JournalEvidenceKind(StrEnum):
+    """Kind of evidence attached to a journal trade (AT-030)."""
+
+    SCREENSHOT = "screenshot"
+    CHART = "chart"
+    NOTE = "note"
+    LINK = "link"
+    FILE = "file"
+
+
+class RuleComplianceStatus(StrEnum):
+    """Compliance outcome for a single rule check on a journal trade (AT-030)."""
+
+    FOLLOWED = "followed"
+    VIOLATED = "violated"
+    PARTIAL = "partial"
+    NOT_APPLICABLE = "not_applicable"
+    UNASSESSED = "unassessed"
+
+
+class JournalObservationCategory(StrEnum):
+    """Category of a behavioral/process observation on a journal trade (AT-030)."""
+
+    BEHAVIORAL = "behavioral"
+    EMOTIONAL = "emotional"
+    EXECUTION = "execution"
+    MARKET = "market"
+    RISK = "risk"
+    PROCESS = "process"
 
 
 class StrategyValidationStatus(StrEnum):
