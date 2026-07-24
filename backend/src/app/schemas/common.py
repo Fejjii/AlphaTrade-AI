@@ -535,13 +535,22 @@ class BacktestStatus(StrEnum):
 
 
 class BacktestRunStatus(StrEnum):
-    """Backtest run lifecycle (Slice 34)."""
+    """Backtest run lifecycle (Slice 34 / AT-034)."""
 
     NOT_STARTED = "not_started"
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELLED = "cancelled"
+
+
+class BacktestSplitLabel(StrEnum):
+    """Walk-forward / holdout split label for a simulated trade (AT-034)."""
+
+    IN_SAMPLE = "in_sample"
+    OUT_OF_SAMPLE = "out_of_sample"
 
 
 class PaperValidationStatus(StrEnum):

@@ -13,8 +13,8 @@ document/chunk metadata lives here.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from datetime import date as date_type
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -32,6 +32,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -468,10 +469,49 @@ class HistoricalCandle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     freshness_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class BacktestDataset(UUIDPrimaryKeyMixin, Base):
+    """Immutable candle-window snapshot for deterministic backtests (AT-034).
+
+    Global (not tenant-scoped) — candles are shared market data. Rows are never
+    updated after insert; reuse is by ``dataset_hash`` match only.
+    """
+
+    __tablename__ = "backtest_datasets"
+
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    start_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date_type] = mapped_column(Date, nullable=False)
+    candle_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_open_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_open_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    gap_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_counts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    stale_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dataset_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
 class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Backtest run record (Slice 35 — deterministic simulation, paper only)."""
+    """Backtest run record (Slice 35 / AT-034 — deterministic simulation, paper only)."""
 
     __tablename__ = "backtest_runs"
+    __table_args__ = (
+        Index(
+            "uq_backtest_runs_org_idempotency_key",
+            "organization_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+            sqlite_where=text("idempotency_key IS NOT NULL"),
+        ),
+    )
 
     strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
     strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -487,6 +527,22 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     assumptions: Mapped[dict] = mapped_column(JSON, default=dict)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # AT-034 — deterministic engine v2 metadata (nullable for pre-v2 rows)
+    config_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("backtest_datasets.id"), nullable=True
+    )
+    engine_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    processed_bars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_bars: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class BacktestTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -511,6 +567,17 @@ class BacktestTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tp_hit_status: Mapped[str] = mapped_column(String(40), nullable=False)
     exit_reason: Mapped[str] = mapped_column(String(60), nullable=False)
     rule_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # AT-034 — excursion / funding / walk-forward labels (nullable for pre-v2 rows)
+    mfe_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    mae_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    mfe_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    mae_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    available_profit: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    capture_pct: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    funding_cost: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    split_label: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    split_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class PaperValidationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
