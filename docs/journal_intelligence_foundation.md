@@ -1,9 +1,10 @@
-# Journal Intelligence Foundation (AT-030, AT-031)
+# Journal Intelligence Foundation (AT-030, AT-031, AT-032)
 
-Status: slices 1 (canonical journal trades, AT-030) and 2 (journal statistics & setup
-analytics v1, AT-031) implemented. Paper-only; record-only; no execution authority. This
-document contains the repository audit, the canonical domain design, what each slice ships,
-and the roadmap for the remaining slices.
+Status: slices 1 (canonical journal trades, AT-030), 2 (journal statistics & setup
+analytics v1, AT-031), and 3 (deterministic excursion replay, AT-032) implemented.
+Paper-only; record-only; no execution authority. This document contains the repository
+audit, the canonical domain design, what each slice ships, and the roadmap for the
+remaining slices.
 
 ## 1. Repository audit (what already existed)
 
@@ -85,7 +86,7 @@ Design decisions (recorded as AT-ADR-012 in `.ai/DECISIONS.md`):
   proposal/position links already consumed by `HumanVsSystemService`; a dedicated
   journal-trade comparison endpoint is a roadmap slice, not duplicated logic now.
 - **MFE/MAE are stored, not fetched.** Values must come from deterministic inputs
-  (manual entry today; candle replay in a later slice). `realized_vs_available_pct` is
+  (manual entry or AT-032 HistoricalCandle replay). `realized_vs_available_pct` is
   derived arithmetic (`net_pnl / available_profit * 100`) unless explicitly provided.
 - **Sources**: `manual`, `paper_execution` (positions lane), `paper_validation` (paper
   trades lane), `backtest`, `imported` (external history via `external_ref`), `system`.
@@ -164,25 +165,58 @@ Semantics (deterministic, conservative — see AT-ADR-013):
   warning. Reads are not audited (consistent with existing journal reads); all
   journal-trade mutations remain audited via AT-030.
 
-## 5. Roadmap — remaining slices
+## 5. Excursion replay slice (AT-032 — implemented)
+
+Deterministic MFE/MAE, available profit, and profit-capture from stored
+`HistoricalCandle` rows. Extends AT-030/031 — no live market I/O, no execution path.
+
+| Layer | Artifact |
+|---|---|
+| Migration | `k7f8a9b0c1d2_at032_journal_excursion_replay.py` (head after `j6e7f8a9b0c1`); provenance columns + org/user/excursion_source index |
+| Calculator | `services/journal_excursion_calculator.py` — pure long/short MFE/MAE / available-profit arithmetic |
+| Service | `services/journal_excursion_replay_service.py` — read-only candle load, overwrite policy, audit, optional post-exit `RunnerAndMissedProfitAnalyzer` |
+| Schemas | `schemas/journal_excursion_replay.py` — request/result/provenance; `overwrite_policy=skip_protected\|force` |
+| Repository | `JournalTradeRepository.list_replay_candidates` — bounded eligible closed trades |
+| API | `POST /journal/trades/{id}/replay-excursions`, `POST /journal/trades/replay-excursions` (`TraderDep`) |
+| Config | `journal_replay_max_candles` (default 5000), `journal_replay_batch_max` (default 100) |
+| Tests | `tests/test_at032_journal_excursion_replay.py` — calculator, edge cases, overwrite policy, tenant isolation, stats feed |
+
+Semantics (deterministic, conservative — see AT-ADR-014):
+
+- **Read-only candles.** Replay never calls market-data providers; missing candles skip
+  safely (`skipped_reason=missing_candles`). Gaps / incomplete coverage set
+  `excursion_is_stale` + freshness notes but still persist best-effort metrics when bars
+  exist.
+- **Window.** Bars overlapping `[entry_time, exit_time)` (exit exclusive) so post-exit
+  runner lookahead is separate.
+- **Long / short.** LONG: MFE=`max(high)`, MAE=`min(low)`; SHORT: MFE=`min(low)`,
+  MAE=`max(high)`. Amounts use recorded size; MAE amount is typically ≤ 0.
+- **available_profit** = `max(mfe_amount, 0)`; **realized_vs_available_pct** =
+  `net_pnl / available_profit * 100` when both set and available ≠ 0.
+- **Overwrite policy.** Default `skip_protected`: write when empty or
+  `excursion_source=replay`; never replace `manual`/`system` without
+  `overwrite_policy=force`.
+- **Provenance.** `excursion_source="replay"` plus data source, staleness, gap count,
+  window completeness, computed_at. Mutations audited as
+  `JOURNAL_TRADE_EXCURSION_REPLAYED`.
+- **AT-031 feed.** Persisted amounts are recorded values — statistics aggregates pick
+  them up automatically (raising excursion coverage).
+
+## 6. Roadmap — remaining slices
 
 1. **Journal completion slice.** Bulk import (`imported` source with `external_ref`
    dedup), auto-journal hooks (opt-in) when positions close or paper trades close,
    `TradeJournal` → `journal_trades` backfill command, evidence upload storage strategy.
-2. **Replay slice.** Deterministic excursion computation from `HistoricalCandle`
-   (`excursion_source="replay"`), post-exit runner replay reusing
-   `RunnerAndMissedProfitAnalyzer`, market-regime auto-labelling from indicator
-   snapshots; strictly read-only market data with freshness provenance. This unlocks
-   MFE/MAE and available-vs-realized coverage for trades that lack manual excursion
-   entries, feeding directly into the AT-031 statistics.
-3. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
+2. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
    `HumanVsSystemService` analyzers over `linked_proposal_id`/`linked_position_id`;
    rule-check auto-suggestions from `UserStrategyVersion.structured_rules`; lesson
    candidate generation from violated rule checks.
-4. **Backtesting integration slice.** Journal backtest trades in bulk per
+3. **Backtesting integration slice.** Journal backtest trades in bulk per
    `BacktestRun`, compare live/paper cohort vs backtest cohort per strategy version
-   using the AT-031 grouping dimensions (`source=backtest` vs `paper_*`).
-5. **Rollup feeds (optional).** Feed `SetupPerformance` and `StrategyPerformanceDaily`
+   using the AT-031 grouping dimensions (`source=backtest` vs `paper_*`). Full
+   deterministic backtesting still needs complete candle ingest coverage, regime
+   auto-labelling, and bulk journal-from-backtest wiring.
+4. **Rollup feeds (optional).** Feed `SetupPerformance` and `StrategyPerformanceDaily`
    rollups from canonical trades once auto-journaling ensures coverage.
 
 Each slice follows the established pattern: migration → models → strict schemas →

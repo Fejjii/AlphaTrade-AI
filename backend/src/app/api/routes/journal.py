@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query
 from app.core.auth import TenantDep
 from app.core.dependencies import (
     HumanVsSystemServiceDep,
+    JournalExcursionReplayServiceDep,
     JournalServiceDep,
     JournalStatisticsServiceDep,
     JournalTradeServiceDep,
@@ -24,6 +25,12 @@ from app.schemas.journal import (
     JournalEntryPrefill,
     JournalEntryUpdate,
     PaginatedJournalEntries,
+)
+from app.schemas.journal_excursion_replay import (
+    JournalExcursionBatchReplayRequest,
+    JournalExcursionBatchReplayResult,
+    JournalExcursionReplayRequest,
+    JournalExcursionReplayResult,
 )
 from app.schemas.journal_statistics import (
     ExecutionActor,
@@ -308,6 +315,54 @@ async def journal_trade_statistics(
         limit=limit,
         offset=offset,
     )
+
+
+@router.post(
+    "/trades/replay-excursions",
+    response_model=JournalExcursionBatchReplayResult,
+    summary="Batch replay MFE/MAE from HistoricalCandle (AT-032)",
+)
+async def batch_replay_journal_trade_excursions(
+    body: JournalExcursionBatchReplayRequest,
+    tenant: TraderDep,
+    service: JournalExcursionReplayServiceDep,
+    session: SessionDep,
+) -> JournalExcursionBatchReplayResult:
+    """Deterministic, record-only excursion replay over eligible closed trades.
+
+    Reads stored HistoricalCandle only — no live market I/O. Manual/system
+    excursions are skipped unless ``overwrite_policy=force``.
+    """
+    result = service.replay_batch(
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/trades/{journal_trade_id}/replay-excursions",
+    response_model=JournalExcursionReplayResult,
+    summary="Replay MFE/MAE from HistoricalCandle for one trade (AT-032)",
+)
+async def replay_journal_trade_excursions(
+    journal_trade_id: uuid.UUID,
+    body: JournalExcursionReplayRequest,
+    tenant: TraderDep,
+    service: JournalExcursionReplayServiceDep,
+    session: SessionDep,
+) -> JournalExcursionReplayResult:
+    """Compute deterministic MFE/MAE / available profit from stored candles."""
+    result = service.replay_trade(
+        journal_trade_id,
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
 
 
 @router.get(

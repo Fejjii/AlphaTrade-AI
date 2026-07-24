@@ -345,6 +345,7 @@ class AuditEventType(StrEnum):
     JOURNAL_TRADE_EVIDENCE_ADDED = "journal_trade_evidence_added"
     JOURNAL_TRADE_RULE_CHECKED = "journal_trade_rule_checked"
     JOURNAL_TRADE_OBSERVED = "journal_trade_observed"
+    JOURNAL_TRADE_EXCURSION_REPLAYED = "journal_trade_excursion_replayed"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"

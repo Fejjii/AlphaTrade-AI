@@ -247,7 +247,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   CI run 30064982141 success (backend 1223 passed / 1 skipped; deployment-safety, frontend,
   evaluation, e2e-smoke, docker-build all green). No deploy.
 - Follow-up slices (see docs roadmap): journal completion (import/backfill/auto-journal),
-  replay (deterministic MFE/MAE), human-vs-system journal endpoint, backtesting integration.
+  replay (AT-032), human-vs-system journal endpoint, backtesting integration.
 
 ### AT-031 — Journal Statistics & Setup Analytics v1 (journal domain, slice 2)
 - Priority: P1 · Status: DONE · Dependencies: AT-030 · Risk: Low (read-only aggregates, no execution path)
@@ -275,9 +275,29 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   https://github.com/Fejjii/AlphaTrade-AI/pull/17; CI run 30092110777 success (backend
   1242 passed / 1 skipped; deployment-safety, frontend, evaluation, e2e-smoke,
   docker-build all green). No deploy.
-- Follow-up slices: replay (deterministic MFE/MAE from `HistoricalCandle`), journal
-  completion (import/backfill/auto-journal), human-vs-system journal endpoint,
-  backtesting integration (see docs roadmap §5).
+- Follow-up slices: replay (AT-032 DONE), journal completion (import/backfill/auto-journal),
+  human-vs-system journal endpoint, backtesting integration (see docs roadmap §6).
+
+### AT-032 — Journal Excursion Replay (deterministic MFE/MAE from HistoricalCandle)
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-030, AT-031 · Risk: Low
+  (record-only replay; no execution path)
+- Safety classification: Paper-safe / record-only
+- Goal: Deterministic in-trade MFE/MAE, available profit, and profit-capture for
+  canonical `journal_trades` from read-only `HistoricalCandle`;
+  `excursion_source="replay"` with data-source/freshness provenance; never overwrite
+  manual/system without explicit `overwrite_policy=force`; optional post-exit runner
+  analysis via `RunnerAndMissedProfitAnalyzer`; feed AT-031 statistics; handle missing
+  candles, gaps, incomplete windows, invalid trade windows safely; tenant isolation +
+  RBAC + audit; bounded candle/batch queries.
+- Branch: `feat/at-032-journal-excursion-replay`
+- Deliverables: migration `k7f8a9b0c1d2`; calculator + replay service; schemas; routes
+  `POST /journal/trades/{id}/replay-excursions` and batch
+  `POST /journal/trades/replay-excursions`; config bounds; tests; docs §5; ADR-014.
+- Validation: (pending REVIEW_REQUIRED) migration upgrade/downgrade/upgrade on Postgres 16;
+  `tests/test_at032_journal_excursion_replay.py`; ruff; strict mypy on new modules;
+  AT-030/031 regression; paper posture unchanged. No deploy.
+- Recommended model: Fable 5
+- ADR: AT-ADR-014 · Docs: `docs/journal_intelligence_foundation.md` (§5)
 
 ---
 

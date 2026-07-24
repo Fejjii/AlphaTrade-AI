@@ -1437,6 +1437,16 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     available_profit: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     realized_vs_available_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     excursion_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # AT-032 — provenance for HistoricalCandle replay (null when never replayed)
+    excursion_data_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    excursion_is_stale: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    excursion_freshness_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    excursion_candle_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    excursion_gaps_detected: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    excursion_window_complete: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    excursion_computed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Reflection
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

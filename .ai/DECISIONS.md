@@ -334,3 +334,40 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Validation:** Migration upgrade/downgrade/upgrade on Postgres 16 scratch DB; 19 new
   API tests; ruff clean; strict mypy clean on new modules; frontend tsc + eslint + page
   test green.
+
+## AT-ADR-014 — Journal excursion replay from HistoricalCandle (AT-032)
+- **Date:** 2026-07-24
+- **Status:** Proposed (implementation complete; awaiting REVIEW_REQUIRED authorization)
+- **Context:** AT-030 stored excursion columns but values were only manual; AT-031
+  aggregates recorded MFE/MAE / available-profit with per-family sample counts, so
+  coverage stays low until a deterministic fill path exists. Live market fetches at
+  read time were rejected in AT-ADR-012.
+- **Decision:**
+  1. **Pure calculator + audited replay service.** In-trade MFE/MAE / available profit
+     are computed from stored `HistoricalCandle` OHLC overlapping `[entry, exit)`
+     (exit exclusive). Long and short use mirrored extremes. Amounts require size;
+     capture percent reuses AT-030 arithmetic.
+  2. **Read-only market data.** Replay never ingests or calls providers; missing
+     candles / invalid windows skip safely with limitations. Gaps and incomplete
+     coverage set freshness flags (`excursion_is_stale`, notes) without inventing bars.
+  3. **Overwrite policy is explicit and deterministic.** Default `skip_protected`
+     writes only when `excursion_source` is empty or already `replay`. `manual` and
+     `system` (and any other non-replay source) require `overwrite_policy=force`.
+  4. **Provenance columns** on `journal_trades` record data source, staleness, gap
+     count, window completeness, and `excursion_computed_at`. Persisted source is
+     always `replay`. Mutations audit as `JOURNAL_TRADE_EXCURSION_REPLAYED`.
+  5. **Post-exit runner analysis** reuses `RunnerAndMissedProfitAnalyzer` in the
+     response only — it does not redefine in-trade `available_profit`.
+  6. **AT-031 integration** is automatic: statistics read recorded amounts; replay
+     raises sample coverage without changing aggregate semantics.
+- **Alternatives considered:** Computing MFE/MAE at statistics read time (rejected:
+  nondeterministic if candles change; couples reads to market store); always
+  overwriting manual values (rejected: human-entered coaching data must stay
+  protected); provider fetch during replay (rejected: violates record-only /
+  freshness rules for this slice).
+- **Safety impact:** Record-only; `TraderDep` mutations; tenant-scoped; bounded
+  candle/batch limits; paper posture unchanged; no live trading.
+- **Consequences:** Alembic head moves to `k7f8a9b0c1d2`. Remaining journal slices:
+  completion/import, human-vs-system endpoint, backtest bulk journal + full
+  deterministic backtesting coverage.
+- **Validation:** See AT-032 task entry / handoff (tests + migration evidence).

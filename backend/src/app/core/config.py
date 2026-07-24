@@ -221,6 +221,10 @@ class Settings(BaseSettings):
     # --- Journal statistics (AT-031) — bounded aggregate scans ---
     journal_stats_max_rows: int = Field(default=5000, ge=100, le=50_000)
 
+    # --- Journal excursion replay (AT-032) — bounded HistoricalCandle reads ---
+    journal_replay_max_candles: int = Field(default=5000, ge=10, le=50_000)
+    journal_replay_batch_max: int = Field(default=100, ge=1, le=1000)
+
     # --- LLM narrative polish (Slice 21 — explanation only, not decision authority) ---
     narrative_llm_enabled: bool = True
 
