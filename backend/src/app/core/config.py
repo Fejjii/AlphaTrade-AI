@@ -225,6 +225,20 @@ class Settings(BaseSettings):
     journal_replay_max_candles: int = Field(default=5000, ge=10, le=50_000)
     journal_replay_batch_max: int = Field(default=100, ge=1, le=1000)
 
+    # --- Auto-journal hooks (AT-033) — opt-in, default off ---
+    # When enabled, closing a paper position / paper-validation trade also
+    # creates a canonical journal trade (entry_method=auto). Journaling
+    # failures never block the close itself.
+    journal_auto_from_position_close: bool = False
+    journal_auto_from_paper_validation: bool = False
+
+    # --- Journal attachments (AT-033) — DB-backed, size/MIME/quota capped ---
+    journal_attachment_max_bytes: int = Field(default=5_242_880, ge=1024, le=26_214_400)
+    journal_attachment_allowed_types: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["image/png", "image/jpeg", "image/webp", "application/pdf"]
+    )
+    journal_attachment_max_per_trade: int = Field(default=20, ge=1, le=100)
+
     # --- LLM narrative polish (Slice 21 — explanation only, not decision authority) ---
     narrative_llm_enabled: bool = True
 
@@ -295,6 +309,14 @@ class Settings(BaseSettings):
         """Allow a comma-separated string for ``CORS_ORIGINS`` in env files."""
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("journal_attachment_allowed_types", mode="before")
+    @classmethod
+    def _split_attachment_types(cls, value: object) -> object:
+        """Allow a comma-separated string for ``JOURNAL_ATTACHMENT_ALLOWED_TYPES``."""
+        if isinstance(value, str):
+            return [item.strip().lower() for item in value.split(",") if item.strip()]
         return value
 
     @field_validator("provider_mode", mode="before")

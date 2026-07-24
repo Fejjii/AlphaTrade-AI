@@ -31,6 +31,7 @@ const GROUP_BY_OPTIONS: { value: JournalStatsGroupBy; label: string }[] = [
   { value: "timeframe", label: "Timeframe" },
   { value: "market_regime", label: "Market regime" },
   { value: "source", label: "Source" },
+  { value: "entry_method", label: "Entry method" },
   { value: "rule_compliance", label: "Rule compliance" },
   { value: "execution_actor", label: "Human vs system" },
 ];

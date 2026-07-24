@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.common import (
+    JournalEntryMethod,
     JournalTradeSource,
     MarketRegime,
     StrictModel,
@@ -38,6 +39,7 @@ class JournalStatsGroupBy(StrEnum):
     TIMEFRAME = "timeframe"
     MARKET_REGIME = "market_regime"
     SOURCE = "source"
+    ENTRY_METHOD = "entry_method"  # AT-033: how the journal row was created
     RULE_COMPLIANCE = "rule_compliance"
     EXECUTION_ACTOR = "execution_actor"
 
@@ -109,6 +111,7 @@ class JournalStatsFilters(StrictModel):
     """Filters applied to a statistics computation (closed trades only)."""
 
     source: JournalTradeSource | None = None
+    entry_method: JournalEntryMethod | None = None
     symbol: str | None = Field(default=None, max_length=30)
     timeframe: str | None = Field(default=None, max_length=8)
     market_regime: MarketRegime | None = None

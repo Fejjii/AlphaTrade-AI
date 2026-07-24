@@ -97,6 +97,7 @@ class JournalStatisticsService:
             organization_id=organization_id,
             user_id=user_id,
             source=filters.source,
+            entry_method=filters.entry_method,
             symbol=filters.symbol,
             timeframe=filters.timeframe,
             market_regime=filters.market_regime,
@@ -171,6 +172,7 @@ class JournalStatisticsService:
             organization_id=organization_id,
             user_id=user_id,
             source=filters.source,
+            entry_method=filters.entry_method,
             symbol=filters.symbol,
             timeframe=filters.timeframe,
             market_regime=filters.market_regime,
@@ -311,6 +313,8 @@ def _group_key(
             return (row.market_regime.value, None, row.market_regime.value)
         case JournalStatsGroupBy.SOURCE:
             return (row.source.value, None, row.source.value)
+        case JournalStatsGroupBy.ENTRY_METHOD:
+            return (row.entry_method.value, None, row.entry_method.value)
         case JournalStatsGroupBy.RULE_COMPLIANCE:
             return (compliance.value, None, compliance.value)
         case JournalStatsGroupBy.EXECUTION_ACTOR:

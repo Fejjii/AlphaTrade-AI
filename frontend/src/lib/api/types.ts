@@ -2790,8 +2790,12 @@ export type JournalStatsGroupBy =
   | "timeframe"
   | "market_regime"
   | "source"
+  | "entry_method"
   | "rule_compliance"
   | "execution_actor";
+
+/** AT-033: how a canonical journal trade record was created. */
+export type JournalEntryMethod = "manual" | "auto" | "import" | "backfill";
 
 export type JournalTradeSource =
   | "manual"
@@ -2859,6 +2863,7 @@ export interface JournalStatsBucket {
 
 export interface JournalStatsFilters {
   source?: JournalTradeSource | null;
+  entry_method?: JournalEntryMethod | null;
   symbol?: string | null;
   timeframe?: string | null;
   market_regime?: MarketRegime | null;
@@ -2887,6 +2892,7 @@ export interface JournalStatsResponse {
 export type JournalStatsParams = {
   group_by?: JournalStatsGroupBy;
   source?: JournalTradeSource;
+  entry_method?: JournalEntryMethod;
   symbol?: string;
   timeframe?: string;
   market_regime?: MarketRegime;
@@ -2900,3 +2906,89 @@ export type JournalStatsParams = {
   limit?: number;
   offset?: number;
 };
+
+// --------------------------------------------------------------------------
+// Journal bulk import (AT-033) — dedup, dry-run, reconciliation
+// --------------------------------------------------------------------------
+
+export type JournalImportMode = "dry_run" | "commit";
+
+export type JournalImportRowOutcome =
+  | "created"
+  | "would_create"
+  | "duplicate"
+  | "invalid";
+
+export type JournalImportBatchStatus = "dry_run" | "committed" | "failed";
+
+/** One row submitted for import; matches backend JournalImportRow fields. */
+export interface JournalImportRowInput {
+  symbol: string;
+  timeframe: string;
+  direction: string;
+  status?: string;
+  exchange?: string;
+  strategy_label?: string;
+  entry_price?: string;
+  entry_time?: string;
+  exit_price?: string;
+  exit_time?: string;
+  exit_reason?: string;
+  size?: string;
+  leverage?: string;
+  fees?: string;
+  funding?: string;
+  slippage?: string;
+  gross_pnl?: string;
+  net_pnl?: string;
+  result?: string;
+  notes?: string;
+  tags?: string[];
+  external_ref?: string;
+}
+
+export interface JournalImportRequestBody {
+  mode: JournalImportMode;
+  source_label?: string | null;
+  rows: JournalImportRowInput[];
+}
+
+export interface JournalImportRowResult {
+  index: number;
+  outcome: JournalImportRowOutcome;
+  external_ref?: string | null;
+  journal_trade_id?: string | null;
+  errors: string[];
+}
+
+export interface JournalImportResult {
+  mode: JournalImportMode;
+  committed: boolean;
+  batch_id: string | null;
+  total_rows: number;
+  created_count: number;
+  duplicate_count: number;
+  invalid_count: number;
+  results: JournalImportRowResult[];
+}
+
+export interface JournalImportBatch {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  status: JournalImportBatchStatus;
+  source_label?: string | null;
+  total_rows: number;
+  created_count: number;
+  duplicate_count: number;
+  invalid_count: number;
+  row_report: JournalImportRowResult[];
+  created_at: string;
+}
+
+export interface PaginatedJournalImportBatches {
+  items: JournalImportBatch[];
+  total: number;
+  limit: number;
+  offset: number;
+}

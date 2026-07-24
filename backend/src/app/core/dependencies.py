@@ -23,7 +23,10 @@ from app.services.execution_service import ExecutionService
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.indicator_service import IndicatorService
+from app.services.journal_attachment_service import JournalAttachmentService
+from app.services.journal_attachment_storage import get_attachment_storage
 from app.services.journal_excursion_replay_service import JournalExcursionReplayService
+from app.services.journal_import_service import JournalImportService
 from app.services.journal_rag_sync_service import JournalRagSyncService
 from app.services.journal_service import JournalService
 from app.services.journal_statistics_service import JournalStatisticsService
@@ -227,6 +230,21 @@ def get_journal_excursion_replay_service(
     return JournalExcursionReplayService(session, audit_service, settings)
 
 
+def get_journal_import_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+) -> JournalImportService:
+    return JournalImportService(session, audit_service)
+
+
+def get_journal_attachment_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+    settings: SettingsDep,
+) -> JournalAttachmentService:
+    return JournalAttachmentService(session, audit_service, get_attachment_storage(), settings)
+
+
 def get_workflow_service(
     proposal_service: ProposalServiceDep,
     approval_service: ApprovalServiceDep,
@@ -261,6 +279,10 @@ JournalStatisticsServiceDep = Annotated[
 ]
 JournalExcursionReplayServiceDep = Annotated[
     JournalExcursionReplayService, Depends(get_journal_excursion_replay_service)
+]
+JournalImportServiceDep = Annotated[JournalImportService, Depends(get_journal_import_service)]
+JournalAttachmentServiceDep = Annotated[
+    JournalAttachmentService, Depends(get_journal_attachment_service)
 ]
 WorkflowServiceDep = Annotated[WorkflowService, Depends(get_workflow_service)]
 

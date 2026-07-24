@@ -47,6 +47,7 @@ from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
     AuditEventType,
+    JournalEntryMethod,
     JournalTradeSource,
     JournalTradeStatus,
     TradeResult,
@@ -157,13 +158,16 @@ class JournalTradeService:
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        entry_method: JournalEntryMethod = JournalEntryMethod.MANUAL,
+        action: str = "create_from_position",
     ) -> JournalTradeRead:
         """Create a journal trade prefilled from an existing paper position.
 
         Copies the execution snapshot from the position and the plan fields
         (thesis, invalidation, stop, targets, runner) from the linked proposal
         when one exists. Idempotent per position: an existing journal trade
-        linked to the position is returned unchanged.
+        linked to the position is returned unchanged. ``entry_method=auto``
+        marks records written by the opt-in auto-journal hooks (AT-033).
         """
         position = self._session.scalar(
             select(Position).where(
@@ -194,6 +198,7 @@ class JournalTradeService:
             organization_id=organization_id,
             user_id=user_id,
             source=JournalTradeSource.PAPER_EXECUTION,
+            entry_method=entry_method,
             status=JournalTradeStatus.CLOSED if is_closed else JournalTradeStatus.OPEN,
             symbol=position.symbol,
             timeframe=proposal.timeframe if proposal is not None else "1h",
@@ -224,7 +229,7 @@ class JournalTradeService:
         self._record_audit(
             row,
             AuditEventType.JOURNAL_TRADE_CREATED,
-            action="create_from_position",
+            action=action,
         )
         return JournalTradeRead.model_validate(row)
 
@@ -234,11 +239,14 @@ class JournalTradeService:
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        entry_method: JournalEntryMethod = JournalEntryMethod.MANUAL,
+        action: str = "create_from_paper_trade",
     ) -> JournalTradeRead:
         """Create a journal trade prefilled from a paper-validation trade.
 
         Idempotent per paper trade: an existing journal trade linked to the
-        paper trade is returned unchanged.
+        paper trade is returned unchanged. ``entry_method=auto`` marks records
+        written by the opt-in auto-journal hooks (AT-033).
         """
         paper_trade = self._session.scalar(
             select(PaperTrade).where(
@@ -262,6 +270,7 @@ class JournalTradeService:
             organization_id=organization_id,
             user_id=user_id,
             source=JournalTradeSource.PAPER_VALIDATION,
+            entry_method=entry_method,
             status=JournalTradeStatus.CLOSED if is_closed else JournalTradeStatus.OPEN,
             symbol=paper_trade.symbol,
             exchange=paper_trade.exchange,
@@ -292,7 +301,7 @@ class JournalTradeService:
         self._record_audit(
             row,
             AuditEventType.JOURNAL_TRADE_CREATED,
-            action="create_from_paper_trade",
+            action=action,
         )
         return JournalTradeRead.model_validate(row)
 

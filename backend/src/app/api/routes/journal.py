@@ -5,19 +5,26 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Form, Query, Response, UploadFile
 
 from app.core.auth import TenantDep
 from app.core.dependencies import (
     HumanVsSystemServiceDep,
+    JournalAttachmentServiceDep,
     JournalExcursionReplayServiceDep,
+    JournalImportServiceDep,
     JournalServiceDep,
     JournalStatisticsServiceDep,
     JournalTradeServiceDep,
     LessonCandidateServiceDep,
     SessionDep,
 )
-from app.schemas.common import JournalTradeSource, JournalTradeStatus, MarketRegime
+from app.schemas.common import (
+    JournalEntryMethod,
+    JournalTradeSource,
+    JournalTradeStatus,
+    MarketRegime,
+)
 from app.schemas.human_vs_system import DisciplineAnalysis
 from app.schemas.journal import (
     JournalEntry,
@@ -26,11 +33,21 @@ from app.schemas.journal import (
     JournalEntryUpdate,
     PaginatedJournalEntries,
 )
+from app.schemas.journal_attachments import (
+    JournalTradeAttachmentList,
+    JournalTradeAttachmentRead,
+)
 from app.schemas.journal_excursion_replay import (
     JournalExcursionBatchReplayRequest,
     JournalExcursionBatchReplayResult,
     JournalExcursionReplayRequest,
     JournalExcursionReplayResult,
+)
+from app.schemas.journal_import import (
+    JournalImportBatchRead,
+    JournalImportRequest,
+    JournalImportResult,
+    PaginatedJournalImportBatches,
 )
 from app.schemas.journal_statistics import (
     ExecutionActor,
@@ -280,6 +297,7 @@ async def journal_trade_statistics(
     service: JournalStatisticsServiceDep,
     group_by: JournalStatsGroupBy = Query(default=JournalStatsGroupBy.OVERALL),
     source: JournalTradeSource | None = Query(default=None),
+    entry_method: JournalEntryMethod | None = Query(default=None),
     symbol: str | None = Query(default=None, max_length=30),
     timeframe: str | None = Query(default=None, max_length=8),
     market_regime: MarketRegime | None = Query(default=None),
@@ -296,6 +314,7 @@ async def journal_trade_statistics(
     """Deterministic, record-only aggregates over the caller's closed journal trades."""
     filters = JournalStatsFilters(
         source=source,
+        entry_method=entry_method,
         symbol=symbol,
         timeframe=timeframe,
         market_regime=market_regime,
@@ -363,6 +382,162 @@ async def replay_journal_trade_excursions(
     )
     session.commit()
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Bulk import & attachments (AT-033 — record-only, no execution authority)
+# --------------------------------------------------------------------------- #
+
+
+@router.post(
+    "/trades/import",
+    response_model=JournalImportResult,
+    summary="Bulk import journal trades with dedup, dry-run, and reconciliation (AT-033)",
+)
+async def import_journal_trades(
+    body: JournalImportRequest,
+    tenant: TraderDep,
+    service: JournalImportServiceDep,
+    session: SessionDep,
+) -> JournalImportResult:
+    """Validate rows individually; dedup by (org, external_ref) or fingerprint.
+
+    ``mode=dry_run`` previews without persisting. ``mode=commit`` is
+    all-or-nothing: invalid rows block the commit and nothing is written;
+    duplicate rows are skipped idempotently, so re-running is always safe.
+    """
+    result = service.import_trades(
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/imports",
+    response_model=PaginatedJournalImportBatches,
+    summary="List committed journal import batches (AT-033)",
+)
+async def list_journal_import_batches(
+    tenant: ReaderDep,
+    service: JournalImportServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedJournalImportBatches:
+    return service.list_batches(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/imports/{batch_id}",
+    response_model=JournalImportBatchRead,
+    summary="Get one journal import batch with its row report (AT-033)",
+)
+async def get_journal_import_batch(
+    batch_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: JournalImportServiceDep,
+) -> JournalImportBatchRead:
+    return service.get_batch(
+        batch_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.post(
+    "/trades/{journal_trade_id}/attachments",
+    response_model=JournalTradeAttachmentRead,
+    status_code=201,
+    summary="Upload a binary attachment for a journal trade (AT-033)",
+)
+async def upload_journal_trade_attachment(
+    journal_trade_id: uuid.UUID,
+    file: UploadFile,
+    tenant: TraderDep,
+    service: JournalAttachmentServiceDep,
+    session: SessionDep,
+    caption: str | None = Form(default=None, max_length=4000),
+) -> JournalTradeAttachmentRead:
+    """Size, MIME, and per-trade quota limits are enforced fail-closed."""
+    content = await file.read()
+    result = service.add_attachment(
+        journal_trade_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        filename=file.filename or "",
+        content_type=file.content_type,
+        content=content,
+        caption=caption,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/trades/{journal_trade_id}/attachments",
+    response_model=JournalTradeAttachmentList,
+    summary="List attachments for a journal trade (AT-033)",
+)
+async def list_journal_trade_attachments(
+    journal_trade_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: JournalAttachmentServiceDep,
+) -> JournalTradeAttachmentList:
+    return service.list_attachments(
+        journal_trade_id,
+        organization_id=tenant.organization_id,
+    )
+
+
+@router.get(
+    "/attachments/{attachment_id}/content",
+    summary="Download attachment content (AT-033)",
+    response_class=Response,
+)
+async def download_journal_trade_attachment(
+    attachment_id: uuid.UUID,
+    tenant: ReaderDep,
+    service: JournalAttachmentServiceDep,
+) -> Response:
+    meta, content = service.get_content(
+        attachment_id,
+        organization_id=tenant.organization_id,
+    )
+    safe_name = meta.filename.replace('"', "")
+    return Response(
+        content=content,
+        media_type=meta.content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.delete(
+    "/attachments/{attachment_id}",
+    status_code=204,
+    summary="Delete an attachment (AT-033)",
+)
+async def delete_journal_trade_attachment(
+    attachment_id: uuid.UUID,
+    tenant: TraderDep,
+    service: JournalAttachmentServiceDep,
+    session: SessionDep,
+) -> None:
+    service.delete_attachment(
+        attachment_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
 
 
 @router.get(

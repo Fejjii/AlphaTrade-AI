@@ -25,11 +25,14 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,7 +52,9 @@ from app.schemas.common import (
     DocumentSourceType,
     ExchangeAccountStatus,
     ExecutionMode,
+    JournalEntryMethod,
     JournalEvidenceKind,
+    JournalImportBatchStatus,
     JournalObservationCategory,
     JournalTradeSource,
     JournalTradeStatus,
@@ -1370,6 +1375,18 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "journal_trades"
+    __table_args__ = (
+        # AT-033: idempotent import/backfill — one journal trade per external
+        # reference within an organization (partial: NULL refs stay unconstrained).
+        Index(
+            "uq_journal_trades_org_external_ref",
+            "organization_id",
+            "external_ref",
+            unique=True,
+            postgresql_where=text("external_ref IS NOT NULL"),
+            sqlite_where=text("external_ref IS NOT NULL"),
+        ),
+    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False, index=True
@@ -1378,6 +1395,10 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source: Mapped[JournalTradeSource] = mapped_column(_enum(JournalTradeSource), nullable=False)
     status: Mapped[JournalTradeStatus] = mapped_column(
         _enum(JournalTradeStatus), default=JournalTradeStatus.PLANNED, nullable=False
+    )
+    # AT-033: who/what created the journal row (human-vs-system analytics).
+    entry_method: Mapped[JournalEntryMethod] = mapped_column(
+        _enum(JournalEntryMethod), default=JournalEntryMethod.MANUAL, nullable=False
     )
 
     # Instrument & context
@@ -1533,6 +1554,60 @@ class JournalTradeObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     emotion_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class JournalImportBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One committed bulk journal import (AT-033) for reconciliation history.
+
+    Commits are all-or-nothing in a single unit of work, so persisted batches
+    always describe an applied import. The row report carries per-row outcomes
+    (created / duplicate / invalid) without duplicating full trade payloads.
+    """
+
+    __tablename__ = "journal_import_batches"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    status: Mapped[JournalImportBatchStatus] = mapped_column(
+        _enum(JournalImportBatchStatus),
+        default=JournalImportBatchStatus.COMMITTED,
+        nullable=False,
+    )
+    source_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    invalid_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    row_report: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+
+
+class JournalTradeAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Binary evidence attachment for a journal trade (AT-033).
+
+    Bytes are stored in the database (``storage_backend='db'``) behind the
+    :class:`~app.services.journal_attachment_storage.AttachmentStorage`
+    interface so an object store can replace the backend later without a
+    schema change. Size/MIME/quota limits are enforced in the service.
+    """
+
+    __tablename__ = "journal_trade_attachments"
+
+    journal_trade_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_backend: Mapped[str] = mapped_column(String(20), nullable=False, default="db")
+    content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # --------------------------------------------------------------------------- #

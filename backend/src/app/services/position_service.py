@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -13,13 +14,22 @@ from app.core.errors import NotFoundError, TradingPolicyError, ValidationAppErro
 from app.db.models import Position as PositionModel
 from app.repositories.positions import PositionRepository
 from app.schemas.audit import AuditRecordCreate
-from app.schemas.common import ActorType, AuditEventType, PositionStatus, TradeDirection
+from app.schemas.common import (
+    ActorType,
+    AuditEventType,
+    JournalEntryMethod,
+    PositionStatus,
+    TradeDirection,
+)
 from app.schemas.position import ClosePaperPositionRequest, Position, PositionUpdate
 from app.schemas.proposal import TakeProfitLevel
 from app.services.audit_service import AuditService
+from app.services.journal_trade_service import JournalTradeService
 from app.services.market_data_service import MarketDataService
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.settings_service import RiskSettingsService
+
+logger = structlog.get_logger(__name__)
 
 
 class PositionService:
@@ -114,7 +124,35 @@ class PositionService:
                 "daily_locked": str(snapshot.daily_locked),
             },
         )
+        self._auto_journal_after_close(row)
         return _to_schema(row)
+
+    def _auto_journal_after_close(self, row: PositionModel) -> None:
+        """Opt-in AT-033 hook: journal the closed position (entry_method=auto).
+
+        Reuses the idempotent ``create_from_position`` prefill, so a position
+        the user already journaled manually is never duplicated. Runs inside a
+        savepoint and swallows every error: journaling must never block or
+        roll back the position close itself.
+        """
+        settings = self._app_settings
+        if settings is None or not settings.journal_auto_from_position_close:
+            return
+        try:
+            with self._session.begin_nested():
+                JournalTradeService(self._session, self._audit).create_from_position(
+                    row.id,
+                    organization_id=row.organization_id,
+                    user_id=row.user_id,
+                    entry_method=JournalEntryMethod.AUTO,
+                    action="auto_journal_position_close",
+                )
+        except Exception as exc:
+            logger.warning(
+                "auto_journal_position_close_failed",
+                position_id=str(row.id),
+                error_type=type(exc).__name__,
+            )
 
     def _resolve_close_exit_price(self, symbol: str, *, requested: Decimal) -> Decimal:
         """Bind realized PnL to server market data when live data is expected.

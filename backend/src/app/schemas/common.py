@@ -346,6 +346,10 @@ class AuditEventType(StrEnum):
     JOURNAL_TRADE_RULE_CHECKED = "journal_trade_rule_checked"
     JOURNAL_TRADE_OBSERVED = "journal_trade_observed"
     JOURNAL_TRADE_EXCURSION_REPLAYED = "journal_trade_excursion_replayed"
+    JOURNAL_IMPORT_COMPLETED = "journal_import_completed"
+    JOURNAL_BACKFILL_COMPLETED = "journal_backfill_completed"
+    JOURNAL_ATTACHMENT_ADDED = "journal_attachment_added"
+    JOURNAL_ATTACHMENT_DELETED = "journal_attachment_deleted"
     # Legacy values retained for existing DB rows
     PROPOSAL_CREATED = "proposal_created"
     POSITION_UPDATE = "position_update"
@@ -435,6 +439,32 @@ class JournalTradeStatus(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
     CANCELLED = "cancelled"
+
+
+class JournalEntryMethod(StrEnum):
+    """How a canonical journal trade record came into existence (AT-033).
+
+    Orthogonal to ``JournalTradeSource``: source describes the origin of the
+    underlying trade, entry_method describes who/what created the journal row
+    (human-vs-system analytics readiness).
+    """
+
+    MANUAL = "manual"
+    AUTO = "auto"
+    IMPORT = "import"
+    BACKFILL = "backfill"
+
+
+class JournalImportBatchStatus(StrEnum):
+    """Outcome of a bulk journal import batch (AT-033).
+
+    Only ``committed`` batches are persisted today (commits are all-or-nothing
+    in one unit of work); ``dry_run``/``failed`` exist for forward compatibility.
+    """
+
+    DRY_RUN = "dry_run"
+    COMMITTED = "committed"
+    FAILED = "failed"
 
 
 class MarketRegime(StrEnum):

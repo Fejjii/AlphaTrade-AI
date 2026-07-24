@@ -305,6 +305,41 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Follow-up slices: journal completion (import/backfill/auto-journal), human-vs-system
   journal endpoint, backtesting integration (see docs roadmap §6).
 
+### AT-033 — Journal Completion (bulk import, backfill, auto-journal, attachments)
+- Priority: P1 · Status: IN_REVIEW (PR open, not merged) · Dependencies: AT-030,
+  AT-031, AT-032 · Risk: Low (record-only; no execution path; new flags default off)
+- Safety classification: Paper-safe / record-only
+- Goal: Bulk journal import (`source=imported`, `entry_method=import`) with
+  `(org, external_ref)` dedup via partial unique index + deterministic fingerprints;
+  dry-run/commit modes with per-row reconciliation and all-or-nothing commits;
+  `TradeJournal` → `journal_trades` backfill CLI (idempotent, dry-run default);
+  opt-in auto-journal hooks on paper position / paper-validation close (default off,
+  savepoint-isolated, never blocks the close); DB-backed attachment storage behind
+  `AttachmentStorage` with size/MIME/quota caps and evidence auto-link;
+  `entry_method` human-vs-system statistics dimension; frontend `/journal/import`
+  with CSV mapping, dry-run preview, and batch history; tenant isolation + RBAC +
+  audit throughout.
+- Branch: `feat/at-033-journal-completion`
+- Deliverables: migration `l8a9b0c1d2e3`; `journal_import_service` +
+  `journal_backfill_service` + `journal_attachment_service`/`_storage`;
+  `scripts/backfill_journal_entries.py`; routes `POST /journal/trades/import`,
+  `GET /journal/imports[/{id}]`, attachment endpoints; auto-journal hooks in
+  `position_service` + `paper_validation_runtime_service`; settings flags + limits;
+  frontend import page + api client + tests; docs §6; ADR-015.
+- Validation: migration `l8a9b0c1d2e3` upgrade/downgrade/upgrade round-trip on
+  disposable Postgres 16 (docker) clean; partial unique index verified on Postgres
+  (duplicate rejected, NULL refs unconstrained); 44 new backend tests
+  (`test_at033_journal_import.py` 14, `test_at033_journal_backfill.py` 6,
+  `test_at033_journal_attachments.py` 12, `test_at033_auto_journal.py` 9,
+  `test_at033_integration.py` 3); AT-030/031/032 regression green (49 tests);
+  frontend 267 passed + lint + typecheck + build green; ruff check/format clean.
+  Full-suite result recorded in the PR. No deploy; no live trading.
+- Recommended model: Fable 5
+- ADR: AT-ADR-015 · Docs: `docs/journal_intelligence_foundation.md` (§6)
+- Follow-ups: attachment upload UI (needs trades detail page), per-user auto-journal
+  preference, failed/dry-run import batch persistence, human-vs-system endpoint,
+  backtest bulk journal (docs roadmap §7).
+
 ---
 
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)
