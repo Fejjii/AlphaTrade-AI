@@ -133,7 +133,25 @@ cd backend && uv run alembic upgrade head
 
 ---
 
-## 7. Post-deploy smoke
+## 7. Post-deploy smoke (mandatory gate)
+
+**AT-005 — run the automated gate before declaring the deploy successful:**
+
+```bash
+# Standard profile: verify-safety.sh + staging-smoke.sh (fail-closed)
+BASE_URL=https://YOUR-API.onrender.com \
+FRONTEND_URL=https://YOUR-APP.vercel.app \
+COOKIE_MODE=true \
+./scripts/post-deploy-smoke-gate.sh
+```
+
+| Gate exit | Meaning |
+|-----------|---------|
+| `0` | Pass — keep deploy; record `/health` → `git_sha` |
+| `1` | Fail — **rollback** per [deploy_rollback_runbook.md](deploy_rollback_runbook.md) |
+| `2` | Misconfig — fix `BASE_URL` / scripts; not a green deploy |
+
+Optional / extended checks (after the gate passes, or via `GATE_PROFILE=extended`):
 
 ```bash
 BASE_URL=https://YOUR-API.onrender.com ./scripts/verify-safety.sh
@@ -195,16 +213,21 @@ Manual:
 
 ## 9. Rollback
 
+Exact triggers, steps, verification, and failure handling:
+**[deploy_rollback_runbook.md](deploy_rollback_runbook.md)** (AT-005).
+
 | Layer | Action |
 |-------|--------|
-| Backend | Render rollback revision |
+| Backend | Render → rollback to last known good deploy |
 | Frontend | Vercel Instant Rollback |
-| Database | Snapshot restore or safe `alembic downgrade` |
+| Database | Snapshot restore or safe `alembic downgrade` — see [backup_restore_runbook.md](backup_restore_runbook.md) |
+| After rollback | Re-run `./scripts/post-deploy-smoke-gate.sh` (must exit 0) |
 
 ---
 
 ## Related
 
+- [deploy_rollback_runbook.md](deploy_rollback_runbook.md) — AT-005 rollback + smoke gate
 - [staging_deployment_runbook.md](staging_deployment_runbook.md)
 - [deployment.md](deployment.md)
 - [railway_deployment.md](railway_deployment.md)

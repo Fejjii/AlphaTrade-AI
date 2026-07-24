@@ -62,7 +62,11 @@ jobs:
           test -x scripts/verify-safety.sh
           test -x scripts/staging-smoke.sh
           test -x scripts/staging-live-smoke.sh
+          test -x scripts/post-deploy-smoke-gate.sh
           test -x scripts/run-migrations.sh
+      - name: Post-deploy smoke gate self-check
+        working-directory: .
+        run: ./scripts/post-deploy-smoke-gate.sh --self-check
 
   frontend:
     runs-on: ubuntu-latest

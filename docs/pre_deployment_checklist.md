@@ -18,7 +18,8 @@ Complete **inside Cursor / locally** before creating Render, Vercel, Upstash, or
 | 12 | CORS configured (plan) | `CORS_ORIGINS` = exact Vercel HTTPS URL | ☐ |
 | 13 | Cookie settings configured (plan) | `AUTH_*` + `NEXT_PUBLIC_AUTH_COOKIE_MODE=true` | ☐ |
 | 14 | Safety scripts ready | `./scripts/verify-safety.sh` executable | ☐ |
-| 15 | Smoke scripts ready | `./scripts/staging-smoke.sh` executable | ☐ |
+| 15 | Smoke scripts ready | `./scripts/staging-smoke.sh` + `./scripts/post-deploy-smoke-gate.sh` executable | ☐ |
+| 15b | Rollback runbook reviewed | `docs/deploy_rollback_runbook.md` (AT-005) | ☐ |
 | 16 | Real trading disabled | `ENABLE_REAL_TRADING=false`, `EXECUTION_MODE=paper` | ☐ |
 | 17 | Billing disabled | `BILLING_ENABLED=false` | ☐ |
 

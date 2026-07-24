@@ -19,10 +19,13 @@ npm run lint && npm run typecheck && npm run test && npm run build
 
 ## Deploy validation (staging, paper-only)
 - `ENV_FILE=.env.staging ./scripts/check-env.sh`
-- `BASE_URL=<api> ./scripts/verify-safety.sh`
+- `BASE_URL=<api> ./scripts/post-deploy-smoke-gate.sh` (AT-005 mandatory gate; exit 0)
+- On gate exit 1 → follow `docs/deploy_rollback_runbook.md` before further work
+- `BASE_URL=<api> ./scripts/verify-safety.sh` (included in the gate; may run alone)
 - `BACKEND_URL=<api> ./scripts/validate-exchange-demo-staging.sh`
 - Confirm `/health`, `/health/ready`, `/openapi.json`, `/providers/status`.
 - Confirm providers remain mock until an operator manually configures keys.
+- Never enable real trading during deploy or rollback.
 
 ## Handoff (mandatory end of task)
 1. Regenerate `HANDOFF.md` + `CHANGELOG_SESSION.md` from the `.ai/` templates; set the correct

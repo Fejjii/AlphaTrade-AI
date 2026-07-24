@@ -17,14 +17,14 @@ Define what we back up, recovery time/point targets, and the exact restore seque
 AlphaTrade AI’s durable stores — so a staging or paper-MVP outage does not rely on tribal
 knowledge.
 
-This runbook does **not** replace AT-005 (deploy rollback + post-deploy smoke gating), which
-remains TODO. Application rollback and data restore are complementary:
+This runbook complements AT-005 (deploy rollback + post-deploy smoke gating).
+Application rollback and data restore are complementary:
 
 | Concern | Owner |
 |---------|--------|
-| Redeploy previous API/frontend revision | Platform + AT-005 (pending) |
+| Redeploy previous API/frontend revision | [deploy_rollback_runbook.md](deploy_rollback_runbook.md) (AT-005) |
 | Restore Postgres / rebuild Qdrant | **This runbook (AT-019)** |
-| Trading safety invariants after restore | `verify-safety.sh` + deployment_safety |
+| Trading safety invariants after restore | `post-deploy-smoke-gate.sh` / `verify-safety.sh` + deployment_safety |
 
 ---
 
@@ -39,7 +39,7 @@ customers, and not a claim of autonomous profitability or live-trading readiness
 | **Qdrant** | **≤ 24 hours** *or* rebuild-from-SoR | **≤ 4 hours** (snapshot restore **or** re-ingest) | Cloud snapshot if available; else `reingest-knowledge-base.sh` after Postgres restore |
 | **Redis** | **N/A** (ephemeral) | **≤ 15 minutes** | Recreate empty managed Redis; point `REDIS_URL` |
 | **Config / secrets** | **0** for *names* (worksheet kept current); values via platform | **≤ 1 hour** to re-bind env on new services | Platform secret store + gitignored worksheet |
-| **App deploy (API/FE)** | N/A (immutable revisions) | **≤ 30 minutes** rollback | Platform rollback (detail → AT-005) |
+| **App deploy (API/FE)** | N/A (immutable revisions) | **≤ 30 minutes** rollback | Platform rollback — [deploy_rollback_runbook.md](deploy_rollback_runbook.md) (AT-005) |
 
 ### Acceptance for “successful restore”
 
@@ -192,7 +192,7 @@ Never paste `DATABASE_URL`, API keys, dump contents, or PII into chat, git, or h
 
 | Gap | Tracking |
 |-----|----------|
-| Automated post-deploy smoke gate + fuller deploy rollback | **AT-005** (TODO) |
+| Automated post-deploy smoke gate + fuller deploy rollback | **AT-005** — [deploy_rollback_runbook.md](deploy_rollback_runbook.md) + `scripts/post-deploy-smoke-gate.sh` |
 | Staging/managed restore drill against real Render/Neon snapshot | Requires human approval after this docs lane |
 | PITR / sub-hour RPO on Postgres | Enable on platform when available; update targets |
 | Qdrant Cloud snapshot automation | Confirm plan features; else rely on re-ingest |

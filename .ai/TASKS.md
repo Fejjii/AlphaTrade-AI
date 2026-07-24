@@ -221,7 +221,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   CI run 30054203698 green. Runbook (RPO/RTO), inventory, drill plan + sanitized Tier A
   local Compose drill evidence (passed 2026-07-23); local-only backup/restore/drill
   scripts (`CONFIRM=yes` gate, no remote targets). RR-13 moved to Partial. Managed/staging
-  Tier B restore remains approval-gated; AT-005 rollback automation still TODO.
+  Tier B restore remains approval-gated; AT-005 deploy rollback + smoke gate delivered
+  on `feat/at-005-deploy-rollback-smoke-gate` (pending merge).
 
 ---
 
@@ -297,8 +298,15 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 ### AT-005 — Deploy rollback runbook + smoke gating on deploy
 - Priority: P2 · Status: TODO · Dependencies: none · Risk: Low
 - Gap: rollback documented informally; no automated post-deploy smoke gate.
-- Validation: documented rollback + `verify-safety.sh` gate wired into deploy checklist.
-- Recommended model: Sonnet 4.6
+- Branch: `feat/at-005-deploy-rollback-smoke-gate`
+- Goal: Document exact rollback triggers/steps/verification/failure handling; automate
+  post-deploy smoke gate (`verify-safety.sh` + staging smoke) wired into deploy checklists.
+- Validation: `docs/deploy_rollback_runbook.md` present; `scripts/post-deploy-smoke-gate.sh`
+  `--self-check` exit 0; gate wired into staging checklist/runbook/`RELEASE.md`; CI
+  deployment-safety runs self-check; paper-only posture unchanged; no deploy performed.
+- Recommended model: Sonnet 4.6 (backlog) · Grok 4.5 (this lane)
+- Note: Status stays TODO until authorized commit/merge; implementation ready at
+  REVIEW_REQUIRED on the feature branch.
 
 ### AT-006 — Cost/usage guardrail alerting
 - Priority: P2 · Status: TODO · Dependencies: AT-002 · Risk: Low
