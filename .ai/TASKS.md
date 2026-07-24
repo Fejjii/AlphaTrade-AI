@@ -221,8 +221,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   CI run 30054203698 green. Runbook (RPO/RTO), inventory, drill plan + sanitized Tier A
   local Compose drill evidence (passed 2026-07-23); local-only backup/restore/drill
   scripts (`CONFIRM=yes` gate, no remote targets). RR-13 moved to Partial. Managed/staging
-  Tier B restore remains approval-gated; AT-005 deploy rollback + smoke gate delivered
-  on `feat/at-005-deploy-rollback-smoke-gate` (pending merge).
+  Tier B restore remains approval-gated. AT-005 deploy rollback + smoke gate merged via PR #15.
 
 ---
 
@@ -296,17 +295,19 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: GPT-5.4
 
 ### AT-005 — Deploy rollback runbook + smoke gating on deploy
-- Priority: P2 · Status: TODO · Dependencies: none · Risk: Low
-- Gap: rollback documented informally; no automated post-deploy smoke gate.
-- Branch: `feat/at-005-deploy-rollback-smoke-gate`
+- Priority: P2 · Status: DONE · Dependencies: none · Risk: Low
+- Branch: `feat/at-005-deploy-rollback-smoke-gate` (merged via PR #15)
 - Goal: Document exact rollback triggers/steps/verification/failure handling; automate
   post-deploy smoke gate (`verify-safety.sh` + staging smoke) wired into deploy checklists.
 - Validation: `docs/deploy_rollback_runbook.md` present; `scripts/post-deploy-smoke-gate.sh`
   `--self-check` exit 0; gate wired into staging checklist/runbook/`RELEASE.md`; CI
-  deployment-safety runs self-check; paper-only posture unchanged; no deploy performed.
+  deployment-safety self-check; paper-only posture unchanged; no staging deploy performed.
 - Recommended model: Sonnet 4.6 (backlog) · Grok 4.5 (this lane)
-- Note: Status stays TODO until authorized commit/merge; implementation ready at
-  REVIEW_REQUIRED on the feature branch.
+- ADR: AT-ADR-011
+- Completed: 2026-07-24 — merged via PR #15 → `main` @ merge `f145599` (commit `4d2617c`);
+  CI run 30057647347 success (backend, deployment-safety, frontend, docker-build,
+  evaluation, e2e-smoke all green). Gate profiles: safety / standard / extended; exit
+  `1` documented as rollback trigger. Live staging gate run deferred to next authorized deploy.
 
 ### AT-006 — Cost/usage guardrail alerting
 - Priority: P2 · Status: TODO · Dependencies: AT-002 · Risk: Low

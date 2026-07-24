@@ -228,7 +228,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-011 — Post-deploy smoke gate + deploy rollback procedure (AT-005)
 - **Date:** 2026-07-24
-- **Status:** Accepted (implementation pending merge)
+- **Status:** Accepted (merged PR #15 → `main` @ `f145599`)
 - **Context:** Rollback was informal checklist rows; no automated fail-closed post-deploy
   gate. AT-019 covers data restore; app revision rollback and smoke gating were still open.
 - **Decision:**
