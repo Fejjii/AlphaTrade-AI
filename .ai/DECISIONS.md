@@ -376,7 +376,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-015 — Journal completion: import dedup, backfill, auto-journal, attachments (AT-033)
 - **Date:** 2026-07-24
-- **Status:** Proposed (PR open, pending review/merge)
+- **Status:** Accepted (merged PR #19, merge `ad66dca`, CI run 30114440476 success)
 - **Context:** AT-030/031/032 built the canonical journal, statistics, and excursion
   replay, but records only entered via manual API calls. The completion slice needs
   bulk history import, legacy `TradeJournal` migration, automatic journaling on paper

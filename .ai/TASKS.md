@@ -306,8 +306,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   journal endpoint, backtesting integration (see docs roadmap §6).
 
 ### AT-033 — Journal Completion (bulk import, backfill, auto-journal, attachments)
-- Priority: P1 · Status: IN_REVIEW (PR open, not merged) · Dependencies: AT-030,
-  AT-031, AT-032 · Risk: Low (record-only; no execution path; new flags default off)
+- Priority: P1 · Status: DONE · Dependencies: AT-030, AT-031, AT-032 · Risk: Low
+  (record-only; no execution path; new flags default off)
 - Safety classification: Paper-safe / record-only
 - Goal: Bulk journal import (`source=imported`, `entry_method=import`) with
   `(org, external_ref)` dedup via partial unique index + deterministic fingerprints;
@@ -336,6 +336,10 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Full-suite result recorded in the PR. No deploy; no live trading.
 - Recommended model: Fable 5
 - ADR: AT-ADR-015 · Docs: `docs/journal_intelligence_foundation.md` (§6)
+- Completion evidence: commits `a2e09a0`…`1e65185`, merge `ad66dca`, PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/19; CI run 30114440476 success
+  (backend, frontend, deployment-safety, docker-build, evaluation, e2e-smoke,
+  Vercel preview green). No deploy; auto-journal flags remain default off.
 - Follow-ups: attachment upload UI (needs trades detail page), per-user auto-journal
   preference, failed/dry-run import batch persistence, human-vs-system endpoint,
   backtest bulk journal (docs roadmap §7).
