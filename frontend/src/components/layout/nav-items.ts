@@ -26,6 +26,7 @@ import {
   Settings,
   Shield,
   Target,
+  Upload,
   Wallet,
 } from "lucide-react";
 
@@ -83,6 +84,7 @@ export const navSections: readonly NavSection[] = [
       { href: "/strategy-lab", label: "Strategy Lab", icon: FlaskConical },
       { href: "/journal", label: "Journal", icon: BookOpen },
       { href: "/journal/statistics", label: "Journal Statistics", icon: BarChart3 },
+      { href: "/journal/import", label: "Journal Import", icon: Upload },
       { href: "/analytics", label: "Analytics", icon: BarChart3 },
     ],
   },

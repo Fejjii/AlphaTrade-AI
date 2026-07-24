@@ -9,8 +9,12 @@ import type {
   DisciplineScoreResult,
   DashboardSummary,
   JournalEntry,
+  JournalImportBatch,
+  JournalImportRequestBody,
+  JournalImportResult,
   JournalStatsParams,
   JournalStatsResponse,
+  PaginatedJournalImportBatches,
   RiskBehaviorAnalytics,
   SetupAnalyticsResponse,
   TradeReviewAnalytics,
@@ -360,6 +364,14 @@ export const api = {
       apiFetch<void>(`/journal/entries/${id}`, { method: "DELETE" }),
     statistics: (params?: JournalStatsParams) =>
       apiFetch<JournalStatsResponse>("/journal/statistics", { query: params }),
+    importTrades: (body: JournalImportRequestBody) =>
+      apiFetch<JournalImportResult>("/journal/trades/import", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    listImports: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedJournalImportBatches>("/journal/imports", { query: params }),
+    getImport: (id: string) => apiFetch<JournalImportBatch>(`/journal/imports/${id}`),
   },
   analytics: {
     setups: () => apiFetch<SetupAnalyticsResponse>("/analytics/setups"),
