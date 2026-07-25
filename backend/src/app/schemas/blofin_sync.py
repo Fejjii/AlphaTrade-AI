@@ -44,13 +44,9 @@ class BloFinSyncSnapshotItem(BaseModel):
     error_summary: str | None = None
     position_count: int = 0
     balance_count: int = 0
-    note: str = (
-        "BloFin demo read-only snapshot. Never places, modifies, or cancels orders."
-    )
+    note: str = "BloFin demo read-only snapshot. Never places, modifies, or cancels orders."
 
 
 class BloFinSyncResult(BaseModel):
     snapshot: BloFinSyncSnapshotItem
-    note: str = (
-        "Read-only reconciliation complete. Live BloFin trading remains disabled."
-    )
+    note: str = "Read-only reconciliation complete. Live BloFin trading remains disabled."

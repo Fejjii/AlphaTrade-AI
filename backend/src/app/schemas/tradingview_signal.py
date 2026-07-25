@@ -173,6 +173,5 @@ class TradingViewSignalCreateCandidateResult(BaseModel):
     source_alert_id: uuid.UUID
     already_exists: bool = False
     note: str = (
-        "Paper-validation candidate only. Does not authorize real trading "
-        "or place exchange orders."
+        "Paper-validation candidate only. Does not authorize real trading or place exchange orders."
     )

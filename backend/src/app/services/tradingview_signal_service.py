@@ -648,4 +648,3 @@ def _serialize_pydantic_errors(exc: ValidationError) -> list[dict[str, Any]]:
             }
         )
     return out
-

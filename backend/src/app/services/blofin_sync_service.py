@@ -109,8 +109,7 @@ class BloFinSyncService:
                     "using_fallback": provider_status.using_fallback,
                     "is_mock": provider_status.is_mock,
                     "detail": redact_text(provider_status.detail or "")[:200],
-                    "error_message": redact_text(provider_status.error_message or "")[:200]
-                    or None,
+                    "error_message": redact_text(provider_status.error_message or "")[:200] or None,
                 },
             }
             positions = {
@@ -118,11 +117,7 @@ class BloFinSyncService:
                 "truncated": len(open_positions) > max_positions,
             }
             symbols = sorted(
-                {
-                    symbol
-                    for item in position_items
-                    if (symbol := item.get("symbol")) is not None
-                }
+                {symbol for item in position_items if (symbol := item.get("symbol")) is not None}
             )[:max_positions]
             market = {
                 "symbols": symbols,
