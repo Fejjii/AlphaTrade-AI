@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import JournalStatisticsPage from "@/app/(app)/journal/statistics/page";
 import type { JournalTradeStatsMetrics } from "@/lib/api/types";
@@ -36,6 +36,18 @@ const metrics = (overrides: Partial<JournalTradeStatsMetrics>): JournalTradeStat
   warnings: [],
   ...overrides,
 });
+
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "mock",
+  postureKnown: true,
+};
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ health: null, providers: { providers: [] } }),
+  useSafetyPosture: () => safetyPosture,
+}));
 
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
@@ -92,7 +104,12 @@ vi.mock("@/hooks/useAsyncData", () => ({
 }));
 
 describe("JournalStatisticsPage", () => {
+  afterEach(() => cleanup());
+
   it("renders overall metrics, bucket cards, and warnings", () => {
+    safetyPosture.executionMode = "paper";
+    safetyPosture.realTradingEnabled = false;
+    safetyPosture.postureKnown = true;
     render(<JournalStatisticsPage />);
     expect(screen.getByText("Journal statistics")).toBeInTheDocument();
     expect(screen.getByText("Overall (filtered)")).toBeInTheDocument();
@@ -101,5 +118,20 @@ describe("JournalStatisticsPage", () => {
       screen.getByText(/Only 12 closed trade\(s\); treat these statistics as anecdotal\./),
     ).toBeInTheDocument();
     expect(screen.getByText(/Setup version breakdown/)).toBeInTheDocument();
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+  });
+
+  it("fails closed when runtime safety is missing", () => {
+    safetyPosture.executionMode = null;
+    safetyPosture.realTradingEnabled = null;
+    safetyPosture.postureKnown = false;
+    render(<JournalStatisticsPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
+    );
   });
 });

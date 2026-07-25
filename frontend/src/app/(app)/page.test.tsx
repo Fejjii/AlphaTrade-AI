@@ -287,6 +287,10 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-real-trading-status")).toHaveTextContent(
       "Real trading disabled",
     );
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
   });
 
   it("renders workflow and summary-backed cards", () => {

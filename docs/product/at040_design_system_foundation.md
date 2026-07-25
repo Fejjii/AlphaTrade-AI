@@ -78,11 +78,12 @@ Fonts: Inter (UI) + JetBrains Mono (data numerals) via `next/font` in `frontend/
 | `PageHeader` | One title per page |
 | `ContentContainer`, `PageSection` | Layout foundation (width + section spacing) |
 | `FreshnessPill` | Stale / delayed / fallback indicators |
-| `PaperModeIndicator` | Compact paper chip |
+| `PaperModeIndicator` | Compact paper chip — **fail-closed** (default unconfirmed; `active` only when verified) |
+| `VerifiedPaperModeIndicator` | Wires `PaperModeIndicator` to `/health` via `useSafetyPosture` |
 | `RiskBlock` | Risk BLOCK panel — **no override control** |
 | `DataNumber` | Tabular trading metrics |
 
-Shared states (`frontend/src/components/states.tsx`): `EmptyState`, `LoadingState`, `ErrorState`, `StaleState`, `BlockedState`, `UnavailableState`, `SuccessState`.
+Shared states (`frontend/src/components/states.tsx`): `EmptyState`, `LoadingState`, `ErrorState`, `StaleState` (freshness only), `LimitationsState` (analytical/coverage limitations — not stale), `BlockedState`, `UnavailableState`, `SuccessState`.
 
 ## Layout foundation
 
@@ -99,7 +100,7 @@ Shared states (`frontend/src/components/states.tsx`): `EmptyState`, `LoadingStat
 | TradingView signal inbox | `PageHeader`, tokenized list selection, unavailable state |
 | Paper signal orchestration | `PageHeader`, `BlockedState`, `RiskBlock` for blocked decisions |
 | Journal statistics | `PageHeader`, `Select` primitive, `DataNumber` metrics |
-| Portfolio summary | `PageHeader`, `StaleState` cue, tokenized limitations panel |
+| Portfolio summary | `PageHeader`, `LimitationsState` for analytical limitations (not stale), verified paper chip |
 
 No routes removed. No full 53-route redesign.
 
@@ -111,6 +112,13 @@ No routes removed. No full 53-route redesign.
 - Risk BLOCK uses lock icon + “Blocked” text + rule reference
 - `prefers-reduced-motion` support
 - WCAG AA contrast targeted for token pairs on dark theme
+- `Tabs`: ArrowLeft/Right, Home/End, wrap, skip disabled, Enter/Space activate; collision-safe ids + `aria-controls` / `aria-labelledby`
+
+## Hardening notes (post Phase A review)
+
+- Paper mode indicators must never default to active; unknown/loading/inconsistent posture → “Paper mode not confirmed”
+- Analytical portfolio limitations use `LimitationsState`, not `StaleState`
+- `StaleState` reserved for actual freshness degradation
 
 ## Remaining work (Phases B–F)
 

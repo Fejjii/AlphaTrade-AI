@@ -10,9 +10,13 @@ import { PaperPortfolioSafetyBanner } from "@/components/portfolio/PaperPortfoli
 import { PaperPortfolioSummaryCards } from "@/components/portfolio/PaperPortfolioSummaryCards";
 import { PortfolioBreakdownTable } from "@/components/portfolio/PortfolioBreakdownTable";
 import { PortfolioTrendBadge } from "@/components/portfolio/PortfolioTrendBadge";
-import { EmptyState, ErrorState, LoadingState, StaleState } from "@/components/states";
+import { EmptyState, ErrorState, LimitationsState, LoadingState } from "@/components/states";
 import { PageHeader } from "@/components/ui/page-header";
-import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import {
+  isPaperModeConfirmed,
+  PaperModeIndicator,
+} from "@/components/ui/paper-mode-indicator";
+import { useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type { PortfolioSourceFilter } from "@/lib/api/types";
@@ -21,6 +25,7 @@ export default function PaperPortfolioPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [source, setSource] = useState<PortfolioSourceFilter>("all");
+  const { executionMode, realTradingEnabled } = useSafetyPosture();
 
   const loader = useCallback(async () => {
     const dateParams = {
@@ -38,18 +43,27 @@ export default function PaperPortfolioPage() {
     ...(data?.open_exposure.limitations ?? []),
   ];
 
+  const paperActive = data
+    ? isPaperModeConfirmed(data.safety.execution_mode, data.safety.real_trading_enabled)
+    : isPaperModeConfirmed(executionMode, realTradingEnabled);
+
   return (
     <div className="space-y-section" data-testid="paper-portfolio-page">
       <PageHeader
         title="Paper Portfolio"
         description="Evaluate simulated paper portfolio performance over time. Read-only analytics — no live trading, no orders, no automation, and not investment advice."
-        meta={<PaperModeIndicator />}
+        meta={<PaperModeIndicator active={paperActive} />}
       />
 
       {loading && !data ? <LoadingState label="Loading paper portfolio…" /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
       {limitations.length > 0 && data ? (
-        <StaleState message="Some portfolio metrics carry explicit limitations — treat values as incomplete." />
+        <div data-testid="paper-portfolio-limitations">
+          <LimitationsState
+            message="Some portfolio metrics carry explicit limitations — treat values as incomplete."
+            items={limitations}
+          />
+        </div>
       ) : null}
 
       {!loading && !error && !data ? (
@@ -80,20 +94,6 @@ export default function PaperPortfolioPage() {
           </div>
 
           <PaperPortfolioCharts equityCurve={data.equity_curve} dailySeries={data.daily_series} />
-
-          {limitations.length ? (
-            <section
-              className="rounded-card border border-stale-border bg-stale-muted p-4 text-sm text-stale"
-              data-testid="paper-portfolio-limitations"
-            >
-              <p className="font-medium">Limitations</p>
-              <ul className="mt-2 space-y-1 text-caption text-text-secondary">
-                {limitations.map((item) => (
-                  <li key={item}>• {item}</li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
 
           <section className="space-y-4" data-testid="paper-portfolio-breakdowns">
             <h2 className="text-lg font-medium">Breakdowns</h2>

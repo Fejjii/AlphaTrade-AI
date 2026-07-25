@@ -7,7 +7,10 @@ import { RiskBadge } from "@/components/RiskBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import {
+  isPaperModeConfirmed,
+  PaperModeIndicator,
+} from "@/components/ui/paper-mode-indicator";
 import { useAppContext, useMockProviders, useSafetyPosture } from "@/contexts/AppContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { appConfig } from "@/lib/config";
@@ -18,7 +21,7 @@ export function TopBar() {
   const { executionMode, realTradingEnabled } = useSafetyPosture();
   const providers = useMockProviders();
   const mockCount = providers.filter((p) => p.is_mock).length;
-  const paperConfirmed = executionMode === "paper" && realTradingEnabled === false;
+  const paperConfirmed = isPaperModeConfirmed(executionMode, realTradingEnabled);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border-subtle bg-surface-0/90 backdrop-blur">

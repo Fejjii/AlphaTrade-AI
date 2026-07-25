@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataNumber } from "@/components/ui/data-number";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
@@ -178,7 +178,7 @@ export default function JournalStatisticsPage() {
       <PageHeader
         title="Journal statistics"
         description="Deterministic aggregates over closed canonical journal trades (paper only). Metrics use recorded values only; small samples carry explicit confidence warnings."
-        meta={<PaperModeIndicator />}
+        meta={<VerifiedPaperModeIndicator />}
       />
 
       <div className="rounded-card border border-border-subtle bg-surface-1/50 p-4">

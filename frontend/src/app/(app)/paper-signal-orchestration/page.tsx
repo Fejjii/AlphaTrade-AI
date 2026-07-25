@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { RiskBlock } from "@/components/ui/risk-block";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError, APPROVE_PAPER_SIGNAL_PROPOSAL } from "@/lib/api";
@@ -129,7 +129,7 @@ export default function PaperSignalOrchestrationPage() {
   if (data.forbidden) {
     return (
       <div data-testid="paper-signal-orch-forbidden" className="space-y-section">
-        <PageHeader title="Signal Orchestration" meta={<PaperModeIndicator />} />
+        <PageHeader title="Signal Orchestration" meta={<VerifiedPaperModeIndicator />} />
         <UnavailableState message="You do not have permission to view paper-signal orchestration." />
       </div>
     );
@@ -150,7 +150,7 @@ export default function PaperSignalOrchestrationPage() {
             {!enabled ? " · disabled (fail-closed)" : ""}. Never creates live orders.
           </>
         }
-        meta={<PaperModeIndicator />}
+        meta={<VerifiedPaperModeIndicator />}
       />
 
       {!enabled && (
