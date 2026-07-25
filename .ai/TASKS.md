@@ -441,10 +441,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `test_at037_tradingview_blofin.py` + frontend tests; `docs/tradingview_blofin_sync.md`;
   ADR-019.
 - Validation: disposable Postgres 16 migration upgrade/downgrade/upgrade cycle for
-  `o1d2e3f4a5b6` verified; PR #26 CI run 30144938569 all green (backend, frontend,
-  deployment-safety, docker-build, evaluation, e2e-smoke, Vercel preview). Local
-  pre-merge: `test_at037_tradingview_blofin.py` (9) + integrated AT-035/blofin (71)
-  + frontend vitest (9) + mypy strict on AT-037 modules. No deploy; no live trading.
+  `o1d2e3f4a5b6` verified; PR #26 CI run 30144938569 all green (backend 1371 passed,
+  1 skipped; frontend, deployment-safety, docker-build, evaluation, e2e-smoke, Vercel
+  preview). Local pre-merge: `test_at037_tradingview_blofin.py` (9) + integrated
+  AT-035/blofin (71) + frontend vitest (9) + mypy strict on AT-037 modules. No deploy;
+  no live trading.
 - Recommended model: Cursor Grok 4.5
 - ADR: AT-ADR-019 (Accepted) · Docs: `docs/tradingview_blofin_sync.md`
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/26 merged
