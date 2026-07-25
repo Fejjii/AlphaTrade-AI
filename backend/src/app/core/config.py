@@ -176,6 +176,37 @@ class Settings(BaseSettings):
     blofin_sync_max_positions: int = Field(default=50, ge=1, le=200)
     blofin_sync_max_balances: int = Field(default=50, ge=1, le=200)
 
+    # --- Paper-signal orchestration (AT-038 — paper-only; disabled by default) ---
+    paper_signal_orchestration_enabled: bool = False
+    # observe_only | candidate_only | approval_required (no live/autonomous mode)
+    paper_signal_orchestration_mode: str = "observe_only"
+    paper_signal_max_age_seconds: int = Field(default=900, ge=60, le=86400)
+    paper_signal_min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    paper_signal_require_setup_when_named: bool = True
+    paper_signal_require_strategy_when_provided: bool = True
+    paper_signal_allowed_timeframes: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "1m",
+            "3m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "4h",
+            "6h",
+            "12h",
+            "1d",
+            "3d",
+            "1w",
+        ]
+    )
+    paper_signal_cooldown_after_loss_seconds: int = Field(default=3600, ge=0, le=86400)
+    paper_signal_conflict_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    paper_signal_default_position_size: float = Field(default=0.001, gt=0, le=1_000_000)
+    paper_signal_default_leverage: float = Field(default=1.0, gt=0, le=125)
+    paper_signal_create_run_plan: bool = True
+
     # --- Data stores (placeholders; clients wired in later slices) ---
     database_url: str = "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade"
     redis_url: str = "redis://localhost:6379/0"
@@ -365,6 +396,20 @@ class Settings(BaseSettings):
     def _normalize_exchange_mode(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip().lower()
+        return value
+
+    @field_validator("paper_signal_orchestration_mode", mode="before")
+    @classmethod
+    def _normalize_paper_signal_orchestration_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("paper_signal_allowed_timeframes", mode="before")
+    @classmethod
+    def _split_paper_signal_timeframes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
     @field_validator("redis_url", mode="before")

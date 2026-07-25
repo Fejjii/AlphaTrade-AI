@@ -47,6 +47,7 @@ from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_portfolio_service import PaperPortfolioService
 from app.services.paper_scheduler_service import PaperSchedulerService
+from app.services.paper_signal_orchestration_service import PaperSignalOrchestrationService
 from app.services.paper_validation_candidate_service import PaperValidationCandidateService
 from app.services.paper_validation_draft_service import PaperValidationDraftService
 from app.services.paper_validation_run_plan_service import PaperValidationRunPlanService
@@ -420,6 +421,22 @@ def get_tradingview_signal_service(
     return TradingViewSignalService(session, settings)
 
 
+def get_paper_signal_orchestration_service(
+    session: SessionDep,
+    settings: SettingsDep,
+    kill_switch: KillSwitchServiceDep,
+    proposal_service: ProposalServiceDep,
+    audit_service: AuditServiceDep,
+) -> PaperSignalOrchestrationService:
+    return PaperSignalOrchestrationService(
+        session,
+        settings=settings,
+        kill_switch=kill_switch,
+        proposal_service=proposal_service,
+        audit_service=audit_service,
+    )
+
+
 def get_blofin_sync_service(session: SessionDep, settings: SettingsDep) -> BloFinSyncService:
     return BloFinSyncService(session, settings)
 
@@ -529,6 +546,9 @@ ResearchValidationServiceDep = Annotated[
 ]
 TradingViewSignalServiceDep = Annotated[
     TradingViewSignalService, Depends(get_tradingview_signal_service)
+]
+PaperSignalOrchestrationServiceDep = Annotated[
+    PaperSignalOrchestrationService, Depends(get_paper_signal_orchestration_service)
 ]
 BloFinSyncServiceDep = Annotated[BloFinSyncService, Depends(get_blofin_sync_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]

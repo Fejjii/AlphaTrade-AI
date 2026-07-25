@@ -2194,6 +2194,99 @@ export interface BloFinSyncResult {
   note: string;
 }
 
+export type PaperSignalOrchestrationMode =
+  | "observe_only"
+  | "candidate_only"
+  | "approval_required";
+
+export type PaperSignalOrchestrationStatus =
+  | "eligible"
+  | "blocked"
+  | "awaiting_review"
+  | "paper_candidate_created"
+  | "paper_proposal_created"
+  | "expired"
+  | "rejected";
+
+export interface PaperSignalEligibilityCheck {
+  code: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface PaperSignalOrchestrationTransition {
+  at: string;
+  from_status: string | null;
+  to_status: string;
+  reason: string;
+  actor_user_id: string | null;
+}
+
+export interface PaperSignalOrchestrationLinks {
+  tradingview_signal_id: string;
+  setup_definition_id: string | null;
+  strategy_id: string | null;
+  strategy_version_id: string | null;
+  journal_trade_id: string | null;
+  backtest_run_id: string | null;
+  candidate_id: string | null;
+  run_plan_id: string | null;
+  proposal_id: string | null;
+  signal_path: string | null;
+  candidate_path: string | null;
+  run_plan_path: string | null;
+  proposal_path: string | null;
+  journal_path: string | null;
+}
+
+export interface PaperSignalOrchestrationDecisionItem {
+  id: string;
+  organization_id: string;
+  tradingview_signal_id: string;
+  idempotency_key: string;
+  status: PaperSignalOrchestrationStatus;
+  mode: PaperSignalOrchestrationMode;
+  symbol: string;
+  timeframe: string;
+  direction: string;
+  reason_codes: string[] | null;
+  reason_summary: string | null;
+  eligibility_checks: PaperSignalEligibilityCheck[];
+  risk_checks: PaperSignalEligibilityCheck[];
+  transitions: PaperSignalOrchestrationTransition[];
+  links: PaperSignalOrchestrationLinks;
+  decided_by: string | null;
+  approved_by: string | null;
+  decided_at: string;
+  expired_at: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  note: string;
+}
+
+export interface PaperSignalOrchestrationListResponse {
+  items: PaperSignalOrchestrationDecisionItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  mode: PaperSignalOrchestrationMode;
+  enabled: boolean;
+}
+
+export interface PaperSignalOrchestrationEvaluateResult {
+  decision: PaperSignalOrchestrationDecisionItem;
+  already_exists: boolean;
+  note: string;
+}
+
+export interface PaperSignalOrchestrationApproveResult {
+  decision: PaperSignalOrchestrationDecisionItem;
+  proposal_id: string;
+  already_exists: boolean;
+  note: string;
+}
+
 export interface PaperValidationMetrics {
   paper_trades_count: number;
   win_rate: number;

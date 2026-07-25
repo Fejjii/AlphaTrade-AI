@@ -593,3 +593,38 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `docs/tradingview_blofin_sync.md`; tests in `test_at037_tradingview_blofin.py`
   + frontend page/panel tests.
 - **Validation:** Targeted backend + frontend tests on feature branch; no deploy.
+
+## AT-ADR-020 — Automated paper-signal orchestration (AT-038)
+- **Date:** 2026-07-25
+- **Status:** Accepted
+- **Context:** AT-037 delivers signed TradingView intake and optional manual
+  paper-candidate creation. Operators need a deterministic, reviewable bridge from
+  validated signals into paper-validation candidates/run plans and (optionally)
+  approval-gated paper proposals — without any live or autonomous execution path.
+- **Decision:**
+  1. **Dedicated decision table.** `paper_signal_orchestration_decisions` with
+     unique `(org, tradingview_signal_id)` idempotency, status state machine,
+     eligibility/risk evidence JSON, transition history, and links to signal /
+     setup / strategy / journal / backtest / candidate / run plan / proposal.
+  2. **Configurable human modes only.** `observe_only` | `candidate_only` |
+     `approval_required`. No autonomous live mode. Default disabled + observe_only.
+  3. **Reuse existing paper pathways.** Candidates via AT-037
+     `_create_candidate_internal`; run plans via Slice 81 confirm pathway;
+     paper proposals via `ProposalService.create(approval_required=True)`.
+     Never call `place_paper_order` or exchange mutation APIs.
+  4. **Fail-closed gates.** Freshness, timeframe, direction, confidence, setup/
+     strategy linkage when configured, level consistency, conflicting-signal
+     window, market-context (when BloFin demo enabled), kill switch, daily-loss
+     lock, cooldown after loss, `execution_mode=paper`, `enable_real_trading=false`.
+  5. **Explicit proposal confirm.** `APPROVE_PAPER_SIGNAL_PROPOSAL` required in
+     `approval_required` mode; re-validate eligibility before proposal create.
+- **Alternatives considered:** Auto-place paper orders from signals (rejected:
+  bypasses approval/risk); extend TradingView signal status instead of a decision
+  table (rejected: conflates intake lifecycle with orchestration); live mode
+  (rejected: Mode D / safety).
+- **Safety impact:** Paper-only; real trading stays disabled; kill switch /
+  cooldown / daily-loss / approval controls remain authoritative.
+- **Consequences:** Migration `p2e3f4a5b6c7`; docs in
+  `docs/paper_signal_orchestration.md`; tests in
+  `test_at038_paper_signal_orchestration.py` + frontend page tests.
+- **Validation:** Targeted backend + frontend tests on feature branch; no deploy.

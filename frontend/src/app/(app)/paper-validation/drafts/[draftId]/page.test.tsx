@@ -176,7 +176,7 @@ describe("PaperValidationDraftDetailPage Slice 80", () => {
       expect(mockQueueDraft).toHaveBeenCalledWith("draft-1", {
         confirm: "QUEUE_PAPER_VALIDATION_CANDIDATE",
       });
+      expect(screen.getByTestId("paper-draft-candidate-link")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("paper-draft-candidate-link")).toBeInTheDocument();
   });
 });
