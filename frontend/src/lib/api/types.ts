@@ -1963,6 +1963,83 @@ export type SetupEvidenceParams = {
   setup_id?: string;
 };
 
+export interface ResearchValidationEvidenceItem {
+  backtest_run_id: string;
+  strategy_id: string;
+  strategy_version_id?: string | null;
+  strategy_name: string;
+  version: number;
+  symbol?: string | null;
+  timeframe?: string | null;
+  regime?: string | null;
+  status: BacktestRunStatus;
+  dataset_hash?: string | null;
+  config_hash?: string | null;
+  result_hash?: string | null;
+  evidence_tier: SetupEvidenceTier;
+  sample_size: number;
+  oos_trade_count: number;
+  oos_expectancy?: string | null;
+  oos_profit_factor?: number | null;
+  confirm_trade_count: number;
+  eligible_for_promotion: boolean;
+  warnings: string[];
+  existing_candidate_id?: string | null;
+  existing_run_plan_id?: string | null;
+  promotion_blocked_reason?: string | null;
+}
+
+export interface ResearchValidationEvidenceResponse {
+  items: ResearchValidationEvidenceItem[];
+  generated_at: string;
+  note: string;
+}
+
+export interface ResearchValidationPromoteRequest {
+  confirm: string;
+  backtest_run_id: string;
+}
+
+export interface ResearchValidationEligibility {
+  eligible: boolean;
+  tier?: SetupEvidenceTier | null;
+  warnings: string[];
+  blocked_reason?: string | null;
+}
+
+export interface ResearchValidationLinks {
+  candidate_id?: string | null;
+  draft_id?: string | null;
+  source_alert_id?: string | null;
+  run_plan_id?: string | null;
+  backtest_run_id: string;
+  strategy_id?: string | null;
+  strategy_version_id?: string | null;
+  journal_comparison_path?: string | null;
+  setup_evidence_path?: string | null;
+  journal_statistics_path?: string | null;
+}
+
+export interface ResearchValidationPromoteResult {
+  candidate: PaperValidationCandidateItem;
+  already_exists: boolean;
+  eligibility: ResearchValidationEligibility;
+  links: ResearchValidationLinks;
+}
+
+export interface ResearchValidationStatusResponse {
+  evidence: ResearchValidationEvidenceItem;
+  links: ResearchValidationLinks;
+  generated_at: string;
+  note: string;
+}
+
+export type ResearchValidationEvidenceParams = {
+  backtest_run_id?: string;
+  strategy_id?: string;
+  strategy_version_id?: string;
+};
+
 export interface PaperValidationMetrics {
   paper_trades_count: number;
   win_rate: number;
@@ -2217,6 +2294,8 @@ export interface PaperValidationDraftSummary {
 
 export type PaperValidationCandidateStatus = "queued" | "reviewing" | "archived";
 
+export type PromotionSource = "alert_draft" | "research_validation";
+
 export interface PaperValidationCandidateItem {
   candidate_id: string;
   draft_id: string;
@@ -2237,6 +2316,18 @@ export interface PaperValidationCandidateItem {
   risk_mode: PaperValidationDraftRiskMode;
   candidate_status: PaperValidationCandidateStatus;
   created_at: string;
+  promotion_source?: PromotionSource | null;
+  backtest_run_id?: string | null;
+  strategy_id?: string | null;
+  strategy_version_id?: string | null;
+  dataset_hash?: string | null;
+  config_hash?: string | null;
+  result_hash?: string | null;
+  evidence_tier?: SetupEvidenceTier | null;
+  sample_size?: number | null;
+  oos_expectancy?: string | null;
+  regime?: string | null;
+  evidence_snapshot?: Record<string, unknown> | null;
 }
 
 export interface PaperValidationCandidateSummary {

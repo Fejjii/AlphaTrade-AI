@@ -34,6 +34,19 @@ class PaperValidationCandidateRepository(SQLAlchemyRepository[PaperValidationCan
             )
         )
 
+    def get_active_for_backtest_run(
+        self,
+        organization_id: uuid.UUID,
+        backtest_run_id: uuid.UUID,
+    ) -> PaperValidationCandidate | None:
+        return self._session.scalar(
+            select(PaperValidationCandidate).where(
+                PaperValidationCandidate.organization_id == organization_id,
+                PaperValidationCandidate.backtest_run_id == backtest_run_id,
+                PaperValidationCandidate.candidate_status.in_(self._ACTIVE_STATUSES),
+            )
+        )
+
     def get_for_org(
         self,
         candidate_id: uuid.UUID,

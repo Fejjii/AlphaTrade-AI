@@ -880,6 +880,25 @@ class PaperValidationCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     risk_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="conservative")
     candidate_status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # AT-035 — research validation provenance (nullable for alert-draft / legacy rows)
+    promotion_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    backtest_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), nullable=True, index=True
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    dataset_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sample_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    oos_expectancy: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    regime: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    evidence_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class PaperValidationRunPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):

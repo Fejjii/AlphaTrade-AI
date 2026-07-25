@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
 
+from app.schemas.backtest import SetupEvidenceTier
 from app.schemas.common import (
     PaperValidationCandidateStatus,
     PaperValidationDraftRiskMode,
+    PromotionSource,
     StrictModel,
 )
 from app.schemas.paper_validation_draft import PaperValidationDraftChecklist
@@ -39,6 +43,19 @@ class PaperValidationCandidateItem(StrictModel):
     risk_mode: PaperValidationDraftRiskMode
     candidate_status: PaperValidationCandidateStatus
     created_at: datetime
+    # AT-035 research provenance (nullable for legacy / alert-draft rows)
+    promotion_source: PromotionSource | None = None
+    backtest_run_id: UUID | None = None
+    strategy_id: UUID | None = None
+    strategy_version_id: UUID | None = None
+    dataset_hash: str | None = None
+    config_hash: str | None = None
+    result_hash: str | None = None
+    evidence_tier: SetupEvidenceTier | None = None
+    sample_size: int | None = None
+    oos_expectancy: Decimal | None = None
+    regime: str | None = None
+    evidence_snapshot: dict[str, Any] | None = None
 
 
 class PaginatedPaperValidationCandidates(StrictModel):
