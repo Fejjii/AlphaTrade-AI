@@ -401,26 +401,29 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   No deploy; paper posture unchanged.
 
 ### AT-036 — Human-vs-system decision quality (aggregate journal comparison)
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-034, AT-031 ·
+- Priority: P1 · Status: DONE · Dependencies: AT-034, AT-031 ·
   Risk: Low (advisory only; no execution path)
 - Safety classification: Paper-safe / record-only
 - Goal: Extend `GET /journal/comparison` with AT-036 decision-quality metrics,
   human/system actor scorecards, dimension buckets, setup/regime breakdowns, and
   frontend `/journal/comparison` page. Backward compatible with AT-034 three-cohort
   response. Tenant isolation + `ReaderDep` RBAC unchanged.
-- Branch: `feat/at-036-human-vs-system-decision-quality`
+- Branch: `feat/at-036-human-vs-system-decision-quality` (merged)
 - Deliverables: extended `journal_statistics_service.compare_cohorts`; schemas in
   `backtest.py` / `journal_statistics.py`; frontend comparison page + nav;
   `tests/test_at036_journal_comparison.py`; `journal/comparison/page.test.tsx`;
   docs + ADR-018.
-- Validation (pre-commit): ruff clean on touched backend modules; targeted pytest
-  `test_at036_journal_comparison.py` + `test_at031_journal_statistics.py` +
-  `test_at034_api.py` → 47 passed; frontend comparison + backtest page tests →
-  9 passed. No deploy; no live trading; risk/execution unchanged. Per-trade
-  `/human-vs-system/{id}` remains Slice 36. Awaiting human authorize commit/push.
+- Validation: PR #25 CI run 30139404763 success (backend, frontend,
+  deployment-safety, docker-build, evaluation, e2e-smoke, Vercel preview green).
+  Local pre-merge targeted: AT-036 + AT-031 + AT-034 API pytest 47 passed;
+  frontend comparison + backtest page tests 9 passed. No deploy; no live trading;
+  risk/execution unchanged. Per-trade `/human-vs-system/{id}` remains Slice 36.
 - Recommended model: Grok 4.5 (WS1) + Composer 2.5 (WS2/WS3)
-- ADR: AT-ADR-018 · Docs: `docs/journal_intelligence_foundation.md` §7,
+- ADR: AT-ADR-018 (Accepted) · Docs: `docs/journal_intelligence_foundation.md` §7,
   `docs/human_vs_system.md`, `docs/backtesting.md`, `docs/limitations_roadmap.md`
+- Completion evidence: commit `847d85d`, merge `3ff1eb3`, PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/25; CI run 30139404763 success.
+  No deploy; paper posture unchanged.
 
 ---
 
