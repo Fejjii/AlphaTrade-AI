@@ -121,6 +121,8 @@ const mockVerify = vi.fn();
 const mockJournalTrades = vi.fn();
 const mockComparison = vi.fn();
 const mockSetupEvidence = vi.fn();
+const mockResearchBacktestStatus = vi.fn();
+const mockResearchPromote = vi.fn();
 
 let currentRun: BacktestRun = completedRun;
 
@@ -150,7 +152,19 @@ vi.mock("@/lib/api", () => ({
       comparison: (...args: unknown[]) => mockComparison(...args),
       setupEvidence: (...args: unknown[]) => mockSetupEvidence(...args),
     },
+    researchValidation: {
+      backtestStatus: (...args: unknown[]) => mockResearchBacktestStatus(...args),
+      promote: (...args: unknown[]) => mockResearchPromote(...args),
+    },
   },
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+  PROMOTE_RESEARCH_VALIDATION_CANDIDATE: "PROMOTE_RESEARCH_VALIDATION_CANDIDATE",
 }));
 
 const verifyResult: BacktestVerifyResult = {
@@ -357,6 +371,28 @@ describe("BacktestRunDetailPage", () => {
     mockJournalTrades.mockResolvedValue(dryRunResult);
     mockComparison.mockResolvedValue(comparisonResponse);
     mockSetupEvidence.mockResolvedValue(evidenceResponse);
+    mockResearchBacktestStatus.mockResolvedValue({
+      evidence: {
+        backtest_run_id: RUN_ID,
+        strategy_id: completedRun.strategy_id,
+        strategy_version_id: completedRun.strategy_version_id,
+        strategy_name: "Test strategy",
+        version: 2,
+        status: "completed",
+        evidence_tier: "tier2",
+        sample_size: 1,
+        oos_trade_count: 1,
+        eligible_for_promotion: true,
+        warnings: [],
+      },
+      links: {
+        backtest_run_id: RUN_ID,
+        strategy_id: completedRun.strategy_id,
+        strategy_version_id: completedRun.strategy_version_id,
+      },
+      generated_at: "2026-07-24T10:00:00Z",
+    });
+    mockResearchPromote.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -418,6 +454,6 @@ describe("BacktestRunDetailPage", () => {
     expect(await screen.findByTestId("journal-comparison-cohorts")).toBeInTheDocument();
     expect(screen.getByText("Human")).toBeInTheDocument();
     expect(screen.getByText("Paper system")).toBeInTheDocument();
-    expect(screen.getByText("Tier 2")).toBeInTheDocument();
+    expect(screen.getAllByText("Tier 2").length).toBeGreaterThan(0);
   });
 });
