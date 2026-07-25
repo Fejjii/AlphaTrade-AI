@@ -63,6 +63,7 @@ from app.services.pretrade_analysis_service import PreTradeAnalysisService
 from app.services.proposal_service import ProposalService
 from app.services.quota_service import QuotaService
 from app.services.rag_service import RagService, build_rag_service
+from app.services.research_validation_service import ResearchValidationService
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
@@ -405,6 +406,12 @@ def get_setup_evidence_service(session: SessionDep, settings: SettingsDep) -> Se
     return SetupEvidenceService(session, settings)
 
 
+def get_research_validation_service(
+    session: SessionDep, settings: SettingsDep
+) -> ResearchValidationService:
+    return ResearchValidationService(session, settings)
+
+
 def get_paper_validation_service(session: SessionDep) -> PaperValidationService:
     return PaperValidationService(session)
 
@@ -505,6 +512,9 @@ StructureFromTextServiceDep = Annotated[
 BacktestServiceDep = Annotated[BacktestService, Depends(get_backtest_service)]
 BacktestJournalServiceDep = Annotated[BacktestJournalService, Depends(get_backtest_journal_service)]
 SetupEvidenceServiceDep = Annotated[SetupEvidenceService, Depends(get_setup_evidence_service)]
+ResearchValidationServiceDep = Annotated[
+    ResearchValidationService, Depends(get_research_validation_service)
+]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]
 PaperValidationRuntimeServiceDep = Annotated[
     PaperValidationRuntimeService, Depends(get_paper_validation_runtime_service)

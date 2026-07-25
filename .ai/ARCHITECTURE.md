@@ -67,6 +67,7 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `GET /providers/status`
 - `GET /performance/report`, `GET /performance/portfolio`
 - `POST /knowledge/ingest`, `POST /knowledge/search`
+- `GET /research-validation/evidence`, `POST /research-validation/promote` (AT-035 — advisory paper-queue promotion; paper-only)
 
 ## CI jobs
 

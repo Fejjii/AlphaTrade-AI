@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.db.models import PaperValidationDraft as DraftModel
 from app.repositories.paper_validation_candidate import PaperValidationCandidateRepository
 from app.repositories.paper_validation_draft import PaperValidationDraftRepository
 from app.schemas.audit import AuditRecordCreate
+from app.schemas.backtest import SetupEvidenceTier
 from app.schemas.common import (
     ActorType,
     AuditEventType,
@@ -21,6 +23,7 @@ from app.schemas.common import (
     PaperValidationDraftPrepStatus,
     PaperValidationDraftRiskMode,
     PaperValidationDraftStatus,
+    PromotionSource,
 )
 from app.schemas.paper_validation_candidate import (
     QUEUE_PAPER_VALIDATION_CANDIDATE_CONFIRM,
@@ -261,6 +264,22 @@ class PaperValidationCandidateService:
         except ValueError:
             candidate_status = PaperValidationCandidateStatus.QUEUED
         checklist = PaperValidationDraftService._parse_checklist(row.checklist_snapshot)
+        promotion_source: PromotionSource | None = None
+        if row.promotion_source:
+            try:
+                promotion_source = PromotionSource(row.promotion_source)
+            except ValueError:
+                promotion_source = None
+        evidence_tier: SetupEvidenceTier | None = None
+        if row.evidence_tier:
+            try:
+                evidence_tier = SetupEvidenceTier(row.evidence_tier)
+            except ValueError:
+                evidence_tier = None
+        oos_expectancy: Decimal | None = None
+        if row.oos_expectancy is not None:
+            oos_expectancy = Decimal(str(row.oos_expectancy))
+        snapshot = row.evidence_snapshot if isinstance(row.evidence_snapshot, dict) else None
         return PaperValidationCandidateItem(
             candidate_id=row.id,
             draft_id=row.draft_id,
@@ -281,6 +300,18 @@ class PaperValidationCandidateService:
             risk_mode=risk_mode,
             candidate_status=candidate_status,
             created_at=row.created_at,
+            promotion_source=promotion_source,
+            backtest_run_id=row.backtest_run_id,
+            strategy_id=row.strategy_id,
+            strategy_version_id=row.strategy_version_id,
+            dataset_hash=row.dataset_hash,
+            config_hash=row.config_hash,
+            result_hash=row.result_hash,
+            evidence_tier=evidence_tier,
+            sample_size=row.sample_size,
+            oos_expectancy=oos_expectancy,
+            regime=row.regime,
+            evidence_snapshot=snapshot,
         )
 
     def _record_audit(

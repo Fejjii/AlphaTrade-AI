@@ -478,3 +478,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   30130869273, 30130870524 all success). Post-merge on `main` @ `8f9a84b`:
   AT-034 + slice-35 pytest 43 passed; frontend page tests 7 passed; ruff clean.
   No deploy.
+
+## AT-ADR-017 — Research validation loop: extend candidate provenance + synthetic alert/draft vs parallel queue (AT-035)
+- **Date:** 2026-07-25
+- **Status:** Accepted
+- **Context:** AT-034 delivers deterministic backtests, OOS metrics, and advisory
+  setup evidence tiers. Slice 80 established the paper validation candidate queue
+  (alert → draft → candidate). Users need a paper-safe path to promote strong
+  backtest evidence into that queue without bypassing FK constraints or creating a
+  parallel promotion system.
+- **Decision:**
+  1. **Reuse existing candidate queue.** Promotion enters `paper_validation_candidates`
+     via the same queue model — no separate research queue or execution shortcut.
+  2. **Synthetic research-origin alert + draft.** Create
+     `PaperAlertType.RESEARCH_VALIDATION_PROMOTION` alert and a `ready_for_validation`
+     draft to satisfy non-null `source_alert_id` / `draft_id` FKs; mark
+     `promotion_source=research_validation`.
+  3. **Eligibility via `SetupEvidenceService`.** Tier1/tier2 eligible; tier3 hard
+     blocked. Missing OOS metrics or incomplete runs blocked. Soft warning
+     `insufficient_confirm_sample` when confirm trades below tier1 threshold.
+  4. **Frozen provenance on candidate.** Persist `backtest_run_id`, strategy/version
+     FKs, dataset/config/result hashes, `evidence_tier`, and `evidence_snapshot`
+     JSON at promotion time. Legacy alert-draft rows keep nullable provenance.
+  5. **Idempotency.** Partial unique index on
+     `(organization_id, backtest_run_id)` for active (`queued`/`reviewing`) candidates.
+  6. **Confirm phrase.** `PROMOTE_RESEARCH_VALIDATION_CANDIDATE` required on POST.
+  7. **Paper-only.** Advisory endpoints; never feed execution or risk; tenant-scoped;
+     `ReaderDep` for evidence/status, `TraderDep` for promote.
+- **Alternatives considered:** Parallel research-only queue (rejected: duplicates
+  review UX and splits paper validation); nullable alert/draft FKs (rejected: breaks
+  existing schema invariants); auto-start paper runtime on promote (rejected: exceeds
+  advisory scope and weakens human review).
+- **Safety impact:** Record-only; paper posture unchanged; no risk/execution module
+  changes; promotion does not authorize live trading.
+- **Consequences:** Alembic head moves to `n0c1d2e3f4a5`. Docs in
+  `docs/research_validation.md`. Tests in `test_at035_research_validation.py`.
+- **Validation:** Disposable Postgres 16 migration upgrade/downgrade/upgrade cycle;
+  partial unique index verified; duplicate active promotion blocked at DB layer;
+  targeted pytest + ruff + frontend research-validation tests; CI on merge PR.

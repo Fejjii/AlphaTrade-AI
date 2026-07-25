@@ -156,7 +156,13 @@ import type {
   AlertRoutingSummary,
   TelegramAlertDeliveryResponse,
   TelegramTestAlertResponse,
+  ResearchValidationEvidenceParams,
+  ResearchValidationEvidenceResponse,
+  ResearchValidationPromoteResult,
+  ResearchValidationStatusResponse,
 } from "@/lib/api/types";
+
+export const PROMOTE_RESEARCH_VALIDATION_CANDIDATE = "PROMOTE_RESEARCH_VALIDATION_CANDIDATE";
 
 export const api = {
   auth: {
@@ -1073,6 +1079,24 @@ export const api = {
         body: JSON.stringify(body),
         auth: true,
       }),
+  },
+  researchValidation: {
+    evidence: (params?: ResearchValidationEvidenceParams) =>
+      apiFetch<ResearchValidationEvidenceResponse>("/research-validation/evidence", {
+        query: params,
+        auth: true,
+      }),
+    promote: (body: { confirm: string; backtest_run_id: string }) =>
+      apiFetch<ResearchValidationPromoteResult>("/research-validation/promote", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    backtestStatus: (backtestRunId: string) =>
+      apiFetch<ResearchValidationStatusResponse>(
+        `/research-validation/backtests/${backtestRunId}/status`,
+        { auth: true },
+      ),
   },
   lessons: {
     listCandidates: (params?: { status?: string; mistake_type?: string }) => {

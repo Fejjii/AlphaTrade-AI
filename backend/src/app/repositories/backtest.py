@@ -57,6 +57,34 @@ class BacktestRunRepository(SQLAlchemyRepository[BacktestRun]):
         )
         return self._session.scalar(stmt)
 
+    def list_for_research_evidence(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        backtest_run_id: uuid.UUID | None = None,
+        strategy_id: uuid.UUID | None = None,
+        strategy_version_id: uuid.UUID | None = None,
+        limit: int = 100,
+    ) -> list[BacktestRun]:
+        """List org-scoped runs for research validation evidence (AT-035)."""
+        filters = [BacktestRun.organization_id == organization_id]
+        if backtest_run_id is not None:
+            filters.append(BacktestRun.id == backtest_run_id)
+        if strategy_id is not None:
+            filters.append(BacktestRun.strategy_id == strategy_id)
+        if strategy_version_id is not None:
+            filters.append(BacktestRun.strategy_version_id == strategy_version_id)
+        stmt = (
+            select(BacktestRun)
+            .where(*filters)
+            .order_by(
+                BacktestRun.finished_at.desc().nullslast(),
+                BacktestRun.created_at.desc(),
+            )
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt).all())
+
     def get_by_idempotency_key(
         self,
         *,

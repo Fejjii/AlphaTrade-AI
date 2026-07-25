@@ -649,6 +649,14 @@ class PaperAlertType(StrEnum):
     PAPER_VALIDATION_RESTRICTED = "paper_validation_restricted"
     OVERTRADING_WARNING = "overtrading_warning"
     DAILY_LOSS_LOCK_WARNING = "daily_loss_lock_warning"
+    RESEARCH_VALIDATION_PROMOTION = "research_validation_promotion"
+
+
+class PromotionSource(StrEnum):
+    """Origin of a paper validation candidate (AT-035)."""
+
+    ALERT_DRAFT = "alert_draft"
+    RESEARCH_VALIDATION = "research_validation"
 
 
 class PaperAlertSeverity(StrEnum):

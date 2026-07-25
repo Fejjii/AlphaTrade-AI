@@ -2,7 +2,7 @@
 
 Deterministic **backtest engine v2** (`ENGINE_VERSION=at034-2.0.0`) replays stored historical OHLCV candles as a pure function of frozen configuration, immutable dataset snapshots, and structured strategy rules. Historical simulation only — **not** a profit guarantee. **Real trading remains disabled** (`enable_real_trading=false`, `execution_mode=paper`). Backtest output is **record-only** and **never feeds execution, risk, or position-sizing decisions**.
 
-See also: [journal_intelligence_foundation.md](journal_intelligence_foundation.md) (journal bulk import from backtests) · [strategy_library.md](strategy_library.md) · [paper_validation.md](paper_validation.md)
+See also: [journal_intelligence_foundation.md](journal_intelligence_foundation.md) (journal bulk import from backtests) · [strategy_library.md](strategy_library.md) · [paper_validation.md](paper_validation.md) · [research_validation.md](research_validation.md) (AT-035 advisory promotion into paper queue)
 
 ## Architecture overview
 

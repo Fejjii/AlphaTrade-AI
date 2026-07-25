@@ -108,6 +108,10 @@ Recommendation may be: `continue`, `improve`, `restrict`, `retire`, `insufficien
 
 **Does not promote to live trading.**
 
+## Research validation bridge (AT-035)
+
+Completed backtests with sufficient setup evidence (tier1/tier2) may be **optionally promoted** into the paper validation candidate queue via `POST /research-validation/promote`. This creates a research-origin candidate with frozen provenance (backtest run, hashes, evidence tier) but does **not** start a runtime or place orders. See [research_validation.md](./research_validation.md).
+
 ## Paper eligibility gates (Slice 38)
 
 See `GET /strategies/{id}/paper-eligibility` for: `needs_structure`, `needs_backtest`, `needs_more_sample`, `needs_lesson_review`, `paper_eligible`, `paper_validation_running`, `paper_validated`, `restricted`.
@@ -140,7 +144,7 @@ Accepted lessons vs pending observations: only **accepted** lessons affect promo
 
 ## Migration
 
-Apply through head **`u1v2w3x4y5z6`** (Slice 42; prior Slice 41: `t0u1v2w3x4y5`):
+Apply through head **`n0c1d2e3f4a5`** (AT-035 research validation provenance; prior Slice 42: `u1v2w3x4y5z6`):
 
 ```bash
 cd backend && uv run alembic upgrade head

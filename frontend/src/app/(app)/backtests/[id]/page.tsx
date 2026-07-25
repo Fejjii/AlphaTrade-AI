@@ -9,8 +9,9 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { useAsyncData } from "@/hooks/useAsyncData";
-import { api } from "@/lib/api";
+import { api, ApiError, PROMOTE_RESEARCH_VALIDATION_CANDIDATE } from "@/lib/api";
 import type {
   BacktestJournalResult,
   BacktestRunStatus,
@@ -18,6 +19,7 @@ import type {
   JournalComparisonCohort,
   JournalComparisonResponse,
   JournalTradeStatsMetrics,
+  ResearchValidationStatusResponse,
   SetupEvidenceItem,
   SetupEvidenceResponse,
   SetupEvidenceTier,
@@ -188,6 +190,13 @@ export default function BacktestRunDetailPage() {
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
 
+  const [rvStatus, setRvStatus] = useState<ResearchValidationStatusResponse | null>(null);
+  const [rvLoading, setRvLoading] = useState(false);
+  const [rvError, setRvError] = useState<string | null>(null);
+  const [rvConfirm, setRvConfirm] = useState("");
+  const [rvPromoting, setRvPromoting] = useState(false);
+  const [rvPromoteError, setRvPromoteError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!run || !ACTIVE_STATUSES.includes(run.status)) return;
     const timer = window.setInterval(() => {
@@ -273,6 +282,42 @@ export default function BacktestRunDetailPage() {
       setJournalError(err instanceof Error ? err.message : "Journal commit failed");
     } finally {
       setJournalBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (run?.status === "completed") {
+      setRvLoading(true);
+      setRvError(null);
+      void api.researchValidation
+        .backtestStatus(runId)
+        .then(setRvStatus)
+        .catch((err) => {
+          if (err instanceof ApiError && err.status === 403) {
+            setRvError("You do not have permission to view research validation status.");
+          } else {
+            setRvError(err instanceof Error ? err.message : "Failed to load research validation.");
+          }
+        })
+        .finally(() => setRvLoading(false));
+    }
+  }, [run?.status, runId]);
+
+  async function handleResearchPromote() {
+    setRvPromoting(true);
+    setRvPromoteError(null);
+    try {
+      await api.researchValidation.promote({
+        confirm: rvConfirm,
+        backtest_run_id: runId,
+      });
+      setRvConfirm("");
+      const refreshed = await api.researchValidation.backtestStatus(runId);
+      setRvStatus(refreshed);
+    } catch (err) {
+      setRvPromoteError(err instanceof Error ? err.message : "Promotion failed.");
+    } finally {
+      setRvPromoting(false);
     }
   }
 
@@ -697,6 +742,84 @@ export default function BacktestRunDetailPage() {
           </Card>
         </>
       ) : null}
+
+      <Card data-testid="backtest-research-validation-panel">
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle className="text-base">Research validation</CardTitle>
+          <Link href="/research-validation" className="text-xs text-sky-400 underline">
+            Open dashboard
+          </Link>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {run.status !== "completed" ? (
+            <p className="text-xs text-zinc-500">
+              Research validation status is available after the backtest completes.
+            </p>
+          ) : null}
+          {run.status === "completed" && rvLoading ? (
+            <p className="text-xs text-zinc-500">Loading research validation…</p>
+          ) : null}
+          {rvError ? <p className="text-xs text-amber-300">{rvError}</p> : null}
+          {rvStatus ? (
+            <div className="space-y-3" data-testid="backtest-research-validation-status">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={tierBadgeVariant(rvStatus.evidence.evidence_tier)}>
+                  {tierLabel(rvStatus.evidence.evidence_tier)}
+                </Badge>
+                <Badge variant={rvStatus.evidence.eligible_for_promotion ? "success" : "muted"}>
+                  {rvStatus.evidence.eligible_for_promotion ? "Eligible" : "Not eligible"}
+                </Badge>
+              </div>
+              {rvStatus.evidence.warnings.length || rvStatus.evidence.promotion_blocked_reason ? (
+                <ul className="space-y-1 text-xs text-amber-300">
+                  {rvStatus.evidence.warnings.map((warning) => (
+                    <li key={warning}>{warning.replaceAll("_", " ")}</li>
+                  ))}
+                  {rvStatus.evidence.promotion_blocked_reason ? (
+                    <li>{rvStatus.evidence.promotion_blocked_reason}</li>
+                  ) : null}
+                </ul>
+              ) : null}
+              {rvStatus.evidence.existing_candidate_id ? (
+                <Link
+                  href={`/paper-validation/candidates/${rvStatus.evidence.existing_candidate_id}`}
+                  className="text-xs text-sky-400 underline"
+                >
+                  View paper validation candidate
+                </Link>
+              ) : rvStatus.evidence.eligible_for_promotion &&
+                !rvStatus.evidence.promotion_blocked_reason ? (
+                <div className="space-y-2 rounded border border-zinc-700 p-3 text-xs">
+                  <p className="text-zinc-400">
+                    Type{" "}
+                    <span className="font-mono text-zinc-100">
+                      {PROMOTE_RESEARCH_VALIDATION_CANDIDATE}
+                    </span>{" "}
+                    to promote into the paper validation queue.
+                  </p>
+                  <Input
+                    value={rvConfirm}
+                    onChange={(event) => setRvConfirm(event.target.value)}
+                    data-testid="backtest-research-validation-confirm"
+                    className="max-w-md font-mono text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={
+                      rvPromoting || rvConfirm !== PROMOTE_RESEARCH_VALIDATION_CANDIDATE
+                    }
+                    onClick={() => void handleResearchPromote()}
+                    data-testid="backtest-research-validation-promote"
+                  >
+                    {rvPromoting ? "Promoting…" : "Promote to paper validation"}
+                  </Button>
+                  {rvPromoteError ? <p className="text-red-400">{rvPromoteError}</p> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">

@@ -372,6 +372,30 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   AT-034 + slice-35 pytest 43 passed; frontend page tests 7 passed; ruff clean.
   No deploy; paper posture unchanged.
 
+### AT-035 — Research validation loop (backtest evidence → paper candidate queue)
+- Priority: P1 · Status: DONE · Dependencies: AT-034, Slice 80
+  (paper validation candidate queue) · Risk: Low (advisory only; no execution path)
+- Safety classification: Paper-safe / record-only
+- Goal: Advisory promotion of completed backtest evidence (tier1/tier2) into the
+  existing paper-validation candidate queue with frozen provenance, synthetic
+  research-origin alert/draft scaffolding, idempotent per org+backtest run,
+  tenant isolation, and RBAC (reader GET, trader POST promote).
+- Branch: `feat/at-035-research-validation-loop`
+- Deliverables: migration `n0c1d2e3f4a5`; `research_validation_service`,
+  routes `/research-validation/*`; candidate provenance fields on
+  `PaperValidationCandidateItem`; frontend `/research-validation` page;
+  `tests/test_at035_research_validation.py`; `docs/research_validation.md`; ADR-017.
+- Validation: disposable Postgres 16 migration upgrade/downgrade/upgrade cycle;
+  partial unique index `uq_pvc_org_backtest_active` verified; duplicate active
+  promotion blocked at DB layer; targeted `test_at035_research_validation.py` (10)
+  green; integrated AT-035 + slice80/81 + at034_api (46) green; ruff + strict mypy
+  on touched modules; frontend lint/typecheck/research-validation tests (8) green.
+  No deploy; no live trading; risk/execution unchanged.
+- Recommended model: Grok 4.5 (WS1) + Composer 2.5 (WS2/WS3)
+- ADR: AT-ADR-017 · Docs: `docs/research_validation.md`
+- Completion evidence: branch `feat/at-035-research-validation-loop`; PR pending;
+  CI pending. No deploy.
+
 ---
 
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)
