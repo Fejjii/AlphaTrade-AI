@@ -107,12 +107,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             className="w-full rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
         </div>
-        <ul className="max-h-80 overflow-y-auto p-2" role="listbox" aria-label="Command results">
+        <ul className="max-h-80 overflow-y-auto p-2" aria-label="Command results">
           {filtered.length === 0 ? (
             <li className="px-3 py-4 text-sm text-text-muted">No matches</li>
           ) : (
             filtered.map((entry) => (
-              <li key={`${entry.group}-${entry.href}`} role="option">
+              <li key={`${entry.group}-${entry.href}`}>
                 <Link
                   href={entry.href}
                   onClick={close}
