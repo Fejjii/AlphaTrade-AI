@@ -6,7 +6,11 @@ import { cn } from "@/lib/utils";
 
 export interface TooltipProps {
   content: React.ReactNode;
-  children: React.ReactElement;
+  children: React.ReactElement<{
+    "aria-describedby"?: string;
+    onFocus?: (event: React.FocusEvent) => void;
+    onBlur?: (event: React.FocusEvent) => void;
+  }>;
   className?: string;
   side?: "top" | "bottom";
 }
@@ -27,13 +31,13 @@ export function Tooltip({ content, children, className, side = "top" }: TooltipP
     >
       {React.cloneElement(children, {
         "aria-describedby": open ? id : undefined,
-        onFocus: (e: React.FocusEvent) => {
+        onFocus: (event: React.FocusEvent) => {
           setOpen(true);
-          children.props.onFocus?.(e);
+          children.props.onFocus?.(event);
         },
-        onBlur: (e: React.FocusEvent) => {
+        onBlur: (event: React.FocusEvent) => {
           setOpen(false);
-          children.props.onBlur?.(e);
+          children.props.onBlur?.(event);
         },
       })}
       {open ? (
@@ -42,7 +46,9 @@ export function Tooltip({ content, children, className, side = "top" }: TooltipP
           role="tooltip"
           className={cn(
             "pointer-events-none absolute z-50 max-w-xs rounded-control border border-border bg-surface-2 px-2 py-1 text-caption text-text-primary shadow-elevation2",
-            side === "top" ? "bottom-full left-1/2 mb-2 -translate-x-1/2" : "top-full left-1/2 mt-2 -translate-x-1/2",
+            side === "top"
+              ? "bottom-full left-1/2 mb-2 -translate-x-1/2"
+              : "top-full left-1/2 mt-2 -translate-x-1/2",
             className,
           )}
         >
