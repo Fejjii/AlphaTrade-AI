@@ -49,6 +49,7 @@ from app.schemas.common import (
     AuditSeverity,
     BacktestRunStatus,
     BacktestStatus,
+    BloFinSyncHealthStatus,
     CostSource,
     DocumentSourceType,
     ExchangeAccountStatus,
@@ -89,6 +90,7 @@ from app.schemas.common import (
     StrategyValidationStatus,
     TradeDirection,
     TradeResult,
+    TradingViewSignalStatus,
     UsageStatus,
     UserRole,
 )
@@ -2084,3 +2086,114 @@ class StrategyPerformanceDaily(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     expectancy: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
     max_drawdown: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
     metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+# --------------------------------------------------------------------------- #
+# TradingView signal intake + BloFin demo sync (AT-037)
+# --------------------------------------------------------------------------- #
+
+
+class TradingViewSignal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Inbound TradingView alert signal (AT-037 — paper-only intake)."""
+
+    __tablename__ = "tradingview_signals"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_tv_signal_org_idempotency",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "external_alert_id",
+            name="uq_tv_signal_org_alert",
+        ),
+        Index("ix_tv_signals_org_status_received", "organization_id", "status", "received_at"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    external_alert_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=TradingViewSignalStatus.RECEIVED.value
+    )
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    setup_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    setup_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    setup_definition_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("setup_definitions.id"), nullable=True
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    trigger_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    invalidation_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    take_profit_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_payload_redacted: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duplicate_of_signal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tradingview_signals.id"), nullable=True
+    )
+    source_alert_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_alerts.id"), nullable=True
+    )
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_drafts.id"), nullable=True
+    )
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_candidates.id"), nullable=True
+    )
+    journal_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=True
+    )
+    backtest_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), nullable=True
+    )
+
+
+class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Bounded BloFin demo account/position snapshot (AT-037 — read-only)."""
+
+    __tablename__ = "blofin_demo_sync_snapshots"
+    __table_args__ = (
+        Index(
+            "ix_blofin_sync_org_synced_at",
+            "organization_id",
+            "synced_at",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    health_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=BloFinSyncHealthStatus.UNAVAILABLE.value
+    )
+    provider: Mapped[str] = mapped_column(String(40), nullable=False, default="blofin_demo")
+    exchange_mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    account_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    positions_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    market_context: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    stale_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    balance_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

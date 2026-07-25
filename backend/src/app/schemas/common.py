@@ -327,6 +327,10 @@ class AuditEventType(StrEnum):
     BILLING_PLAN_CHANGED = "billing_plan_changed"
     BILLING_USAGE_EXPORTED = "billing_usage_exported"
     PROVIDER_USAGE_METADATA_MISSING = "provider_usage_metadata_missing"
+    TRADINGVIEW_SIGNAL_RECEIVED = "tradingview_signal_received"
+    TRADINGVIEW_SIGNAL_REJECTED = "tradingview_signal_rejected"
+    TRADINGVIEW_SIGNAL_CANDIDATE_CREATED = "tradingview_signal_candidate_created"
+    BLOFIN_DEMO_SYNC = "blofin_demo_sync"
     LESSON_CANDIDATE_CREATED = "lesson_candidate_created"
     LESSON_ACCEPTED = "lesson_accepted"
     LESSON_REJECTED = "lesson_rejected"
@@ -650,13 +654,34 @@ class PaperAlertType(StrEnum):
     OVERTRADING_WARNING = "overtrading_warning"
     DAILY_LOSS_LOCK_WARNING = "daily_loss_lock_warning"
     RESEARCH_VALIDATION_PROMOTION = "research_validation_promotion"
+    TRADINGVIEW_SIGNAL = "tradingview_signal"
 
 
 class PromotionSource(StrEnum):
-    """Origin of a paper validation candidate (AT-035)."""
+    """Origin of a paper validation candidate (AT-035 / AT-037)."""
 
     ALERT_DRAFT = "alert_draft"
     RESEARCH_VALIDATION = "research_validation"
+    TRADINGVIEW_SIGNAL = "tradingview_signal"
+
+
+class TradingViewSignalStatus(StrEnum):
+    """Lifecycle status for inbound TradingView signals (AT-037)."""
+
+    RECEIVED = "received"
+    VALIDATED = "validated"
+    REJECTED = "rejected"
+    DUPLICATE = "duplicate"
+    CANDIDATE_CREATED = "candidate_created"
+
+
+class BloFinSyncHealthStatus(StrEnum):
+    """Health of a BloFin demo read-only sync snapshot (AT-037)."""
+
+    OK = "ok"
+    DEGRADED = "degraded"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
 
 
 class PaperAlertSeverity(StrEnum):

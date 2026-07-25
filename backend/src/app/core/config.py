@@ -163,6 +163,19 @@ class Settings(BaseSettings):
     market_watcher_bridge_max_scans_per_cycle: int = Field(default=5, ge=1, le=50)
     alert_webhook_secret: str = ""
 
+    # --- TradingView signal intake (AT-037 — disabled by default; paper-only) ---
+    tradingview_webhook_enabled: bool = False
+    tradingview_webhook_secret: str = ""
+    tradingview_webhook_max_skew_seconds: int = Field(default=300, ge=30, le=3600)
+    tradingview_webhook_rate_limit: int = Field(default=60, ge=1, le=600)
+    tradingview_webhook_rate_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    tradingview_auto_create_candidate: bool = False
+
+    # --- BloFin demo read-only sync (AT-037 — demo only; never places orders) ---
+    blofin_sync_stale_after_seconds: int = Field(default=300, ge=30, le=86400)
+    blofin_sync_max_positions: int = Field(default=50, ge=1, le=200)
+    blofin_sync_max_balances: int = Field(default=50, ge=1, le=200)
+
     # --- Data stores (placeholders; clients wired in later slices) ---
     database_url: str = "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade"
     redis_url: str = "redis://localhost:6379/0"

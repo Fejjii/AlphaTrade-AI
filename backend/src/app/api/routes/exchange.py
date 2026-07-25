@@ -11,7 +11,13 @@ from app.core.demo_order_status import (
     cancelled_status_from_cancel_audit,
     probe_demo_order_status_with_retry,
 )
-from app.core.dependencies import AuditServiceDep, ProviderRegistryDep, SessionDep, SettingsDep
+from app.core.dependencies import (
+    AuditServiceDep,
+    BloFinSyncServiceDep,
+    ProviderRegistryDep,
+    SessionDep,
+    SettingsDep,
+)
 from app.core.errors import ExchangeProviderError
 from app.core.exchange_demo_access import (
     get_demo_account_provider,
@@ -29,6 +35,7 @@ from app.providers.exchange.base import (
 from app.providers.exchange.errors import ExchangeError
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.schemas.audit import AuditRecordCreate
+from app.schemas.blofin_sync import BloFinSyncResult, BloFinSyncSnapshotItem
 from app.schemas.common import ActorType, AuditEventType
 from app.schemas.exchange import (
     ExchangeBalanceItem,
@@ -46,7 +53,7 @@ from app.schemas.exchange import (
     ExchangePositionsResponse,
     ExchangeStatusResponse,
 )
-from app.security.rbac import OwnerDep
+from app.security.rbac import OwnerDep, ReaderDep
 from app.services.audit_service import AuditService
 from app.services.exchange_diagnostics_service import build_exchange_diagnostics_summary
 
@@ -405,3 +412,35 @@ async def cancel_order(
         cancelled=True,
         generated_at=_now(),
     )
+
+
+@router.post(
+    "/blofin/sync",
+    response_model=BloFinSyncResult,
+    summary="Sync BloFin demo account/positions (read-only)",
+)
+async def blofin_demo_sync(
+    tenant: OwnerDep,
+    service: BloFinSyncServiceDep,
+    session: SessionDep,
+) -> BloFinSyncResult:
+    """Persist a bounded read-only demo snapshot. Never places or cancels orders."""
+    result = service.sync(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        request_id=f"blofin-sync-{tenant.organization_id}",
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/blofin/sync/latest",
+    response_model=BloFinSyncSnapshotItem,
+    summary="Latest BloFin demo sync snapshot",
+)
+async def blofin_demo_sync_latest(
+    tenant: ReaderDep,
+    service: BloFinSyncServiceDep,
+) -> BloFinSyncSnapshotItem:
+    return service.latest(organization_id=tenant.organization_id)

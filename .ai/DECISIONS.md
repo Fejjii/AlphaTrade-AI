@@ -555,3 +555,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `docs/human_vs_system.md`, `docs/backtesting.md`. Tests in
   `test_at036_journal_comparison.py` and frontend comparison page tests.
 - **Validation:** Targeted backend + frontend tests on feature branch; no deploy.
+
+## AT-ADR-019 — TradingView signed intake + BloFin demo read-only sync (AT-037)
+- **Date:** 2026-07-25
+- **Status:** Accepted
+- **Context:** TradingView alerts need a secure multi-tenant intake path into the
+  paper-first workflow, and operators need BloFin **demo** account/position
+  visibility without any order mutation. Existing paper-validation candidates
+  require non-null alert/draft FKs (AT-035 synthetic scaffold pattern). Billing
+  webhooks prove HMAC+timestamp+idempotency patterns but lack tenant signal
+  lifecycle and public rate limits.
+- **Decision:**
+  1. **Signed public webhook.** `POST /webhooks/tradingview` with
+     `X-AT-Timestamp` + `X-AT-Signature` (HMAC-SHA256 over `{timestamp}.{body}`),
+     skew window, fail-closed when disabled/secret missing, public IP rate limit.
+  2. **Dedicated `tradingview_signals` table.** Org-scoped lifecycle
+     (`received`/`validated`/`rejected`/`duplicate`/`candidate_created`),
+     unique `(org, idempotency_key)` and `(org, alert_id)`, redacted payload
+     storage, optional links to setup/strategy/journal/backtest/candidate.
+  3. **Optional paper candidate only.** Explicit trader confirm
+     (`CREATE_TRADINGVIEW_PAPER_CANDIDATE`) creates synthetic alert+draft+queued
+     candidate with `promotion_source=tradingview_signal`. Auto-create off by
+     default. Never creates live orders or executable proposals.
+  4. **BloFin sync is read-only demo.** Persist bounded snapshots via
+     `get_demo_account_provider` only; provenance + health + stale marking;
+     no execution provider calls; secrets never logged.
+  5. **Frontend.** Signal inbox + exchange BloFin sync panel with loading/empty/
+     stale/error states.
+- **Alternatives considered:** Reuse billing `webhook_events` only (rejected:
+  no signal lifecycle/links); make alert FK nullable on candidates (rejected:
+  breaks Slice 80 invariants — use synthetic scaffold); auto-queue every alert
+  (rejected: opt-in confirm / setting); live BloFin sync (rejected: Mode D /
+  safety).
+- **Safety impact:** Paper/demo only; real trading stays disabled; no order
+  placement/cancel/modify; rate limits/denylist/kill-switch unchanged.
+- **Consequences:** Migration `o1d2e3f4a5b6`; docs in
+  `docs/tradingview_blofin_sync.md`; tests in `test_at037_tradingview_blofin.py`
+  + frontend page/panel tests.
+- **Validation:** Targeted backend + frontend tests on feature branch; no deploy.

@@ -18,6 +18,7 @@ from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.backtest_journal_service import BacktestJournalService
 from app.services.backtest_service import BacktestService
+from app.services.blofin_sync_service import BloFinSyncService
 from app.services.coaching import CoachingService
 from app.services.dashboard_summary_service import DashboardSummaryService
 from app.services.execution_service import ExecutionService
@@ -74,6 +75,7 @@ from app.services.strategy_service import StrategyService
 from app.services.strategy_testability_service import StrategyTestabilityService
 from app.services.structure_from_text_service import StructureFromTextService
 from app.services.structured_rules_service import StructuredRulesService
+from app.services.tradingview_signal_service import TradingViewSignalService
 from app.services.usage_service import UsageService
 from app.services.validation_priority import ValidationPriorityService
 from app.services.workflow_service import WorkflowService
@@ -412,6 +414,16 @@ def get_research_validation_service(
     return ResearchValidationService(session, settings)
 
 
+def get_tradingview_signal_service(
+    session: SessionDep, settings: SettingsDep
+) -> TradingViewSignalService:
+    return TradingViewSignalService(session, settings)
+
+
+def get_blofin_sync_service(session: SessionDep, settings: SettingsDep) -> BloFinSyncService:
+    return BloFinSyncService(session, settings)
+
+
 def get_paper_validation_service(session: SessionDep) -> PaperValidationService:
     return PaperValidationService(session)
 
@@ -515,6 +527,10 @@ SetupEvidenceServiceDep = Annotated[SetupEvidenceService, Depends(get_setup_evid
 ResearchValidationServiceDep = Annotated[
     ResearchValidationService, Depends(get_research_validation_service)
 ]
+TradingViewSignalServiceDep = Annotated[
+    TradingViewSignalService, Depends(get_tradingview_signal_service)
+]
+BloFinSyncServiceDep = Annotated[BloFinSyncService, Depends(get_blofin_sync_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]
 PaperValidationRuntimeServiceDep = Annotated[
     PaperValidationRuntimeService, Depends(get_paper_validation_runtime_service)
