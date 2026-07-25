@@ -426,13 +426,13 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   No deploy; paper posture unchanged.
 
 ### AT-037 — TradingView Signal Intake and BloFin Read-Only Synchronisation v1
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-035, Slice 80, BloFin demo
+- Priority: P1 · Status: DONE · Dependencies: AT-035, Slice 80, BloFin demo
   account provider · Risk: Medium (webhook surface; exchange read path)
 - Safety classification: Paper-safe / demo read-only (no order mutation)
 - Goal: Secure TradingView signed webhook intake with idempotent signal lifecycle,
   optional paper-validation candidate routing, plus BloFin demo read-only
   account/position/market-context sync. No order placement.
-- Branch: `feat/at-037-tradingview-blofin-sync`
+- Branch: `feat/at-037-tradingview-blofin-sync` (merged)
 - Deliverables: migration `o1d2e3f4a5b6`; `tradingview_signals` +
   `blofin_demo_sync_snapshots`; `tradingview_signal_service`, `blofin_sync_service`,
   signature helper; routes `POST /webhooks/tradingview`,
@@ -440,13 +440,16 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   frontend `/tradingview-signals` + BloFin sync panel; tests
   `test_at037_tradingview_blofin.py` + frontend tests; `docs/tradingview_blofin_sync.md`;
   ADR-019.
-- Validation (pre-commit): `test_at037_tradingview_blofin.py` 9 passed; integrated
-  AT-037+AT-035+blofin_provider 71 passed; ruff clean on touched modules; mypy
-  --strict on AT-037 modules clean; frontend vitest 9 passed
-  (tradingview-signals + BloFinSyncPanel). No deploy; no live trading.
-  Stopped at REVIEW_REQUIRED (no commit/push).
+- Validation: disposable Postgres 16 migration upgrade/downgrade/upgrade cycle for
+  `o1d2e3f4a5b6` verified; PR #26 CI run 30144938569 all green (backend, frontend,
+  deployment-safety, docker-build, evaluation, e2e-smoke, Vercel preview). Local
+  pre-merge: `test_at037_tradingview_blofin.py` (9) + integrated AT-035/blofin (71)
+  + frontend vitest (9) + mypy strict on AT-037 modules. No deploy; no live trading.
 - Recommended model: Cursor Grok 4.5
-- ADR: AT-ADR-019 · Docs: `docs/tradingview_blofin_sync.md`
+- ADR: AT-ADR-019 (Accepted) · Docs: `docs/tradingview_blofin_sync.md`
+- Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/26 merged
+  (`1d52cb3`, CI run 30144938569). Commits `650097a`, `9e09a85`. No deploy; paper
+  posture unchanged.
 
 ---
 
