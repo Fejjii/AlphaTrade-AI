@@ -1,0 +1,187 @@
+/**
+ * AlphaTrade AI design tokens — AT-040 Phase A
+ * Dark-first semantic tokens; light theme via [data-theme="light"] token swap.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --color-background: #09090b;
+  --color-surface-0: #09090b;
+  --color-surface-1: #18181b;
+  --color-surface-2: #27272a;
+  --color-surface-raised: #1f1f23;
+  --color-border: #3f3f46;
+  --color-border-subtle: #27272a;
+  --color-border-strong: #52525b;
+
+  /* Text hierarchy */
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #71717a;
+  --color-text-inverse: #09090b;
+  --color-text-disabled: #52525b;
+
+  /* Brand / accent (paper-safe emerald) */
+  --color-accent: #10b981;
+  --color-accent-hover: #34d399;
+  --color-accent-muted: rgba(16, 185, 129, 0.12);
+  --color-accent-border: rgba(16, 185, 129, 0.35);
+  --color-accent-foreground: #052e1c;
+
+  /* Semantic status */
+  --color-success: #34d399;
+  --color-success-muted: rgba(52, 211, 153, 0.12);
+  --color-success-border: rgba(52, 211, 153, 0.35);
+  --color-warning: #fbbf24;
+  --color-warning-muted: rgba(251, 191, 36, 0.12);
+  --color-warning-border: rgba(251, 191, 36, 0.35);
+  --color-danger: #f87171;
+  --color-danger-muted: rgba(248, 113, 113, 0.12);
+  --color-danger-border: rgba(248, 113, 113, 0.4);
+  --color-info: #38bdf8;
+  --color-info-muted: rgba(56, 189, 248, 0.12);
+  --color-info-border: rgba(56, 189, 248, 0.35);
+  --color-blocked: #f87171;
+  --color-blocked-muted: rgba(248, 113, 113, 0.16);
+  --color-blocked-border: rgba(248, 113, 113, 0.5);
+
+  /* Financial directional (never sole channel) */
+  --color-positive: #34d399;
+  --color-negative: #f87171;
+
+  /* Paper / stale indicators */
+  --color-paper: #34d399;
+  --color-paper-muted: rgba(52, 211, 153, 0.12);
+  --color-paper-border: rgba(52, 211, 153, 0.35);
+  --color-stale: #fbbf24;
+  --color-stale-muted: rgba(251, 191, 36, 0.12);
+  --color-stale-border: rgba(251, 191, 36, 0.4);
+
+  /* Focus */
+  --color-focus-ring: rgba(16, 185, 129, 0.45);
+
+  /* Spacing (4px base) */
+  --space-0: 0;
+  --space-1: 0.25rem; /* 4 */
+  --space-2: 0.5rem; /* 8 */
+  --space-3: 0.75rem; /* 12 */
+  --space-4: 1rem; /* 16 */
+  --space-5: 1.25rem; /* 20 */
+  --space-6: 1.5rem; /* 24 */
+  --space-8: 2rem; /* 32 */
+  --space-10: 2.5rem; /* 40 */
+  --space-12: 3rem; /* 48 */
+
+  /* Radius */
+  --radius-sm: 0.375rem; /* 6 */
+  --radius-control: 0.5rem; /* 8 */
+  --radius-card: 0.75rem; /* 12 */
+  --radius-pill: 9999px;
+
+  /* Elevation — prefer surface step + border on dark */
+  --shadow-none: none;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --elevation-0: none;
+  --elevation-1: var(--shadow-sm);
+  --elevation-2: var(--shadow-md);
+
+  /* Typography sizes (rem) — restrained app hierarchy */
+  --text-caption: 0.75rem;
+  --text-body: 0.875rem;
+  --text-label: 0.875rem;
+  --text-section: 1.125rem;
+  --text-title: 1.5rem;
+  --text-display: 1.75rem;
+
+  /* Layout */
+  --content-max: 80rem; /* max-w-7xl */
+  --page-gutter-mobile: 1rem;
+  --page-gutter-desktop: 1.5rem;
+  --section-gap: 1.5rem;
+  --card-padding-mobile: 1rem;
+  --card-padding-desktop: 1.5rem;
+
+  /* Breakpoints documented for JS consumers */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+
+  /* Compat aliases used by existing Tailwind theme keys */
+  --background: var(--color-background);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-surface-1);
+  --muted: var(--color-text-muted);
+  --accent: var(--color-accent);
+}
+
+/* Future light theme — token swap only (Phase E); structure ready now */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --color-background: #fafafa;
+  --color-surface-0: #fafafa;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f4f4f5;
+  --color-surface-raised: #ffffff;
+  --color-border: #d4d4d8;
+  --color-border-subtle: #e4e4e7;
+  --color-border-strong: #a1a1aa;
+
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525b;
+  --color-text-muted: #71717a;
+  --color-text-inverse: #fafafa;
+  --color-text-disabled: #a1a1aa;
+
+  --color-accent: #059669;
+  --color-accent-hover: #047857;
+  --color-accent-muted: rgba(5, 150, 105, 0.1);
+  --color-accent-border: rgba(5, 150, 105, 0.35);
+  --color-accent-foreground: #ecfdf5;
+
+  --color-success: #059669;
+  --color-success-muted: rgba(5, 150, 105, 0.1);
+  --color-success-border: rgba(5, 150, 105, 0.35);
+  --color-warning: #d97706;
+  --color-warning-muted: rgba(217, 119, 6, 0.1);
+  --color-warning-border: rgba(217, 119, 6, 0.35);
+  --color-danger: #dc2626;
+  --color-danger-muted: rgba(220, 38, 38, 0.1);
+  --color-danger-border: rgba(220, 38, 38, 0.35);
+  --color-info: #0284c7;
+  --color-info-muted: rgba(2, 132, 199, 0.1);
+  --color-info-border: rgba(2, 132, 199, 0.35);
+  --color-blocked: #dc2626;
+  --color-blocked-muted: rgba(220, 38, 38, 0.12);
+  --color-blocked-border: rgba(220, 38, 38, 0.45);
+
+  --color-positive: #059669;
+  --color-negative: #dc2626;
+
+  --color-paper: #059669;
+  --color-paper-muted: rgba(5, 150, 105, 0.1);
+  --color-paper-border: rgba(5, 150, 105, 0.35);
+  --color-stale: #d97706;
+  --color-stale-muted: rgba(217, 119, 6, 0.1);
+  --color-stale-border: rgba(217, 119, 6, 0.4);
+
+  --color-focus-ring: rgba(5, 150, 105, 0.45);
+
+  --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --shadow-md: 0 4px 12px rgba(24, 24, 27, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

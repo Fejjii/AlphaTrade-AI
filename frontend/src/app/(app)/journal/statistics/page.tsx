@@ -5,7 +5,10 @@ import { useCallback, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input, Label } from "@/components/ui/input";
+import { DataNumber } from "@/components/ui/data-number";
+import { Input, Label, Select } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
@@ -84,19 +87,36 @@ function ConfidenceBadge({ confidence }: { confidence: SampleConfidence }) {
 
 function MetricsSummary({ metrics }: { metrics: JournalTradeStatsMetrics }) {
   return (
-    <div className="grid gap-2 text-sm text-zinc-300 md:grid-cols-3">
+    <div className="grid gap-2 text-sm text-text-secondary md:grid-cols-3">
       <p>
-        Trades: {metrics.trade_count} (W {metrics.wins} / L {metrics.losses} / BE{" "}
-        {metrics.breakeven})
+        Trades:{" "}
+        <DataNumber value={metrics.trade_count} /> (W <DataNumber value={metrics.wins} /> / L{" "}
+        <DataNumber value={metrics.losses} /> / BE <DataNumber value={metrics.breakeven} />)
       </p>
-      <p>Win rate: {pct(metrics.win_rate)}</p>
       <p>
-        Net PnL: {formatDecimal(metrics.net_pnl_total)} (PnL on {metrics.pnl_sample_count}{" "}
-        trades)
+        Win rate: <DataNumber value={pct(metrics.win_rate)} />
       </p>
-      <p>Expectancy: {formatDecimal(metrics.expectancy)}</p>
       <p>
-        Avg R: {num(metrics.average_r)} ({metrics.r_sample_count} trades)
+        Net PnL:{" "}
+        <DataNumber
+          value={formatDecimal(metrics.net_pnl_total)}
+          tone={
+            metrics.net_pnl_total == null
+              ? "muted"
+              : Number(metrics.net_pnl_total) >= 0
+                ? "positive"
+                : "negative"
+          }
+          signed
+          numeric={metrics.net_pnl_total == null ? null : Number(metrics.net_pnl_total)}
+        />{" "}
+        (PnL on {metrics.pnl_sample_count} trades)
+      </p>
+      <p>
+        Expectancy: <DataNumber value={formatDecimal(metrics.expectancy)} />
+      </p>
+      <p>
+        Avg R: <DataNumber value={num(metrics.average_r)} /> ({metrics.r_sample_count} trades)
       </p>
       <p>Profit factor: {num(metrics.profit_factor)}</p>
       <p>Avg winner: {formatDecimal(metrics.average_winner)}</p>
@@ -154,22 +174,19 @@ export default function JournalStatisticsPage() {
   const { data, loading, error, reload } = useAsyncData(loader, [loader]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Journal statistics</h1>
-        <p className="text-sm text-zinc-400">
-          Deterministic aggregates over closed canonical journal trades (paper only). Metrics use
-          recorded values only; small samples carry explicit confidence warnings.
-        </p>
-      </div>
+    <div className="space-y-section">
+      <PageHeader
+        title="Journal statistics"
+        description="Deterministic aggregates over closed canonical journal trades (paper only). Metrics use recorded values only; small samples carry explicit confidence warnings."
+        meta={<PaperModeIndicator />}
+      />
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+      <div className="rounded-card border border-border-subtle bg-surface-1/50 p-4">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
           <div className="space-y-2">
             <Label htmlFor="stats-group-by">Group by</Label>
-            <select
+            <Select
               id="stats-group-by"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
               value={groupBy}
               onChange={(e) => {
                 setGroupBy(e.target.value as JournalStatsGroupBy);
@@ -181,13 +198,12 @@ export default function JournalStatisticsPage() {
                   {opt.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="stats-source">Source</Label>
-            <select
+            <Select
               id="stats-source"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
               value={source}
               onChange={(e) => {
                 setSource(e.target.value as JournalTradeSource | "");
@@ -200,7 +216,7 @@ export default function JournalStatisticsPage() {
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="stats-symbol">Symbol</Label>
@@ -228,9 +244,8 @@ export default function JournalStatisticsPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="stats-regime">Market regime</Label>
-            <select
+            <Select
               id="stats-regime"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
               value={regime}
               onChange={(e) => {
                 setRegime(e.target.value as MarketRegime | "");
@@ -243,13 +258,12 @@ export default function JournalStatisticsPage() {
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="stats-compliance">Rule compliance</Label>
-            <select
+            <Select
               id="stats-compliance"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
               value={compliance}
               onChange={(e) => {
                 setCompliance(e.target.value as TradeRuleCompliance | "");
@@ -262,13 +276,12 @@ export default function JournalStatisticsPage() {
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="stats-actor">Execution</Label>
-            <select
+            <Select
               id="stats-actor"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
               value={actor}
               onChange={(e) => {
                 setActor(e.target.value as ExecutionActor | "");
@@ -278,7 +291,7 @@ export default function JournalStatisticsPage() {
               <option value="">Human + system</option>
               <option value="human">Human</option>
               <option value="system">System</option>
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="stats-date-from">From</Label>

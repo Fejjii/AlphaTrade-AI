@@ -15,6 +15,8 @@ import { PaperPortfolioDashboardCard } from "@/components/portfolio/PaperPortfol
 import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -283,13 +285,19 @@ export default function DashboardPage() {
       : null);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Dashboard</h1>
-        <p className="text-sm text-zinc-400">
-          Your paper-only trading workspace — strategy readiness, discipline, and what to do next.
-        </p>
-      </div>
+    <div className="space-y-section">
+      <PageHeader
+        title="Dashboard"
+        description="Your paper-only trading workspace — strategy readiness, discipline, and what to do next."
+        meta={
+          <PaperModeIndicator
+            active={
+              (summary?.safety.execution_mode ?? executionMode) === "paper" &&
+              (summary?.safety.real_trading_enabled ?? realTradingEnabled) === false
+            }
+          />
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2" data-testid="dashboard-safety-status">
         <Badge

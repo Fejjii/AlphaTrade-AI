@@ -1,21 +1,49 @@
-import { Inbox } from "lucide-react";
+import { AlertTriangle, Ban, Clock, Inbox, ShieldOff } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-export function EmptyState({ title, description }: { title: string; description?: string }) {
+export function EmptyState({
+  title,
+  description,
+  className,
+}: {
+  title: string;
+  description?: string;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 px-6 py-12 text-center">
-      <Inbox className="mb-3 h-8 w-8 text-zinc-600" />
-      <h3 className="text-base font-medium text-zinc-200">{title}</h3>
-      {description ? <p className="mt-2 max-w-md text-sm text-zinc-500">{description}</p> : null}
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center rounded-card border border-dashed border-border bg-surface-0/40 px-6 py-12 text-center",
+        className,
+      )}
+      data-testid="empty-state"
+    >
+      <Inbox className="mb-3 h-8 w-8 text-text-disabled" aria-hidden="true" />
+      <h3 className="text-base font-medium text-text-primary">{title}</h3>
+      {description ? <p className="mt-2 max-w-md text-sm text-text-muted">{description}</p> : null}
     </div>
   );
 }
 
-export function LoadingState({ label = "Loading…" }: { label?: string }) {
+export function LoadingState({
+  label = "Loading…",
+  className,
+}: {
+  label?: string;
+  className?: string;
+}) {
   return (
-    <div className="flex items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/40 px-6 py-12 text-sm text-zinc-400">
-      {label}
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn("space-y-3", className)}
+      data-testid="loading-state"
+    >
+      <p className="text-sm text-text-muted">{label}</p>
+      <SkeletonCard />
     </div>
   );
 }
@@ -24,7 +52,7 @@ export function SuccessState({ message, className }: { message: string; classNam
   return (
     <div
       className={cn(
-        "rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-6 py-4 text-center text-sm text-emerald-200",
+        "rounded-card border border-success-border bg-success-muted px-6 py-4 text-center text-sm text-success",
         className,
       )}
     >
@@ -44,20 +72,104 @@ export function ErrorState({
 }) {
   return (
     <div
+      role="alert"
+      data-testid="error-state"
       className={cn(
-        "rounded-xl border border-red-500/20 bg-red-500/5 px-6 py-8 text-center",
+        "rounded-card border border-danger-border bg-danger-muted px-6 py-8 text-center",
         className,
       )}
     >
-      <p className="text-sm text-red-300">{message}</p>
+      <AlertTriangle className="mx-auto mb-2 h-5 w-5 text-danger" aria-hidden="true" />
+      <p className="text-sm text-danger">{message}</p>
       {onRetry ? (
-        <button
-          type="button"
-          className="mt-3 text-sm text-red-200 underline"
-          onClick={onRetry}
-        >
+        <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
           Retry
-        </button>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+export function StaleState({
+  message = "Data may be delayed or stale.",
+  ageLabel,
+  className,
+}: {
+  message?: string;
+  ageLabel?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="stale-state"
+      className={cn(
+        "rounded-card border border-stale-border bg-stale-muted px-4 py-3 text-sm text-stale",
+        className,
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <div>
+          <p className="font-medium">Stale data{ageLabel ? ` · ${ageLabel}` : ""}</p>
+          <p className="mt-1 text-text-secondary">{message}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function BlockedState({
+  message,
+  className,
+}: {
+  message: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      data-testid="blocked-state"
+      className={cn(
+        "rounded-card border border-blocked-border bg-blocked-muted px-4 py-3 text-sm",
+        className,
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <Ban className="mt-0.5 h-4 w-4 shrink-0 text-blocked" aria-hidden="true" />
+        <div>
+          <p className="font-semibold uppercase tracking-wide text-blocked">Blocked</p>
+          <p className="mt-1 text-text-primary">{message}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function UnavailableState({
+  message = "This surface is temporarily unavailable.",
+  onRetry,
+  className,
+}: {
+  message?: string;
+  onRetry?: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="unavailable-state"
+      className={cn(
+        "rounded-card border border-border bg-surface-1 px-6 py-8 text-center",
+        className,
+      )}
+    >
+      <ShieldOff className="mx-auto mb-2 h-5 w-5 text-text-muted" aria-hidden="true" />
+      <p className="text-sm text-text-secondary">{message}</p>
+      {onRetry ? (
+        <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onRetry}>
+          Retry
+        </Button>
       ) : null}
     </div>
   );

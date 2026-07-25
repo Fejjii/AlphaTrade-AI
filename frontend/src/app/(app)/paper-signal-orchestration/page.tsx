@@ -3,10 +3,19 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import {
+  BlockedState,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  UnavailableState,
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { RiskBlock } from "@/components/ui/risk-block";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError, APPROVE_PAPER_SIGNAL_PROPOSAL } from "@/lib/api";
 import type {
@@ -119,11 +128,9 @@ export default function PaperSignalOrchestrationPage() {
   }
   if (data.forbidden) {
     return (
-      <div data-testid="paper-signal-orch-forbidden" className="space-y-3">
-        <h1 className="text-2xl font-semibold text-zinc-50">Signal Orchestration</h1>
-        <p className="text-sm text-zinc-400">
-          You do not have permission to view paper-signal orchestration.
-        </p>
+      <div data-testid="paper-signal-orch-forbidden" className="space-y-section">
+        <PageHeader title="Signal Orchestration" meta={<PaperModeIndicator />} />
+        <UnavailableState message="You do not have permission to view paper-signal orchestration." />
       </div>
     );
   }
@@ -133,22 +140,22 @@ export default function PaperSignalOrchestrationPage() {
   const mode = data.data.mode;
 
   return (
-    <div data-testid="paper-signal-orch-page" className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Signal Orchestration</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-          Deterministic paper-only routing from validated TradingView signals. Mode:{" "}
-          <span className="text-zinc-200">{mode}</span>
-          {!enabled ? " · disabled (fail-closed)" : ""}. Never creates live orders.
-        </p>
-      </div>
+    <div data-testid="paper-signal-orch-page" className="space-y-section">
+      <PageHeader
+        title="Signal Orchestration"
+        description={
+          <>
+            Deterministic paper-only routing from validated TradingView signals. Mode:{" "}
+            <span className="text-text-primary">{mode}</span>
+            {!enabled ? " · disabled (fail-closed)" : ""}. Never creates live orders.
+          </>
+        }
+        meta={<PaperModeIndicator />}
+      />
 
       {!enabled && (
-        <div
-          data-testid="paper-signal-orch-disabled"
-          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
-        >
-          Orchestration is disabled for this environment. Decisions may be empty until enabled.
+        <div data-testid="paper-signal-orch-disabled">
+          <BlockedState message="Orchestration is disabled for this environment. Decisions may be empty until enabled." />
         </div>
       )}
 
@@ -201,9 +208,16 @@ export default function PaperSignalOrchestrationPage() {
                 <Badge variant="muted">{selected.mode}</Badge>
               </div>
 
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-text-secondary">
                 {selected.reason_summary ?? "No blocking reason."}
               </p>
+
+              {selected.status === "blocked" ? (
+                <RiskBlock
+                  reason={selected.reason_summary ?? "Risk checks blocked this paper signal."}
+                  ruleReference={selected.reason_codes?.[0]}
+                />
+              ) : null}
 
               {(selected.reason_codes?.length ?? 0) > 0 && (
                 <div>
