@@ -75,6 +75,7 @@ from app.services.strategy_service import StrategyService
 from app.services.strategy_testability_service import StrategyTestabilityService
 from app.services.structure_from_text_service import StructureFromTextService
 from app.services.structured_rules_service import StructuredRulesService
+from app.services.paper_signal_orchestration_service import PaperSignalOrchestrationService
 from app.services.tradingview_signal_service import TradingViewSignalService
 from app.services.usage_service import UsageService
 from app.services.validation_priority import ValidationPriorityService
@@ -420,6 +421,22 @@ def get_tradingview_signal_service(
     return TradingViewSignalService(session, settings)
 
 
+def get_paper_signal_orchestration_service(
+    session: SessionDep,
+    settings: SettingsDep,
+    kill_switch: KillSwitchServiceDep,
+    proposal_service: ProposalServiceDep,
+    audit_service: AuditServiceDep,
+) -> PaperSignalOrchestrationService:
+    return PaperSignalOrchestrationService(
+        session,
+        settings=settings,
+        kill_switch=kill_switch,
+        proposal_service=proposal_service,
+        audit_service=audit_service,
+    )
+
+
 def get_blofin_sync_service(session: SessionDep, settings: SettingsDep) -> BloFinSyncService:
     return BloFinSyncService(session, settings)
 
@@ -529,6 +546,9 @@ ResearchValidationServiceDep = Annotated[
 ]
 TradingViewSignalServiceDep = Annotated[
     TradingViewSignalService, Depends(get_tradingview_signal_service)
+]
+PaperSignalOrchestrationServiceDep = Annotated[
+    PaperSignalOrchestrationService, Depends(get_paper_signal_orchestration_service)
 ]
 BloFinSyncServiceDep = Annotated[BloFinSyncService, Depends(get_blofin_sync_service)]
 PaperValidationServiceDep = Annotated[PaperValidationService, Depends(get_paper_validation_service)]

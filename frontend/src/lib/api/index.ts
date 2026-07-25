@@ -166,10 +166,16 @@ import type {
   TradingViewSignalStatus,
   BloFinSyncResult,
   BloFinSyncSnapshotItem,
+  PaperSignalOrchestrationApproveResult,
+  PaperSignalOrchestrationDecisionItem,
+  PaperSignalOrchestrationEvaluateResult,
+  PaperSignalOrchestrationListResponse,
+  PaperSignalOrchestrationStatus,
 } from "@/lib/api/types";
 
 export const PROMOTE_RESEARCH_VALIDATION_CANDIDATE = "PROMOTE_RESEARCH_VALIDATION_CANDIDATE";
 export const CREATE_TRADINGVIEW_PAPER_CANDIDATE = "CREATE_TRADINGVIEW_PAPER_CANDIDATE";
+export const APPROVE_PAPER_SIGNAL_PROPOSAL = "APPROVE_PAPER_SIGNAL_PROPOSAL";
 
 export const api = {
   auth: {
@@ -270,6 +276,42 @@ export const api = {
     createCandidate: (id: string, body: { confirm: string }) =>
       apiFetch<TradingViewSignalCreateCandidateResult>(
         `/tradingview/signals/${id}/create-candidate`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
+  },
+  paperSignalOrchestration: {
+    listDecisions: (params?: {
+      status?: PaperSignalOrchestrationStatus;
+      symbol?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      apiFetch<PaperSignalOrchestrationListResponse>("/paper-signal-orchestration/decisions", {
+        query: params,
+        auth: true,
+      }),
+    getDecision: (id: string) =>
+      apiFetch<PaperSignalOrchestrationDecisionItem>(
+        `/paper-signal-orchestration/decisions/${id}`,
+        { auth: true },
+      ),
+    evaluate: (signalId: string) =>
+      apiFetch<PaperSignalOrchestrationEvaluateResult>(
+        `/paper-signal-orchestration/signals/${signalId}/evaluate`,
+        { method: "POST", auth: true },
+      ),
+    orchestrate: (signalId: string) =>
+      apiFetch<PaperSignalOrchestrationEvaluateResult>(
+        `/paper-signal-orchestration/signals/${signalId}/orchestrate`,
+        { method: "POST", auth: true },
+      ),
+    approvePaperProposal: (decisionId: string, body: { confirm: string }) =>
+      apiFetch<PaperSignalOrchestrationApproveResult>(
+        `/paper-signal-orchestration/decisions/${decisionId}/approve-paper-proposal`,
         {
           method: "POST",
           body: JSON.stringify(body),

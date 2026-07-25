@@ -90,6 +90,8 @@ from app.schemas.common import (
     StrategyValidationStatus,
     TradeDirection,
     TradeResult,
+    PaperSignalOrchestrationMode,
+    PaperSignalOrchestrationStatus,
     TradingViewSignalStatus,
     UsageStatus,
     UserRole,
@@ -2164,6 +2166,85 @@ class TradingViewSignal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     backtest_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("backtest_runs.id"), nullable=True
     )
+
+
+class PaperSignalOrchestrationDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Deterministic paper-signal orchestration decision (AT-038 — paper-only)."""
+
+    __tablename__ = "paper_signal_orchestration_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "tradingview_signal_id",
+            name="uq_pso_org_signal",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_pso_org_idempotency",
+        ),
+        Index(
+            "ix_pso_org_status_updated",
+            "organization_id",
+            "status",
+            "updated_at",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    tradingview_signal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tradingview_signals.id"), nullable=False, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default=PaperSignalOrchestrationStatus.BLOCKED.value,
+    )
+    mode: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default=PaperSignalOrchestrationMode.OBSERVE_ONLY.value,
+    )
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    reason_codes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    reason_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    eligibility_evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    risk_evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    transitions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    setup_definition_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("setup_definitions.id"), nullable=True
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    journal_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=True
+    )
+    backtest_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), nullable=True
+    )
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_candidates.id"), nullable=True
+    )
+    run_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("paper_validation_run_plans.id"), nullable=True
+    )
+    proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("trade_proposals.id"), nullable=True
+    )
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):

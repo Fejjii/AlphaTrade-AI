@@ -331,6 +331,11 @@ class AuditEventType(StrEnum):
     TRADINGVIEW_SIGNAL_REJECTED = "tradingview_signal_rejected"
     TRADINGVIEW_SIGNAL_CANDIDATE_CREATED = "tradingview_signal_candidate_created"
     BLOFIN_DEMO_SYNC = "blofin_demo_sync"
+    PAPER_SIGNAL_ORCHESTRATION_EVALUATED = "paper_signal_orchestration_evaluated"
+    PAPER_SIGNAL_ORCHESTRATION_TRANSITION = "paper_signal_orchestration_transition"
+    PAPER_SIGNAL_ORCHESTRATION_BLOCKED = "paper_signal_orchestration_blocked"
+    PAPER_SIGNAL_ORCHESTRATION_CANDIDATE = "paper_signal_orchestration_candidate"
+    PAPER_SIGNAL_ORCHESTRATION_PROPOSAL = "paper_signal_orchestration_proposal"
     LESSON_CANDIDATE_CREATED = "lesson_candidate_created"
     LESSON_ACCEPTED = "lesson_accepted"
     LESSON_REJECTED = "lesson_rejected"
@@ -682,6 +687,29 @@ class BloFinSyncHealthStatus(StrEnum):
     DEGRADED = "degraded"
     STALE = "stale"
     UNAVAILABLE = "unavailable"
+
+
+class PaperSignalOrchestrationMode(StrEnum):
+    """Human-review modes for paper-signal orchestration (AT-038).
+
+    No autonomous live mode exists. All modes remain paper-only.
+    """
+
+    OBSERVE_ONLY = "observe_only"
+    CANDIDATE_ONLY = "candidate_only"
+    APPROVAL_REQUIRED = "approval_required"
+
+
+class PaperSignalOrchestrationStatus(StrEnum):
+    """Decision state machine for paper-signal orchestration (AT-038)."""
+
+    ELIGIBLE = "eligible"
+    BLOCKED = "blocked"
+    AWAITING_REVIEW = "awaiting_review"
+    PAPER_CANDIDATE_CREATED = "paper_candidate_created"
+    PAPER_PROPOSAL_CREATED = "paper_proposal_created"
+    EXPIRED = "expired"
+    REJECTED = "rejected"
 
 
 class PaperAlertSeverity(StrEnum):

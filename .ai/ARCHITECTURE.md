@@ -70,6 +70,7 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `GET /research-validation/evidence`, `POST /research-validation/promote` (AT-035 — advisory paper-queue promotion; paper-only)
 - `POST /webhooks/tradingview`, `GET /tradingview/signals`, `POST /tradingview/signals/{id}/create-candidate` (AT-037 — signed intake + optional paper candidate; paper-only)
 - `POST /exchange/blofin/sync`, `GET /exchange/blofin/sync/latest` (AT-037 — BloFin demo read-only snapshots; no order mutation)
+- `GET/POST /paper-signal-orchestration/*` (AT-038 — deterministic paper-signal orchestration; paper-only; no order placement)
 
 ## CI jobs
 
