@@ -30,5 +30,12 @@ export {
 } from "./paper-mode-indicator";
 export { RiskBlock, type RiskBlockProps } from "./risk-block";
 export { Skeleton, SkeletonCard, SkeletonText } from "./skeleton";
-export { TabPanel, Tabs, type TabItem, type TabsProps } from "./tabs";
+export {
+  TabPanel,
+  Tabs,
+  TabsRoot,
+  type TabItem,
+  type TabsProps,
+  type TabsRootProps,
+} from "./tabs";
 export { Tooltip, type TooltipProps } from "./tooltip";

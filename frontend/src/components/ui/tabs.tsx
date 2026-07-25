@@ -10,14 +10,48 @@ export interface TabItem {
   disabled?: boolean;
 }
 
-export interface TabsProps {
-  items: TabItem[];
+type TabsContextValue = {
+  idPrefix: string;
   value: string;
   onChange: (id: string) => void;
+};
+
+const TabsContext = React.createContext<TabsContextValue | null>(null);
+
+function useTabsContext(component: string): TabsContextValue {
+  const ctx = React.useContext(TabsContext);
+  if (!ctx) {
+    throw new Error(`${component} must be used within TabsRoot`);
+  }
+  return ctx;
+}
+
+export interface TabsRootProps {
+  children: React.ReactNode;
+  value: string;
+  onChange: (id: string) => void;
+  /**
+   * Optional stable prefix for tab/panel ids.
+   * When omitted, TabsRoot owns a single React.useId() shared by all descendants.
+   */
+  idPrefix?: string;
+}
+
+/** Owns one collision-safe id prefix for a Tabs + TabPanel group. */
+export function TabsRoot({ children, value, onChange, idPrefix }: TabsRootProps) {
+  const generatedPrefix = React.useId();
+  const prefix = idPrefix ?? generatedPrefix;
+  const contextValue = React.useMemo(
+    () => ({ idPrefix: prefix, value, onChange }),
+    [prefix, value, onChange],
+  );
+  return <TabsContext.Provider value={contextValue}>{children}</TabsContext.Provider>;
+}
+
+export interface TabsProps {
+  items: TabItem[];
   className?: string;
   "aria-label"?: string;
-  /** Optional stable prefix for tab/panel ids; defaults to React.useId(). */
-  idPrefix?: string;
 }
 
 function enabledItems(items: TabItem[]): TabItem[] {
@@ -33,23 +67,34 @@ function nextEnabledId(items: TabItem[], currentId: string, delta: number): stri
   return enabled[next]?.id ?? null;
 }
 
+/** Resolve the single enabled tab that should receive tabIndex={0}. */
+function resolveRovingTabId(
+  items: TabItem[],
+  preferredId: string | null,
+  selectedId: string,
+): string | null {
+  const enabled = enabledItems(items);
+  if (enabled.length === 0) return null;
+  if (preferredId && enabled.some((item) => item.id === preferredId)) {
+    return preferredId;
+  }
+  if (enabled.some((item) => item.id === selectedId)) {
+    return selectedId;
+  }
+  return enabled[0]?.id ?? null;
+}
+
 /** Lightweight accessible tabs (no Radix dependency). Manual activation + arrow keys. */
-export function Tabs({
-  items,
-  value,
-  onChange,
-  className,
-  "aria-label": ariaLabel,
-  idPrefix,
-}: TabsProps) {
-  const autoPrefix = React.useId();
-  const prefix = idPrefix ?? autoPrefix;
-  const [focusedId, setFocusedId] = React.useState(value);
+export function Tabs({ items, className, "aria-label": ariaLabel }: TabsProps) {
+  const { idPrefix: prefix, value, onChange } = useTabsContext("Tabs");
+  const [focusedId, setFocusedId] = React.useState<string | null>(value);
   const tabRefs = React.useRef(new Map<string, HTMLButtonElement>());
 
+  const tabStopId = resolveRovingTabId(items, focusedId, value);
+
   React.useEffect(() => {
-    setFocusedId(value);
-  }, [value]);
+    setFocusedId((current) => resolveRovingTabId(items, current, value));
+  }, [items, value]);
 
   const focusTab = (id: string) => {
     setFocusedId(id);
@@ -60,7 +105,7 @@ export function Tabs({
     const enabled = enabledItems(items);
     if (enabled.length === 0) return;
 
-    const current = focusedId || value || enabled[0].id;
+    const current = tabStopId ?? enabled[0].id;
     let nextId: string | null = null;
 
     switch (event.key) {
@@ -109,6 +154,7 @@ export function Tabs({
         const selected = item.id === value;
         const tabDomId = `${prefix}-tab-${item.id}`;
         const panelDomId = `${prefix}-tabpanel-${item.id}`;
+        const isTabStop = !item.disabled && tabStopId === item.id;
         return (
           <button
             key={item.id}
@@ -118,7 +164,7 @@ export function Tabs({
             aria-controls={panelDomId}
             disabled={item.disabled}
             id={tabDomId}
-            tabIndex={focusedId === item.id ? 0 : -1}
+            tabIndex={isTabStop ? 0 : -1}
             ref={(node) => {
               if (node) tabRefs.current.set(item.id, node);
               else tabRefs.current.delete(item.id);
@@ -136,7 +182,9 @@ export function Tabs({
               setFocusedId(item.id);
               onChange(item.id);
             }}
-            onFocus={() => setFocusedId(item.id)}
+            onFocus={() => {
+              if (!item.disabled) setFocusedId(item.id);
+            }}
           >
             {item.label}
           </button>
@@ -148,26 +196,21 @@ export function Tabs({
 
 export function TabPanel({
   id,
-  activeId,
   children,
   className,
-  idPrefix,
 }: {
   id: string;
-  activeId: string;
   children: React.ReactNode;
   className?: string;
-  /** Must match the Tabs `idPrefix` (or the same React tree useId) for aria linkage. */
-  idPrefix?: string;
 }) {
-  const autoPrefix = React.useId();
-  const prefix = idPrefix ?? autoPrefix;
-  if (id !== activeId) return null;
+  const { idPrefix: prefix, value: activeId } = useTabsContext("TabPanel");
+  const inactive = id !== activeId;
   return (
     <div
       role="tabpanel"
       id={`${prefix}-tabpanel-${id}`}
       aria-labelledby={`${prefix}-tab-${id}`}
+      hidden={inactive}
       className={className}
     >
       {children}
