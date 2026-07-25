@@ -453,7 +453,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   posture unchanged.
 
 ### AT-038 — Automated Paper-Signal Orchestration v1
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-037, Slice 80/81,
+- Priority: P1 · Status: DONE · Dependencies: AT-037, Slice 80/81,
   ProposalService, KillSwitchService · Risk: Medium (orchestration surface;
   must remain paper-only)
 - Safety classification: Paper-safe (no order mutation; no live mode)
@@ -461,18 +461,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   plans and optional approval-gated paper proposals through a deterministic,
   reviewable orchestration workflow with observe_only / candidate_only /
   approval_required modes.
-- Branch: `feat/at-038-paper-signal-orchestration`
+- Branch: `cursor/at-038-paper-signal-orchestration`
 - Deliverables: migration `p2e3f4a5b6c7`; `paper_signal_orchestration_decisions`;
   eligibility + orchestration service; routes under `/paper-signal-orchestration/*`;
   frontend `/paper-signal-orchestration`; tests
   `test_at038_paper_signal_orchestration.py` + frontend page tests;
   `docs/paper_signal_orchestration.md`; ADR-020.
-- Validation (local, pre-commit): disposable Postgres 16 migration
-  upgrade→downgrade→upgrade for `p2e3f4a5b6c7` OK; backend AT-038 (8) + AT-037 (9)
-  = 17 passed; frontend vitest 4/4; ruff + mypy --strict on AT-038 modules clean.
-  No deploy; no commit/push performed (REVIEW_REQUIRED).
+- Validation: PR #27 CI run 30160911227 success (backend, frontend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). Frontend flake fix: await
+  `paper-draft-candidate-link` inside `waitFor` after draft queue
+  (`4c2e49d`). No deploy; `PAPER_SIGNAL_ORCHESTRATION` not enabled on staging;
+  paper posture unchanged.
 - Recommended model: Cursor Grok 4.5
 - ADR: AT-ADR-020 (Accepted) · Docs: `docs/paper_signal_orchestration.md`
+- Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/27 merged
+  (`05b79ea`, CI run 30160911227). Head commit `4c2e49d`.
 
 ---
 
