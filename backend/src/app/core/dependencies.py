@@ -47,6 +47,7 @@ from app.services.paper_alert_service import PaperAlertService
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_portfolio_service import PaperPortfolioService
 from app.services.paper_scheduler_service import PaperSchedulerService
+from app.services.paper_signal_orchestration_service import PaperSignalOrchestrationService
 from app.services.paper_validation_candidate_service import PaperValidationCandidateService
 from app.services.paper_validation_draft_service import PaperValidationDraftService
 from app.services.paper_validation_run_plan_service import PaperValidationRunPlanService
@@ -75,7 +76,6 @@ from app.services.strategy_service import StrategyService
 from app.services.strategy_testability_service import StrategyTestabilityService
 from app.services.structure_from_text_service import StructureFromTextService
 from app.services.structured_rules_service import StructuredRulesService
-from app.services.paper_signal_orchestration_service import PaperSignalOrchestrationService
 from app.services.tradingview_signal_service import TradingViewSignalService
 from app.services.usage_service import UsageService
 from app.services.validation_priority import ValidationPriorityService
