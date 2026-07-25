@@ -1,27 +1,35 @@
 "use client";
 
-import { NotFinancialAdviceBanner } from "@/components/layout/NotFinancialAdviceBanner";
-import { BottomNav, Sidebar } from "@/components/layout/navigation";
+import { useState } from "react";
+
+import { CommandMenu } from "@/components/layout/CommandMenu";
+import { DesktopSidebar } from "@/components/layout/DesktopSidebar";
+import { MobileBottomNavigation } from "@/components/layout/MobileBottomNavigation";
+import { SecondaryNavigation } from "@/components/layout/SecondaryNavigation";
 import { TopBar } from "@/components/layout/TopBar";
-import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { AppProvider } from "@/contexts/AppContext";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const [commandOpen, setCommandOpen] = useState(false);
+
   return (
     <AppProvider>
-      <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
+      <div
+        data-testid="app-shell"
+        className="min-h-screen overflow-x-hidden bg-background text-text-primary"
+      >
         <div className="flex min-h-screen min-w-0">
-          <Sidebar />
-          <div className="flex min-h-screen min-w-0 flex-1 flex-col pb-20 lg:pb-0">
-            <TopBar />
+          <DesktopSidebar onOpenCommandMenu={() => setCommandOpen(true)} />
+          <div className="flex min-h-screen min-w-0 flex-1 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
+            <TopBar onOpenCommandMenu={() => setCommandOpen(true)} />
+            <SecondaryNavigation />
             <main className="mx-auto w-full min-w-0 max-w-content flex-1 space-y-section overflow-x-hidden px-gutter py-6 lg:px-gutter-lg">
-              <PaperModeBanner />
-              <NotFinancialAdviceBanner />
               {children}
             </main>
           </div>
         </div>
-        <BottomNav />
+        <MobileBottomNavigation />
+        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </div>
     </AppProvider>
   );

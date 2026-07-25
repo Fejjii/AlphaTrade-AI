@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  getDestinationId,
+  isNavLinkActive,
+  isPrimaryDestinationActive,
+  listReachableHrefs,
+  MOBILE_BOTTOM_DESTINATION_IDS,
+  MOBILE_MENU_DESTINATION_IDS,
+  PRIMARY_DESTINATIONS,
+  SECONDARY_NAV,
+} from "@/components/layout/navigation-config";
+import {
+  PHASE_B_CAPABILITY_PATHS,
+  PHASE_B_REDIRECTS,
+} from "@/lib/navigation/phase-b-redirects";
+
+describe("AT-040 Phase B navigation config", () => {
+  it("exposes exactly eight primary destinations", () => {
+    expect(PRIMARY_DESTINATIONS).toHaveLength(8);
+    expect(PRIMARY_DESTINATIONS.map((d) => d.id)).toEqual([
+      "dashboard",
+      "plan",
+      "signals",
+      "validate",
+      "journal",
+      "analyze",
+      "portfolio",
+      "settings",
+    ]);
+    const labels = PRIMARY_DESTINATIONS.map((d) => d.label);
+    expect(new Set(labels).size).toBe(8);
+  });
+
+  it("keeps mobile bottom destinations and menu destinations disjoint and complete", () => {
+    expect(MOBILE_BOTTOM_DESTINATION_IDS).toEqual([
+      "dashboard",
+      "signals",
+      "plan",
+      "portfolio",
+    ]);
+    expect(MOBILE_MENU_DESTINATION_IDS).toEqual([
+      "validate",
+      "journal",
+      "analyze",
+      "settings",
+    ]);
+    const combined = [...MOBILE_BOTTOM_DESTINATION_IDS, ...MOBILE_MENU_DESTINATION_IDS];
+    expect(new Set(combined).size).toBe(8);
+    expect(combined.sort()).toEqual(PRIMARY_DESTINATIONS.map((d) => d.id).sort());
+  });
+
+  it("maps key workflows to the correct primary destination", () => {
+    expect(getDestinationId("/")).toBe("dashboard");
+    expect(getDestinationId("/tradingview-signals")).toBe("signals");
+    expect(getDestinationId("/paper-validation/candidates")).toBe("validate");
+    expect(getDestinationId("/paper-validation/candidates/cand-1")).toBe("validate");
+    expect(getDestinationId("/paper-signal-orchestration")).toBe("signals");
+    expect(getDestinationId("/journal")).toBe("journal");
+    expect(getDestinationId("/journal/comparison")).toBe("analyze");
+    expect(getDestinationId("/backtests/bt-123")).toBe("validate");
+    expect(getDestinationId("/portfolio")).toBe("portfolio");
+    expect(getDestinationId("/settings")).toBe("settings");
+    expect(getDestinationId("/settings/billing")).toBe("settings");
+    expect(getDestinationId("/risk")).toBe("portfolio");
+    expect(getDestinationId("/workspace")).toBe("plan");
+  });
+
+  it("marks nested routes active without false dashboard matches", () => {
+    expect(isNavLinkActive("/paper-validation/candidates/abc", "/paper-validation/candidates")).toBe(
+      true,
+    );
+    expect(isNavLinkActive("/journal/import", "/journal")).toBe(false);
+    expect(isNavLinkActive("/", "/")).toBe(true);
+    expect(isNavLinkActive("/workspace", "/")).toBe(false);
+    const dashboard = PRIMARY_DESTINATIONS[0];
+    expect(isPrimaryDestinationActive("/", dashboard)).toBe(true);
+    expect(isPrimaryDestinationActive("/portfolio", dashboard)).toBe(false);
+  });
+
+  it("keeps advanced placements under destination secondary navigation", () => {
+    const signals = SECONDARY_NAV.find((g) => g.destinationId === "signals");
+    const validate = SECONDARY_NAV.find((g) => g.destinationId === "validate");
+    const settings = SECONDARY_NAV.find((g) => g.destinationId === "settings");
+    expect(signals?.items.some((i) => i.href === "/paper-signal-orchestration" && i.advanced)).toBe(
+      true,
+    );
+    expect(validate?.items.some((i) => i.href === "/research-validation" && i.advanced)).toBe(true);
+    expect(settings?.items.some((i) => i.href === "/settings/audit" && i.advanced)).toBe(true);
+    expect(settings?.items.some((i) => i.href === "/settings/exchange" && i.advanced)).toBe(true);
+  });
+
+  it("keeps required capabilities reachable from primary or secondary navigation", () => {
+    const reachable = new Set(listReachableHrefs());
+    for (const path of PHASE_B_CAPABILITY_PATHS) {
+      if (path.startsWith("/backtests/")) {
+        expect(getDestinationId(path)).toBe("validate");
+        continue;
+      }
+      expect(reachable.has(path) || getDestinationId(path) !== null).toBe(true);
+    }
+    expect(reachable.has("/tradingview-signals")).toBe(true);
+    expect(reachable.has("/paper-validation/candidates")).toBe(true);
+    expect(reachable.has("/paper-signal-orchestration")).toBe(true);
+    expect(reachable.has("/journal")).toBe(true);
+    expect(reachable.has("/journal/comparison")).toBe(true);
+    expect(reachable.has("/portfolio")).toBe(true);
+    expect(reachable.has("/settings")).toBe(true);
+    expect(reachable.has("/risk")).toBe(true);
+  });
+});
+
+describe("AT-040 Phase B redirects", () => {
+  it("defines Settings hub redirects without loops", () => {
+    expect(PHASE_B_REDIRECTS.length).toBeGreaterThan(0);
+    const sources = new Set(PHASE_B_REDIRECTS.map((r) => r.source));
+    const destinations = new Set(PHASE_B_REDIRECTS.map((r) => r.destination));
+    for (const rule of PHASE_B_REDIRECTS) {
+      expect(rule.source).not.toBe(rule.destination);
+      expect(rule.destination.startsWith("/settings/")).toBe(true);
+      expect(destinations.has(rule.source)).toBe(false);
+    }
+    expect(sources.has("/billing")).toBe(true);
+    expect(sources.has("/usage")).toBe(true);
+    expect(sources.has("/invitations")).toBe(true);
+    expect(sources.has("/audit")).toBe(true);
+    expect(sources.has("/exchange")).toBe(true);
+  });
+
+  it("does not redirect dynamic capability IDs or paper-validation paths", () => {
+    for (const rule of PHASE_B_REDIRECTS) {
+      expect(rule.source.includes("[")).toBe(false);
+      expect(rule.source.startsWith("/paper-validation")).toBe(false);
+      expect(rule.source.startsWith("/backtests")).toBe(false);
+      expect(rule.source.startsWith("/strategy-lab")).toBe(false);
+    }
+  });
+
+  it("preserves query parameters by using path-only redirect sources", () => {
+    for (const rule of PHASE_B_REDIRECTS) {
+      expect(rule.source.includes("?")).toBe(false);
+      expect(rule.destination.includes("?")).toBe(false);
+    }
+  });
+});

@@ -100,7 +100,7 @@ export default function BillingPage() {
 
           <QuotaPanel quota={data.quota} />
           <p className="text-xs text-zinc-500">
-            <Link href="/usage" className="text-emerald-400 hover:underline">
+            <Link href="/settings/usage" className="text-emerald-400 hover:underline">
               View full usage dashboard
             </Link>{" "}
             for cost source labels and event history.

@@ -38,7 +38,7 @@ vi.mock("@/components/RiskBadge", () => ({
   RiskBadge: () => <span>Risk</span>,
 }));
 
-describe("TopBar PaperModeIndicator", () => {
+describe("TopBar status strip PaperModeIndicator", () => {
   beforeEach(() => {
     posture.executionMode = "paper";
     posture.realTradingEnabled = false;
@@ -49,6 +49,7 @@ describe("TopBar PaperModeIndicator", () => {
 
   it("shows confirmed paper when /health verifies paper posture", () => {
     render(<TopBar />);
+    expect(screen.getByTestId("status-strip")).toBeInTheDocument();
     expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
       "aria-label",
       "Paper mode active",
@@ -82,5 +83,11 @@ describe("TopBar PaperModeIndicator", () => {
       "aria-label",
       "Paper mode not confirmed",
     );
+  });
+
+  it("keeps real-trading-disabled and advice messaging in the status strip", () => {
+    render(<TopBar />);
+    expect(screen.getByText("Real OFF")).toBeInTheDocument();
+    expect(screen.getByTestId("status-strip-advice")).toHaveTextContent("Not financial advice");
   });
 });
