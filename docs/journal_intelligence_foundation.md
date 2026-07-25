@@ -84,8 +84,9 @@ Design decisions (recorded as AT-ADR-012 in `.ai/DECISIONS.md`):
   journal row is the canonical *intelligence* record that unifies them. Cross-tenant link
   attempts return 404 (fail closed, no existence leak).
 - **Human-vs-system comparison** is expressed by the plan-vs-execution split plus the
-  proposal/position links already consumed by `HumanVsSystemService`; a dedicated
-  journal-trade comparison endpoint is a roadmap slice, not duplicated logic now.
+  proposal/position links already consumed by `HumanVsSystemService`. AT-036 adds
+  aggregate cohort/scorecard comparison on `GET /journal/comparison` (recorded journal
+  fields only); per-trade orchestration remains `/human-vs-system/{id}` (Slice 36).
 - **MFE/MAE are stored, not fetched.** Values must come from deterministic inputs
   (manual entry or AT-032 HistoricalCandle replay). `realized_vs_available_pct` is
   derived arithmetic (`net_pnl / available_profit * 100`) unless explicitly provided.
@@ -315,12 +316,52 @@ additionally user-scoped. New audit events: `JOURNAL_IMPORT_COMPLETED`,
   supports `dry_run`/`failed` for forward compatibility; only `committed` rows are
   written today).
 
-## 7. Roadmap — remaining slices
+## 7. Human-vs-system decision quality slice (AT-036 — implemented)
 
-1. **Human-vs-system slice.** Journal-trade-native comparison endpoint reusing
-   `HumanVsSystemService` analyzers over `linked_proposal_id`/`linked_position_id`;
-   rule-check auto-suggestions from `UserStrategyVersion.structured_rules`; lesson
-   candidate generation from violated rule checks.
+Aggregate human-vs-system performance and decision-quality comparison over closed
+canonical journal trades. Extends AT-034 `GET /journal/comparison` (backward
+compatible) — record-only; no `HumanVsSystemService` per-trade orchestration.
+
+| Layer | Artifact |
+|---|---|
+| Service | `services/journal_statistics_service.py` — `compare_cohorts` extended with
+  `DecisionQualityMetrics`, actor scorecards, dimension buckets, setup/regime
+  breakdowns, navigation links, warning rollup |
+| Schemas | `schemas/backtest.py` — `DecisionQualityMetrics`, `ComparisonScorecard`,
+  `ComparisonDimensionBucket`, `ComparisonBreakdown`, `ComparisonLinks`;
+  `schemas/journal_statistics.py` — `PARTIAL_TIMING_DATA`, `PARTIAL_MISSED_PROFIT_DATA` |
+| Repository | `repositories/journal_trades.py` — stats row projection adds
+  `planned_entry_price`, `entry_price`, `direction`, `realized_vs_available_pct` |
+| API | `GET /journal/comparison` — new query params: `market_regime`, `entry_method`,
+  `source`, `breakdown_limit`; `ReaderDep`; tenant-scoped |
+| Frontend | `/journal/comparison` — cohort cards, actor scorecards, decision-quality
+  summary, dimension buckets, breakdowns, filters, related links |
+| Tests | `tests/test_at036_journal_comparison.py`; `journal/comparison/page.test.tsx` |
+
+Semantics (deterministic, conservative — see AT-ADR-018):
+
+- **Cohort mapping (AT-034 preserved):** `human` = manual + imported +
+  paper_execution; `paper_system` = paper_validation; `backtest` = backtest.
+- **Actor scorecards:** `human` = same as human cohort; `system` = paper_validation +
+  backtest + system.
+- **Decision quality** from recorded journal fields only: entry timing % (planned vs
+  actual), early-exit rate (capture &lt; 50%), missed profit (available &gt; net PnL),
+  average capture %. Partial-data warnings when sample &lt; trade count.
+- **Rule compliance buckets** use worst-assessment classification (AT-031).
+- **Breakdowns** capped by `breakdown_limit` (default 10), sorted by trade count desc.
+- **Per-trade `/human-vs-system/{id}`** remains Slice 36 — not replaced by this slice.
+
+## 8. Roadmap — remaining slices
+
+1. **Human-vs-system slice (aggregate delivered — AT-036).** `GET /journal/comparison`
+   extended with AT-036 decision-quality metrics, human/system actor scorecards,
+   dimension buckets (entry method, source, rule compliance), setup/regime
+   breakdowns, and frontend `/journal/comparison` page. Record-only aggregates
+   over canonical journal fields — does **not** invoke `HumanVsSystemService`
+   per-trade analyzers. Per-trade `/human-vs-system/{id}` orchestration remains
+   Slice 36. Future: rule-check auto-suggestions from
+   `UserStrategyVersion.structured_rules`; lesson candidate generation from
+   violated rule checks.
 2. **Backtesting integration slice (delivered — AT-034).** Deterministic backtest v2
    (`ENGINE_VERSION=at034-2.0.0`) with frozen `config_snapshot`/`config_hash`,
    immutable `backtest_datasets`, walk-forward holdout/rolling splits, long+short

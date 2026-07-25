@@ -17,12 +17,20 @@ from app.schemas.common import (
     BacktestRecommendation,
     BacktestRunStatus,
     BacktestSplitLabel,
+    JournalEntryMethod,
+    JournalTradeSource,
+    MarketRegime,
     ORMModel,
     StrictModel,
     Timeframe,
     TradeDirection,
 )
-from app.schemas.journal_statistics import JournalTradeStatsMetrics
+from app.schemas.journal_statistics import (
+    ExecutionActor,
+    JournalStatsWarning,
+    JournalTradeStatsMetrics,
+    SampleConfidence,
+)
 
 
 class BacktestSplitMode(StrEnum):
@@ -272,6 +280,13 @@ class JournalComparisonCohort(StrEnum):
     BACKTEST = "backtest"
 
 
+class ComparisonBreakdownDimension(StrEnum):
+    """Breakdown dimensions for AT-036 journal comparison."""
+
+    SETUP = "setup"
+    MARKET_REGIME = "market_regime"
+
+
 class JournalComparisonFilters(StrictModel):
     strategy_id: UUID | None = None
     strategy_version_id: UUID | None = None
@@ -280,6 +295,9 @@ class JournalComparisonFilters(StrictModel):
     timeframe: str | None = Field(default=None, max_length=8)
     date_from: datetime | None = None
     date_to: datetime | None = None
+    market_regime: MarketRegime | None = None
+    entry_method: JournalEntryMethod | None = None
+    source: JournalTradeSource | None = None
 
 
 class JournalComparisonCohortResult(StrictModel):
@@ -289,14 +307,70 @@ class JournalComparisonCohortResult(StrictModel):
     truncated: bool = False
 
 
+class DecisionQualityMetrics(StrictModel):
+    """Record-only entry timing, early-exit, and missed-profit aggregates (AT-036)."""
+
+    timing_sample_count: int = 0
+    average_entry_timing_pct: float | None = None
+    early_exit_sample_count: int = 0
+    early_exit_count: int | None = None
+    early_exit_rate: float | None = None
+    missed_profit_sample_count: int = 0
+    average_missed_profit: Decimal | None = None
+    average_capture_pct: float | None = None
+    warnings: list[JournalStatsWarning] = Field(default_factory=list)
+
+
+class ComparisonScorecard(StrictModel):
+    actor: ExecutionActor
+    metrics: JournalTradeStatsMetrics
+    decision_quality: DecisionQualityMetrics
+    sample_count: int = Field(ge=0)
+    truncated: bool = False
+
+
+class ComparisonDimensionBucket(StrictModel):
+    key: str
+    group_id: UUID | None = None
+    label: str
+    metrics: JournalTradeStatsMetrics
+    sample_count: int = Field(ge=0)
+
+
+class ComparisonBreakdown(StrictModel):
+    dimension: ComparisonBreakdownDimension
+    buckets: list[ComparisonDimensionBucket]
+
+
+class ComparisonLinks(StrictModel):
+    """Frontend paths (not API URLs) for related journal / research surfaces."""
+
+    journal_trades_path: str = "/journal"
+    journal_statistics_path: str = "/journal/statistics"
+    journal_comparison_path: str = "/journal/comparison"
+    backtests_path: str = "/backtests"
+    research_validation_path: str = "/research-validation"
+    paper_validation_candidates_path: str = "/paper-validation/candidates"
+
+
 class JournalComparisonResponse(StrictModel):
     filters: JournalComparisonFilters
     cohorts: list[JournalComparisonCohortResult]
+    scorecards: list[ComparisonScorecard] = Field(default_factory=list)
+    by_entry_method: list[ComparisonDimensionBucket] = Field(default_factory=list)
+    by_source: list[ComparisonDimensionBucket] = Field(default_factory=list)
+    rule_compliance: list[ComparisonDimensionBucket] = Field(default_factory=list)
+    decision_quality: DecisionQualityMetrics = Field(default_factory=DecisionQualityMetrics)
+    breakdowns: list[ComparisonBreakdown] = Field(default_factory=list)
+    links: ComparisonLinks = Field(default_factory=ComparisonLinks)
+    confidence: SampleConfidence = SampleConfidence.INSUFFICIENT
+    warnings: list[JournalStatsWarning] = Field(default_factory=list)
     max_rows: int
     generated_at: datetime
     note: str = (
-        "Record-only cohort comparison over canonical journal trades. "
-        "Advisory only — never feeds execution or risk decisions."
+        "Record-only human-vs-system performance and decision-quality comparison "
+        "(AT-036) over canonical journal trades. Advisory only — never feeds "
+        "execution or risk decisions."
     )
 
 

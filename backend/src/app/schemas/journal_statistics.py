@@ -92,6 +92,8 @@ class JournalStatsWarningCode(StrEnum):
     NO_LOSING_TRADES = "no_losing_trades"
     PARTIAL_EXCURSION_DATA = "partial_excursion_data"
     PARTIAL_CAPTURE_DATA = "partial_capture_data"
+    PARTIAL_TIMING_DATA = "partial_timing_data"
+    PARTIAL_MISSED_PROFIT_DATA = "partial_missed_profit_data"
     RESULT_TRUNCATED = "result_truncated"
 
 

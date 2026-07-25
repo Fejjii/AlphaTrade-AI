@@ -516,3 +516,42 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Validation:** Disposable Postgres 16 migration upgrade/downgrade/upgrade cycle;
   partial unique index verified; duplicate active promotion blocked at DB layer;
   targeted pytest + ruff + frontend research-validation tests; CI on merge PR.
+
+## AT-ADR-018 — Aggregate journal comparison decision quality vs per-trade HumanVsSystemService (AT-036)
+- **Date:** 2026-07-25
+- **Status:** Accepted
+- **Context:** AT-034 delivers three-cohort journal comparison (`human`,
+  `paper_system`, `backtest`) over closed canonical trades. Users need aggregate
+  decision-quality metrics (entry timing, early exits, missed profit, capture) and
+  human-vs-system actor scorecards without invoking per-trade
+  `HumanVsSystemService` orchestration on every list request. Slice 36
+  `/human-vs-system/{id}` remains the per-trade analyzer surface.
+- **Decision:**
+  1. **Extend existing endpoint.** Add AT-036 fields to `GET /journal/comparison`
+     — backward compatible; preserve AT-034 `cohorts` with three keys.
+  2. **Recorded fields only.** Decision quality computed from journal columns
+     (`planned_entry_price`, `entry_price`, `direction`, `available_profit`,
+     `net_pnl`, `realized_vs_available_pct`) — no live market I/O, no proposal
+     linkage required for aggregates.
+  3. **Actor scorecards.** `human` = manual + imported + paper_execution;
+     `system` = paper_validation + backtest + system (decision-authority mapping
+     from AT-031).
+  4. **Dimension buckets.** `by_entry_method`, `by_source`, `rule_compliance`
+     (worst-assessment), plus capped setup/regime `breakdowns`.
+  5. **Warnings.** Reuse AT-031 confidence thresholds; add `PARTIAL_TIMING_DATA`
+     and `PARTIAL_MISSED_PROFIT_DATA` when subsamples are partial.
+  6. **Frontend paths in `links`.** Echo filters for journal statistics and
+     comparison; link to research-validation and paper-validation candidates.
+  7. **Paper-only / ReaderDep.** Advisory record-only; never feeds execution or
+     risk; tenant-scoped like AT-034.
+- **Alternatives considered:** New dedicated endpoint (rejected: fragments
+  comparison UX and duplicates filters); invoke `HumanVsSystemService` per trade in
+  list (rejected: heavy, needs proposal links, exceeds aggregate scope); replace
+  Slice 36 per-trade API (rejected: different granularity and analyzer depth).
+- **Safety impact:** Record-only; paper posture unchanged; no risk/execution
+  module changes.
+- **Consequences:** No migration required (reuses AT-031/034 indexes and journal
+  columns). Docs in `docs/journal_intelligence_foundation.md` §7,
+  `docs/human_vs_system.md`, `docs/backtesting.md`. Tests in
+  `test_at036_journal_comparison.py` and frontend comparison page tests.
+- **Validation:** Targeted backend + frontend tests on feature branch; no deploy.
