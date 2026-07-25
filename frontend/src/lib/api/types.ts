@@ -2100,6 +2100,100 @@ export type ResearchValidationEvidenceParams = {
   strategy_version_id?: string;
 };
 
+export type TradingViewSignalStatus =
+  | "received"
+  | "validated"
+  | "rejected"
+  | "duplicate"
+  | "candidate_created";
+
+export interface TradingViewSignalLinks {
+  setup_definition_id: string | null;
+  strategy_id: string | null;
+  strategy_version_id: string | null;
+  source_alert_id: string | null;
+  draft_id: string | null;
+  candidate_id: string | null;
+  journal_trade_id: string | null;
+  backtest_run_id: string | null;
+  paper_candidate_path: string | null;
+  strategy_path: string | null;
+  journal_path: string | null;
+}
+
+export interface TradingViewSignalItem {
+  id: string;
+  organization_id: string;
+  external_alert_id: string;
+  idempotency_key: string;
+  status: TradingViewSignalStatus;
+  symbol: string;
+  timeframe: string;
+  direction: string;
+  setup_name: string | null;
+  setup_version: number | null;
+  setup_definition_id: string | null;
+  strategy_id: string | null;
+  strategy_version_id: string | null;
+  trigger_level: number | null;
+  invalidation_level: number | null;
+  take_profit_level: number | null;
+  stop_loss_level: number | null;
+  confidence: number | null;
+  source_metadata: Record<string, unknown> | null;
+  validation_errors: string[] | null;
+  rejection_reason: string | null;
+  received_at: string;
+  validated_at: string | null;
+  occurred_at: string | null;
+  duplicate_of_signal_id: string | null;
+  links: TradingViewSignalLinks;
+  note: string;
+}
+
+export interface TradingViewSignalListResponse {
+  items: TradingViewSignalItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TradingViewSignalCreateCandidateResult {
+  signal: TradingViewSignalItem;
+  candidate_id: string;
+  draft_id: string;
+  source_alert_id: string;
+  already_exists: boolean;
+  note: string;
+}
+
+export type BloFinSyncHealthStatus = "ok" | "degraded" | "stale" | "unavailable";
+
+export interface BloFinSyncSnapshotItem {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  synced_at: string;
+  health_status: BloFinSyncHealthStatus;
+  provider: string;
+  exchange_mode: string;
+  account_snapshot: Record<string, unknown>;
+  positions_snapshot: Record<string, unknown>;
+  market_context: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  is_stale: boolean;
+  stale_reason: string | null;
+  error_summary: string | null;
+  position_count: number;
+  balance_count: number;
+  note: string;
+}
+
+export interface BloFinSyncResult {
+  snapshot: BloFinSyncSnapshotItem;
+  note: string;
+}
+
 export interface PaperValidationMetrics {
   paper_trades_count: number;
   win_rate: number;

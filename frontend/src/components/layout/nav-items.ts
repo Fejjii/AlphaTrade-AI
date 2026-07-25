@@ -68,6 +68,7 @@ export const navSections: readonly NavSection[] = [
       { href: "/learning-analytics", label: "Learning Analytics", icon: Brain },
       { href: "/validation-priority", label: "Validation Priority", icon: ListChecks },
       { href: "/research-validation", label: "Research Validation", icon: Microscope },
+      { href: "/tradingview-signals", label: "TradingView Signals", icon: Radio },
       { href: "/coaching", label: "Coaching", icon: GraduationCap },
       { href: "/lessons", label: "Lessons", icon: ListChecks },
       { href: "/strategy-quality", label: "Strategy Quality", icon: Gauge },

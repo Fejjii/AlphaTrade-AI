@@ -425,6 +425,29 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   https://github.com/Fejjii/AlphaTrade-AI/pull/25; CI run 30139404763 success.
   No deploy; paper posture unchanged.
 
+### AT-037 — TradingView Signal Intake and BloFin Read-Only Synchronisation v1
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-035, Slice 80, BloFin demo
+  account provider · Risk: Medium (webhook surface; exchange read path)
+- Safety classification: Paper-safe / demo read-only (no order mutation)
+- Goal: Secure TradingView signed webhook intake with idempotent signal lifecycle,
+  optional paper-validation candidate routing, plus BloFin demo read-only
+  account/position/market-context sync. No order placement.
+- Branch: `feat/at-037-tradingview-blofin-sync`
+- Deliverables: migration `o1d2e3f4a5b6`; `tradingview_signals` +
+  `blofin_demo_sync_snapshots`; `tradingview_signal_service`, `blofin_sync_service`,
+  signature helper; routes `POST /webhooks/tradingview`,
+  `GET/POST /tradingview/signals*`, `POST/GET /exchange/blofin/sync*`;
+  frontend `/tradingview-signals` + BloFin sync panel; tests
+  `test_at037_tradingview_blofin.py` + frontend tests; `docs/tradingview_blofin_sync.md`;
+  ADR-019.
+- Validation (pre-commit): `test_at037_tradingview_blofin.py` 9 passed; integrated
+  AT-037+AT-035+blofin_provider 71 passed; ruff clean on touched modules; mypy
+  --strict on AT-037 modules clean; frontend vitest 9 passed
+  (tradingview-signals + BloFinSyncPanel). No deploy; no live trading.
+  Stopped at REVIEW_REQUIRED (no commit/push).
+- Recommended model: Cursor Grok 4.5
+- ADR: AT-ADR-019 · Docs: `docs/tradingview_blofin_sync.md`
+
 ---
 
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)

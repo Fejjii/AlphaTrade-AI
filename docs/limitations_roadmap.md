@@ -35,6 +35,10 @@
 - **Paper eligibility (Slice 38):** conservative gates via `/paper-eligibility`; `paper_validated` does **not** enable live trading.
 - Human-vs-system: per-trade `/human-vs-system/{id}` (Slice 36) still has estimate/placeholder
   limitations; AT-036 adds aggregate journal comparison decision-quality over recorded fields only.
+- **TradingView intake (AT-037):** signed webhook + inbox only; optional paper-candidate creation;
+  never creates live orders. Disabled by default (`TRADINGVIEW_WEBHOOK_ENABLED=false`).
+- **BloFin demo sync (AT-037):** read-only account/position snapshots; no order place/cancel/modify;
+  demo exchange posture only; stale/unavailable states degrade conservatively.
 - Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
 - Playwright E2E: **API workflow in CI**; full browser tour optional locally (skipped in CI).
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.

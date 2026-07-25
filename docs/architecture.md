@@ -105,6 +105,15 @@ chat, RAG ingest, market analyze, narrative, and paper execution. See
 - Routes: `/billing/*` (OWNER for customer, checkout, portal, usage export); webhook signature verification in Stripe mode.
 - Frontend `/billing` page; no live charges unless billing enabled and provider confirms live mode.
 
+## TradingView intake + BloFin demo sync (AT-037)
+
+- Signed webhook `POST /webhooks/tradingview` (HMAC + timestamp skew + idempotency); org-scoped
+  `tradingview_signals` lifecycle; optional paper-candidate creation only.
+- BloFin demo read-only sync: `POST/GET /exchange/blofin/sync*`; persists bounded snapshots with
+  provenance/health; never calls execution APIs.
+- Frontend: `/tradingview-signals` inbox; BloFin sync panel on `/exchange`.
+- See [tradingview_blofin_sync.md](tradingview_blofin_sync.md).
+
 See [agent_workflow.md](agent_workflow.md) and [demo_script.md](demo_script.md).
 
 ## Dashboard summary (Slice 44)

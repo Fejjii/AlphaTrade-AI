@@ -1,5 +1,6 @@
 "use client";
 
+import { BloFinSyncPanel } from "@/components/BloFinSyncPanel";
 import { ExchangeDiagnosticsCard } from "@/components/ExchangeDiagnosticsCard";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -13,10 +14,14 @@ export default function ExchangeDiagnosticsPage() {
 
   if (loading) return <LoadingState label="Loading exchange diagnostics…" />;
   if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
-  if (!data) return <ErrorState message="Exchange diagnostics unavailable." onRetry={() => void reload()} />;
+  if (!data) {
+    return (
+      <ErrorState message="Exchange diagnostics unavailable." onRetry={() => void reload()} />
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-50">Exchange diagnostics</h1>
         <p className="text-sm text-zinc-400">
@@ -24,6 +29,7 @@ export default function ExchangeDiagnosticsPage() {
         </p>
       </div>
       <ExchangeDiagnosticsCard diagnostics={data} />
+      <BloFinSyncPanel />
     </div>
   );
 }

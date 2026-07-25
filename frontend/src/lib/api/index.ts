@@ -160,9 +160,16 @@ import type {
   ResearchValidationEvidenceResponse,
   ResearchValidationPromoteResult,
   ResearchValidationStatusResponse,
+  TradingViewSignalCreateCandidateResult,
+  TradingViewSignalItem,
+  TradingViewSignalListResponse,
+  TradingViewSignalStatus,
+  BloFinSyncResult,
+  BloFinSyncSnapshotItem,
 } from "@/lib/api/types";
 
 export const PROMOTE_RESEARCH_VALIDATION_CANDIDATE = "PROMOTE_RESEARCH_VALIDATION_CANDIDATE";
+export const CREATE_TRADINGVIEW_PAPER_CANDIDATE = "CREATE_TRADINGVIEW_PAPER_CANDIDATE";
 
 export const api = {
   auth: {
@@ -242,6 +249,33 @@ export const api = {
   exchange: {
     diagnosticsSummary: () =>
       apiFetch<ExchangeDiagnosticsSummary>("/exchange/diagnostics/summary", { auth: true }),
+    blofinSync: () =>
+      apiFetch<BloFinSyncResult>("/exchange/blofin/sync", { method: "POST", auth: true }),
+    blofinSyncLatest: () =>
+      apiFetch<BloFinSyncSnapshotItem>("/exchange/blofin/sync/latest", { auth: true }),
+  },
+  tradingview: {
+    listSignals: (params?: {
+      status?: TradingViewSignalStatus;
+      symbol?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      apiFetch<TradingViewSignalListResponse>("/tradingview/signals", {
+        query: params,
+        auth: true,
+      }),
+    getSignal: (id: string) =>
+      apiFetch<TradingViewSignalItem>(`/tradingview/signals/${id}`, { auth: true }),
+    createCandidate: (id: string, body: { confirm: string }) =>
+      apiFetch<TradingViewSignalCreateCandidateResult>(
+        `/tradingview/signals/${id}/create-candidate`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
   },
   chat: {
     message: (body: { message: string; conversation_id?: string; symbol?: string; timeframe?: string }) =>
