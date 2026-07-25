@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError, CREATE_TRADINGVIEW_PAPER_CANDIDATE } from "@/lib/api";
 import type {
@@ -84,7 +84,7 @@ export default function TradingViewSignalsPage() {
   if (data.forbidden) {
     return (
       <div data-testid="tradingview-signals-forbidden" className="space-y-section">
-        <PageHeader title="TradingView Signals" meta={<PaperModeIndicator />} />
+        <PageHeader title="TradingView Signals" meta={<VerifiedPaperModeIndicator />} />
         <UnavailableState message="You do not have permission to view TradingView signals." />
       </div>
     );
@@ -97,7 +97,7 @@ export default function TradingViewSignalsPage() {
       <PageHeader
         title="TradingView Signals"
         description="Signed webhook intake inbox. Paper validation only — never creates live orders."
-        meta={<PaperModeIndicator />}
+        meta={<VerifiedPaperModeIndicator />}
       />
 
       {items.length === 0 ? (

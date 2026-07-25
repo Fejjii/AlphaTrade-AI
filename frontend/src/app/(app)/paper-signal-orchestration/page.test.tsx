@@ -78,6 +78,18 @@ let asyncState: {
   error: string | null;
 };
 
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "mock",
+  postureKnown: true,
+};
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ health: null, providers: { providers: [] } }),
+  useSafetyPosture: () => safetyPosture,
+}));
+
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
     data: asyncState.data,
@@ -106,6 +118,9 @@ describe("PaperSignalOrchestrationPage", () => {
     mockList.mockReset();
     mockApprove.mockReset();
     mockReload.mockReset();
+    safetyPosture.executionMode = "paper";
+    safetyPosture.realTradingEnabled = false;
+    safetyPosture.postureKnown = true;
     asyncState = {
       data: { forbidden: false, data: sampleList },
       loading: false,
@@ -115,6 +130,25 @@ describe("PaperSignalOrchestrationPage", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("shows paper mode only when runtime safety is verified", () => {
+    render(<PaperSignalOrchestrationPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+  });
+
+  it("fails closed when runtime safety is missing", () => {
+    safetyPosture.executionMode = null;
+    safetyPosture.realTradingEnabled = null;
+    safetyPosture.postureKnown = false;
+    render(<PaperSignalOrchestrationPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
+    );
   });
 
   it("renders queue and progressive disclosure for checks", () => {

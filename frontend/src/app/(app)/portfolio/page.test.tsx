@@ -7,6 +7,18 @@ import { samplePortfolio } from "./sample-portfolio";
 const portfolioMock = vi.fn();
 const useAsyncDataMock = vi.fn();
 
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "mock",
+  postureKnown: true,
+};
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ health: null, providers: { providers: [] } }),
+  useSafetyPosture: () => safetyPosture,
+}));
+
 vi.mock("@/lib/api", () => ({
   api: {
     performance: {
@@ -27,6 +39,9 @@ describe("PaperPortfolioPage Slice 91B", () => {
   });
 
   beforeEach(() => {
+    safetyPosture.executionMode = "paper";
+    safetyPosture.realTradingEnabled = false;
+    safetyPosture.postureKnown = true;
     useAsyncDataMock.mockReturnValue({
       data: samplePortfolio,
       loading: false,
@@ -50,6 +65,55 @@ describe("PaperPortfolioPage Slice 91B", () => {
     expect(screen.getByTestId("portfolio-current-equity")).toHaveTextContent("10,450");
     expect(screen.getByTestId("portfolio-realized-pnl")).toHaveTextContent("450");
     expect(screen.getByTestId("portfolio-win-rate")).toHaveTextContent("66.7%");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+  });
+
+  it("fails closed when portfolio safety and posture are not paper", () => {
+    useAsyncDataMock.mockReturnValue({
+      data: {
+        ...samplePortfolio,
+        safety: {
+          ...samplePortfolio.safety,
+          execution_mode: "live",
+          real_trading_enabled: true,
+          paper_only: false,
+        },
+      },
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    });
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
+    );
+  });
+
+  it("uses LimitationsState for analytical limitations, not StaleState", () => {
+    useAsyncDataMock.mockReturnValue({
+      data: {
+        ...samplePortfolio,
+        account: {
+          ...samplePortfolio.account,
+          limitations: ["Methodology excludes funding on open trades"],
+        },
+      },
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    });
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-portfolio-limitations")).toBeInTheDocument();
+    expect(screen.getByTestId("limitations-state")).toHaveTextContent("Limitations");
+    expect(screen.getByTestId("limitations-state")).toHaveTextContent(
+      "Methodology excludes funding on open trades",
+    );
+    expect(screen.queryByTestId("stale-state")).not.toBeInTheDocument();
+    expect(screen.getByTestId("limitations-state")).not.toHaveTextContent("Stale data");
   });
 
   it("renders charts and breakdown tables", () => {

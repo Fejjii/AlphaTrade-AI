@@ -1,4 +1,4 @@
-import { AlertTriangle, Ban, Clock, Inbox, ShieldOff } from "lucide-react";
+import { AlertTriangle, Ban, Clock, Inbox, Info, ShieldOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SkeletonCard } from "@/components/ui/skeleton";
@@ -113,6 +113,48 @@ export function StaleState({
         <div>
           <p className="font-medium">Stale data{ageLabel ? ` · ${ageLabel}` : ""}</p>
           <p className="mt-1 text-text-secondary">{message}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Neutral advisory for analytical / coverage / methodology limitations.
+ * Not a freshness warning — do not use for stale/delayed market data.
+ */
+export function LimitationsState({
+  title = "Limitations",
+  message = "Some metrics carry explicit limitations — treat values as incomplete.",
+  items,
+  className,
+}: {
+  title?: string;
+  message?: string;
+  items?: string[];
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="limitations-state"
+      className={cn(
+        "rounded-card border border-border bg-surface-1 px-4 py-3 text-sm text-text-primary",
+        className,
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium text-text-primary">{title}</p>
+          <p className="text-text-secondary">{message}</p>
+          {items && items.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-caption text-text-secondary">
+              {items.map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       </div>
     </div>

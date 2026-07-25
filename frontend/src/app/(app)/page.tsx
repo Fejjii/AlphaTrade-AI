@@ -16,7 +16,10 @@ import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import {
+  isPaperModeConfirmed,
+  PaperModeIndicator,
+} from "@/components/ui/paper-mode-indicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -291,10 +294,10 @@ export default function DashboardPage() {
         description="Your paper-only trading workspace — strategy readiness, discipline, and what to do next."
         meta={
           <PaperModeIndicator
-            active={
-              (summary?.safety.execution_mode ?? executionMode) === "paper" &&
-              (summary?.safety.real_trading_enabled ?? realTradingEnabled) === false
-            }
+            active={isPaperModeConfirmed(
+              summary?.safety.execution_mode ?? executionMode,
+              summary?.safety.real_trading_enabled ?? realTradingEnabled,
+            )}
           />
         }
       />

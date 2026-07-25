@@ -66,6 +66,18 @@ let asyncState: {
   error: string | null;
 };
 
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "mock",
+  postureKnown: true,
+};
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ health: null, providers: { providers: [] } }),
+  useSafetyPosture: () => safetyPosture,
+}));
+
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
     data: asyncState.data,
@@ -92,6 +104,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 describe("TradingViewSignalsPage AT-037", () => {
   beforeEach(() => {
+    safetyPosture.executionMode = "paper";
+    safetyPosture.realTradingEnabled = false;
+    safetyPosture.postureKnown = true;
     asyncState = {
       data: { forbidden: false, data: sampleList },
       loading: false,
@@ -102,6 +117,25 @@ describe("TradingViewSignalsPage AT-037", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it("shows paper mode only when runtime safety is verified", () => {
+    render(<TradingViewSignalsPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+  });
+
+  it("fails closed when runtime safety is missing", () => {
+    safetyPosture.executionMode = null;
+    safetyPosture.realTradingEnabled = null;
+    safetyPosture.postureKnown = false;
+    render(<TradingViewSignalsPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
+    );
   });
 
   it("renders loading state", () => {

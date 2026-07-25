@@ -22,7 +22,12 @@ export {
 } from "./input";
 export { PageHeader, type PageHeaderProps } from "./page-header";
 export { Panel, PanelHeader, PanelTitle } from "./panel";
-export { PaperModeIndicator, type PaperModeIndicatorProps } from "./paper-mode-indicator";
+export {
+  isPaperModeConfirmed,
+  PaperModeIndicator,
+  VerifiedPaperModeIndicator,
+  type PaperModeIndicatorProps,
+} from "./paper-mode-indicator";
 export { RiskBlock, type RiskBlockProps } from "./risk-block";
 export { Skeleton, SkeletonCard, SkeletonText } from "./skeleton";
 export { TabPanel, Tabs, type TabItem, type TabsProps } from "./tabs";
