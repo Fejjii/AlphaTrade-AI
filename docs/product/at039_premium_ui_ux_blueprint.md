@@ -38,7 +38,38 @@ screens that expose every metric at once. This blueprint defines the target expe
 
 ---
 
-## 1. Product experience principles
+## 1. Target user, daily-use philosophy, and experience principles
+
+### 1.1 Target user
+
+AlphaTrade's primary user is a **single, self-directed trader running a paper-first
+learning system**: someone who takes TradingView and watcher signals seriously enough
+to validate them, journals their own trades, and wants an honest answer to "am I
+better than my system?". The same person switches between three modes during a day:
+
+- **Trader mode** (multiple short sessions daily, often mobile): triage signals,
+  approve/reject paper trades, check portfolio and risk state.
+- **Researcher mode** (longer desktop sessions): run validation pipelines, inspect
+  setup and backtest evidence, study analytics.
+- **Owner mode** (rare): billing, team invitations, risk configuration, diagnostics.
+
+The product is *not* designed for high-frequency execution, multi-account fund
+management, or passive "set and forget" automation — every trade decision is human.
+
+### 1.2 Daily-use philosophy
+
+The interface is organized around one repeating daily loop, not around features:
+
+**Triage signals → plan and approve (paper) → let validation/positions run →
+journal outcomes → review Human-vs-System and risk state.**
+
+Every session should be completable in minutes: Dashboard tells the user what the
+loop needs from them right now (signals awaiting triage, approvals pending, trades
+needing journaling, cooldowns active); each item deep-links straight into the
+relevant step. Anything not needed for today's loop — research tooling, orchestration
+diagnostics, configuration — is reachable but never in the way.
+
+### 1.3 Experience principles
 
 1. **Calm over dense.** A trading assistant should reduce cognitive load, not add to it.
    Each screen answers one question ("What needs my decision?", "How am I performing?").
@@ -186,11 +217,16 @@ Success: entry saved in ≤ 2 minutes; statistics and Human-vs-System update.
    to the underlying journal entries.
 Success: user can answer "where does the system beat me?" with linked evidence.
 
-### J5 — Inspect setup evidence
-1. From any signal, candidate, or proposal: **Evidence** tab in the detail panel.
+### J5 — Inspect setup and backtest evidence
+1. From any signal, candidate, playbook, or proposal: **Evidence** tab in the detail
+   panel.
 2. Shows detector scores with history (from strategy-quality data), validation run
    outcomes for this setup class, sample sizes, and freshness/provenance of every
    input. Low-sample or stale evidence is explicitly flagged.
+3. Linked **backtest results** (today's `/backtests/[id]`) open in context: equity
+   and drawdown for the setup's backtest, key stats (expectancy, profit factor, win
+   rate), and the parameters used — so historical evidence sits beside live
+   validation evidence, clearly labeled as historical simulation.
 Success: "why should I trust this?" answered on one screen without leaving context.
 
 ### J6 — Review portfolio, risk and cooldown state
@@ -226,7 +262,7 @@ current source of inconsistency and are phased out.
 - Existing, to be tokenized: `Button`, `Card`, `Badge`, `Input`.
 - To add (each replaces ≥ 3 ad-hoc implementations found in current pages):
   `PageHeader`, `Tabs`, `Sheet`/`Drawer`, `Dialog`, `Select`, `Table` (with mobile
-  card fallback, §8), `Skeleton`, `EmptyState` (exists informally — standardize),
+  card fallback, §7.2), `Skeleton`, `EmptyState` (exists informally — standardize),
   `Stat` (metric tile), `FreshnessPill`, `StatusBadge` (pass/warn/block/stale),
   `Toast`, `CommandMenu`, `ConfirmSheet` (for approvals), `Timeline` (audit/history).
 
@@ -310,11 +346,13 @@ position cards, stat tiles, and approval cards are all instances of this anatomy
 
 ## 8. Chart and analytics standards
 
+### 8.1 Charting stack and rendering standards
+
 - **One charting stack.** Adopt a single library — recommendation: **TradingView
   Lightweight Charts** for price/candle/level charts and **Recharts** for statistical
-  charts (equity curve, distributions) — added once, in a dedicated Phase (§11);
-  no per-page chart implementations. (Neither is currently installed; today's pages
-  are chartless or ad hoc, which caps the perceived quality.)
+  charts (equity curve, distributions) — added once, in Phase D (§13); no per-page
+  chart implementations. (Neither is currently installed; today's pages are chartless
+  or ad hoc, which caps the perceived quality.)
 - **Standards for every chart:** dark-theme tokens (§5.3), tabular-numeral axis
   labels, no gridline overload (y-axis only, muted), interactive crosshair with a
   single shared tooltip style, and an explicit **provenance caption** (source +
@@ -328,6 +366,41 @@ position cards, stat tiles, and approval cards are all instances of this anatomy
   same 32 px height, no axes, everywhere.
 - Empty analytic states show a labeled skeleton of the chart-to-be with the action
   that will populate it ("Close 5 journaled trades to unlock expectancy").
+
+### 8.2 Canonical metric catalog (one home per metric)
+
+Every analytics metric has exactly **one canonical surface** where it is fully
+rendered and explained. Other surfaces may reference it only as a compact `Stat`
+tile or sparkline that links to the canonical home — never as a second full chart.
+
+| Metric | Definition shown to user | Canonical home | Canonical form | Compact references allowed |
+|---|---|---|---|---|
+| **Equity curve** | Paper account value over time | Portfolio → Overview | Line chart with drawdown shading | Dashboard sparkline |
+| **Drawdown** | Peak-to-trough decline, current + max | Portfolio → Overview (paired with equity) | Underwater (drawdown) area chart | Stat tile in Analyze |
+| **Expectancy** | Average R per trade, with sample size | Analyze → Statistics | Stat + R-multiple histogram | Playbook/setup detail stat |
+| **Setup win rate** | Wins ÷ closed trades, per setup class | Analyze → Statistics (per-setup table) | Sorted bar/table with sample size | Evidence panel stat (J5) |
+| **Profit factor** | Gross profit ÷ gross loss | Analyze → Statistics | Stat with per-setup breakdown | Playbook detail stat |
+| **MFE / MAE** | Max favorable/adverse excursion per trade | Analyze → Statistics (trade-level drill-down) | Scatter (MFE vs. MAE) with R overlay | Journal entry detail values |
+| **Available-profit capture** | Realized P&L ÷ maximum available profit (from MFE) | Analyze → Statistics | Distribution + trend line | Journal entry detail value |
+| **Human vs System** | Side-by-side scorecards + divergence list | Analyze → Human vs System | Paired scorecards + divergence table | Dashboard summary tile |
+| **Risk & cooldown status** | Budget consumed, active cooldowns + causes | Portfolio → Risk & Cooldowns | Budget gauge + cooldown list with countdowns | Dashboard status chip; Plan ticket check row |
+| **Detector / setup quality** | Validation-derived quality scores over time | Analyze → Evidence | Score trend per detector | Evidence tab in Signals/Validate/Playbooks |
+
+### 8.3 Anti-duplication and chart-overload rules
+
+- **No metric is fully charted twice.** If two screens need the same metric, one gets
+  the canonical chart and the other gets a `Stat`/sparkline linking to it. Reviews
+  enforce this against the catalog above (§8.2).
+- **Chart budget:** at most **2 full-size charts per screen** without a disclosure
+  interaction (tab, expander, drill-down). Dashboards use sparklines and stat tiles,
+  not chart walls.
+- **Metric budget:** consistent with acceptance criterion 15 — no more than ~7
+  primary metrics visible per screen before progressive disclosure.
+- **No vanity duplication:** the same quantity may not appear under two names
+  (e.g. "avg R" and "expectancy" are one metric, labeled once, defined once).
+- **Every chart answers a stated question.** Chart titles are questions or plain
+  statements ("Are drawdowns shrinking?"), and any chart that cannot be tied to a
+  §4 journey or a catalog row is cut, not restyled.
 
 ---
 
@@ -362,7 +435,7 @@ Every data surface must implement all five, via primitives — no blank divs:
   elevation, desaturated accents so P&L colors don't glow.
 - All text/interactive contrast meets WCAG AA on `surface-0/1/2` (verified in CI or
   review checklist, not by eye).
-- A light theme is a token-swap deliverable in a later phase (§11), enabled by the
+- A light theme is a token-swap deliverable in Phase E (§13), enabled by the
   semantic-token architecture; `next-themes` (or equivalent) with
   `prefers-color-scheme` default and a Settings toggle. No component may hardcode a
   palette value — that is the enforcement rule that makes light mode cheap.
@@ -410,31 +483,43 @@ Every data surface must implement all five, via primitives — no blank divs:
 
 Phased by dependency, not calendar time. Each phase is independently shippable and
 leaves the app consistent (no half-migrated navigation states visible to users).
+The screen inventory assigns every route to one of these phases.
 
-- **Phase 0 — Tokens and primitives.** Introduce semantic color/type/spacing tokens
-  (§5.3, §6) and the primitive set (§5.2), including `PageHeader`, `FreshnessPill`,
-  `StatusBadge`, `Skeleton`, standardized `EmptyState`. No route changes. Risk: low;
-  purely additive.
-- **Phase 1 — Shell and navigation.** New 8-destination sidebar, mobile bottom bar +
-  Menu sheet, merged status strip (paper + advice), command menu. Old routes keep
-  working via redirects; `nav-items.ts` is replaced. This phase delivers the largest
-  perceived-quality jump for the least page-level work.
-- **Phase 2 — Spine consolidation.** Signals inbox (merging alerts/tradingview-
-  signals/watcher surfaces), Plan hub (workspace + proposals + approvals + pre-trade
-  as ticket steps), Validate pipeline (drafts → candidates → runs as one flow),
-  Portfolio merge (positions tab, risk & cooldown state tab). Route redirects per the
-  screen inventory. Most invasive phase; done destination-by-destination.
-- **Phase 3 — Charts and analytics.** Add the charting stack (§8), Dashboard redesign,
-  Analyze hub (statistics + comparison + learning analytics + coaching + strategy
-  quality), evidence panels (J5).
-- **Phase 4 — Mobile/PWA polish and accessibility hardening.** Manifest/installability,
-  offline shell, notification opt-ins, AA audit pass, reduced-motion audit.
-- **Phase 5 — Light theme and commercial finish.** Token-swap light mode, auth-screen
-  polish, micro-interaction pass (hover/press states, transitions ≤ 200 ms).
+- **Phase A — Design-system foundation.** Introduce semantic color/type/spacing
+  tokens (§5.3, §6) and the primitive set (§5.2), including `PageHeader`,
+  `FreshnessPill`, `StatusBadge`, `Skeleton`, standardized `EmptyState`. No route
+  changes. Risk: low; purely additive.
+- **Phase B — Navigation and application shell.** New 8-destination sidebar, mobile
+  bottom bar + Menu sheet, merged status strip (paper + advice), command menu.
+  Includes the navigation-only route moves: Settings hub tabs (billing, usage,
+  invitations, audit) and the "Advanced" placements (orchestration, research
+  validation, exchange diagnostics). Old routes keep working via redirects;
+  `nav-items.ts` is replaced. This phase delivers the largest perceived-quality jump
+  for the least page-level work.
+- **Phase C — Critical daily workflows.** The spine consolidations: Signals inbox
+  (merging alerts/tradingview-signals/watcher surfaces), Plan hub (workspace +
+  proposals + approvals + pre-trade as ticket steps), Validate pipeline (drafts →
+  candidates → runs as one flow), Journal quick-entry + Teach, Portfolio merge
+  (positions tab, risk & cooldown state tab), Dashboard attention queue. Route
+  redirects per the screen inventory. Most invasive phase; done
+  destination-by-destination.
+- **Phase D — Analytics visualisation.** Add the charting stack (§8.1), implement
+  the canonical metric catalog (§8.2): Analyze hub (statistics + Human vs System +
+  learning + coaching + evidence), Portfolio equity/drawdown charts, evidence and
+  backtest panels (J5).
+- **Phase E — Mobile/PWA polish.** Manifest/installability, offline shell,
+  notification opt-ins, auth-screen polish, journal-import wizard polish, token-swap
+  light theme (enabled by Phase A's token architecture).
+- **Phase F — Usability and consistency review.** Unassisted walkthroughs of all
+  seven journeys (§4), acceptance-criteria audit (§14), AA contrast and keyboard
+  audit (§12), state-checklist audit per destination (§9), anti-duplication audit
+  against the metric catalog (§8.3), and removal of any residual ad-hoc styling
+  (grep-verifiable, criterion 4). Findings feed a final fix pass; no new features.
 
-Dependencies: 1 requires 0; 2–3 require 1; 4–5 require 2–3 only for the surfaces they
-polish. Backend/API changes are **not** required for phases 0–1 and are expected to be
-minimal elsewhere (the consolidation is presentational; existing endpoints remain).
+Dependencies: B requires A; C and D require B; E and F polish and verify the
+surfaces delivered by C–D. Backend/API changes are **not** required for phases A–B
+and are expected to be minimal elsewhere (the consolidation is presentational;
+existing endpoints remain).
 
 ---
 
