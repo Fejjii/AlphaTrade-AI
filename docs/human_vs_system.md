@@ -4,9 +4,13 @@ Compares journaled trades, linked proposals, backtest context, and system recomm
 
 ## API
 
-- `GET /human-vs-system/{trade_id}` — journal or proposal id
+- `GET /human-vs-system/{trade_id}` — journal or proposal id (per-trade analyzers)
 - `POST /human-vs-system/{trade_id}/analyze` — full discipline pass
 - `GET /journal/entries/{id}/discipline-analysis` — journal-focused breakdown with lesson candidates
+- `GET /journal/comparison` — **aggregate** human-vs-system cohort/scorecard comparison
+  with decision-quality metrics over closed journal trades (AT-036); record-only,
+  does not invoke per-trade `HumanVsSystemService` orchestration. Frontend:
+  `/journal/comparison`.
 
 ## Outputs (v3)
 

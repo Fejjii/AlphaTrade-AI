@@ -345,7 +345,9 @@ async def journal_trade_statistics(
 @router.get(
     "/comparison",
     response_model=JournalComparisonResponse,
-    summary="Compare human / paper-system / backtest journal cohorts (AT-034)",
+    summary=(
+        "Compare human / paper-system / backtest cohorts with decision quality (AT-034/AT-036)"
+    ),
 )
 async def journal_comparison(
     tenant: ReaderDep,
@@ -357,6 +359,10 @@ async def journal_comparison(
     timeframe: str | None = Query(default=None, max_length=8),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
+    market_regime: MarketRegime | None = Query(default=None),
+    entry_method: JournalEntryMethod | None = Query(default=None),
+    source: JournalTradeSource | None = Query(default=None),
+    breakdown_limit: int = Query(default=10, ge=1, le=50),
 ) -> JournalComparisonResponse:
     filters = JournalComparisonFilters(
         strategy_id=strategy_id,
@@ -366,11 +372,15 @@ async def journal_comparison(
         timeframe=timeframe,
         date_from=date_from,
         date_to=date_to,
+        market_regime=market_regime,
+        entry_method=entry_method,
+        source=source,
     )
     return service.compare_cohorts(
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
         filters=filters,
+        breakdown_limit=breakdown_limit,
     )
 
 

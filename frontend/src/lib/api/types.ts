@@ -1892,6 +1892,9 @@ export interface JournalComparisonFilters {
   timeframe?: string | null;
   date_from?: string | null;
   date_to?: string | null;
+  market_regime?: MarketRegime | null;
+  entry_method?: JournalEntryMethod | null;
+  source?: JournalTradeSource | null;
 }
 
 export interface JournalComparisonCohortResult {
@@ -1901,9 +1904,62 @@ export interface JournalComparisonCohortResult {
   truncated: boolean;
 }
 
+export type ComparisonBreakdownDimension = "setup" | "market_regime";
+
+export interface DecisionQualityMetrics {
+  timing_sample_count: number;
+  average_entry_timing_pct: number | null;
+  early_exit_sample_count: number;
+  early_exit_count: number | null;
+  early_exit_rate: number | null;
+  missed_profit_sample_count: number;
+  average_missed_profit: string | null;
+  average_capture_pct: number | null;
+  warnings: JournalStatsWarning[];
+}
+
+export interface ComparisonScorecard {
+  actor: ExecutionActor;
+  metrics: JournalTradeStatsMetrics;
+  decision_quality: DecisionQualityMetrics;
+  sample_count: number;
+  truncated: boolean;
+}
+
+export interface ComparisonDimensionBucket {
+  key: string;
+  group_id?: string | null;
+  label: string;
+  metrics: JournalTradeStatsMetrics;
+  sample_count: number;
+}
+
+export interface ComparisonBreakdown {
+  dimension: ComparisonBreakdownDimension;
+  buckets: ComparisonDimensionBucket[];
+}
+
+export interface ComparisonLinks {
+  journal_trades_path: string;
+  journal_statistics_path: string;
+  journal_comparison_path: string;
+  backtests_path: string;
+  research_validation_path: string;
+  paper_validation_candidates_path: string;
+}
+
 export interface JournalComparisonResponse {
   filters: JournalComparisonFilters;
   cohorts: JournalComparisonCohortResult[];
+  scorecards: ComparisonScorecard[];
+  by_entry_method: ComparisonDimensionBucket[];
+  by_source: ComparisonDimensionBucket[];
+  rule_compliance: ComparisonDimensionBucket[];
+  decision_quality: DecisionQualityMetrics;
+  breakdowns: ComparisonBreakdown[];
+  links: ComparisonLinks;
+  confidence: SampleConfidence;
+  warnings: JournalStatsWarning[];
   max_rows: number;
   generated_at: string;
   note: string;
@@ -1955,6 +2011,10 @@ export type JournalComparisonParams = {
   timeframe?: string;
   date_from?: string;
   date_to?: string;
+  market_regime?: MarketRegime;
+  entry_method?: JournalEntryMethod;
+  source?: JournalTradeSource;
+  breakdown_limit?: number;
 };
 
 export type SetupEvidenceParams = {

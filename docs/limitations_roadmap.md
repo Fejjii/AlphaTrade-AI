@@ -33,7 +33,8 @@
 - **Backtest v1** replays stored OHLCV with fees/slippage — historical simulation only; not a profit guarantee. Complex NL rules may require structured translation (`needs_structured_rules`).
 - **Paper validation runtime (Slice 39–40):** deterministic scan/tick bot + optional scheduler foundation. Scheduler **disabled by default** (`ENABLE_PAPER_SCHEDULER=false`). Manual scheduler tick via API/UI. Runtime history, observability events, and in-app alerts (no delivery).
 - **Paper eligibility (Slice 38):** conservative gates via `/paper-eligibility`; `paper_validated` does **not** enable live trading.
-- Human-vs-system v2 adds delta fields; PnL simulation and runner tracking remain placeholders.
+- Human-vs-system: per-trade `/human-vs-system/{id}` (Slice 36) still has estimate/placeholder
+  limitations; AT-036 adds aggregate journal comparison decision-quality over recorded fields only.
 - Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
 - Playwright E2E: **API workflow in CI**; full browser tour optional locally (skipped in CI).
 - LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
@@ -171,7 +172,8 @@ Responses label `is_live`, `fallback_used`, and `is_stale`. Mock data is never p
 ## Recommended next slices
 
 1. **Paper validation scheduler** — optional background scan/tick loop (currently manual / disabled by default)
-2. **Human-vs-system v2 + backtest comparison** — compare backtest to actual trades; runner tracking
+2. **Per-trade human-vs-system deepen** — richer plan-adherence / runner estimates on
+   `/human-vs-system/{id}` (aggregate comparison delivered as AT-036)
 3. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
 4. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
 5. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)

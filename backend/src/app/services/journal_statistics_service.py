@@ -19,15 +19,19 @@ Classification rules (deterministic, documented):
   authority: manual, imported, and human-approved proposal-flow paper
   executions are ``human``; paper-validation, backtest, and system-generated
   trades are ``system``.
+- AT-036 extends cohort comparison with scorecards, decision-quality metrics,
+  dimension buckets, setup/regime breakdowns, and frontend navigation links.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Final
+from urllib.parse import urlencode
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,12 +40,18 @@ from app.core.errors import ValidationAppError
 from app.db.models import SetupDefinition, UserStrategy, UserStrategyVersion
 from app.repositories.journal_trades import JournalTradeRepository, JournalTradeStatsRow
 from app.schemas.backtest import (
+    ComparisonBreakdown,
+    ComparisonBreakdownDimension,
+    ComparisonDimensionBucket,
+    ComparisonLinks,
+    ComparisonScorecard,
+    DecisionQualityMetrics,
     JournalComparisonCohort,
     JournalComparisonCohortResult,
     JournalComparisonFilters,
     JournalComparisonResponse,
 )
-from app.schemas.common import JournalTradeSource, RuleComplianceStatus, TradeResult
+from app.schemas.common import JournalTradeSource, RuleComplianceStatus, TradeDirection, TradeResult
 from app.schemas.journal_statistics import (
     ExecutionActor,
     JournalStatsBucket,
@@ -62,6 +72,9 @@ _UNASSIGNED_LABEL: Final = "Unassigned"
 _CONFIDENCE_LOW: Final = 5
 _CONFIDENCE_MODERATE: Final = 20
 _CONFIDENCE_HIGH: Final = 50
+
+# Early-exit threshold: capture below 50% of available profit (AT-036).
+_EARLY_EXIT_CAPTURE_PCT: Final = 50.0
 
 # Human-vs-system execution classification by decision authority (see module docstring).
 _EXECUTION_ACTOR_BY_SOURCE: Final[dict[JournalTradeSource, ExecutionActor]] = {
@@ -93,6 +106,29 @@ _COMPARISON_COHORTS: Final[
     (
         JournalComparisonCohort.BACKTEST,
         frozenset({JournalTradeSource.BACKTEST}),
+    ),
+)
+
+_SCORECARD_ACTORS: Final[tuple[tuple[ExecutionActor, frozenset[JournalTradeSource]], ...]] = (
+    (
+        ExecutionActor.HUMAN,
+        frozenset(
+            {
+                JournalTradeSource.MANUAL,
+                JournalTradeSource.IMPORTED,
+                JournalTradeSource.PAPER_EXECUTION,
+            }
+        ),
+    ),
+    (
+        ExecutionActor.SYSTEM,
+        frozenset(
+            {
+                JournalTradeSource.PAPER_VALIDATION,
+                JournalTradeSource.BACKTEST,
+                JournalTradeSource.SYSTEM,
+            }
+        ),
     ),
 )
 
@@ -189,8 +225,9 @@ class JournalStatisticsService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         filters: JournalComparisonFilters,
+        breakdown_limit: int = 10,
     ) -> JournalComparisonResponse:
-        """Three-cohort comparison reusing AT-031 metric math (AT-034)."""
+        """Human-vs-system performance + decision-quality comparison (AT-034/AT-036)."""
         if (
             filters.date_from is not None
             and filters.date_to is not None
@@ -198,43 +235,17 @@ class JournalStatisticsService:
         ):
             raise ValidationAppError("date_from must not be after date_to.")
 
-        cohorts: list[JournalComparisonCohortResult] = []
-        for cohort, sources in _COMPARISON_COHORTS:
-            metrics, truncated = self._metrics_for_sources(
-                organization_id=organization_id,
-                user_id=user_id,
-                sources=sources,
-                filters=filters,
-            )
-            cohorts.append(
-                JournalComparisonCohortResult(
-                    cohort=cohort,
-                    metrics=metrics,
-                    sample_count=metrics.trade_count,
-                    truncated=truncated,
-                )
-            )
-        return JournalComparisonResponse(
-            filters=filters,
-            cohorts=cohorts,
-            max_rows=self._max_rows,
-            generated_at=datetime.now(UTC),
+        sources: frozenset[JournalTradeSource] | None = (
+            frozenset({filters.source}) if filters.source is not None else None
         )
-
-    def _metrics_for_sources(
-        self,
-        *,
-        organization_id: uuid.UUID,
-        user_id: uuid.UUID,
-        sources: frozenset[JournalTradeSource],
-        filters: JournalComparisonFilters,
-    ) -> tuple[JournalTradeStatsMetrics, bool]:
         rows, truncated = self._trades.fetch_stats_rows(
             organization_id=organization_id,
             user_id=user_id,
             sources=sources,
+            entry_method=filters.entry_method,
             symbol=filters.symbol,
             timeframe=filters.timeframe,
+            market_regime=filters.market_regime,
             setup_id=filters.setup_id,
             user_strategy_id=filters.strategy_id,
             strategy_version_id=filters.strategy_version_id,
@@ -242,18 +253,75 @@ class JournalStatisticsService:
             date_to=filters.date_to,
             max_rows=self._max_rows,
         )
-        metrics = _compute_metrics(rows)
-        if truncated:
-            metrics.warnings.append(
-                JournalStatsWarning(
-                    code=JournalStatsWarningCode.RESULT_TRUNCATED,
-                    message=(
-                        f"Result capped at {self._max_rows} closed trades; aggregates cover "
-                        "only the oldest trades in range. Narrow the date range or filters."
-                    ),
-                )
+        compliance_by_trade = self._load_comparison_compliance(
+            organization_id=organization_id,
+            user_id=user_id,
+            filters=filters,
+            sources=sources,
+            rows=rows,
+        )
+
+        cohorts = [
+            _cohort_result(
+                cohort,
+                [row for row in rows if row.source in cohort_sources],
+                truncated=truncated,
             )
-        return metrics, truncated
+            for cohort, cohort_sources in _COMPARISON_COHORTS
+        ]
+        scorecards = [
+            _scorecard_result(
+                actor,
+                [row for row in rows if row.source in actor_sources],
+                truncated=truncated,
+            )
+            for actor, actor_sources in _SCORECARD_ACTORS
+        ]
+
+        by_entry_method = _dimension_buckets_by_key(
+            rows,
+            key_fn=lambda r: (r.entry_method.value, None, r.entry_method.value),
+        )
+        by_source = _dimension_buckets_by_key(
+            rows,
+            key_fn=lambda r: (r.source.value, None, r.source.value),
+        )
+        rule_compliance = _dimension_buckets_by_key(
+            rows,
+            key_fn=lambda r: (
+                compliance_by_trade.get(r.id, TradeRuleCompliance.UNASSESSED).value,
+                None,
+                compliance_by_trade.get(r.id, TradeRuleCompliance.UNASSESSED).value,
+            ),
+        )
+
+        decision_quality = _compute_decision_quality(rows)
+        breakdowns = self._comparison_breakdowns(rows, limit=breakdown_limit)
+        links = _comparison_links(filters)
+        confidence = _confidence(len(rows))
+        warnings = _rollup_comparison_warnings(
+            truncated=truncated,
+            max_rows=self._max_rows,
+            overall_count=len(rows),
+            scorecards=scorecards,
+            decision_quality=decision_quality,
+        )
+
+        return JournalComparisonResponse(
+            filters=filters,
+            cohorts=cohorts,
+            scorecards=scorecards,
+            by_entry_method=by_entry_method,
+            by_source=by_source,
+            rule_compliance=rule_compliance,
+            decision_quality=decision_quality,
+            breakdowns=breakdowns,
+            links=links,
+            confidence=confidence,
+            warnings=warnings,
+            max_rows=self._max_rows,
+            generated_at=datetime.now(UTC),
+        )
 
     # ------------------------------------------------------------------ #
     # Internals
@@ -283,10 +351,66 @@ class JournalStatisticsService:
             date_from=filters.date_from,
             date_to=filters.date_to,
         )
-        statuses: dict[uuid.UUID, set[RuleComplianceStatus]] = defaultdict(set)
-        for trade_id, status in pairs:
-            statuses[trade_id].add(status)
-        return {trade_id: _classify_compliance(recorded) for trade_id, recorded in statuses.items()}
+        return _compliance_map_from_pairs(pairs)
+
+    def _load_comparison_compliance(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        filters: JournalComparisonFilters,
+        sources: Collection[JournalTradeSource] | None,
+        rows: list[JournalTradeStatsRow],
+    ) -> dict[uuid.UUID, TradeRuleCompliance]:
+        if not rows:
+            return {}
+        pairs = self._trades.fetch_rule_check_status_pairs(
+            organization_id=organization_id,
+            user_id=user_id,
+            sources=sources,
+            entry_method=filters.entry_method,
+            symbol=filters.symbol,
+            timeframe=filters.timeframe,
+            market_regime=filters.market_regime,
+            setup_id=filters.setup_id,
+            user_strategy_id=filters.strategy_id,
+            strategy_version_id=filters.strategy_version_id,
+            date_from=filters.date_from,
+            date_to=filters.date_to,
+        )
+        return _compliance_map_from_pairs(pairs)
+
+    def _comparison_breakdowns(
+        self,
+        rows: list[JournalTradeStatsRow],
+        *,
+        limit: int,
+    ) -> list[ComparisonBreakdown]:
+        setup_labels = self._resolve_labels(rows, JournalStatsGroupBy.SETUP_VERSION)
+        setup_buckets = _dimension_buckets_by_key(
+            rows,
+            key_fn=lambda r: (
+                (str(r.setup_id), r.setup_id, setup_labels.get(r.setup_id, str(r.setup_id)))
+                if r.setup_id is not None
+                else (_UNASSIGNED_KEY, None, _UNASSIGNED_LABEL)
+            ),
+            limit=limit,
+        )
+        regime_buckets = _dimension_buckets_by_key(
+            rows,
+            key_fn=lambda r: (r.market_regime.value, None, r.market_regime.value),
+            limit=limit,
+        )
+        return [
+            ComparisonBreakdown(
+                dimension=ComparisonBreakdownDimension.SETUP,
+                buckets=setup_buckets,
+            ),
+            ComparisonBreakdown(
+                dimension=ComparisonBreakdownDimension.MARKET_REGIME,
+                buckets=regime_buckets,
+            ),
+        ]
 
     def _build_buckets(
         self,
@@ -357,6 +481,15 @@ class JournalStatisticsService:
 # --------------------------------------------------------------------------- #
 # Pure, deterministic computation helpers (unit-testable without a session)
 # --------------------------------------------------------------------------- #
+
+
+def _compliance_map_from_pairs(
+    pairs: list[tuple[uuid.UUID, RuleComplianceStatus]],
+) -> dict[uuid.UUID, TradeRuleCompliance]:
+    statuses: dict[uuid.UUID, set[RuleComplianceStatus]] = defaultdict(set)
+    for trade_id, status in pairs:
+        statuses[trade_id].add(status)
+    return {trade_id: _classify_compliance(recorded) for trade_id, recorded in statuses.items()}
 
 
 def _classify_compliance(recorded: set[RuleComplianceStatus]) -> TradeRuleCompliance:
@@ -449,6 +582,313 @@ def _mean(values: list[Decimal]) -> Decimal | None:
     if not values:
         return None
     return sum(values, Decimal("0")) / Decimal(len(values))
+
+
+def _mean_float(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _capture_pct(row: JournalTradeStatsRow) -> float | None:
+    """Realized-vs-available % from recorded value or AT-031 derivation."""
+    if row.net_pnl is None or row.available_profit is None:
+        return None
+    if row.realized_vs_available_pct is not None:
+        return row.realized_vs_available_pct
+    if row.available_profit != 0:
+        return float(row.net_pnl / row.available_profit * Decimal("100"))
+    return None
+
+
+def _entry_timing_pct(row: JournalTradeStatsRow) -> float | None:
+    """Signed % distance of actual entry vs planned; positive = worse fill."""
+    if row.planned_entry_price is None or row.entry_price is None:
+        return None
+    planned = row.planned_entry_price
+    if planned == 0:
+        return None
+    if row.direction is TradeDirection.LONG:
+        return float((row.entry_price - planned) / planned * Decimal("100"))
+    return float((planned - row.entry_price) / planned * Decimal("100"))
+
+
+def _compute_decision_quality(rows: list[JournalTradeStatsRow]) -> DecisionQualityMetrics:
+    """Decision-quality aggregates from recorded journal fields only (AT-036)."""
+    trade_count = len(rows)
+    warnings: list[JournalStatsWarning] = []
+    if trade_count == 0:
+        warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.NO_CLOSED_TRADES,
+                message="No closed trades match the filters; no decision quality computable.",
+            )
+        )
+        return DecisionQualityMetrics(warnings=warnings)
+
+    timing_pcts = [pct for row in rows if (pct := _entry_timing_pct(row)) is not None]
+    capture_pcts = [pct for row in rows if (pct := _capture_pct(row)) is not None]
+    early_exit_count = sum(1 for pct in capture_pcts if pct < _EARLY_EXIT_CAPTURE_PCT)
+    missed_profits = [
+        row.available_profit - row.net_pnl
+        for row in rows
+        if row.available_profit is not None
+        and row.net_pnl is not None
+        and row.available_profit > row.net_pnl
+    ]
+
+    if 0 < len(timing_pcts) < trade_count:
+        warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.PARTIAL_TIMING_DATA,
+                message=(
+                    f"Entry timing computable on {len(timing_pcts)} of {trade_count} trades; "
+                    "averages cover only those with planned and actual entry prices."
+                ),
+            )
+        )
+    if 0 < len(capture_pcts) < trade_count:
+        warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.PARTIAL_CAPTURE_DATA,
+                message=(
+                    f"Capture / early-exit data on {len(capture_pcts)} of {trade_count} trades; "
+                    "early-exit rate covers only those with available and realized profit."
+                ),
+            )
+        )
+    if 0 < len(missed_profits) < trade_count:
+        warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.PARTIAL_MISSED_PROFIT_DATA,
+                message=(
+                    f"Missed profit computable on {len(missed_profits)} of {trade_count} trades; "
+                    "average covers only those with available profit exceeding net PnL."
+                ),
+            )
+        )
+    if trade_count < _CONFIDENCE_MODERATE:
+        warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.LOW_SAMPLE,
+                message=(
+                    f"Only {trade_count} closed trade(s); treat decision-quality metrics as "
+                    "anecdotal, not as evidence of an edge."
+                ),
+            )
+        )
+
+    return DecisionQualityMetrics(
+        timing_sample_count=len(timing_pcts),
+        average_entry_timing_pct=_mean_float(timing_pcts),
+        early_exit_sample_count=len(capture_pcts),
+        early_exit_count=early_exit_count if capture_pcts else None,
+        early_exit_rate=(early_exit_count / len(capture_pcts) if capture_pcts else None),
+        missed_profit_sample_count=len(missed_profits),
+        average_missed_profit=_mean(missed_profits),
+        average_capture_pct=_mean_float(capture_pcts),
+        warnings=warnings,
+    )
+
+
+def _cohort_result(
+    cohort: JournalComparisonCohort,
+    rows: list[JournalTradeStatsRow],
+    *,
+    truncated: bool,
+) -> JournalComparisonCohortResult:
+    metrics = _compute_metrics(rows)
+    if truncated:
+        metrics.warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.RESULT_TRUNCATED,
+                message=(
+                    "Underlying comparison sample was capped; this cohort may omit newer "
+                    "closed trades. Narrow the date range or filters."
+                ),
+            )
+        )
+    return JournalComparisonCohortResult(
+        cohort=cohort,
+        metrics=metrics,
+        sample_count=metrics.trade_count,
+        truncated=truncated,
+    )
+
+
+def _scorecard_result(
+    actor: ExecutionActor,
+    rows: list[JournalTradeStatsRow],
+    *,
+    truncated: bool,
+) -> ComparisonScorecard:
+    metrics = _compute_metrics(rows)
+    decision_quality = _compute_decision_quality(rows)
+    if truncated:
+        metrics.warnings.append(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.RESULT_TRUNCATED,
+                message=(
+                    "Underlying comparison sample was capped; this scorecard may omit newer "
+                    "closed trades. Narrow the date range or filters."
+                ),
+            )
+        )
+    return ComparisonScorecard(
+        actor=actor,
+        metrics=metrics,
+        decision_quality=decision_quality,
+        sample_count=metrics.trade_count,
+        truncated=truncated,
+    )
+
+
+def _dimension_buckets_by_key(
+    rows: list[JournalTradeStatsRow],
+    *,
+    key_fn: Callable[[JournalTradeStatsRow], tuple[str, uuid.UUID | None, str]],
+    limit: int | None = None,
+) -> list[ComparisonDimensionBucket]:
+    grouped: dict[tuple[str, uuid.UUID | None, str], list[JournalTradeStatsRow]] = defaultdict(list)
+    for row in rows:
+        key, group_id, label = key_fn(row)
+        grouped[(key, group_id, label)].append(row)
+
+    buckets = [
+        ComparisonDimensionBucket(
+            key=key,
+            group_id=group_id,
+            label=label,
+            metrics=_compute_metrics(bucket_rows),
+            sample_count=len(bucket_rows),
+        )
+        for (key, group_id, label), bucket_rows in grouped.items()
+    ]
+    # Contract: trade_count desc, then key.
+    buckets.sort(key=lambda b: (-b.metrics.trade_count, b.key))
+    if limit is not None:
+        return buckets[:limit]
+    return buckets
+
+
+def _comparison_links(filters: JournalComparisonFilters) -> ComparisonLinks:
+    params: list[tuple[str, str]] = []
+    if filters.strategy_id is not None:
+        params.append(("strategy_id", str(filters.strategy_id)))
+    if filters.strategy_version_id is not None:
+        params.append(("strategy_version_id", str(filters.strategy_version_id)))
+    if filters.setup_id is not None:
+        params.append(("setup_id", str(filters.setup_id)))
+    if filters.symbol is not None:
+        params.append(("symbol", filters.symbol))
+    if filters.timeframe is not None:
+        params.append(("timeframe", filters.timeframe))
+    if filters.date_from is not None:
+        params.append(("date_from", filters.date_from.isoformat()))
+    if filters.date_to is not None:
+        params.append(("date_to", filters.date_to.isoformat()))
+    if filters.market_regime is not None:
+        params.append(("market_regime", filters.market_regime.value))
+    if filters.entry_method is not None:
+        params.append(("entry_method", filters.entry_method.value))
+    if filters.source is not None:
+        params.append(("source", filters.source.value))
+
+    query = urlencode(params)
+    comparison_path = f"/journal/comparison?{query}" if query else "/journal/comparison"
+
+    stats_params: list[tuple[str, str]] = []
+    if filters.strategy_id is not None:
+        stats_params.append(("user_strategy_id", str(filters.strategy_id)))
+    if filters.strategy_version_id is not None:
+        stats_params.append(("strategy_version_id", str(filters.strategy_version_id)))
+    if filters.setup_id is not None:
+        stats_params.append(("setup_id", str(filters.setup_id)))
+    if filters.symbol is not None:
+        stats_params.append(("symbol", filters.symbol))
+    if filters.timeframe is not None:
+        stats_params.append(("timeframe", filters.timeframe))
+    if filters.market_regime is not None:
+        stats_params.append(("market_regime", filters.market_regime.value))
+    if filters.entry_method is not None:
+        stats_params.append(("entry_method", filters.entry_method.value))
+    if filters.source is not None:
+        stats_params.append(("source", filters.source.value))
+    if filters.date_from is not None:
+        stats_params.append(("date_from", filters.date_from.isoformat()))
+    if filters.date_to is not None:
+        stats_params.append(("date_to", filters.date_to.isoformat()))
+    stats_query = urlencode(stats_params)
+    stats_path = f"/journal/statistics?{stats_query}" if stats_query else "/journal/statistics"
+
+    if filters.strategy_id is not None:
+        backtests_path = f"/backtests?strategy_id={filters.strategy_id}"
+    else:
+        backtests_path = "/backtests"
+
+    return ComparisonLinks(
+        journal_trades_path="/journal",
+        journal_statistics_path=stats_path,
+        journal_comparison_path=comparison_path,
+        backtests_path=backtests_path,
+        research_validation_path="/research-validation",
+        paper_validation_candidates_path="/paper-validation/candidates",
+    )
+
+
+def _rollup_comparison_warnings(
+    *,
+    truncated: bool,
+    max_rows: int,
+    overall_count: int,
+    scorecards: list[ComparisonScorecard],
+    decision_quality: DecisionQualityMetrics,
+) -> list[JournalStatsWarning]:
+    """Top-level warning rollup with stable first-seen order and deduped codes."""
+    ordered: list[JournalStatsWarning] = []
+    seen: set[JournalStatsWarningCode] = set()
+
+    def _add(warning: JournalStatsWarning) -> None:
+        if warning.code in seen:
+            return
+        seen.add(warning.code)
+        ordered.append(warning)
+
+    if overall_count == 0:
+        _add(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.NO_CLOSED_TRADES,
+                message="No closed trades match the filters; no comparison computable.",
+            )
+        )
+    elif overall_count < _CONFIDENCE_MODERATE:
+        _add(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.LOW_SAMPLE,
+                message=(
+                    f"Only {overall_count} closed trade(s); treat comparison metrics as "
+                    "anecdotal, not as evidence of an edge."
+                ),
+            )
+        )
+    if truncated:
+        _add(
+            JournalStatsWarning(
+                code=JournalStatsWarningCode.RESULT_TRUNCATED,
+                message=(
+                    f"Result capped at {max_rows} closed trades; aggregates cover only the "
+                    "oldest trades in range. Narrow the date range or filters."
+                ),
+            )
+        )
+    for warning in decision_quality.warnings:
+        _add(warning)
+    for scorecard in scorecards:
+        for warning in scorecard.metrics.warnings:
+            _add(warning)
+        for warning in scorecard.decision_quality.warnings:
+            _add(warning)
+    return ordered
 
 
 def _compute_metrics(rows: list[JournalTradeStatsRow]) -> JournalTradeStatsMetrics:

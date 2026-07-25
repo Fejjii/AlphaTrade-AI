@@ -125,13 +125,21 @@ Per open trade the engine tracks:
 
 ### `GET /journal/comparison`
 
-Returns three cohorts with shared filters (`strategy_id`, `strategy_version_id`, date range):
+Returns three AT-034 cohorts plus AT-036 decision-quality extensions with shared
+filters (`strategy_id`, `strategy_version_id`, `setup_id`, `symbol`, `timeframe`,
+`market_regime`, `entry_method`, `source`, date range, `breakdown_limit`):
 
 | Cohort | Sources |
 |--------|---------|
-| `human` | `manual`, `imported` |
-| `paper_system` | `paper_execution`, `paper_validation` |
+| `human` | `manual`, `imported`, `paper_execution` |
+| `paper_system` | `paper_validation` |
 | `backtest` | `backtest` |
+
+AT-036 additions (backward compatible): `scorecards` (human vs system actors),
+`decision_quality` (entry timing, early exits, missed profit, capture),
+`by_entry_method`, `by_source`, `rule_compliance`, setup/regime `breakdowns`,
+`links`, top-level `confidence` + `warnings`. Record-only — never feeds execution
+or risk. Frontend: `/journal/comparison`.
 
 ### `GET /journal/setup-evidence`
 
@@ -156,7 +164,7 @@ Thresholds are configurable via the `backtest_tier*` settings.
 | POST | `/backtests/{id}/cancel` | Trader | Cancel queued/running |
 | POST | `/backtests/{id}/verify` | Trader | Deterministic re-run check |
 | POST | `/backtests/{id}/journal-trades` | Trader | Bulk journal import |
-| GET | `/journal/comparison` | Reader | Three-cohort comparison |
+| GET | `/journal/comparison` | Reader | Three-cohort comparison + AT-036 decision quality |
 | GET | `/journal/setup-evidence` | Reader | Advisory evidence tiers |
 | POST | `/market/history/ingest` | Trader | Store candles (ingest before snapshot) |
 

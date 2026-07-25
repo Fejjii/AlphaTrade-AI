@@ -26,13 +26,14 @@ from app.schemas.common import (
     JournalTradeStatus,
     MarketRegime,
     RuleComplianceStatus,
+    TradeDirection,
     TradeResult,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class JournalTradeStatsRow:
-    """Minimal per-trade projection used for deterministic statistics (AT-031).
+    """Minimal per-trade projection used for deterministic statistics (AT-031/AT-036).
 
     Only recorded values are carried — no derived or fetched data. Loading a
     narrow projection instead of full ORM rows keeps the bounded statistics
@@ -59,6 +60,11 @@ class JournalTradeStatsRow:
     mae_amount: Decimal | None
     available_profit: Decimal | None
     realized_vs_available_pct: float | None
+    # Decision-quality inputs (AT-036).
+    direction: TradeDirection
+    planned_entry_price: Decimal | None
+    entry_price: Decimal | None
+    exit_reason: str | None
 
 
 class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
@@ -323,6 +329,10 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
                 JournalTrade.mae_amount,
                 JournalTrade.available_profit,
                 JournalTrade.realized_vs_available_pct,
+                JournalTrade.direction,
+                JournalTrade.planned_entry_price,
+                JournalTrade.entry_price,
+                JournalTrade.exit_reason,
             )
             .where(*filters)
             .order_by(effective_time.asc(), JournalTrade.id.asc())
@@ -339,6 +349,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         source: JournalTradeSource | None = None,
+        sources: Collection[JournalTradeSource] | None = None,
         entry_method: JournalEntryMethod | None = None,
         symbol: str | None = None,
         timeframe: str | None = None,
@@ -358,6 +369,7 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
             organization_id=organization_id,
             user_id=user_id,
             source=source,
+            sources=sources,
             entry_method=entry_method,
             symbol=symbol,
             timeframe=timeframe,
