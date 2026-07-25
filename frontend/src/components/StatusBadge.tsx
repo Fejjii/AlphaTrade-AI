@@ -3,14 +3,19 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 const toneMap: Record<string, BadgeProps["variant"]> = {
   ok: "success",
   healthy: "success",
-  paper: "success",
+  success: "success",
+  paper: "paper",
   pending: "warning",
   degraded: "warning",
   warn: "warning",
-  blocked: "danger",
+  warning: "warning",
+  blocked: "blocked",
   unavailable: "danger",
   critical: "danger",
   rejected: "danger",
+  stale: "stale",
+  info: "info",
+  muted: "muted",
 };
 
 export function StatusBadge({
@@ -18,11 +23,8 @@ export function StatusBadge({
   tone = "default",
 }: {
   label: string;
-  tone?: keyof typeof toneMap | "default" | "info" | "muted";
+  tone?: keyof typeof toneMap | "default";
 }) {
-  const variant =
-    tone === "default" || tone === "info" || tone === "muted"
-      ? tone
-      : (toneMap[tone] ?? "default");
+  const variant = tone === "default" ? "default" : (toneMap[tone] ?? "default");
   return <Badge variant={variant}>{label}</Badge>;
 }

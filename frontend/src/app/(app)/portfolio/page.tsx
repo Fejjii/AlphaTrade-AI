@@ -10,7 +10,9 @@ import { PaperPortfolioSafetyBanner } from "@/components/portfolio/PaperPortfoli
 import { PaperPortfolioSummaryCards } from "@/components/portfolio/PaperPortfolioSummaryCards";
 import { PortfolioBreakdownTable } from "@/components/portfolio/PortfolioBreakdownTable";
 import { PortfolioTrendBadge } from "@/components/portfolio/PortfolioTrendBadge";
-import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { EmptyState, ErrorState, LoadingState, StaleState } from "@/components/states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type { PortfolioSourceFilter } from "@/lib/api/types";
@@ -37,17 +39,18 @@ export default function PaperPortfolioPage() {
   ];
 
   return (
-    <div className="space-y-8" data-testid="paper-portfolio-page">
-      <div>
-        <h1 className="text-2xl font-semibold">Paper Portfolio</h1>
-        <p className="text-sm text-zinc-400">
-          Evaluate simulated paper portfolio performance over time. Read-only analytics — no live
-          trading, no orders, no automation, and not investment advice.
-        </p>
-      </div>
+    <div className="space-y-section" data-testid="paper-portfolio-page">
+      <PageHeader
+        title="Paper Portfolio"
+        description="Evaluate simulated paper portfolio performance over time. Read-only analytics — no live trading, no orders, no automation, and not investment advice."
+        meta={<PaperModeIndicator />}
+      />
 
       {loading && !data ? <LoadingState label="Loading paper portfolio…" /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
+      {limitations.length > 0 && data ? (
+        <StaleState message="Some portfolio metrics carry explicit limitations — treat values as incomplete." />
+      ) : null}
 
       {!loading && !error && !data ? (
         <EmptyState
@@ -80,11 +83,11 @@ export default function PaperPortfolioPage() {
 
           {limitations.length ? (
             <section
-              className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-500/90"
+              className="rounded-card border border-stale-border bg-stale-muted p-4 text-sm text-stale"
               data-testid="paper-portfolio-limitations"
             >
               <p className="font-medium">Limitations</p>
-              <ul className="mt-2 space-y-1 text-xs">
+              <ul className="mt-2 space-y-1 text-caption text-text-secondary">
                 {limitations.map((item) => (
                   <li key={item}>• {item}</li>
                 ))}

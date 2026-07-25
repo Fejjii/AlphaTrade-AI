@@ -9,12 +9,12 @@ import { AppProvider } from "@/contexts/AppContext";
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AppProvider>
-      <div className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-100">
+      <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
         <div className="flex min-h-screen min-w-0">
           <Sidebar />
           <div className="flex min-h-screen min-w-0 flex-1 flex-col pb-20 lg:pb-0">
             <TopBar />
-            <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 overflow-x-hidden px-4 py-6 lg:px-6">
+            <main className="mx-auto w-full min-w-0 max-w-content flex-1 space-y-section overflow-x-hidden px-gutter py-6 lg:px-gutter-lg">
               <PaperModeBanner />
               <NotFinancialAdviceBanner />
               {children}

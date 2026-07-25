@@ -8,7 +8,7 @@ function ProtectedShell({ children }: { children: React.ReactNode }) {
   const auth = useRequireAuth();
   if (auth.loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <LoadingState label="Checking session…" />
       </div>
     );
@@ -16,7 +16,7 @@ function ProtectedShell({ children }: { children: React.ReactNode }) {
   // Fail closed: never render protected content while the redirect to /login runs.
   if (!auth.isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <LoadingState label="Redirecting to sign in…" />
       </div>
     );

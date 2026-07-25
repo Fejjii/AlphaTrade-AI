@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { EmptyState, ErrorState, LoadingState, UnavailableState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError, CREATE_TRADINGVIEW_PAPER_CANDIDATE } from "@/lib/api";
 import type {
@@ -81,9 +83,9 @@ export default function TradingViewSignalsPage() {
   }
   if (data.forbidden) {
     return (
-      <div data-testid="tradingview-signals-forbidden" className="space-y-3">
-        <h1 className="text-2xl font-semibold text-zinc-50">TradingView Signals</h1>
-        <p className="text-sm text-zinc-400">You do not have permission to view TradingView signals.</p>
+      <div data-testid="tradingview-signals-forbidden" className="space-y-section">
+        <PageHeader title="TradingView Signals" meta={<PaperModeIndicator />} />
+        <UnavailableState message="You do not have permission to view TradingView signals." />
       </div>
     );
   }
@@ -91,13 +93,12 @@ export default function TradingViewSignalsPage() {
   const items = data.data.items;
 
   return (
-    <div data-testid="tradingview-signals-page" className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">TradingView Signals</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-          Signed webhook intake inbox. Paper validation only — never creates live orders.
-        </p>
-      </div>
+    <div data-testid="tradingview-signals-page" className="space-y-section">
+      <PageHeader
+        title="TradingView Signals"
+        description="Signed webhook intake inbox. Paper validation only — never creates live orders."
+        meta={<PaperModeIndicator />}
+      />
 
       {items.length === 0 ? (
         <EmptyState
@@ -105,17 +106,17 @@ export default function TradingViewSignalsPage() {
           description="Validated alerts from TradingView will appear here after signed webhook intake."
         />
       ) : (
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <div className="grid gap-section lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
           <section className="space-y-3" aria-label="Signal inbox">
             {items.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setSelectedId(item.id)}
-                className={`w-full rounded-lg border px-4 py-3 text-left transition ${
+                className={`w-full rounded-control border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                   selected?.id === item.id
-                    ? "border-sky-500/60 bg-sky-500/10"
-                    : "border-zinc-800 bg-zinc-950/40 hover:border-zinc-700"
+                    ? "border-info-border bg-info-muted"
+                    : "border-border-subtle bg-surface-0/40 hover:border-border"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
