@@ -509,10 +509,16 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Validation: PR #29 CI run 30165820718 success (backend, frontend, docker-build,
   deployment-safety, evaluation, e2e-smoke). No `package.json` dependency adds;
   no routes removed; `nav-items.ts` unchanged; zero backend/API/migration files.
-  No deploy; live trading unchanged.
+  Phase A hardening PR #30 CI run 30174563899 success; post-merge main CI run
+  30178168238 success (backend, frontend, docker-build, deployment-safety,
+  evaluation, e2e-smoke). No deploy; live trading unchanged.
 - Recommended model: Cursor Grok 4.5
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/29 merged
-  (`c414378`, CI run 30165820718). Head commit `34135be`. Phases B–F remain.
+  (`c414378`, CI run 30165820718). Head commit `34135be`. Phase A hardening PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/30 merged (`d988576`, CI run
+  30174563899; post-merge main CI 30178168238). Hardening head `e9e930c`
+  (TabsRoot shared id prefix + fail-closed paper-mode / limitations hardening).
+  Phases B–F remain.
 
 ---
 
