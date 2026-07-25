@@ -393,8 +393,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   No deploy; no live trading; risk/execution unchanged.
 - Recommended model: Grok 4.5 (WS1) + Composer 2.5 (WS2/WS3)
 - ADR: AT-ADR-017 · Docs: `docs/research_validation.md`
-- Completion evidence: branch `feat/at-035-research-validation-loop`; PR pending;
-  CI pending. No deploy.
+- Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/24 merged
+  (`2f46111`, CI run 30136769341 all green: backend, frontend, deployment-safety,
+  docker-build, evaluation, e2e-smoke, Vercel preview). Disposable Postgres 16
+  migration upgrade/downgrade/upgrade verified; partial unique index
+  `uq_pvc_org_backtest_active` and duplicate active promotion blocked at DB layer.
+  No deploy; paper posture unchanged.
 
 ---
 
