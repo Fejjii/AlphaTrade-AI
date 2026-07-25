@@ -477,6 +477,43 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/27 merged
   (`05b79ea`, CI run 30160911227). Head commit `4c2e49d`.
 
+### AT-039 — Premium UI/UX blueprint + screen inventory (planning only)
+- Priority: P1 · Status: DONE · Dependencies: AT-038 · Risk: Low (docs only)
+- Safety classification: Product/design planning; no runtime change
+- Goal: Author AlphaTrade-specific premium UI/UX blueprint and full frontend
+  screen inventory to guide Phases A–F redesign without changing app behavior.
+- Branch: `plan/at-039-premium-ui-ux-blueprint-cloud`
+- Deliverables: `docs/product/at039_premium_ui_ux_blueprint.md`,
+  `docs/product/at039_screen_inventory.md` (53 routes audited).
+- Validation: Docs-only PR #28; no frontend/backend/API/migration/dependency
+  changes. Paper-first invariants encoded in blueprint (risk BLOCK final, no UI
+  override; provenance/freshness required).
+- Recommended model: Cursor Grok 4.5
+- Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/28 merged
+  (`853d96b`). Head commit `7ebc8df`.
+
+### AT-040 — Premium design-system foundation (Phase A)
+- Priority: P1 · Status: DONE · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Safety classification: UI foundation; no trading/execution/risk-authority change
+- Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
+  primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
+  Stale/Blocked states, RiskBlock with no UI override, PaperModeIndicator,
+  DataNumber), and adopt them on a small representative set of screens without
+  route or nav IA changes.
+- Branch: `feat/at-040-premium-design-system-foundation`
+- Deliverables: `frontend/src/styles/tokens.css`, tokenized Tailwind + globals,
+  `frontend/src/components/ui/*` primitives, states updates, representative page
+  adoption (Dashboard, TradingView signals, paper-signal orchestration, journal
+  statistics, portfolio), guide `docs/product/at040_design_system_foundation.md`,
+  vitest `design-system.test.tsx`.
+- Validation: PR #29 CI run 30165820718 success (backend, frontend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). No `package.json` dependency adds;
+  no routes removed; `nav-items.ts` unchanged; zero backend/API/migration files.
+  No deploy; live trading unchanged.
+- Recommended model: Cursor Grok 4.5
+- Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/29 merged
+  (`c414378`, CI run 30165820718). Head commit `34135be`. Phases B–F remain.
+
 ---
 
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)
