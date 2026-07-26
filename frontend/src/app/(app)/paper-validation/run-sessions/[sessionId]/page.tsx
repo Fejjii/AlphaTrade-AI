@@ -10,6 +10,8 @@ import {
   RelatedStageLinks,
   loadObservationsSource,
   loadSessionResultSource,
+  sessionOutcomeUiStateFromLoad,
+  type SessionOutcomeUiState,
   type SessionResultLoad,
 } from "@/components/validate";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +91,7 @@ export default function PaperValidationRunSessionDetailPage() {
   const [observations, setObservations] =
     useState<SourceResult<PaperValidationSessionObservationItem[]>>(INITIAL_OBS);
   const [sessionResult, setSessionResult] = useState<SessionResultLoad>(INITIAL_RESULT);
+  const [outcomeUiState, setOutcomeUiState] = useState<SessionOutcomeUiState>("loading");
   const [extrasLoading, setExtrasLoading] = useState(false);
   const [obsKind, setObsKind] = useState<PaperValidationObservationKind>("general_note");
   const [obsPrice, setObsPrice] = useState("");
@@ -112,12 +115,14 @@ export default function PaperValidationRunSessionDetailPage() {
 
   const loadExtras = useCallback(async () => {
     setExtrasLoading(true);
+    setOutcomeUiState("loading");
     const [obsSource, resultSource] = await Promise.all([
       loadObservationsSource(api.strategies.sessionObservations(sessionId)),
       loadSessionResultSource(api.strategies.getSessionResult(sessionId)),
     ]);
     setObservations(obsSource);
     setSessionResult(resultSource);
+    setOutcomeUiState(sessionOutcomeUiStateFromLoad(resultSource));
     setExtrasLoading(false);
   }, [sessionId]);
 
@@ -177,13 +182,15 @@ export default function PaperValidationRunSessionDetailPage() {
         lessons: lessons || null,
       };
       const response = await api.strategies.recordSessionResult(sessionId, payload);
-      setSessionResult({
+      const next: SessionResultLoad = {
         data: response.result,
         available: true,
         error: null,
         fallbackUsed: false,
         resultNotRecorded: false,
-      });
+      };
+      setSessionResult(next);
+      setOutcomeUiState(sessionOutcomeUiStateFromLoad(next));
       setResultConfirm("");
     } catch (err) {
       setResultError(err instanceof Error ? err.message : "Failed to record outcome.");
@@ -198,11 +205,12 @@ export default function PaperValidationRunSessionDetailPage() {
     return <ErrorState message="Run session not found." onRetry={() => void reload()} />;
 
   const isRunning = session.session_status === "running";
-  const hasVerifiedOutcome =
-    sessionResult.available && sessionResult.data != null && !sessionResult.resultNotRecorded;
+  const hasVerifiedOutcome = outcomeUiState === "recorded" && sessionResult.data != null;
   const canComplete = isRunning && hasVerifiedOutcome;
-  const outcomeUnknown = isRunning && !sessionResult.available;
-  const outcomeMissing = isRunning && sessionResult.available && sessionResult.resultNotRecorded;
+  const outcomeLoading = outcomeUiState === "loading" || extrasLoading;
+  const outcomeUnavailable = outcomeUiState === "unavailable";
+  const outcomeMissing = outcomeUiState === "confirmed_not_recorded";
+  const canShowRecordForm = isRunning && outcomeUiState === "confirmed_not_recorded";
   const observationItems = observations.available ? (observations.data ?? []) : [];
 
   return (
@@ -297,11 +305,17 @@ export default function PaperValidationRunSessionDetailPage() {
               Record a session outcome before marking completed.
             </p>
           ) : null}
-          {outcomeUnknown ? (
+          {outcomeLoading && isRunning ? (
+            <p className="text-xs text-amber-400" data-testid="paper-run-session-outcome-loading">
+              Loading outcome state… completion stays unavailable until the outcome source responds.
+            </p>
+          ) : null}
+          {outcomeUnavailable && isRunning ? (
             <p className="text-xs text-amber-400" data-testid="paper-run-session-outcome-unverified">
               Completion is unavailable until outcome state is verified. Retry loading the outcome
               source
-              {extrasLoading ? " (retrying…)" : ""}.
+              {extrasLoading ? " (retrying…)" : ""}. Recording is blocked until the current outcome
+              state is known — no blind duplicate write is offered.
             </p>
           ) : null}
           {statusError ? <p className="text-sm text-red-400">{statusError}</p> : null}
@@ -418,7 +432,13 @@ export default function PaperValidationRunSessionDetailPage() {
           <CardTitle className="text-base">Session outcome</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          {!sessionResult.available ? (
+          {outcomeLoading ? (
+            <p className="text-zinc-400" data-testid="paper-run-session-result-loading">
+              Loading outcome source…
+            </p>
+          ) : null}
+
+          {outcomeUiState === "unavailable" ? (
             <div className="space-y-2">
               <p className="text-amber-400" data-testid="paper-run-session-result-unavailable">
                 Outcome source unavailable
@@ -434,12 +454,10 @@ export default function PaperValidationRunSessionDetailPage() {
               >
                 Retry outcome
               </Button>
-              {isRunning ? (
-                <p className="text-xs text-zinc-400">
-                  You may still record an outcome below after verifying the current state, or retry
-                  first.
-                </p>
-              ) : null}
+              <p className="text-xs text-zinc-400">
+                Recording stays disabled until outcome state is verified. No blind duplicate write
+                is offered without an explicit backend idempotency contract.
+              </p>
             </div>
           ) : null}
 
@@ -456,23 +474,14 @@ export default function PaperValidationRunSessionDetailPage() {
             </div>
           ) : null}
 
-          {sessionResult.available &&
-          sessionResult.resultNotRecorded &&
-          !isRunning &&
-          !hasVerifiedOutcome ? (
+          {outcomeUiState === "confirmed_not_recorded" && !isRunning ? (
             <p className="text-zinc-400" data-testid="paper-run-session-result-not-recorded">
               No outcome recorded.
             </p>
           ) : null}
 
-          {isRunning && !hasVerifiedOutcome ? (
+          {canShowRecordForm ? (
             <div className="space-y-3" data-testid="paper-run-session-result-form">
-              {!sessionResult.available ? (
-                <p className="text-xs text-zinc-400">
-                  Recording a new outcome is allowed, but current outcome state is unverified until
-                  the outcome source responds.
-                </p>
-              ) : null}
               <label className="block text-xs text-zinc-400">
                 Outcome
                 <select

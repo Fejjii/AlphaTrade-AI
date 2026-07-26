@@ -11,14 +11,18 @@ export { RelatedStageLinks } from "@/components/validate/RelatedStageLinks";
 export { RunPlanSummaryCard } from "@/components/validate/RunPlanSummaryCard";
 export { RunSessionSummaryCard } from "@/components/validate/RunSessionSummaryCard";
 export {
+  classifyOutcomeCoverage,
   loadObservationsSource,
   loadRecentSessionResults,
   loadSessionResultSource,
+  sessionOutcomeUiStateFromLoad,
   summarizeOutcomeCoverage,
 } from "@/components/validate/sessionExtras";
 export type {
   OutcomeCoverage,
+  OutcomeCoverageStatus,
   RecentResultLoad,
+  SessionOutcomeUiState,
   SessionResultLoad,
 } from "@/components/validate/sessionExtras";
 export { ValidatePageChrome } from "@/components/validate/ValidatePageChrome";

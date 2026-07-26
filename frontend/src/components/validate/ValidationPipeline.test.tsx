@@ -21,6 +21,10 @@ function stage(id: ValidationStageModel["id"], index: number): ValidationStageMo
     blocker: null,
     timestamp: "2026-07-26T10:00:00.000Z",
     available: true,
+    renderable: true,
+    fullyAvailable: true,
+    coverageStatus: null,
+    errorCount: 0,
     sourceName: id,
   };
 }

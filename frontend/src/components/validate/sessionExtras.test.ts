@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/client";
 import {
+  classifyOutcomeCoverage,
   loadObservationsSource,
   loadRecentSessionResults,
   loadSessionResultSource,
+  sessionOutcomeUiStateFromLoad,
   summarizeOutcomeCoverage,
 } from "@/components/validate/sessionExtras";
 import type { PaperValidationSessionResultItem } from "@/lib/api/types";
@@ -69,23 +71,41 @@ describe("sessionExtras", () => {
     expect(source.error).toMatch(/obs down/i);
   });
 
-  it("summarizes five completed sessions with five loaded results", async () => {
+  it("classifies coverage statuses explicitly", () => {
+    expect(classifyOutcomeCoverage({ completedSessionsProbed: 0, resultsUnavailable: 0 })).toBe(
+      "not_applicable",
+    );
+    expect(classifyOutcomeCoverage({ completedSessionsProbed: 5, resultsUnavailable: 0 })).toBe(
+      "complete",
+    );
+    expect(classifyOutcomeCoverage({ completedSessionsProbed: 5, resultsUnavailable: 2 })).toBe(
+      "partial",
+    );
+    expect(classifyOutcomeCoverage({ completedSessionsProbed: 5, resultsUnavailable: 5 })).toBe(
+      "unavailable",
+    );
+  });
+
+  it("summarizes five completed sessions with five loaded results as complete", async () => {
     const sessions = Array.from({ length: 5 }, (_, i) => ({
       session_id: `sess-${i}`,
       session_status: "completed",
     }));
     const fetchResult = vi.fn(async (id: string) => result({ run_session_id: id, result_id: id }));
     const recent = await loadRecentSessionResults(sessions, fetchResult, 5);
-    expect(recent).toHaveLength(5);
-    expect(summarizeOutcomeCoverage(recent)).toEqual({
+    expect(summarizeOutcomeCoverage(recent)).toMatchObject({
       completedSessionsProbed: 5,
       resultsLoaded: 5,
       resultsUnavailable: 0,
       resultsNotRecorded: 0,
+      status: "complete",
+      fullyAvailable: true,
+      renderable: true,
+      errorCount: 0,
     });
   });
 
-  it("summarizes three loaded and two failed result requests", async () => {
+  it("summarizes three loaded and two failed result requests as partial", async () => {
     const sessions = Array.from({ length: 5 }, (_, i) => ({
       session_id: `sess-${i}`,
       session_status: "completed",
@@ -97,15 +117,19 @@ describe("sessionExtras", () => {
       return result({ run_session_id: id, result_id: id });
     });
     const recent = await loadRecentSessionResults(sessions, fetchResult, 5);
-    expect(summarizeOutcomeCoverage(recent)).toEqual({
+    expect(summarizeOutcomeCoverage(recent)).toMatchObject({
       completedSessionsProbed: 5,
       resultsLoaded: 3,
       resultsUnavailable: 2,
       resultsNotRecorded: 0,
+      status: "partial",
+      fullyAvailable: false,
+      renderable: true,
+      errorCount: 2,
     });
   });
 
-  it("summarizes all result requests failed", async () => {
+  it("summarizes all result requests failed as unavailable", async () => {
     const sessions = Array.from({ length: 5 }, (_, i) => ({
       session_id: `sess-${i}`,
       session_status: "completed",
@@ -114,40 +138,93 @@ describe("sessionExtras", () => {
       throw new Error("down");
     });
     const recent = await loadRecentSessionResults(sessions, fetchResult, 5);
-    expect(summarizeOutcomeCoverage(recent)).toEqual({
+    expect(summarizeOutcomeCoverage(recent)).toMatchObject({
       completedSessionsProbed: 5,
       resultsLoaded: 0,
       resultsUnavailable: 5,
       resultsNotRecorded: 0,
+      status: "unavailable",
+      fullyAvailable: false,
+      renderable: false,
+      errorCount: 5,
     });
   });
 
-  it("summarizes confirmed no result for a completed session", async () => {
+  it("summarizes confirmed 404 results as not recorded, not failed", async () => {
     const recent = await loadRecentSessionResults(
-      [{ session_id: "sess-1", session_status: "completed" }],
+      Array.from({ length: 5 }, (_, i) => ({
+        session_id: `sess-${i}`,
+        session_status: "completed",
+      })),
       async () => {
         throw new ApiError("Session result not found.", 404, {});
       },
     );
-    expect(summarizeOutcomeCoverage(recent)).toEqual({
-      completedSessionsProbed: 1,
+    expect(summarizeOutcomeCoverage(recent)).toMatchObject({
+      completedSessionsProbed: 5,
       resultsLoaded: 0,
       resultsUnavailable: 0,
-      resultsNotRecorded: 1,
+      resultsNotRecorded: 5,
+      status: "complete",
+      fullyAvailable: true,
+      errorCount: 0,
     });
   });
 
-  it("summarizes no completed sessions as empty coverage", async () => {
+  it("summarizes no completed sessions as not_applicable", async () => {
     const recent = await loadRecentSessionResults(
       [{ session_id: "sess-1", session_status: "running" }],
       async () => result(),
     );
     expect(recent).toEqual([]);
-    expect(summarizeOutcomeCoverage(recent)).toEqual({
+    expect(summarizeOutcomeCoverage(recent)).toMatchObject({
       completedSessionsProbed: 0,
-      resultsLoaded: 0,
-      resultsUnavailable: 0,
-      resultsNotRecorded: 0,
+      status: "not_applicable",
+      fullyAvailable: false,
+      renderable: true,
+      errorCount: 0,
     });
+  });
+
+  it("maps session outcome UI states honestly", () => {
+    expect(
+      sessionOutcomeUiStateFromLoad(
+        {
+          data: null,
+          available: false,
+          error: null,
+          fallbackUsed: false,
+          resultNotRecorded: false,
+        },
+        { loading: true },
+      ),
+    ).toBe("loading");
+    expect(
+      sessionOutcomeUiStateFromLoad({
+        data: result(),
+        available: true,
+        error: null,
+        fallbackUsed: false,
+        resultNotRecorded: false,
+      }),
+    ).toBe("recorded");
+    expect(
+      sessionOutcomeUiStateFromLoad({
+        data: null,
+        available: true,
+        error: null,
+        fallbackUsed: false,
+        resultNotRecorded: true,
+      }),
+    ).toBe("confirmed_not_recorded");
+    expect(
+      sessionOutcomeUiStateFromLoad({
+        data: null,
+        available: false,
+        error: "down",
+        fallbackUsed: false,
+        resultNotRecorded: false,
+      }),
+    ).toBe("unavailable");
   });
 });

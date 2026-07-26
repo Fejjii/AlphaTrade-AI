@@ -1,4 +1,7 @@
-import type { RecentResultLoad } from "@/components/validate/sessionExtras";
+import type {
+  OutcomeCoverageStatus,
+  RecentResultLoad,
+} from "@/components/validate/sessionExtras";
 import type { SourceResult } from "@/components/workflows/sourceResult";
 import type {
   PaperValidationCandidateItem,
@@ -77,7 +80,17 @@ export type ValidationStageModel = {
   nextAction: string;
   blocker: string | null;
   timestamp: string | null;
+  /**
+   * For most stages: source loaded successfully.
+   * For outcome: true only when coverage is complete or not_applicable (never partial).
+   */
   available: boolean;
+  /** Whether honest stage content can be rendered (partial outcome rows remain visible). */
+  renderable: boolean;
+  /** True only when coverage/source has complete successful availability. */
+  fullyAvailable: boolean;
+  coverageStatus: OutcomeCoverageStatus | null;
+  errorCount: number;
   sourceName: string;
 };
 
@@ -109,6 +122,10 @@ export type OutcomeCoverageModel = {
   resultsLoaded: number;
   resultsUnavailable: number;
   resultsNotRecorded: number;
+  status: OutcomeCoverageStatus;
+  renderable: boolean;
+  fullyAvailable: boolean;
+  errorCount: number;
 };
 
 export type ValidationPipelineModel = {

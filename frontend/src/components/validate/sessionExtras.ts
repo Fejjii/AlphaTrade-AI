@@ -18,6 +18,32 @@ export type RecentResultLoad = SessionResultLoad & {
   sessionId: string;
 };
 
+/** Explicit outcome-probe coverage classification for Validate hub honesty. */
+export type OutcomeCoverageStatus =
+  | "not_applicable"
+  | "complete"
+  | "partial"
+  | "unavailable";
+
+export type OutcomeCoverage = {
+  completedSessionsProbed: number;
+  resultsLoaded: number;
+  resultsUnavailable: number;
+  resultsNotRecorded: number;
+  status: OutcomeCoverageStatus;
+  /** Some honest outcome rows/status can be shown (including empty not_applicable). */
+  renderable: boolean;
+  /** True only when every probed result request succeeded (loaded or confirmed not recorded). */
+  fullyAvailable: boolean;
+  errorCount: number;
+};
+
+export type SessionOutcomeUiState =
+  | "loading"
+  | "recorded"
+  | "confirmed_not_recorded"
+  | "unavailable";
+
 export function isSessionResultNotFound(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const status = (error as { status?: unknown }).status;
@@ -75,12 +101,16 @@ export async function loadRecentSessionResults(
   );
 }
 
-export type OutcomeCoverage = {
+export function classifyOutcomeCoverage(input: {
   completedSessionsProbed: number;
-  resultsLoaded: number;
   resultsUnavailable: number;
-  resultsNotRecorded: number;
-};
+}): OutcomeCoverageStatus {
+  const { completedSessionsProbed, resultsUnavailable } = input;
+  if (completedSessionsProbed === 0) return "not_applicable";
+  if (resultsUnavailable === 0) return "complete";
+  if (resultsUnavailable === completedSessionsProbed) return "unavailable";
+  return "partial";
+}
 
 export function summarizeOutcomeCoverage(recentResults: RecentResultLoad[]): OutcomeCoverage {
   let resultsLoaded = 0;
@@ -95,10 +125,30 @@ export function summarizeOutcomeCoverage(recentResults: RecentResultLoad[]): Out
       resultsLoaded += 1;
     }
   }
+  const completedSessionsProbed = recentResults.length;
+  const status = classifyOutcomeCoverage({
+    completedSessionsProbed,
+    resultsUnavailable,
+  });
   return {
-    completedSessionsProbed: recentResults.length,
+    completedSessionsProbed,
     resultsLoaded,
     resultsUnavailable,
     resultsNotRecorded,
+    status,
+    // Keep partial rows visible; unavailable has nothing trustworthy to render as a count.
+    renderable: status !== "unavailable",
+    fullyAvailable: status === "complete",
+    errorCount: resultsUnavailable,
   };
+}
+
+export function sessionOutcomeUiStateFromLoad(
+  result: SessionResultLoad,
+  options?: { loading?: boolean },
+): SessionOutcomeUiState {
+  if (options?.loading) return "loading";
+  if (!result.available) return "unavailable";
+  if (result.resultNotRecorded || result.data == null) return "confirmed_not_recorded";
+  return "recorded";
 }

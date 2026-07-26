@@ -178,11 +178,15 @@ describe("buildValidationPipeline", () => {
     expect(model.counts.run_session).toBe(2);
     expect(model.counts.observation).toBe(1);
     expect(model.counts.outcome).toBe(1);
-    expect(model.outcomeCoverage).toEqual({
+    expect(model.outcomeCoverage).toMatchObject({
       completedSessionsProbed: 1,
       resultsLoaded: 1,
       resultsUnavailable: 0,
       resultsNotRecorded: 0,
+      status: "complete",
+      fullyAvailable: true,
+      renderable: true,
+      errorCount: 0,
     });
   });
 
@@ -281,7 +285,15 @@ describe("buildValidationPipeline", () => {
     expect(model.stages.find((s) => s.id === "outcome")?.statusLabel).toMatch(
       /Outcome results unavailable/i,
     );
-    expect(model.outcomeCoverage.resultsUnavailable).toBe(5);
+    expect(model.outcomeCoverage).toMatchObject({
+      status: "unavailable",
+      fullyAvailable: false,
+      renderable: false,
+      resultsUnavailable: 5,
+      errorCount: 5,
+    });
+    expect(model.stages.find((s) => s.id === "outcome")?.available).toBe(false);
+    expect(model.stages.find((s) => s.id === "outcome")?.renderable).toBe(false);
   });
 
   it("shows partial outcome coverage when some result probes fail", () => {
@@ -319,7 +331,16 @@ describe("buildValidationPipeline", () => {
     expect(model.stages.find((s) => s.id === "outcome")?.statusLabel).toBe(
       "3 of 5 recent outcomes loaded",
     );
-    expect(model.limitations.some((item) => /unavailable/i.test(item))).toBe(true);
+    expect(model.outcomeCoverage).toMatchObject({
+      status: "partial",
+      fullyAvailable: false,
+      renderable: true,
+      errorCount: 2,
+    });
+    expect(model.stages.find((s) => s.id === "outcome")?.available).toBe(false);
+    expect(model.stages.find((s) => s.id === "outcome")?.renderable).toBe(true);
+    expect(model.recentOutcomes).toHaveLength(5);
+    expect(model.limitations.some((item) => /partial/i.test(item))).toBe(true);
   });
 
   it("labels confirmed missing outcomes as not recorded", () => {
@@ -335,7 +356,12 @@ describe("buildValidationPipeline", () => {
     });
     expect(model.counts.outcome).toBe(0);
     expect(model.recentOutcomes[0]?.resultNotRecorded).toBe(true);
-    expect(model.outcomeCoverage.resultsNotRecorded).toBe(1);
+    expect(model.outcomeCoverage).toMatchObject({
+      resultsNotRecorded: 1,
+      resultsUnavailable: 0,
+      status: "complete",
+      fullyAvailable: true,
+    });
   });
 
   it("keeps outcome count 0 when there are no completed sessions", () => {
@@ -347,9 +373,12 @@ describe("buildValidationPipeline", () => {
       recentResults: [],
     });
     expect(model.counts.outcome).toBe(0);
+    expect(model.outcomeCoverage.status).toBe("not_applicable");
     expect(model.stages.find((s) => s.id === "outcome")?.statusLabel).toMatch(
       /No completed sessions/i,
     );
+    expect(model.stages.find((s) => s.id === "outcome")?.available).toBe(true);
+    expect(model.stages.find((s) => s.id === "outcome")?.fullyAvailable).toBe(true);
   });
 
   it("marks outcome unavailable when run-session source is unavailable", () => {
@@ -362,5 +391,6 @@ describe("buildValidationPipeline", () => {
     });
     expect(model.counts.outcome).toBeNull();
     expect(model.stages.find((s) => s.id === "outcome")?.available).toBe(false);
+    expect(model.stages.find((s) => s.id === "outcome")?.coverageStatus).toBeNull();
   });
 });

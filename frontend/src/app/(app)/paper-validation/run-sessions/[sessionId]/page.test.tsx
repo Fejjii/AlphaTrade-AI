@@ -108,30 +108,51 @@ describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", (
     expect(screen.queryByRole("button", { name: /execute live/i })).not.toBeInTheDocument();
   });
 
-  it("treats confirmed 404 as not recorded and requires outcome before completion", async () => {
+  it("does not enable the recording form during the initial outcome load", async () => {
+    let rejectResult!: (error: unknown) => void;
+    mockGetSessionResult.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectResult = reject;
+        }),
+    );
+    render(<PaperValidationRunSessionDetailPage />);
+
+    expect(screen.getByTestId("paper-run-session-result-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("paper-run-session-result-form")).not.toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-session-mark-completed")).toBeDisabled();
+
+    rejectResult(new ApiError("Session result not found.", 404, {}));
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-form")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the recording form only after confirmed 404 not-recorded", async () => {
     render(<PaperValidationRunSessionDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("paper-run-session-outcome-required")).toBeInTheDocument();
+      expect(screen.getByTestId("paper-run-session-result-form")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("paper-run-session-outcome-required")).toBeInTheDocument();
     expect(screen.getByTestId("outcome-not-recorded")).toBeInTheDocument();
-    expect(screen.getByTestId("paper-run-session-result-form")).toBeInTheDocument();
     expect(screen.getByTestId("paper-run-session-mark-completed")).toBeDisabled();
     expect(screen.queryByTestId("paper-run-session-result-unavailable")).not.toBeInTheDocument();
   });
 
-  it("shows outcome source unavailable for non-404 failures and blocks completion", async () => {
+  it("shows Retry and keeps the recording form unavailable on non-404 failures", async () => {
     mockGetSessionResult.mockRejectedValue(new ApiError("server error", 500, {}));
     render(<PaperValidationRunSessionDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByTestId("paper-run-session-result-unavailable")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("paper-run-session-result-retry")).toBeInTheDocument();
+    expect(screen.queryByTestId("paper-run-session-result-form")).not.toBeInTheDocument();
     expect(screen.getByTestId("paper-run-session-outcome-unverified")).toHaveTextContent(
       /until outcome state is verified/i,
     );
     expect(screen.queryByTestId("outcome-not-recorded")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("paper-run-session-outcome-required")).not.toBeInTheDocument();
     expect(screen.getByTestId("paper-run-session-mark-completed")).toBeDisabled();
   });
 
@@ -164,6 +185,53 @@ describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", (
     expect(mockGetSessionResult.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("hides the recording form when an outcome is already recorded", async () => {
+    mockGetSessionResult.mockResolvedValue({
+      result_id: "result-1",
+      outcome: "success",
+      success_criteria_met: "met",
+      failure_criteria_met: "not_met",
+      entry_assessment: "no_entry",
+      discipline_assessment: "disciplined",
+      invalidation_hit: false,
+      recorded_at: "2026-06-29T01:00:00Z",
+      created_at: "2026-06-29T01:00:00Z",
+      run_session_id: "session-1",
+      run_plan_id: "plan-1",
+    });
+
+    render(<PaperValidationRunSessionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-summary")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("paper-run-session-result-form")).not.toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-session-mark-completed")).not.toBeDisabled();
+  });
+
+  it("enables completion only after a newly recorded outcome succeeds", async () => {
+    render(<PaperValidationRunSessionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-form")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("paper-run-session-mark-completed")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("paper-run-session-result-confirm"), {
+      target: { value: "RECORD_PAPER_VALIDATION_OUTCOME" },
+    });
+    fireEvent.click(screen.getByTestId("paper-run-session-result-submit"));
+
+    await waitFor(() => {
+      expect(mockRecordSessionResult).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-mark-completed")).not.toBeDisabled();
+    });
+    expect(screen.queryByTestId("paper-run-session-result-form")).not.toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-session-result-summary")).toBeInTheDocument();
+  });
+
   it("disables observation submit until confirm phrase typed", async () => {
     render(<PaperValidationRunSessionDetailPage />);
 
@@ -186,29 +254,5 @@ describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", (
         }),
       );
     });
-  });
-
-  it("enables mark completed only when a verified outcome exists", async () => {
-    mockGetSessionResult.mockResolvedValue({
-      result_id: "result-1",
-      outcome: "success",
-      success_criteria_met: "met",
-      failure_criteria_met: "not_met",
-      entry_assessment: "no_entry",
-      discipline_assessment: "disciplined",
-      invalidation_hit: false,
-      recorded_at: "2026-06-29T01:00:00Z",
-      created_at: "2026-06-29T01:00:00Z",
-      run_session_id: "session-1",
-      run_plan_id: "plan-1",
-    });
-
-    render(<PaperValidationRunSessionDetailPage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("paper-run-session-mark-completed")).not.toBeDisabled();
-    });
-    expect(screen.queryByTestId("paper-run-session-outcome-required")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("paper-run-session-outcome-unverified")).not.toBeInTheDocument();
   });
 });

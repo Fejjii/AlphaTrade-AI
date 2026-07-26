@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RecentResultLoad } from "@/components/validate/sessionExtras";
 import type { SourceResult } from "@/components/workflows/sourceResult";
-import type { PaperValidationRunSessionItem } from "@/lib/api/types";
+import type {
+  PaperValidationRunSessionItem,
+  PaperValidationSessionResultItem,
+} from "@/lib/api/types";
 
 import ValidateHubPage from "./page";
 
@@ -13,6 +16,8 @@ const safetyPosture = {
   providerMode: "fallback",
 };
 
+const setFreshness = vi.fn();
+
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({ killSwitchActive: false }),
   useSafetyPosture: () => safetyPosture,
@@ -21,7 +26,7 @@ vi.mock("@/contexts/AppContext", () => ({
 vi.mock("@/contexts/ShellFreshnessContext", () => ({
   useShellFreshness: () => ({
     freshness: { state: null },
-    setFreshness: vi.fn(),
+    setFreshness,
     clearFreshness: vi.fn(),
   }),
 }));
@@ -140,6 +145,40 @@ function recentResult(
   };
 }
 
+function loadedResult(
+  sessionId: string,
+  item: PaperValidationSessionResultItem,
+): RecentResultLoad {
+  return recentResult(sessionId, {
+    data: item,
+    available: true,
+    resultNotRecorded: false,
+  });
+}
+
+function makeResult(sessionId: string, index: number): PaperValidationSessionResultItem {
+  return {
+    result_id: `res-${index}`,
+    run_session_id: sessionId,
+    run_plan_id: "plan-1",
+    outcome: "success",
+    success_criteria_met: "met",
+    failure_criteria_met: "not_met",
+    invalidation_hit: false,
+    entry_assessment: "entered_as_planned",
+    discipline_assessment: "disciplined",
+    recorded_at: "2026-07-26T14:00:00.000Z",
+    created_at: "2026-07-26T14:00:00.000Z",
+  };
+}
+
+function fiveCompleted(): PaperValidationRunSessionItem[] {
+  return Array.from({ length: 5 }, (_, i) => ({
+    ...completedSession,
+    session_id: `sess-${i}`,
+  }));
+}
+
 let asyncState = {
   data: {
     drafts: ok({ items: [draft], total: 1, limit: 50, offset: 0 }),
@@ -159,6 +198,7 @@ vi.mock("@/hooks/useAsyncData", () => ({
 
 afterEach(() => {
   cleanup();
+  setFreshness.mockClear();
   safetyPosture.executionMode = "paper";
   safetyPosture.realTradingEnabled = false;
   asyncState = {
@@ -254,59 +294,116 @@ describe("ValidateHubPage Phase C2", () => {
     );
   });
 
-  it("shows honest outcome coverage and Outcomes partial-data when result probes fail", () => {
+  it("treats five loaded outcomes as complete coverage without partial warning", () => {
+    const completed = fiveCompleted();
     asyncState = {
       ...asyncState,
       data: {
         ...asyncState.data,
-        runSessions: ok({
-          items: [runningSession, completedSession, { ...completedSession, session_id: "sess-2" }],
-          total: 3,
-          limit: 50,
-          offset: 0,
-        }),
+        runSessions: ok({ items: completed, total: 5, limit: 50, offset: 0 }),
+        recentResults: completed.map((session, index) =>
+          loadedResult(session.session_id, makeResult(session.session_id, index)),
+        ),
+      },
+    };
+    render(<ValidateHubPage />);
+    expect(screen.queryByTestId("validate-hub-partial")).not.toBeInTheDocument();
+    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(/Coverage: complete/i);
+    expect(screen.getByTestId("validation-stage-outcome")).toHaveTextContent(
+      /5 of 5 recent outcomes loaded/i,
+    );
+    expect(setFreshness).toHaveBeenCalled();
+    // Complete coverage must not force page-level unavailable the way partial does.
+    expect(setFreshness.mock.calls.some((call) => call[0]?.state === "unavailable")).toBe(false);
+  });
+
+  it("marks partial coverage with Outcomes warning, Retry, 3 of 5 label, and non-Live freshness", () => {
+    const completed = fiveCompleted();
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...asyncState.data,
+        runSessions: ok({ items: completed, total: 5, limit: 50, offset: 0 }),
         recentResults: [
-          recentResult("sess-done", {
-            available: false,
-            error: "down",
-          }),
-          recentResult("sess-2", {
-            available: false,
-            error: "down",
-          }),
+          loadedResult("sess-0", makeResult("sess-0", 0)),
+          loadedResult("sess-1", makeResult("sess-1", 1)),
+          loadedResult("sess-2", makeResult("sess-2", 2)),
+          recentResult("sess-3", { available: false, error: "down" }),
+          recentResult("sess-4", { available: false, error: "down" }),
         ],
       },
     };
     render(<ValidateHubPage />);
-    expect(screen.getByTestId("validate-hub-partial")).toHaveTextContent(/Outcomes/i);
-    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(
-      /Unavailable:\s*2/i,
+    const partial = screen.getByTestId("validate-hub-partial");
+    expect(partial).toHaveTextContent(/Outcomes/i);
+    expect(within(partial).getByRole("button", { name: /^Retry$/i })).toBeInTheDocument();
+    expect(screen.getByTestId("validation-stage-outcome")).toHaveTextContent(
+      /3 of 5 recent outcomes loaded/i,
     );
-    expect(screen.getByTestId("validate-recent-outcome-sess-done")).toHaveTextContent(
+    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(/Coverage: partial/i);
+    expect(screen.getByTestId("validate-recent-outcome-sess-0")).toHaveTextContent(/success/i);
+    expect(screen.getByTestId("validate-recent-outcome-sess-3")).toHaveTextContent(
       /result unavailable/i,
     );
-    expect(screen.queryByText("Count: 0")).not.toBeInTheDocument();
+    expect(setFreshness.mock.calls.some((call) => call[0]?.state === "live")).toBe(false);
+    expect(setFreshness.mock.calls.some((call) => call[0]?.state === "unavailable")).toBe(true);
   });
 
-  it("labels confirmed missing outcomes as not recorded", () => {
+  it("marks all failed probes as unavailable without a confirmed zero", () => {
+    const completed = fiveCompleted();
     asyncState = {
       ...asyncState,
       data: {
         ...asyncState.data,
-        runSessions: ok({ items: [completedSession], total: 1, limit: 50, offset: 0 }),
-        recentResults: [
-          recentResult("sess-done", {
+        runSessions: ok({ items: completed, total: 5, limit: 50, offset: 0 }),
+        recentResults: completed.map((session) =>
+          recentResult(session.session_id, { available: false, error: "down" }),
+        ),
+      },
+    };
+    render(<ValidateHubPage />);
+    const partial = screen.getByTestId("validate-hub-partial");
+    expect(partial).toHaveTextContent(/Outcomes/i);
+    expect(within(partial).getByRole("button", { name: /^Retry$/i })).toBeInTheDocument();
+    expect(screen.getByTestId("validation-stage-outcome")).toHaveTextContent(
+      /Outcome results unavailable/i,
+    );
+    expect(screen.getByTestId("validation-stage-count-outcome")).toHaveTextContent("unavailable");
+    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(
+      /Coverage: unavailable/i,
+    );
+  });
+
+  it("classifies confirmed 404s as not recorded complete coverage", () => {
+    const completed = fiveCompleted();
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...asyncState.data,
+        runSessions: ok({ items: completed, total: 5, limit: 50, offset: 0 }),
+        recentResults: completed.map((session) =>
+          recentResult(session.session_id, {
             available: true,
             resultNotRecorded: true,
             data: null,
           }),
-        ],
+        ),
       },
     };
     render(<ValidateHubPage />);
-    expect(screen.getByTestId("validate-recent-outcome-sess-done")).toHaveTextContent(
-      /not recorded/i,
+    expect(screen.queryByTestId("validate-hub-partial")).not.toBeInTheDocument();
+    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(/Coverage: complete/i);
+    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(/Not recorded:\s*5/i);
+    expect(screen.getByTestId("validate-recent-outcome-sess-0")).toHaveTextContent(/not recorded/i);
+  });
+
+  it("uses not_applicable with honest zero and no false Outcomes warning", () => {
+    render(<ValidateHubPage />);
+    expect(screen.queryByTestId("validate-hub-partial")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("validate-outcome-coverage")).not.toBeInTheDocument();
+    expect(screen.getByTestId("validation-stage-outcome")).toHaveTextContent(
+      /No completed sessions/i,
     );
-    expect(screen.queryByText(/result unavailable/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("validation-stage-count-outcome")).toHaveTextContent("Count: 0");
   });
 });

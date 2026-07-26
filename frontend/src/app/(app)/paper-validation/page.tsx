@@ -70,17 +70,20 @@ export default function ValidateHubPage() {
   );
 
   const outcomeCoverage = pipeline?.outcomeCoverage;
-  const outcomesSourceAvailable =
-    !data?.runSessions.available
-      ? false
-      : !outcomeCoverage
-        ? true
-        : outcomeCoverage.completedSessionsProbed === 0 ||
-          outcomeCoverage.resultsUnavailable < outcomeCoverage.completedSessionsProbed;
+  const coverageStatus = outcomeCoverage?.status;
 
   const sourceStatuses = useMemo(() => {
     if (!data) return [];
     const coverage = pipeline?.outcomeCoverage;
+    const status = coverage?.status;
+    const outcomeFullyAvailable = status === "complete" || status === "not_applicable";
+    const outcomeRequired = status === "complete" || status === "partial" || status === "unavailable";
+    const outcomeTimestamp =
+      status === "complete"
+        ? (data.recentResults.find((r) => r.data?.recorded_at)?.data?.recorded_at ??
+          data.recentResults.find((r) => r.data?.created_at)?.data?.created_at ??
+          null)
+        : null;
     return [
       {
         name: "Drafts",
@@ -115,29 +118,35 @@ export default function ValidateHubPage() {
       },
       {
         name: "Outcomes",
-        available: outcomesSourceAvailable,
+        // Partial/unavailable are not fully available; not_applicable is not a failure.
+        available: !data.runSessions.available ? false : outcomeFullyAvailable,
         error:
-          coverage && coverage.resultsUnavailable > 0
-            ? `${coverage.resultsUnavailable} of ${coverage.completedSessionsProbed} recent outcome result request(s) failed`
+          coverage && (status === "partial" || status === "unavailable")
+            ? `${coverage.errorCount} of ${coverage.completedSessionsProbed} recent outcome result request(s) failed`
             : null,
-        timestamp:
-          data.recentResults.find((r) => r.data?.recorded_at)?.data?.recorded_at ??
-          data.recentResults.find((r) => r.data?.created_at)?.data?.created_at ??
-          null,
-        required: Boolean(coverage && coverage.completedSessionsProbed > 0),
+        timestamp: outcomeTimestamp,
+        required: Boolean(data.runSessions.available && outcomeRequired),
       },
     ];
-  }, [data, outcomesSourceAvailable, pipeline?.outcomeCoverage]);
+  }, [data, pipeline?.outcomeCoverage]);
 
-  const freshnessSources = sourceStatuses.map((source) => ({
-    name: source.name,
-    available: source.available,
-    required: source.required ?? true,
-    timestamp: source.timestamp,
-  }));
+  // Exclude not_applicable Outcomes from freshness aggregation entirely.
+  const freshnessSources = sourceStatuses
+    .filter((source) => {
+      if (source.name !== "Outcomes") return true;
+      return coverageStatus !== "not_applicable" && coverageStatus != null;
+    })
+    .map((source) => ({
+      name: source.name,
+      available: source.available,
+      required: source.required ?? true,
+      // Never promote a single loaded outcome timestamp while coverage is incomplete.
+      timestamp:
+        source.name === "Outcomes" && coverageStatus !== "complete" ? null : source.timestamp,
+    }));
 
   const unavailableSources = sourceStatuses
-    .filter((source) => !source.available)
+    .filter((source) => !source.available && source.required)
     .map((source) => source.name);
   const allFailed =
     Boolean(data) &&
@@ -145,9 +154,12 @@ export default function ValidateHubPage() {
     sourceStatuses.filter((s) => s.required).every((s) => !s.available);
   const partialData = Boolean(data) && unavailableSources.length > 0 && !allFailed;
   const outcomeHint =
-    outcomeCoverage && outcomeCoverage.completedSessionsProbed > 0
+    outcomeCoverage &&
+    (outcomeCoverage.status === "complete" || outcomeCoverage.status === "partial")
       ? `${outcomeCoverage.resultsLoaded} of ${outcomeCoverage.completedSessionsProbed} recent outcomes loaded`
-      : "From completed sessions";
+      : outcomeCoverage?.status === "unavailable"
+        ? "Outcome results unavailable"
+        : "From completed sessions";
 
   if (loading && !data) {
     return <LoadingState label="Loading Validate pipeline…" />;
@@ -243,13 +255,14 @@ export default function ValidateHubPage() {
                 testId="validation-summary-recent-outcomes"
               />
             </div>
-            {outcomeCoverage && outcomeCoverage.completedSessionsProbed > 0 ? (
+            {outcomeCoverage && outcomeCoverage.status !== "not_applicable" ? (
               <p
                 className="text-caption text-text-muted"
                 data-testid="validate-outcome-coverage"
               >
-                Completed sessions probed: {outcomeCoverage.completedSessionsProbed}. Results
-                loaded: {outcomeCoverage.resultsLoaded}. Not recorded:{" "}
+                Coverage: {outcomeCoverage.status}. Completed sessions probed:{" "}
+                {outcomeCoverage.completedSessionsProbed}. Results loaded:{" "}
+                {outcomeCoverage.resultsLoaded}. Not recorded:{" "}
                 {outcomeCoverage.resultsNotRecorded}. Unavailable:{" "}
                 {outcomeCoverage.resultsUnavailable}.
               </p>

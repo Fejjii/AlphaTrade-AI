@@ -69,16 +69,9 @@ function stageCount(
     case "outcome": {
       if (!sources.runSessions.available) return null;
       const coverage = summarizeOutcomeCoverage(sources.recentResults);
-      // No completed sessions probed → honest zero only when sessions source is available.
-      if (coverage.completedSessionsProbed === 0) return 0;
+      if (coverage.status === "not_applicable") return 0;
       // All result requests failed → never display a confirmed zero.
-      if (
-        coverage.resultsUnavailable === coverage.completedSessionsProbed &&
-        coverage.resultsLoaded === 0 &&
-        coverage.resultsNotRecorded === 0
-      ) {
-        return null;
-      }
+      if (coverage.status === "unavailable") return null;
       // Loaded recorded outcomes only; confirmed not-recorded are not counted as loaded results.
       return coverage.resultsLoaded;
     }
@@ -196,25 +189,21 @@ function stageStatus(
       const probed = coverage.completedSessionsProbed;
       let statusLabel = "No completed sessions";
       let blocker: string | null = null;
-      if (probed === 0) {
+      if (coverage.status === "not_applicable") {
         statusLabel = "No completed sessions";
-      } else if (
-        coverage.resultsUnavailable === probed &&
-        coverage.resultsLoaded === 0 &&
-        coverage.resultsNotRecorded === 0
-      ) {
+      } else if (coverage.status === "unavailable") {
         statusLabel = "Outcome results unavailable";
         blocker = "All recent outcome result requests failed.";
-      } else if (coverage.resultsUnavailable > 0) {
+      } else if (coverage.status === "partial") {
         statusLabel = `${coverage.resultsLoaded} of ${probed} recent outcomes loaded`;
-        blocker = `${coverage.resultsUnavailable} recent outcome result request(s) failed.`;
+        blocker = `${coverage.errorCount} recent outcome result request(s) failed.`;
       } else {
         statusLabel = `${coverage.resultsLoaded} of ${probed} recent outcomes loaded`;
       }
       return {
         statusLabel,
         nextAction:
-          probed === 0
+          coverage.status === "not_applicable"
             ? "Complete a running session after recording an outcome."
             : "Review recent outcomes and journal lessons if needed.",
         blocker,
@@ -237,20 +226,33 @@ function buildStages(sources: ValidateHubSources): ValidationStageModel[] {
     const count = stageCount(id, sources);
     const meta = stageStatus(id, sources, count);
     const coverage = summarizeOutcomeCoverage(sources.recentResults);
-    const outcomeResultsAvailable =
-      sources.runSessions.available &&
-      (coverage.completedSessionsProbed === 0 ||
-        coverage.resultsUnavailable < coverage.completedSessionsProbed);
-    const available =
+    const sourceAvailable =
       id === "draft"
         ? sources.drafts.available
         : id === "candidate"
           ? sources.candidates.available
           : id === "run_plan"
             ? sources.runPlans.available
-            : id === "outcome"
-              ? outcomeResultsAvailable
-              : sources.runSessions.available;
+            : sources.runSessions.available;
+
+    const isOutcome = id === "outcome";
+    const coverageStatus = isOutcome
+      ? sources.runSessions.available
+        ? coverage.status
+        : null
+      : null;
+    const fullyAvailable = isOutcome
+      ? Boolean(
+          sources.runSessions.available &&
+            (coverage.status === "complete" || coverage.status === "not_applicable"),
+        )
+      : sourceAvailable;
+    // Partial outcome coverage remains renderable so loaded rows stay visible.
+    const renderable = isOutcome
+      ? Boolean(sources.runSessions.available && coverage.renderable)
+      : sourceAvailable;
+    const available = fullyAvailable;
+    const errorCount = isOutcome ? coverage.errorCount : sourceAvailable ? 0 : 1;
     const sourceName =
       id === "draft"
         ? "Drafts"
@@ -274,6 +276,10 @@ function buildStages(sources: ValidateHubSources): ValidationStageModel[] {
       blocker: meta.blocker,
       timestamp: meta.timestamp,
       available,
+      renderable,
+      fullyAvailable,
+      coverageStatus,
+      errorCount,
       sourceName,
     };
   });
@@ -413,9 +419,9 @@ function buildLimitations(
   if (!sources.runSessions.available) {
     limitations.push("Run session source unavailable — session and outcome summaries limited.");
   }
-  if (coverage.resultsUnavailable > 0) {
+  if (coverage.status === "partial" || coverage.status === "unavailable") {
     limitations.push(
-      `${coverage.resultsUnavailable} recent outcome result request(s) unavailable — coverage incomplete.`,
+      `${coverage.errorCount} recent outcome result request(s) unavailable — coverage ${coverage.status}.`,
     );
   }
   return limitations;
