@@ -39,6 +39,47 @@ export function resolveExecutionDisplay(
   };
 }
 
+export type AdviceDisplay = {
+  text: string;
+  tone: "muted" | "warn" | "blocked";
+};
+
+/**
+ * Advice notice must match runtime posture truth.
+ * "Paper-only research" is allowed only when paper is fully confirmed.
+ */
+export function resolveAdviceDisplay(
+  executionMode: string | null | undefined,
+  realTradingEnabled: boolean | null | undefined,
+  postureKnown: boolean,
+): AdviceDisplay {
+  if (isPaperModeConfirmed(executionMode, realTradingEnabled) && postureKnown) {
+    return {
+      text: "Not financial advice. Paper-only research — simulated results do not guarantee performance.",
+      tone: "muted",
+    };
+  }
+
+  if (!postureKnown || executionMode == null || realTradingEnabled == null) {
+    return {
+      text: "Trading environment not verified. Not financial advice.",
+      tone: "warn",
+    };
+  }
+
+  if (realTradingEnabled === true) {
+    return {
+      text: "Not financial advice. Real trading appears enabled — paper-only claims do not apply.",
+      tone: "blocked",
+    };
+  }
+
+  return {
+    text: `Not financial advice. Runtime execution mode is ${String(executionMode).toUpperCase()} — not paper-only.`,
+    tone: "warn",
+  };
+}
+
 export type RiskDisplay = {
   label: string;
   /** Passed to RiskBadge; null means unknown (never invent "low"). */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  resolveAdviceDisplay,
   resolveExecutionDisplay,
   resolveRiskDisplay,
 } from "@/components/layout/status-strip-state";
@@ -125,5 +126,56 @@ describe("AT-040 StatusStrip safety truth", () => {
     });
     expect(risk.level).toBeNull();
     expect(risk.label).toBe("Risk unknown");
+  });
+});
+
+describe("AT-040 StatusStrip advice truth", () => {
+  it("confirmed paper may say Paper-only research", () => {
+    const advice = resolveAdviceDisplay("paper", false, true);
+    expect(advice.text).toContain("Paper-only research");
+    expect(advice.text).toContain("Not financial advice");
+  });
+
+  it("real trading enabled never claims paper-only research", () => {
+    const advice = resolveAdviceDisplay("paper", true, true);
+    expect(advice.text.toLowerCase()).not.toContain("paper-only research");
+    expect(advice.text).toContain("Real trading appears enabled");
+  });
+
+  it("live execution mode never claims paper-only research", () => {
+    const advice = resolveAdviceDisplay("live", false, true);
+    expect(advice.text.toLowerCase()).not.toContain("paper-only research");
+    expect(advice.text).toContain("LIVE");
+    expect(advice.text).toContain("not paper-only");
+  });
+
+  it("unknown posture uses neutral unverified wording", () => {
+    const advice = resolveAdviceDisplay(null, null, false);
+    expect(advice.text).toBe("Trading environment not verified. Not financial advice.");
+    expect(advice.text.toLowerCase()).not.toContain("paper-only");
+  });
+
+  it("partial posture uses neutral unverified wording", () => {
+    expect(resolveAdviceDisplay("paper", null, true).text).toBe(
+      "Trading environment not verified. Not financial advice.",
+    );
+    expect(resolveAdviceDisplay(null, false, true).text).toBe(
+      "Trading environment not verified. Not financial advice.",
+    );
+  });
+
+  it("never renders contradictory paper-only text outside confirmed paper", () => {
+    const cases: Array<[string | null, boolean | null, boolean]> = [
+      ["paper", true, true],
+      ["live", false, true],
+      ["live", true, true],
+      [null, null, false],
+      ["paper", null, true],
+      [null, false, true],
+    ];
+    for (const [mode, real, known] of cases) {
+      const advice = resolveAdviceDisplay(mode, real, known);
+      expect(advice.text.toLowerCase()).not.toContain("paper-only research");
+    }
   });
 });

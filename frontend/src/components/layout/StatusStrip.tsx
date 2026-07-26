@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 
 import { RiskBadge } from "@/components/RiskBadge";
 import {
+  resolveAdviceDisplay,
   resolveExecutionDisplay,
   resolveRiskDisplay,
 } from "@/components/layout/status-strip-state";
@@ -24,6 +25,7 @@ export function StatusStrip({ className }: { className?: string }) {
   const { killSwitchStatus, killSwitchError, loading } = useAppContext();
   const { executionMode, realTradingEnabled, postureKnown } = useSafetyPosture();
   const execution = resolveExecutionDisplay(executionMode, realTradingEnabled, postureKnown);
+  const advice = resolveAdviceDisplay(executionMode, realTradingEnabled, postureKnown);
   const risk = resolveRiskDisplay({
     killSwitchStatus,
     killSwitchError,
@@ -81,13 +83,18 @@ export function StatusStrip({ className }: { className?: string }) {
       </span>
       {!adviceDismissed ? (
         <div
-          className="flex min-w-0 flex-1 items-center gap-2 text-text-muted"
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2",
+            advice.tone === "blocked"
+              ? "text-danger"
+              : advice.tone === "warn"
+                ? "text-warning"
+                : "text-text-muted",
+          )}
           data-testid="status-strip-advice"
+          data-advice-tone={advice.tone}
         >
-          <p className="min-w-0 flex-1 truncate">
-            Not financial advice. Paper-only research — simulated results do not guarantee
-            performance.
-          </p>
+          <p className="min-w-0 flex-1 truncate">{advice.text}</p>
           <IconButton
             label="Dismiss advice notice for this session"
             variant="ghost"

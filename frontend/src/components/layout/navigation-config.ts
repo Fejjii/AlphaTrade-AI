@@ -347,6 +347,51 @@ export function isPrimaryDestinationActive(pathname: string, destination: Primar
   return getDestinationId(pathname) === destination.id;
 }
 
+export type PageIdentity = {
+  primaryLabel: string;
+  secondaryLabel: string | null;
+  title: string;
+  subtitle: string | null;
+};
+
+/**
+ * Route-aware page identity derived only from the centralized navigation config.
+ * Dynamic detail routes fall back to the owning primary / parent secondary item.
+ */
+export function resolvePageIdentity(pathname: string): PageIdentity {
+  const destinationId = getDestinationId(pathname);
+  if (!destinationId) {
+    return {
+      primaryLabel: "Workspace",
+      secondaryLabel: null,
+      title: "Workspace",
+      subtitle: null,
+    };
+  }
+
+  const primary = getPrimaryDestination(destinationId);
+  const secondaryItems = getSecondaryItems(destinationId);
+  const activeHref = resolveSecondaryActiveHref(pathname, secondaryItems);
+  const secondary = secondaryItems.find((item) => item.href === activeHref) ?? null;
+
+  // Hub exact match with the destination entry: title only.
+  if (!secondary || (secondary.href === primary.href && pathname === primary.href)) {
+    return {
+      primaryLabel: primary.label,
+      secondaryLabel: null,
+      title: primary.label,
+      subtitle: null,
+    };
+  }
+
+  return {
+    primaryLabel: primary.label,
+    secondaryLabel: secondary.label,
+    title: primary.label,
+    subtitle: secondary.label,
+  };
+}
+
 /** Flat reachability map used by tests — every retained capability path. */
 export function listReachableHrefs(): string[] {
   const hrefs = new Set<string>();

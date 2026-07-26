@@ -9,6 +9,7 @@ import {
   MOBILE_BOTTOM_DESTINATION_IDS,
   MOBILE_MENU_DESTINATION_IDS,
   PRIMARY_DESTINATIONS,
+  resolvePageIdentity,
   resolveSecondaryActiveHref,
   SECONDARY_NAV,
 } from "@/components/layout/navigation-config";
@@ -102,6 +103,20 @@ describe("AT-040 Phase B navigation config", () => {
     expect(settings.some((i) => i.href === "/risk")).toBe(false);
     expect(portfolio.some((i) => i.href === "/risk")).toBe(true);
     expect(getDestinationId("/risk")).toBe("portfolio");
+  });
+
+  it("resolves route-aware page identity from centralized navigation config", () => {
+    expect(resolvePageIdentity("/").title).toBe("Dashboard");
+    expect(resolvePageIdentity("/tradingview-signals").title).toBe("Signals");
+    expect(resolvePageIdentity("/alerts/review")).toMatchObject({
+      title: "Signals",
+      subtitle: "Setup Review",
+    });
+    expect(resolvePageIdentity("/paper-validation/candidates/example")).toMatchObject({
+      title: "Validate",
+      subtitle: "Candidates",
+    });
+    expect(resolvePageIdentity("/unknown-path").title).toBe("Workspace");
   });
 
   it("resolves exactly one secondary active href via longest match", () => {

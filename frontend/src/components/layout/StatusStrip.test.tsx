@@ -96,4 +96,27 @@ describe("StatusStrip integration", () => {
     render(<StatusStrip />);
     expect(within(screen.getByTestId("status-strip-risk")).getByText(/Risk critical/i)).toBeInTheDocument();
   });
+
+  it("shows paper-only advice only when paper is confirmed", () => {
+    render(<StatusStrip />);
+    expect(screen.getByTestId("status-strip-advice")).toHaveTextContent("Paper-only research");
+  });
+
+  it("does not show paper-only advice when real trading is enabled", () => {
+    posture.realTradingEnabled = true;
+    render(<StatusStrip />);
+    const advice = screen.getByTestId("status-strip-advice");
+    expect(advice).not.toHaveTextContent(/paper-only research/i);
+    expect(advice).toHaveTextContent(/Real trading appears enabled/i);
+  });
+
+  it("does not show paper-only advice for unknown posture", () => {
+    posture.executionMode = null;
+    posture.realTradingEnabled = null;
+    posture.postureKnown = false;
+    render(<StatusStrip />);
+    const advice = screen.getByTestId("status-strip-advice");
+    expect(advice).toHaveTextContent("Trading environment not verified");
+    expect(advice).not.toHaveTextContent(/paper-only/i);
+  });
 });
