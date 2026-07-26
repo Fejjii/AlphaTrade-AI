@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 DONE; Phase C2 Validate pipeline in review) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 DONE) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -545,13 +545,13 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   aggregation (available sources with missing/invalid/future timestamps
   contribute unavailable; live + unknown cannot yield page-level Live), signal
   deep-link honesty, Plan signal context query, and session-only dismiss
-  labeling. Phase C1 complete; Phase C2 Validate pipeline implemented pending review.
+  labeling. Phase C1 complete; Phase C2 Validate pipeline complete.
 - Phase C1 deliverables: Dashboard attention queue; Signals inbox on
   `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
   unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
   SourceResult partial-data honesty; confirmed-paper-only safety badges;
   conservative multi-source shell freshness with unknown-timestamp contribution.
-- Phase C2 deliverables (pending review): Validate hub at `/paper-validation`;
+- Phase C2 deliverables: Validate hub at `/paper-validation`;
   pipeline components (`ValidationPipeline`, stage/summary cards, attention queue,
   source availability, `OutcomeSummary`); SourceResult honesty on stage lists;
   preserved detail routes with related-stage links; confirmed-paper posture;
@@ -570,11 +570,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `OutcomeSummary`; initial load shows neutral loading copy (no premature
   unavailable/Retry/zero); retry shows retrying/refreshing without unavailable;
   completed sessions use historical missing-outcome wording.
-  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — validated
-  implementation tip `921929e` pending CI; prior tip `1fb21d0` CI 30222210844
-  success (frontend, backend, docker-build, deployment-safety, evaluation,
-  e2e-smoke). Prior honesty tip `7d63371` CI 30220150868. Local: 520 frontend
-  unit tests, lint/typecheck/build green.
+  Phase C2 PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 merged
+  (`cd77790`; pre-merge head `0e0a1af`; validated implementation commit
+  `921929e`; pre-merge CI 30224234541 success; post-merge main CI 30225088594
+  success — frontend, backend, docker-build, deployment-safety, evaluation,
+  e2e-smoke). Phase C2 complete.
 - Phase C remaining after C2: Journal redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
