@@ -534,17 +534,18 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Phase B PR https://github.com/Fejjii/AlphaTrade-AI/pull/31 merged (`fc148ff`,
   pre-merge head `7f7818c`, CI run 30200035610; post-merge main CI 30201145776).
   Phase C1 draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/32 remains
-  IN REVIEW on `feat/at040-phase-c1-daily-decision-loop` (validated head
-  `7404326`; correction evidence `fab9291`; CI run 30206694206 success).
-  Correction pass recorded: SourceResult availability, runtime safety-truth
-  matrix (`isPaperModeConfirmed`), conservative shell freshness aggregation,
-  signal deep-link honesty, Plan signal context query, and session-only
-  dismiss labeling. Phases C2–F remain.
+  IN REVIEW on `feat/at040-phase-c1-daily-decision-loop` (validated
+  implementation commit `7e42fe8`; CI run 30210340611 success). Correction
+  pass recorded: SourceResult availability, runtime safety-truth matrix
+  (`isPaperModeConfirmed`), conservative shell freshness aggregation (available
+  sources with missing/invalid/future timestamps contribute unavailable; live +
+  unknown cannot yield page-level Live), signal deep-link honesty, Plan signal
+  context query, and session-only dismiss labeling. Phases C2–F remain.
 - Phase C1 deliverables: Dashboard attention queue; Signals inbox on
   `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
   unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
   SourceResult partial-data honesty; confirmed-paper-only safety badges;
-  conservative multi-source shell freshness.
+  conservative multi-source shell freshness with unknown-timestamp contribution.
 - Phase C remaining (do not implement in C1): Validate pipeline redesign;
   Journal redesign; Portfolio/risk split; analytics/charts (Phase D+).
 
