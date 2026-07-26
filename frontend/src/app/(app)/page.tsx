@@ -432,8 +432,8 @@ export default function DashboardPage() {
             </Link>
           </li>
           <li>
-            <Link className="underline" href="/paper-validation/candidates">
-              Validation queue
+            <Link className="underline" href="/paper-validation">
+              Validate pipeline
             </Link>
           </li>
           <li>

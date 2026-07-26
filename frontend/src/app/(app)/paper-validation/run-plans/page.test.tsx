@@ -1,7 +1,26 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SourceResult } from "@/components/workflows/sourceResult";
+
 import PaperValidationRunPlansPage from "./page";
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ killSwitchActive: false }),
+  useSafetyPosture: () => ({
+    executionMode: "paper",
+    realTradingEnabled: false,
+    providerMode: "fallback",
+  }),
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
+}));
 
 const samplePlan = {
   plan_id: "plan-1",
@@ -41,27 +60,38 @@ const samplePlan = {
   created_at: "2026-06-28T12:00:00Z",
 };
 
+function ok<T>(data: T): SourceResult<T> {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
-    data: { items: [samplePlan], total: 1, limit: 50, offset: 0 },
+    data: {
+      runPlans: ok({ items: [samplePlan], total: 1, limit: 50, offset: 0 }),
+    },
     loading: false,
     error: null,
     reload: vi.fn(),
   }),
 }));
 
-describe("PaperValidationRunPlansPage Slice 81", () => {
+describe("PaperValidationRunPlansPage Slice 81 / Phase C2", () => {
   afterEach(() => {
     cleanup();
   });
 
-  it("renders run plan list without run or execution UI", () => {
+  it("renders run plan list with criteria and without execution UI", () => {
     render(<PaperValidationRunPlansPage />);
 
     expect(screen.getByTestId("paper-validation-run-plans-page")).toBeInTheDocument();
     expect(screen.getByTestId("paper-validation-run-plans-list")).toBeInTheDocument();
     expect(screen.getByTestId("paper-run-plan-plan-1")).toBeInTheDocument();
     expect(screen.getByText(/plan only/i)).toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-plan-plan-1")).toHaveTextContent("Entry rule");
+    expect(screen.getByTestId("paper-run-plan-plan-1")).toHaveTextContent("Success criteria");
+    expect(screen.getByTestId("paper-run-plan-next-plan-1")).toHaveTextContent(
+      /START_PAPER_VALIDATION_RUN/,
+    );
     expect(screen.queryByRole("button", { name: /start run/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
   });

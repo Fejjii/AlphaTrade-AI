@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { ErrorState, LoadingState } from "@/components/states";
+import { RelatedStageLinks } from "@/components/validate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +86,15 @@ export default function PaperValidationRunPlanDetailPage() {
           Plan only. No run started. No order. No proposal. No approval. No Telegram.
         </p>
       </div>
+
+      <RelatedStageLinks
+        current="run_plan"
+        draftId={plan.draft_id}
+        candidateId={plan.candidate_id}
+        runPlanId={plan.plan_id}
+        runSessionId={startedSessionId}
+        sourceAlertId={plan.source_alert_id}
+      />
 
       <Card>
         <CardHeader>

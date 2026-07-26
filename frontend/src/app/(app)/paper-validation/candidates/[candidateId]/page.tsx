@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { ErrorState, LoadingState } from "@/components/states";
+import { RelatedStageLinks } from "@/components/validate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,6 +123,14 @@ export default function PaperValidationCandidateDetailPage() {
           Queue only. No run started. No order. No proposal. No approval. No Telegram.
         </p>
       </div>
+
+      <RelatedStageLinks
+        current="candidate"
+        draftId={candidate.draft_id}
+        candidateId={candidate.candidate_id}
+        sourceAlertId={candidate.source_alert_id}
+        runPlanId={createdPlanId}
+      />
 
       <Card>
         <CardHeader>

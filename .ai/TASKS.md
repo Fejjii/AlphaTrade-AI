@@ -492,8 +492,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/28 merged
   (`853d96b`). Head commit `7ebc8df`.
 
-### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C1 daily decision loop
-- Priority: P1 · Status: DONE (Phase A + Phase B + Phase C1) · Dependencies: AT-039 · Risk: Low (frontend-only)
+### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 DONE; Phase C2 Validate pipeline in review) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -504,9 +504,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   StatusStrip advice/execution/risk truth, TopBar page identity + freshness shell
   interface + account control, Settings Billing & Usage consolidation). Phase C1
   implements Dashboard attention queue, Signals inbox, and Plan hub daily loop.
+  Phase C2 redesigns Validate as one coherent pipeline (Draft → Candidate →
+  Run plan → Run session → Observation → Outcome).
 - Branch (Phase A): `feat/at-040-premium-design-system-foundation`
 - Branch (Phase B): `cursor/at040-phase-b-nav-shell-ae93`
 - Branch (Phase C1): `feat/at040-phase-c1-daily-decision-loop`
+- Branch (Phase C2): `cursor/at040-phase-c2-validate-pipeline-53f5`
 - Deliverables (Phase A): `frontend/src/styles/tokens.css`, tokenized Tailwind + globals,
   `frontend/src/components/ui/*` primitives, states updates, representative page
   adoption (Dashboard, TradingView signals, paper-signal orchestration, journal
@@ -542,14 +545,38 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   aggregation (available sources with missing/invalid/future timestamps
   contribute unavailable; live + unknown cannot yield page-level Live), signal
   deep-link honesty, Plan signal context query, and session-only dismiss
-  labeling. Phase C2 and later remain unstarted.
+  labeling. Phase C1 complete; Phase C2 Validate pipeline implemented pending review.
 - Phase C1 deliverables: Dashboard attention queue; Signals inbox on
   `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
   unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
   SourceResult partial-data honesty; confirmed-paper-only safety badges;
   conservative multi-source shell freshness with unknown-timestamp contribution.
-- Phase C remaining (unstarted): Validate pipeline redesign (C2); Journal
-  redesign; Portfolio/risk split; analytics/charts (Phase D+).
+- Phase C2 deliverables (pending review): Validate hub at `/paper-validation`;
+  pipeline components (`ValidationPipeline`, stage/summary cards, attention queue,
+  source availability, `OutcomeSummary`); SourceResult honesty on stage lists;
+  preserved detail routes with related-stage links; confirmed-paper posture;
+  Risk BLOCK no override; no auto-promote/start; no backend/API/migration changes.
+  Honesty correction pass: independent session observation/outcome SourceResult
+  loads (404 = not recorded; other failures = unavailable); Setup Alert Review
+  `?alert=` deep-link highlight/focus without mutation; candidate→run-plan
+  active preference + accessible plan links with partial-data Retry when run
+  plans fail. Final coverage/freshness pass: typed outcome coverage statuses
+  (`not_applicable` / `complete` / `partial` / `unavailable`) with separate
+  `renderable` / `fullyAvailable` / `errorCount`; partial Outcomes in
+  partial-data warning without Live freshness; session outcome UI states
+  (`loading` / `recorded` / `confirmed_not_recorded` / `unavailable`) gate the
+  recording form. Loading-versus-unavailable pass: explicit observation source
+  states (`loading` / `available` / `unavailable`) and outcome source states in
+  `OutcomeSummary`; initial load shows neutral loading copy (no premature
+  unavailable/Retry/zero); retry shows retrying/refreshing without unavailable;
+  completed sessions use historical missing-outcome wording.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — validated
+  implementation tip `921929e` pending CI; prior tip `1fb21d0` CI 30222210844
+  success (frontend, backend, docker-build, deployment-safety, evaluation,
+  e2e-smoke). Prior honesty tip `7d63371` CI 30220150868. Local: 520 frontend
+  unit tests, lint/typecheck/build green.
+- Phase C remaining after C2: Journal redesign; Portfolio/risk split;
+  analytics/charts (Phase D+).
 
 ---
 

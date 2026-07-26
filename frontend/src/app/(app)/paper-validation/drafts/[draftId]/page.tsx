@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { ErrorState, LoadingState } from "@/components/states";
+import { RelatedStageLinks } from "@/components/validate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -146,6 +147,12 @@ export default function PaperValidationDraftDetailPage() {
           Prep only. No order. No execution. No proposal. No approval.
         </p>
       </div>
+
+      <RelatedStageLinks
+        current="draft"
+        draftId={draft.draft_id}
+        sourceAlertId={draft.source_alert_id}
+      />
 
       <Card>
         <CardHeader>

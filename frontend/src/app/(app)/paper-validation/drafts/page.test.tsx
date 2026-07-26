@@ -1,7 +1,26 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SourceResult } from "@/components/workflows/sourceResult";
+
 import PaperValidationDraftsPage from "./page";
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ killSwitchActive: false }),
+  useSafetyPosture: () => ({
+    executionMode: "paper",
+    realTradingEnabled: false,
+    providerMode: "fallback",
+  }),
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
+}));
 
 const sampleDraft = {
   draft_id: "draft-1",
@@ -38,16 +57,22 @@ const sampleDraft = {
   is_ready_for_validation: false,
 };
 
+function ok<T>(data: T): SourceResult<T> {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
-    data: { items: [sampleDraft], total: 1, limit: 50, offset: 0 },
+    data: {
+      drafts: ok({ items: [sampleDraft], total: 1, limit: 50, offset: 0 }),
+    },
     loading: false,
     error: null,
     reload: vi.fn(),
   }),
 }));
 
-describe("PaperValidationDraftsPage Slice 78", () => {
+describe("PaperValidationDraftsPage Slice 78 / Phase C2", () => {
   afterEach(() => {
     cleanup();
   });
@@ -61,6 +86,7 @@ describe("PaperValidationDraftsPage Slice 78", () => {
     expect(screen.getByText(/never place orders/i)).toBeInTheDocument();
     expect(screen.getByText(/Prep: needs_review/i)).toBeInTheDocument();
     expect(screen.getByText(/Score: 60%/i)).toBeInTheDocument();
+    expect(screen.getByTestId("paper-draft-next-draft-1")).toHaveTextContent(/missing checklist/i);
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /send to telegram/i })).not.toBeInTheDocument();
   });
