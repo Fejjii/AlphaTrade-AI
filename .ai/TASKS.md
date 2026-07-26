@@ -492,9 +492,9 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/28 merged
   (`853d96b`). Head commit `7ebc8df`.
 
-### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B)
-- Priority: P1 · Status: DONE (Phase A + Phase B) · Dependencies: AT-039 · Risk: Low (frontend-only)
-- Safety classification: UI foundation / shell IA; no trading/execution/risk-authority change
+### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C1 daily decision loop
+- Priority: P1 · Status: DONE (Phase A + Phase B); IN REVIEW (Phase C1) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
   Stale/Blocked states, RiskBlock with no UI override, PaperModeIndicator,
@@ -502,9 +502,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   route or nav IA changes (Phase A). Then implement AT-039 Phase B navigation and
   app shell (eight destinations, desktop sidebar, mobile bottom nav + Menu sheet,
   StatusStrip advice/execution/risk truth, TopBar page identity + freshness shell
-  interface + account control, Settings Billing & Usage consolidation).
+  interface + account control, Settings Billing & Usage consolidation). Phase C1
+  implements Dashboard attention queue, Signals inbox, and Plan hub daily loop.
 - Branch (Phase A): `feat/at-040-premium-design-system-foundation`
 - Branch (Phase B): `cursor/at040-phase-b-nav-shell-ae93`
+- Branch (Phase C1): `feat/at040-phase-c1-daily-decision-loop`
 - Deliverables (Phase A): `frontend/src/styles/tokens.css`, tokenized Tailwind + globals,
   `frontend/src/components/ui/*` primitives, states updates, representative page
   adoption (Dashboard, TradingView signals, paper-signal orchestration, journal
@@ -531,11 +533,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (TabsRoot shared id prefix + fail-closed paper-mode / limitations hardening).
   Phase B PR https://github.com/Fejjii/AlphaTrade-AI/pull/31 merged (`fc148ff`,
   pre-merge head `7f7818c`, CI run 30200035610; post-merge main CI 30201145776).
-  Phases C–F remain.
-- Phase C follow-ups (do not implement here): unknown-route identity should use
-  neutral terminology rather than Workspace; account-menu Escape closure should
-  explicitly restore focus to the trigger; real page-level freshness sources
-  should be wired into `ShellFreshnessContext`.
+  Phase C1 draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/32 remains
+  IN REVIEW on `feat/at040-phase-c1-daily-decision-loop` (validated
+  implementation commit `7e42fe8`; CI run 30210340611 success). Correction
+  pass recorded: SourceResult availability, runtime safety-truth matrix
+  (`isPaperModeConfirmed`), conservative shell freshness aggregation (available
+  sources with missing/invalid/future timestamps contribute unavailable; live +
+  unknown cannot yield page-level Live), signal deep-link honesty, Plan signal
+  context query, and session-only dismiss labeling. Phases C2–F remain.
+- Phase C1 deliverables: Dashboard attention queue; Signals inbox on
+  `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
+  unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
+  SourceResult partial-data honesty; confirmed-paper-only safety badges;
+  conservative multi-source shell freshness with unknown-timestamp contribution.
+- Phase C remaining (do not implement in C1): Validate pipeline redesign;
+  Journal redesign; Portfolio/risk split; analytics/charts (Phase D+).
 
 ---
 

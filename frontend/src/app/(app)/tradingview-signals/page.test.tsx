@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TradingViewSignalsPage from "./page";
@@ -57,11 +57,31 @@ const sampleList: TradingViewSignalListResponse = {
 };
 
 const mockReload = vi.fn();
-const mockList = vi.fn();
 const mockCreate = vi.fn();
+const mockPush = vi.fn();
+const mockReplace = vi.fn();
+const search = new URLSearchParams();
+
+type Loaded = {
+  forbidden: false;
+  tradingView: {
+    data: TradingViewSignalListResponse;
+    available: boolean;
+    error: string | null;
+    fallbackUsed: boolean;
+  };
+  alerts: { data: { items: []; total: 0 }; available: boolean; error: null; fallbackUsed: false };
+  setupReviews: {
+    data: { items: []; total: 0; limit: 50; offset: 0 };
+    available: boolean;
+    error: null;
+    fallbackUsed: false;
+  };
+  watcherSummary: { data: null; available: boolean; error: string | null; fallbackUsed: false };
+};
 
 let asyncState: {
-  data: { forbidden: boolean; data: TradingViewSignalListResponse | null } | null;
+  data: Loaded | { forbidden: true } | null;
   loading: boolean;
   error: string | null;
 };
@@ -73,9 +93,22 @@ const safetyPosture = {
   postureKnown: true,
 };
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  useSearchParams: () => search,
+}));
+
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({ health: null, providers: { providers: [] } }),
   useSafetyPosture: () => safetyPosture,
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
 }));
 
 vi.mock("@/hooks/useAsyncData", () => ({
@@ -94,21 +127,61 @@ vi.mock("@/lib/api", async (importOriginal) => {
     api: {
       ...actual.api,
       tradingview: {
-        listSignals: (...args: unknown[]) => mockList(...args),
+        listSignals: vi.fn(),
         getSignal: vi.fn(),
         createCandidate: (...args: unknown[]) => mockCreate(...args),
+      },
+      alerts: {
+        ...actual.api.alerts,
+        list: vi.fn(),
+        setupReview: vi.fn(),
+        updateSetupReview: vi.fn(),
+        markRead: vi.fn(),
+      },
+      marketWatcher: {
+        ...actual.api.marketWatcher,
+        summary: vi.fn(),
       },
     },
   };
 });
 
-describe("TradingViewSignalsPage AT-037", () => {
+function loaded(
+  tradingView: TradingViewSignalListResponse = sampleList,
+  options?: { alertsAvailable?: boolean; setupAvailable?: boolean; watcherAvailable?: boolean },
+): Loaded {
+  return {
+    forbidden: false,
+    tradingView: { data: tradingView, available: true, error: null, fallbackUsed: false },
+    alerts: {
+      data: { items: [], total: 0 },
+      available: options?.alertsAvailable ?? true,
+      error: null,
+      fallbackUsed: false,
+    },
+    setupReviews: {
+      data: { items: [], total: 0, limit: 50, offset: 0 },
+      available: options?.setupAvailable ?? true,
+      error: null,
+      fallbackUsed: false,
+    },
+    watcherSummary: {
+      data: null,
+      available: options?.watcherAvailable ?? true,
+      error: options?.watcherAvailable === false ? "down" : null,
+      fallbackUsed: false,
+    },
+  };
+}
+
+describe("Signals inbox Phase C1 corrections", () => {
   beforeEach(() => {
     safetyPosture.executionMode = "paper";
     safetyPosture.realTradingEnabled = false;
     safetyPosture.postureKnown = true;
+    search.delete("signal");
     asyncState = {
-      data: { forbidden: false, data: sampleList },
+      data: loaded(),
       loading: false,
       error: null,
     };
@@ -127,70 +200,56 @@ describe("TradingViewSignalsPage AT-037", () => {
     );
   });
 
-  it("fails closed when runtime safety is missing", () => {
-    safetyPosture.executionMode = null;
-    safetyPosture.realTradingEnabled = null;
-    safetyPosture.postureKnown = false;
+  it("renders source availability and create paper candidate action", () => {
     render(<TradingViewSignalsPage />);
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode not confirmed",
+    expect(screen.getByTestId("signals-source-availability")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /create paper candidate/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /hide for this session/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /dismiss with reason/i })).not.toBeInTheDocument();
+  });
+
+  it("carries plan trade context in the typed query", () => {
+    render(<TradingViewSignalsPage />);
+    fireEvent.click(screen.getAllByRole("button", { name: /plan trade/i })[0]);
+    expect(mockPush).toHaveBeenCalledWith(
+      `/workspace?source=tradingview&signal=${SIGNAL_ID}`,
     );
   });
 
-  it("renders loading state", () => {
-    asyncState = { data: null, loading: true, error: null };
+  it("does not select an unrelated signal for a missing deep link", () => {
+    search.set("signal", "missing-signal-id");
     render(<TradingViewSignalsPage />);
-    expect(screen.getByText(/loading tradingview signals/i)).toBeInTheDocument();
+    expect(screen.getByTestId("signal-deep-link-missing")).toHaveTextContent(
+      /requested signal not found/i,
+    );
+    expect(screen.queryByTestId("tradingview-signal-detail")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /clear stale link/i }));
+    expect(mockReplace).toHaveBeenCalledWith("/tradingview-signals");
   });
 
-  it("renders empty state", () => {
+  it("shows partial inbox data when optional sources fail", () => {
     asyncState = {
-      data: { forbidden: false, data: { ...sampleList, items: [], total: 0 } },
+      data: loaded(sampleList, { alertsAvailable: false, watcherAvailable: false }),
       loading: false,
       error: null,
     };
     render(<TradingViewSignalsPage />);
-    expect(screen.getByTestId("tradingview-signals-page")).toBeInTheDocument();
-    expect(screen.getByText(/no tradingview signals/i)).toBeInTheDocument();
+    expect(screen.getByTestId("signals-partial-data")).toHaveTextContent(/partial inbox data/i);
+    expect(screen.getByTestId("signals-unavailable-sources")).toHaveTextContent("Alerts");
   });
 
-  it("renders error state", () => {
-    asyncState = { data: null, loading: false, error: "Network error" };
-    render(<TradingViewSignalsPage />);
-    expect(screen.getByText("Network error")).toBeInTheDocument();
-  });
-
-  it("renders forbidden state", () => {
-    asyncState = { data: { forbidden: true, data: null }, loading: false, error: null };
-    render(<TradingViewSignalsPage />);
-    expect(screen.getByTestId("tradingview-signals-forbidden")).toBeInTheDocument();
-  });
-
-  it("renders signal detail and rejection explanations", () => {
+  it("does not claim a complete empty inbox when sources failed", () => {
     asyncState = {
-      data: {
-        forbidden: false,
-        data: {
-          ...sampleList,
-          items: [
-            {
-              ...sampleList.items[0],
-              status: "rejected",
-              rejection_reason: "strategy_id does not belong to this organization.",
-              validation_errors: ["strategy_id does not belong to this organization."],
-            },
-          ],
-        },
-      },
+      data: loaded(
+        { ...sampleList, items: [], total: 0 },
+        { alertsAvailable: false, setupAvailable: false },
+      ),
       loading: false,
       error: null,
     };
     render(<TradingViewSignalsPage />);
-    expect(screen.getByTestId("tradingview-signal-detail")).toBeInTheDocument();
-    expect(screen.getByTestId("tradingview-rejection")).toHaveTextContent(
-      /strategy_id does not belong/i,
-    );
+    expect(screen.getByText(/no signals found in the available sources/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^No signals need review$/)).not.toBeInTheDocument();
   });
 
   it("requires confirmation before creating a paper candidate", async () => {
@@ -203,9 +262,10 @@ describe("TradingViewSignalsPage AT-037", () => {
       note: "Paper-validation candidate only.",
     });
     render(<TradingViewSignalsPage />);
-    const button = screen.getByRole("button", { name: /create paper candidate/i });
+    const detail = screen.getByTestId("tradingview-signal-detail");
+    const button = within(detail).getByRole("button", { name: /create paper candidate/i });
     expect(button).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/candidate confirmation phrase/i), {
+    fireEvent.change(within(detail).getByLabelText(/candidate confirmation phrase/i), {
       target: { value: CREATE_TRADINGVIEW_PAPER_CANDIDATE },
     });
     expect(button).not.toBeDisabled();
@@ -213,5 +273,11 @@ describe("TradingViewSignalsPage AT-037", () => {
     expect(mockCreate).toHaveBeenCalledWith(SIGNAL_ID, {
       confirm: CREATE_TRADINGVIEW_PAPER_CANDIDATE,
     });
+  });
+
+  it("renders forbidden state", () => {
+    asyncState = { data: { forbidden: true }, loading: false, error: null };
+    render(<TradingViewSignalsPage />);
+    expect(screen.getByTestId("tradingview-signals-forbidden")).toBeInTheDocument();
   });
 });

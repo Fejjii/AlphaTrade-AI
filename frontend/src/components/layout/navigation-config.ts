@@ -151,7 +151,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "plan",
     items: [
-      { href: "/workspace", label: "Workspace", icon: Bot },
+      { href: "/workspace", label: "Plan hub", icon: Bot },
       { href: "/proposals", label: "Proposals", icon: FileText },
       { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
       { href: "/pre-trade", label: "Pre-Trade", icon: Scale },
@@ -162,7 +162,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "signals",
     items: [
-      { href: "/tradingview-signals", label: "TradingView Signals", icon: Radio },
+      { href: "/tradingview-signals", label: "Inbox", icon: Radio },
       { href: "/alerts", label: "Alerts", icon: Bell },
       { href: "/alerts/review", label: "Setup Review", icon: ScanSearch },
       { href: "/watcher", label: "Watcher Scanner", icon: Radio },
@@ -362,9 +362,9 @@ export function resolvePageIdentity(pathname: string): PageIdentity {
   const destinationId = getDestinationId(pathname);
   if (!destinationId) {
     return {
-      primaryLabel: "Workspace",
+      primaryLabel: "AlphaTrade",
       secondaryLabel: null,
-      title: "Workspace",
+      title: "AlphaTrade",
       subtitle: null,
     };
   }

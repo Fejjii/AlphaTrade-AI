@@ -164,10 +164,21 @@ describe("TopBar page identity and account control", () => {
     expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Candidates");
   });
 
-  it("falls back for unknown routes", () => {
+  it("falls back for unknown routes with neutral identity", () => {
     navigationState.pathname = "/not-a-known-route";
     renderTopBar();
-    expect(within(screen.getByTestId("topbar-page-identity")).getByText("Workspace")).toBeInTheDocument();
+    expect(within(screen.getByTestId("topbar-page-identity")).getByText("AlphaTrade")).toBeInTheDocument();
+  });
+
+  it("restores focus to the account trigger after Escape", async () => {
+    renderTopBar();
+    const trigger = screen.getByRole("button", { name: "Account menu" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu", { name: "Account" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Account" })).not.toBeInTheDocument();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("does not fabricate freshness claims", () => {

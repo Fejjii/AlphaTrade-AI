@@ -2,14 +2,26 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
-import { samplePortfolio } from "./portfolio/sample-portfolio";
+
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+};
 
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({
     providers: { providers: [] },
     health: { version: "0.1.0", status: "ok" },
   }),
-  useSafetyPosture: () => ({ executionMode: "paper", realTradingEnabled: false }),
+  useSafetyPosture: () => safetyPosture,
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
 }));
 
 const summary = {
@@ -50,28 +62,7 @@ const summary = {
     main_contributors: ["Consistent stop-loss usage"],
     limitations: [],
   },
-  strategy_readiness: {
-    counts: {
-      needs_structure: 0,
-      ready_for_backtest: 0,
-      needs_more_sample: 0,
-      paper_eligible: 0,
-      paper_validation_running: 1,
-      paper_validated: 0,
-      restricted: 0,
-    },
-    top_needing_action: [
-      {
-        strategy_id: "s1",
-        name: "HTF Pullback",
-        status: "Paper validation running",
-        next_action: "Review latest scans and simulated trades.",
-        blockers: [],
-        link_hint: "/strategy-lab/s1",
-      },
-    ],
-    limitations: [],
-  },
+  strategy_readiness: null,
   active_paper_validations: [{ strategy_id: "s1", name: "HTF Pullback", status: "running" }],
   open_paper_trades: [
     {
@@ -85,41 +76,29 @@ const summary = {
       status: "open",
       source: "proposal_flow",
     },
-    {
-      position_id: null,
-      paper_trade_id: "t1",
-      strategy_id: "s1",
-      strategy_name: "HTF Pullback",
-      symbol: "ETHUSDT",
-      direction: "short",
-      unrealized_pnl: null,
-      status: "open",
-      source: "paper_validation",
-    },
   ],
   open_paper_trades_summary: {
     proposal_flow_count: 1,
-    paper_validation_count: 1,
-    total_count: 2,
+    paper_validation_count: 0,
+    total_count: 1,
     total_open_exposure: "5",
     items: [],
-    limitations: ["Paper-validation open trades do not include live unrealized PnL in this slice."],
+    limitations: [],
   },
   alerts_lessons: {
     unread_alerts: 2,
-    latest_high_priority: [
-      {
-        alert_type: "setup_signal_detected",
-        severity: "warning",
-        message: "Setup",
-      },
-    ],
+    latest_high_priority: [],
     pending_lessons: 2,
     accepted_lessons: 1,
     top_pending_lessons: [],
     limitations: [],
   },
-  market_watcher: null,
+  market_watcher: {
+    effective_enabled: true,
+    last_scan_at: "2026-06-28T12:00:00Z",
+    fresh_observations: 1,
+    limitations: [],
+  },
   bridge: null,
   next_recommended_action: {
     action: "Consider pausing new entries and reviewing today's paper results.",
@@ -130,243 +109,167 @@ const summary = {
   limitations: [],
 };
 
-vi.mock("@/hooks/useAsyncData", () => ({
-  useAsyncData: () => ({
-    data: {
-      summary,
-      strategies: [
+function ok<T>(data: T) {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
+function failed<T = null>(error = "boom") {
+  return { data: null as T | null, available: false, error, fallbackUsed: false };
+}
+
+let asyncState = {
+  data: {
+    summary: ok(summary),
+    approvals: ok({
+      items: [{ id: "a1", status: "pending", proposal_id: "p1" }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    proposals: ok({
+      items: [{ id: "p1", status: "pending_approval" }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    tvSignals: ok({
+      items: [
         {
-          id: "s1",
-          name: "HTF Pullback",
-          setup_type: "htf_trend_pullback",
-          current_version: 1,
-          paper_validation_status: "running",
-          paper_eligible: true,
-          backtest_status: "completed",
-          enabled: true,
-          created_at: "2024-01-01T00:00:00Z",
-          updated_at: "2024-01-01T00:00:00Z",
+          id: "sig-1",
+          status: "validated",
+          links: { candidate_id: null },
         },
       ],
-      usage: { event_count: 10, total_estimated_cost: "0.50", cost_is_placeholder: true },
-      audit: { items: [], total: 0 },
-      legacyDiscipline: null,
-      legacyRisk: null,
-      legacyTradesToday: null,
-      exchangeDiagnostics: null,
-      alertRouting: {
-        alerts_enabled: true,
-        telegram_enabled: false,
-        webhook_enabled: false,
-        external_delivery_enabled: false,
-        paper_only: true,
-        quiet_hours: { enabled: false, start: null, end: null, timezone: "UTC", source: "none" },
-        severity_filters: ["worker: info+", "user: info+"],
-        pending_alerts_count: 0,
-        delivered_alerts_count: 0,
-        failed_alerts_count: 0,
-        market_watcher_configured: false,
-        market_watcher_running: false,
-        bridge_enabled: false,
-        bridge_running: false,
-        worker_enabled: false,
-        worker_running: false,
-        readiness: "ready",
-        warnings: [],
-        generated_at: "2026-06-28T12:00:00Z",
-      },
-      setupReviewSummary: {
-        total_unreviewed: 3,
-        total_watching: 2,
-        total_important: 1,
-        total_ignored: 0,
-        by_condition: { order_block: 2, sfp: 1 },
-        by_symbol: { BTCUSDT: 3 },
-        latest_created_at: "2026-06-28T12:00:00Z",
-        highest_confidence_alerts: [
-          {
-            alert_id: "a1",
-            symbol: "BTCUSDT",
-            condition: "order_block",
-            confidence: 0.91,
-            created_at: "2026-06-28T12:00:00Z",
-          },
-        ],
-      },
-      paperDraftSummary: {
-        total_drafts: 2,
-        latest_condition: "breakout_retest",
-        latest_created_at: "2026-06-28T12:00:00Z",
-        ready_for_validation_count: 1,
-      },
-      paperCandidateSummary: {
-        total_queued: 2,
-        total_reviewing: 1,
-        total_archived: 0,
-        by_condition: { order_block: 2 },
-        by_symbol: { BTCUSDT: 2 },
-        latest_created_at: "2026-06-28T12:00:00Z",
-      },
-      paperRunPlanSummary: {
-        total_planned: 1,
-        total_needs_revision: 1,
-        total_archived: 0,
-        by_condition: { order_block: 1 },
-        by_symbol: { BTCUSDT: 1 },
-        latest_created_at: "2026-06-28T12:00:00Z",
-      },
-      validationPrioritySummary: {
-        organization_id: "org-1",
-        user_id: null,
-        date_range: { start: null, end: null },
-        min_sample: 5,
-        note: "Read-only validation prioritization for human study only.",
-        total_pending: 2,
-        run_plans_pending: 1,
-        candidates_pending: 1,
-        by_action: [
-          { action_label: "prioritize", count: 1 },
-          { action_label: "watch", count: 0 },
-          { action_label: "collect_more_data", count: 1 },
-          { action_label: "avoid_for_now", count: 0 },
-        ],
-        by_reliability: [
-          { reliability: "none", count: 1 },
-          { reliability: "low", count: 0 },
-          { reliability: "medium", count: 1 },
-          { reliability: "high", count: 0 },
-        ],
-      },
-      validationPriorityQueue: {
-        organization_id: "org-1",
-        user_id: null,
-        date_range: { start: null, end: null },
-        min_sample: 5,
-        note: "Read-only validation prioritization for human study only.",
-        item_type_filter: null,
-        limit: 3,
-        total_pending: 2,
-        items: [
-          {
-            item_type: "run_plan",
-            item_id: "plan-1",
-            symbol: "BTCUSDT",
-            condition: "breakout",
-            timeframe: "1h",
-            direction: "long",
-            confidence: 0.9,
-            confidence_bucket: "very_high",
-            current_status: "planned",
-            priority_score: 81,
-            action_label: "prioritize",
-            reliability: "medium",
-            matched_dimension: "condition",
-            matched_key: "breakout",
-            matched_sample_size: 10,
-            historical_success_rate: 0.8,
-            historical_invalidation_rate: 0,
-            factors: [],
-            rationale: [],
-          },
-        ],
-      },
-      paperPortfolio: samplePortfolio,
-    },
-    loading: false,
-    error: null,
-    reload: vi.fn(),
-  }),
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    setupReviewSummary: ok({ total_unreviewed: 3 }),
+    paperDraftSummary: ok({ ready_for_validation_count: 1 }),
+    paperCandidateSummary: ok({ total_queued: 2 }),
+    paperRunPlanSummary: ok({ total_planned: 1 }),
+    paperRunSessions: ok({ items: [], total: 0 }),
+    alertRouting: ok({ generated_at: "2026-06-28T12:00:00Z" }),
+    watcherSummary: ok({ last_scan_at: "2026-06-28T12:00:00Z", generated_at: "2026-06-28T12:00:00Z" }),
+    discipline: failed(),
+    risk: failed(),
+    tradeReview: failed(),
+  } as unknown,
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn(),
+};
+
+vi.mock("@/hooks/useAsyncData", () => ({
+  useAsyncData: () => asyncState,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  safetyPosture.executionMode = "paper";
+  safetyPosture.realTradingEnabled = false;
+  asyncState = {
+    ...asyncState,
+    loading: false,
+    error: null,
+  };
+});
 
-describe("DashboardPage", () => {
-  it("shows paper-only and real-trading-disabled status", () => {
+describe("DashboardPage Phase C1 safety and availability", () => {
+  it("shows confirmed paper posture only when verified", () => {
     render(<DashboardPage />);
     expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent("PAPER mode");
     expect(screen.getByTestId("dashboard-real-trading-status")).toHaveTextContent(
       "Real trading disabled",
     );
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent("Paper only");
+    expect(screen.queryByText("Simulated execution only")).not.toBeInTheDocument();
     expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
       "aria-label",
       "Paper mode active",
     );
   });
 
-  it("renders workflow and summary-backed cards", () => {
+  it("shows safety conflict when real trading is enabled", () => {
+    safetyPosture.realTradingEnabled = true;
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        summary: ok({
+          ...summary,
+          safety: { ...summary.safety, real_trading_enabled: true },
+        }),
+      },
+    };
     render(<DashboardPage />);
-    expect(screen.getByTestId("workflow-stepper")).toBeInTheDocument();
-    expect(screen.getByTestId("todays-discipline-card")).toBeInTheDocument();
-    expect(screen.getByTestId("trades-today")).toHaveTextContent("4");
-    expect(screen.getByTestId("daily-pnl-today")).toHaveTextContent("12.5");
-    expect(screen.getByTestId("discipline-green-day-protection")).toHaveTextContent("engaged");
-    expect(screen.getByTestId("strategy-readiness-card")).toBeInTheDocument();
-    expect(screen.getByTestId("active-paper-validations")).toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-latest-alerts")).toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-lessons-pending")).toHaveTextContent("2");
-    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Unreviewed: 3");
-    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Watching: 2");
-    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Important: 1");
-    expect(screen.getByTestId("dashboard-setup-alerts-review")).toHaveTextContent("Order block");
-    expect(screen.getByRole("link", { name: "Review setup alerts" })).toHaveAttribute(
-      "href",
-      "/alerts/review",
+    expect(screen.getByTestId("dashboard-safety-conflict")).toHaveTextContent(/safety conflict/i);
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent("Safety conflict");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
     );
-    expect(screen.getByTestId("dashboard-paper-drafts")).toHaveTextContent("Draft count: 2");
-    expect(screen.getByTestId("dashboard-paper-drafts")).toHaveTextContent(
-      "Ready for validation: 1",
-    );
-    expect(screen.getByTestId("dashboard-paper-drafts")).toHaveTextContent("Breakout retest");
-    expect(screen.getByTestId("dashboard-paper-validation-queue")).toHaveTextContent("Queued: 2");
-    expect(screen.getByTestId("dashboard-paper-validation-queue")).toHaveTextContent(
-      "Reviewing: 1",
-    );
-    expect(screen.getByRole("link", { name: "View paper validation queue" })).toHaveAttribute(
-      "href",
-      "/paper-validation/candidates",
-    );
-    expect(screen.getByTestId("dashboard-paper-validation-plans")).toHaveTextContent("Planned: 1");
-    expect(screen.getByTestId("dashboard-paper-validation-plans")).toHaveTextContent(
-      "Needs revision: 1",
-    );
-    expect(screen.getByRole("link", { name: "View run plans" })).toHaveAttribute(
-      "href",
-      "/paper-validation/run-plans",
-    );
-    expect(screen.getByRole("link", { name: "View paper drafts" })).toHaveAttribute(
-      "href",
-      "/paper-validation/drafts",
-    );
-    expect(screen.getByTestId("dashboard-validation-priority")).toBeInTheDocument();
-    expect(screen.getByText("Validate next")).toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-validation-priority-top-plan-1")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open validation priority" })).toHaveAttribute(
-      "href",
-      "/validation-priority",
-    );
-    expect(screen.getByTestId("dashboard-paper-portfolio")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open paper portfolio" })).toHaveAttribute(
-      "href",
-      "/portfolio",
-    );
-    expect(screen.getByTestId("what-to-do-next")).toBeInTheDocument();
-    expect(screen.getByTestId("next-action-reason")).toHaveTextContent("Green-day protection");
   });
 
-  it("displays discipline score and configured limits", () => {
+  it("shows unverified posture when runtime fields are unknown", () => {
+    safetyPosture.executionMode = null;
+    safetyPosture.realTradingEnabled = null;
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        summary: failed(),
+      },
+    };
     render(<DashboardPage />);
-    expect(screen.getByTestId("discipline-score-badge")).toHaveTextContent("84");
-    expect(screen.getByTestId("discipline-configured-limits")).toHaveTextContent("Max trades: 20");
+    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent("Execution unverified");
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
+      "Runtime posture unverified",
+    );
   });
 
-  it("shows open paper trades from summary", () => {
+  it("renders attention queue with prioritized actionable links", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("open-paper-trades-counts")).toHaveTextContent("Paper validation: 1");
-    expect(screen.getByTestId("dashboard-open-paper-trades")).toHaveTextContent("HTF Pullback");
+    expect(screen.getByTestId("attention-queue")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /review approvals/i })).toHaveAttribute(
+      "href",
+      "/approvals",
+    );
+    expect(screen.getByRole("link", { name: /open signals inbox/i })).toHaveAttribute(
+      "href",
+      "/tradingview-signals",
+    );
   });
 
-  it("renders PnL limitations in discipline details", () => {
+  it("does not claim catch-up when required sources failed", () => {
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        approvals: failed("approvals down"),
+        proposals: failed("proposals down"),
+        tvSignals: failed("tv down"),
+        summary: failed("summary down"),
+        setupReviewSummary: failed(),
+        paperDraftSummary: failed(),
+        paperCandidateSummary: failed(),
+        paperRunPlanSummary: failed(),
+        paperRunSessions: failed(),
+      },
+    };
     render(<DashboardPage />);
-    expect(screen.getByTestId("discipline-limitations")).toHaveTextContent("Unrealized paper PnL");
+    expect(screen.getByTestId("attention-partial-data")).toBeInTheDocument();
+    expect(screen.getByText(/no actionable items found in the available sources/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you are caught up/i)).not.toBeInTheDocument();
+  });
+
+  it("shows loading and error states", () => {
+    asyncState = { ...asyncState, loading: true, data: null };
+    const { rerender } = render(<DashboardPage />);
+    expect(screen.getByText(/loading dashboard/i)).toBeInTheDocument();
+
+    asyncState = { ...asyncState, loading: false, error: "Failed to load", data: null };
+    rerender(<DashboardPage />);
+    expect(screen.getByText("Failed to load")).toBeInTheDocument();
   });
 });

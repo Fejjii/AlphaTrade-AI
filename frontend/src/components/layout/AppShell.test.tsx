@@ -130,7 +130,7 @@ describe("AT-040 Phase B AppShell", () => {
     );
     const secondary = screen.getByTestId("secondary-navigation");
     expect(secondary).toHaveAttribute("data-destination", "signals");
-    expect(within(secondary).getByRole("link", { name: "TradingView Signals" })).toBeInTheDocument();
+    expect(within(secondary).getByRole("link", { name: "Inbox" })).toBeInTheDocument();
     expect(within(secondary).getByText("Advanced")).toBeInTheDocument();
     expect(
       within(secondary).getByRole("link", { name: "Signal Orchestration" }),

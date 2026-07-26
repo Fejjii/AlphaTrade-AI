@@ -116,7 +116,7 @@ describe("AT-040 Phase B navigation config", () => {
       title: "Validate",
       subtitle: "Candidates",
     });
-    expect(resolvePageIdentity("/unknown-path").title).toBe("Workspace");
+    expect(resolvePageIdentity("/unknown-path").title).toBe("AlphaTrade");
   });
 
   it("resolves exactly one secondary active href via longest match", () => {

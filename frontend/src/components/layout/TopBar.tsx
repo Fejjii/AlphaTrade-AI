@@ -30,6 +30,7 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
   const { freshness } = useShellFreshness();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountWrapRef = useRef<HTMLDivElement>(null);
+  const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
 
   useEffect(() => {
@@ -40,7 +41,12 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setAccountOpen(false);
+      if (event.key !== "Escape") return;
+      setAccountOpen(false);
+      // Restore focus to the account trigger after Escape closes the menu.
+      queueMicrotask(() => {
+        accountTriggerRef.current?.focus();
+      });
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -99,6 +105,7 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
 
           <div className="relative" ref={accountWrapRef} data-testid="topbar-account-control">
             <button
+              ref={accountTriggerRef}
               type="button"
               className={cn(
                 "inline-flex min-h-11 max-w-[11rem] items-center gap-1.5 rounded-control border border-border-subtle px-2 py-1.5 text-caption",
