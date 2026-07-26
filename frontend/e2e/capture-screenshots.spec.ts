@@ -27,7 +27,7 @@ async function registerAndOpenDashboard(page: Page, email: string, password: str
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL("/", { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /^dashboard$/i })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/paper mode active/i)).toBeVisible();
+  await expect(page.getByLabel("Paper mode active")).toBeVisible();
 }
 
 async function bearerHeaders(page: Page) {

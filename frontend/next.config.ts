@@ -1,9 +1,17 @@
 import type { NextConfig } from "next";
 
+import { PHASE_B_REDIRECTS } from "./src/lib/navigation/phase-b-redirects";
 import { buildSecurityHeaders, resolveApiOrigin } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  async redirects() {
+    return PHASE_B_REDIRECTS.map((rule) => ({
+      source: rule.source,
+      destination: rule.destination,
+      permanent: rule.permanent,
+    }));
+  },
   async headers() {
     return [
       {

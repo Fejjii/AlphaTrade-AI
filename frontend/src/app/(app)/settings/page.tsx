@@ -34,12 +34,12 @@ export default function SettingsPage() {
             )}
           </span>
           <span>
-            <Link href="/invitations" className="text-emerald-400 hover:underline">
+            <Link href="/settings/team" className="text-emerald-400 hover:underline">
               Manage team invitations
             </Link>
           </span>
           <span>
-            <Link href="/billing" className="text-emerald-400 hover:underline">
+            <Link href="/settings/billing" className="text-emerald-400 hover:underline">
               Billing &amp; plans
             </Link>
           </span>
