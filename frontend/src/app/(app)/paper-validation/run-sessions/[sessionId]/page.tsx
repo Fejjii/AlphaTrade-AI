@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { ErrorState, LoadingState } from "@/components/states";
+import { OutcomeSummary, RelatedStageLinks } from "@/components/validate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -187,6 +188,22 @@ export default function PaperValidationRunSessionDetailPage() {
           automation.
         </p>
       </div>
+
+      <RelatedStageLinks
+        current="run_session"
+        draftId={session.draft_id}
+        candidateId={session.candidate_id}
+        runPlanId={session.run_plan_id}
+        runSessionId={session.session_id}
+        sourceAlertId={session.source_alert_id}
+      />
+
+      <OutcomeSummary
+        observations={observations}
+        observationsAvailable
+        result={sessionResult}
+        resultAvailable={sessionResult != null}
+      />
 
       <Card>
         <CardHeader>

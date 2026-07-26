@@ -1,100 +1,101 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
-import { Badge } from "@/components/ui/badge";
+import { CandidateSummaryCard, ValidatePageChrome } from "@/components/validate";
+import { describeSafetyPosture, loadSource, type SourceResult } from "@/components/workflows";
+import { useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import { setupConditionLabel } from "@/lib/alert-display";
-import type { PaperValidationCandidateItem } from "@/lib/api/types";
 
-function formatLevel(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
-function formatConfidence(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return `${Math.round(value * 100)}%`;
-}
-
-function CandidateCard({ candidate }: { candidate: PaperValidationCandidateItem }) {
-  return (
-    <article
-      className="rounded-lg border border-zinc-800 p-4 space-y-3"
-      data-testid={`paper-candidate-${candidate.candidate_id}`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="info">
-              {setupConditionLabel(candidate.condition ?? "unknown")}
-            </Badge>
-            <span className="text-sm font-medium text-zinc-100">
-              {candidate.symbol ?? "—"} · {candidate.timeframe ?? "—"}
-            </span>
-            <Badge variant="muted">{candidate.direction ?? "—"}</Badge>
-          </div>
-          <p className="text-xs text-zinc-500">
-            Queued {new Date(candidate.created_at).toLocaleString()}
-          </p>
-        </div>
-        <Badge variant="muted">{candidate.candidate_status}</Badge>
-      </div>
-
-      <p className="text-sm text-zinc-300">{candidate.thesis ?? "No thesis provided."}</p>
-
-      <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-4">
-        <p>Confidence: {formatConfidence(candidate.confidence)}</p>
-        <p>Trigger: {formatLevel(candidate.trigger_level)}</p>
-        <p>Invalidation: {formatLevel(candidate.invalidation_level)}</p>
-        <p>Latest: {formatLevel(candidate.latest_price)}</p>
-      </div>
-
-      <Link
-        href={`/paper-validation/candidates/${candidate.candidate_id}`}
-        className="inline-block text-xs text-zinc-400 underline"
-      >
-        View candidate detail
-      </Link>
-    </article>
-  );
-}
+type CandidatesPageData = {
+  candidates: SourceResult<Awaited<ReturnType<typeof api.strategies.candidates>>>;
+  runPlans: SourceResult<Awaited<ReturnType<typeof api.strategies.runPlans>>>;
+};
 
 export default function PaperValidationCandidatesPage() {
-  const loader = useCallback(
-    () => api.strategies.candidates({ limit: 50 }),
-    [],
-  );
+  const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
+  const posture = describeSafetyPosture(executionMode, realTradingEnabled);
+
+  const loader = useCallback(async (): Promise<CandidatesPageData> => {
+    const [candidates, runPlans] = await Promise.all([
+      loadSource(api.strategies.candidates({ limit: 50 })),
+      loadSource(api.strategies.runPlans({ limit: 50 })),
+    ]);
+    return { candidates, runPlans };
+  }, []);
+
   const { data, loading, error, reload } = useAsyncData(loader, []);
+  const available = data?.candidates.available ?? false;
+  const items = available ? (data?.candidates.data?.items ?? []) : [];
+  const planByCandidate = useMemo(() => {
+    const map = new Map<string, { planId: string; status: string }>();
+    if (!data?.runPlans.available) return map;
+    for (const plan of data.runPlans.data?.items ?? []) {
+      if (!map.has(plan.candidate_id)) {
+        map.set(plan.candidate_id, { planId: plan.plan_id, status: plan.plan_status });
+      }
+    }
+    return map;
+  }, [data]);
+
+  const freshnessSources = [
+    {
+      name: "Candidates",
+      available,
+      required: true,
+      timestamp: items[0]?.created_at ?? null,
+    },
+    {
+      name: "Run plans",
+      available: data?.runPlans.available ?? false,
+      required: false,
+      timestamp: data?.runPlans.data?.items[0]?.created_at ?? null,
+    },
+  ];
 
   if (loading && !data) return <LoadingState label="Loading paper validation queue…" />;
-  if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
+  if (error && !data) return <ErrorState message={error} onRetry={() => void reload()} />;
 
   return (
-    <div className="space-y-6" data-testid="paper-validation-candidates-page">
-      <div>
-        <h1 className="text-2xl font-semibold">Paper Validation Queue</h1>
-        <p className="text-sm text-zinc-400">
-          Structured validation candidates from ready drafts. Queue only — no run started, no orders,
-          no proposals, no Telegram.
-        </p>
-      </div>
-
-      {data?.items.length ? (
+    <ValidatePageChrome
+      title="Paper Validation Queue"
+      description="Structured validation candidates from ready drafts. Queue only — no run started, no orders, no proposals, no Telegram."
+      posture={posture}
+      providerMode={providerMode}
+      freshnessSources={freshnessSources}
+      testId="paper-validation-candidates-page"
+      activeHref="/paper-validation/candidates"
+    >
+      {!available ? (
+        <ErrorState
+          message={
+            data?.candidates.error ??
+            "Candidate source unavailable. Count is not shown as zero."
+          }
+          onRetry={() => void reload()}
+        />
+      ) : items.length ? (
         <div className="space-y-3" data-testid="paper-validation-candidates-list">
-          {data.items.map((candidate) => (
-            <CandidateCard key={candidate.candidate_id} candidate={candidate} />
-          ))}
+          {items.map((candidate) => {
+            const plan = planByCandidate.get(candidate.candidate_id);
+            return (
+              <CandidateSummaryCard
+                key={candidate.candidate_id}
+                candidate={candidate}
+                runPlanId={plan?.planId ?? null}
+                runPlanStatus={plan?.status ?? null}
+              />
+            );
+          })}
         </div>
       ) : (
         <EmptyState
           title="No validation candidates yet"
-          description="Mark a draft ready for validation, then queue it from the draft detail page."
+          description="Mark a draft ready for validation, then queue it from the draft detail page. Available candidate source returned an empty list."
         />
       )}
-    </div>
+    </ValidatePageChrome>
   );
 }

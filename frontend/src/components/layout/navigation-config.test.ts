@@ -56,6 +56,7 @@ describe("AT-040 Phase B navigation config", () => {
   it("maps key workflows to the correct primary destination", () => {
     expect(getDestinationId("/")).toBe("dashboard");
     expect(getDestinationId("/tradingview-signals")).toBe("signals");
+    expect(getDestinationId("/paper-validation")).toBe("validate");
     expect(getDestinationId("/paper-validation/candidates")).toBe("validate");
     expect(getDestinationId("/paper-validation/candidates/cand-1")).toBe("validate");
     expect(getDestinationId("/paper-signal-orchestration")).toBe("signals");
@@ -127,6 +128,7 @@ describe("AT-040 Phase B navigation config", () => {
 
     expect(resolveSecondaryActiveHref("/alerts", signals)).toBe("/alerts");
     expect(resolveSecondaryActiveHref("/alerts/review", signals)).toBe("/alerts/review");
+    expect(resolveSecondaryActiveHref("/paper-validation", validate)).toBe("/paper-validation");
     expect(resolveSecondaryActiveHref("/paper-validation/candidates/example", validate)).toBe(
       "/paper-validation/candidates",
     );
@@ -148,7 +150,11 @@ describe("AT-040 Phase B navigation config", () => {
       expect(reachable.has(path) || getDestinationId(path) !== null).toBe(true);
     }
     expect(reachable.has("/tradingview-signals")).toBe(true);
+    expect(reachable.has("/paper-validation")).toBe(true);
     expect(reachable.has("/paper-validation/candidates")).toBe(true);
+    expect(reachable.has("/paper-validation/drafts")).toBe(true);
+    expect(reachable.has("/paper-validation/run-plans")).toBe(true);
+    expect(reachable.has("/paper-validation/run-sessions")).toBe(true);
     expect(reachable.has("/paper-signal-orchestration")).toBe(true);
     expect(reachable.has("/journal")).toBe(true);
     expect(reachable.has("/journal/comparison")).toBe(true);

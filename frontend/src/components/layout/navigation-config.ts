@@ -90,7 +90,7 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   {
     id: "validate",
     label: "Validate",
-    href: "/paper-validation/candidates",
+    href: "/paper-validation",
     icon: Inbox,
     ariaLabel: "Validate",
   },
@@ -180,6 +180,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "validate",
     items: [
+      { href: "/paper-validation", label: "Validate hub", icon: Inbox },
       { href: "/paper-validation/drafts", label: "Drafts", icon: FilePenLine },
       { href: "/paper-validation/candidates", label: "Candidates", icon: Inbox },
       { href: "/paper-validation/run-plans", label: "Run Plans", icon: CalendarClock },
@@ -324,6 +325,8 @@ export function isNavLinkActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   if (href === "/settings") return pathname === "/settings";
   if (href === "/journal") return pathname === "/journal";
+  // Validate hub is exact-only so stage routes do not keep the hub link current.
+  if (href === "/paper-validation") return pathname === "/paper-validation";
   if (href === "/risk") return pathname === "/risk" || pathname.startsWith("/risk/");
   if (href === "/alerts") return pathname === "/alerts" || pathname.startsWith("/alerts/");
   return pathname === href || pathname.startsWith(`${href}/`);

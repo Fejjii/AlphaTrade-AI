@@ -23,8 +23,11 @@ export const PHASE_B_REDIRECTS: readonly PhaseBRedirect[] = [
 export const PHASE_B_CAPABILITY_PATHS: readonly string[] = [
   "/",
   "/tradingview-signals",
+  "/paper-validation",
   "/paper-validation/candidates",
   "/paper-validation/drafts",
+  "/paper-validation/run-plans",
+  "/paper-validation/run-sessions",
   "/paper-signal-orchestration",
   "/journal",
   "/journal/comparison",

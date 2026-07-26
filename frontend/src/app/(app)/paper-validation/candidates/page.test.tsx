@@ -1,7 +1,26 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SourceResult } from "@/components/workflows/sourceResult";
+
 import PaperValidationCandidatesPage from "./page";
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({ killSwitchActive: false }),
+  useSafetyPosture: () => ({
+    executionMode: "paper",
+    realTradingEnabled: false,
+    providerMode: "fallback",
+  }),
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
+}));
 
 const sampleCandidate = {
   candidate_id: "candidate-1",
@@ -33,16 +52,23 @@ const sampleCandidate = {
   created_at: "2026-06-28T12:00:00Z",
 };
 
+function ok<T>(data: T): SourceResult<T> {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
-    data: { items: [sampleCandidate], total: 1, limit: 50, offset: 0 },
+    data: {
+      candidates: ok({ items: [sampleCandidate], total: 1, limit: 50, offset: 0 }),
+      runPlans: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    },
     loading: false,
     error: null,
     reload: vi.fn(),
   }),
 }));
 
-describe("PaperValidationCandidatesPage Slice 80", () => {
+describe("PaperValidationCandidatesPage Slice 80 / Phase C2", () => {
   afterEach(() => {
     cleanup();
   });
@@ -54,6 +80,8 @@ describe("PaperValidationCandidatesPage Slice 80", () => {
     expect(screen.getByTestId("paper-validation-candidates-list")).toBeInTheDocument();
     expect(screen.getByTestId("paper-candidate-candidate-1")).toBeInTheDocument();
     expect(screen.getByText(/queue only/i)).toBeInTheDocument();
+    expect(screen.getByTestId("paper-candidate-status-candidate-1")).toHaveTextContent("queued");
+    expect(screen.getByTestId("paper-candidate-next-candidate-1")).toHaveTextContent(/reviewing/i);
     expect(screen.queryByRole("button", { name: /start run/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /send to telegram/i })).not.toBeInTheDocument();
