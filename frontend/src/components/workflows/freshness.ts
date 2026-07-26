@@ -96,13 +96,18 @@ export type FreshnessSourceInput = {
 
 /**
  * Conservatively aggregate page-level freshness across sources.
+ * Every included source contributes a freshness state — missing/invalid/future
+ * timestamps on available sources are unavailable, never silently dropped.
  * One fresh source never makes the whole page live when others are worse/failed.
+ *
+ * Callers must exclude sources with no freshness meaning before calling this;
+ * do not rely on the aggregator to ignore missing timestamps.
  */
 export function aggregateShellFreshness(
   sources: FreshnessSourceInput[],
   options?: { nowMs?: number },
 ): { state: FreshnessState | null; ageLabel?: string } {
-  if (!sources.length) return { state: null };
+  if (!sources.length) return { state: "unavailable" };
 
   const requiredFailed = sources.some(
     (source) => source.required !== false && !source.available,
@@ -121,14 +126,16 @@ export function aggregateShellFreshness(
           ageLabel: ageLabelFromTimestamp(source.timestamp, options?.nowMs),
         };
       }
-      return freshnessFromTimestamp(source.timestamp, {
+      const fromTimestamp = freshnessFromTimestamp(source.timestamp, {
         nowMs: options?.nowMs,
         fallbackUsed: false,
       });
-    })
-    .filter((item): item is { state: FreshnessState; ageLabel?: string } => item != null);
+      // Available source with missing/empty/invalid timestamp → unavailable freshness.
+      // (Materially future timestamps already resolve to unavailable above.)
+      return fromTimestamp ?? { state: "unavailable" as const };
+    });
 
-  if (!derived.length) return { state: null };
+  if (!derived.length) return { state: "unavailable" };
 
   let least = derived[0];
   for (const item of derived.slice(1)) {

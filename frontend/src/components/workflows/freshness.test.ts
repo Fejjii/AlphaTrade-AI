@@ -9,6 +9,9 @@ import {
 
 describe("workflow freshness helpers", () => {
   const nowMs = Date.parse("2026-07-26T12:00:00.000Z");
+  const liveTs = "2026-07-26T11:59:00.000Z";
+  const staleTs = "2026-07-26T11:00:00.000Z";
+  const futureTs = "2026-07-26T12:10:00.000Z";
 
   it("does not invent freshness without a timestamp", () => {
     expect(freshnessFromTimestamp(null)).toBeNull();
@@ -17,20 +20,16 @@ describe("workflow freshness helpers", () => {
   });
 
   it("maps known timestamps to live/delayed/stale honestly", () => {
-    expect(
-      freshnessFromTimestamp("2026-07-26T11:59:00.000Z", { nowMs })?.state,
-    ).toBe("live");
+    expect(freshnessFromTimestamp(liveTs, { nowMs })?.state).toBe("live");
     expect(
       freshnessFromTimestamp("2026-07-26T11:50:00.000Z", { nowMs })?.state,
     ).toBe("delayed");
-    expect(
-      freshnessFromTimestamp("2026-07-26T11:00:00.000Z", { nowMs })?.state,
-    ).toBe("stale");
+    expect(freshnessFromTimestamp(staleTs, { nowMs })?.state).toBe("stale");
   });
 
   it("marks fallback when the source reports fallback_used", () => {
     expect(
-      freshnessFromTimestamp("2026-07-26T11:59:00.000Z", {
+      freshnessFromTimestamp(liveTs, {
         nowMs,
         fallbackUsed: true,
       }),
@@ -38,9 +37,7 @@ describe("workflow freshness helpers", () => {
   });
 
   it("treats materially future timestamps as unavailable clock skew", () => {
-    expect(
-      freshnessFromTimestamp("2026-07-26T12:10:00.000Z", { nowMs })?.state,
-    ).toBe("unavailable");
+    expect(freshnessFromTimestamp(futureTs, { nowMs })?.state).toBe("unavailable");
   });
 
   it("picks the newest available timestamp only", () => {
@@ -54,57 +51,65 @@ describe("workflow freshness helpers", () => {
     expect(ageLabelFromTimestamp("2026-07-26T11:55:00.000Z", nowMs)).toBe("5m");
   });
 
-  it("aggregates conservatively: live + stale => stale", () => {
+  it("live plus missing timestamp equals unavailable", () => {
     const result = aggregateShellFreshness(
       [
-        {
-          name: "a",
-          available: true,
-          required: true,
-          timestamp: "2026-07-26T11:59:00.000Z",
-        },
-        {
-          name: "b",
-          available: true,
-          required: true,
-          timestamp: "2026-07-26T11:00:00.000Z",
-        },
-      ],
-      { nowMs },
-    );
-    expect(result.state).toBe("stale");
-  });
-
-  it("aggregates conservatively: live + failed required => unavailable", () => {
-    const result = aggregateShellFreshness(
-      [
-        {
-          name: "a",
-          available: true,
-          required: true,
-          timestamp: "2026-07-26T11:59:00.000Z",
-        },
-        {
-          name: "b",
-          available: false,
-          required: true,
-          timestamp: null,
-        },
+        { name: "live", available: true, required: true, timestamp: liveTs },
+        { name: "missing", available: true, required: true, timestamp: null },
       ],
       { nowMs },
     );
     expect(result.state).toBe("unavailable");
   });
 
-  it("aggregates all live sources as live", () => {
+  it("live plus invalid timestamp equals unavailable", () => {
     const result = aggregateShellFreshness(
       [
-        {
-          name: "a",
-          available: true,
-          required: true,
-          timestamp: "2026-07-26T11:59:00.000Z",
-        },
+        { name: "live", available: true, required: true, timestamp: liveTs },
+        { name: "invalid", available: true, required: true, timestamp: "not-a-date" },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("unavailable");
+  });
+
+  it("live plus future timestamp equals unavailable", () => {
+    const result = aggregateShellFreshness(
+      [
+        { name: "live", available: true, required: true, timestamp: liveTs },
+        { name: "future", available: true, required: true, timestamp: futureTs },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("unavailable");
+  });
+
+  it("live plus stale equals stale", () => {
+    const result = aggregateShellFreshness(
+      [
+        { name: "live", available: true, required: true, timestamp: liveTs },
+        { name: "stale", available: true, required: true, timestamp: staleTs },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("stale");
+  });
+
+  it("live plus failed required source equals unavailable", () => {
+    const result = aggregateShellFreshness(
+      [
+        { name: "live", available: true, required: true, timestamp: liveTs },
+        { name: "failed", available: false, required: true, timestamp: null },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("unavailable");
+  });
+
+  it("all live equals live", () => {
+    const result = aggregateShellFreshness(
+      [
+        { name: "a", available: true, required: true, timestamp: liveTs },
         {
           name: "b",
           available: true,
@@ -117,36 +122,32 @@ describe("workflow freshness helpers", () => {
     expect(result.state).toBe("live");
   });
 
-  it("returns unavailable default when timestamps are missing", () => {
-    const result = aggregateShellFreshness(
-      [
-        { name: "a", available: true, required: true, timestamp: null },
-        { name: "b", available: true, required: true, timestamp: null },
-      ],
-      { nowMs },
-    );
-    expect(result.state).toBeNull();
-  });
-
-  it("prefers fallback when a source reports fallback_used", () => {
+  it("fallback plus live equals fallback", () => {
     const result = aggregateShellFreshness(
       [
         {
-          name: "a",
+          name: "fallback",
           available: true,
           required: true,
-          timestamp: "2026-07-26T11:59:00.000Z",
+          timestamp: liveTs,
           fallbackUsed: true,
         },
-        {
-          name: "b",
-          available: true,
-          required: true,
-          timestamp: "2026-07-26T11:58:00.000Z",
-        },
+        { name: "live", available: true, required: true, timestamp: liveTs },
       ],
       { nowMs },
     );
     expect(result.state).toBe("fallback");
+  });
+
+  it("no applicable sources leaves freshness unavailable", () => {
+    expect(aggregateShellFreshness([], { nowMs }).state).toBe("unavailable");
+  });
+
+  it("empty timestamp on available source contributes unavailable, not silent drop", () => {
+    const result = aggregateShellFreshness(
+      [{ name: "empty", available: true, required: true, timestamp: "" }],
+      { nowMs },
+    );
+    expect(result.state).toBe("unavailable");
   });
 });

@@ -269,11 +269,13 @@ export default function DashboardPage() {
 
   const freshnessSources = useMemo(() => {
     if (!data) return [];
-    return [
+    // Timestamp-bearing sources only when they participate in freshness.
+    // Optional sources that failed to load are excluded (no freshness meaning).
+    const timedSources = [
       {
         name: "watcher",
         available: data.watcherSummary.available || data.summary.available,
-        required: false,
+        required: false as const,
         timestamp:
           data.watcherSummary.data?.last_scan_at ??
           summary?.market_watcher?.last_scan_at ??
@@ -283,46 +285,40 @@ export default function DashboardPage() {
       {
         name: "bridge",
         available: data.summary.available,
-        required: false,
+        required: false as const,
         timestamp: summary?.bridge?.last_tick_at ?? null,
       },
       {
         name: "alert-routing",
         available: data.alertRouting.available,
-        required: false,
+        required: false as const,
         timestamp: data.alertRouting.data?.generated_at ?? null,
       },
       {
         name: "setup-review",
         available: data.setupReviewSummary.available,
-        required: false,
+        required: false as const,
         timestamp: data.setupReviewSummary.data?.latest_created_at ?? null,
       },
-      {
-        name: "dashboard-summary",
-        available: data.summary.available,
-        required: true,
+    ].filter((source) => source.available);
+
+    // Availability-only required sources have no timestamp field — include only on
+    // failure so required-source failure still forces unavailable shell freshness.
+    const failedRequiredAvailability = [
+      { name: "dashboard-summary", available: data.summary.available },
+      { name: "approvals", available: data.approvals.available },
+      { name: "proposals", available: data.proposals.available },
+      { name: "tradingview", available: data.tvSignals.available },
+    ]
+      .filter((source) => !source.available)
+      .map((source) => ({
+        name: source.name,
+        available: false,
+        required: true as const,
         timestamp: null,
-      },
-      {
-        name: "approvals",
-        available: data.approvals.available,
-        required: true,
-        timestamp: null,
-      },
-      {
-        name: "proposals",
-        available: data.proposals.available,
-        required: true,
-        timestamp: null,
-      },
-      {
-        name: "tradingview",
-        available: data.tvSignals.available,
-        required: true,
-        timestamp: null,
-      },
-    ];
+      }));
+
+    return [...timedSources, ...failedRequiredAvailability];
   }, [data, summary]);
 
   if (loading) return <LoadingState label="Loading dashboard…" />;

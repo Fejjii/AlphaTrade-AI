@@ -1,5 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 
 import {
   ShellFreshnessProvider,
@@ -7,8 +14,66 @@ import {
 } from "@/contexts/ShellFreshnessContext";
 import { WorkflowFreshnessAdapter } from "@/components/workflows/WorkflowFreshnessAdapter";
 import { FreshnessPill } from "@/components/ui/freshness-pill";
+import { TopBar } from "@/components/layout/TopBar";
+import type { FreshnessSourceInput } from "@/components/workflows/freshness";
 
 afterEach(cleanup);
+
+function liveTimestamp(): string {
+  return new Date(Date.now() - 60_000).toISOString();
+}
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+}));
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({
+    refreshStatus: vi.fn(),
+    loading: false,
+    killSwitchActive: false,
+    killSwitchStatus: {
+      organization_id: "org",
+      active: false,
+      reason: null,
+      activated_by: null,
+      activated_at: null,
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 1,
+      scope: "organization",
+      global_active: false,
+      execution_blocked: false,
+    },
+    killSwitchError: null,
+    health: {
+      status: "ok",
+      version: "0.1",
+      execution_mode: "paper",
+      real_trading_enabled: false,
+    },
+    providers: { providers: [] },
+  }),
+  useMockProviders: () => [],
+  useSafetyPosture: () => ({
+    executionMode: "paper",
+    realTradingEnabled: false,
+    providerMode: "mock",
+    postureKnown: true,
+  }),
+}));
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    user: { email: "trader@example.com" },
+    organization: { name: "Alpha Org" },
+    logout: vi.fn(),
+  }),
+}));
+
+vi.mock("@/components/KillSwitchButton", () => ({
+  KillSwitchButton: () => <button type="button">Kill</button>,
+}));
 
 function FreshnessProbe() {
   const { freshness, setFreshness, clearFreshness } = useShellFreshness();
@@ -61,7 +126,7 @@ describe("ShellFreshnessContext", () => {
               name: "a",
               available: true,
               required: true,
-              timestamp: "2026-07-26T11:59:00.000Z",
+              timestamp: liveTimestamp(),
             },
           ]}
           clearOnUnmount={false}
@@ -79,7 +144,8 @@ describe("ShellFreshnessContext", () => {
         <FreshnessProbe />
       </ShellFreshnessProvider>,
     );
-    expect(screen.getByTestId("probe-state")).toHaveTextContent("null");
+    expect(screen.getByTestId("probe-state")).toHaveTextContent("unavailable");
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
   it("does not mark the page live when a required source failed", () => {
@@ -91,7 +157,7 @@ describe("ShellFreshnessContext", () => {
               name: "live",
               available: true,
               required: true,
-              timestamp: "2026-07-26T11:59:00.000Z",
+              timestamp: liveTimestamp(),
             },
             {
               name: "failed",
@@ -107,5 +173,115 @@ describe("ShellFreshnessContext", () => {
     );
     expect(screen.getByTestId("probe-state")).toHaveTextContent("unavailable");
   });
-});
 
+  it("does not mark the page live when one source has unknown freshness", () => {
+    render(
+      <ShellFreshnessProvider>
+        <WorkflowFreshnessAdapter
+          sources={[
+            {
+              name: "live",
+              available: true,
+              required: true,
+              timestamp: liveTimestamp(),
+            },
+            {
+              name: "unknown",
+              available: true,
+              required: true,
+              timestamp: null,
+            },
+          ]}
+          clearOnUnmount={false}
+        />
+        <FreshnessProbe />
+      </ShellFreshnessProvider>,
+    );
+    expect(screen.getByTestId("probe-state")).toHaveTextContent("unavailable");
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+  });
+
+  it("TopBar does not display Live when one relevant page source has unknown freshness", () => {
+    render(
+      <ShellFreshnessProvider>
+        <WorkflowFreshnessAdapter
+          sources={[
+            {
+              name: "live",
+              available: true,
+              required: true,
+              timestamp: liveTimestamp(),
+            },
+            {
+              name: "unknown",
+              available: true,
+              required: true,
+              timestamp: null,
+            },
+          ]}
+          clearOnUnmount={false}
+        />
+        <TopBar />
+      </ShellFreshnessProvider>,
+    );
+    const freshnessRegion = screen.getByTestId("topbar-freshness");
+    expect(within(freshnessRegion).queryByText(/^Live/)).not.toBeInTheDocument();
+    expect(
+      within(freshnessRegion).getByText(/Unavailable|Freshness unavailable/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not re-push context for an equivalently recreated sources array", () => {
+    const freshnessUpdates: Array<string | null> = [];
+    const timestamp = liveTimestamp();
+
+    function CountingProbe() {
+      const { freshness } = useShellFreshness();
+      useEffect(() => {
+        freshnessUpdates.push(freshness.state);
+      }, [freshness]);
+      return <span data-testid="probe-state">{freshness.state ?? "null"}</span>;
+    }
+
+    function Harness({ sources }: { sources: FreshnessSourceInput[] }) {
+      return (
+        <ShellFreshnessProvider>
+          <WorkflowFreshnessAdapter sources={sources} clearOnUnmount={false} />
+          <CountingProbe />
+        </ShellFreshnessProvider>
+      );
+    }
+
+    const { rerender } = render(
+      <Harness
+        sources={[
+          {
+            name: "a",
+            available: true,
+            required: true,
+            timestamp,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("probe-state")).toHaveTextContent("live");
+    const updatesAfterFirst = freshnessUpdates.length;
+
+    rerender(
+      <Harness
+        sources={[
+          {
+            name: "a",
+            available: true,
+            required: true,
+            timestamp,
+          },
+        ]}
+      />,
+    );
+
+    expect(freshnessUpdates.length).toBe(updatesAfterFirst);
+    expect(screen.getByTestId("probe-state")).toHaveTextContent("live");
+  });
+});

@@ -202,6 +202,8 @@ export default function TradingViewSignalsPage() {
   const partialData = unavailableSources.length > 0;
   const allSourcesOk = unavailableSources.length === 0;
 
+  // Optional sources that failed to load are excluded before aggregation (no freshness
+  // meaning). Available sources with missing timestamps still contribute unavailable.
   const freshnessSources = [
     {
       name: "tradingview",
@@ -209,24 +211,26 @@ export default function TradingViewSignalsPage() {
       required: true,
       timestamp: data.tradingView.data?.items[0]?.received_at ?? null,
     },
-    {
-      name: "alerts",
-      available: data.alerts.available,
-      required: false,
-      timestamp: data.alerts.data?.items[0]?.created_at ?? null,
-    },
-    {
-      name: "setup-review",
-      available: data.setupReviews.available,
-      required: false,
-      timestamp: data.setupReviews.data?.items[0]?.created_at ?? null,
-    },
-    {
-      name: "watcher",
-      available: data.watcherSummary.available,
-      required: false,
-      timestamp: data.watcherSummary.data?.last_scan_at ?? null,
-    },
+    ...[
+      {
+        name: "alerts",
+        available: data.alerts.available,
+        required: false as const,
+        timestamp: data.alerts.data?.items[0]?.created_at ?? null,
+      },
+      {
+        name: "setup-review",
+        available: data.setupReviews.available,
+        required: false as const,
+        timestamp: data.setupReviews.data?.items[0]?.created_at ?? null,
+      },
+      {
+        name: "watcher",
+        available: data.watcherSummary.available,
+        required: false as const,
+        timestamp: data.watcherSummary.data?.last_scan_at ?? null,
+      },
+    ].filter((source) => source.available),
   ];
 
   return (
