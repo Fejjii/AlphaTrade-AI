@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C1 daily decision loop
-- Priority: P1 · Status: DONE (Phase A + Phase B); IN REVIEW (Phase C1) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: DONE (Phase A + Phase B + Phase C1) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -533,21 +533,23 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (TabsRoot shared id prefix + fail-closed paper-mode / limitations hardening).
   Phase B PR https://github.com/Fejjii/AlphaTrade-AI/pull/31 merged (`fc148ff`,
   pre-merge head `7f7818c`, CI run 30200035610; post-merge main CI 30201145776).
-  Phase C1 draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/32 remains
-  IN REVIEW on `feat/at040-phase-c1-daily-decision-loop` (validated
-  implementation commit `7e42fe8`; CI run 30210340611 success). Correction
-  pass recorded: SourceResult availability, runtime safety-truth matrix
-  (`isPaperModeConfirmed`), conservative shell freshness aggregation (available
-  sources with missing/invalid/future timestamps contribute unavailable; live +
-  unknown cannot yield page-level Live), signal deep-link honesty, Plan signal
-  context query, and session-only dismiss labeling. Phases C2–F remain.
+  Phase C1 PR https://github.com/Fejjii/AlphaTrade-AI/pull/32 merged
+  (`f7fafd4`; pre-merge head `95d669a`; validated implementation commit
+  `7e42fe8`; pre-merge CI 30211212052 success; post-merge main CI 30212388146
+  success — frontend, backend, docker-build, deployment-safety, evaluation,
+  e2e-smoke). Correction pass recorded: SourceResult availability, runtime
+  safety-truth matrix (`isPaperModeConfirmed`), conservative shell freshness
+  aggregation (available sources with missing/invalid/future timestamps
+  contribute unavailable; live + unknown cannot yield page-level Live), signal
+  deep-link honesty, Plan signal context query, and session-only dismiss
+  labeling. Phase C2 and later remain unstarted.
 - Phase C1 deliverables: Dashboard attention queue; Signals inbox on
   `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
   unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
   SourceResult partial-data honesty; confirmed-paper-only safety badges;
   conservative multi-source shell freshness with unknown-timestamp contribution.
-- Phase C remaining (do not implement in C1): Validate pipeline redesign;
-  Journal redesign; Portfolio/risk split; analytics/charts (Phase D+).
+- Phase C remaining (unstarted): Validate pipeline redesign (C2); Journal
+  redesign; Portfolio/risk split; analytics/charts (Phase D+).
 
 ---
 
