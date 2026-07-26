@@ -565,12 +565,16 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `renderable` / `fullyAvailable` / `errorCount`; partial Outcomes in
   partial-data warning without Live freshness; session outcome UI states
   (`loading` / `recorded` / `confirmed_not_recorded` / `unavailable`) gate the
-  recording form.
+  recording form. Loading-versus-unavailable pass: explicit observation source
+  states (`loading` / `available` / `unavailable`) and outcome source states in
+  `OutcomeSummary`; initial load shows neutral loading copy (no premature
+  unavailable/Retry/zero); retry shows retrying/refreshing without unavailable;
+  completed sessions use historical missing-outcome wording.
   Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — validated
-  implementation tip `1fb21d0`; complete CI run 30222210844 success (frontend,
-  backend, docker-build, deployment-safety, evaluation, e2e-smoke). Prior
-  honesty tip `7d63371` CI 30220150868. Local: 512 frontend unit tests,
-  lint/typecheck/build green.
+  implementation tip `921929e` pending CI; prior tip `1fb21d0` CI 30222210844
+  success (frontend, backend, docker-build, deployment-safety, evaluation,
+  e2e-smoke). Prior honesty tip `7d63371` CI 30220150868. Local: 520 frontend
+  unit tests, lint/typecheck/build green.
 - Phase C remaining after C2: Journal redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
