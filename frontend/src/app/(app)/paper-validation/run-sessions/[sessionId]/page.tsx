@@ -5,10 +5,17 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { ErrorState, LoadingState } from "@/components/states";
-import { OutcomeSummary, RelatedStageLinks } from "@/components/validate";
+import {
+  OutcomeSummary,
+  RelatedStageLinks,
+  loadObservationsSource,
+  loadSessionResultSource,
+  type SessionResultLoad,
+} from "@/components/validate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { SourceResult } from "@/components/workflows";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { setupConditionLabel } from "@/lib/alert-display";
@@ -22,7 +29,6 @@ import {
   type PaperValidationDisciplineAssessment,
   type PaperValidationRunSessionStatus,
   type PaperValidationSessionObservationItem,
-  type PaperValidationSessionResultItem,
 } from "@/lib/api/types";
 
 const OBSERVATION_KINDS: PaperValidationObservationKind[] = [
@@ -60,15 +66,30 @@ const DISCIPLINE_ASSESSMENTS: PaperValidationDisciplineAssessment[] = [
   "should_have_avoided",
 ];
 
+const INITIAL_OBS: SourceResult<PaperValidationSessionObservationItem[]> = {
+  data: null,
+  available: false,
+  error: null,
+  fallbackUsed: false,
+};
+
+const INITIAL_RESULT: SessionResultLoad = {
+  data: null,
+  available: false,
+  error: null,
+  fallbackUsed: false,
+  resultNotRecorded: false,
+};
+
 export default function PaperValidationRunSessionDetailPage() {
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId;
   const [busy, setBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [observations, setObservations] = useState<PaperValidationSessionObservationItem[]>([]);
-  const [sessionResult, setSessionResult] = useState<PaperValidationSessionResultItem | null>(
-    null,
-  );
+  const [observations, setObservations] =
+    useState<SourceResult<PaperValidationSessionObservationItem[]>>(INITIAL_OBS);
+  const [sessionResult, setSessionResult] = useState<SessionResultLoad>(INITIAL_RESULT);
+  const [extrasLoading, setExtrasLoading] = useState(false);
   const [obsKind, setObsKind] = useState<PaperValidationObservationKind>("general_note");
   const [obsPrice, setObsPrice] = useState("");
   const [obsNote, setObsNote] = useState("");
@@ -90,17 +111,14 @@ export default function PaperValidationRunSessionDetailPage() {
   const { data: session, loading, error, reload } = useAsyncData(loader, [sessionId]);
 
   const loadExtras = useCallback(async () => {
-    try {
-      const [obsList, result] = await Promise.all([
-        api.strategies.sessionObservations(sessionId),
-        api.strategies.getSessionResult(sessionId).catch(() => null),
-      ]);
-      setObservations(obsList.items);
-      setSessionResult(result);
-    } catch {
-      setObservations([]);
-      setSessionResult(null);
-    }
+    setExtrasLoading(true);
+    const [obsSource, resultSource] = await Promise.all([
+      loadObservationsSource(api.strategies.sessionObservations(sessionId)),
+      loadSessionResultSource(api.strategies.getSessionResult(sessionId)),
+    ]);
+    setObservations(obsSource);
+    setSessionResult(resultSource);
+    setExtrasLoading(false);
   }, [sessionId]);
 
   useEffect(() => {
@@ -159,7 +177,13 @@ export default function PaperValidationRunSessionDetailPage() {
         lessons: lessons || null,
       };
       const response = await api.strategies.recordSessionResult(sessionId, payload);
-      setSessionResult(response.result);
+      setSessionResult({
+        data: response.result,
+        available: true,
+        error: null,
+        fallbackUsed: false,
+        resultNotRecorded: false,
+      });
       setResultConfirm("");
     } catch (err) {
       setResultError(err instanceof Error ? err.message : "Failed to record outcome.");
@@ -174,7 +198,12 @@ export default function PaperValidationRunSessionDetailPage() {
     return <ErrorState message="Run session not found." onRetry={() => void reload()} />;
 
   const isRunning = session.session_status === "running";
-  const canComplete = isRunning && sessionResult !== null;
+  const hasVerifiedOutcome =
+    sessionResult.available && sessionResult.data != null && !sessionResult.resultNotRecorded;
+  const canComplete = isRunning && hasVerifiedOutcome;
+  const outcomeUnknown = isRunning && !sessionResult.available;
+  const outcomeMissing = isRunning && sessionResult.available && sessionResult.resultNotRecorded;
+  const observationItems = observations.available ? (observations.data ?? []) : [];
 
   return (
     <div className="space-y-6" data-testid="paper-validation-run-session-detail">
@@ -199,10 +228,13 @@ export default function PaperValidationRunSessionDetailPage() {
       />
 
       <OutcomeSummary
-        observations={observations}
-        observationsAvailable
-        result={sessionResult}
-        resultAvailable={sessionResult != null}
+        observations={observations.available ? observationItems : null}
+        observationsAvailable={observations.available}
+        result={sessionResult.data}
+        resultAvailable={sessionResult.available}
+        resultNotRecorded={sessionResult.resultNotRecorded}
+        resultError={sessionResult.error}
+        onRetryExtras={() => void loadExtras()}
       />
 
       <Card>
@@ -260,9 +292,16 @@ export default function PaperValidationRunSessionDetailPage() {
               </Button>
             </div>
           ) : null}
-          {isRunning && !sessionResult ? (
+          {outcomeMissing ? (
             <p className="text-xs text-amber-400" data-testid="paper-run-session-outcome-required">
               Record a session outcome before marking completed.
+            </p>
+          ) : null}
+          {outcomeUnknown ? (
+            <p className="text-xs text-amber-400" data-testid="paper-run-session-outcome-unverified">
+              Completion is unavailable until outcome state is verified. Retry loading the outcome
+              source
+              {extrasLoading ? " (retrying…)" : ""}.
             </p>
           ) : null}
           {statusError ? <p className="text-sm text-red-400">{statusError}</p> : null}
@@ -274,11 +313,27 @@ export default function PaperValidationRunSessionDetailPage() {
           <CardTitle className="text-base">Observation timeline</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          {observations.length === 0 ? (
+          {!observations.available ? (
+            <div className="space-y-2">
+              <p className="text-amber-400" data-testid="paper-run-session-obs-unavailable">
+                Observation source unavailable
+                {observations.error ? `: ${observations.error}` : "."}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void loadExtras()}
+                data-testid="paper-run-session-obs-retry"
+              >
+                Retry observations
+              </Button>
+            </div>
+          ) : observationItems.length === 0 ? (
             <p className="text-zinc-400">No observations recorded yet.</p>
           ) : (
             <ul className="space-y-2">
-              {observations.map((obs) => (
+              {observationItems.map((obs) => (
                 <li
                   key={obs.observation_id}
                   className="rounded border border-zinc-800 p-3"
@@ -298,7 +353,10 @@ export default function PaperValidationRunSessionDetailPage() {
           )}
 
           {isRunning ? (
-            <div className="space-y-3 border-t border-zinc-800 pt-4" data-testid="paper-run-session-observation-form">
+            <div
+              className="space-y-3 border-t border-zinc-800 pt-4"
+              data-testid="paper-run-session-observation-form"
+            >
               <label className="block text-xs text-zinc-400">
                 Kind
                 <select
@@ -360,19 +418,61 @@ export default function PaperValidationRunSessionDetailPage() {
           <CardTitle className="text-base">Session outcome</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          {sessionResult ? (
+          {!sessionResult.available ? (
+            <div className="space-y-2">
+              <p className="text-amber-400" data-testid="paper-run-session-result-unavailable">
+                Outcome source unavailable
+                {sessionResult.error ? `: ${sessionResult.error}` : "."} This is not a confirmed
+                “not recorded” state.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void loadExtras()}
+                data-testid="paper-run-session-result-retry"
+              >
+                Retry outcome
+              </Button>
+              {isRunning ? (
+                <p className="text-xs text-zinc-400">
+                  You may still record an outcome below after verifying the current state, or retry
+                  first.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {hasVerifiedOutcome && sessionResult.data ? (
             <div className="space-y-2 text-zinc-300" data-testid="paper-run-session-result-summary">
               <p>
-                Outcome: <Badge variant="muted">{sessionResult.outcome}</Badge>
+                Outcome: <Badge variant="muted">{sessionResult.data.outcome}</Badge>
               </p>
-              <p>Success criteria: {sessionResult.success_criteria_met}</p>
-              <p>Failure criteria: {sessionResult.failure_criteria_met}</p>
-              <p>Entry assessment: {sessionResult.entry_assessment}</p>
-              <p>Discipline: {sessionResult.discipline_assessment}</p>
-              {sessionResult.lessons ? <p>Lessons: {sessionResult.lessons}</p> : null}
+              <p>Success criteria: {sessionResult.data.success_criteria_met}</p>
+              <p>Failure criteria: {sessionResult.data.failure_criteria_met}</p>
+              <p>Entry assessment: {sessionResult.data.entry_assessment}</p>
+              <p>Discipline: {sessionResult.data.discipline_assessment}</p>
+              {sessionResult.data.lessons ? <p>Lessons: {sessionResult.data.lessons}</p> : null}
             </div>
-          ) : isRunning ? (
+          ) : null}
+
+          {sessionResult.available &&
+          sessionResult.resultNotRecorded &&
+          !isRunning &&
+          !hasVerifiedOutcome ? (
+            <p className="text-zinc-400" data-testid="paper-run-session-result-not-recorded">
+              No outcome recorded.
+            </p>
+          ) : null}
+
+          {isRunning && !hasVerifiedOutcome ? (
             <div className="space-y-3" data-testid="paper-run-session-result-form">
+              {!sessionResult.available ? (
+                <p className="text-xs text-zinc-400">
+                  Recording a new outcome is allowed, but current outcome state is unverified until
+                  the outcome source responds.
+                </p>
+              ) : null}
               <label className="block text-xs text-zinc-400">
                 Outcome
                 <select
@@ -488,9 +588,7 @@ export default function PaperValidationRunSessionDetailPage() {
               </Button>
               {resultError ? <p className="text-sm text-red-400">{resultError}</p> : null}
             </div>
-          ) : (
-            <p className="text-zinc-400">No outcome recorded.</p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>

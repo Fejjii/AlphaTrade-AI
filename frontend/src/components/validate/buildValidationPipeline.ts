@@ -6,6 +6,7 @@ import type {
   PaperValidationSessionResultItem,
 } from "@/lib/api/types";
 
+import { summarizeOutcomeCoverage } from "@/components/validate/sessionExtras";
 import {
   draftNextAction,
   runPlanCriteriaIssues,
@@ -16,6 +17,7 @@ import { runSessionDetailHref } from "@/components/validate/validationLinks";
 import {
   VALIDATION_STAGE_DEFINITIONS,
   VALIDATION_STAGE_ORDER,
+  type OutcomeCoverageModel,
   type RecentOutcomeSummary,
   type ValidateHubSources,
   type ValidationAttentionItem,
@@ -66,13 +68,19 @@ function stageCount(
     }
     case "outcome": {
       if (!sources.runSessions.available) return null;
-      // Count only loaded recent results that are available — do not invent totals.
-      const availableResults = sources.recentResults.filter((r) => r.available && r.data).length;
-      const completed =
-        sources.runSessions.data?.items.filter((s) => s.session_status === "completed").length ?? 0;
-      // If no recent-result probes were requested, surface completed session count as stage volume.
-      if (!sources.recentResults.length) return completed;
-      return availableResults;
+      const coverage = summarizeOutcomeCoverage(sources.recentResults);
+      // No completed sessions probed → honest zero only when sessions source is available.
+      if (coverage.completedSessionsProbed === 0) return 0;
+      // All result requests failed → never display a confirmed zero.
+      if (
+        coverage.resultsUnavailable === coverage.completedSessionsProbed &&
+        coverage.resultsLoaded === 0 &&
+        coverage.resultsNotRecorded === 0
+      ) {
+        return null;
+      }
+      // Loaded recorded outcomes only; confirmed not-recorded are not counted as loaded results.
+      return coverage.resultsLoaded;
     }
     default: {
       const _exhaustive: never = id;
@@ -87,7 +95,9 @@ function stageStatus(
   count: ValidationCount,
 ): { statusLabel: string; nextAction: string; blocker: string | null; timestamp: string | null } {
   const def = VALIDATION_STAGE_DEFINITIONS.find((s) => s.id === id)!;
-  const unavailable = count == null;
+  // Outcome may have null count when result probes failed while sessions remain available.
+  const unavailable =
+    count == null && !(id === "outcome" && sources.runSessions.available);
 
   if (unavailable) {
     return {
@@ -182,19 +192,32 @@ function stageStatus(
     case "outcome": {
       const completed =
         sources.runSessions.data?.items.filter((s) => s.session_status === "completed") ?? [];
-      const recorded = sources.recentResults.filter((r) => r.available && r.data).length;
+      const coverage = summarizeOutcomeCoverage(sources.recentResults);
+      const probed = coverage.completedSessionsProbed;
+      let statusLabel = "No completed sessions";
+      let blocker: string | null = null;
+      if (probed === 0) {
+        statusLabel = "No completed sessions";
+      } else if (
+        coverage.resultsUnavailable === probed &&
+        coverage.resultsLoaded === 0 &&
+        coverage.resultsNotRecorded === 0
+      ) {
+        statusLabel = "Outcome results unavailable";
+        blocker = "All recent outcome result requests failed.";
+      } else if (coverage.resultsUnavailable > 0) {
+        statusLabel = `${coverage.resultsLoaded} of ${probed} recent outcomes loaded`;
+        blocker = `${coverage.resultsUnavailable} recent outcome result request(s) failed.`;
+      } else {
+        statusLabel = `${coverage.resultsLoaded} of ${probed} recent outcomes loaded`;
+      }
       return {
-        statusLabel:
-          sources.recentResults.length > 0
-            ? `${recorded} recent outcomes loaded`
-            : count === 0
-              ? "No completed sessions"
-              : `${count} completed sessions`,
+        statusLabel,
         nextAction:
-          count === 0
+          probed === 0
             ? "Complete a running session after recording an outcome."
             : "Review recent outcomes and journal lessons if needed.",
-        blocker: null,
+        blocker,
         timestamp: newestTimestamp([
           ...completed.map((s) => s.ended_at ?? s.created_at),
           ...sources.recentResults.map((r) => r.data?.recorded_at ?? r.data?.created_at),
@@ -213,6 +236,11 @@ function buildStages(sources: ValidateHubSources): ValidationStageModel[] {
     const def = VALIDATION_STAGE_DEFINITIONS.find((s) => s.id === id)!;
     const count = stageCount(id, sources);
     const meta = stageStatus(id, sources, count);
+    const coverage = summarizeOutcomeCoverage(sources.recentResults);
+    const outcomeResultsAvailable =
+      sources.runSessions.available &&
+      (coverage.completedSessionsProbed === 0 ||
+        coverage.resultsUnavailable < coverage.completedSessionsProbed);
     const available =
       id === "draft"
         ? sources.drafts.available
@@ -220,7 +248,9 @@ function buildStages(sources: ValidateHubSources): ValidationStageModel[] {
           ? sources.candidates.available
           : id === "run_plan"
             ? sources.runPlans.available
-            : sources.runSessions.available;
+            : id === "outcome"
+              ? outcomeResultsAvailable
+              : sources.runSessions.available;
     const sourceName =
       id === "draft"
         ? "Drafts"
@@ -232,7 +262,7 @@ function buildStages(sources: ValidateHubSources): ValidationStageModel[] {
               ? "Run sessions"
               : id === "observation"
                 ? "Run sessions (active)"
-                : "Run sessions / outcomes";
+                : "Outcome results";
     return {
       id,
       name: def.name,
@@ -337,27 +367,36 @@ function buildAttention(sources: ValidateHubSources): ValidationAttentionItem[] 
 
 function buildRecentOutcomes(sources: ValidateHubSources): RecentOutcomeSummary[] {
   if (!sources.runSessions.available) return [];
-  const completed = (sources.runSessions.data?.items ?? [])
-    .filter((s) => s.session_status === "completed")
-    .slice(0, 5);
+  const completedById = new Map(
+    (sources.runSessions.data?.items ?? [])
+      .filter((s) => s.session_status === "completed")
+      .map((s) => [s.session_id, s]),
+  );
 
-  return completed.map((session, index) => {
-    const resultSource = sources.recentResults[index];
-    const result = resultSource?.available ? resultSource.data : null;
+  return sources.recentResults.map((resultSource) => {
+    const session = completedById.get(resultSource.sessionId);
+    const result =
+      resultSource.available && !resultSource.resultNotRecorded ? resultSource.data : null;
     return {
-      sessionId: session.session_id,
-      symbol: session.symbol ?? null,
-      condition: session.condition ?? null,
-      sessionStatus: session.session_status,
+      sessionId: resultSource.sessionId,
+      symbol: session?.symbol ?? null,
+      condition: session?.condition ?? null,
+      sessionStatus: session?.session_status ?? "completed",
       outcome: result?.outcome ?? null,
-      recordedAt: result?.recorded_at ?? result?.created_at ?? session.ended_at ?? null,
-      href: runSessionDetailHref(session.session_id),
-      resultAvailable: Boolean(resultSource?.available && result),
+      recordedAt:
+        result?.recorded_at ?? result?.created_at ?? session?.ended_at ?? session?.created_at ?? null,
+      href: runSessionDetailHref(resultSource.sessionId),
+      resultAvailable: resultSource.available,
+      resultNotRecorded: resultSource.resultNotRecorded,
+      resultError: resultSource.error,
     };
   });
 }
 
-function buildLimitations(sources: ValidateHubSources): string[] {
+function buildLimitations(
+  sources: ValidateHubSources,
+  coverage: OutcomeCoverageModel,
+): string[] {
   const limitations: string[] = [
     "Paper validation only — no exchange orders, no autonomous execution, no live trading.",
     "Drafts, candidates, plans, and sessions advance only through explicit confirmed actions.",
@@ -374,10 +413,16 @@ function buildLimitations(sources: ValidateHubSources): string[] {
   if (!sources.runSessions.available) {
     limitations.push("Run session source unavailable — session and outcome summaries limited.");
   }
+  if (coverage.resultsUnavailable > 0) {
+    limitations.push(
+      `${coverage.resultsUnavailable} recent outcome result request(s) unavailable — coverage incomplete.`,
+    );
+  }
   return limitations;
 }
 
 export function buildValidationPipeline(sources: ValidateHubSources): ValidationPipelineModel {
+  const outcomeCoverage = summarizeOutcomeCoverage(sources.recentResults);
   const stages = buildStages(sources);
   const counts = Object.fromEntries(stages.map((s) => [s.id, s.count])) as Record<
     ValidationStageId,
@@ -393,7 +438,8 @@ export function buildValidationPipeline(sources: ValidateHubSources): Validation
     attention: buildAttention(sources),
     activeSessions,
     recentOutcomes: buildRecentOutcomes(sources),
-    limitations: buildLimitations(sources),
+    outcomeCoverage,
+    limitations: buildLimitations(sources, outcomeCoverage),
   };
 }
 

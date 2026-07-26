@@ -1,10 +1,10 @@
+import type { RecentResultLoad } from "@/components/validate/sessionExtras";
 import type { SourceResult } from "@/components/workflows/sourceResult";
 import type {
   PaperValidationCandidateItem,
   PaperValidationDraftItem,
   PaperValidationRunPlanItem,
   PaperValidationRunSessionItem,
-  PaperValidationSessionResultItem,
 } from "@/lib/api/types";
 
 /** Ordered Validate pipeline stages (AT-040 Phase C2). */
@@ -98,7 +98,17 @@ export type RecentOutcomeSummary = {
   outcome: string | null;
   recordedAt: string | null;
   href: string;
+  /** True when the result request succeeded (including confirmed not-recorded). */
   resultAvailable: boolean;
+  resultNotRecorded: boolean;
+  resultError: string | null;
+};
+
+export type OutcomeCoverageModel = {
+  completedSessionsProbed: number;
+  resultsLoaded: number;
+  resultsUnavailable: number;
+  resultsNotRecorded: number;
 };
 
 export type ValidationPipelineModel = {
@@ -107,6 +117,7 @@ export type ValidationPipelineModel = {
   attention: ValidationAttentionItem[];
   activeSessions: PaperValidationRunSessionItem[];
   recentOutcomes: RecentOutcomeSummary[];
+  outcomeCoverage: OutcomeCoverageModel;
   limitations: string[];
 };
 
@@ -122,6 +133,6 @@ export type ValidateHubSources = {
   candidates: SourceResult<ValidationListPayload<PaperValidationCandidateItem>>;
   runPlans: SourceResult<ValidationListPayload<PaperValidationRunPlanItem>>;
   runSessions: SourceResult<ValidationListPayload<PaperValidationRunSessionItem>>;
-  /** Optional per-session results for recent completed sessions only. */
-  recentResults: SourceResult<PaperValidationSessionResultItem>[];
+  /** Per completed-session result probes with 404-vs-failure distinction. */
+  recentResults: RecentResultLoad[];
 };

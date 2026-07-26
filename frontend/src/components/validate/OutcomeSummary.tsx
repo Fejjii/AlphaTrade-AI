@@ -18,8 +18,11 @@ type OutcomeSummaryProps = {
   observations: PaperValidationSessionObservationItem[] | null;
   observationsAvailable: boolean;
   result: PaperValidationSessionResultItem | null;
+  /** True when the outcome GET succeeded (including confirmed not-recorded). */
   resultAvailable: boolean;
+  resultNotRecorded?: boolean;
   resultError?: string | null;
+  onRetryExtras?: () => void;
 };
 
 export function OutcomeSummary({
@@ -27,7 +30,9 @@ export function OutcomeSummary({
   observationsAvailable,
   result,
   resultAvailable,
+  resultNotRecorded = false,
   resultError = null,
+  onRetryExtras,
 }: OutcomeSummaryProps) {
   const detailsId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -39,6 +44,7 @@ export function OutcomeSummary({
       })[0]
     : undefined;
   const observationCount = observationsAvailable ? (observations?.length ?? 0) : null;
+  const statusLabel = outcomeStatusLabel(result, { resultAvailable, resultNotRecorded });
 
   return (
     <section
@@ -55,7 +61,7 @@ export function OutcomeSummary({
             High-level summary first. Detailed observations use progressive disclosure.
           </p>
         </div>
-        <Badge variant={result ? "info" : "muted"}>{outcomeStatusLabel(result)}</Badge>
+        <Badge variant={result ? "info" : "muted"}>{statusLabel}</Badge>
       </div>
 
       {!observationsAvailable ? (
@@ -63,10 +69,27 @@ export function OutcomeSummary({
           Observation source unavailable.
         </p>
       ) : null}
-      {!resultAvailable && resultError ? (
+      {!resultAvailable ? (
         <p role="status" className="text-sm text-warning" data-testid="outcome-result-unavailable">
-          Outcome source unavailable: {resultError}
+          Outcome source unavailable
+          {resultError ? `: ${resultError}` : "."} Do not treat this as confirmed not recorded.
         </p>
+      ) : null}
+      {resultAvailable && resultNotRecorded && !result ? (
+        <p role="status" className="text-sm text-text-muted" data-testid="outcome-not-recorded">
+          Outcome not recorded.
+        </p>
+      ) : null}
+      {onRetryExtras && (!observationsAvailable || !resultAvailable) ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onRetryExtras}
+          data-testid="outcome-retry-extras"
+        >
+          Retry observations and outcome
+        </Button>
       ) : null}
 
       <dl className="grid gap-2 text-sm text-text-secondary sm:grid-cols-2">
@@ -103,13 +126,19 @@ export function OutcomeSummary({
           <dd className="font-medium text-text-primary" data-testid="outcome-success-failure">
             {result
               ? `success ${result.success_criteria_met.replaceAll("_", " ")} · failure ${result.failure_criteria_met.replaceAll("_", " ")}`
-              : "not recorded"}
+              : !resultAvailable
+                ? "unavailable"
+                : "not recorded"}
           </dd>
         </div>
         <div>
           <dt className="text-caption text-text-muted">Discipline / rule compliance</dt>
           <dd className="font-medium text-text-primary" data-testid="outcome-discipline">
-            {result ? result.discipline_assessment.replaceAll("_", " ") : "not recorded"}
+            {result
+              ? result.discipline_assessment.replaceAll("_", " ")
+              : !resultAvailable
+                ? "unavailable"
+                : "not recorded"}
           </dd>
         </div>
       </dl>

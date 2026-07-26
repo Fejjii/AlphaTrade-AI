@@ -1,10 +1,26 @@
 export { buildValidationPipeline, countOrNullExport } from "@/components/validate/buildValidationPipeline";
+export {
+  buildCandidateRunPlanMap,
+  selectRunPlanForCandidate,
+} from "@/components/validate/candidateRunPlan";
+export type { CandidateRunPlanRelation } from "@/components/validate/candidateRunPlan";
 export { CandidateSummaryCard } from "@/components/validate/CandidateSummaryCard";
 export { DraftSummaryCard } from "@/components/validate/DraftSummaryCard";
 export { OutcomeSummary } from "@/components/validate/OutcomeSummary";
 export { RelatedStageLinks } from "@/components/validate/RelatedStageLinks";
 export { RunPlanSummaryCard } from "@/components/validate/RunPlanSummaryCard";
 export { RunSessionSummaryCard } from "@/components/validate/RunSessionSummaryCard";
+export {
+  loadObservationsSource,
+  loadRecentSessionResults,
+  loadSessionResultSource,
+  summarizeOutcomeCoverage,
+} from "@/components/validate/sessionExtras";
+export type {
+  OutcomeCoverage,
+  RecentResultLoad,
+  SessionResultLoad,
+} from "@/components/validate/sessionExtras";
 export { ValidatePageChrome } from "@/components/validate/ValidatePageChrome";
 export { ValidationAttentionQueue } from "@/components/validate/ValidationAttentionQueue";
 export { ValidationPipeline } from "@/components/validate/ValidationPipeline";
@@ -17,6 +33,7 @@ export {
   VALIDATION_STAGE_ORDER,
 } from "@/components/validate/types";
 export type {
+  OutcomeCoverageModel,
   RecentOutcomeSummary,
   ValidateHubSources,
   ValidationAttentionItem,

@@ -63,10 +63,29 @@ describe("OutcomeSummary", () => {
         result={null}
         resultAvailable={false}
         resultError="down"
+        onRetryExtras={() => undefined}
       />,
     );
     expect(screen.getByTestId("outcome-obs-unavailable")).toBeInTheDocument();
     expect(screen.getByTestId("outcome-result-unavailable")).toHaveTextContent(/down/);
     expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("unavailable");
+    expect(screen.getByTestId("outcome-latest-observation")).toHaveTextContent("unavailable");
+    expect(screen.queryByText(/No observations recorded/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("outcome-retry-extras")).toBeInTheDocument();
+  });
+
+  it("shows Outcome not recorded only when the source confirms absence", () => {
+    render(
+      <OutcomeSummary
+        observations={[]}
+        observationsAvailable
+        result={null}
+        resultAvailable
+        resultNotRecorded
+      />,
+    );
+    expect(screen.getByTestId("outcome-not-recorded")).toHaveTextContent(/Outcome not recorded/i);
+    expect(screen.queryByTestId("outcome-result-unavailable")).not.toBeInTheDocument();
+    expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("0");
   });
 });

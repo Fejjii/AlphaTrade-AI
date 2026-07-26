@@ -3,7 +3,12 @@
 import { useCallback, useMemo } from "react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
-import { CandidateSummaryCard, ValidatePageChrome } from "@/components/validate";
+import { Button } from "@/components/ui/button";
+import {
+  CandidateSummaryCard,
+  ValidatePageChrome,
+  buildCandidateRunPlanMap,
+} from "@/components/validate";
 import { describeSafetyPosture, loadSource, type SourceResult } from "@/components/workflows";
 import { useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -28,17 +33,19 @@ export default function PaperValidationCandidatesPage() {
 
   const { data, loading, error, reload } = useAsyncData(loader, []);
   const available = data?.candidates.available ?? false;
+  const runPlansAvailable = data?.runPlans.available ?? false;
   const items = available ? (data?.candidates.data?.items ?? []) : [];
-  const planByCandidate = useMemo(() => {
-    const map = new Map<string, { planId: string; status: string }>();
-    if (!data?.runPlans.available) return map;
-    for (const plan of data.runPlans.data?.items ?? []) {
-      if (!map.has(plan.candidate_id)) {
-        map.set(plan.candidate_id, { planId: plan.plan_id, status: plan.plan_status });
-      }
-    }
-    return map;
-  }, [data]);
+  const planByCandidate = useMemo(
+    () =>
+      buildCandidateRunPlanMap(
+        runPlansAvailable,
+        data?.runPlans.data?.items,
+        items.map((item) => item.candidate_id),
+      ),
+    [data?.runPlans.data?.items, items, runPlansAvailable],
+  );
+
+  const partialRunPlans = available && Boolean(data) && !runPlansAvailable;
 
   const freshnessSources = [
     {
@@ -49,7 +56,7 @@ export default function PaperValidationCandidatesPage() {
     },
     {
       name: "Run plans",
-      available: data?.runPlans.available ?? false,
+      available: runPlansAvailable,
       required: false,
       timestamp: data?.runPlans.data?.items[0]?.created_at ?? null,
     },
@@ -68,6 +75,25 @@ export default function PaperValidationCandidatesPage() {
       testId="paper-validation-candidates-page"
       activeHref="/paper-validation/candidates"
     >
+      {partialRunPlans ? (
+        <div
+          role="status"
+          data-testid="candidates-run-plans-partial"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          <p className="font-medium">Partial data</p>
+          <p className="mt-1">
+            Candidates are shown, but run-plan relationships are unavailable from the API.
+          </p>
+          {data?.runPlans.error ? (
+            <p className="mt-1 text-caption">Run plans error: {data.runPlans.error}</p>
+          ) : null}
+          <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => void reload()}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
       {!available ? (
         <ErrorState
           message={
@@ -78,17 +104,15 @@ export default function PaperValidationCandidatesPage() {
         />
       ) : items.length ? (
         <div className="space-y-3" data-testid="paper-validation-candidates-list">
-          {items.map((candidate) => {
-            const plan = planByCandidate.get(candidate.candidate_id);
-            return (
-              <CandidateSummaryCard
-                key={candidate.candidate_id}
-                candidate={candidate}
-                runPlanId={plan?.planId ?? null}
-                runPlanStatus={plan?.status ?? null}
-              />
-            );
-          })}
+          {items.map((candidate) => (
+            <CandidateSummaryCard
+              key={candidate.candidate_id}
+              candidate={candidate}
+              runPlanRelation={
+                planByCandidate.get(candidate.candidate_id) ?? { kind: "none" }
+              }
+            />
+          ))}
         </div>
       ) : (
         <EmptyState

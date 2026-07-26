@@ -3,6 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SetupAlertReviewPage from "./page";
 
+const navigationState = vi.hoisted(() => ({
+  search: new URLSearchParams(),
+  replace: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: navigationState.replace, push: vi.fn() }),
+  useSearchParams: () => navigationState.search,
+}));
+
 const { sampleAlert, watchingAlert, summary } = vi.hoisted(() => ({
   sampleAlert: {
     alert_id: "alert-1",
@@ -122,16 +132,21 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-describe("SetupAlertReviewPage Slice 77", () => {
-  beforeEach(() => {
+describe("SetupAlertReviewPage Slice 77 / Phase C2 deep links", () => {
+  beforeEach(async () => {
     hookCall = 0;
+    navigationState.search = new URLSearchParams();
+    navigationState.replace.mockReset();
+    const { api } = await import("@/lib/api");
+    vi.mocked(api.alerts.updateSetupReview).mockClear();
+    vi.mocked(api.alerts.createSetupDraft).mockClear();
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("renders review page, filters, and alert card fields", () => {
+  it("renders review page, filters, and alert card fields with no query", () => {
     render(<SetupAlertReviewPage />);
     const firstCard = screen.getByTestId("setup-alert-alert-1");
 
@@ -218,5 +233,47 @@ describe("SetupAlertReviewPage Slice 77", () => {
         "View draft",
       );
     });
+  });
+
+  it("highlights a valid source-alert query without mutating review status", async () => {
+    const { api } = await import("@/lib/api");
+    navigationState.search = new URLSearchParams("alert=alert-1");
+    render(<SetupAlertReviewPage />);
+
+    const card = screen.getByTestId("setup-alert-alert-1");
+    expect(card).toHaveAttribute("data-highlighted", "true");
+    expect(screen.getByTestId("setup-alert-deep-link-active")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-alert-alert-2")).toHaveAttribute("data-highlighted", "false");
+    expect(api.alerts.updateSetupReview).not.toHaveBeenCalled();
+  });
+
+  it("shows a missing-alert notice for an unavailable source-alert query", () => {
+    navigationState.search = new URLSearchParams("alert=missing-alert");
+    render(<SetupAlertReviewPage />);
+
+    expect(screen.getByTestId("setup-alert-deep-link-missing")).toHaveTextContent(
+      /not found or is no longer available/i,
+    );
+    expect(screen.getByTestId("setup-alert-clear-deep-link")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-alert-alert-1")).toHaveAttribute("data-highlighted", "false");
+  });
+
+  it("clears a stale source-alert query", () => {
+    navigationState.search = new URLSearchParams("alert=missing-alert");
+    render(<SetupAlertReviewPage />);
+
+    fireEvent.click(screen.getByTestId("setup-alert-clear-deep-link"));
+    expect(navigationState.replace).toHaveBeenCalledWith("/alerts/review");
+  });
+
+  it("keeps filters working and clears the alert query when filters change", () => {
+    navigationState.search = new URLSearchParams("alert=alert-1");
+    render(<SetupAlertReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Filter by symbol"), {
+      target: { value: "ETHUSDT" },
+    });
+    expect(navigationState.replace).toHaveBeenCalledWith("/alerts/review");
+    expect(screen.getByTestId("setup-alert-review-filters")).toBeInTheDocument();
   });
 });

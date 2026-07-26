@@ -5,6 +5,7 @@ import {
   draftMissingStructure,
   draftNextAction,
   excursionAvailabilityLabel,
+  outcomeStatusLabel,
   runPlanCriteriaIssues,
   runPlanNextAction,
   runSessionNextAction,
@@ -14,6 +15,7 @@ import type {
   PaperValidationDraftItem,
   PaperValidationRunPlanItem,
   PaperValidationRunSessionItem,
+  PaperValidationSessionResultItem,
 } from "@/lib/api/types";
 
 const checklist = {
@@ -109,5 +111,28 @@ describe("validationDisplay", () => {
   it("does not invent MFE/MAE values", () => {
     expect(excursionAvailabilityLabel()).toMatch(/unavailable/i);
     expect(excursionAvailabilityLabel()).toMatch(/not provided/i);
+  });
+
+  it("distinguishes unavailable outcomes from confirmed not recorded", () => {
+    const recorded: PaperValidationSessionResultItem = {
+      result_id: "r1",
+      run_session_id: "s1",
+      run_plan_id: "p1",
+      outcome: "missed_entry",
+      success_criteria_met: "not_met",
+      failure_criteria_met: "met",
+      invalidation_hit: false,
+      entry_assessment: "missed_entry",
+      discipline_assessment: "should_have_waited",
+      recorded_at: "2026-07-26T14:00:00.000Z",
+      created_at: "2026-07-26T14:00:00.000Z",
+    };
+    expect(outcomeStatusLabel(recorded)).toBe("missed entry");
+    expect(
+      outcomeStatusLabel(null, { resultAvailable: false, resultNotRecorded: false }),
+    ).toBe("Outcome source unavailable");
+    expect(
+      outcomeStatusLabel(null, { resultAvailable: true, resultNotRecorded: true }),
+    ).toBe("Outcome not recorded");
   });
 });

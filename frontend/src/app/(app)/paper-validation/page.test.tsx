@@ -1,6 +1,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { RecentResultLoad } from "@/components/validate/sessionExtras";
 import type { SourceResult } from "@/components/workflows/sourceResult";
 
 import ValidateHubPage from "./page";
@@ -116,13 +117,35 @@ const runningSession = {
   created_at: "2026-07-26T13:00:00.000Z",
 };
 
+const completedSession = {
+  ...runningSession,
+  session_id: "sess-done",
+  session_status: "completed" as const,
+  ended_at: "2026-07-26T15:00:00.000Z",
+};
+
+function recentResult(
+  sessionId: string,
+  overrides: Partial<RecentResultLoad> = {},
+): RecentResultLoad {
+  return {
+    sessionId,
+    data: null,
+    available: true,
+    error: null,
+    fallbackUsed: false,
+    resultNotRecorded: false,
+    ...overrides,
+  };
+}
+
 let asyncState = {
   data: {
     drafts: ok({ items: [draft], total: 1, limit: 50, offset: 0 }),
     candidates: ok({ items: [candidate], total: 1, limit: 50, offset: 0 }),
     runPlans: ok({ items: [plan], total: 1, limit: 50, offset: 0 }),
     runSessions: ok({ items: [runningSession], total: 1, limit: 50, offset: 0 }),
-    recentResults: [] as SourceResult<unknown>[],
+    recentResults: [] as RecentResultLoad[],
   },
   loading: false,
   error: null as string | null,
@@ -228,5 +251,61 @@ describe("ValidateHubPage Phase C2", () => {
       "href",
       "/paper-validation/run-sessions",
     );
+  });
+
+  it("shows honest outcome coverage and Outcomes partial-data when result probes fail", () => {
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...asyncState.data,
+        runSessions: ok({
+          items: [runningSession, completedSession, { ...completedSession, session_id: "sess-2" }],
+          total: 3,
+          limit: 50,
+          offset: 0,
+        }),
+        recentResults: [
+          recentResult("sess-done", {
+            available: false,
+            error: "down",
+          }),
+          recentResult("sess-2", {
+            available: false,
+            error: "down",
+          }),
+        ],
+      },
+    };
+    render(<ValidateHubPage />);
+    expect(screen.getByTestId("validate-hub-partial")).toHaveTextContent(/Outcomes/i);
+    expect(screen.getByTestId("validate-outcome-coverage")).toHaveTextContent(
+      /Unavailable:\s*2/i,
+    );
+    expect(screen.getByTestId("validate-recent-outcome-sess-done")).toHaveTextContent(
+      /result unavailable/i,
+    );
+    expect(screen.queryByText("Count: 0")).not.toBeInTheDocument();
+  });
+
+  it("labels confirmed missing outcomes as not recorded", () => {
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...asyncState.data,
+        runSessions: ok({ items: [completedSession], total: 1, limit: 50, offset: 0 }),
+        recentResults: [
+          recentResult("sess-done", {
+            available: true,
+            resultNotRecorded: true,
+            data: null,
+          }),
+        ],
+      },
+    };
+    render(<ValidateHubPage />);
+    expect(screen.getByTestId("validate-recent-outcome-sess-done")).toHaveTextContent(
+      /not recorded/i,
+    );
+    expect(screen.queryByText(/result unavailable/i)).not.toBeInTheDocument();
   });
 });

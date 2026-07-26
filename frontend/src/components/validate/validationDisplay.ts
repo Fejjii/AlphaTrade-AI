@@ -140,9 +140,14 @@ export function runSessionNextAction(session: PaperValidationRunSessionItem): st
   }
 }
 
-export function outcomeStatusLabel(result: PaperValidationSessionResultItem | null): string {
-  if (!result) return "Outcome not recorded";
-  return result.outcome.replaceAll("_", " ");
+export function outcomeStatusLabel(
+  result: PaperValidationSessionResultItem | null,
+  options?: { resultAvailable?: boolean; resultNotRecorded?: boolean },
+): string {
+  if (result) return result.outcome.replaceAll("_", " ");
+  if (options?.resultAvailable === false) return "Outcome source unavailable";
+  if (options?.resultNotRecorded || options?.resultAvailable) return "Outcome not recorded";
+  return "Outcome status unknown";
 }
 
 /** MFE/MAE are not on the paper-validation outcome API — never invent values. */

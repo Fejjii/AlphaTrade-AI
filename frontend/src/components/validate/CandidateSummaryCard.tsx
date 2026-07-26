@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { setupConditionLabel } from "@/lib/alert-display";
 import type { PaperValidationCandidateItem } from "@/lib/api/types";
+import type { CandidateRunPlanRelation } from "@/components/validate/candidateRunPlan";
 import {
   candidateEvidenceCompleteness,
   candidateNextAction,
@@ -14,22 +15,60 @@ import {
   candidateDetailHref,
   draftDetailHref,
   relatedObjectAvailable,
+  runPlanDetailHref,
 } from "@/components/validate/validationLinks";
 
 type CandidateSummaryCardProps = {
   candidate: PaperValidationCandidateItem;
-  /** Optional known run-plan id if already discovered from API; never invented. */
-  runPlanId?: string | null;
-  runPlanStatus?: string | null;
+  runPlanRelation?: CandidateRunPlanRelation;
 };
+
+function RunPlanRelationDisplay({
+  candidateId,
+  relation,
+}: {
+  candidateId: string;
+  relation: CandidateRunPlanRelation;
+}) {
+  if (relation.kind === "source_unavailable") {
+    return (
+      <dd data-testid={`paper-candidate-run-plan-${candidateId}`}>
+        Run plan: relationship source unavailable
+      </dd>
+    );
+  }
+  if (relation.kind === "none") {
+    return (
+      <dd data-testid={`paper-candidate-run-plan-${candidateId}`}>
+        Run plan: no active run plan
+      </dd>
+    );
+  }
+
+  const label =
+    relation.kind === "historical"
+      ? `historical ${relation.status}`
+      : relation.status;
+
+  return (
+    <dd data-testid={`paper-candidate-run-plan-${candidateId}`}>
+      Run plan:{" "}
+      <Link
+        href={runPlanDetailHref(relation.planId)}
+        className="text-text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        data-testid={`paper-candidate-run-plan-link-${candidateId}`}
+      >
+        {label} ({relation.planId.slice(0, 8)}…)
+      </Link>
+    </dd>
+  );
+}
 
 export function CandidateSummaryCard({
   candidate,
-  runPlanId = null,
-  runPlanStatus = null,
+  runPlanRelation = { kind: "none" },
 }: CandidateSummaryCardProps) {
   const queued = formatTimestamp(candidate.created_at);
-  const hasRunPlan = relatedObjectAvailable(runPlanId);
 
   return (
     <article
@@ -70,12 +109,10 @@ export function CandidateSummaryCard({
         </div>
         <div>
           <dt className="sr-only">Run plan</dt>
-          <dd data-testid={`paper-candidate-run-plan-${candidate.candidate_id}`}>
-            Run plan:{" "}
-            {hasRunPlan
-              ? `${runPlanStatus ?? "linked"} (${runPlanId!.slice(0, 8)}…)`
-              : "not linked on this list — open detail or Run plans"}
-          </dd>
+          <RunPlanRelationDisplay
+            candidateId={candidate.candidate_id}
+            relation={runPlanRelation}
+          />
         </div>
         <div>
           <dt className="sr-only">Next action</dt>

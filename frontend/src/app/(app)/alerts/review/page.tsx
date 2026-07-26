@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { reviewStatusLabel, setupConditionLabel } from "@/lib/alert-display";
 import type { PaperValidationDraftItem, SetupAlertReviewItem, SetupAlertReviewStatus } from "@/lib/api/types";
+import { cn } from "@/lib/utils";
 
 const CREATE_PAPER_VALIDATION_DRAFT = "CREATE_PAPER_VALIDATION_DRAFT";
 
@@ -34,6 +36,8 @@ function formatConfidence(value: number | null | undefined): string {
 type AlertCardProps = {
   alert: SetupAlertReviewItem;
   busy: boolean;
+  highlighted?: boolean;
+  cardRef?: (node: HTMLElement | null) => void;
   onSave: (alertId: string, status: SetupAlertReviewStatus, notes: string) => Promise<void>;
   onQuickAction: (alertId: string, status: SetupAlertReviewStatus) => Promise<void>;
   onCreateDraft: (
@@ -51,6 +55,8 @@ function canCreateDraft(status: SetupAlertReviewStatus): boolean {
 function SetupAlertReviewCard({
   alert,
   busy,
+  highlighted = false,
+  cardRef,
   onSave,
   onQuickAction,
   onCreateDraft,
@@ -66,8 +72,17 @@ function SetupAlertReviewCard({
 
   return (
     <article
-      className="rounded-lg border border-zinc-800 p-4 space-y-3"
+      ref={cardRef}
+      tabIndex={highlighted ? -1 : undefined}
+      aria-current={highlighted ? "true" : undefined}
+      className={cn(
+        "rounded-lg border p-4 space-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        highlighted
+          ? "border-info-border bg-info-muted/30"
+          : "border-zinc-800",
+      )}
       data-testid={`setup-alert-${alert.alert_id}`}
+      data-highlighted={highlighted ? "true" : "false"}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="space-y-1">
@@ -283,6 +298,9 @@ function SetupAlertReviewCard({
 }
 
 export default function SetupAlertReviewPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedAlertId = (searchParams.get("alert") ?? "").trim();
   const [filterSymbol, setFilterSymbol] = useState("");
   const [filterCondition, setFilterCondition] = useState("");
   const [filterTimeframe, setFilterTimeframe] = useState("");
@@ -291,6 +309,8 @@ export default function SetupAlertReviewPage() {
   const [filterMinConfidence, setFilterMinConfidence] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
+  const highlightedRef = useRef<HTMLElement | null>(null);
 
   const listLoader = useCallback(
     () =>
@@ -328,6 +348,41 @@ export default function SetupAlertReviewPage() {
     const keys = Object.keys(summary?.by_condition ?? {});
     return keys.sort();
   }, [summary?.by_condition]);
+
+  const matchedAlert = useMemo(() => {
+    if (!requestedAlertId || !data?.items) return null;
+    return data.items.find((item) => item.alert_id === requestedAlertId) ?? null;
+  }, [data?.items, requestedAlertId]);
+
+  const clearAlertQuery = useCallback(
+    (message?: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("alert");
+      const query = params.toString();
+      router.replace(query ? `/alerts/review?${query}` : "/alerts/review");
+      if (message) setDeepLinkNotice(message);
+    },
+    [router, searchParams],
+  );
+
+  useEffect(() => {
+    if (!requestedAlertId || loading) return;
+    if (!data) return;
+    if (matchedAlert) {
+      setDeepLinkNotice(null);
+      const node = highlightedRef.current;
+      if (node) {
+        if (typeof node.scrollIntoView === "function") {
+          node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+        if (typeof node.focus === "function") {
+          node.focus({ preventScroll: true });
+        }
+      }
+      return;
+    }
+    setDeepLinkNotice("Requested source alert was not found or is no longer available.");
+  }, [data, loading, matchedAlert, requestedAlertId]);
 
   async function persistReview(
     alertId: string,
@@ -415,6 +470,40 @@ export default function SetupAlertReviewPage() {
         </CardContent>
       </Card>
 
+      {deepLinkNotice || (requestedAlertId && !matchedAlert && data) ? (
+        <div
+          role="status"
+          data-testid="setup-alert-deep-link-missing"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          <p>
+            {deepLinkNotice ??
+              "Requested source alert was not found or is no longer available."}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            data-testid="setup-alert-clear-deep-link"
+            onClick={() => clearAlertQuery("Cleared stale source-alert query.")}
+          >
+            Clear alert query
+          </Button>
+        </div>
+      ) : null}
+
+      {requestedAlertId && matchedAlert ? (
+        <p
+          className="text-sm text-text-secondary"
+          data-testid="setup-alert-deep-link-active"
+          role="status"
+        >
+          Highlighting source alert {requestedAlertId.slice(0, 8)}… from Validate deep link. No
+          review status was changed.
+        </p>
+      ) : null}
+
       <div
         className="flex flex-wrap gap-2 text-sm"
         data-testid="setup-alert-review-filters"
@@ -422,7 +511,12 @@ export default function SetupAlertReviewPage() {
         <select
           className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
           value={filterSymbol}
-          onChange={(event) => setFilterSymbol(event.target.value)}
+          onChange={(event) => {
+            setFilterSymbol(event.target.value);
+            if (requestedAlertId) {
+              clearAlertQuery("Cleared source-alert query because filters changed.");
+            }
+          }}
           aria-label="Filter by symbol"
         >
           <option value="">All symbols</option>
@@ -437,7 +531,12 @@ export default function SetupAlertReviewPage() {
         <select
           className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
           value={filterCondition}
-          onChange={(event) => setFilterCondition(event.target.value)}
+          onChange={(event) => {
+            setFilterCondition(event.target.value);
+            if (requestedAlertId) {
+              clearAlertQuery("Cleared source-alert query because filters changed.");
+            }
+          }}
           aria-label="Filter by condition"
         >
           <option value="">All conditions</option>
@@ -450,7 +549,12 @@ export default function SetupAlertReviewPage() {
         <select
           className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
           value={filterTimeframe}
-          onChange={(event) => setFilterTimeframe(event.target.value)}
+          onChange={(event) => {
+            setFilterTimeframe(event.target.value);
+            if (requestedAlertId) {
+              clearAlertQuery("Cleared source-alert query because filters changed.");
+            }
+          }}
           aria-label="Filter by timeframe"
         >
           <option value="">All timeframes</option>
@@ -461,7 +565,12 @@ export default function SetupAlertReviewPage() {
         <select
           className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
           value={filterDirection}
-          onChange={(event) => setFilterDirection(event.target.value)}
+          onChange={(event) => {
+            setFilterDirection(event.target.value);
+            if (requestedAlertId) {
+              clearAlertQuery("Cleared source-alert query because filters changed.");
+            }
+          }}
           aria-label="Filter by direction"
         >
           <option value="">All directions</option>
@@ -471,7 +580,12 @@ export default function SetupAlertReviewPage() {
         <select
           className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
           value={filterReviewStatus}
-          onChange={(event) => setFilterReviewStatus(event.target.value)}
+          onChange={(event) => {
+            setFilterReviewStatus(event.target.value);
+            if (requestedAlertId) {
+              clearAlertQuery("Cleared source-alert query because filters changed.");
+            }
+          }}
           aria-label="Filter by review status"
         >
           <option value="">All review statuses</option>
@@ -489,7 +603,12 @@ export default function SetupAlertReviewPage() {
           placeholder="Min confidence"
           className="w-36 rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
           value={filterMinConfidence}
-          onChange={(event) => setFilterMinConfidence(event.target.value)}
+          onChange={(event) => {
+            setFilterMinConfidence(event.target.value);
+            if (requestedAlertId) {
+              clearAlertQuery("Cleared source-alert query because filters changed.");
+            }
+          }}
           aria-label="Minimum confidence"
         />
       </div>
@@ -502,16 +621,29 @@ export default function SetupAlertReviewPage() {
 
       {data?.items.length ? (
         <div className="space-y-3" data-testid="setup-alert-review-list">
-          {data.items.map((alert) => (
-            <SetupAlertReviewCard
-              key={alert.alert_id}
-              alert={alert}
-              busy={busy}
-              onSave={persistReview}
-              onQuickAction={(alertId, reviewStatus) => persistReview(alertId, reviewStatus)}
-              onCreateDraft={createPaperDraft}
-            />
-          ))}
+          {data.items.map((alert) => {
+            const highlighted = Boolean(
+              requestedAlertId && alert.alert_id === requestedAlertId,
+            );
+            return (
+              <SetupAlertReviewCard
+                key={alert.alert_id}
+                alert={alert}
+                busy={busy}
+                highlighted={highlighted}
+                cardRef={
+                  highlighted
+                    ? (node) => {
+                        highlightedRef.current = node;
+                      }
+                    : undefined
+                }
+                onSave={persistReview}
+                onQuickAction={(alertId, reviewStatus) => persistReview(alertId, reviewStatus)}
+                onCreateDraft={createPaperDraft}
+              />
+            );
+          })}
         </div>
       ) : (
         <EmptyState

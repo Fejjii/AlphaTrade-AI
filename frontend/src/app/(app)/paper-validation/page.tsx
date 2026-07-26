@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 
 import { ErrorState, LimitationsState, LoadingState } from "@/components/states";
+import { Button } from "@/components/ui/button";
 import {
   RunSessionSummaryCard,
   ValidatePageChrome,
@@ -12,34 +13,23 @@ import {
   ValidationSourceAvailability,
   ValidationSummaryCard,
   buildValidationPipeline,
+  loadRecentSessionResults,
   validateHubHref,
+  type RecentResultLoad,
   type ValidateHubSources,
 } from "@/components/validate";
 import { describeSafetyPosture, loadSource, type SourceResult } from "@/components/workflows";
 import { useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import type { PaperValidationSessionResultItem } from "@/lib/api/types";
 
 type ValidateHubData = {
   drafts: SourceResult<Awaited<ReturnType<typeof api.strategies.drafts>>>;
   candidates: SourceResult<Awaited<ReturnType<typeof api.strategies.candidates>>>;
   runPlans: SourceResult<Awaited<ReturnType<typeof api.strategies.runPlans>>>;
   runSessions: SourceResult<Awaited<ReturnType<typeof api.strategies.runSessions>>>;
-  recentResults: SourceResult<PaperValidationSessionResultItem>[];
+  recentResults: RecentResultLoad[];
 };
-
-async function loadRecentResults(
-  sessions: Awaited<ReturnType<typeof api.strategies.runSessions>> | null,
-): Promise<SourceResult<PaperValidationSessionResultItem>[]> {
-  if (!sessions) return [];
-  const completed = sessions.items
-    .filter((session) => session.session_status === "completed")
-    .slice(0, 5);
-  return Promise.all(
-    completed.map((session) => loadSource(api.strategies.getSessionResult(session.session_id))),
-  );
-}
 
 export default function ValidateHubPage() {
   const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
@@ -52,7 +42,12 @@ export default function ValidateHubPage() {
       loadSource(api.strategies.runPlans({ limit: 50 })),
       loadSource(api.strategies.runSessions({ limit: 50 })),
     ]);
-    const recentResults = await loadRecentResults(runSessions.data);
+    const recentResults = runSessions.available
+      ? await loadRecentSessionResults(
+          runSessions.data?.items ?? [],
+          (sessionId) => api.strategies.getSessionResult(sessionId),
+        )
+      : [];
     return { drafts, candidates, runPlans, runSessions, recentResults };
   }, []);
 
@@ -74,8 +69,18 @@ export default function ValidateHubPage() {
     [sources],
   );
 
+  const outcomeCoverage = pipeline?.outcomeCoverage;
+  const outcomesSourceAvailable =
+    !data?.runSessions.available
+      ? false
+      : !outcomeCoverage
+        ? true
+        : outcomeCoverage.completedSessionsProbed === 0 ||
+          outcomeCoverage.resultsUnavailable < outcomeCoverage.completedSessionsProbed;
+
   const sourceStatuses = useMemo(() => {
     if (!data) return [];
+    const coverage = pipeline?.outcomeCoverage;
     return [
       {
         name: "Drafts",
@@ -108,21 +113,41 @@ export default function ValidateHubPage() {
           null,
         required: true,
       },
+      {
+        name: "Outcomes",
+        available: outcomesSourceAvailable,
+        error:
+          coverage && coverage.resultsUnavailable > 0
+            ? `${coverage.resultsUnavailable} of ${coverage.completedSessionsProbed} recent outcome result request(s) failed`
+            : null,
+        timestamp:
+          data.recentResults.find((r) => r.data?.recorded_at)?.data?.recorded_at ??
+          data.recentResults.find((r) => r.data?.created_at)?.data?.created_at ??
+          null,
+        required: Boolean(coverage && coverage.completedSessionsProbed > 0),
+      },
     ];
-  }, [data]);
+  }, [data, outcomesSourceAvailable, pipeline?.outcomeCoverage]);
 
   const freshnessSources = sourceStatuses.map((source) => ({
     name: source.name,
     available: source.available,
-    required: true as const,
+    required: source.required ?? true,
     timestamp: source.timestamp,
   }));
 
   const unavailableSources = sourceStatuses
     .filter((source) => !source.available)
     .map((source) => source.name);
-  const allFailed = Boolean(data) && sourceStatuses.length > 0 && sourceStatuses.every((s) => !s.available);
+  const allFailed =
+    Boolean(data) &&
+    sourceStatuses.filter((s) => s.required).length > 0 &&
+    sourceStatuses.filter((s) => s.required).every((s) => !s.available);
   const partialData = Boolean(data) && unavailableSources.length > 0 && !allFailed;
+  const outcomeHint =
+    outcomeCoverage && outcomeCoverage.completedSessionsProbed > 0
+      ? `${outcomeCoverage.resultsLoaded} of ${outcomeCoverage.completedSessionsProbed} recent outcomes loaded`
+      : "From completed sessions";
 
   if (loading && !data) {
     return <LoadingState label="Loading Validate pipeline…" />;
@@ -155,7 +180,17 @@ export default function ValidateHubPage() {
           data-testid="validate-hub-partial"
           className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
         >
-          Partial data: {unavailableSources.join(", ")} unavailable. Showing available stages only.
+          <p className="font-medium">Partial data</p>
+          <p className="mt-1">
+            {unavailableSources.join(", ")} unavailable. Showing available stages only
+            {unavailableSources.includes("Outcomes")
+              ? "; recent outcome coverage is incomplete"
+              : ""}
+            .
+          </p>
+          <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => void reload()}>
+            Retry
+          </Button>
         </div>
       ) : null}
 
@@ -204,9 +239,21 @@ export default function ValidateHubPage() {
                 label="Recent outcomes"
                 count={pipeline.counts.outcome}
                 href="/paper-validation/run-sessions"
-                hint="From completed sessions"
+                hint={outcomeHint}
+                testId="validation-summary-recent-outcomes"
               />
             </div>
+            {outcomeCoverage && outcomeCoverage.completedSessionsProbed > 0 ? (
+              <p
+                className="text-caption text-text-muted"
+                data-testid="validate-outcome-coverage"
+              >
+                Completed sessions probed: {outcomeCoverage.completedSessionsProbed}. Results
+                loaded: {outcomeCoverage.resultsLoaded}. Not recorded:{" "}
+                {outcomeCoverage.resultsNotRecorded}. Unavailable:{" "}
+                {outcomeCoverage.resultsUnavailable}.
+              </p>
+            ) : null}
           </section>
 
           <ValidationPipeline stages={pipeline.stages} />
@@ -282,9 +329,11 @@ export default function ValidateHubPage() {
                     </p>
                     <p className="mt-1 text-text-secondary">
                       Outcome:{" "}
-                      {outcome.resultAvailable
-                        ? (outcome.outcome?.replaceAll("_", " ") ?? "recorded")
-                        : "result unavailable — open session detail"}
+                      {!outcome.resultAvailable
+                        ? "result unavailable"
+                        : outcome.resultNotRecorded
+                          ? "not recorded"
+                          : (outcome.outcome?.replaceAll("_", " ") ?? "recorded")}
                     </p>
                     <Link
                       href={outcome.href}
