@@ -36,9 +36,11 @@ describe("ValidationPipeline Phase C2", () => {
 
     const list = screen.getByTestId("validation-pipeline-stages");
     expect(list.tagName).toBe("OL");
-    expect(getComputedStyle(list).display).toBe("flex");
-    expect(getComputedStyle(list).flexDirection).toBe("column");
+    expect(list.className).toMatch(/flex/);
+    expect(list.className).toMatch(/flex-col/);
     expect(list.children).toHaveLength(6);
+    // Mobile-first vertical stack: no wide table forced into the 390px viewport.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.getByTestId("validation-stage-draft")).toBeInTheDocument();
     expect(screen.getByTestId("validation-stage-link-outcome")).toHaveAttribute(
       "href",

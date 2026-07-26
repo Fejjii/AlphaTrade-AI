@@ -87,8 +87,8 @@ describe("PaperValidationRunPlansPage Slice 81 / Phase C2", () => {
     expect(screen.getByTestId("paper-validation-run-plans-list")).toBeInTheDocument();
     expect(screen.getByTestId("paper-run-plan-plan-1")).toBeInTheDocument();
     expect(screen.getByText(/plan only/i)).toBeInTheDocument();
-    expect(screen.getByText("Entry rule")).toBeInTheDocument();
-    expect(screen.getByText("Success criteria")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-plan-plan-1")).toHaveTextContent("Entry rule");
+    expect(screen.getByTestId("paper-run-plan-plan-1")).toHaveTextContent("Success criteria");
     expect(screen.getByTestId("paper-run-plan-next-plan-1")).toHaveTextContent(
       /START_PAPER_VALIDATION_RUN/,
     );

@@ -74,7 +74,7 @@ describe("PaperValidationRunSessionsPage Slice 82 / Phase C2", () => {
     expect(screen.getByTestId("paper-run-session-next-session-1")).toHaveTextContent(
       /Record observations/i,
     );
-    expect(screen.getByText("Paper only")).toBeInTheDocument();
+    expect(screen.getAllByText("Paper only").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /deliver telegram/i })).not.toBeInTheDocument();
   });

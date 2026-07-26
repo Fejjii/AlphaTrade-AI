@@ -27,7 +27,10 @@ export default function PaperValidationDraftsPage() {
   const { data, loading, error, reload } = useAsyncData(loader, []);
   const drafts = data?.drafts;
   const available = drafts?.available ?? false;
-  const items = available ? (drafts?.data?.items ?? []) : [];
+  const items = useMemo(
+    () => (available ? (drafts?.data?.items ?? []) : []),
+    [available, drafts?.data?.items],
+  );
   const total = available ? (drafts?.data?.total ?? 0) : null;
 
   const freshnessSources = useMemo(

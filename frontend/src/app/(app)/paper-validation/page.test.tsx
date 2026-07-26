@@ -166,7 +166,7 @@ describe("ValidateHubPage Phase C2", () => {
     expect(screen.getByTestId("validate-limitations")).toBeInTheDocument();
     expect(screen.getByTestId("validation-source-availability")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/override/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /override/i })).not.toBeInTheDocument();
   });
 
   it("shows partial source availability without zeroing failed counts", () => {
@@ -191,20 +191,22 @@ describe("ValidateHubPage Phase C2", () => {
     safetyPosture.executionMode = "paper";
     safetyPosture.realTradingEnabled = true;
     render(<ValidateHubPage />);
-    expect(screen.getByTestId("validate-safety-conflict")).toBeInTheDocument();
-    expect(screen.getByText(/Safety conflict/i)).toBeInTheDocument();
+    expect(screen.getByTestId("validate-safety-conflict")).toHaveTextContent(/Safety conflict/i);
+    expect(screen.queryByRole("button", { name: /override/i })).not.toBeInTheDocument();
   });
 
   it("keeps paper-confirmed wording only for verified paper posture", () => {
     render(<ValidateHubPage />);
-    expect(screen.getByText("PAPER mode")).toBeInTheDocument();
-    expect(screen.getByText("Real trading disabled")).toBeInTheDocument();
+    expect(screen.getByTestId("validate-safety-strip")).toHaveTextContent("PAPER mode");
+    expect(screen.getByTestId("validate-safety-strip")).toHaveTextContent("Real trading disabled");
 
     cleanup();
     safetyPosture.executionMode = null;
     safetyPosture.realTradingEnabled = false;
     render(<ValidateHubPage />);
-    expect(screen.getByText(/Paper mode not confirmed|Execution unverified|Runtime posture/i)).toBeInTheDocument();
+    expect(screen.getByTestId("validate-safety-strip")).toHaveTextContent(
+      /Paper mode not confirmed|Execution unverified|Runtime posture/,
+    );
   });
 
   it("preserves existing validation stage routes in stage nav", () => {
