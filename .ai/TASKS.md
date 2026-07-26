@@ -556,6 +556,10 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   source availability, `OutcomeSummary`); SourceResult honesty on stage lists;
   preserved detail routes with related-stage links; confirmed-paper posture;
   Risk BLOCK no override; no auto-promote/start; no backend/API/migration changes.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — head `11642cd`;
+  complete CI run 30214795665 success (frontend, backend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). Local: 469 frontend unit tests,
+  lint/typecheck/build green.
 - Phase C remaining after C2: Journal redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
