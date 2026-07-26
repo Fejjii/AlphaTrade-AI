@@ -73,7 +73,7 @@ test.describe("AT-017 edge auth boundary", () => {
     await page.locator("#password").fill(password);
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByText(/paper mode active/i).first()).toBeVisible();
+    await expect(page.getByLabel("Paper mode active").first()).toBeVisible();
 
     // Create a real history entry on a protected route before logging out.
     await page.goto("/portfolio");
@@ -85,7 +85,7 @@ test.describe("AT-017 edge auth boundary", () => {
     // Back navigation and direct URLs must not restore protected content.
     await page.goBack();
     await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByText(/paper mode active/i)).toHaveCount(0);
+    await expect(page.getByLabel("Paper mode active")).toHaveCount(0);
     await page.goto("/portfolio");
     await expect(page).toHaveURL(/\/login\?next=%2Fportfolio/);
   });
