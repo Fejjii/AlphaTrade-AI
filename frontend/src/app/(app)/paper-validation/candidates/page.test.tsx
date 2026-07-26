@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceResult } from "@/components/workflows/sourceResult";
+import type { PaperValidationRunPlanItem } from "@/lib/api/types";
 
 import PaperValidationCandidatesPage from "./page";
 
@@ -52,7 +53,7 @@ const sampleCandidate = {
   created_at: "2026-06-28T12:00:00Z",
 };
 
-const activePlan = {
+const activePlan: PaperValidationRunPlanItem = {
   plan_id: "plan-active-1",
   candidate_id: "candidate-1",
   draft_id: "draft-1",
@@ -62,8 +63,8 @@ const activePlan = {
   condition: "order_block",
   direction: "long",
   checklist_snapshot: sampleCandidate.checklist_snapshot,
-  risk_mode: "conservative" as const,
-  plan_status: "planned" as const,
+  risk_mode: "conservative",
+  plan_status: "planned",
   validation_window: "intraday",
   observation_timeframe: "1h",
   max_duration_minutes: 240,
@@ -74,10 +75,10 @@ const activePlan = {
   created_at: "2026-06-28T13:00:00Z",
 };
 
-const archivedPlan = {
+const archivedPlan: PaperValidationRunPlanItem = {
   ...activePlan,
   plan_id: "plan-archived-1",
-  plan_status: "archived" as const,
+  plan_status: "archived",
   created_at: "2026-06-29T13:00:00Z",
 };
 
@@ -92,7 +93,7 @@ function failed<T>(): SourceResult<T> {
 let asyncState = {
   data: {
     candidates: ok({ items: [sampleCandidate], total: 1, limit: 50, offset: 0 }),
-    runPlans: ok({ items: [] as typeof activePlan[], total: 0, limit: 50, offset: 0 }),
+    runPlans: ok({ items: [] as PaperValidationRunPlanItem[], total: 0, limit: 50, offset: 0 }),
   },
   loading: false,
   error: null as string | null,

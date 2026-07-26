@@ -34,7 +34,10 @@ export default function PaperValidationCandidatesPage() {
   const { data, loading, error, reload } = useAsyncData(loader, []);
   const available = data?.candidates.available ?? false;
   const runPlansAvailable = data?.runPlans.available ?? false;
-  const items = available ? (data?.candidates.data?.items ?? []) : [];
+  const items = useMemo(
+    () => (available ? (data?.candidates.data?.items ?? []) : []),
+    [available, data?.candidates.data?.items],
+  );
   const planByCandidate = useMemo(
     () =>
       buildCandidateRunPlanMap(

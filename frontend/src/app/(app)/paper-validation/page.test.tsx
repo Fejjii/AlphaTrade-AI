@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RecentResultLoad } from "@/components/validate/sessionExtras";
 import type { SourceResult } from "@/components/workflows/sourceResult";
+import type { PaperValidationRunSessionItem } from "@/lib/api/types";
 
 import ValidateHubPage from "./page";
 
@@ -101,7 +102,7 @@ const plan = {
   created_at: "2026-07-26T12:00:00.000Z",
 };
 
-const runningSession = {
+const runningSession: PaperValidationRunSessionItem = {
   session_id: "sess-1",
   run_plan_id: "plan-1",
   candidate_id: "cand-1",
@@ -111,16 +112,16 @@ const runningSession = {
   timeframe: "1h",
   condition: "fvg",
   direction: "short",
-  risk_mode: "conservative" as const,
-  session_status: "running" as const,
+  risk_mode: "conservative",
+  session_status: "running",
   started_at: "2026-07-26T13:00:00.000Z",
   created_at: "2026-07-26T13:00:00.000Z",
 };
 
-const completedSession = {
+const completedSession: PaperValidationRunSessionItem = {
   ...runningSession,
   session_id: "sess-done",
-  session_status: "completed" as const,
+  session_status: "completed",
   ended_at: "2026-07-26T15:00:00.000Z",
 };
 
