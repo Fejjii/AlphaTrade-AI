@@ -22,7 +22,8 @@ type SignalSummaryCardProps = {
   onReviewEvidence?: (signal: InboxSignalModel) => void;
   onCreateDraft?: (signal: InboxSignalModel) => void;
   onPlanTrade?: (signal: InboxSignalModel) => void;
-  onDismiss?: (signal: InboxSignalModel) => void;
+  onDismissWithReason?: (signal: InboxSignalModel) => void;
+  onHideForSession?: (signal: InboxSignalModel) => void;
   compactActions?: boolean;
 };
 
@@ -33,7 +34,8 @@ export function SignalSummaryCard({
   onReviewEvidence,
   onCreateDraft,
   onPlanTrade,
-  onDismiss,
+  onDismissWithReason,
+  onHideForSession,
   compactActions = false,
 }: SignalSummaryCardProps) {
   return (
@@ -96,7 +98,7 @@ export function SignalSummaryCard({
         </Button>
         {signal.canCreateDraft ? (
           <Button type="button" size="sm" variant="outline" onClick={() => onCreateDraft?.(signal)}>
-            Create validation draft
+            {signal.createActionLabel ?? "Create validation draft"}
           </Button>
         ) : null}
         {signal.canPlanTrade ? (
@@ -104,9 +106,24 @@ export function SignalSummaryCard({
             Plan trade
           </Button>
         ) : null}
-        {signal.canDismiss ? (
-          <Button type="button" size="sm" variant="ghost" onClick={() => onDismiss?.(signal)}>
+        {signal.canDismissWithReason ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => onDismissWithReason?.(signal)}
+          >
             Dismiss with reason
+          </Button>
+        ) : null}
+        {signal.canHideForSession ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => onHideForSession?.(signal)}
+          >
+            Hide for this session
           </Button>
         ) : null}
         {signal.detailHref ? (

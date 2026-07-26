@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { KillSwitchButton } from "@/components/KillSwitchButton";
@@ -13,36 +14,34 @@ import {
   PlanSummary,
   WorkflowFreshnessAdapter,
   buildPlanHierarchy,
+  describeSafetyPosture,
+  loadSource,
+  parsePlanSignalContext,
+  type SourceResult,
 } from "@/components/workflows";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { RiskBlock } from "@/components/ui/risk-block";
-import {
-  isPaperModeConfirmed,
-  PaperModeIndicator,
-} from "@/components/ui/paper-mode-indicator";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type { AgentMessageResponse } from "@/lib/api/types";
 
-async function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await promise;
-  } catch {
-    return fallback;
-  }
-}
-
 type PlanHubData = {
-  proposals: Awaited<ReturnType<typeof api.proposals.list>>;
-  approvals: Awaited<ReturnType<typeof api.approvals.list>>;
+  proposals: SourceResult<Awaited<ReturnType<typeof api.proposals.list>>>;
+  approvals: SourceResult<Awaited<ReturnType<typeof api.approvals.list>>>;
 };
 
 export default function WorkspacePage() {
+  const searchParams = useSearchParams();
+  const signalContext = useMemo(
+    () => parsePlanSignalContext(searchParams),
+    [searchParams],
+  );
   const { killSwitchActive } = useAppContext();
   const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
   const [message, setMessage] = useState("");
@@ -56,27 +55,34 @@ export default function WorkspacePage() {
 
   const loader = useCallback(async (): Promise<PlanHubData> => {
     const [proposals, approvals] = await Promise.all([
-      settled(api.proposals.list({ limit: 50 }), { items: [], total: 0, limit: 50, offset: 0 }),
-      settled(api.approvals.list({ limit: 50 }), { items: [], total: 0, limit: 50, offset: 0 }),
+      loadSource(api.proposals.list({ limit: 50 })),
+      loadSource(api.approvals.list({ limit: 50 })),
     ]);
     return { proposals, approvals };
   }, []);
 
   const { data, loading, error, reload } = useAsyncData(loader, []);
 
-  const plan = useMemo(
-    () =>
-      buildPlanHierarchy({
-        proposals: data?.proposals.items ?? [],
-        approvals: data?.approvals.items ?? [],
-      }),
-    [data],
-  );
+  const proposalsAvailable = data?.proposals.available ?? false;
+  const approvalsAvailable = data?.approvals.available ?? false;
+  const bothSourcesAvailable = proposalsAvailable && approvalsAvailable;
+  const bothFailed = Boolean(data) && !proposalsAvailable && !approvalsAvailable;
+  const partialData = Boolean(data) && !bothSourcesAvailable && !bothFailed;
 
-  const pendingApprovals =
-    data?.approvals.items.filter(
-      (item) => item.status === "pending" || item.status === "needs_more_analysis",
-    ).length ?? 0;
+  const plan = useMemo(() => {
+    if (!data) return null;
+    if (!proposalsAvailable && !approvalsAvailable) return null;
+    return buildPlanHierarchy({
+      proposals: proposalsAvailable ? data.proposals.data?.items ?? [] : [],
+      approvals: approvalsAvailable ? data.approvals.data?.items ?? [] : [],
+    });
+  }, [data, proposalsAvailable, approvalsAvailable]);
+
+  const pendingApprovals = approvalsAvailable
+    ? (data?.approvals.data?.items.filter(
+        (item) => item.status === "pending" || item.status === "needs_more_analysis",
+      ).length ?? 0)
+    : null;
 
   async function sendMessage() {
     if (!message.trim() || killSwitchActive) return;
@@ -100,42 +106,85 @@ export default function WorkspacePage() {
     }
   }
 
-  const paperConfirmed = isPaperModeConfirmed(executionMode, realTradingEnabled);
-  const freshnessTimestamps = [
-    ...(data?.proposals.items.map((item) => item.created_at) ?? []),
-    ...(data?.approvals.items.map((item) => item.created_at) ?? []),
+  const posture = describeSafetyPosture(executionMode, realTradingEnabled);
+  const freshnessSources = [
+    {
+      name: "proposals",
+      available: proposalsAvailable,
+      required: true,
+      timestamp: data?.proposals.data?.items[0]?.created_at ?? null,
+    },
+    {
+      name: "approvals",
+      available: approvalsAvailable,
+      required: true,
+      timestamp: data?.approvals.data?.items[0]?.created_at ?? null,
+    },
   ];
+
+  const unavailableSources = [
+    !proposalsAvailable ? "Proposals" : null,
+    !approvalsAvailable ? "Approvals" : null,
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <div className="space-y-section" data-testid="plan-hub-page">
-      <WorkflowFreshnessAdapter timestamps={freshnessTimestamps} />
+      <WorkflowFreshnessAdapter sources={freshnessSources} />
 
       <PageHeader
         title="Plan"
         description="What trade am I preparing, and is it approved? Paper planning only."
-        meta={<PaperModeIndicator active={paperConfirmed} />}
+        meta={<PaperModeIndicator active={posture.paperConfirmed} />}
       />
 
       <div className="flex flex-wrap items-center gap-2" data-testid="plan-hub-safety">
         <StatusBadge
-          label={`${executionMode ?? "unverified"} mode`}
-          tone={executionMode === "paper" ? "paper" : "warn"}
+          label={posture.executionLabel}
+          tone={
+            posture.paperConfirmed
+              ? "paper"
+              : posture.kind === "safety_conflict"
+                ? "blocked"
+                : "warn"
+          }
         />
         <StatusBadge label={`providers: ${providerMode}`} tone="muted" />
-        {realTradingEnabled === false ? (
-          <StatusBadge label="Real trading disabled" tone="healthy" />
-        ) : (
-          <StatusBadge
-            label={realTradingEnabled ? "Real trading enabled" : "Real trading unverified"}
-            tone="blocked"
-          />
-        )}
         <StatusBadge
-          label={`${pendingApprovals} awaiting approval`}
-          tone={pendingApprovals > 0 ? "warn" : "muted"}
+          label={posture.realTradingLabel}
+          tone={
+            posture.realTradingVariant === "success"
+              ? "healthy"
+              : posture.realTradingVariant === "danger"
+                ? "blocked"
+                : "warn"
+          }
+        />
+        <StatusBadge
+          label={posture.runtimeBadgeLabel}
+          tone={
+            posture.runtimeBadgeVariant === "paper"
+              ? "paper"
+              : posture.runtimeBadgeVariant === "danger"
+                ? "blocked"
+                : "warn"
+          }
+        />
+        <StatusBadge
+          label={
+            pendingApprovals == null
+              ? "Approvals unavailable"
+              : `${pendingApprovals} awaiting approval`
+          }
+          tone={pendingApprovals != null && pendingApprovals > 0 ? "warn" : "muted"}
         />
         <KillSwitchButton />
       </div>
+
+      {posture.conflictMessage ? (
+        <p className="text-sm text-danger" role="alert" data-testid="plan-safety-conflict">
+          {posture.conflictMessage}
+        </p>
+      ) : null}
 
       {killSwitchActive ? (
         <ErrorState message="Kill switch is active. Agent requests are paused until you reset it." />
@@ -167,8 +216,17 @@ export default function WorkspacePage() {
       ) : (
         <PlanSummary
           plan={plan}
-          error={error}
+          error={
+            bothFailed
+              ? "Plan data unavailable: proposals and approvals both failed to load."
+              : error
+          }
           onRetry={() => void reload()}
+          posture={posture}
+          partialData={partialData}
+          unavailableSources={unavailableSources}
+          bothSourcesAvailable={bothSourcesAvailable}
+          signalContext={signalContext}
         />
       )}
 
@@ -269,52 +327,16 @@ export default function WorkspacePage() {
                 {response.approval_required ? (
                   <StatusBadge label="Approval required" tone="warn" />
                 ) : null}
-                {response.analysis ? (
-                  <StatusBadge
-                    label={`Market: ${response.analysis.market_data_quality}`}
-                    tone={response.analysis.market_data_quality === "live" ? "healthy" : "paper"}
-                  />
-                ) : null}
-                {response.narrative_meta ? (
-                  <StatusBadge
-                    label={
-                      response.narrative_meta.source === "llm"
-                        ? "Narrative: LLM"
-                        : "Narrative: fallback"
-                    }
-                    tone={response.narrative_meta.source === "llm" ? "healthy" : "warn"}
-                  />
-                ) : null}
               </div>
-              <p className="text-xs text-text-muted">
-                Full text reply for chat history. Decisions come from deterministic analysis above.
-              </p>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-text-secondary">
               <p className="whitespace-pre-wrap">{response.reply}</p>
-              <div className="grid gap-2 text-text-muted md:grid-cols-2">
-                {response.proposal_id ? <span>Proposal ID: {response.proposal_id}</span> : null}
-                {response.approval_id ? <span>Approval ID: {response.approval_id}</span> : null}
-                <span>Request ID: {response.request_id}</span>
-                {response.usage ? (
-                  <span>
-                    Usage: {response.usage.provider} · {response.usage.total_tokens} tokens
-                    {response.usage.fallback_used ? " (fallback)" : ""}
-                  </span>
-                ) : null}
-              </div>
-              {response.approval_reason ? (
-                <p className="text-amber-300">{response.approval_reason}</p>
-              ) : null}
               {response.limitations.length ? (
-                <div>
-                  <p className="mb-2 font-medium text-text-primary">Limitations</p>
-                  <ul className="list-disc space-y-1 pl-5 text-text-muted">
-                    {response.limitations.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
+                <ul className="list-disc space-y-1 pl-5 text-text-muted">
+                  {response.limitations.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
               ) : null}
             </CardContent>
           </Card>

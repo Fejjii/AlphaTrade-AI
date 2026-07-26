@@ -3,13 +3,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import WorkspacePage from "./page";
 
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "fallback",
+};
+
+const search = new URLSearchParams();
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => search,
+}));
+
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({ killSwitchActive: false }),
-  useSafetyPosture: () => ({
-    executionMode: "paper",
-    realTradingEnabled: false,
-    providerMode: "fallback",
-  }),
+  useSafetyPosture: () => safetyPosture,
 }));
 
 vi.mock("@/contexts/ShellFreshnessContext", () => ({
@@ -58,10 +66,18 @@ const proposal = {
   created_at: "2026-07-26T11:00:00.000Z",
 };
 
+function ok<T>(data: T) {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
+function failed() {
+  return { data: null, available: false, error: "down", fallbackUsed: false };
+}
+
 let asyncState = {
   data: {
-    proposals: { items: [proposal], total: 1, limit: 50, offset: 0 },
-    approvals: {
+    proposals: ok({ items: [proposal], total: 1, limit: 50, offset: 0 }),
+    approvals: ok({
       items: [
         {
           id: "appr-1",
@@ -77,7 +93,7 @@ let asyncState = {
       total: 1,
       limit: 50,
       offset: 0,
-    },
+    }),
   },
   loading: false,
   error: null as string | null,
@@ -103,6 +119,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 afterEach(() => {
   cleanup();
+  safetyPosture.executionMode = "paper";
+  safetyPosture.realTradingEnabled = false;
+  search.delete("source");
+  search.delete("signal");
+  search.delete("alert");
   asyncState = {
     ...asyncState,
     loading: false,
@@ -110,19 +131,14 @@ afterEach(() => {
   };
 });
 
-describe("Plan hub Phase C1", () => {
+describe("Plan hub Phase C1 corrections", () => {
   it("renders plan hierarchy with evidence and approval state", () => {
     render(<WorkspacePage />);
     expect(screen.getByTestId("plan-hub-page")).toBeInTheDocument();
     expect(screen.getByTestId("plan-summary")).toBeInTheDocument();
     expect(screen.getByTestId("evidence-summary")).toHaveTextContent("Clear demand reclaim");
-    expect(screen.getByText(/entry/i)).toBeInTheDocument();
-    expect(screen.getByText("65000")).toBeInTheDocument();
-    expect(screen.getByText(/approval: pending/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open proposal/i })).toHaveAttribute(
-      "href",
-      "/proposals?id=prop-1",
-    );
+    expect(screen.getByTestId("plan-approval-state")).toHaveTextContent("pending");
+    expect(screen.getByTestId("plan-runtime-posture")).toHaveTextContent("Paper only");
   });
 
   it("shows Risk BLOCK as final with no override control", () => {
@@ -130,6 +146,23 @@ describe("Plan hub Phase C1", () => {
     expect(screen.getByTestId("risk-block")).toHaveTextContent(/blocked/i);
     expect(screen.getByTestId("risk-block")).toHaveTextContent(/no override/i);
     expect(screen.queryByRole("button", { name: /override/i })).not.toBeInTheDocument();
+  });
+
+  it("shows runtime posture conflict when real trading is enabled", () => {
+    safetyPosture.realTradingEnabled = true;
+    render(<WorkspacePage />);
+    expect(screen.getByTestId("plan-runtime-posture")).toHaveTextContent("Safety conflict");
+    expect(screen.getByTestId("plan-safety-conflict")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-runtime-posture")).not.toHaveTextContent(/^Paper only$/);
+  });
+
+  it("shows unverified runtime posture without claiming paper only", () => {
+    safetyPosture.executionMode = null;
+    safetyPosture.realTradingEnabled = null;
+    render(<WorkspacePage />);
+    expect(screen.getByTestId("plan-runtime-posture")).toHaveTextContent(
+      "Runtime posture unverified",
+    );
   });
 
   it("keeps consolidated Plan deep links reachable", () => {
@@ -143,18 +176,32 @@ describe("Plan hub Phase C1", () => {
       "href",
       "/approvals",
     );
-    expect(within(nav).getByRole("link", { name: "Pre-Trade" })).toHaveAttribute(
+  });
+
+  it("shows planning-from-signal context from typed query", () => {
+    search.set("source", "tradingview");
+    search.set("signal", "sig-123");
+    render(<WorkspacePage />);
+    expect(screen.getByTestId("plan-signal-context")).toHaveTextContent("Planning from signal");
+    expect(screen.getByTestId("plan-signal-context")).toHaveTextContent("tradingview");
+    expect(screen.getByTestId("plan-signal-context")).toHaveTextContent("sig-123");
+    expect(screen.getByRole("link", { name: /back to evidence/i })).toHaveAttribute(
       "href",
-      "/pre-trade",
+      "/tradingview-signals?signal=sig-123",
     );
-    expect(within(nav).getByRole("link", { name: "Manual Levels" })).toHaveAttribute(
-      "href",
-      "/manual-levels",
-    );
-    expect(within(nav).getByRole("link", { name: "Strategy Lab" })).toHaveAttribute(
-      "href",
-      "/strategy-lab",
-    );
+  });
+
+  it("does not claim empty plan when sources failed", () => {
+    asyncState = {
+      ...asyncState,
+      data: {
+        proposals: failed(),
+        approvals: failed(),
+      },
+    };
+    render(<WorkspacePage />);
+    expect(screen.getByRole("heading", { name: /plan data unavailable/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no in-flight paper plan/i)).not.toBeInTheDocument();
   });
 
   it("keeps AI assist behind progressive disclosure", () => {

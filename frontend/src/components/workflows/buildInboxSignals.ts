@@ -1,4 +1,5 @@
 import { freshnessFromTimestamp } from "@/components/workflows/freshness";
+import { buildPlanHref } from "@/components/workflows/planContext";
 import type { InboxSignalModel, SignalReviewStatus } from "@/components/workflows/types";
 import type {
   MarketWatcherSummary,
@@ -63,6 +64,7 @@ export function buildInboxSignals(input: InboxSignalsInput): InboxSignalModel[] 
         state: "unavailable" as const,
       };
     const reviewStatus = tvReviewStatus(signal);
+    const needsCandidate = reviewStatus === "needs_review";
     items.push({
       id,
       source: "tradingview",
@@ -81,17 +83,18 @@ export function buildInboxSignals(input: InboxSignalsInput): InboxSignalModel[] 
       provenance: `TradingView · alert ${signal.external_alert_id}`,
       href: `/tradingview-signals?signal=${signal.id}`,
       detailHref: `/tradingview-signals?signal=${signal.id}`,
-      planHref: "/workspace",
+      planHref: buildPlanHref({ source: "tradingview", signalId: signal.id }),
       validateHref: signal.links.paper_candidate_path ?? "/paper-validation/drafts",
-      nextAction:
-        reviewStatus === "needs_review"
-          ? "Review evidence"
-          : reviewStatus === "candidate_created"
-            ? "Open paper candidate"
-            : "Inspect signal",
-      canCreateDraft: reviewStatus === "needs_review",
+      nextAction: needsCandidate
+        ? "Create paper candidate"
+        : reviewStatus === "candidate_created"
+          ? "Open paper candidate"
+          : "Inspect signal",
+      canCreateDraft: needsCandidate,
+      createActionLabel: needsCandidate ? "Create paper candidate" : undefined,
       canPlanTrade: true,
-      canDismiss: true,
+      canDismissWithReason: false,
+      canHideForSession: true,
       dismissTarget: "session",
       tradingViewSignalId: signal.id,
     });
@@ -121,12 +124,14 @@ export function buildInboxSignals(input: InboxSignalsInput): InboxSignalModel[] 
       provenance: `Setup review · ${review.delivery_channel}/${review.delivery_status}`,
       href: "/alerts/review",
       detailHref: "/alerts/review",
-      planHref: "/workspace",
-      validateHref: "/paper-validation/drafts",
+      planHref: buildPlanHref({ source: "setup_review", alertId: review.alert_id }),
+      validateHref: "/alerts/review",
       nextAction: reviewStatus === "needs_review" ? "Review evidence" : "Open setup review",
       canCreateDraft: true,
+      createActionLabel: "Create validation draft",
       canPlanTrade: true,
-      canDismiss: true,
+      canDismissWithReason: true,
+      canHideForSession: false,
       dismissTarget: "setup_review",
       rawAlertId: review.alert_id,
     });
@@ -155,10 +160,12 @@ export function buildInboxSignals(input: InboxSignalsInput): InboxSignalModel[] 
       provenance: `In-app alert · ${alert.alert_source ?? "unknown source"}`,
       href: "/alerts",
       detailHref: "/alerts",
+      planHref: buildPlanHref({ source: "alert", alertId: alert.id }),
       nextAction: "Review evidence",
       canCreateDraft: false,
       canPlanTrade: false,
-      canDismiss: true,
+      canDismissWithReason: true,
+      canHideForSession: false,
       dismissTarget: "alert",
       rawAlertId: alert.id,
     });
@@ -189,7 +196,8 @@ export function buildInboxSignals(input: InboxSignalsInput): InboxSignalModel[] 
       nextAction: "Open watcher scanner",
       canCreateDraft: false,
       canPlanTrade: false,
-      canDismiss: false,
+      canDismissWithReason: false,
+      canHideForSession: false,
     });
   }
 

@@ -11,12 +11,34 @@ export { buildPlanHierarchy } from "@/components/workflows/buildPlanHierarchy";
 export { EvidenceSummary } from "@/components/workflows/EvidenceSummary";
 export {
   ageLabelFromTimestamp,
+  aggregateShellFreshness,
   freshnessFromTimestamp,
   pickNewestTimestamp,
 } from "@/components/workflows/freshness";
+export type { FreshnessSourceInput } from "@/components/workflows/freshness";
+export {
+  buildPlanHref,
+  evidenceHrefForPlanContext,
+  parsePlanSignalContext,
+} from "@/components/workflows/planContext";
+export type { PlanSignalContext } from "@/components/workflows/planContext";
 export { PlanSummary } from "@/components/workflows/PlanSummary";
+export { describeSafetyPosture } from "@/components/workflows/safetyPostureDisplay";
+export type {
+  SafetyPostureDisplay,
+  SafetyPostureKind,
+} from "@/components/workflows/safetyPostureDisplay";
 export { SignalSummaryCard } from "@/components/workflows/SignalSummaryCard";
 export { SignalsInbox } from "@/components/workflows/SignalsInbox";
+export {
+  allSourcesAvailable,
+  anySourceFailed,
+  failedSource,
+  loadSource,
+  okSource,
+  unavailableSourceNames,
+} from "@/components/workflows/sourceResult";
+export type { NamedSourceResult, SourceResult } from "@/components/workflows/sourceResult";
 export type {
   AttentionItemModel,
   AttentionSectionId,

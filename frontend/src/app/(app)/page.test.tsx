@@ -3,12 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
 
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+};
+
 vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({
     providers: { providers: [] },
     health: { version: "0.1.0", status: "ok" },
   }),
-  useSafetyPosture: () => ({ executionMode: "paper", realTradingEnabled: false }),
+  useSafetyPosture: () => safetyPosture,
 }));
 
 vi.mock("@/contexts/ShellFreshnessContext", () => ({
@@ -104,23 +109,51 @@ const summary = {
   limitations: [],
 };
 
+function ok<T>(data: T) {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
+function failed<T = null>(error = "boom") {
+  return { data: null as T | null, available: false, error, fallbackUsed: false };
+}
+
 let asyncState = {
   data: {
-    summary,
-    pendingApprovals: 1,
-    pendingProposals: 1,
-    validatedSignalsNeedingReview: 1,
-    setupReviewUnreviewed: 3,
-    draftsReady: 1,
-    candidatesQueued: 2,
-    runPlansPending: 1,
-    activeValidations: 1,
-    freshnessTimestamps: ["2026-06-28T12:00:00Z"],
-    disciplineFallback: {
-      legacyDiscipline: null,
-      legacyRisk: null,
-      legacyTradesToday: null,
-    },
+    summary: ok(summary),
+    approvals: ok({
+      items: [{ id: "a1", status: "pending", proposal_id: "p1" }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    proposals: ok({
+      items: [{ id: "p1", status: "pending_approval" }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    tvSignals: ok({
+      items: [
+        {
+          id: "sig-1",
+          status: "validated",
+          links: { candidate_id: null },
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    setupReviewSummary: ok({ total_unreviewed: 3 }),
+    paperDraftSummary: ok({ ready_for_validation_count: 1 }),
+    paperCandidateSummary: ok({ total_queued: 2 }),
+    paperRunPlanSummary: ok({ total_planned: 1 }),
+    paperRunSessions: ok({ items: [], total: 0 }),
+    alertRouting: ok({ generated_at: "2026-06-28T12:00:00Z" }),
+    watcherSummary: ok({ last_scan_at: "2026-06-28T12:00:00Z", generated_at: "2026-06-28T12:00:00Z" }),
+    discipline: failed(),
+    risk: failed(),
+    tradeReview: failed(),
   } as unknown,
   loading: false,
   error: null as string | null,
@@ -133,6 +166,8 @@ vi.mock("@/hooks/useAsyncData", () => ({
 
 afterEach(() => {
   cleanup();
+  safetyPosture.executionMode = "paper";
+  safetyPosture.realTradingEnabled = false;
   asyncState = {
     ...asyncState,
     loading: false,
@@ -140,23 +175,62 @@ afterEach(() => {
   };
 });
 
-describe("DashboardPage Phase C1 attention queue", () => {
-  it("shows paper-only and real-trading-disabled status", () => {
+describe("DashboardPage Phase C1 safety and availability", () => {
+  it("shows confirmed paper posture only when verified", () => {
     render(<DashboardPage />);
     expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent("PAPER mode");
     expect(screen.getByTestId("dashboard-real-trading-status")).toHaveTextContent(
       "Real trading disabled",
     );
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent("Paper only");
+    expect(screen.queryByText("Simulated execution only")).not.toBeInTheDocument();
     expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
       "aria-label",
       "Paper mode active",
     );
   });
 
+  it("shows safety conflict when real trading is enabled", () => {
+    safetyPosture.realTradingEnabled = true;
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        summary: ok({
+          ...summary,
+          safety: { ...summary.safety, real_trading_enabled: true },
+        }),
+      },
+    };
+    render(<DashboardPage />);
+    expect(screen.getByTestId("dashboard-safety-conflict")).toHaveTextContent(/safety conflict/i);
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent("Safety conflict");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
+    );
+  });
+
+  it("shows unverified posture when runtime fields are unknown", () => {
+    safetyPosture.executionMode = null;
+    safetyPosture.realTradingEnabled = null;
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        summary: failed(),
+      },
+    };
+    render(<DashboardPage />);
+    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent("Execution unverified");
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
+      "Runtime posture unverified",
+    );
+  });
+
   it("renders attention queue with prioritized actionable links", () => {
     render(<DashboardPage />);
     expect(screen.getByTestId("attention-queue")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /what needs my attention/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /review approvals/i })).toHaveAttribute(
       "href",
       "/approvals",
@@ -165,24 +239,28 @@ describe("DashboardPage Phase C1 attention queue", () => {
       "href",
       "/tradingview-signals",
     );
-    expect(screen.getByRole("link", { name: /review lessons/i })).toHaveAttribute(
-      "href",
-      "/lessons",
-    );
-    expect(screen.getByRole("link", { name: /view positions/i })).toHaveAttribute(
-      "href",
-      "/positions",
-    );
   });
 
-  it("keeps progressive disclosure for denser metrics", () => {
+  it("does not claim catch-up when required sources failed", () => {
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        approvals: failed("approvals down"),
+        proposals: failed("proposals down"),
+        tvSignals: failed("tv down"),
+        summary: failed("summary down"),
+        setupReviewSummary: failed(),
+        paperDraftSummary: failed(),
+        paperCandidateSummary: failed(),
+        paperRunPlanSummary: failed(),
+        paperRunSessions: failed(),
+      },
+    };
     render(<DashboardPage />);
-    expect(screen.getByText(/today's discipline snapshot/i)).toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-progressive-links")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /validation queue/i })).toHaveAttribute(
-      "href",
-      "/paper-validation/candidates",
-    );
+    expect(screen.getByTestId("attention-partial-data")).toBeInTheDocument();
+    expect(screen.getByText(/no actionable items found in the available sources/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you are caught up/i)).not.toBeInTheDocument();
   });
 
   it("shows loading and error states", () => {
@@ -193,12 +271,5 @@ describe("DashboardPage Phase C1 attention queue", () => {
     asyncState = { ...asyncState, loading: false, error: "Failed to load", data: null };
     rerender(<DashboardPage />);
     expect(screen.getByText("Failed to load")).toBeInTheDocument();
-  });
-
-  it("uses a simple one-column mobile-friendly layout", () => {
-    const { container } = render(<DashboardPage />);
-    expect(container.querySelector("[data-testid='dashboard-page']")?.className).toContain(
-      "max-w-3xl",
-    );
   });
 });

@@ -14,16 +14,16 @@ function takeProfitLabel(proposal: TradeProposal): string | null {
 
 function paperExecutionState(proposal: TradeProposal, approval: ApprovalRequest | null): string {
   if (proposal.risk_result?.action === "block") {
-    return "Paper execution blocked by risk engine";
+    return "Proposal blocked by risk engine — runtime paper availability is separate";
   }
   if (approval?.status === "approved") {
-    return "Approved for paper execution only";
+    return "Proposal approved — does not confirm current runtime paper availability";
   }
   if (approval?.status === "pending" || proposal.status === "pending_approval") {
-    return "Awaiting human approval — paper only";
+    return "Awaiting human approval — no live orders";
   }
   if (approval?.status === "rejected") {
-    return "Rejected — no paper execution";
+    return "Proposal rejected — no paper execution from this approval";
   }
   return "Draft / planning — no live orders";
 }

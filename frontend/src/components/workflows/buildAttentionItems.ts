@@ -8,23 +8,28 @@ export type AttentionBuildInput = {
   executionMode: string | null | undefined;
   realTradingEnabled: boolean | null | undefined;
   paperOnlyConfirmed: boolean;
-  pendingApprovals: number;
-  pendingProposals: number;
-  unreadAlerts: number;
-  unreviewedSetupAlerts: number;
-  validatedSignalsNeedingReview: number;
-  activeValidations: number;
-  draftsReady: number;
-  candidatesQueued: number;
-  runPlansPending: number;
-  openPaperPositions: number;
-  riskAlertsActive: boolean;
-  lossLockActive: boolean;
-  greenDayProtectionActive: boolean;
-  overtradingWarningActive: boolean;
-  pendingLessons: number;
+  /** null means the source was unavailable — never treated as a confirmed zero. */
+  pendingApprovals: number | null;
+  pendingProposals: number | null;
+  unreadAlerts: number | null;
+  unreviewedSetupAlerts: number | null;
+  validatedSignalsNeedingReview: number | null;
+  activeValidations: number | null;
+  draftsReady: number | null;
+  candidatesQueued: number | null;
+  runPlansPending: number | null;
+  openPaperPositions: number | null;
+  riskAlertsActive: boolean | null;
+  lossLockActive: boolean | null;
+  greenDayProtectionActive: boolean | null;
+  overtradingWarningActive: boolean | null;
+  pendingLessons: number | null;
   nextAction?: { action: string; reason?: string; link?: string } | null;
 };
+
+function positiveCount(value: number | null | undefined): value is number {
+  return typeof value === "number" && value > 0;
+}
 
 const SECTION_PRIORITY: Record<AttentionSectionId, AttentionItemModel["priority"]> = {
   safety: 1,
@@ -65,7 +70,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.lossLockActive) {
+  if (input.lossLockActive === true) {
     pushItem(items, {
       id: "safety-loss-lock",
       section: "safety",
@@ -75,7 +80,10 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
       actionLabel: "Open risk state",
       tone: "danger",
     });
-  } else if (input.greenDayProtectionActive || input.overtradingWarningActive) {
+  } else if (
+    input.greenDayProtectionActive === true ||
+    input.overtradingWarningActive === true
+  ) {
     pushItem(items, {
       id: "safety-protection",
       section: "safety",
@@ -89,7 +97,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.pendingApprovals > 0) {
+  if (positiveCount(input.pendingApprovals)) {
     pushItem(items, {
       id: "pending-approvals",
       section: "pending_decisions",
@@ -102,7 +110,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.pendingProposals > 0) {
+  if (positiveCount(input.pendingProposals)) {
     pushItem(items, {
       id: "pending-proposals",
       section: "pending_decisions",
@@ -126,7 +134,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.unreviewedSetupAlerts > 0) {
+  if (positiveCount(input.unreviewedSetupAlerts)) {
     pushItem(items, {
       id: "setup-alerts-unreviewed",
       section: "new_signals",
@@ -141,7 +149,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.validatedSignalsNeedingReview > 0) {
+  if (positiveCount(input.validatedSignalsNeedingReview)) {
     pushItem(items, {
       id: "tv-signals-review",
       section: "new_signals",
@@ -155,7 +163,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.unreadAlerts > 0) {
+  if (positiveCount(input.unreadAlerts)) {
     pushItem(items, {
       id: "unread-alerts",
       section: "new_signals",
@@ -167,7 +175,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.activeValidations > 0) {
+  if (positiveCount(input.activeValidations)) {
     pushItem(items, {
       id: "active-validations",
       section: "validation_work",
@@ -181,7 +189,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.draftsReady > 0) {
+  if (positiveCount(input.draftsReady)) {
     pushItem(items, {
       id: "drafts-ready",
       section: "validation_work",
@@ -193,7 +201,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.candidatesQueued > 0) {
+  if (positiveCount(input.candidatesQueued)) {
     pushItem(items, {
       id: "candidates-queued",
       section: "validation_work",
@@ -205,7 +213,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.runPlansPending > 0) {
+  if (positiveCount(input.runPlansPending)) {
     pushItem(items, {
       id: "run-plans-pending",
       section: "validation_work",
@@ -217,7 +225,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.openPaperPositions > 0) {
+  if (positiveCount(input.openPaperPositions)) {
     pushItem(items, {
       id: "open-positions",
       section: "positions_risk",
@@ -231,7 +239,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.riskAlertsActive) {
+  if (input.riskAlertsActive === true) {
     pushItem(items, {
       id: "risk-alerts",
       section: "positions_risk",
@@ -243,7 +251,7 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
-  if (input.pendingLessons > 0) {
+  if (positiveCount(input.pendingLessons)) {
     pushItem(items, {
       id: "pending-lessons",
       section: "lessons",

@@ -67,8 +67,12 @@ export type InboxSignalModel = {
   planHref?: string;
   validateHref?: string;
   canCreateDraft?: boolean;
+  createActionLabel?: string;
   canPlanTrade?: boolean;
-  canDismiss?: boolean;
+  /** Persisted dismiss-with-reason via existing API. */
+  canDismissWithReason?: boolean;
+  /** Session-only hide with no persisted reason. */
+  canHideForSession?: boolean;
   dismissTarget?: "setup_review" | "alert" | "session";
   rawAlertId?: string;
   tradingViewSignalId?: string;

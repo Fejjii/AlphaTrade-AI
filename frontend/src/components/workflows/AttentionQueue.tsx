@@ -6,6 +6,7 @@ import {
   type AttentionSectionId,
 } from "@/components/workflows/types";
 import { groupAttentionItems } from "@/components/workflows/buildAttentionItems";
+import { Button } from "@/components/ui/button";
 
 type AttentionQueueProps = {
   items: AttentionItemModel[];
@@ -14,6 +15,8 @@ type AttentionQueueProps = {
   onRetry?: () => void;
   emptyTitle?: string;
   emptyDescription?: string;
+  partialData?: boolean;
+  unavailableSources?: string[];
 };
 
 export function AttentionQueue({
@@ -23,6 +26,8 @@ export function AttentionQueue({
   onRetry,
   emptyTitle = "Nothing needs your attention",
   emptyDescription = "You are caught up. New signals, approvals, and lessons will appear here.",
+  partialData = false,
+  unavailableSources = [],
 }: AttentionQueueProps) {
   if (loading) {
     return (
@@ -72,6 +77,29 @@ export function AttentionQueue({
           Prioritized actionable items from existing paper workflows. No live orders.
         </p>
       </div>
+
+      {partialData ? (
+        <div
+          role="status"
+          data-testid="attention-partial-data"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          <p className="font-medium">Partial data</p>
+          <p className="mt-1">
+            Some sources failed. Showing attention items from available sources only.
+          </p>
+          {unavailableSources.length ? (
+            <p className="mt-1" data-testid="attention-unavailable-sources">
+              Unavailable: {unavailableSources.join(", ")}.
+            </p>
+          ) : null}
+          {onRetry ? (
+            <Button type="button" size="sm" variant="outline" className="mt-2" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {groups.length === 0 ? (
         <WorkflowEmptyState title={emptyTitle} description={emptyDescription} />

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ageLabelFromTimestamp,
+  aggregateShellFreshness,
   freshnessFromTimestamp,
   pickNewestTimestamp,
 } from "@/components/workflows/freshness";
@@ -36,6 +37,12 @@ describe("workflow freshness helpers", () => {
     ).toMatchObject({ state: "fallback" });
   });
 
+  it("treats materially future timestamps as unavailable clock skew", () => {
+    expect(
+      freshnessFromTimestamp("2026-07-26T12:10:00.000Z", { nowMs })?.state,
+    ).toBe("unavailable");
+  });
+
   it("picks the newest available timestamp only", () => {
     expect(
       pickNewestTimestamp([null, "2026-07-26T10:00:00.000Z", "2026-07-26T11:00:00.000Z"]),
@@ -45,5 +52,101 @@ describe("workflow freshness helpers", () => {
 
   it("formats age labels from known timestamps", () => {
     expect(ageLabelFromTimestamp("2026-07-26T11:55:00.000Z", nowMs)).toBe("5m");
+  });
+
+  it("aggregates conservatively: live + stale => stale", () => {
+    const result = aggregateShellFreshness(
+      [
+        {
+          name: "a",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:59:00.000Z",
+        },
+        {
+          name: "b",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:00:00.000Z",
+        },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("stale");
+  });
+
+  it("aggregates conservatively: live + failed required => unavailable", () => {
+    const result = aggregateShellFreshness(
+      [
+        {
+          name: "a",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:59:00.000Z",
+        },
+        {
+          name: "b",
+          available: false,
+          required: true,
+          timestamp: null,
+        },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("unavailable");
+  });
+
+  it("aggregates all live sources as live", () => {
+    const result = aggregateShellFreshness(
+      [
+        {
+          name: "a",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:59:00.000Z",
+        },
+        {
+          name: "b",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:58:00.000Z",
+        },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("live");
+  });
+
+  it("returns unavailable default when timestamps are missing", () => {
+    const result = aggregateShellFreshness(
+      [
+        { name: "a", available: true, required: true, timestamp: null },
+        { name: "b", available: true, required: true, timestamp: null },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBeNull();
+  });
+
+  it("prefers fallback when a source reports fallback_used", () => {
+    const result = aggregateShellFreshness(
+      [
+        {
+          name: "a",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:59:00.000Z",
+          fallbackUsed: true,
+        },
+        {
+          name: "b",
+          available: true,
+          required: true,
+          timestamp: "2026-07-26T11:58:00.000Z",
+        },
+      ],
+      { nowMs },
+    );
+    expect(result.state).toBe("fallback");
   });
 });

@@ -56,7 +56,14 @@ describe("ShellFreshnessContext", () => {
     render(
       <ShellFreshnessProvider>
         <WorkflowFreshnessAdapter
-          timestamps={["2026-07-26T11:59:00.000Z"]}
+          sources={[
+            {
+              name: "a",
+              available: true,
+              required: true,
+              timestamp: "2026-07-26T11:59:00.000Z",
+            },
+          ]}
           clearOnUnmount={false}
         />
         <FreshnessProbe />
@@ -74,4 +81,31 @@ describe("ShellFreshnessContext", () => {
     );
     expect(screen.getByTestId("probe-state")).toHaveTextContent("null");
   });
+
+  it("does not mark the page live when a required source failed", () => {
+    render(
+      <ShellFreshnessProvider>
+        <WorkflowFreshnessAdapter
+          sources={[
+            {
+              name: "live",
+              available: true,
+              required: true,
+              timestamp: "2026-07-26T11:59:00.000Z",
+            },
+            {
+              name: "failed",
+              available: false,
+              required: true,
+              timestamp: null,
+            },
+          ]}
+          clearOnUnmount={false}
+        />
+        <FreshnessProbe />
+      </ShellFreshnessProvider>,
+    );
+    expect(screen.getByTestId("probe-state")).toHaveTextContent("unavailable");
+  });
 });
+

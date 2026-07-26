@@ -73,6 +73,8 @@ describe("buildPlanHierarchy", () => {
     const plan = buildPlanHierarchy({ proposals: [proposal], approvals: [approval] });
     expect(plan?.riskBlocked).toBe(true);
     expect(plan?.blockReason).toContain("daily loss lock");
-    expect(plan?.paperExecutionState).toContain("blocked");
+    expect(plan?.paperExecutionState).toMatch(/blocked by risk engine/i);
+    expect(plan?.paperExecutionState).toMatch(/runtime paper availability is separate/i);
   });
 });
+

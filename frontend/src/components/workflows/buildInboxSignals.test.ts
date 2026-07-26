@@ -88,17 +88,23 @@ describe("buildInboxSignals", () => {
     const tv = items.find((item) => item.source === "tradingview");
     expect(tv?.freshness).toBe("live");
     expect(tv?.provenance).toContain("TradingView");
-    expect(tv?.nextAction).toBe("Review evidence");
+    expect(tv?.nextAction).toBe("Create paper candidate");
     expect(tv?.canCreateDraft).toBe(true);
-    expect(tv?.planHref).toBe("/workspace");
+    expect(tv?.createActionLabel).toBe("Create paper candidate");
+    expect(tv?.canHideForSession).toBe(true);
+    expect(tv?.canDismissWithReason).toBe(false);
+    expect(tv?.planHref).toBe("/workspace?source=tradingview&signal=sig-1");
 
     const alert = items.find((item) => item.source === "alert");
     expect(alert?.provenance).toContain("market_watcher");
     expect(alert?.freshness).toBe("live");
+    expect(alert?.canDismissWithReason).toBe(true);
 
     const setup = items.find((item) => item.source === "setup_review");
     expect(setup?.reviewStatus).toBe("needs_review");
     expect(setup?.href).toBe("/alerts/review");
+    expect(setup?.createActionLabel).toBe("Create validation draft");
+    expect(setup?.planHref).toContain("source=setup_review");
   });
 
   it("distinguishes stale timestamps without fabricating live status", () => {

@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   SignalsInbox,
   WorkflowFreshnessAdapter,
   buildInboxSignals,
+  buildPlanHref,
+  loadSource,
   type InboxSignalModel,
+  type SourceResult,
 } from "@/components/workflows";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,19 +27,11 @@ type SignalsLoadResult =
   | { forbidden: true }
   | {
       forbidden: false;
-      tradingView: Awaited<ReturnType<typeof api.tradingview.listSignals>>;
-      alerts: Awaited<ReturnType<typeof api.alerts.list>>;
-      setupReviews: Awaited<ReturnType<typeof api.alerts.setupReview>>;
-      watcherSummary: Awaited<ReturnType<typeof api.marketWatcher.summary>> | null;
+      tradingView: SourceResult<Awaited<ReturnType<typeof api.tradingview.listSignals>>>;
+      alerts: SourceResult<Awaited<ReturnType<typeof api.alerts.list>>>;
+      setupReviews: SourceResult<Awaited<ReturnType<typeof api.alerts.setupReview>>>;
+      watcherSummary: SourceResult<Awaited<ReturnType<typeof api.marketWatcher.summary>>>;
     };
-
-async function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await promise;
-  } catch {
-    return fallback;
-  }
-}
 
 function statusVariant(
   status: TradingViewSignalItem["status"],
@@ -58,27 +53,31 @@ export default function TradingViewSignalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const deepLinkSignalId = searchParams.get("signal");
+  const confirmSectionRef = useRef<HTMLDivElement>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [sessionDismissed, setSessionDismissed] = useState<Set<string>>(new Set());
+  const [deepLinkMissing, setDeepLinkMissing] = useState(false);
 
   const loader = useCallback(async (): Promise<SignalsLoadResult> => {
     try {
-      const [tradingView, alerts, setupReviews, watcherSummary] = await Promise.all([
-        api.tradingview.listSignals({ limit: 50 }),
-        settled(api.alerts.list({ limit: 50 }), { items: [], total: 0 }),
-        settled(api.alerts.setupReview({ limit: 50 }), {
-          items: [],
-          total: 0,
-          limit: 50,
-          offset: 0,
-        }),
-        settled(api.marketWatcher.summary(), null),
+      // Preserve explicit forbidden semantics for TradingView.
+      const tv = await api.tradingview.listSignals({ limit: 50 });
+      const [alerts, setupReviews, watcherSummary] = await Promise.all([
+        loadSource(api.alerts.list({ limit: 50 })),
+        loadSource(api.alerts.setupReview({ limit: 50 })),
+        loadSource(api.marketWatcher.summary()),
       ]);
-      return { forbidden: false, tradingView, alerts, setupReviews, watcherSummary };
+      return {
+        forbidden: false,
+        tradingView: { data: tv, available: true, error: null, fallbackUsed: false },
+        alerts,
+        setupReviews,
+        watcherSummary,
+      };
     } catch (error) {
       if (error instanceof ApiError && error.status === 403) {
         return { forbidden: true };
@@ -92,32 +91,47 @@ export default function TradingViewSignalsPage() {
   const inboxSignals = useMemo(() => {
     if (!data || data.forbidden) return [];
     return buildInboxSignals({
-      tradingViewSignals: data.tradingView.items,
-      alerts: data.alerts.items,
-      setupReviews: data.setupReviews.items,
-      watcherSummary: data.watcherSummary,
+      tradingViewSignals: data.tradingView.available ? data.tradingView.data?.items : [],
+      alerts: data.alerts.available ? data.alerts.data?.items : [],
+      setupReviews: data.setupReviews.available ? data.setupReviews.data?.items : [],
+      watcherSummary: data.watcherSummary.available ? data.watcherSummary.data : null,
       sessionDismissedIds: sessionDismissed,
     });
   }, [data, sessionDismissed]);
 
+  useEffect(() => {
+    if (!data || data.forbidden) return;
+    if (!deepLinkSignalId) {
+      setDeepLinkMissing(false);
+      return;
+    }
+    const match = inboxSignals.find(
+      (item) => item.tradingViewSignalId === deepLinkSignalId,
+    );
+    if (match) {
+      setSelectedId(match.id);
+      setDeepLinkMissing(false);
+      return;
+    }
+    // Do not fall back to an unrelated first signal.
+    setDeepLinkMissing(true);
+    setSelectedId(null);
+  }, [data, deepLinkSignalId, inboxSignals]);
+
   const selectedSignal = useMemo(() => {
     if (!inboxSignals.length) return null;
     if (selectedId) {
-      return inboxSignals.find((item) => item.id === selectedId) ?? inboxSignals[0];
+      return inboxSignals.find((item) => item.id === selectedId) ?? null;
     }
-    if (deepLinkSignalId) {
-      return (
-        inboxSignals.find((item) => item.tradingViewSignalId === deepLinkSignalId) ??
-        inboxSignals[0]
-      );
-    }
-    return inboxSignals[0];
-  }, [inboxSignals, selectedId, deepLinkSignalId]);
+    if (deepLinkMissing) return null;
+    return inboxSignals[0] ?? null;
+  }, [inboxSignals, selectedId, deepLinkMissing]);
 
   const selectedTv: TradingViewSignalItem | null =
-    data && !data.forbidden && selectedSignal?.tradingViewSignalId
-      ? (data.tradingView.items.find((item) => item.id === selectedSignal.tradingViewSignalId) ??
-        null)
+    data && !data.forbidden && selectedSignal?.tradingViewSignalId && data.tradingView.data
+      ? (data.tradingView.data.items.find(
+          (item) => item.id === selectedSignal.tradingViewSignalId,
+        ) ?? null)
       : null;
 
   async function createCandidate(signal: TradingViewSignalItem) {
@@ -148,12 +162,21 @@ export default function TradingViewSignalsPage() {
       if (signal.dismissTarget === "alert" && signal.rawAlertId) {
         await api.alerts.markRead(signal.rawAlertId);
         await reload();
-        return;
       }
-      setSessionDismissed((prev) => new Set(prev).add(signal.id));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Dismiss failed.");
     }
+  }
+
+  function hideForSession(signal: InboxSignalModel) {
+    setSessionDismissed((prev) => new Set(prev).add(signal.id));
+    if (selectedId === signal.id) setSelectedId(null);
+  }
+
+  function clearStaleDeepLink() {
+    router.replace("/tradingview-signals");
+    setDeepLinkMissing(false);
+    setSelectedId(null);
   }
 
   if (loading) return <LoadingState label="Loading TradingView signals…" />;
@@ -170,17 +193,45 @@ export default function TradingViewSignalsPage() {
     );
   }
 
-  const freshnessTimestamps = [
-    ...data.tradingView.items.map((item) => item.received_at),
-    ...data.alerts.items.map((item) => item.created_at),
-    ...data.setupReviews.items.map((item) => item.created_at),
-    data.watcherSummary?.last_scan_at ?? null,
-    data.watcherSummary?.generated_at ?? null,
+  const unavailableSources = [
+    !data.tradingView.available ? "TradingView" : null,
+    !data.alerts.available ? "Alerts" : null,
+    !data.setupReviews.available ? "Setup review" : null,
+    !data.watcherSummary.available ? "Watcher" : null,
+  ].filter((item): item is string => Boolean(item));
+  const partialData = unavailableSources.length > 0;
+  const allSourcesOk = unavailableSources.length === 0;
+
+  const freshnessSources = [
+    {
+      name: "tradingview",
+      available: data.tradingView.available,
+      required: true,
+      timestamp: data.tradingView.data?.items[0]?.received_at ?? null,
+    },
+    {
+      name: "alerts",
+      available: data.alerts.available,
+      required: false,
+      timestamp: data.alerts.data?.items[0]?.created_at ?? null,
+    },
+    {
+      name: "setup-review",
+      available: data.setupReviews.available,
+      required: false,
+      timestamp: data.setupReviews.data?.items[0]?.created_at ?? null,
+    },
+    {
+      name: "watcher",
+      available: data.watcherSummary.available,
+      required: false,
+      timestamp: data.watcherSummary.data?.last_scan_at ?? null,
+    },
   ];
 
   return (
     <div data-testid="tradingview-signals-page" className="space-y-section">
-      <WorkflowFreshnessAdapter timestamps={freshnessTimestamps} />
+      <WorkflowFreshnessAdapter sources={freshnessSources} />
 
       <PageHeader
         title="Signals"
@@ -206,33 +257,94 @@ export default function TradingViewSignalsPage() {
         </Link>
       </div>
 
+      <div
+        className="flex flex-wrap gap-2 text-caption"
+        data-testid="signals-source-availability"
+      >
+        <Badge variant={data.tradingView.available ? "success" : "warning"}>
+          TradingView {data.tradingView.available ? "available" : "unavailable"}
+        </Badge>
+        <Badge variant={data.alerts.available ? "success" : "warning"}>
+          Alerts {data.alerts.available ? "available" : "unavailable"}
+        </Badge>
+        <Badge variant={data.setupReviews.available ? "success" : "warning"}>
+          Setup review {data.setupReviews.available ? "available" : "unavailable"}
+        </Badge>
+        <Badge variant={data.watcherSummary.available ? "success" : "warning"}>
+          Watcher {data.watcherSummary.available ? "available" : "unavailable"}
+        </Badge>
+      </div>
+
       {actionError ? (
         <p className="text-sm text-rose-300" role="alert">
           {actionError}
         </p>
       ) : null}
 
+      {deepLinkMissing ? (
+        <div
+          role="alert"
+          data-testid="signal-deep-link-missing"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-4 py-3 text-sm"
+        >
+          <p className="font-medium text-text-primary">
+            Requested signal not found or no longer available.
+          </p>
+          <Button type="button" size="sm" className="mt-2" onClick={clearStaleDeepLink}>
+            Clear stale link and return to inbox
+          </Button>
+        </div>
+      ) : null}
+
       <SignalsInbox
         signals={inboxSignals}
         selectedId={selectedSignal?.id ?? null}
-        onSelect={(signal) => setSelectedId(signal.id)}
+        onSelect={(signal) => {
+          setSelectedId(signal.id);
+          setDeepLinkMissing(false);
+        }}
         onReviewEvidence={(signal) => {
-          if (signal.detailHref) router.push(signal.detailHref);
+          setSelectedId(signal.id);
+          if (signal.source !== "tradingview" && signal.detailHref) {
+            router.push(signal.detailHref);
+          }
         }}
         onCreateDraft={(signal) => {
           if (signal.source === "setup_review") {
             router.push("/alerts/review");
             return;
           }
-          if (signal.tradingViewSignalId && selectedTv) {
-            // Keep user on detail confirmation for TradingView candidate creation.
+          if (signal.tradingViewSignalId) {
             setSelectedId(signal.id);
-            return;
+            queueMicrotask(() => {
+              confirmSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              confirmSectionRef.current?.querySelector("input")?.focus();
+            });
           }
-          router.push(signal.validateHref ?? "/paper-validation/drafts");
         }}
-        onPlanTrade={() => router.push("/workspace")}
+        onPlanTrade={(signal) => {
+          router.push(
+            signal.planHref ??
+              buildPlanHref({
+                source: "tradingview",
+                signalId: signal.tradingViewSignalId,
+              }),
+          );
+        }}
         onDismiss={(signal, reason) => void dismissSignal(signal, reason)}
+        onHideForSession={hideForSession}
+        partialData={partialData}
+        unavailableSources={unavailableSources}
+        emptyTitle={
+          allSourcesOk
+            ? "No signals need review"
+            : "No signals found in the available sources"
+        }
+        emptyDescription={
+          allSourcesOk
+            ? "Validated TradingView signals, unread alerts, and setup reviews will appear here."
+            : "One or more inbox sources failed. Retry before treating this as a complete empty inbox."
+        }
         detail={
           selectedTv ? (
             <section
@@ -324,13 +436,20 @@ export default function TradingViewSignalsPage() {
                     Journal trade
                   </Link>
                 ) : null}
-                <Link href="/workspace" className="text-sky-400 underline">
+                <Link
+                  href={buildPlanHref({ source: "tradingview", signalId: selectedTv.id })}
+                  className="text-sky-400 underline"
+                >
                   Plan trade
                 </Link>
               </div>
 
               {selectedTv.status === "validated" && !selectedTv.links.candidate_id ? (
-                <div className="space-y-2 border-t border-border-subtle pt-4">
+                <div
+                  ref={confirmSectionRef}
+                  id="create-paper-candidate"
+                  className="space-y-2 border-t border-border-subtle pt-4"
+                >
                   <p className="text-xs text-text-muted">
                     Optional paper-validation candidate only. Confirm with{" "}
                     <code className="text-text-secondary">{CREATE_TRADINGVIEW_PAPER_CANDIDATE}</code>.
@@ -375,10 +494,6 @@ export default function TradingViewSignalsPage() {
           )
         }
       />
-
-      {data.tradingView.items.length === 0 && inboxSignals.length === 0 ? (
-        <p className="sr-only">No TradingView signals</p>
-      ) : null}
     </div>
   );
 }
