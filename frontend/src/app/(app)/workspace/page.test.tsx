@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SourceResult } from "@/components/workflows/sourceResult";
+
 import WorkspacePage from "./page";
 
 const safetyPosture = {
@@ -66,11 +68,11 @@ const proposal = {
   created_at: "2026-07-26T11:00:00.000Z",
 };
 
-function ok<T>(data: T) {
+function ok<T>(data: T): SourceResult<T> {
   return { data, available: true, error: null, fallbackUsed: false };
 }
 
-function failed() {
+function failed<T>(): SourceResult<T> {
   return { data: null, available: false, error: "down", fallbackUsed: false };
 }
 
@@ -125,9 +127,29 @@ afterEach(() => {
   search.delete("signal");
   search.delete("alert");
   asyncState = {
-    ...asyncState,
+    data: {
+      proposals: ok({ items: [proposal], total: 1, limit: 50, offset: 0 }),
+      approvals: ok({
+        items: [
+          {
+            id: "appr-1",
+            proposal_id: "prop-1",
+            organization_id: "org",
+            user_id: "user",
+            status: "pending",
+            risk_level: "medium",
+            confidence: 0.7,
+            created_at: "2026-07-26T11:01:00.000Z",
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    },
     loading: false,
     error: null,
+    reload: vi.fn(),
   };
 });
 
