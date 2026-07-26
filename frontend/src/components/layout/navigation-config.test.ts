@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   getDestinationId,
+  getSecondaryItems,
   isNavLinkActive,
   isPrimaryDestinationActive,
   listReachableHrefs,
   MOBILE_BOTTOM_DESTINATION_IDS,
   MOBILE_MENU_DESTINATION_IDS,
   PRIMARY_DESTINATIONS,
+  resolveSecondaryActiveHref,
   SECONDARY_NAV,
 } from "@/components/layout/navigation-config";
 import {
@@ -90,6 +92,37 @@ describe("AT-040 Phase B navigation config", () => {
     expect(settings?.items.some((i) => i.href === "/settings/exchange" && i.advanced)).toBe(true);
   });
 
+  it("uses one Billing & Usage L2 section and keeps /risk under Portfolio only", () => {
+    const settings = getSecondaryItems("settings");
+    const portfolio = getSecondaryItems("portfolio");
+    expect(settings.some((i) => i.href === "/settings/billing" && i.label === "Billing & Usage")).toBe(
+      true,
+    );
+    expect(settings.some((i) => i.href === "/settings/usage")).toBe(false);
+    expect(settings.some((i) => i.href === "/risk")).toBe(false);
+    expect(portfolio.some((i) => i.href === "/risk")).toBe(true);
+    expect(getDestinationId("/risk")).toBe("portfolio");
+  });
+
+  it("resolves exactly one secondary active href via longest match", () => {
+    const signals = getSecondaryItems("signals");
+    const validate = getSecondaryItems("validate");
+    const journal = getSecondaryItems("journal");
+    const settings = getSecondaryItems("settings");
+
+    expect(resolveSecondaryActiveHref("/alerts", signals)).toBe("/alerts");
+    expect(resolveSecondaryActiveHref("/alerts/review", signals)).toBe("/alerts/review");
+    expect(resolveSecondaryActiveHref("/paper-validation/candidates/example", validate)).toBe(
+      "/paper-validation/candidates",
+    );
+    expect(resolveSecondaryActiveHref("/journal/import", journal)).toBe("/journal/import");
+    expect(resolveSecondaryActiveHref("/settings/billing", settings)).toBe("/settings/billing");
+
+    const reviewMatches = signals.filter((item) => isNavLinkActive("/alerts/review", item.href));
+    expect(reviewMatches.map((m) => m.href).sort()).toEqual(["/alerts", "/alerts/review"].sort());
+    expect(resolveSecondaryActiveHref("/alerts/review", signals)).toBe("/alerts/review");
+  });
+
   it("keeps required capabilities reachable from primary or secondary navigation", () => {
     const reachable = new Set(listReachableHrefs());
     for (const path of PHASE_B_CAPABILITY_PATHS) {
@@ -106,6 +139,7 @@ describe("AT-040 Phase B navigation config", () => {
     expect(reachable.has("/journal/comparison")).toBe(true);
     expect(reachable.has("/portfolio")).toBe(true);
     expect(reachable.has("/settings")).toBe(true);
+    expect(reachable.has("/settings/billing")).toBe(true);
     expect(reachable.has("/risk")).toBe(true);
   });
 });
@@ -122,9 +156,16 @@ describe("AT-040 Phase B redirects", () => {
     }
     expect(sources.has("/billing")).toBe(true);
     expect(sources.has("/usage")).toBe(true);
+    expect(sources.has("/settings/usage")).toBe(true);
     expect(sources.has("/invitations")).toBe(true);
     expect(sources.has("/audit")).toBe(true);
     expect(sources.has("/exchange")).toBe(true);
+    expect(
+      PHASE_B_REDIRECTS.find((r) => r.source === "/billing")?.destination,
+    ).toBe("/settings/billing");
+    expect(PHASE_B_REDIRECTS.find((r) => r.source === "/usage")?.destination).toBe(
+      "/settings/billing",
+    );
   });
 
   it("does not redirect dynamic capability IDs or paper-validation paths", () => {

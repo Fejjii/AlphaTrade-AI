@@ -1,0 +1,73 @@
+import { isPaperModeConfirmed } from "@/components/ui/paper-mode-indicator";
+import type { KillSwitchStatus } from "@/lib/api/types";
+
+export type StatusTone = "paper" | "warn" | "blocked" | "success" | "muted" | "info";
+
+export type ExecutionDisplay = {
+  label: string;
+  tone: StatusTone;
+  /** True only when paper + real trading disabled. */
+  paperConfirmed: boolean;
+};
+
+/**
+ * Resolve execution badge copy/tone.
+ * Never applies paper label or paper styling unless paper is fully confirmed.
+ */
+export function resolveExecutionDisplay(
+  executionMode: string | null | undefined,
+  realTradingEnabled: boolean | null | undefined,
+  postureKnown: boolean,
+): ExecutionDisplay {
+  const paperConfirmed = isPaperModeConfirmed(executionMode, realTradingEnabled);
+  if (paperConfirmed) {
+    return { label: "PAPER", tone: "paper", paperConfirmed: true };
+  }
+
+  if (executionMode === "paper" && realTradingEnabled === true) {
+    return { label: "Safety conflict", tone: "blocked", paperConfirmed: false };
+  }
+
+  if (!postureKnown || executionMode == null || realTradingEnabled == null) {
+    return { label: "Execution unverified", tone: "warn", paperConfirmed: false };
+  }
+
+  return {
+    label: String(executionMode).toUpperCase(),
+    tone: "warn",
+    paperConfirmed: false,
+  };
+}
+
+export type RiskDisplay = {
+  label: string;
+  /** Passed to RiskBadge; null means unknown (never invent "low"). */
+  level: string | null;
+  known: boolean;
+};
+
+/**
+ * Resolve risk badge from kill-switch status truth.
+ * Missing/loading/error must not become Risk low.
+ */
+export function resolveRiskDisplay(input: {
+  killSwitchStatus: KillSwitchStatus | null;
+  killSwitchError: string | null;
+  statusLoading: boolean;
+}): RiskDisplay {
+  const { killSwitchStatus, killSwitchError, statusLoading } = input;
+
+  if (killSwitchError) {
+    return { label: "Risk unknown", level: null, known: false };
+  }
+  if (statusLoading && killSwitchStatus == null) {
+    return { label: "Risk unknown", level: null, known: false };
+  }
+  if (killSwitchStatus == null) {
+    return { label: "Risk unknown", level: null, known: false };
+  }
+  if (killSwitchStatus.execution_blocked) {
+    return { label: "Risk critical", level: "critical", known: true };
+  }
+  return { label: "Risk low", level: "low", known: true };
+}

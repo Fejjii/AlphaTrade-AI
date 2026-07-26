@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 
 import { RiskBadge } from "@/components/RiskBadge";
+import {
+  resolveExecutionDisplay,
+  resolveRiskDisplay,
+} from "@/components/layout/status-strip-state";
 import { StatusBadge } from "@/components/StatusBadge";
 import { IconButton } from "@/components/ui/icon-button";
-import {
-  isPaperModeConfirmed,
-  PaperModeIndicator,
-} from "@/components/ui/paper-mode-indicator";
+import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { cn } from "@/lib/utils";
 
@@ -20,9 +21,14 @@ const ADVICE_DISMISS_KEY = "alphatrade.statusStrip.adviceDismissed";
  * Paper mode remains fail-closed from verified runtime posture.
  */
 export function StatusStrip({ className }: { className?: string }) {
-  const { killSwitchActive } = useAppContext();
-  const { executionMode, realTradingEnabled } = useSafetyPosture();
-  const paperConfirmed = isPaperModeConfirmed(executionMode, realTradingEnabled);
+  const { killSwitchStatus, killSwitchError, loading } = useAppContext();
+  const { executionMode, realTradingEnabled, postureKnown } = useSafetyPosture();
+  const execution = resolveExecutionDisplay(executionMode, realTradingEnabled, postureKnown);
+  const risk = resolveRiskDisplay({
+    killSwitchStatus,
+    killSwitchError,
+    statusLoading: loading,
+  });
   const [adviceDismissed, setAdviceDismissed] = useState(false);
 
   useEffect(() => {
@@ -50,11 +56,10 @@ export function StatusStrip({ className }: { className?: string }) {
         className,
       )}
     >
-      <PaperModeIndicator active={paperConfirmed} />
-      <StatusBadge
-        label={(executionMode ?? "unverified").toUpperCase()}
-        tone={executionMode === "paper" ? "paper" : "warn"}
-      />
+      <PaperModeIndicator active={execution.paperConfirmed} />
+      <span data-testid="status-strip-execution">
+        <StatusBadge label={execution.label} tone={execution.tone} />
+      </span>
       <StatusBadge
         label={
           realTradingEnabled === true
@@ -71,7 +76,9 @@ export function StatusStrip({ className }: { className?: string }) {
               : "warn"
         }
       />
-      <RiskBadge level={killSwitchActive ? "critical" : "low"} />
+      <span data-testid="status-strip-risk">
+        <RiskBadge level={risk.level} />
+      </span>
       {!adviceDismissed ? (
         <div
           className="flex min-w-0 flex-1 items-center gap-2 text-text-muted"
@@ -81,7 +88,11 @@ export function StatusStrip({ className }: { className?: string }) {
             Not financial advice. Paper-only research — simulated results do not guarantee
             performance.
           </p>
-          <IconButton label="Dismiss advice notice for this session" variant="ghost" onClick={dismissAdvice}>
+          <IconButton
+            label="Dismiss advice notice for this session"
+            variant="ghost"
+            onClick={dismissAdvice}
+          >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </IconButton>
         </div>

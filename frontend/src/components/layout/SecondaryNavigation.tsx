@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   getDestinationId,
   getSecondaryItems,
-  isNavLinkActive,
+  resolveSecondaryActiveHref,
 } from "@/components/layout/navigation-config";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,7 @@ export function SecondaryNavigation() {
   const items = getSecondaryItems(destinationId);
   if (items.length === 0) return null;
 
+  const activeHref = resolveSecondaryActiveHref(pathname, items);
   const primaryItems = items.filter((item) => !item.advanced);
   const advancedItems = items.filter((item) => item.advanced);
 
@@ -30,12 +31,13 @@ export function SecondaryNavigation() {
     >
       <div className="flex gap-1 overflow-x-auto px-gutter py-2 lg:px-gutter-lg motion-safe:scroll-smooth">
         {primaryItems.map(({ href, label }) => {
-          const active = isNavLinkActive(pathname, href);
+          const active = activeHref === href;
           return (
             <Link
               key={href}
               href={href}
               aria-current={active ? "page" : undefined}
+              data-active={active ? "true" : undefined}
               className={cn(
                 "shrink-0 rounded-control px-3 py-2 text-sm font-medium transition-colors",
                 "min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
@@ -54,12 +56,13 @@ export function SecondaryNavigation() {
               Advanced
             </span>
             {advancedItems.map(({ href, label }) => {
-              const active = isNavLinkActive(pathname, href);
+              const active = activeHref === href;
               return (
                 <Link
                   key={href}
                   href={href}
                   aria-current={active ? "page" : undefined}
+                  data-active={active ? "true" : undefined}
                   className={cn(
                     "shrink-0 rounded-control px-3 py-2 text-sm font-medium transition-colors",
                     "min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",

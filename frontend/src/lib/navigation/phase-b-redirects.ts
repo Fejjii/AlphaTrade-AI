@@ -11,7 +11,9 @@ export type PhaseBRedirect = {
 
 export const PHASE_B_REDIRECTS: readonly PhaseBRedirect[] = [
   { source: "/billing", destination: "/settings/billing", permanent: false },
-  { source: "/usage", destination: "/settings/usage", permanent: false },
+  // Billing & Usage share one canonical Settings route.
+  { source: "/usage", destination: "/settings/billing", permanent: false },
+  { source: "/settings/usage", destination: "/settings/billing", permanent: false },
   { source: "/invitations", destination: "/settings/team", permanent: false },
   { source: "/audit", destination: "/settings/audit", permanent: false },
   { source: "/exchange", destination: "/settings/exchange", permanent: false },
@@ -29,6 +31,7 @@ export const PHASE_B_CAPABILITY_PATHS: readonly string[] = [
   "/backtests/example-id",
   "/portfolio",
   "/settings",
+  "/settings/billing",
   "/risk",
   "/workspace",
   "/proposals",

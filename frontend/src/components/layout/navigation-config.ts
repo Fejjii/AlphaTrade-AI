@@ -225,10 +225,9 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
     destinationId: "settings",
     items: [
       { href: "/settings", label: "Profile", icon: Settings },
-      { href: "/settings/billing", label: "Billing", icon: CreditCard },
-      { href: "/settings/usage", label: "Usage", icon: Gauge },
+      // Billing & Usage are one L2 section; /risk config split is deferred to Phase C.
+      { href: "/settings/billing", label: "Billing & Usage", icon: CreditCard },
       { href: "/settings/team", label: "Team", icon: ClipboardCheck },
-      { href: "/risk", label: "Risk configuration", icon: Shield },
       { href: "/settings/audit", label: "Audit", icon: Activity, advanced: true },
       { href: "/settings/exchange", label: "Exchange diagnostics", icon: Radio, advanced: true },
     ],
@@ -326,7 +325,22 @@ export function isNavLinkActive(pathname: string, href: string): boolean {
   if (href === "/settings") return pathname === "/settings";
   if (href === "/journal") return pathname === "/journal";
   if (href === "/risk") return pathname === "/risk" || pathname.startsWith("/risk/");
+  if (href === "/alerts") return pathname === "/alerts" || pathname.startsWith("/alerts/");
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * Exactly one secondary link may be current: prefer the longest matching href.
+ * Dynamic detail routes without a more-specific item keep the parent match.
+ */
+export function resolveSecondaryActiveHref(
+  pathname: string,
+  items: readonly NavLink[],
+): string | null {
+  const matches = items
+    .filter((item) => isNavLinkActive(pathname, item.href))
+    .sort((a, b) => b.href.length - a.href.length);
+  return matches[0]?.href ?? null;
 }
 
 export function isPrimaryDestinationActive(pathname: string, destination: PrimaryDestination): boolean {

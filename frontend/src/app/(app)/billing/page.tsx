@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useState } from "react";
 
 import { QuotaPanel } from "@/components/usage/QuotaPanel";
@@ -100,10 +99,10 @@ export default function BillingPage() {
 
           <QuotaPanel quota={data.quota} />
           <p className="text-xs text-zinc-500">
-            <Link href="/settings/usage" className="text-emerald-400 hover:underline">
-              View full usage dashboard
-            </Link>{" "}
-            for cost source labels and event history.
+            <a href="#usage" className="text-emerald-400 hover:underline">
+              View usage details
+            </a>{" "}
+            in the Billing &amp; Usage section below (when opened from Settings).
           </p>
 
           <section className="space-y-3">
