@@ -134,5 +134,12 @@ describe("validationDisplay", () => {
     expect(
       outcomeStatusLabel(null, { resultAvailable: true, resultNotRecorded: true }),
     ).toBe("Outcome not recorded");
+    expect(outcomeStatusLabel(null, { resultState: "loading" })).toBe("Loading outcome…");
+    expect(outcomeStatusLabel(null, { resultState: "unavailable" })).toBe(
+      "Outcome source unavailable",
+    );
+    expect(outcomeStatusLabel(null, { resultState: "confirmed_not_recorded" })).toBe(
+      "Outcome not recorded",
+    );
   });
 });

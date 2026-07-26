@@ -2,29 +2,44 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/client";
+import type { PaperValidationRunSessionItem } from "@/lib/api/types";
 
 import PaperValidationRunSessionDetailPage from "./page";
 
-const sampleSession = {
-  session_id: "session-1",
-  run_plan_id: "plan-1",
-  candidate_id: "candidate-1",
-  draft_id: "draft-1",
-  source_alert_id: "alert-1",
-  symbol: "BTCUSDT",
-  timeframe: "15m",
-  condition: "order_block",
-  direction: "long",
-  risk_mode: "conservative" as const,
-  validation_window: "intraday",
-  observation_timeframe: "1h",
-  max_duration_minutes: 240,
-  session_status: "running" as const,
-  notes: "Observation notes.",
-  started_at: "2026-06-29T00:00:00Z",
-  ended_at: null,
-  created_at: "2026-06-29T00:00:00Z",
-};
+const {
+  mockUseAsyncDataState,
+  sampleSession,
+} = vi.hoisted(() => {
+  const session: PaperValidationRunSessionItem = {
+    session_id: "session-1",
+    run_plan_id: "plan-1",
+    candidate_id: "candidate-1",
+    draft_id: "draft-1",
+    source_alert_id: "alert-1",
+    symbol: "BTCUSDT",
+    timeframe: "15m",
+    condition: "order_block",
+    direction: "long",
+    risk_mode: "conservative",
+    validation_window: "intraday",
+    observation_timeframe: "1h",
+    max_duration_minutes: 240,
+    session_status: "running",
+    notes: "Observation notes.",
+    started_at: "2026-06-29T00:00:00Z",
+    ended_at: null,
+    created_at: "2026-06-29T00:00:00Z",
+  };
+  return {
+    sampleSession: session,
+    mockUseAsyncDataState: {
+      data: session,
+      loading: false,
+      error: null as string | null,
+      reload: vi.fn(),
+    },
+  };
+});
 
 const mockSessionObservations = vi.fn();
 const mockGetSessionResult = vi.fn();
@@ -34,17 +49,14 @@ const mockUpdateRunSessionStatus = vi.fn();
 const mockGetRunSession = vi.fn();
 const mockReload = vi.fn();
 
+mockUseAsyncDataState.reload = mockReload;
+
 vi.mock("next/navigation", () => ({
   useParams: () => ({ sessionId: "session-1" }),
 }));
 
 vi.mock("@/hooks/useAsyncData", () => ({
-  useAsyncData: () => ({
-    data: sampleSession,
-    loading: false,
-    error: null,
-    reload: mockReload,
-  }),
+  useAsyncData: () => mockUseAsyncDataState,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -63,6 +75,9 @@ vi.mock("@/lib/api", () => ({
 
 describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", () => {
   beforeEach(() => {
+    mockUseAsyncDataState.data = sampleSession;
+    mockUseAsyncDataState.loading = false;
+    mockUseAsyncDataState.error = null;
     mockSessionObservations.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     mockGetSessionResult.mockRejectedValue(
       new ApiError("Session result not found.", 404, {}),
@@ -119,13 +134,43 @@ describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", (
     render(<PaperValidationRunSessionDetailPage />);
 
     expect(screen.getByTestId("paper-run-session-result-loading")).toBeInTheDocument();
+    expect(screen.getByTestId("outcome-result-loading")).toBeInTheDocument();
     expect(screen.queryByTestId("paper-run-session-result-form")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-result-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-retry-extras")).not.toBeInTheDocument();
     expect(screen.getByTestId("paper-run-session-mark-completed")).toBeDisabled();
 
     rejectResult(new ApiError("Session result not found.", 404, {}));
     await waitFor(() => {
       expect(screen.getByTestId("paper-run-session-result-form")).toBeInTheDocument();
     });
+  });
+
+  it("shows neutral observation loading without unavailable, retry, or false zero", async () => {
+    let resolveObs!: (value: unknown) => void;
+    mockSessionObservations.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveObs = resolve;
+        }),
+    );
+    render(<PaperValidationRunSessionDetailPage />);
+
+    expect(screen.getByTestId("paper-run-session-obs-loading")).toBeInTheDocument();
+    expect(screen.getByTestId("outcome-obs-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("paper-run-session-obs-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-obs-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("paper-run-session-obs-retry")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-retry-extras")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("paper-run-session-obs-empty")).not.toBeInTheDocument();
+
+    resolveObs({ items: [], total: 0, limit: 50, offset: 0 });
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-obs-empty")).toHaveTextContent(
+        /No observations recorded yet/i,
+      );
+    });
+    expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("0");
   });
 
   it("shows the recording form only after confirmed 404 not-recorded", async () => {
@@ -165,6 +210,67 @@ describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", (
     });
     expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("unavailable");
     expect(screen.queryByText(/No observations recorded yet/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("paper-run-session-obs-retry")).toBeInTheDocument();
+  });
+
+  it("shows retrying observation state without unavailable while pending", async () => {
+    let resolveObsRetry!: (value: unknown) => void;
+    mockSessionObservations
+      .mockRejectedValueOnce(new Error("obs down"))
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveObsRetry = resolve;
+          }),
+      );
+    render(<PaperValidationRunSessionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-obs-unavailable")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("paper-run-session-obs-retry"));
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-obs-retrying")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("paper-run-session-obs-unavailable")).not.toBeInTheDocument();
+
+    resolveObsRetry({ items: [], total: 0, limit: 50, offset: 0 });
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-obs-empty")).toBeInTheDocument();
+    });
+  });
+
+  it("shows retrying outcome state without unavailable while pending", async () => {
+    let rejectResultRetry!: (error: unknown) => void;
+    mockGetSessionResult
+      .mockRejectedValueOnce(new ApiError("server error", 500, {}))
+      .mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            rejectResultRetry = reject;
+          }),
+      );
+    render(<PaperValidationRunSessionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-unavailable")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("paper-run-session-result-retry"));
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-loading")).toHaveTextContent(
+        /Retrying outcome source/i,
+      );
+      expect(screen.getByTestId("outcome-result-loading")).toHaveTextContent(
+        /Retrying outcome source/i,
+      );
+    });
+    expect(screen.queryByTestId("paper-run-session-result-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-result-unavailable")).not.toBeInTheDocument();
+
+    rejectResultRetry(new ApiError("Session result not found.", 404, {}));
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-form")).toBeInTheDocument();
+    });
   });
 
   it("retries extras without requiring main session reload", async () => {
@@ -254,5 +360,22 @@ describe("PaperValidationRunSessionDetailPage Slice 82/83 / Phase C2 honesty", (
         }),
       );
     });
+  });
+
+  it("uses historical wording for completed sessions with no recorded outcome", async () => {
+    mockUseAsyncDataState.data = {
+      ...sampleSession,
+      session_status: "completed",
+      ended_at: "2026-06-29T02:00:00Z",
+    };
+    render(<PaperValidationRunSessionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-run-session-result-not-recorded")).toHaveTextContent(
+        /No outcome was recorded for this completed session/i,
+      );
+    });
+    expect(screen.queryByTestId("paper-run-session-outcome-required")).not.toBeInTheDocument();
+    expect(screen.queryByText(/before marking completed/i)).not.toBeInTheDocument();
   });
 });

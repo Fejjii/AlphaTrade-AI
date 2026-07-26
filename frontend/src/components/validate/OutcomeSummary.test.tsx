@@ -11,7 +11,7 @@ describe("OutcomeSummary", () => {
   it("shows high-level observation and outcome summary with progressive disclosure", () => {
     render(
       <OutcomeSummary
-        observationsAvailable
+        observationsState="available"
         observations={[
           {
             observation_id: "obs-1",
@@ -24,7 +24,7 @@ describe("OutcomeSummary", () => {
             created_at: "2026-07-26T13:30:00.000Z",
           },
         ]}
-        resultAvailable
+        resultState="recorded"
         result={{
           result_id: "res-1",
           run_session_id: "sess-1",
@@ -55,13 +55,32 @@ describe("OutcomeSummary", () => {
     expect(screen.getByText(/Wait for confirmation/)).toBeInTheDocument();
   });
 
+  it("shows neutral loading states without unavailable or retry", () => {
+    render(
+      <OutcomeSummary
+        observations={null}
+        observationsState="loading"
+        result={null}
+        resultState="loading"
+        onRetryExtras={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId("outcome-obs-loading")).toHaveTextContent(/Loading observations/i);
+    expect(screen.getByTestId("outcome-result-loading")).toHaveTextContent(/Loading outcome source/i);
+    expect(screen.queryByTestId("outcome-obs-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-result-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outcome-retry-extras")).not.toBeInTheDocument();
+    expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("…");
+    expect(screen.queryByText(/^0$/)).not.toBeInTheDocument();
+  });
+
   it("keeps unavailable observation/result states honest", () => {
     render(
       <OutcomeSummary
         observations={null}
-        observationsAvailable={false}
+        observationsState="unavailable"
         result={null}
-        resultAvailable={false}
+        resultState="unavailable"
         resultError="down"
         onRetryExtras={() => undefined}
       />,
@@ -78,14 +97,39 @@ describe("OutcomeSummary", () => {
     render(
       <OutcomeSummary
         observations={[]}
-        observationsAvailable
+        observationsState="available"
         result={null}
-        resultAvailable
-        resultNotRecorded
+        resultState="confirmed_not_recorded"
       />,
     );
     expect(screen.getByTestId("outcome-not-recorded")).toHaveTextContent(/Outcome not recorded/i);
     expect(screen.queryByTestId("outcome-result-unavailable")).not.toBeInTheDocument();
     expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("0");
+  });
+
+  it("shows refreshing label while observations remain visible", () => {
+    render(
+      <OutcomeSummary
+        observations={[
+          {
+            observation_id: "obs-1",
+            run_session_id: "sess-1",
+            run_plan_id: "plan-1",
+            observation_kind: "general_note",
+            observed_price: null,
+            observed_at: "2026-07-26T13:30:00.000Z",
+            note: null,
+            created_at: "2026-07-26T13:30:00.000Z",
+          },
+        ]}
+        observationsState="available"
+        observationsRefreshing
+        result={null}
+        resultState="loading"
+      />,
+    );
+    expect(screen.getByTestId("outcome-obs-refreshing")).toHaveTextContent(/Refreshing observations/i);
+    expect(screen.getByTestId("outcome-observation-count")).toHaveTextContent("1");
+    expect(screen.queryByTestId("outcome-obs-unavailable")).not.toBeInTheDocument();
   });
 });

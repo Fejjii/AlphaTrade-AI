@@ -15,13 +15,17 @@ export {
   loadObservationsSource,
   loadRecentSessionResults,
   loadSessionResultSource,
+  resultSourceStateFromLoad,
+  sessionObservationUiStateFromLoad,
   sessionOutcomeUiStateFromLoad,
   summarizeOutcomeCoverage,
 } from "@/components/validate/sessionExtras";
 export type {
+  ObservationSourceState,
   OutcomeCoverage,
   OutcomeCoverageStatus,
   RecentResultLoad,
+  ResultSourceState,
   SessionOutcomeUiState,
   SessionResultLoad,
 } from "@/components/validate/sessionExtras";

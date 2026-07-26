@@ -44,6 +44,16 @@ export type SessionOutcomeUiState =
   | "confirmed_not_recorded"
   | "unavailable";
 
+/** Explicit observation source state for session detail / OutcomeSummary honesty. */
+export type ObservationSourceState = "loading" | "available" | "unavailable";
+
+/** Explicit outcome source state for session detail / OutcomeSummary honesty. */
+export type ResultSourceState =
+  | "loading"
+  | "recorded"
+  | "confirmed_not_recorded"
+  | "unavailable";
+
 export function isSessionResultNotFound(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const status = (error as { status?: unknown }).status;
@@ -143,12 +153,28 @@ export function summarizeOutcomeCoverage(recentResults: RecentResultLoad[]): Out
   };
 }
 
-export function sessionOutcomeUiStateFromLoad(
+export function sessionObservationUiStateFromLoad(
+  obs: SourceResult<PaperValidationSessionObservationItem[]>,
+  options?: { loading?: boolean },
+): ObservationSourceState {
+  if (options?.loading) return "loading";
+  if (!obs.available) return "unavailable";
+  return "available";
+}
+
+export function resultSourceStateFromLoad(
   result: SessionResultLoad,
   options?: { loading?: boolean },
-): SessionOutcomeUiState {
+): ResultSourceState {
   if (options?.loading) return "loading";
   if (!result.available) return "unavailable";
   if (result.resultNotRecorded || result.data == null) return "confirmed_not_recorded";
   return "recorded";
+}
+
+export function sessionOutcomeUiStateFromLoad(
+  result: SessionResultLoad,
+  options?: { loading?: boolean },
+): SessionOutcomeUiState {
+  return resultSourceStateFromLoad(result, options);
 }

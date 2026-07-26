@@ -6,6 +6,8 @@ import {
   loadObservationsSource,
   loadRecentSessionResults,
   loadSessionResultSource,
+  resultSourceStateFromLoad,
+  sessionObservationUiStateFromLoad,
   sessionOutcomeUiStateFromLoad,
   summarizeOutcomeCoverage,
 } from "@/components/validate/sessionExtras";
@@ -219,6 +221,73 @@ describe("sessionExtras", () => {
     ).toBe("confirmed_not_recorded");
     expect(
       sessionOutcomeUiStateFromLoad({
+        data: null,
+        available: false,
+        error: "down",
+        fallbackUsed: false,
+        resultNotRecorded: false,
+      }),
+    ).toBe("unavailable");
+  });
+
+  it("maps observation source states honestly", () => {
+    expect(
+      sessionObservationUiStateFromLoad(
+        { data: null, available: false, error: null, fallbackUsed: false },
+        { loading: true },
+      ),
+    ).toBe("loading");
+    expect(
+      sessionObservationUiStateFromLoad({
+        data: [],
+        available: true,
+        error: null,
+        fallbackUsed: false,
+      }),
+    ).toBe("available");
+    expect(
+      sessionObservationUiStateFromLoad({
+        data: null,
+        available: false,
+        error: "down",
+        fallbackUsed: false,
+      }),
+    ).toBe("unavailable");
+  });
+
+  it("maps result source states honestly", () => {
+    expect(
+      resultSourceStateFromLoad(
+        {
+          data: null,
+          available: false,
+          error: null,
+          fallbackUsed: false,
+          resultNotRecorded: false,
+        },
+        { loading: true },
+      ),
+    ).toBe("loading");
+    expect(
+      resultSourceStateFromLoad({
+        data: result(),
+        available: true,
+        error: null,
+        fallbackUsed: false,
+        resultNotRecorded: false,
+      }),
+    ).toBe("recorded");
+    expect(
+      resultSourceStateFromLoad({
+        data: null,
+        available: true,
+        error: null,
+        fallbackUsed: false,
+        resultNotRecorded: true,
+      }),
+    ).toBe("confirmed_not_recorded");
+    expect(
+      resultSourceStateFromLoad({
         data: null,
         available: false,
         error: "down",

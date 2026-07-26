@@ -142,9 +142,17 @@ export function runSessionNextAction(session: PaperValidationRunSessionItem): st
 
 export function outcomeStatusLabel(
   result: PaperValidationSessionResultItem | null,
-  options?: { resultAvailable?: boolean; resultNotRecorded?: boolean },
+  options?: {
+    resultAvailable?: boolean;
+    resultNotRecorded?: boolean;
+    resultState?: "loading" | "recorded" | "confirmed_not_recorded" | "unavailable";
+  },
 ): string {
   if (result) return result.outcome.replaceAll("_", " ");
+  if (options?.resultState === "loading") return "Loading outcome…";
+  if (options?.resultState === "unavailable") return "Outcome source unavailable";
+  if (options?.resultState === "confirmed_not_recorded") return "Outcome not recorded";
+  if (options?.resultState === "recorded") return "Outcome recorded";
   if (options?.resultAvailable === false) return "Outcome source unavailable";
   if (options?.resultNotRecorded || options?.resultAvailable) return "Outcome not recorded";
   return "Outcome status unknown";

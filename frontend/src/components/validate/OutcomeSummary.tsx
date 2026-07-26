@@ -5,6 +5,10 @@ import { useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
+  ObservationSourceState,
+  ResultSourceState,
+} from "@/components/validate/sessionExtras";
+import type {
   PaperValidationSessionObservationItem,
   PaperValidationSessionResultItem,
 } from "@/lib/api/types";
@@ -16,26 +20,34 @@ import {
 
 type OutcomeSummaryProps = {
   observations: PaperValidationSessionObservationItem[] | null;
-  observationsAvailable: boolean;
+  observationsState: ObservationSourceState;
+  /** When true, observations remain visible but the source is refreshing. */
+  observationsRefreshing?: boolean;
   result: PaperValidationSessionResultItem | null;
-  /** True when the outcome GET succeeded (including confirmed not-recorded). */
-  resultAvailable: boolean;
-  resultNotRecorded?: boolean;
+  resultState: ResultSourceState;
+  resultRetrying?: boolean;
   resultError?: string | null;
   onRetryExtras?: () => void;
 };
 
 export function OutcomeSummary({
   observations,
-  observationsAvailable,
+  observationsState,
+  observationsRefreshing = false,
   result,
-  resultAvailable,
-  resultNotRecorded = false,
+  resultState,
+  resultRetrying = false,
   resultError = null,
   onRetryExtras,
 }: OutcomeSummaryProps) {
   const detailsId = useId();
   const [expanded, setExpanded] = useState(false);
+  const observationsLoading = observationsState === "loading";
+  const observationsUnavailable = observationsState === "unavailable";
+  const observationsAvailable = observationsState === "available";
+  const resultLoading = resultState === "loading";
+  const resultUnavailable = resultState === "unavailable";
+  const resultNotRecorded = resultState === "confirmed_not_recorded";
   const latest = observationsAvailable
     ? (observations ?? []).slice().sort((a, b) => {
         const aMs = Date.parse(a.observed_at ?? a.created_at);
@@ -44,7 +56,7 @@ export function OutcomeSummary({
       })[0]
     : undefined;
   const observationCount = observationsAvailable ? (observations?.length ?? 0) : null;
-  const statusLabel = outcomeStatusLabel(result, { resultAvailable, resultNotRecorded });
+  const statusLabel = outcomeStatusLabel(result, { resultState });
 
   return (
     <section
@@ -64,23 +76,40 @@ export function OutcomeSummary({
         <Badge variant={result ? "info" : "muted"}>{statusLabel}</Badge>
       </div>
 
-      {!observationsAvailable ? (
+      {observationsLoading ? (
+        <p role="status" className="text-sm text-text-muted" data-testid="outcome-obs-loading">
+          Loading observations…
+        </p>
+      ) : null}
+      {observationsRefreshing ? (
+        <p role="status" className="text-sm text-text-muted" data-testid="outcome-obs-refreshing">
+          Refreshing observations…
+        </p>
+      ) : null}
+      {observationsUnavailable ? (
         <p role="status" className="text-sm text-warning" data-testid="outcome-obs-unavailable">
           Observation source unavailable.
         </p>
       ) : null}
-      {!resultAvailable ? (
+
+      {resultLoading ? (
+        <p role="status" className="text-sm text-text-muted" data-testid="outcome-result-loading">
+          {resultRetrying ? "Retrying outcome source…" : "Loading outcome source…"}
+        </p>
+      ) : null}
+      {resultUnavailable ? (
         <p role="status" className="text-sm text-warning" data-testid="outcome-result-unavailable">
           Outcome source unavailable
           {resultError ? `: ${resultError}` : "."} Do not treat this as confirmed not recorded.
         </p>
       ) : null}
-      {resultAvailable && resultNotRecorded && !result ? (
+      {resultNotRecorded && !result ? (
         <p role="status" className="text-sm text-text-muted" data-testid="outcome-not-recorded">
           Outcome not recorded.
         </p>
       ) : null}
-      {onRetryExtras && (!observationsAvailable || !resultAvailable) ? (
+
+      {onRetryExtras && (observationsUnavailable || resultUnavailable) ? (
         <Button
           type="button"
           size="sm"
@@ -96,7 +125,11 @@ export function OutcomeSummary({
         <div>
           <dt className="text-caption text-text-muted">Observation count</dt>
           <dd className="font-medium text-text-primary" data-testid="outcome-observation-count">
-            {observationCount == null ? "unavailable" : String(observationCount)}
+            {observationsLoading
+              ? "…"
+              : observationCount == null
+                ? "unavailable"
+                : String(observationCount)}
           </dd>
         </div>
         <div>
@@ -104,9 +137,11 @@ export function OutcomeSummary({
           <dd className="font-medium text-text-primary" data-testid="outcome-latest-observation">
             {latest
               ? `${latest.observation_kind.replaceAll("_", " ")} · ${formatTimestamp(latest.observed_at ?? latest.created_at) ?? "unavailable"}`
-              : observationsAvailable
-                ? "None recorded"
-                : "unavailable"}
+              : observationsLoading
+                ? "…"
+                : observationsAvailable
+                  ? "None recorded"
+                  : "unavailable"}
           </dd>
         </div>
         <div>
@@ -126,9 +161,13 @@ export function OutcomeSummary({
           <dd className="font-medium text-text-primary" data-testid="outcome-success-failure">
             {result
               ? `success ${result.success_criteria_met.replaceAll("_", " ")} · failure ${result.failure_criteria_met.replaceAll("_", " ")}`
-              : !resultAvailable
-                ? "unavailable"
-                : "not recorded"}
+              : resultLoading
+                ? "…"
+                : resultUnavailable
+                  ? "unavailable"
+                  : resultNotRecorded
+                    ? "not recorded"
+                    : "not recorded"}
           </dd>
         </div>
         <div>
@@ -136,9 +175,11 @@ export function OutcomeSummary({
           <dd className="font-medium text-text-primary" data-testid="outcome-discipline">
             {result
               ? result.discipline_assessment.replaceAll("_", " ")
-              : !resultAvailable
-                ? "unavailable"
-                : "not recorded"}
+              : resultLoading
+                ? "…"
+                : resultUnavailable
+                  ? "unavailable"
+                  : "not recorded"}
           </dd>
         </div>
       </dl>
@@ -169,7 +210,9 @@ export function OutcomeSummary({
         data-testid="outcome-details"
         className="space-y-2"
       >
-        {!observationsAvailable ? (
+        {observationsLoading ? (
+          <p className="text-sm text-text-muted">Loading observation details…</p>
+        ) : observationsUnavailable ? (
           <p className="text-sm text-warning">Cannot expand — observation source unavailable.</p>
         ) : (observations?.length ?? 0) === 0 ? (
           <p className="text-sm text-text-muted">No observations recorded for this session.</p>
