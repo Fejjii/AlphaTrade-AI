@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 DONE; Phase C2 Validate pipeline in review) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 DONE; Phase C2 Validate pipeline honesty corrections in review) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -556,11 +556,17 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   source availability, `OutcomeSummary`); SourceResult honesty on stage lists;
   preserved detail routes with related-stage links; confirmed-paper posture;
   Risk BLOCK no override; no auto-promote/start; no backend/API/migration changes.
-  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — tip head `7beb63e`
-  (implementation `11642cd`); complete CI runs 30214795665 (impl) and
-  30215560898 (tip) success (frontend, backend, docker-build,
-  deployment-safety, evaluation, e2e-smoke). Local: 469 frontend unit tests,
-  lint/typecheck/build green.
+  Honesty correction pass: independent session observation/outcome SourceResult
+  loads (404 = not recorded; other failures = unavailable); hub outcome coverage
+  model (`completedSessionsProbed` / `resultsLoaded` / `resultsUnavailable` /
+  `resultsNotRecorded`); Setup Alert Review `?alert=` deep-link highlight/focus
+  without mutation; candidate→run-plan active preference + accessible plan links
+  with partial-data Retry when run plans fail.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — validated tip head
+  `7d63371` (honesty implementation `38e74d5` + typing follow-up `7d63371`);
+  complete tip CI run 30220150868 success (frontend, backend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). Prior tip CI 30216521529 on
+  `94c7f40`. Local: 505 frontend unit tests, lint/typecheck/build green.
 - Phase C remaining after C2: Journal redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
