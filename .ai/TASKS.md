@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 DONE; Phase C2 Validate pipeline honesty corrections in review) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 DONE; Phase C2 Validate pipeline in review) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -557,17 +557,20 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   preserved detail routes with related-stage links; confirmed-paper posture;
   Risk BLOCK no override; no auto-promote/start; no backend/API/migration changes.
   Honesty correction pass: independent session observation/outcome SourceResult
-  loads (404 = not recorded; other failures = unavailable); hub outcome coverage
-  model (`completedSessionsProbed` / `resultsLoaded` / `resultsUnavailable` /
-  `resultsNotRecorded`); Setup Alert Review `?alert=` deep-link highlight/focus
-  without mutation; candidate→run-plan active preference + accessible plan links
-  with partial-data Retry when run plans fail.
-  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — tip head `3288068`
-  (governance); validated implementation `7d63371` (honesty `38e74d5` + typing
-  follow-up); complete CI runs 30220150868 (`7d63371`) and 30220981661
-  (`3288068`) success (frontend, backend, docker-build, deployment-safety,
-  evaluation, e2e-smoke). Prior tip CI 30216521529 on `94c7f40`. Local: 505
-  frontend unit tests, lint/typecheck/build green.
+  loads (404 = not recorded; other failures = unavailable); Setup Alert Review
+  `?alert=` deep-link highlight/focus without mutation; candidate→run-plan
+  active preference + accessible plan links with partial-data Retry when run
+  plans fail. Final coverage/freshness pass: typed outcome coverage statuses
+  (`not_applicable` / `complete` / `partial` / `unavailable`) with separate
+  `renderable` / `fullyAvailable` / `errorCount`; partial Outcomes in
+  partial-data warning without Live freshness; session outcome UI states
+  (`loading` / `recorded` / `confirmed_not_recorded` / `unavailable`) gate the
+  recording form.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — validated
+  implementation tip `1fb21d0`; complete CI run 30222210844 success (frontend,
+  backend, docker-build, deployment-safety, evaluation, e2e-smoke). Prior
+  honesty tip `7d63371` CI 30220150868. Local: 512 frontend unit tests,
+  lint/typecheck/build green.
 - Phase C remaining after C2: Journal redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
