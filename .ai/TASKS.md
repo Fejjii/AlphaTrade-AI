@@ -562,11 +562,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `resultsNotRecorded`); Setup Alert Review `?alert=` deep-link highlight/focus
   without mutation; candidate→run-plan active preference + accessible plan links
   with partial-data Retry when run plans fail.
-  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — validated tip head
-  `7d63371` (honesty implementation `38e74d5` + typing follow-up `7d63371`);
-  complete tip CI run 30220150868 success (frontend, backend, docker-build,
-  deployment-safety, evaluation, e2e-smoke). Prior tip CI 30216521529 on
-  `94c7f40`. Local: 505 frontend unit tests, lint/typecheck/build green.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/33 — tip head `3288068`
+  (governance); validated implementation `7d63371` (honesty `38e74d5` + typing
+  follow-up); complete CI runs 30220150868 (`7d63371`) and 30220981661
+  (`3288068`) success (frontend, backend, docker-build, deployment-safety,
+  evaluation, e2e-smoke). Prior tip CI 30216521529 on `94c7f40`. Local: 505
+  frontend unit tests, lint/typecheck/build green.
 - Phase C remaining after C2: Journal redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
