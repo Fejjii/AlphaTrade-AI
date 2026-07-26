@@ -492,33 +492,50 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/28 merged
   (`853d96b`). Head commit `7ebc8df`.
 
-### AT-040 — Premium design-system foundation (Phase A)
-- Priority: P1 · Status: DONE · Dependencies: AT-039 · Risk: Low (frontend-only)
-- Safety classification: UI foundation; no trading/execution/risk-authority change
+### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B)
+- Priority: P1 · Status: DONE (Phase A + Phase B) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Safety classification: UI foundation / shell IA; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
   Stale/Blocked states, RiskBlock with no UI override, PaperModeIndicator,
   DataNumber), and adopt them on a small representative set of screens without
-  route or nav IA changes.
-- Branch: `feat/at-040-premium-design-system-foundation`
-- Deliverables: `frontend/src/styles/tokens.css`, tokenized Tailwind + globals,
+  route or nav IA changes (Phase A). Then implement AT-039 Phase B navigation and
+  app shell (eight destinations, desktop sidebar, mobile bottom nav + Menu sheet,
+  StatusStrip advice/execution/risk truth, TopBar page identity + freshness shell
+  interface + account control, Settings Billing & Usage consolidation).
+- Branch (Phase A): `feat/at-040-premium-design-system-foundation`
+- Branch (Phase B): `cursor/at040-phase-b-nav-shell-ae93`
+- Deliverables (Phase A): `frontend/src/styles/tokens.css`, tokenized Tailwind + globals,
   `frontend/src/components/ui/*` primitives, states updates, representative page
   adoption (Dashboard, TradingView signals, paper-signal orchestration, journal
   statistics, portfolio), guide `docs/product/at040_design_system_foundation.md`,
   vitest `design-system.test.tsx`.
+- Deliverables (Phase B): centralized `navigation-config.ts`, DesktopSidebar /
+  MobileBottomNavigation / MobileMenuSheet / SecondaryNavigation / StatusStrip /
+  TopBar / CommandMenu / `ShellFreshnessContext`, Billing & Usage at
+  `/settings/billing`, Portfolio ownership of `/risk`, session-dismissible advice
+  truth, e2e logout via account menu.
 - Validation: PR #29 CI run 30165820718 success (backend, frontend, docker-build,
   deployment-safety, evaluation, e2e-smoke). No `package.json` dependency adds;
   no routes removed; `nav-items.ts` unchanged; zero backend/API/migration files.
   Phase A hardening PR #30 CI run 30174563899 success; post-merge main CI run
   30178168238 success (backend, frontend, docker-build, deployment-safety,
-  evaluation, e2e-smoke). No deploy; live trading unchanged.
+  evaluation, e2e-smoke). Phase B PR #31 CI run 30200035610 success; post-merge
+  main CI run 30201145776 success (frontend, backend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). No deploy; live trading unchanged.
 - Recommended model: Cursor Grok 4.5
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/29 merged
   (`c414378`, CI run 30165820718). Head commit `34135be`. Phase A hardening PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/30 merged (`d988576`, CI run
   30174563899; post-merge main CI 30178168238). Hardening head `e9e930c`
   (TabsRoot shared id prefix + fail-closed paper-mode / limitations hardening).
-  Phases B–F remain.
+  Phase B PR https://github.com/Fejjii/AlphaTrade-AI/pull/31 merged (`fc148ff`,
+  pre-merge head `7f7818c`, CI run 30200035610; post-merge main CI 30201145776).
+  Phases C–F remain.
+- Phase C follow-ups (do not implement here): unknown-route identity should use
+  neutral terminology rather than Workspace; account-menu Escape closure should
+  explicitly restore focus to the trigger; real page-level freshness sources
+  should be wired into `ShellFreshnessContext`.
 
 ---
 
