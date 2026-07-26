@@ -534,12 +534,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Phase B PR https://github.com/Fejjii/AlphaTrade-AI/pull/31 merged (`fc148ff`,
   pre-merge head `7f7818c`, CI run 30200035610; post-merge main CI 30201145776).
   Phase C1 draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/32 remains
-  IN REVIEW on `feat/at040-phase-c1-daily-decision-loop` (correction evidence
-  `fab9291`; branch tip includes this governance note). Correction pass
-  recorded: SourceResult availability, runtime safety-truth matrix
-  (`isPaperModeConfirmed`), conservative shell freshness aggregation, signal
-  deep-link honesty, Plan signal context query, and session-only dismiss
-  labeling. Phases C2–F remain.
+  IN REVIEW on `feat/at040-phase-c1-daily-decision-loop` (final head
+  `ca6863f`; correction evidence `fab9291`; CI run 30205930061 success).
+  Correction pass recorded: SourceResult availability, runtime safety-truth
+  matrix (`isPaperModeConfirmed`), conservative shell freshness aggregation,
+  signal deep-link honesty, Plan signal context query, and session-only
+  dismiss labeling. Phases C2–F remain.
 - Phase C1 deliverables: Dashboard attention queue; Signals inbox on
   `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
   unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
