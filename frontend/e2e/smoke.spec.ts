@@ -157,7 +157,8 @@ test.describe("Browser happy path (local optional)", () => {
     await expect(page.getByRole("heading", { name: /ai trading workspace/i })).toBeVisible();
     await expect(page.getByText(/real off/i).first()).toBeVisible();
 
-    await page.getByRole("button", { name: /log out/i }).click();
+    await page.getByRole("button", { name: /account menu/i }).click();
+    await page.getByRole("menuitem", { name: /log out/i }).click();
     await expect(page).toHaveURL(/login/);
     await page.goto("/journal");
     await expect(page).toHaveURL(/login/);

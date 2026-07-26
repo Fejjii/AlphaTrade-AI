@@ -79,7 +79,8 @@ test.describe("AT-017 edge auth boundary", () => {
     await page.goto("/portfolio");
     await expect(page).toHaveURL(/\/portfolio/);
 
-    await page.getByRole("button", { name: /log out/i }).click();
+    await page.getByRole("button", { name: /account menu/i }).click();
+    await page.getByRole("menuitem", { name: /log out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 
     // Back navigation and direct URLs must not restore protected content.
