@@ -546,16 +546,6 @@ describe("Portfolio & Risk command centre", () => {
   });
 
   it("keeps portfolio filters wired and has no unsafe live CTAs", () => {
-    asyncState = {
-      data: completeData(),
-      loading: false,
-      error: null,
-      reload: vi.fn(),
-    };
-    // Exercise loader path for filter changes via useAsyncData mock passthrough
-    vi.mocked;
-    const useAsyncData = asyncState;
-    void useAsyncData;
     render(<PaperPortfolioPage />);
     fireEvent.change(screen.getByTestId("portfolio-filter-start-date"), {
       target: { value: "2026-01-01" },
@@ -563,6 +553,8 @@ describe("Portfolio & Risk command centre", () => {
     fireEvent.change(screen.getByTestId("portfolio-filter-source"), {
       target: { value: "proposal_flow" },
     });
+    expect(screen.getByTestId("portfolio-filter-start-date")).toHaveValue("2026-01-01");
+    expect(screen.getByTestId("portfolio-filter-source")).toHaveValue("proposal_flow");
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("paper-portfolio-related-links")).toHaveTextContent(/Risk settings/i);
