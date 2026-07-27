@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
-import type { PortfolioSourceFilter } from "@/lib/api/types";
+import type { PortfolioSourceFilter, UserStrategy } from "@/lib/api/types";
 
 import { formatDateRangeLabel } from "./format";
 import type { AnalyticsFilterState, AnalyticsTab, DatePreset } from "./useAnalyticsFilters";
@@ -29,6 +29,8 @@ type Draft = {
   symbol: string;
   timeframe: string;
   portfolioSource: PortfolioSourceFilter;
+  setupId: string;
+  userStrategyId: string;
 };
 
 function draftFromState(state: AnalyticsFilterState): Draft {
@@ -38,17 +40,23 @@ function draftFromState(state: AnalyticsFilterState): Draft {
     symbol: state.symbol ?? "",
     timeframe: state.timeframe ?? "",
     portfolioSource: state.portfolioSource ?? "all",
+    setupId: state.setupId ?? "",
+    userStrategyId: state.userStrategyId ?? "",
   };
 }
 
 export type AnalyticsFilterBarProps = {
   state: AnalyticsFilterState;
+  strategies?: UserStrategy[];
+  strategiesLoading?: boolean;
   onApplyDraft: (draft: {
     dateFrom?: string | null;
     dateTo?: string | null;
     symbol?: string | null;
     timeframe?: string | null;
     portfolioSource?: PortfolioSourceFilter | null;
+    setupId?: string | null;
+    userStrategyId?: string | null;
   }) => void;
   onApplyPreset: (preset: DatePreset) => void;
   onClear: () => void;
@@ -56,6 +64,8 @@ export type AnalyticsFilterBarProps = {
 
 export function AnalyticsFilterBar({
   state,
+  strategies = [],
+  strategiesLoading = false,
   onApplyDraft,
   onApplyPreset,
   onClear,
@@ -67,6 +77,7 @@ export function AnalyticsFilterBar({
   }, [state]);
 
   const showPortfolioSource = state.tab === "performance";
+  const showSetupFilters = state.tab === "setups";
 
   return (
     <section
@@ -134,6 +145,41 @@ export function AnalyticsFilterBar({
             </Select>
           </div>
         ) : null}
+        {showSetupFilters ? (
+          <>
+            <div className="space-y-1">
+              <Label htmlFor="analytics-setup-id">Journal setup ID</Label>
+              <Input
+                id="analytics-setup-id"
+                value={draft.setupId}
+                placeholder="setup-definition UUID"
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, setupId: event.target.value }))
+                }
+                data-testid="analytics-setup-id"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="analytics-strategy-id">Strategy</Label>
+              <Select
+                id="analytics-strategy-id"
+                value={draft.userStrategyId}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, userStrategyId: event.target.value }))
+                }
+                data-testid="analytics-strategy-id"
+                disabled={strategiesLoading}
+              >
+                <option value="">All strategies</option>
+                {strategies.map((strategy) => (
+                  <option key={strategy.id} value={strategy.id}>
+                    {strategy.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </>
+        ) : null}
         <Button
           type="button"
           onClick={() =>
@@ -143,6 +189,8 @@ export function AnalyticsFilterBar({
               symbol: draft.symbol.trim() || null,
               timeframe: draft.timeframe.trim() || null,
               portfolioSource: showPortfolioSource ? draft.portfolioSource : null,
+              setupId: showSetupFilters ? draft.setupId.trim() || null : undefined,
+              userStrategyId: showSetupFilters ? draft.userStrategyId.trim() || null : undefined,
             })
           }
           data-testid="analytics-apply-filters"
@@ -176,6 +224,10 @@ export function AnalyticsFilterBar({
         {state.timeframe ? ` · Timeframe ${state.timeframe}` : ""}
         {showPortfolioSource && state.portfolioSource && state.portfolioSource !== "all"
           ? ` · Source ${state.portfolioSource}`
+          : ""}
+        {showSetupFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showSetupFilters && state.userStrategyId
+          ? ` · strategy ${state.userStrategyId}`
           : ""}
       </p>
 

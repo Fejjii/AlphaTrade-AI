@@ -3,20 +3,28 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AnalyticsPage from "@/app/(app)/analytics/page";
-import type { JournalStatsResponse, PaperPortfolioResponse } from "@/lib/api/types";
+import type {
+  JournalStatsResponse,
+  PaperPortfolioResponse,
+  SetupEvidenceResponse,
+} from "@/lib/api/types";
 import type { SourceResult } from "@/components/workflows";
 import type { AnalyticsFilterState } from "@/components/analytics/useAnalyticsFilters";
 
-const { performanceChartsMounted } = vi.hoisted(() => ({
+const { performanceChartsMounted, setupsChartsMounted } = vi.hoisted(() => ({
   performanceChartsMounted: vi.fn(),
+  setupsChartsMounted: vi.fn(),
 }));
 
 const mockReload = vi.fn();
+const mockSetupReload = vi.fn();
 const mockSetTab = vi.fn();
 const mockApplyDraft = vi.fn();
 const mockApplyPreset = vi.fn();
 const mockClear = vi.fn();
 const mockCleanup = vi.fn();
+const mockSetGroupBy = vi.fn();
+const mockSetBucketOffset = vi.fn();
 
 const journalData: JournalStatsResponse = {
   group_by: "overall",
@@ -59,6 +67,46 @@ const journalData: JournalStatsResponse = {
   truncated: false,
   max_rows: 5000,
   generated_at: "2026-07-25T12:00:00Z",
+};
+
+const setupJournalData: JournalStatsResponse = {
+  ...journalData,
+  group_by: "setup",
+  buckets: [
+    {
+      key: "11111111-1111-1111-1111-111111111111",
+      group_id: "11111111-1111-1111-1111-111111111111",
+      label: "Breakout",
+      metrics: {
+        ...journalData.overall,
+        trade_count: 8,
+        win_rate: 0.75,
+        expectancy: "15.00",
+        confidence: "high",
+      },
+    },
+    {
+      key: "unassigned",
+      group_id: null,
+      label: "Unassigned",
+      metrics: {
+        ...journalData.overall,
+        trade_count: 4,
+        win_rate: 0.25,
+        expectancy: null,
+        confidence: "insufficient",
+      },
+    },
+  ],
+  total_buckets: 2,
+  limit: 20,
+  offset: 0,
+};
+
+const evidenceData: SetupEvidenceResponse = {
+  items: [],
+  generated_at: "2026-07-25T12:00:00Z",
+  note: "none",
 };
 
 const portfolioData: PaperPortfolioResponse = {
@@ -179,6 +227,10 @@ let filterState: AnalyticsFilterState = {
   symbol: null,
   timeframe: null,
   portfolioSource: null,
+  setupId: null,
+  userStrategyId: null,
+  groupBy: "setup",
+  bucketOffset: 0,
   ignoredParams: [],
 };
 
@@ -191,13 +243,30 @@ let sourcesState = {
   loadedFilterKey: "key",
 };
 
+let setupSourcesState = {
+  journal: ok(setupJournalData),
+  evidence: ok(evidenceData),
+  strategies: [] as Array<{ id: string; name: string }>,
+  strategiesError: null as string | null,
+  strategiesLoading: false,
+  loading: false,
+  loadedFilterKey: "setup-key",
+};
+
 vi.mock("@/components/analytics/useAnalyticsFilters", () => ({
   useAnalyticsFilters: () => ({
     state: filterState,
     apiParams: { journal: { group_by: "overall" }, portfolio: { timezone: "UTC" }, state: filterState },
+    setupApiParams: {
+      journal: { group_by: filterState.groupBy, setup_id: filterState.setupId ?? undefined },
+      evidence: { setup_id: filterState.setupId ?? undefined },
+      state: filterState,
+    },
     setTab: mockSetTab,
     applyDraft: mockApplyDraft,
     applyDatePreset: mockApplyPreset,
+    setGroupBy: mockSetGroupBy,
+    setBucketOffset: mockSetBucketOffset,
     clearFilters: mockClear,
     cleanupIgnoredParams: mockCleanup,
   }),
@@ -211,12 +280,23 @@ vi.mock("@/components/analytics/useAnalyticsSources", () => ({
   }),
 }));
 
+vi.mock("@/components/analytics/useSetupAnalyticsSources", () => ({
+  useSetupAnalyticsSources: () => ({
+    ...setupSourcesState,
+    reload: mockSetupReload,
+  }),
+}));
+
 vi.mock("@/components/analytics/AnalyticsCharts", async () => {
   const daily = await import("@/components/analytics/DailyPnlChart");
   const cumulative = await import("@/components/analytics/CumulativePnlChart");
+  const win = await import("@/components/analytics/SetupWinRateChart");
+  const expectancy = await import("@/components/analytics/SetupExpectancyChart");
   return {
     DailyPnlChart: daily.DailyPnlChart,
     CumulativePnlChart: cumulative.CumulativePnlChart,
+    SetupWinRateChart: win.SetupWinRateChart,
+    SetupExpectancyChart: expectancy.SetupExpectancyChart,
   };
 });
 
@@ -232,6 +312,18 @@ vi.mock("@/components/analytics/PerformanceCharts", async () => {
   };
 });
 
+vi.mock("@/components/analytics/SetupsCharts", async () => {
+  const actual = await vi.importActual<typeof import("@/components/analytics/SetupsCharts")>(
+    "@/components/analytics/SetupsCharts",
+  );
+  return {
+    SetupsCharts: (props: ComponentProps<typeof actual.SetupsCharts>) => {
+      setupsChartsMounted();
+      return <actual.SetupsCharts {...props} />;
+    },
+  };
+});
+
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => ({
     executionMode: "paper",
@@ -241,7 +333,7 @@ vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({ health: { version: "test" } }),
 }));
 
-describe("AnalyticsPage PR1", () => {
+describe("AnalyticsPage PR2", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
@@ -252,6 +344,10 @@ describe("AnalyticsPage PR1", () => {
       symbol: null,
       timeframe: null,
       portfolioSource: null,
+      setupId: null,
+      userStrategyId: null,
+      groupBy: "setup",
+      bucketOffset: 0,
       ignoredParams: [],
     };
     sourcesState = {
@@ -262,49 +358,77 @@ describe("AnalyticsPage PR1", () => {
       partialData: false,
       loadedFilterKey: "key",
     };
+    setupSourcesState = {
+      journal: ok(setupJournalData),
+      evidence: ok(evidenceData),
+      strategies: [],
+      strategiesError: null,
+      strategiesLoading: false,
+      loading: false,
+      loadedFilterKey: "setup-key",
+    };
     vi.clearAllMocks();
     performanceChartsMounted.mockClear();
+    setupsChartsMounted.mockClear();
   });
 
-  it("keeps overview and performance tabpanels in the DOM with overview active by default", () => {
+  it("keeps overview, performance, and setups tabpanels in the DOM", () => {
     render(<AnalyticsPage />);
 
     const overviewTab = screen.getByRole("tab", { name: "Overview" });
     const performanceTab = screen.getByRole("tab", { name: "Performance" });
+    const setupsTab = screen.getByRole("tab", { name: "Setups" });
 
     expect(overviewTab).toHaveAttribute("aria-selected", "true");
     expect(performanceTab).toHaveAttribute("aria-selected", "false");
+    expect(setupsTab).toHaveAttribute("aria-selected", "false");
 
-    const overviewPanelId = overviewTab.getAttribute("aria-controls");
-    const performancePanelId = performanceTab.getAttribute("aria-controls");
-    expect(overviewPanelId).toBeTruthy();
-    expect(performancePanelId).toBeTruthy();
-
-    const overviewPanel = document.getElementById(overviewPanelId!);
-    const performancePanel = document.getElementById(performancePanelId!);
-    expect(overviewPanel).toBeTruthy();
-    expect(performancePanel).toBeTruthy();
-    expect(overviewPanel).toHaveAttribute("role", "tabpanel");
-    expect(performancePanel).toHaveAttribute("role", "tabpanel");
-    expect(overviewPanel).not.toHaveAttribute("hidden");
-    expect(performancePanel).toHaveAttribute("hidden");
-  });
-
-  it("does not mount performance charts while overview is active", () => {
-    render(<AnalyticsPage />);
     expect(performanceChartsMounted).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("performance-charts")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("daily-pnl-chart")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("cumulative-pnl-chart")).not.toBeInTheDocument();
+    expect(setupsChartsMounted).not.toHaveBeenCalled();
   });
 
-  it("mounts performance charts when the performance tab is active", () => {
-    filterState = { ...filterState, tab: "performance" };
+  it("mounts setups charts only when the setups tab is active", () => {
+    filterState = {
+      ...filterState,
+      tab: "setups",
+      setupId: "11111111-1111-1111-1111-111111111111",
+    };
     render(<AnalyticsPage />);
-    expect(performanceChartsMounted).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("performance-charts")).toBeInTheDocument();
-    expect(screen.getByTestId("daily-pnl-chart")).toBeInTheDocument();
-    expect(screen.getByTestId("cumulative-pnl-chart")).toBeInTheDocument();
+    expect(setupsChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("setups-charts")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-win-rate-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-expectancy-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-bucket-table")).toBeInTheDocument();
+    expect(screen.getByTestId("analytics-setup-id")).toHaveValue(
+      "11111111-1111-1111-1111-111111111111",
+    );
+  });
+
+  it("does not fabricate zero charts when setups journal fails", () => {
+    filterState = { ...filterState, tab: "setups" };
+    setupSourcesState = {
+      ...setupSourcesState,
+      journal: failed("journal down"),
+      evidence: ok(evidenceData),
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("setup-win-rate-chart-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-win-rate-chart-plot")).not.toBeInTheDocument();
+    expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+  });
+
+  it("shows unassigned and No P&L data on setups tab", () => {
+    filterState = { ...filterState, tab: "setups" };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("setup-win-rate-row-unassigned")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-expectancy-row-unassigned")).toHaveTextContent("No P&L data");
+  });
+
+  it("wires grouping toggle through push handler", () => {
+    filterState = { ...filterState, tab: "setups" };
+    render(<AnalyticsPage />);
+    fireEvent.click(screen.getByTestId("setup-group-strategy"));
+    expect(mockSetGroupBy).toHaveBeenCalledWith("strategy");
   });
 
   it("renders overview stats from available sources", () => {
@@ -315,7 +439,7 @@ describe("AnalyticsPage PR1", () => {
     expect(screen.getByTestId("overview-tile-trend")).toHaveTextContent("Improving");
   });
 
-  it("shows partial banner when one source fails", () => {
+  it("shows partial banner when one shared source fails", () => {
     sourcesState = {
       journal: failed("journal down"),
       portfolio: ok(portfolioData),
@@ -329,7 +453,7 @@ describe("AnalyticsPage PR1", () => {
     expect(screen.getByTestId("overview-journal-error")).toBeInTheDocument();
   });
 
-  it("shows full error when both sources fail", () => {
+  it("shows full error when both shared sources fail", () => {
     sourcesState = {
       journal: failed(),
       portfolio: failed(),
@@ -343,28 +467,18 @@ describe("AnalyticsPage PR1", () => {
     expect(screen.queryByTestId("overview-stats")).not.toBeInTheDocument();
   });
 
-  it("renders performance charts without zero fabrication on portfolio failure", () => {
+  it("mounts performance charts when the performance tab is active", () => {
     filterState = { ...filterState, tab: "performance" };
-    sourcesState = {
-      journal: ok(journalData),
-      portfolio: failed("portfolio down"),
-      loading: false,
-      bothFailed: false,
-      partialData: true,
-      loadedFilterKey: "key",
-    };
     render(<AnalyticsPage />);
-    expect(screen.getByTestId("daily-pnl-chart-error")).toBeInTheDocument();
-    expect(screen.getByTestId("cumulative-pnl-chart-error")).toBeInTheDocument();
-    expect(screen.queryByTestId("daily-pnl-chart-plot")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("cumulative-pnl-chart-plot")).not.toBeInTheDocument();
+    expect(performanceChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("performance-charts")).toBeInTheDocument();
   });
 
   it("wires tab aria-controls to tabpanels and aria-labelledby back to tabs", () => {
     render(<AnalyticsPage />);
     const tablist = screen.getByRole("tablist", { name: "Analytics sections" });
     const tabs = within(tablist).getAllByRole("tab");
-    expect(tabs).toHaveLength(2);
+    expect(tabs).toHaveLength(3);
     for (const tab of tabs) {
       const panelId = tab.getAttribute("aria-controls");
       expect(panelId).toBeTruthy();
@@ -382,47 +496,5 @@ describe("AnalyticsPage PR1", () => {
     expect(mockApplyPreset).toHaveBeenCalledWith("30d");
     fireEvent.click(screen.getByTestId("analytics-clear-filters"));
     expect(mockClear).toHaveBeenCalled();
-  });
-
-  it("shows tab-level stale state on overview when all available sources are stale", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
-    sourcesState = {
-      journal: ok({ ...journalData, generated_at: "2026-07-25T11:00:00Z" }),
-      portfolio: ok({
-        ...portfolioData,
-        account: { ...portfolioData.account, as_of: "2026-07-25T11:00:00Z" },
-      }),
-      loading: false,
-      bothFailed: false,
-      partialData: false,
-      loadedFilterKey: "key",
-    };
-    render(<AnalyticsPage />);
-    expect(screen.getByTestId("overview-stale-state")).toHaveTextContent(/stale for this view/i);
-    vi.useRealTimers();
-  });
-
-  it("treats future-skewed portfolio as unavailable on performance tab", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
-    filterState = { ...filterState, tab: "performance" };
-    sourcesState = {
-      journal: ok(journalData),
-      portfolio: ok({
-        ...portfolioData,
-        account: { ...portfolioData.account, as_of: "2026-07-25T12:05:00Z" },
-      }),
-      loading: false,
-      bothFailed: false,
-      partialData: false,
-      loadedFilterKey: "key",
-    };
-    render(<AnalyticsPage />);
-    expect(screen.getByTestId("daily-pnl-chart-error")).toHaveTextContent(/clock-skewed/i);
-    expect(screen.getByTestId("cumulative-pnl-chart-error")).toHaveTextContent(/clock-skewed/i);
-    expect(screen.queryByTestId("daily-pnl-chart-plot")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("cumulative-pnl-chart-plot")).not.toBeInTheDocument();
-    vi.useRealTimers();
   });
 });

@@ -37,7 +37,7 @@ export function gateSourceByFreshness<T>(
 }
 
 export function tabSourcesStale(
-  tab: "overview" | "performance",
+  tab: "overview" | "performance" | "setups",
   journal: SourceResult<{ generated_at?: string | null }> | null,
   portfolio: SourceResult<{ account: { as_of?: string | null } }> | null,
   nowMs?: number,
@@ -48,7 +48,9 @@ export function tabSourcesStale(
           { source: journal, timestamp: journalFreshnessTimestamp(journal) },
           { source: portfolio, timestamp: portfolioFreshnessTimestamp(portfolio) },
         ]
-      : [{ source: portfolio, timestamp: portfolioFreshnessTimestamp(portfolio) }];
+      : tab === "setups"
+        ? [{ source: journal, timestamp: journalFreshnessTimestamp(journal) }]
+        : [{ source: portfolio, timestamp: portfolioFreshnessTimestamp(portfolio) }];
 
   const freshAvailable = entries.filter(({ source, timestamp }) => {
     if (!source?.available || !timestamp) return false;

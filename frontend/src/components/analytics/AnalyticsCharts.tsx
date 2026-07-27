@@ -19,3 +19,21 @@ export const CumulativePnlChart = dynamic(
     loading: () => <ChartLoadingFallback title="Is realised P&L compounding or churning?" />,
   },
 );
+
+export const SetupWinRateChart = dynamic(
+  () => import("./SetupWinRateChart").then((module) => module.SetupWinRateChart),
+  {
+    ssr: false,
+    loading: () => (
+      <ChartLoadingFallback title="Which setups win most often — with enough sample to matter?" />
+    ),
+  },
+);
+
+export const SetupExpectancyChart = dynamic(
+  () => import("./SetupExpectancyChart").then((module) => module.SetupExpectancyChart),
+  {
+    ssr: false,
+    loading: () => <ChartLoadingFallback title="Expectancy (mean net P&L per trade)" />,
+  },
+);
