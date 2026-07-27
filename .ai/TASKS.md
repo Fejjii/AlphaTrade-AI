@@ -582,8 +582,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   entries), recent entries, SourceResult honesty, quick-entry prefill from
   proposal/position context, verified validation-session link context (not
   persisted), confirmed-PAPER posture wording, preserved Import/Lessons/Knowledge/
-  Statistics/Comparison reachability. No backend/API/migration changes. No Lessons/
-  Knowledge/Portfolio/Analyze redesign.
+  Statistics/Comparison reachability. Correction pass: prefill relationship reset
+  on context change/loading/invalid/cleared; needs-journaling coverage model
+  (`journalCoverage`/`positionsCoverage`) suppresses definitive counts/actions when
+  journal entries are truncated. Validated implementation commit `d2aa71e`. No
+  backend/API/migration changes. No Lessons/Knowledge/Portfolio/Analyze redesign.
 - Phase C remaining after C3A: Lessons/Knowledge redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
