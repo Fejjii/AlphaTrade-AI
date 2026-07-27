@@ -19,7 +19,8 @@ export function RecentReviewedLessons({
 }: RecentReviewedLessonsProps) {
   const showItems =
     (result.status === "available" ||
-      result.status === "partial" ||
+      result.status === "partial_failure" ||
+      result.status === "partial_truncated" ||
       result.status === "filtered_empty") &&
     result.items &&
     result.items.length > 0;
@@ -39,6 +40,16 @@ export function RecentReviewedLessons({
           time when available.
         </p>
       </div>
+
+      {result.coverageMessage ? (
+        <div
+          role="status"
+          data-testid="lessons-recent-coverage"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          {result.coverageMessage}
+        </div>
+      ) : null}
 
       {result.status === "loading" ? (
         <p className="text-sm text-text-muted" data-testid="lessons-recent-loading">
@@ -61,21 +72,34 @@ export function RecentReviewedLessons({
         </div>
       ) : null}
 
-      {result.status === "partial" ? (
+      {result.status === "partial_failure" ? (
         <div
           role="status"
-          data-testid="lessons-recent-partial"
+          data-testid="lessons-recent-partial-failure"
           className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
         >
-          <p className="font-medium">Partial review history</p>
+          <p className="font-medium">Partial review history — source failure</p>
           <p className="mt-1">
             {[
-              !result.acceptedAvailable ? "Accepted lessons" : null,
-              !result.rejectedAvailable ? "Rejected lessons" : null,
+              result.acceptedFailed ? "Accepted lessons unavailable" : null,
+              result.rejectedFailed ? "Rejected lessons unavailable" : null,
             ]
               .filter(Boolean)
-              .join(", ")}{" "}
-            unavailable. Showing available history only.
+              .join("; ")}
+            . Showing available history only.
+          </p>
+        </div>
+      ) : null}
+
+      {result.status === "partial_truncated" ? (
+        <div
+          role="status"
+          data-testid="lessons-recent-partial-truncated"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          <p className="font-medium">Partial review history — incomplete coverage</p>
+          <p className="mt-1">
+            Loaded history may not represent all reviewed lessons. See coverage details above.
           </p>
         </div>
       ) : null}
@@ -87,6 +111,17 @@ export function RecentReviewedLessons({
           className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary"
         >
           No accepted or rejected lessons in loaded history yet.
+        </div>
+      ) : null}
+
+      {result.status === "truncated_empty" ? (
+        <div
+          role="status"
+          data-testid="lessons-recent-truncated-empty"
+          className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary"
+        >
+          No reviewed lessons appear in the loaded page, but history coverage is incomplete. An
+          empty history cannot be confirmed.
         </div>
       ) : null}
 
@@ -110,9 +145,9 @@ export function RecentReviewedLessons({
 
       {showItems ? (
         <ul className="grid gap-3" data-testid="lessons-recent-list">
-          {result.items!.map((lesson) => (
-            <li key={lesson.id} data-testid={`lessons-recent-item-${lesson.id}`}>
-              <LessonReviewCard lesson={lesson} highlighted={highlightedLessonId === lesson.id} />
+          {result.items!.map((item) => (
+            <li key={item.id} data-testid={`lessons-recent-item-${item.id}`}>
+              <LessonReviewCard lesson={item} highlighted={highlightedLessonId === item.id} />
             </li>
           ))}
         </ul>

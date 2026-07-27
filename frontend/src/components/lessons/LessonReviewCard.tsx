@@ -17,6 +17,8 @@ type LessonReviewCardProps = {
   lesson: LessonCandidate;
   highlighted?: boolean;
   busy?: boolean;
+  mutationLocked?: boolean;
+  deepLinkNotice?: boolean;
   mutationError?: string | null;
   onAccept?: () => void;
   onReject?: () => void;
@@ -24,10 +26,16 @@ type LessonReviewCardProps = {
   onReviewerNotesChange?: (value: string) => void;
 };
 
+export function formatLessonConfidence(confidence: string | null | undefined): string {
+  return confidence != null ? `confidence ${confidence}` : "confidence unavailable";
+}
+
 export function LessonReviewCard({
   lesson,
   highlighted = false,
   busy = false,
+  mutationLocked = false,
+  deepLinkNotice = false,
   mutationError = null,
   onAccept,
   onReject,
@@ -41,6 +49,7 @@ export function LessonReviewCard({
   const createdLabel = formatLessonTimestamp(lesson.created_at);
   const reviewedLabel = formatLessonTimestamp(lesson.reviewed_at);
   const showReviewerNotes = isPending && onReviewerNotesChange;
+  const controlsDisabled = mutationLocked;
 
   return (
     <Card
@@ -69,10 +78,18 @@ export function LessonReviewCard({
           </div>
         </div>
         <p className="text-xs text-zinc-500" data-testid="lesson-confidence">
-          {lesson.confidence ? `confidence ${lesson.confidence}` : "confidence unavailable"}
+          {formatLessonConfidence(lesson.confidence)}
         </p>
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-zinc-300">
+        {deepLinkNotice ? (
+          <p
+            className="rounded border border-amber-700/50 bg-amber-950/30 p-2 text-xs text-amber-100"
+            data-testid="lesson-deeplink-notice"
+          >
+            Loaded directly because this lesson is outside the current paginated queues.
+          </p>
+        ) : null}
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Lesson text</p>
           <p data-testid="lesson-text">{lesson.lesson_text}</p>
@@ -161,21 +178,27 @@ export function LessonReviewCard({
           <div className="flex flex-wrap gap-2" data-testid="lesson-actions">
             <button
               type="button"
-              disabled={busy}
+              disabled={controlsDisabled}
               aria-busy={busy}
               className="inline-flex h-10 min-w-[8rem] items-center justify-center rounded-control bg-emerald-700/80 px-4 text-sm font-medium text-white disabled:opacity-50"
               data-testid="accept-lesson-btn"
-              onClick={onAccept}
+              onClick={() => {
+                if (controlsDisabled) return;
+                onAccept();
+              }}
             >
               {busy ? "Working…" : "Accept"}
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={controlsDisabled}
               aria-busy={busy}
               className="inline-flex h-10 min-w-[8rem] items-center justify-center rounded-control border border-zinc-600 px-4 text-sm disabled:opacity-50"
               data-testid="reject-lesson-btn"
-              onClick={onReject}
+              onClick={() => {
+                if (controlsDisabled) return;
+                onReject();
+              }}
             >
               {busy ? "Working…" : "Reject"}
             </button>

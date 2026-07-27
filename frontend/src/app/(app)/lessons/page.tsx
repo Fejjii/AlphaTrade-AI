@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { JournalHubChrome } from "@/components/journal/JournalHubChrome";
 import {
@@ -17,6 +18,7 @@ import {
   RecentReviewedLessons,
   type AcceptPath,
 } from "@/components/lessons";
+import { coverageFromPage } from "@/components/lessons/lessonCoverage";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { describeSafetyPosture, loadSource, type SourceResult } from "@/components/workflows";
@@ -54,6 +56,8 @@ export default function LessonsPage() {
   const [mutationErrors, setMutationErrors] = useState<Record<string, string>>({});
   const [deepLinkLesson, setDeepLinkLesson] = useState<SourceResult<LessonCandidate> | null>(null);
   const [deepLinkLoading, setDeepLinkLoading] = useState(false);
+  const [mutationInFlight, setMutationInFlight] = useState(false);
+  const mutationGuardRef = useRef(false);
 
   useEffect(() => {
     if (!context.candidateId) {
@@ -100,12 +104,25 @@ export default function LessonsPage() {
   const pendingAvailable = Boolean(data?.pending.available);
   const acceptedAvailable = Boolean(data?.accepted.available);
   const rejectedAvailable = Boolean(data?.rejected.available);
+  const pendingCoverage =
+    pendingAvailable && data?.pending.data
+      ? coverageFromPage(data.pending.data.items.length, data.pending.data.total)
+      : null;
+  const acceptedCoverage =
+    acceptedAvailable && data?.accepted.data
+      ? coverageFromPage(data.accepted.data.items.length, data.accepted.data.total)
+      : null;
+  const rejectedCoverage =
+    rejectedAvailable && data?.rejected.data
+      ? coverageFromPage(data.rejected.data.items.length, data.rejected.data.total)
+      : null;
   const allFailed =
     Boolean(data) && !pendingAvailable && !acceptedAvailable && !rejectedAvailable;
   const partialData =
     Boolean(data) &&
     !allFailed &&
     (!pendingAvailable || !acceptedAvailable || !rejectedAvailable);
+  const mutationLocked = mutationInFlight || busyId !== null;
 
   const sourceStatuses = useMemo(() => {
     if (!data) return [];
@@ -134,12 +151,18 @@ export default function LessonsPage() {
     ];
   }, [data]);
 
-  const freshnessSources = sourceStatuses.map((source) => ({
-    name: source.name,
-    available: source.available,
-    required: source.required ?? true,
-    timestamp: source.timestamp,
-  }));
+  const freshnessSources = sourceStatuses.map((source) => {
+    const incompleteCoverage =
+      (source.name === "Pending lessons" && pendingCoverage === "truncated") ||
+      (source.name === "Accepted lessons" && acceptedCoverage === "truncated") ||
+      (source.name === "Rejected lessons" && rejectedCoverage === "truncated");
+    return {
+      name: source.name,
+      available: source.available,
+      required: source.required ?? true,
+      timestamp: incompleteCoverage ? null : source.timestamp,
+    };
+  });
 
   const loadedLessonIds = useMemo(() => {
     const ids = new Set<string>();
@@ -188,7 +211,12 @@ export default function LessonsPage() {
       strategyId: string | null;
     },
   ) => {
-    setBusyId(id);
+    if (mutationGuardRef.current || mutationLocked) return;
+    mutationGuardRef.current = true;
+    flushSync(() => {
+      setMutationInFlight(true);
+      setBusyId(id);
+    });
     setMutationErrors((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -203,17 +231,28 @@ export default function LessonsPage() {
         related_strategy_id: payload.strategyId ?? undefined,
       });
       setAcceptingId(null);
+      setMutationErrors((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       await reload();
     } catch (err) {
       throw err;
     } finally {
+      mutationGuardRef.current = false;
+      setMutationInFlight(false);
       setBusyId(null);
     }
   };
 
   const handleReject = async (lesson: LessonCandidate) => {
-    if (busyId) return;
-    setBusyId(lesson.id);
+    if (mutationGuardRef.current || mutationLocked) return;
+    mutationGuardRef.current = true;
+    flushSync(() => {
+      setMutationInFlight(true);
+      setBusyId(lesson.id);
+    });
     setMutationErrors((prev) => {
       const next = { ...prev };
       delete next[lesson.id];
@@ -221,6 +260,11 @@ export default function LessonsPage() {
     });
     try {
       await api.lessons.reject(lesson.id, { reviewer_notes: notes[lesson.id] ?? "" });
+      setMutationErrors((prev) => {
+        const next = { ...prev };
+        delete next[lesson.id];
+        return next;
+      });
       await reload();
     } catch (err) {
       setMutationErrors((prev) => ({
@@ -228,8 +272,15 @@ export default function LessonsPage() {
         [lesson.id]: err instanceof Error ? err.message : "Reject failed",
       }));
     } finally {
+      mutationGuardRef.current = false;
+      setMutationInFlight(false);
       setBusyId(null);
     }
+  };
+
+  const handleOpenAccept = (lesson: LessonCandidate) => {
+    if (mutationGuardRef.current || mutationLocked) return;
+    setAcceptingId(lesson.id);
   };
 
   const nextAction = useMemo(() => {
@@ -354,7 +405,7 @@ export default function LessonsPage() {
         </div>
       ) : null}
 
-      {deepLinkOnlyLesson && deepLinkOnlyLesson.status === "pending_review" ? (
+      {deepLinkOnlyLesson ? (
         <section
           aria-labelledby="lessons-deeplink-heading"
           data-testid="lessons-deeplink-only"
@@ -363,7 +414,8 @@ export default function LessonsPage() {
           <h2 id="lessons-deeplink-heading" className="text-lg font-semibold text-text-primary">
             Deep-linked lesson
           </h2>
-          {acceptingId === deepLinkOnlyLesson.id ? (
+          {deepLinkOnlyLesson.status === "pending_review" &&
+          acceptingId === deepLinkOnlyLesson.id ? (
             <LessonAcceptPanel
               lesson={deepLinkOnlyLesson}
               busy={busyId === deepLinkOnlyLesson.id}
@@ -374,14 +426,24 @@ export default function LessonsPage() {
             <LessonReviewCard
               lesson={deepLinkOnlyLesson}
               highlighted
+              deepLinkNotice
               busy={busyId === deepLinkOnlyLesson.id}
+              mutationLocked={mutationLocked}
               mutationError={mutationErrors[deepLinkOnlyLesson.id] ?? null}
               reviewerNotes={notes[deepLinkOnlyLesson.id]}
               onReviewerNotesChange={(value: string) =>
                 setNotes((prev) => ({ ...prev, [deepLinkOnlyLesson.id]: value }))
               }
-              onAccept={() => setAcceptingId(deepLinkOnlyLesson.id)}
-              onReject={() => void handleReject(deepLinkOnlyLesson)}
+              onAccept={
+                deepLinkOnlyLesson.status === "pending_review" && !mutationLocked
+                  ? () => handleOpenAccept(deepLinkOnlyLesson)
+                  : undefined
+              }
+              onReject={
+                deepLinkOnlyLesson.status === "pending_review"
+                  ? () => void handleReject(deepLinkOnlyLesson)
+                  : undefined
+              }
             />
           )}
         </section>
@@ -392,10 +454,11 @@ export default function LessonsPage() {
         highlightedLessonId={highlightedLessonId}
         acceptingId={acceptingId}
         busyId={busyId}
+        mutationLocked={mutationLocked}
         mutationErrors={mutationErrors}
         notes={notes}
         onNotesChange={(lessonId, value) => setNotes((prev) => ({ ...prev, [lessonId]: value }))}
-        onAccept={(lesson) => setAcceptingId(lesson.id)}
+        onAccept={handleOpenAccept}
         onAcceptSubmit={handleAcceptSubmit}
         onAcceptCancel={() => setAcceptingId(null)}
         onReject={(lesson) => void handleReject(lesson)}
@@ -414,7 +477,10 @@ export default function LessonsPage() {
         sources={sourceStatuses}
         onRetry={() => void reload()}
         limitations={[
+          ...(attentionQueue.coverageMessage ? [attentionQueue.coverageMessage] : []),
+          ...(recentReviewed.coverageMessage ? [recentReviewed.coverageMessage] : []),
           "Attention queue includes pending_review status only — not accepted or rejected history.",
+          "Counts and empty states require complete list coverage (items.length >= total).",
           "Journal links require related_journal_entry_id; related_trade_id is never treated as a journal-entry link.",
           "Validation session links use coaching analysis_metadata.source_session_ids when present.",
           "Deep link ?candidate= verifies the ID before highlight; invalid IDs do not open unrelated lessons.",

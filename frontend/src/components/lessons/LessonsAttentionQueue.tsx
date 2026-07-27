@@ -14,6 +14,7 @@ type LessonsAttentionQueueProps = {
   highlightedLessonId?: string | null;
   acceptingId?: string | null;
   busyId?: string | null;
+  mutationLocked?: boolean;
   mutationErrors?: Record<string, string>;
   notes?: Record<string, string>;
   onNotesChange?: (lessonId: string, value: string) => void;
@@ -38,6 +39,7 @@ export function LessonsAttentionQueue({
   highlightedLessonId,
   acceptingId,
   busyId,
+  mutationLocked = false,
   mutationErrors = {},
   notes = {},
   onNotesChange,
@@ -48,10 +50,7 @@ export function LessonsAttentionQueue({
   onRetry,
   sourceFilter,
 }: LessonsAttentionQueueProps) {
-  const showItems =
-    (queue.queueStatus === "available" || queue.queueStatus === "filtered_empty") &&
-    queue.items &&
-    queue.items.length > 0;
+  const showItems = queue.queueStatus === "available" && queue.items && queue.items.length > 0;
 
   return (
     <section
@@ -69,9 +68,20 @@ export function LessonsAttentionQueue({
             rules.
           </p>
         </div>
-        {queue.countDefinitive && queue.sourceAvailable ? (
+        {!queue.sourceAvailable ? (
+          <p className="text-sm text-text-muted" data-testid="lessons-attention-count-unavailable">
+            Count unavailable
+          </p>
+        ) : queue.countDefinitive ? (
           <p className="text-sm text-text-secondary" data-testid="lessons-attention-count">
             {queue.items?.length ?? 0} pending
+          </p>
+        ) : queue.countAvailable ? (
+          <p
+            className="text-sm text-text-secondary"
+            data-testid="lessons-attention-count-loaded"
+          >
+            {queue.items?.length ?? 0} of {queue.totalPendingCount} pending lessons loaded
           </p>
         ) : (
           <p className="text-sm text-text-muted" data-testid="lessons-attention-count-unavailable">
@@ -79,6 +89,16 @@ export function LessonsAttentionQueue({
           </p>
         )}
       </div>
+
+      {queue.coverageMessage ? (
+        <div
+          role="status"
+          data-testid="lessons-attention-coverage"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          {queue.coverageMessage}
+        </div>
+      ) : null}
 
       {queue.queueStatus === "loading" ? (
         <p className="text-sm text-text-muted" data-testid="lessons-attention-loading">
@@ -129,29 +149,60 @@ export function LessonsAttentionQueue({
         </div>
       ) : null}
 
+      {queue.queueStatus === "truncated_empty" ? (
+        <div
+          role="status"
+          data-testid="lessons-attention-truncated-empty"
+          className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary"
+        >
+          No pending lessons appear in the loaded page, but {queue.totalPendingCount} pending
+          lesson(s) exist in total. Coverage is incomplete — an all-clear cannot be confirmed.
+        </div>
+      ) : null}
+
+      {queue.queueStatus === "truncated_filtered_empty" ? (
+        <div
+          role="status"
+          data-testid="lessons-attention-truncated-filtered-empty"
+          className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary"
+        >
+          No coaching-source pending lessons were found in the loaded page. Additional pending
+          lessons may exist outside this page.
+          {sourceFilter === "coaching" ? (
+            <>
+              {" "}
+              <Link href="/coaching" className="underline">
+                Back to coaching
+              </Link>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
       {showItems ? (
         <ul className="grid gap-3" data-testid="lessons-attention-list">
-          {queue.items!.map((lesson) => (
-            <li key={lesson.id} data-testid={`lessons-attention-item-${lesson.id}`}>
-              {acceptingId === lesson.id && onAcceptSubmit && onAcceptCancel ? (
+          {queue.items!.map((item) => (
+            <li key={item.id} data-testid={`lessons-attention-item-${item.id}`}>
+              {acceptingId === item.id && onAcceptSubmit && onAcceptCancel ? (
                 <LessonAcceptPanel
-                  lesson={lesson}
-                  busy={busyId === lesson.id}
-                  onAccept={(payload) => onAcceptSubmit(lesson.id, payload)}
+                  lesson={item}
+                  busy={busyId === item.id}
+                  onAccept={(payload) => onAcceptSubmit(item.id, payload)}
                   onCancel={onAcceptCancel}
                 />
               ) : (
                 <LessonReviewCard
-                  lesson={lesson}
-                  highlighted={highlightedLessonId === lesson.id}
-                  busy={busyId === lesson.id}
-                  mutationError={mutationErrors[lesson.id] ?? null}
-                  reviewerNotes={notes[lesson.id]}
+                  lesson={item}
+                  highlighted={highlightedLessonId === item.id}
+                  busy={busyId === item.id}
+                  mutationLocked={mutationLocked}
+                  mutationError={mutationErrors[item.id] ?? null}
+                  reviewerNotes={notes[item.id]}
                   onReviewerNotesChange={
-                    onNotesChange ? (value) => onNotesChange(lesson.id, value) : undefined
+                    onNotesChange ? (value) => onNotesChange(item.id, value) : undefined
                   }
-                  onAccept={onAccept ? () => onAccept(lesson) : undefined}
-                  onReject={onReject ? () => onReject(lesson) : undefined}
+                  onAccept={onAccept ? () => onAccept(item) : undefined}
+                  onReject={onReject ? () => onReject(item) : undefined}
                 />
               )}
             </li>

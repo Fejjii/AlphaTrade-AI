@@ -1,6 +1,12 @@
 export { buildLessonsAttentionQueue, type AttentionQueueResult, type AttentionQueueStatus } from "@/components/lessons/buildLessonsAttention";
 export { buildRecentReviewedLessons, type RecentReviewedResult, type RecentReviewedStatus } from "@/components/lessons/buildRecentReviewed";
 export {
+  coverageFromPage,
+  pendingCoverageMessage,
+  reviewedCoverageMessage,
+  type SourceCoverage,
+} from "@/components/lessons/lessonCoverage";
+export {
   filterLessonsBySource,
   formatLessonTimestamp,
   formatMistakeType,
@@ -13,7 +19,7 @@ export {
 } from "@/components/lessons/lessonDisplay";
 export { LessonAcceptPanel, type AcceptPath } from "@/components/lessons/LessonAcceptPanel";
 export { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
-export { LessonReviewCard } from "@/components/lessons/LessonReviewCard";
+export { LessonReviewCard, formatLessonConfidence } from "@/components/lessons/LessonReviewCard";
 export { LessonsAttentionQueue } from "@/components/lessons/LessonsAttentionQueue";
 export {
   LessonsSourceAvailability,

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceResult } from "@/components/workflows/sourceResult";
@@ -6,6 +6,7 @@ import type { LessonCandidate, PaginatedLessonCandidates } from "@/lib/api/types
 
 import LessonsPage from "./page";
 import { LessonAcceptPanel } from "@/components/lessons/LessonAcceptPanel";
+import { LessonReviewCard } from "@/components/lessons/LessonReviewCard";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
@@ -219,11 +220,60 @@ describe("LessonsPage hub", () => {
     expect(screen.queryByTestId("lessons-attention-empty")).not.toBeInTheDocument();
   });
 
-  it("shows partial warning when rejected history fails", async () => {
+  it("shows partial failure warning when rejected history fails", async () => {
     asyncState.data!.rejected = failed("rejected down");
     render(<LessonsPage />);
-    expect(await screen.findByTestId("lessons-recent-partial")).toBeInTheDocument();
+    expect(await screen.findByTestId("lessons-recent-partial-failure")).toBeInTheDocument();
     expect(screen.getByTestId("lessons-recent-item-lesson-accepted")).toBeInTheDocument();
+  });
+
+  it("shows truncated pending coverage count", async () => {
+    asyncState.data!.pending = ok({
+      items: [pendingLesson],
+      total: 4,
+      limit: 1,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-count-loaded")).toHaveTextContent(
+      /1 of 4 pending lessons loaded/i,
+    );
+    expect(screen.getByTestId("lessons-attention-coverage")).toBeInTheDocument();
+  });
+
+  it("does not show definitive empty when truncated pending total is nonzero", async () => {
+    asyncState.data!.pending = ok({ items: [], total: 3, limit: 1, offset: 0 });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-truncated-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-attention-empty")).not.toBeInTheDocument();
+  });
+
+  it("shows coaching truncated filter empty wording", async () => {
+    search.set("source", "coaching");
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "journal-only", source_type: "journal" })],
+      total: 5,
+      limit: 1,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-truncated-filtered-empty")).toHaveTextContent(
+      /no coaching-source pending lessons were found in the loaded page/i,
+    );
+  });
+
+  it("shows accepted truncated history coverage", async () => {
+    asyncState.data!.accepted = ok({
+      items: [acceptedLesson],
+      total: 3,
+      limit: 1,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-recent-coverage")).toHaveTextContent(
+      /accepted history is truncated/i,
+    );
+    expect(screen.getByTestId("lessons-recent-partial-truncated")).toBeInTheDocument();
   });
 
   it("shows recently reviewed accepted and rejected lessons", async () => {
@@ -262,7 +312,60 @@ describe("LessonsPage hub", () => {
     expect(await screen.findByTestId("lessons-candidate-stale")).toHaveTextContent(
       /missing-lesson/i,
     );
-    expect(screen.queryByTestId("lessons-attention-item-missing-lesson")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-deeplink-only")).not.toBeInTheDocument();
+  });
+
+  it("renders deep-linked pending lesson outside loaded page", async () => {
+    search.set("candidate", "deep-pending");
+    getCandidateMock.mockResolvedValueOnce(lesson({ id: "deep-pending", status: "pending_review" }));
+    render(<LessonsPage />);
+    const deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).getByTestId("lesson-deeplink-notice")).toBeInTheDocument();
+    expect(within(deeplink).getByTestId("accept-lesson-btn")).toBeInTheDocument();
+  });
+
+  it("renders deep-linked accepted lesson as display-only", async () => {
+    search.set("candidate", "deep-accepted");
+    getCandidateMock.mockResolvedValueOnce(
+      lesson({ id: "deep-accepted", status: "accepted", reviewed_at: "2026-07-21T10:00:00.000Z" }),
+    );
+    render(<LessonsPage />);
+    const deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).queryByTestId("lesson-actions")).not.toBeInTheDocument();
+  });
+
+  it("renders deep-linked rejected and archived lessons as display-only", async () => {
+    search.set("candidate", "deep-rejected");
+    getCandidateMock.mockResolvedValueOnce(
+      lesson({ id: "deep-rejected", status: "rejected", reviewed_at: "2026-07-21T10:00:00.000Z" }),
+    );
+    const { unmount } = render(<LessonsPage />);
+    let deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).queryByTestId("lesson-actions")).not.toBeInTheDocument();
+    unmount();
+
+    search.set("candidate", "deep-archived");
+    getCandidateMock.mockResolvedValueOnce(lesson({ id: "deep-archived", status: "archived" }));
+    render(<LessonsPage />);
+    deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).queryByTestId("lesson-actions")).not.toBeInTheDocument();
+  });
+
+  it("renders unknown stored status on valid deep link", async () => {
+    search.set("candidate", "deep-unknown");
+    getCandidateMock.mockResolvedValueOnce(lesson({ id: "deep-unknown", status: "legacy_status" }));
+    render(<LessonsPage />);
+    const deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).getByTestId("lesson-status-badge")).toHaveTextContent(/legacy status/i);
+    expect(within(deeplink).queryByTestId("lesson-actions")).not.toBeInTheDocument();
+  });
+
+  it("shows deep-link source failure honestly", async () => {
+    search.set("candidate", "deep-fail");
+    getCandidateMock.mockRejectedValueOnce(new Error("candidate down"));
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-candidate-stale")).toHaveTextContent(/candidate down/i);
+    expect(screen.queryByTestId("lessons-deeplink-only")).not.toBeInTheDocument();
   });
 
   it("supports accept mutation with confirmation", async () => {
@@ -295,11 +398,127 @@ describe("LessonsPage hub", () => {
     render(<LessonsPage />);
     const rejectBtn = await screen.findByTestId("reject-lesson-btn");
     fireEvent.click(rejectBtn);
-    expect(rejectBtn).toBeDisabled();
     fireEvent.click(rejectBtn);
     expect(rejectMock).toHaveBeenCalledTimes(1);
-    resolveReject?.();
+    await act(async () => {
+      resolveReject?.();
+    });
     await waitFor(() => expect(rejectMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("locks all lesson actions while reject mutation is pending on another card", async () => {
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "lesson-a" }), lesson({ id: "lesson-b" })],
+      total: 2,
+      limit: 50,
+      offset: 0,
+    });
+    let resolveReject: (() => void) | undefined;
+    rejectMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReject = resolve;
+        }),
+    );
+    render(<LessonsPage />);
+    const cardA = await screen.findByTestId("lessons-attention-item-lesson-a");
+    fireEvent.click(within(cardA).getByTestId("reject-lesson-btn"));
+    const cardBAfterReject = screen.getByTestId("lessons-attention-item-lesson-b");
+    fireEvent.click(within(cardBAfterReject).getByTestId("reject-lesson-btn"));
+    expect(rejectMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(cardBAfterReject).getByTestId("accept-lesson-btn"));
+    expect(screen.queryByTestId("lesson-accept-panel")).not.toBeInTheDocument();
+    await act(async () => {
+      resolveReject?.();
+    });
+    await waitFor(() => expect(rejectMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("locks accept while reject is pending", async () => {
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "lesson-a" }), lesson({ id: "lesson-b" })],
+      total: 2,
+      limit: 50,
+      offset: 0,
+    });
+    let resolveReject: (() => void) | undefined;
+    rejectMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReject = resolve;
+        }),
+    );
+    render(<LessonsPage />);
+    const cardA = await screen.findByTestId("lessons-attention-item-lesson-a");
+    fireEvent.click(within(cardA).getByTestId("reject-lesson-btn"));
+    const cardBAfterReject = screen.getByTestId("lessons-attention-item-lesson-b");
+    fireEvent.click(within(cardBAfterReject).getByTestId("accept-lesson-btn"));
+    expect(screen.queryByTestId("lesson-accept-panel")).not.toBeInTheDocument();
+    await act(async () => {
+      resolveReject?.();
+    });
+    await waitFor(() => expect(rejectMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("locks reject while accept mutation is pending", async () => {
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "lesson-a" }), lesson({ id: "lesson-b" })],
+      total: 2,
+      limit: 50,
+      offset: 0,
+    });
+    let resolveAccept: (() => void) | undefined;
+    acceptMock.mockImplementation(
+      () =>
+        new Promise<Record<string, never>>((resolve) => {
+          resolveAccept = () => resolve({});
+        }),
+    );
+    render(<LessonsPage />);
+    const cardA = await screen.findByTestId("lessons-attention-item-lesson-a");
+    fireEvent.click(within(cardA).getByTestId("accept-lesson-btn"));
+    fireEvent.click(screen.getByTestId("accept-path-accept_only"));
+    fireEvent.click(screen.getByTestId("accept-confirm-checkbox"));
+    fireEvent.click(screen.getByTestId("confirm-accept"));
+    const cardBAfterAccept = screen.getByTestId("lessons-attention-item-lesson-b");
+    fireEvent.click(within(cardBAfterAccept).getByTestId("reject-lesson-btn"));
+    expect(rejectMock).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveAccept?.();
+    });
+    await waitFor(() => expect(acceptMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("prevents duplicate accept submissions", async () => {
+    let resolveAccept: (() => void) | undefined;
+    acceptMock.mockImplementation(
+      () =>
+        new Promise<Record<string, never>>((resolve) => {
+          resolveAccept = () => resolve({});
+        }),
+    );
+    render(<LessonsPage />);
+    fireEvent.click(await screen.findByTestId("accept-lesson-btn"));
+    fireEvent.click(screen.getByTestId("accept-path-accept_only"));
+    fireEvent.click(screen.getByTestId("accept-confirm-checkbox"));
+    const confirm = screen.getByTestId("confirm-accept");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(acceptMock).toHaveBeenCalledTimes(1));
+    resolveAccept?.();
+  });
+
+  it("disables lesson action buttons while mutationLocked", () => {
+    render(
+      <LessonReviewCard
+        lesson={pendingLesson}
+        mutationLocked
+        onAccept={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("accept-lesson-btn")).toBeDisabled();
+    expect(screen.getByTestId("reject-lesson-btn")).toBeDisabled();
   });
 
   it("shows confirmed paper posture when verified", async () => {

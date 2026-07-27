@@ -26,28 +26,16 @@ function lesson(overrides: Partial<LessonCandidate> & { id: string; status: stri
 }
 
 describe("buildRecentReviewedLessons", () => {
-  it("merges accepted and rejected history sorted by reviewed_at", () => {
+  it("merges accepted and rejected history when both complete", () => {
     const result = buildRecentReviewedLessons({
       accepted: ok({
-        items: [
-          lesson({
-            id: "a1",
-            status: "accepted",
-            reviewed_at: "2026-07-21T10:00:00.000Z",
-          }),
-        ],
+        items: [lesson({ id: "a1", status: "accepted", reviewed_at: "2026-07-21T10:00:00.000Z" })],
         total: 1,
         limit: 50,
         offset: 0,
       }),
       rejected: ok({
-        items: [
-          lesson({
-            id: "r1",
-            status: "rejected",
-            reviewed_at: "2026-07-22T10:00:00.000Z",
-          }),
-        ],
+        items: [lesson({ id: "r1", status: "rejected", reviewed_at: "2026-07-22T10:00:00.000Z" })],
         total: 1,
         limit: 50,
         offset: 0,
@@ -56,10 +44,67 @@ describe("buildRecentReviewedLessons", () => {
       sourceFilter: "all",
     });
     expect(result.status).toBe("available");
-    expect(result.items?.map((item) => item.id)).toEqual(["r1", "a1"]);
+    expect(result.acceptedCoverage).toBe("complete");
+    expect(result.rejectedCoverage).toBe("complete");
   });
 
-  it("keeps partial history when one source fails", () => {
+  it("marks accepted truncated independently", () => {
+    const result = buildRecentReviewedLessons({
+      accepted: ok({
+        items: [lesson({ id: "a1", status: "accepted" })],
+        total: 4,
+        limit: 1,
+        offset: 0,
+      }),
+      rejected: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.acceptedCoverage).toBe("truncated");
+    expect(result.rejectedCoverage).toBe("complete");
+    expect(result.status).toBe("partial_truncated");
+    expect(result.coverageMessage).toMatch(/accepted history is truncated/i);
+  });
+
+  it("marks rejected truncated independently", () => {
+    const result = buildRecentReviewedLessons({
+      accepted: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+      rejected: ok({
+        items: [lesson({ id: "r1", status: "rejected" })],
+        total: 3,
+        limit: 1,
+        offset: 0,
+      }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.rejectedCoverage).toBe("truncated");
+    expect(result.status).toBe("partial_truncated");
+  });
+
+  it("marks both reviewed sources truncated", () => {
+    const result = buildRecentReviewedLessons({
+      accepted: ok({
+        items: [lesson({ id: "a1", status: "accepted" })],
+        total: 2,
+        limit: 1,
+        offset: 0,
+      }),
+      rejected: ok({
+        items: [lesson({ id: "r1", status: "rejected" })],
+        total: 2,
+        limit: 1,
+        offset: 0,
+      }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.acceptedCoverage).toBe("truncated");
+    expect(result.rejectedCoverage).toBe("truncated");
+    expect(result.status).toBe("partial_truncated");
+  });
+
+  it("distinguishes source failure from truncation", () => {
     const result = buildRecentReviewedLessons({
       accepted: ok({
         items: [lesson({ id: "a1", status: "accepted" })],
@@ -71,7 +116,28 @@ describe("buildRecentReviewedLessons", () => {
       loading: false,
       sourceFilter: "all",
     });
-    expect(result.status).toBe("partial");
-    expect(result.items).toHaveLength(1);
+    expect(result.status).toBe("partial_failure");
+    expect(result.rejectedFailed).toBe(true);
+    expect(result.rejectedCoverage).toBeNull();
+  });
+
+  it("allows definitive empty only when both sources complete and empty", () => {
+    const result = buildRecentReviewedLessons({
+      accepted: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+      rejected: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.status).toBe("empty");
+  });
+
+  it("does not claim empty history when truncated totals remain", () => {
+    const result = buildRecentReviewedLessons({
+      accepted: ok({ items: [], total: 2, limit: 1, offset: 0 }),
+      rejected: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.status).toBe("truncated_empty");
   });
 });

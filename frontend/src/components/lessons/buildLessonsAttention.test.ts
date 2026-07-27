@@ -27,20 +27,72 @@ function lesson(overrides: Partial<LessonCandidate> & { id: string }): LessonCan
 }
 
 describe("buildLessonsAttentionQueue", () => {
-  it("classifies pending_review lessons as attention items", () => {
+  it("marks complete pending page as definitive", () => {
     const result = buildLessonsAttentionQueue({
       pending: ok({
-        items: [lesson({ id: "l1" }), lesson({ id: "l2", status: "rejected" })],
-        total: 2,
+        items: [lesson({ id: "l1" })],
+        total: 1,
         limit: 50,
         offset: 0,
       }),
       loading: false,
       sourceFilter: "all",
     });
-    expect(result.queueStatus).toBe("available");
-    expect(result.items).toHaveLength(1);
+    expect(result.coverage).toBe("complete");
     expect(result.countDefinitive).toBe(true);
+    expect(result.queueStatus).toBe("available");
+  });
+
+  it("marks truncated pending page as non-definitive with coverage message", () => {
+    const result = buildLessonsAttentionQueue({
+      pending: ok({
+        items: [lesson({ id: "l1" })],
+        total: 5,
+        limit: 1,
+        offset: 0,
+      }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.coverage).toBe("truncated");
+    expect(result.countDefinitive).toBe(false);
+    expect(result.countAvailable).toBe(true);
+    expect(result.totalPendingCount).toBe(5);
+    expect(result.coverageMessage).toMatch(/only 1 of 5 pending lessons/i);
+  });
+
+  it("allows definitive empty only when coverage is complete", () => {
+    const result = buildLessonsAttentionQueue({
+      pending: ok({ items: [], total: 0, limit: 50, offset: 0 }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.queueStatus).toBe("empty");
+    expect(result.countDefinitive).toBe(true);
+  });
+
+  it("does not claim empty when truncated page has zero loaded but nonzero total", () => {
+    const result = buildLessonsAttentionQueue({
+      pending: ok({ items: [], total: 3, limit: 1, offset: 0 }),
+      loading: false,
+      sourceFilter: "all",
+    });
+    expect(result.queueStatus).toBe("truncated_empty");
+    expect(result.countDefinitive).toBe(false);
+  });
+
+  it("uses coaching-specific truncated empty wording", () => {
+    const result = buildLessonsAttentionQueue({
+      pending: ok({
+        items: [lesson({ id: "l-journal", source_type: "journal" })],
+        total: 4,
+        limit: 1,
+        offset: 0,
+      }),
+      loading: false,
+      sourceFilter: "coaching",
+    });
+    expect(result.queueStatus).toBe("truncated_filtered_empty");
   });
 
   it("does not treat failed pending source as empty", () => {
@@ -50,7 +102,6 @@ describe("buildLessonsAttentionQueue", () => {
       sourceFilter: "all",
     });
     expect(result.queueStatus).toBe("unavailable");
-    expect(result.items).toBeNull();
     expect(result.countDefinitive).toBe(false);
   });
 });
