@@ -182,10 +182,13 @@ export default function KnowledgePage() {
     void fetchChunks(expandedDocumentId);
   }, [chunkResults, expandedDocumentId, fetchChunks]);
 
-  const handleRetryChunks = (documentId: string) => {
-    if (chunkInFlightRef.current === documentId || chunkLoadingId === documentId) return;
-    void fetchChunks(documentId);
-  };
+  const handleRetryChunks = useCallback(
+    (documentId: string) => {
+      if (chunkInFlightRef.current === documentId || chunkLoadingId === documentId) return;
+      void fetchChunks(documentId);
+    },
+    [chunkLoadingId, fetchChunks],
+  );
 
   const documentsAvailable = Boolean(data?.documents.available);
   const page = documentsAvailable ? data?.documents.data : null;
@@ -299,7 +302,7 @@ export default function KnowledgePage() {
       );
     }
     return entries;
-  }, [chunkLoadingId, chunkResults, expandedDocumentId]);
+  }, [chunkLoadingId, chunkResults, expandedDocumentId, handleRetryChunks]);
 
   const handleToggleExpand = (documentId: string) => {
     setExpandedDocumentId((current) => (current === documentId ? null : documentId));
