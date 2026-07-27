@@ -588,7 +588,18 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `d2aa71e`; pre-merge CI 30229681876 success; post-merge main CI 30231014521
   success — frontend, backend, docker-build, deployment-safety, evaluation,
   e2e-smoke). Phase C3A complete.
-- Phase C remaining (unstarted): Phase C3B Lessons/Knowledge redesign;
+- Phase C3B1 deliverables (draft PR, review hub only — no Knowledge redesign):
+  Lessons review hub at `/lessons`; attention queue (`pending_review` only);
+  recently reviewed (accepted + rejected); source context + next-action guidance;
+  SourceResult multi-source honesty; preserved accept/reject mutations + typed
+  confirmations; journal/strategy/validation relationship links from stored fields only;
+  `?candidate=` deep-link verification; coaching source filter; confirmed-PAPER posture;
+  no backend/API/migration changes.
+  Phase C3B1 PR https://github.com/Fejjii/AlphaTrade-AI/pull/35 (draft;
+  branch `cursor/at040-phase-c3b1-lessons-review-hub-a54b`; validated implementation
+  commit `5c1dc7c`; pre-merge CI 30232978185 success — frontend, backend,
+  docker-build, deployment-safety, evaluation, e2e-smoke). Phase C3B1 pending review.
+- Phase C remaining: Phase C3B2+ Knowledge redesign (unstarted);
   Portfolio/risk split; analytics/charts (Phase D+).
 
 ---
