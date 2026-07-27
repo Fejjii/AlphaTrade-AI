@@ -630,6 +630,20 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `0a2fcad698b7997b74ef3402006e73cedbf1a35a`; pre-merge CI 30277821355 success;
   post-merge main CI 30279764094 success — frontend, backend, docker-build,
   deployment-safety, evaluation, e2e-smoke). Portfolio/Risk command centre DONE.
+- Critical data-honesty and Portfolio RiskBlock fixes deliverables:
+  `/settings/audit` loading/error honesty (EmptyState only after successful empty
+  response); `/settings/team` explicit loading/loaded/failed list state (empty wording
+  only after successful empty response; create/revoke preserved); Portfolio
+  `buildRiskPosture` kill-switch BLOCK precedence when Daily discipline is
+  loading/absent, failed, or missing snapshot (`showRiskBlock=true`, stored reason,
+  discipline values unavailable, limitations explain source condition). Frontend-only;
+  no `/analytics`, `useAsyncData.ts`, Knowledge, nav, backend, API, migration, or
+  deployment changes.
+  Critical data-honesty / RiskBlock fixes PR https://github.com/Fejjii/AlphaTrade-AI/pull/44
+  merged (`aaa33f4`; pre-merge / implementation head
+  `0ab606984edab99550d70d77b70a51111f8a861d`; pre-merge CI 30287687997 success;
+  post-merge main CI 30291493531 — frontend, backend, docker-build, deployment-safety,
+  evaluation, e2e-smoke). Critical data-honesty / RiskBlock fixes DONE.
 - Phase D Analytics & Charts blueprint deliverables (documentation only — no
   frontend/backend/chart implementation): authoritative implementation plan at
   `docs/product/at040_analytics_and_charts_blueprint.md`; verified capability
