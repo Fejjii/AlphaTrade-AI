@@ -321,3 +321,31 @@ export function formatAppliedFiltersSummary(state: AnalyticsFilterState): string
   }
   return parts.join(" · ");
 }
+
+/** Filters actually sent to GET /journal/setup-evidence (setup_id + strategy_id only). */
+export function formatSetupEvidenceFiltersSummary(state: AnalyticsFilterState): string {
+  const parts: string[] = [];
+  if (state.setupId) parts.push(`setup_id ${state.setupId}`);
+  if (state.userStrategyId) parts.push(`strategy_id ${state.userStrategyId}`);
+  if (parts.length === 0) return "no setup_id or strategy_id filter";
+  return parts.join(" · ");
+}
+
+/** Journal-statistics filters that do not apply to setup-evidence. */
+export function listSetupEvidenceUnsupportedJournalFilters(
+  state: AnalyticsFilterState,
+): string[] {
+  const unsupported: string[] = [];
+  if (state.dateFrom || state.dateTo) unsupported.push("dates");
+  if (state.symbol) unsupported.push("symbol");
+  if (state.timeframe) unsupported.push("timeframe");
+  if (state.journalSource) unsupported.push("journal source");
+  if (state.groupBy !== "setup") unsupported.push("grouping");
+  return unsupported;
+}
+
+export function formatSetupEvidenceLimitationNote(state: AnalyticsFilterState): string | null {
+  const unsupported = listSetupEvidenceUnsupportedJournalFilters(state);
+  if (unsupported.length === 0) return null;
+  return `Active ${unsupported.join(", ")} filter(s) apply to journal statistics only — not setup evidence.`;
+}

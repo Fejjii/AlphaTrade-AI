@@ -223,7 +223,9 @@ export function SetupExpectancyChart({
           onClick={() => setShowAll((current) => !current)}
           data-testid="setup-expectancy-show-all"
         >
-          {showAll ? `Show top ${SETUP_CHART_MOBILE_CAP}` : `Show all (${derived.rows.length})`}
+          {showAll
+            ? `Show compact view (${SETUP_CHART_MOBILE_CAP})`
+            : `Show all (${derived.rows.length})`}
         </Button>
       ) : null}
 

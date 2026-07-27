@@ -448,4 +448,54 @@ describe("Setup analytics charts", () => {
       "/journal/statistics",
     );
   });
+
+  it("setup evidence panel shows only evidence API filters, not journal statistics filters", () => {
+    render(
+      <SetupEvidencePanel
+        evidence={ok(evidenceData)}
+        evidenceFiltersSummary={`setup_id ${SETUP_A} · strategy_id ${STRATEGY_A}`}
+        evidenceLimitationNote="Active dates, symbol filter(s) apply to journal statistics only — not setup evidence."
+      />,
+    );
+    const panel = screen.getByTestId("setup-evidence-panel");
+    expect(panel).toHaveTextContent(`setup_id ${SETUP_A}`);
+    expect(panel).toHaveTextContent(`strategy_id ${STRATEGY_A}`);
+    expect(panel).not.toHaveTextContent("dates all time");
+    expect(panel).not.toHaveTextContent("symbol BTCUSDT");
+    expect(panel).not.toHaveTextContent("group setup");
+    expect(screen.getByTestId("limitations-state")).toHaveTextContent(
+      /journal statistics only — not setup evidence/i,
+    );
+  });
+
+  it("uses compact-view toggle wording instead of metric-ranked top label", () => {
+    const many: JournalStatsResponse = {
+      ...rankedJournal,
+      buckets: Array.from({ length: 10 }, (_, index) => {
+        const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+        return {
+          key: id,
+          group_id: id,
+          label: `Row ${index}`,
+          metrics: metrics({
+            trade_count: 20 - index,
+            win_rate: 0.5,
+            expectancy: "1.00",
+            confidence: "high" as const,
+          }),
+        };
+      }),
+      total_buckets: 10,
+    };
+    render(<SetupWinRateChart source={ok(many)} groupBy="setup_version" />);
+    fireEvent.click(screen.getByTestId("setup-win-rate-show-all"));
+    expect(screen.getByTestId("setup-win-rate-show-all")).toHaveTextContent(/Show compact view/i);
+    expect(screen.getByTestId("setup-win-rate-show-all")).not.toHaveTextContent(/Show top/i);
+
+    cleanup();
+    render(<SetupExpectancyChart source={ok(many)} groupBy="setup_version" />);
+    fireEvent.click(screen.getByTestId("setup-expectancy-show-all"));
+    expect(screen.getByTestId("setup-expectancy-show-all")).toHaveTextContent(/Show compact view/i);
+    expect(screen.getByTestId("setup-expectancy-show-all")).not.toHaveTextContent(/Show top/i);
+  });
 });

@@ -10,7 +10,9 @@ export type SetupEvidencePanelProps = {
   evidence: SourceResult<SetupEvidenceResponse> | null;
   loading?: boolean;
   onRetry?: () => void;
-  filtersSummary?: string;
+  /** Only setup_id / strategy_id filters sent to GET /journal/setup-evidence. */
+  evidenceFiltersSummary?: string;
+  evidenceLimitationNote?: string | null;
 };
 
 /**
@@ -20,7 +22,8 @@ export function SetupEvidencePanel({
   evidence,
   loading = false,
   onRetry,
-  filtersSummary,
+  evidenceFiltersSummary,
+  evidenceLimitationNote = null,
 }: SetupEvidencePanelProps) {
   const available = Boolean(evidence?.available && evidence.data);
   const items = available ? evidence!.data!.items : [];
@@ -32,7 +35,8 @@ export function SetupEvidencePanel({
       title="Setup evidence"
       sourceLabel="GET /journal/setup-evidence"
       generatedAt={generatedAt}
-      filtersSummary={filtersSummary}
+      filtersSummary={evidenceFiltersSummary}
+      limitations={evidenceLimitationNote ? [evidenceLimitationNote] : []}
       sampleSize={available ? items.length : null}
       sampleLabel="evidence rows"
       loading={loading}

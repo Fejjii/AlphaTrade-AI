@@ -197,7 +197,9 @@ export function SetupWinRateChart({
           onClick={() => setShowAll((current) => !current)}
           data-testid="setup-win-rate-show-all"
         >
-          {showAll ? `Show top ${SETUP_CHART_MOBILE_CAP}` : `Show all (${derived.rows.length})`}
+          {showAll
+            ? `Show compact view (${SETUP_CHART_MOBILE_CAP})`
+            : `Show all (${derived.rows.length})`}
         </Button>
       ) : null}
 

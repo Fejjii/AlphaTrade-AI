@@ -17,6 +17,8 @@ export type SetupsChartsProps = {
   onRetry?: () => void;
   onRetryEvidence?: () => void;
   filtersSummary?: string;
+  evidenceFiltersSummary?: string;
+  evidenceLimitationNote?: string | null;
   staleWholeTab?: boolean;
   groupBy: SetupGroupBy;
   onGroupByChange: (value: SetupGroupBy) => void;
@@ -32,6 +34,8 @@ export function SetupsCharts({
   onRetry,
   onRetryEvidence,
   filtersSummary,
+  evidenceFiltersSummary,
+  evidenceLimitationNote = null,
   staleWholeTab = false,
   groupBy,
   onGroupByChange,
@@ -78,7 +82,8 @@ export function SetupsCharts({
         evidence={evidence}
         loading={evidenceLoading}
         onRetry={onRetryEvidence ?? onRetry}
-        filtersSummary={filtersSummary}
+        evidenceFiltersSummary={evidenceFiltersSummary}
+        evidenceLimitationNote={evidenceLimitationNote}
       />
     </div>
   );

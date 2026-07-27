@@ -8,6 +8,8 @@ import {
   PerformanceCharts,
   SetupsCharts,
   formatAppliedFiltersSummary,
+  formatSetupEvidenceFiltersSummary,
+  formatSetupEvidenceLimitationNote,
   gateSourceByFreshness,
   journalFreshnessTimestamp,
   portfolioFreshnessTimestamp,
@@ -49,6 +51,8 @@ export default function AnalyticsPage() {
   }, [cleanupIgnoredParams]);
 
   const filtersSummary = formatAppliedFiltersSummary(state);
+  const evidenceFiltersSummary = formatSetupEvidenceFiltersSummary(state);
+  const evidenceLimitationNote = formatSetupEvidenceLimitationNote(state);
 
   const gatedJournal = useMemo(
     () => gateSourceByFreshness(shared.journal, journalFreshnessTimestamp(shared.journal)),
@@ -186,6 +190,8 @@ export default function AnalyticsPage() {
               onRetry={() => void setups.reload()}
               onRetryEvidence={() => void setups.reload()}
               filtersSummary={filtersSummary}
+              evidenceFiltersSummary={evidenceFiltersSummary}
+              evidenceLimitationNote={evidenceLimitationNote}
               staleWholeTab={staleWholeTab}
               groupBy={state.groupBy}
               onGroupByChange={setGroupBy}

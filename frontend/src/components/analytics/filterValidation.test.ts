@@ -4,6 +4,8 @@ import {
   buildAnalyticsApiParams,
   buildSetupAnalyticsApiParams,
   formatAppliedFiltersSummary,
+  formatSetupEvidenceFiltersSummary,
+  formatSetupEvidenceLimitationNote,
   parseAnalyticsSearchParams,
 } from "./filterValidation";
 
@@ -246,5 +248,65 @@ describe("buildSetupAnalyticsApiParams journal source", () => {
     expect(params.journal.source).toBe("backtest");
     expect(params.evidence).not.toHaveProperty("source");
     expect(params).not.toHaveProperty("portfolio");
+  });
+});
+
+describe("setup evidence provenance", () => {
+  const baseSetupsState = {
+    tab: "setups" as const,
+    dateFrom: null,
+    dateTo: null,
+    symbol: null,
+    timeframe: null,
+    portfolioSource: null,
+    journalSource: null,
+    setupId: null,
+    userStrategyId: null,
+    groupBy: "setup" as const,
+    bucketOffset: 0,
+    ignoredParams: [] as string[],
+  };
+
+  it("summarizes only setup_id and strategy_id for setup-evidence", () => {
+    const summary = formatSetupEvidenceFiltersSummary({
+      ...baseSetupsState,
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      journalSource: "manual",
+      groupBy: "strategy",
+      setupId: SETUP_UUID,
+      userStrategyId: STRATEGY_UUID,
+    });
+    expect(summary).toBe(`setup_id ${SETUP_UUID} · strategy_id ${STRATEGY_UUID}`);
+    expect(summary).not.toContain("dates");
+    expect(summary).not.toContain("symbol");
+    expect(summary).not.toContain("timeframe");
+    expect(summary).not.toContain("group");
+  });
+
+  it("returns limitation note when journal-only filters are active", () => {
+    const note = formatSetupEvidenceLimitationNote({
+      ...baseSetupsState,
+      dateFrom: "2026-01-01",
+      symbol: "BTCUSDT",
+      journalSource: "backtest",
+      groupBy: "setup_version",
+    });
+    expect(note).toMatch(/journal statistics only — not setup evidence/i);
+    expect(note).toContain("dates");
+    expect(note).toContain("symbol");
+    expect(note).toContain("journal source");
+    expect(note).toContain("grouping");
+  });
+
+  it("returns null limitation note when only evidence filters are active", () => {
+    expect(
+      formatSetupEvidenceLimitationNote({
+        ...baseSetupsState,
+        setupId: SETUP_UUID,
+      }),
+    ).toBeNull();
   });
 });
