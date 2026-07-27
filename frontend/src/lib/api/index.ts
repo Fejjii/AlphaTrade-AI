@@ -6,6 +6,8 @@ import type {
   AuthResponse,
   HealthResponse,
   IngestDocumentResponse,
+  PaginatedRagChunks,
+  PaginatedRagDocuments,
   DisciplineScoreResult,
   DashboardSummary,
   JournalEntry,
@@ -575,12 +577,32 @@ export const api = {
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
   },
   knowledge: {
+    listDocuments: (params?: {
+      source_type?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      apiFetch<PaginatedRagDocuments>("/knowledge/documents", {
+        query: params,
+      }),
+    listChunks: (params?: {
+      document_id?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      apiFetch<PaginatedRagChunks>("/knowledge/chunks", {
+        query: params,
+      }),
     ingest: (body: {
       title: string;
       text: string;
       source_type: string;
       strategy_tag?: string;
       symbol_tag?: string;
+      timeframe_tag?: string;
+      risk_tag?: string;
+      source_uri?: string;
+      version?: number;
     }) =>
       apiFetch<IngestDocumentResponse>("/knowledge/ingest", {
         method: "POST",
@@ -590,6 +612,10 @@ export const api = {
       query: string;
       top_k?: number;
       source_types?: string[];
+      strategy_tag?: string;
+      symbol_tag?: string;
+      timeframe_tag?: string;
+      risk_tag?: string;
     }) =>
       apiFetch<RagSearchResponse>("/knowledge/search", {
         method: "POST",
