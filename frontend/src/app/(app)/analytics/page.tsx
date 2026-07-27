@@ -1,172 +1,136 @@
 "use client";
 
-import { useCallback } from "react";
+import { useEffect, useMemo } from "react";
 
-import { StatusBadge } from "@/components/StatusBadge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState, ErrorState, LoadingState } from "@/components/states";
-import { useAsyncData } from "@/hooks/useAsyncData";
-import { api } from "@/lib/api";
-import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
-import { formatDate, formatDecimal } from "@/lib/utils";
+import {
+  AnalyticsFilterBar,
+  OverviewStats,
+  PerformanceCharts,
+  formatAppliedFiltersSummary,
+  gateSourceByFreshness,
+  journalFreshnessTimestamp,
+  portfolioFreshnessTimestamp,
+  tabSourcesStale,
+  useAnalyticsFilters,
+  useAnalyticsSources,
+} from "@/components/analytics";
+import { PageHeader } from "@/components/ui/page-header";
+import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { TabPanel, Tabs, TabsRoot } from "@/components/ui/tabs";
+import { ErrorState, LoadingState, StaleState } from "@/components/states";
 
-function setupLabel(value: string) {
-  return SETUP_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
-}
+const TAB_ITEMS = [
+  { id: "overview", label: "Overview" },
+  { id: "performance", label: "Performance" },
+];
 
 export default function AnalyticsPage() {
-  const loader = useCallback(async () => {
-    const [setups, review, discipline, risk] = await Promise.all([
-      api.analytics.setups(),
-      api.analytics.tradeReview(),
-      api.analytics.discipline(),
-      api.analytics.riskBehavior(),
-    ]);
-    return { setups, review, discipline, risk };
-  }, []);
-  const { data, loading, error, reload } = useAsyncData(loader, []);
+  const {
+    state,
+    apiParams,
+    setTab,
+    applyDraft,
+    applyDatePreset,
+    clearFilters,
+    cleanupIgnoredParams,
+  } = useAnalyticsFilters();
+
+  const { journal, portfolio, loading, reload, bothFailed, partialData } =
+    useAnalyticsSources(apiParams);
+
+  useEffect(() => {
+    cleanupIgnoredParams();
+  }, [cleanupIgnoredParams]);
+
+  const filtersSummary = formatAppliedFiltersSummary(state);
+
+  const gatedJournal = useMemo(
+    () => gateSourceByFreshness(journal, journalFreshnessTimestamp(journal)),
+    [journal],
+  );
+
+  const gatedPortfolio = useMemo(
+    () => gateSourceByFreshness(portfolio, portfolioFreshnessTimestamp(portfolio)),
+    [portfolio],
+  );
+
+  const staleWholeTab = useMemo(
+    () => tabSourcesStale(state.tab, journal, portfolio),
+    [journal, portfolio, state.tab],
+  );
+
+  const initialLoad = loading && !journal && !portfolio;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Analytics</h1>
-        <p className="text-sm text-zinc-400">
-          Deterministic setup performance, trade review, discipline score, and risk behavior (paper
-          only).
-        </p>
-      </div>
+    <div className="space-y-8" data-testid="analytics-page">
+      <PageHeader
+        title="Analytics"
+        description="Paper-only statistical hub — overview and performance charts with honest source states."
+        meta={<VerifiedPaperModeIndicator />}
+      />
 
-      {loading ? <LoadingState label="Loading analytics…" /> : null}
-      {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
+      <TabsRoot value={state.tab} onChange={(tab) => setTab(tab as typeof state.tab)}>
+        <div data-testid="analytics-tabs">
+          <Tabs items={TAB_ITEMS} aria-label="Analytics sections" />
+        </div>
 
-      {data ? (
-        <>
-          <section className="space-y-3">
-            <h2 className="text-lg font-medium">Setup performance</h2>
-            {data.setups.setups.length ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {data.setups.setups.map((setup) => (
-                  <Card key={setup.setup_type}>
-                    <CardHeader>
-                      <CardTitle className="text-base">{setupLabel(setup.setup_type)}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm text-zinc-300">
-                      <p>Proposals: {setup.proposal_count}</p>
-                      <p>
-                        Paper trades: {setup.paper_trade_count} (W {setup.winning_paper_trades} / L{" "}
-                        {setup.losing_paper_trades})
-                      </p>
-                      {setup.average_paper_pnl ? (
-                        <p>Avg paper PnL: {formatDecimal(setup.average_paper_pnl)}</p>
-                      ) : null}
-                      {setup.average_confidence != null ? (
-                        <p>Avg confidence: {(setup.average_confidence * 100).toFixed(0)}%</p>
-                      ) : null}
-                      {setup.most_common_mistakes.length ? (
-                        <p>Mistakes: {setup.most_common_mistakes.join(", ")}</p>
-                      ) : null}
-                      {setup.last_used_at ? (
-                        <p className="text-zinc-500">Last used {formatDate(setup.last_used_at)}</p>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title="No setup activity yet"
-                description="Create proposals or paper trades to populate setup statistics."
+        <AnalyticsFilterBar
+          state={state}
+          onApplyDraft={applyDraft}
+          onApplyPreset={applyDatePreset}
+          onClear={clearFilters}
+        />
+
+        {partialData ? (
+          <p
+            className="text-sm text-amber-500/90"
+            data-testid="analytics-partial-data"
+            role="status"
+          >
+            Partial analytics data — some sources failed. Retry unavailable sections before
+            treating this as complete.
+          </p>
+        ) : null}
+
+        {initialLoad ? <LoadingState label="Loading analytics…" /> : null}
+
+        {bothFailed ? (
+          <ErrorState
+            message="Analytics sources unavailable. Journal statistics and paper portfolio both failed."
+            onRetry={() => void reload()}
+          />
+        ) : null}
+
+        {!bothFailed ? (
+          <>
+            <TabPanel id="overview">
+              {staleWholeTab ? (
+                <div data-testid="overview-stale-state">
+                  <StaleState message="Analytics sources may be delayed or stale for this view." />
+                </div>
+              ) : null}
+              <OverviewStats
+                journal={gatedJournal}
+                portfolio={gatedPortfolio}
+                loading={loading}
+                onRetryJournal={() => void reload()}
+                onRetryPortfolio={() => void reload()}
               />
-            )}
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-lg font-medium">Trade review</h2>
-            <Card>
-              <CardContent className="grid gap-2 pt-6 text-sm text-zinc-300 md:grid-cols-2">
-                <p>Journaled trades: {data.review.total_journaled_trades}</p>
-                <p>
-                  Wins / losses: {data.review.win_count} / {data.review.loss_count}
-                </p>
-                <p>
-                  Most frequent setup:{" "}
-                  {data.review.most_frequent_setup_type
-                    ? setupLabel(data.review.most_frequent_setup_type)
-                    : "—"}
-                </p>
-                <p>Mistake tag: {data.review.most_frequent_mistake_tag ?? "—"}</p>
-                <p>Emotion tag: {data.review.most_frequent_emotion_tag ?? "—"}</p>
-                <p>Risk blocks: {data.review.trades_blocked_by_risk_engine}</p>
-                <p>After daily loss warning: {data.review.trades_after_daily_loss_warning}</p>
-                <p>After green day warning: {data.review.trades_after_green_day_warning}</p>
-                <p>Rejected proposals: {data.review.proposals_rejected_by_user}</p>
-                <p>Needs more analysis: {data.review.proposals_needing_more_analysis}</p>
-              </CardContent>
-            </Card>
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-lg font-medium">Discipline score</h2>
-            <Card>
-              <CardHeader className="flex flex-row items-center gap-3">
-                <CardTitle className="text-3xl">{data.discipline.score}</CardTitle>
-                <StatusBadge label={`Grade ${data.discipline.grade}`} tone="info" />
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-zinc-300">
-                {data.discipline.positive_behaviors.length ? (
-                  <div>
-                    <p className="font-medium text-emerald-300">Positive behaviors</p>
-                    <ul className="list-disc pl-5">
-                      {data.discipline.positive_behaviors.map((b) => (
-                        <li key={b}>{b}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {data.discipline.negative_behaviors.length ? (
-                  <div>
-                    <p className="font-medium text-amber-300">Negative behaviors</p>
-                    <ul className="list-disc pl-5">
-                      {data.discipline.negative_behaviors.map((b) => (
-                        <li key={b}>{b}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {data.discipline.improvement_suggestions.length ? (
-                  <div>
-                    <p className="font-medium text-zinc-200">Improvement suggestions</p>
-                    <ul className="list-disc pl-5">
-                      {data.discipline.improvement_suggestions.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-lg font-medium">Risk behavior</h2>
-            <Card>
-              <CardContent className="grid gap-2 pt-6 text-sm text-zinc-300 md:grid-cols-2">
-                <p>Risk blocks: {data.risk.risk_blocks_count}</p>
-                <p>Daily loss warnings: {data.risk.daily_loss_warnings}</p>
-                <p>Green day warnings: {data.risk.green_day_warnings}</p>
-                <p>Trading frequency notices: {data.risk.overtrading_warnings}</p>
-                <p>Emotion-driven trade notices: {data.risk.revenge_trading_warnings}</p>
-                <p>
-                  Journal completion: {(data.risk.journal_completion_rate * 100).toFixed(0)}%
-                </p>
-                <p>Approvals approved: {data.risk.approval_approved_count}</p>
-                <p>Approvals pending: {data.risk.approval_pending_count}</p>
-                <p>Paper orders rejected: {data.risk.paper_orders_rejected}</p>
-              </CardContent>
-            </Card>
-          </section>
-        </>
-      ) : null}
+            </TabPanel>
+            <TabPanel id="performance">
+              {state.tab === "performance" ? (
+                <PerformanceCharts
+                  source={gatedPortfolio}
+                  loading={loading && !portfolio}
+                  onRetry={() => void reload()}
+                  filtersSummary={filtersSummary}
+                  staleWholeTab={staleWholeTab}
+                />
+              ) : null}
+            </TabPanel>
+          </>
+        ) : null}
+      </TabsRoot>
     </div>
   );
 }
