@@ -597,9 +597,10 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   no backend/API/migration changes.
   Phase C3B1 PR https://github.com/Fejjii/AlphaTrade-AI/pull/35 (draft;
   branch `cursor/at040-phase-c3b1-lessons-review-hub-a54b`; validated implementation
-  commit `750fbab`; correction pass: pagination coverage honesty (complete/truncated),
-  all-status deep-link rendering, global mutation lock, confidence 0 display;
-  pre-merge CI 30253001631 success — frontend, backend, docker-build,
+  commit `219f2c8`; correction passes: pagination coverage honesty (complete/truncated),
+  all-status deep-link rendering, global mutation lock, confidence 0 display,
+  deep-link + coaching-filter visibility, corrected truncated count wording;
+  pre-merge CI pending — frontend, backend, docker-build,
   deployment-safety, evaluation, e2e-smoke). Phase C3B1 pending review.
 - Phase C remaining: Phase C3B2+ Knowledge redesign (unstarted);
   Portfolio/risk split; analytics/charts (Phase D+).
