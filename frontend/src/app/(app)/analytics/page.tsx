@@ -2,40 +2,27 @@
 
 import { useEffect, useMemo } from "react";
 
+import { CumulativePnlChart, DailyPnlChart } from "@/components/analytics/AnalyticsCharts";
 import {
   AnalyticsFilterBar,
-  CumulativePnlChart,
-  DailyPnlChart,
   OverviewStats,
   formatAppliedFiltersSummary,
+  gateSourceByFreshness,
+  journalFreshnessTimestamp,
+  portfolioFreshnessTimestamp,
+  tabSourcesStale,
   useAnalyticsFilters,
   useAnalyticsSources,
 } from "@/components/analytics";
-import { freshnessFromTimestamp } from "@/components/workflows/freshness";
 import { PageHeader } from "@/components/ui/page-header";
 import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { TabPanel, Tabs, TabsRoot } from "@/components/ui/tabs";
-import { ErrorState, LoadingState } from "@/components/states";
+import { ErrorState, LoadingState, StaleState } from "@/components/states";
 
 const TAB_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "performance", label: "Performance" },
 ];
-
-function tabSourcesStale(
-  tab: "overview" | "performance",
-  journalAsOf: string | null | undefined,
-  portfolioAsOf: string | null | undefined,
-): boolean {
-  const timestamps =
-    tab === "overview"
-      ? [journalAsOf, portfolioAsOf]
-      : [portfolioAsOf];
-  const states = timestamps
-    .filter(Boolean)
-    .map((timestamp) => freshnessFromTimestamp(timestamp)?.state);
-  return states.length > 0 && states.every((state) => state === "stale");
-}
 
 export default function AnalyticsPage() {
   const {
@@ -57,13 +44,18 @@ export default function AnalyticsPage() {
 
   const filtersSummary = formatAppliedFiltersSummary(state);
 
+  const gatedJournal = useMemo(
+    () => gateSourceByFreshness(journal, journalFreshnessTimestamp(journal)),
+    [journal],
+  );
+
+  const gatedPortfolio = useMemo(
+    () => gateSourceByFreshness(portfolio, portfolioFreshnessTimestamp(portfolio)),
+    [portfolio],
+  );
+
   const staleWholeTab = useMemo(
-    () =>
-      tabSourcesStale(
-        state.tab,
-        journal?.available ? journal.data?.generated_at : null,
-        portfolio?.available ? portfolio.data?.account.as_of : null,
-      ),
+    () => tabSourcesStale(state.tab, journal, portfolio),
     [journal, portfolio, state.tab],
   );
 
@@ -112,9 +104,14 @@ export default function AnalyticsPage() {
         {!bothFailed ? (
           <>
             <TabPanel id="overview">
+              {staleWholeTab ? (
+                <div data-testid="overview-stale-state">
+                  <StaleState message="Analytics sources may be delayed or stale for this view." />
+                </div>
+              ) : null}
               <OverviewStats
-                journal={journal}
-                portfolio={portfolio}
+                journal={gatedJournal}
+                portfolio={gatedPortfolio}
                 loading={loading}
                 onRetryJournal={() => void reload()}
                 onRetryPortfolio={() => void reload()}
@@ -123,14 +120,14 @@ export default function AnalyticsPage() {
             <TabPanel id="performance">
               <div className="space-y-6">
                 <DailyPnlChart
-                  source={portfolio}
+                  source={gatedPortfolio}
                   loading={loading && !portfolio}
                   onRetry={() => void reload()}
                   filtersSummary={filtersSummary}
                   staleWholeTab={staleWholeTab}
                 />
                 <CumulativePnlChart
-                  source={portfolio}
+                  source={gatedPortfolio}
                   loading={loading && !portfolio}
                   onRetry={() => void reload()}
                   filtersSummary={filtersSummary}

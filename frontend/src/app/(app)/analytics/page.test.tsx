@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AnalyticsPage from "@/app/(app)/analytics/page";
+import { DailyPnlChart } from "@/components/analytics/DailyPnlChart";
+import { CumulativePnlChart } from "@/components/analytics/CumulativePnlChart";
 import type { JournalStatsResponse, PaperPortfolioResponse } from "@/lib/api/types";
 import type { SourceResult } from "@/components/workflows";
 import type { AnalyticsFilterState } from "@/components/analytics/useAnalyticsFilters";
@@ -206,6 +209,13 @@ vi.mock("@/components/analytics/useAnalyticsSources", () => ({
   }),
 }));
 
+vi.mock("@/components/analytics/AnalyticsCharts", () => ({
+  DailyPnlChart: (props: ComponentProps<typeof DailyPnlChart>) => <DailyPnlChart {...props} />,
+  CumulativePnlChart: (props: ComponentProps<typeof CumulativePnlChart>) => (
+    <CumulativePnlChart {...props} />
+  ),
+}));
+
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => ({
     executionMode: "paper",
@@ -314,5 +324,47 @@ describe("AnalyticsPage PR1", () => {
     expect(mockApplyPreset).toHaveBeenCalledWith("30d");
     fireEvent.click(screen.getByTestId("analytics-clear-filters"));
     expect(mockClear).toHaveBeenCalled();
+  });
+
+  it("shows tab-level stale state on overview when all available sources are stale", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
+    sourcesState = {
+      journal: ok({ ...journalData, generated_at: "2026-07-25T11:00:00Z" }),
+      portfolio: ok({
+        ...portfolioData,
+        account: { ...portfolioData.account, as_of: "2026-07-25T11:00:00Z" },
+      }),
+      loading: false,
+      bothFailed: false,
+      partialData: false,
+      loadedFilterKey: "key",
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("overview-stale-state")).toHaveTextContent(/stale for this view/i);
+    vi.useRealTimers();
+  });
+
+  it("treats future-skewed portfolio as unavailable on performance tab", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
+    filterState = { ...filterState, tab: "performance" };
+    sourcesState = {
+      journal: ok(journalData),
+      portfolio: ok({
+        ...portfolioData,
+        account: { ...portfolioData.account, as_of: "2026-07-25T12:05:00Z" },
+      }),
+      loading: false,
+      bothFailed: false,
+      partialData: false,
+      loadedFilterKey: "key",
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("daily-pnl-chart-error")).toHaveTextContent(/clock-skewed/i);
+    expect(screen.getByTestId("cumulative-pnl-chart-error")).toHaveTextContent(/clock-skewed/i);
+    expect(screen.queryByTestId("daily-pnl-chart-plot")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cumulative-pnl-chart-plot")).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 });

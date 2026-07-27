@@ -68,18 +68,20 @@ function parseDailyPoint(point: DailyPortfolioPoint): {
 export function buildDailyPnlRows(series: DailyPortfolioPoint[]): DailyPnlTransformResult {
   let invalidMonetaryCount = 0;
 
-  const dailyRows: DailyPnlRow[] = series.map((point) => {
+  const parsedSeries = series.map((point) => {
     const parsed = parseDailyPoint(point);
     if (parsed.invalidMonetary) invalidMonetaryCount += 1;
-    return {
-      key: point.date,
-      label: point.date,
-      dailyPnl: parsed.dailyPnl,
-      tradesClosed: point.trades_closed,
-      endingEquity: parsed.endingEquity,
-      invalidMonetary: parsed.invalidMonetary,
-    };
+    return { point, parsed };
   });
+
+  const dailyRows: DailyPnlRow[] = parsedSeries.map(({ point, parsed }) => ({
+    key: point.date,
+    label: point.date,
+    dailyPnl: parsed.dailyPnl,
+    tradesClosed: point.trades_closed,
+    endingEquity: parsed.endingEquity,
+    invalidMonetary: parsed.invalidMonetary,
+  }));
 
   if (series.length <= MAX_DAILY_BARS) {
     return {
@@ -91,10 +93,8 @@ export function buildDailyPnlRows(series: DailyPortfolioPoint[]): DailyPnlTransf
   }
 
   const buckets = new Map<string, DailyPnlRow>();
-  for (const point of series) {
+  for (const { point, parsed } of parsedSeries) {
     const week = isoWeekKey(point.date);
-    const parsed = parseDailyPoint(point);
-    if (parsed.invalidMonetary) invalidMonetaryCount += 1;
 
     const existing = buckets.get(week);
     if (!existing) {

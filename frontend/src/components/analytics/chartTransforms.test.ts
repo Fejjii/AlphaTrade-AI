@@ -53,6 +53,20 @@ describe("buildDailyPnlRows", () => {
     expect(plottableDailyRows(result.rows)).toHaveLength(1);
     expect(result.rows[0]?.dailyPnl).toBeNull();
   });
+
+  it("counts malformed monetary values once when rolling up long series", () => {
+    const series = Array.from({ length: MAX_DAILY_BARS + 1 }, (_, index) => {
+      const day = String((index % 28) + 1).padStart(2, "0");
+      const pnl = index === 3 || index === 47 ? "not-a-number" : "10";
+      return dailyPoint(`2026-01-${day}`, pnl);
+    });
+
+    const result = buildDailyPnlRows(series);
+
+    expect(result.weekly).toBe(true);
+    expect(result.invalidMonetaryCount).toBe(2);
+    expect(result.malformed).toBe(true);
+  });
 });
 
 describe("buildCumulativePnlRows", () => {
