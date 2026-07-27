@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { PaperModeBanner } from "@/components/PaperModeBanner";
@@ -7,6 +8,7 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError } from "@/lib/api";
 import type { UserRiskSettings, UserRiskSettingsUpdate } from "@/lib/api/types";
@@ -115,12 +117,29 @@ export default function RiskSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Risk Settings</h1>
-        <p className="text-sm text-zinc-400">
-          Configure paper discipline limits and protective signals. These guide simulated trading only —
-          not live exchange execution.
+    <div className="space-y-6 pb-24 md:pb-section" data-testid="risk-settings-page">
+      <PageHeader
+        title="Risk settings"
+        description="Configure paper discipline limits and protective signals. Current risk posture and cooldowns live on the Portfolio command centre — this page is configuration only."
+      />
+
+      <div
+        role="status"
+        className="rounded-control border border-border-subtle bg-surface-1 px-3 py-3 text-sm text-text-secondary"
+        data-testid="risk-settings-ownership"
+      >
+        <p>
+          Portfolio owns the live risk overview. This page is configuration only.{" "}
+          <Link
+            href="/portfolio"
+            className="underline text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            data-testid="risk-settings-portfolio-link"
+          >
+            Open Portfolio &amp; Risk command centre
+          </Link>
+        </p>
+        <p className="mt-1 text-text-muted">
+          Saving settings here does not bypass risk engine BLOCK. Real trading remains disabled.
         </p>
       </div>
 
