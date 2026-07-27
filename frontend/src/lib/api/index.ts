@@ -436,6 +436,7 @@ export const api = {
       timeframe: string;
       direction: string;
       entry_rationale: string;
+      exit_rationale?: string;
       lessons?: string;
       improvement_rule?: string;
       emotions?: string[];
@@ -443,6 +444,10 @@ export const api = {
       strategy_id?: string;
       linked_proposal_id?: string;
       linked_position_id?: string;
+      result?: string;
+      pnl?: string;
+      stress_score?: number;
+      tags?: string[];
       organization_id?: string;
       user_id?: string;
     }) =>
