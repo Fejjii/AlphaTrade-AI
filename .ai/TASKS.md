@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A DONE) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A + C3B1 DONE) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -588,20 +588,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `d2aa71e`; pre-merge CI 30229681876 success; post-merge main CI 30231014521
   success — frontend, backend, docker-build, deployment-safety, evaluation,
   e2e-smoke). Phase C3A complete.
-- Phase C3B1 deliverables (draft PR, review hub only — no Knowledge redesign):
+- Phase C3B1 deliverables (review hub only — no Knowledge redesign):
   Lessons review hub at `/lessons`; attention queue (`pending_review` only);
   recently reviewed (accepted + rejected); source context + next-action guidance;
   SourceResult multi-source honesty; preserved accept/reject mutations + typed
   confirmations; journal/strategy/validation relationship links from stored fields only;
   `?candidate=` deep-link verification; coaching source filter; confirmed-PAPER posture;
+  correction passes: pagination coverage honesty (complete/truncated), all-status
+  deep-link rendering, global mutation lock, confidence 0 display, deep-link +
+  coaching-filter visibility, corrected truncated count wording;
   no backend/API/migration changes.
-  Phase C3B1 PR https://github.com/Fejjii/AlphaTrade-AI/pull/35 (draft;
-  branch `cursor/at040-phase-c3b1-lessons-review-hub-a54b`; validated implementation
-  commit `219f2c8`; correction passes: pagination coverage honesty (complete/truncated),
-  all-status deep-link rendering, global mutation lock, confidence 0 display,
-  deep-link + coaching-filter visibility, corrected truncated count wording;
-  pre-merge CI 30255517676 success — frontend, backend, docker-build,
-  deployment-safety, evaluation, e2e-smoke). Phase C3B1 pending review.
+  Phase C3B1 PR https://github.com/Fejjii/AlphaTrade-AI/pull/35 merged
+  (`edbc038`; pre-merge head `7ccc005`; validated implementation commit
+  `219f2c8`; pre-merge CI 30257024612 success; post-merge main CI 30258584822
+  success — frontend, backend, docker-build, deployment-safety, evaluation,
+  e2e-smoke). Phase C3B1 complete.
 - Phase C remaining: Phase C3B2+ Knowledge redesign (unstarted);
   Portfolio/risk split; analytics/charts (Phase D+).
 
