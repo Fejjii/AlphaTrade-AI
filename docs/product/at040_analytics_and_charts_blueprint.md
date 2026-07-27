@@ -54,7 +54,9 @@ The plan:
 7. **Ship in four small PRs** (foundation/overview → setups → behaviour/comparison →
    validation/polish) on Composer 2.5, with no file overlap with Knowledge Hub (#36) or
    Portfolio/Risk (#37), complete repository CI as merge evidence, and App Router URL state
-   via `router.replace(href, { scroll: false })`.
+   via `router.push(href, { scroll: false })` for committed user actions (tabs, submitted
+   filters, date presets, clear) and `router.replace(href, { scroll: false })` only for
+   invalid-param cleanup / canonicalisation (replace does **not** create a history entry).
 
 Gaps that require backend work before their charts can exist (deliberately excluded from
 the four frontend PRs): R-multiple distribution endpoint (or date filters on
@@ -440,17 +442,24 @@ One shared `AnalyticsFilterBar` (new, PR 1) synchronises to URL query params usi
 Router APIs from `next/navigation`:
 
 - `useRouter`, `usePathname`, `useSearchParams`
-- Updates via `router.replace(href, { scroll: false })` — **not** Pages-router "shallow"
-  routing (that concept does not apply here and must not appear in implementation prompts)
+- **Committed user actions** use `router.push(href, { scroll: false })` — tab changes,
+  submitted filters, date presets, and clearing filters. These create browser-history
+  entries so back/forward restores the previous committed state.
+- **`router.replace(href, { scroll: false })` is reserved** for invalid-param cleanup,
+  canonicalisation, unsupported-param removal, or equivalent URL replacement. Replace does
+  **not** create a browser-history entry and must never be described as doing so.
+- Do **not** use or mention Pages-router "shallow" routing (that concept does not apply
+  here and must not appear in implementation prompts).
 
 URL-state design requirements:
 
 - shareable (full filter + tab state in the query string)
-- back/forward-safe (browser history records each replace)
+- back/forward-safe (browser history records each **push** of a committed user action;
+  replace cleanup does not add history)
 - synchronized after external URL changes (read from `useSearchParams` as the source of
   truth; do not keep a stale local draft that diverges from the URL)
 - free from stale local draft state (controlled components derive values from search params;
-  writes go through `router.replace` only)
+  committed writes go through `router.push`; cleanup-only writes go through `router.replace`)
 
 Server is the source of truth for what each endpoint accepts; the bar only shows filters the
 active tab's sources support (unsupported filters are hidden, not disabled-and-ignored).
@@ -572,7 +581,7 @@ BASE: <full SHA>
 HEAD: <full SHA>
 DEPENDENCIES: <PR numbers>
 PARALLEL WORKSTREAMS:
-- Knowledge Hub: PR #36
+- Knowledge Hub: PR #36 (merged into main)
 - Portfolio/Risk: PR #37
 - Analytics Blueprint: PR #38
 MERGE REQUIREMENTS:
@@ -594,12 +603,14 @@ HEAD: ...
 
 - This blueprint documentation PR (#38) can merge after the contract correction lands and
   complete repository CI is green.
-- Analytics PR 1 may then start from the **latest `main`** while Knowledge (#36) and
-  Portfolio/Risk (#37) remain separate, provided it:
+- Knowledge Hub PR #36 is **merged into main**; Portfolio/Risk PR #37 remains a separate
+  parallel workstream.
+- Analytics PR 1 may then start from the **latest `main`** while Portfolio/Risk (#37)
+  remains separate, provided it:
   - uses a **new** agent chat
   - creates a **fresh** branch from latest `main`
   - does not touch Knowledge or Portfolio files
-  - records PR #36 and PR #37 as parallel workstreams in the tracking block
+  - records PR #36 (merged) and PR #37 as parallel workstreams in the tracking block
   - rebases before merge if `main` advances
 - No autonomous merge and no deploy from any Analytics PR.
 
@@ -609,11 +620,11 @@ HEAD: ...
 |---|---|
 | Recommended model | Composer 2.5 (Normal Agent / Cursor Cloud) |
 | Routes | `/analytics` (existing page restructured into `Tabs`: Overview, Performance; other tabs hidden until their PRs) |
-| Components (new) | `frontend/src/components/analytics/ChartFrame.tsx` (provenance caption, states, sample badge), `AnalyticsFilterBar.tsx` (App Router URL-synced, §6.2), `DailyPnlChart.tsx` (C1), `CumulativePnlChart.tsx` (C2), `OverviewStats.tsx` (≤ 7 `DataNumber` tiles + equity sparkline linking to `/portfolio`), `useAnalyticsFilters.ts` (`useRouter`/`usePathname`/`useSearchParams` + `router.replace(href, { scroll: false })`), `format.ts` (shared monetary/percent/date-range formatters — account-currency-agnostic; no hardcoded currency symbols; replaces page-local `pct()` copies) |
+| Components (new) | `frontend/src/components/analytics/ChartFrame.tsx` (provenance caption, states, sample badge), `AnalyticsFilterBar.tsx` (App Router URL-synced, §6.2), `DailyPnlChart.tsx` (C1), `CumulativePnlChart.tsx` (C2), `OverviewStats.tsx` (≤ 7 `DataNumber` tiles + equity sparkline linking to `/portfolio`), `useAnalyticsFilters.ts` (`useRouter`/`usePathname`/`useSearchParams`; `router.push(href, { scroll: false })` for committed actions; `router.replace(href, { scroll: false })` only for invalid-param cleanup / canonicalisation), `format.ts` (shared monetary/percent/date-range formatters — account-currency-agnostic; no hardcoded currency symbols; replaces page-local `pct()` copies) |
 | Files likely touched | `frontend/package.json` (+ `recharts`), `frontend/src/app/(app)/analytics/page.tsx` + `page.test.tsx`, new `frontend/src/components/analytics/*`, `frontend/src/lib/api/types.ts` only if PP/JS response types are missing fields (verify first — most exist) |
 | API dependencies | `GET /journal/statistics`, `GET /performance/portfolio` (both existing; no backend change) |
 | Filter scope for PR 1 | Shared: date range, symbol, timeframe. Tab-scoped PP `source` on Performance. **Omit** journal `setup_id` and **omit** `portfolio_setup` from PR 1 |
-| Tests | page tests for loading/empty/error/truncated/insufficient states; `ChartFrame` unit tests (all §7 conditions); filter-bar URL round-trip via `useSearchParams` + `router.replace(href, { scroll: false })`; assert no currency symbols in monetary rendering; a11y assertions (aria-labels, hidden tables); no-fabricated-values test (source error ⇒ no zero series) |
+| Tests | page tests for loading/empty/error/truncated/insufficient states; `ChartFrame` unit tests (all §7 conditions); filter-bar URL round-trips asserting `router.push` for tab/filter/preset/clear and `router.replace` only for invalid-param cleanup; assert no currency symbols in monetary rendering; a11y assertions (aria-labels, hidden tables); no-fabricated-values test (source error ⇒ no zero series) |
 | Conflict risks | lowest with parallel agents (new folder + one page). `package.json` merge conflict is possible with any parallel dependency change — keep the diff to one dependency line. Do not touch Knowledge (#36) or Portfolio (#37) files |
 | Merge prerequisites | §8.2 complete validation green (targeted + lint + typecheck + full unit tests + production build + complete repo CI). Fetch latest `main` and report rebase requirement. No autonomous merge / no deploy |
 | Estimated Cursor execution time | 60–90 min |
@@ -677,7 +688,7 @@ Unit/page tests (vitest + Testing Library, mocking the `api` facade per existing
 | Insufficient sample | `confidence="insufficient"` / `insufficient_data=true` ⇒ muted rendering + "n=X" badge; verdict copy absent |
 | Invalid dates | null `timestamp` points ⇒ index plotting + limitation note; future `as_of` ⇒ unavailable state (freshness helper contract) |
 | Missing values | `profit_factor=null` + `no_losing_trades` warning ⇒ "n/a — no losing trades"; `expectancy=null` bucket ⇒ "no P&L data" row, no zero bar |
-| Filter persistence | set filters ⇒ URL updated via `router.replace(href, { scroll: false })` (mock `useRouter`/`usePathname`/`useSearchParams`); reload from URL ⇒ same request params; tab switch keeps shared filters, drops tab-specific ones; invalid param ⇒ visible "ignored" notice; no stale local draft after external URL change |
+| Filter persistence | committed actions (tab change, submitted filters, date presets, clear) ⇒ `router.push(href, { scroll: false })` (mock `useRouter`/`usePathname`/`useSearchParams`); invalid-param cleanup / canonicalisation ⇒ `router.replace` only (assert replace is **not** claimed to add history); reload from URL ⇒ same request params; tab switch keeps shared filters, drops tab-specific ones; invalid param ⇒ visible "ignored" notice; no stale local draft after external URL change |
 | Deep links | `/analytics?tab=setups&setup_id=…&date_from=…` renders the tab pre-filtered with journal setup-definition UUID only; assert `setup_id` is never sent to PP and `portfolio_setup` (if present later) never overwrites `setup_id` |
 | Setup identity integrity | fixture with colliding display names across journal setup-definition / `StrategyId` enum / user-strategy name must not cross-filter; PR 1 asserts Portfolio setup filter is absent |
 | Currency honesty | rendered monetary strings contain no `$`, `£`, `€`, `USD`, or other currency symbol/code; axes/tooltips/a11y labels use signed monetary wording |
@@ -704,12 +715,12 @@ picked up later, it ships with its own pytest coverage in that separate task.
 
 | Risk | Mitigation |
 |---|---|
-| Parallel workstreams Knowledge Hub PR #36 and Portfolio/Risk PR #37 | All new code in `frontend/src/components/analytics/`; only `analytics/page.tsx`, its test, and one `package.json` line are shared surface. Portfolio/Knowledge files and navigation config are explicitly out of scope. Record #36/#37/#38 in every implementation tracking block; fetch latest `main` and report rebase requirement before merge; no autonomous merge |
+| Parallel workstreams Knowledge Hub PR #36 (merged) and Portfolio/Risk PR #37 | All new code in `frontend/src/components/analytics/`; only `analytics/page.tsx`, its test, and one `package.json` line are shared surface. Portfolio/Knowledge files and navigation config are explicitly out of scope. Record #36/#37/#38 in every implementation tracking block; fetch latest `main` and report rebase requirement before merge; no autonomous merge |
 | `recharts` bundle size on mobile | dynamic-import chart components (`next/dynamic`, `ssr: false`) so tab-less visits pay nothing; verify with build output in PR 1 |
 | Equity/drawdown chart ownership drift (this hub vs Portfolio) | AT-039 §8.2 catalog is the arbiter: Portfolio owns equity/drawdown; Analytics owns statistical charts. Overview references equity as sparkline only |
 | Setup identity confusion (journal `setup_id` vs PP `StrategyId` enum vs user-strategy name/UUID vs detector `condition`) | §6.1 contract: never translate by name; separate URL params (`setup_id` vs `portfolio_setup`); PR 1 omits both setup filters; Validation charts labeled "detector condition", Setups tab "journal setup" |
 | Hardcoded currency symbols despite no API currency field | §5 monetary display contract + §9 currency-honesty tests; optional §11 B9 if commercial multi-currency is desired later |
-| Stale local filter draft vs App Router URL | `useSearchParams` is source of truth; writes only via `router.replace(href, { scroll: false })`; tests cover external URL changes |
+| Stale local filter draft vs App Router URL | `useSearchParams` is source of truth; committed writes via `router.push(href, { scroll: false })`; cleanup-only writes via `router.replace` (no history entry); tests cover external URL changes and push-vs-replace call sites |
 | Two discipline scores misread as one | distinct card labels + source links (§8 PR 3 tests enforce) |
 | `journal_stats_max_rows` truncation on large histories | truncation banner + narrow-range suggestion (§7); no client attempt to page beyond the cap |
 | No stored equity history — curves recomputed per request | acceptable for paper scale; if latency grows, §11 B8 (scheduled snapshots) is the fix, not client caching |
@@ -754,7 +765,7 @@ BASE: <full SHA of latest main at branch creation>
 HEAD: <full SHA after each push>
 DEPENDENCIES: PR #38 (merged blueprint)
 PARALLEL WORKSTREAMS:
-- Knowledge Hub: PR #36
+- Knowledge Hub: PR #36 (merged into main)
 - Portfolio/Risk: PR #37
 - Analytics Blueprint: PR #38
 MERGE REQUIREMENTS:
@@ -769,11 +780,14 @@ MERGE REQUIREMENTS:
 > `feat/at040-analytics-pr1-foundation` in a new agent chat. Add `recharts` as the only new
 > dependency (dynamic-imported, `ssr: false`). Create `frontend/src/components/analytics/`
 > with `ChartFrame`, `AnalyticsFilterBar`, `useAnalyticsFilters` (Next.js 15 App Router:
-> `useRouter` / `usePathname` / `useSearchParams` from `next/navigation`; update URL with
-> `router.replace(href, { scroll: false })` — do not use or mention shallow routing),
-> `format.ts` (account-currency-agnostic monetary/percent/date-range formatters — never
-> hardcode `$`, `£`, `€`, `USD`, or any currency symbol/code), `OverviewStats`,
-> `DailyPnlChart` (spec C1) and `CumulativePnlChart` (spec C2). Restructure
+> `useRouter` / `usePathname` / `useSearchParams` from `next/navigation`; committed user
+> actions — tab changes, submitted filters, date presets, clearing filters — update the URL
+> with `router.push(href, { scroll: false })`; use `router.replace(href, { scroll: false })`
+> only for invalid-param cleanup, canonicalisation, unsupported-param removal, or equivalent
+> URL replacement — never claim replace creates a browser-history entry; do not use or
+> mention shallow routing), `format.ts` (account-currency-agnostic monetary/percent/
+> date-range formatters — never hardcode `$`, `£`, `€`, `USD`, or any currency symbol/code),
+> `OverviewStats`, `DailyPnlChart` (spec C1) and `CumulativePnlChart` (spec C2). Restructure
 > `frontend/src/app/(app)/analytics/page.tsx` into URL-param tabs (Overview, Performance)
 > using the existing `Tabs` primitive. Consume only `GET /journal/statistics` and
 > `GET /performance/portfolio`. Shared filters for PR 1: date range, symbol, timeframe;
@@ -785,12 +799,12 @@ MERGE REQUIREMENTS:
 > banners for `truncated=true`). Do not modify navigation config, portfolio
 > components/pages, knowledge pages, backend code, or `.ai/TASKS.md`. Add the §9 tests
 > including currency honesty, setup-identity integrity (Portfolio setup filter absent),
-> App Router URL round-trips with no stale local draft, chart accessibility (aria-label +
-> hidden table), and the no-fabricated-values assertion. Run targeted tests, frontend lint,
-> frontend typecheck, complete frontend unit tests, frontend production build, then wait for
-> complete repository CI (frontend, backend, docker-build, deployment-safety, evaluation,
-> e2e-smoke). Frontend-only green is not sufficient merge evidence. Open exactly one draft
-> PR titled
+> App Router URL round-trips asserting `push` for committed actions and `replace` only for
+> cleanup (with no stale local draft), chart accessibility (aria-label + hidden table), and
+> the no-fabricated-values assertion. Run targeted tests, frontend lint, frontend typecheck,
+> complete frontend unit tests, frontend production build, then wait for complete repository
+> CI (frontend, backend, docker-build, deployment-safety, evaluation, e2e-smoke).
+> Frontend-only green is not sufficient merge evidence. Open exactly one draft PR titled
 > `feat(analytics): analytics hub foundation with filters, overview and performance charts (AT-040 PR 1)`.
 > Every final response must begin with `PR NUMBER` / `BRANCH` / `HEAD`. Do not merge. Do not
 > deploy. Do not begin until blueprint PR #38 is merged.
