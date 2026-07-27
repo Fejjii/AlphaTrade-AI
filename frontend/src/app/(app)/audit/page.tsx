@@ -17,15 +17,19 @@ export default function AuditPage() {
         <h1 className="text-2xl font-semibold">Audit</h1>
         <p className="text-sm text-zinc-400">Redacted audit trail for compliance-style review.</p>
       </div>
-      {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
-      <div className="grid gap-4">
-        {data?.items.length ? (
-          data.items.map((event) => <AuditEventCard key={event.event_id} event={event} />)
-        ) : (
-          <EmptyState title="No audit events" />
-        )}
-      </div>
+      {loading ? (
+        <LoadingState label="Loading audit events…" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={() => void reload()} />
+      ) : data ? (
+        <div className="grid gap-4">
+          {data.items.length ? (
+            data.items.map((event) => <AuditEventCard key={event.event_id} event={event} />)
+          ) : (
+            <EmptyState title="No audit events" />
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
