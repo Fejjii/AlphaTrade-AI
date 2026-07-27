@@ -1,6 +1,8 @@
 import type { SourceResult } from "@/components/workflows";
 import { freshnessFromTimestamp } from "@/components/workflows/freshness";
 
+import type { AnalyticsTab } from "./filterValidation";
+
 export const FRESHNESS_UNAVAILABLE_MESSAGE =
   "Source timestamp is invalid or clock-skewed — data treated as unavailable.";
 
@@ -36,11 +38,14 @@ export function gateSourceByFreshness<T>(
   return source;
 }
 
+type Timestamped = SourceResult<{ generated_at?: string | null }> | null;
+
 export function tabSourcesStale(
-  tab: "overview" | "performance" | "setups",
+  tab: AnalyticsTab,
   journal: SourceResult<{ generated_at?: string | null }> | null,
   portfolio: SourceResult<{ account: { as_of?: string | null } }> | null,
   nowMs?: number,
+  extras: Timestamped[] = [],
 ): boolean {
   const entries =
     tab === "overview"
@@ -50,7 +55,12 @@ export function tabSourcesStale(
         ]
       : tab === "setups"
         ? [{ source: journal, timestamp: journalFreshnessTimestamp(journal) }]
-        : [{ source: portfolio, timestamp: portfolioFreshnessTimestamp(portfolio) }];
+        : tab === "performance"
+          ? [{ source: portfolio, timestamp: portfolioFreshnessTimestamp(portfolio) }]
+          : extras.map((source) => ({
+              source,
+              timestamp: journalFreshnessTimestamp(source),
+            }));
 
   const freshAvailable = entries.filter(({ source, timestamp }) => {
     if (!source?.available || !timestamp) return false;

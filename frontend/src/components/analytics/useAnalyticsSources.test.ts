@@ -132,43 +132,49 @@ const portfolioResponse = {
   },
 };
 
-const defaultParams: AnalyticsFilterParams = {
-  journal: { group_by: "overall" as const },
-  portfolio: { timezone: "UTC" },
-  state: {
+function baseState(symbol: string | null = null) {
+  return {
     tab: "overview" as const,
     dateFrom: null,
     dateTo: null,
-    symbol: null,
+    symbol,
     timeframe: null,
     portfolioSource: null,
     journalSource: null,
     setupId: null,
     userStrategyId: null,
+    strategyVersionId: null,
+    ruleCompliance: null,
+    marketRegime: null,
     groupBy: "setup" as const,
     bucketOffset: 0,
     ignoredParams: [],
-  },
+  };
+}
+
+const defaultParams: AnalyticsFilterParams = {
+  journal: { group_by: "overall" as const },
+  portfolio: { timezone: "UTC" },
+  ruleComplianceJournal: { group_by: "rule_compliance", limit: 20 },
+  comparison: {},
+  analyticsWindow: {},
+  learningWindow: {},
+  state: baseState(),
 };
 
 function paramsForSymbol(symbol: string | null): AnalyticsFilterParams {
   return {
     journal: { group_by: "overall" as const, ...(symbol ? { symbol } : {}) },
     portfolio: { timezone: "UTC", ...(symbol ? { symbol } : {}) },
-    state: {
-      tab: "overview" as const,
-      dateFrom: null,
-      dateTo: null,
-      symbol,
-      timeframe: null,
-      portfolioSource: null,
-    journalSource: null,
-      setupId: null,
-      userStrategyId: null,
-      groupBy: "setup" as const,
-      bucketOffset: 0,
-      ignoredParams: [],
+    ruleComplianceJournal: {
+      group_by: "rule_compliance",
+      limit: 20,
+      ...(symbol ? { symbol } : {}),
     },
+    comparison: symbol ? { symbol } : {},
+    analyticsWindow: {},
+    learningWindow: {},
+    state: baseState(symbol),
   };
 }
 

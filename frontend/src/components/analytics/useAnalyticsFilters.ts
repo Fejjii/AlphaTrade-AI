@@ -3,10 +3,16 @@
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import type { JournalTradeSource, PortfolioSourceFilter } from "@/lib/api/types";
+import type {
+  JournalTradeSource,
+  MarketRegime,
+  PortfolioSourceFilter,
+  TradeRuleCompliance,
+} from "@/lib/api/types";
 
 import { isoDateOnly, addDays } from "./format";
 import {
+  TAB_SCOPED_PARAM_KEYS,
   buildAnalyticsApiParams,
   buildSetupAnalyticsApiParams,
   parseAnalyticsSearchParams,
@@ -14,7 +20,13 @@ import {
   type SetupGroupBy,
 } from "./filterValidation";
 
-export type { AnalyticsFilterParams, AnalyticsFilterState, AnalyticsTab, SetupGroupBy } from "./filterValidation";
+export type {
+  AnalyticsFilterParams,
+  AnalyticsFilterState,
+  AnalyticsTab,
+  SetupAnalyticsApiParams,
+  SetupGroupBy,
+} from "./filterValidation";
 
 export type DatePreset = "7d" | "30d" | "90d" | "ytd" | "all";
 
@@ -47,15 +59,36 @@ export {
   buildFilterKey,
   buildSetupAnalyticsApiParams,
   buildSetupFilterKey,
+  formatAnalyticsWindowFiltersSummary,
   formatAppliedFiltersSummary,
+  formatComparisonFiltersSummary,
+  formatJournalStatsFiltersSummary,
+  formatLearningAnalyticsFiltersSummary,
+  formatSetupEvidenceFiltersSummary,
+  formatSetupEvidenceLimitationNote,
 } from "./filterValidation";
 
-function dropSetupsParams(params: URLSearchParams): void {
-  params.delete("setup_id");
-  params.delete("user_strategy_id");
-  params.delete("group_by");
-  params.delete("offset");
-  params.delete("source");
+export type AnalyticsDraft = {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  symbol?: string | null;
+  timeframe?: string | null;
+  portfolioSource?: PortfolioSourceFilter | null;
+  setupId?: string | null;
+  userStrategyId?: string | null;
+  strategyVersionId?: string | null;
+  journalSource?: JournalTradeSource | null;
+  ruleCompliance?: TradeRuleCompliance | null;
+  marketRegime?: MarketRegime | null;
+};
+
+function setOrDelete(params: URLSearchParams, key: string, value: string | null | undefined): void {
+  if (value) params.set(key, value);
+  else params.delete(key);
+}
+
+function dropTabScopedParams(params: URLSearchParams): void {
+  for (const key of TAB_SCOPED_PARAM_KEYS) params.delete(key);
 }
 
 export function useAnalyticsFilters() {
@@ -94,59 +127,53 @@ export function useAnalyticsFilters() {
       pushParams((params) => {
         if (tab === "overview") params.delete("tab");
         else params.set("tab", tab);
-        if (tab !== "performance") params.delete("source");
-        if (tab !== "setups") dropSetupsParams(params);
+        dropTabScopedParams(params);
       });
     },
     [pushParams],
   );
 
   const applyDraft = useCallback(
-    (draft: {
-      dateFrom?: string | null;
-      dateTo?: string | null;
-      symbol?: string | null;
-      timeframe?: string | null;
-      portfolioSource?: PortfolioSourceFilter | null;
-      journalSource?: JournalTradeSource | null;
-      setupId?: string | null;
-      userStrategyId?: string | null;
-    }) => {
+    (draft: AnalyticsDraft) => {
       pushParams((params) => {
-        const setOrDelete = (key: string, value: string | null | undefined) => {
-          if (value) params.set(key, value);
-          else params.delete(key);
-        };
-        if ("dateFrom" in draft) setOrDelete("date_from", draft.dateFrom);
-        if ("dateTo" in draft) setOrDelete("date_to", draft.dateTo);
-        if ("symbol" in draft) setOrDelete("symbol", draft.symbol);
-        if ("timeframe" in draft) setOrDelete("timeframe", draft.timeframe);
+        if ("dateFrom" in draft) setOrDelete(params, "date_from", draft.dateFrom);
+        if ("dateTo" in draft) setOrDelete(params, "date_to", draft.dateTo);
+        if ("symbol" in draft) setOrDelete(params, "symbol", draft.symbol);
+        if ("timeframe" in draft) setOrDelete(params, "timeframe", draft.timeframe);
         if ("portfolioSource" in draft) {
           if (draft.portfolioSource && draft.portfolioSource !== "all") {
             params.set("source", draft.portfolioSource);
-          } else {
+          } else if (state.tab === "performance") {
             params.delete("source");
           }
         }
         if ("journalSource" in draft) {
-          if (draft.journalSource) {
-            params.set("source", draft.journalSource);
-          } else {
+          if (draft.journalSource) params.set("source", draft.journalSource);
+          else if (state.tab === "setups" || state.tab === "behaviour" || state.tab === "comparison") {
             params.delete("source");
           }
           params.delete("offset");
         }
         if ("setupId" in draft) {
-          setOrDelete("setup_id", draft.setupId);
+          setOrDelete(params, "setup_id", draft.setupId);
           params.delete("offset");
         }
         if ("userStrategyId" in draft) {
-          setOrDelete("user_strategy_id", draft.userStrategyId);
+          setOrDelete(params, "user_strategy_id", draft.userStrategyId);
           params.delete("offset");
+        }
+        if ("strategyVersionId" in draft) {
+          setOrDelete(params, "strategy_version_id", draft.strategyVersionId);
+        }
+        if ("ruleCompliance" in draft) {
+          setOrDelete(params, "rule_compliance", draft.ruleCompliance);
+        }
+        if ("marketRegime" in draft) {
+          setOrDelete(params, "market_regime", draft.marketRegime);
         }
       });
     },
-    [pushParams],
+    [pushParams, state.tab],
   );
 
   const applyDatePreset = useCallback(
@@ -185,8 +212,7 @@ export function useAnalyticsFilters() {
       params.delete("date_to");
       params.delete("symbol");
       params.delete("timeframe");
-      params.delete("source");
-      dropSetupsParams(params);
+      dropTabScopedParams(params);
     });
   }, [pushParams]);
 

@@ -475,10 +475,14 @@ export const api = {
       apiFetch<SetupEvidenceResponse>("/journal/setup-evidence", { query: params }),
   },
   analytics: {
-    setups: () => apiFetch<SetupAnalyticsResponse>("/analytics/setups"),
-    tradeReview: () => apiFetch<TradeReviewAnalytics>("/analytics/trade-review"),
-    discipline: () => apiFetch<DisciplineScoreResult>("/analytics/discipline"),
-    riskBehavior: () => apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior"),
+    setups: (params?: { start_date?: string; end_date?: string; setup_type?: string }) =>
+      apiFetch<SetupAnalyticsResponse>("/analytics/setups", { query: params }),
+    tradeReview: (params?: { start_date?: string; end_date?: string }) =>
+      apiFetch<TradeReviewAnalytics>("/analytics/trade-review", { query: params }),
+    discipline: (params?: { start_date?: string; end_date?: string }) =>
+      apiFetch<DisciplineScoreResult>("/analytics/discipline", { query: params }),
+    riskBehavior: (params?: { start_date?: string; end_date?: string }) =>
+      apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior", { query: params }),
   },
   learningAnalytics: {
     summary: (params?: LearningAnalyticsParams) =>

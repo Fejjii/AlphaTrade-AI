@@ -4,6 +4,8 @@ import { useEffect, useMemo } from "react";
 
 import {
   AnalyticsFilterBar,
+  BehaviourCharts,
+  ComparisonCharts,
   OverviewStats,
   PerformanceCharts,
   SetupsCharts,
@@ -27,6 +29,8 @@ const TAB_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "performance", label: "Performance" },
   { id: "setups", label: "Setups" },
+  { id: "behaviour", label: "Behaviour" },
+  { id: "comparison", label: "Comparison" },
 ];
 
 export default function AnalyticsPage() {
@@ -83,7 +87,7 @@ export default function AnalyticsPage() {
     <div className="space-y-8 max-w-full" data-testid="analytics-page">
       <PageHeader
         title="Analytics"
-        description="Paper-only statistical hub — overview, performance, and journal setup analytics with honest source states."
+        description="Paper-only statistical hub — overview, performance, setups, behaviour, and human-versus-system comparison with honest source states."
         meta={<VerifiedPaperModeIndicator />}
       />
 
@@ -104,7 +108,10 @@ export default function AnalyticsPage() {
           onClear={clearFilters}
         />
 
-        {state.tab !== "setups" && shared.partialData ? (
+        {state.tab !== "setups" &&
+        state.tab !== "behaviour" &&
+        state.tab !== "comparison" &&
+        shared.partialData ? (
           <p
             className="text-sm text-amber-500/90"
             data-testid="analytics-partial-data"
@@ -198,6 +205,18 @@ export default function AnalyticsPage() {
               bucketOffset={state.bucketOffset}
               onPageChange={setBucketOffset}
             />
+          ) : null}
+        </TabPanel>
+
+        <TabPanel id="behaviour">
+          {state.tab === "behaviour" ? (
+            <BehaviourCharts apiParams={apiParams} enabled />
+          ) : null}
+        </TabPanel>
+
+        <TabPanel id="comparison">
+          {state.tab === "comparison" ? (
+            <ComparisonCharts apiParams={apiParams} enabled />
           ) : null}
         </TabPanel>
       </TabsRoot>
