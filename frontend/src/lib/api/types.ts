@@ -43,13 +43,17 @@ export type StrategyId =
   | "green_day_guard"
   | "mental_capital_guard"
   | "manual_review";
+/** Backend DocumentSourceType values (RAG corpus). */
 export type DocumentSourceType =
-  | "playbook"
-  | "journal"
-  | "market_note"
-  | "strategy_doc"
+  | "trading_playbook"
+  | "product_requirements"
+  | "system_architecture"
   | "risk_policy"
-  | "external";
+  | "strategy_template"
+  | "trade_journal"
+  | "review_note"
+  | "mistakes_database"
+  | "general_note";
 export type AuditSeverity = "info" | "warning" | "error" | "critical";
 export type AuditEventType = string;
 export type ProviderKind =
@@ -1139,7 +1143,7 @@ export interface Citation {
   document_id: string;
   chunk_id: string;
   title?: string | null;
-  source_type: DocumentSourceType;
+  source_type: DocumentSourceType | string;
   section_title?: string | null;
   page_number?: number | null;
   chunk_ordinal?: number | null;
@@ -1154,7 +1158,7 @@ export interface RetrievedChunk {
   section_title?: string | null;
   page_number?: number | null;
   chunk_ordinal: number;
-  source_type: DocumentSourceType;
+  source_type: DocumentSourceType | string;
   content: string;
   score: number;
 }
@@ -1169,12 +1173,69 @@ export interface RagSearchResponse {
   detail?: string | null;
 }
 
+export interface RagDocument {
+  id: string;
+  organization_id?: string | null;
+  user_id?: string | null;
+  source_type: DocumentSourceType | string;
+  title: string;
+  source_uri?: string | null;
+  source_hash?: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaginatedRagDocuments {
+  items: RagDocument[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ChunkMetadata {
+  title?: string | null;
+  section_title?: string | null;
+  page_number?: number | null;
+  source_type: DocumentSourceType | string;
+  strategy_tag?: string | null;
+  symbol_tag?: string | null;
+  timeframe_tag?: string | null;
+  risk_tag?: string | null;
+}
+
+export interface RagChunk {
+  id: string;
+  document_id: string;
+  organization_id?: string | null;
+  user_id?: string | null;
+  title?: string | null;
+  section_title?: string | null;
+  page_number?: number | null;
+  chunk_ordinal: number;
+  content: string;
+  token_count?: number | null;
+  text_hash?: string | null;
+  embedding_ref?: string | null;
+  metadata: ChunkMetadata;
+  created_at: string;
+}
+
+export interface PaginatedRagChunks {
+  items: RagChunk[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface IngestDocumentResponse {
   document_id: string;
   source_hash: string;
   chunk_count: number;
   duplicate: boolean;
   version: number;
+  vector_backend?: string | null;
+  fallback_used?: boolean;
 }
 
 export interface UsageSummary {
