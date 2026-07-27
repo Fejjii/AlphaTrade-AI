@@ -1,135 +1,338 @@
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import LessonsPage from "@/app/(app)/lessons/page";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { SourceResult } from "@/components/workflows/sourceResult";
+import type { LessonCandidate, PaginatedLessonCandidates } from "@/lib/api/types";
+
+import LessonsPage from "./page";
 import { LessonAcceptPanel } from "@/components/lessons/LessonAcceptPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-}));
-
-const { acceptMock } = vi.hoisted(() => ({
-  acceptMock: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock("@/lib/api", () => ({
-  api: {
-    strategies: {
-      list: vi.fn().mockResolvedValue({
-        items: [{ id: "strategy-1", name: "HTF Pullback", current_version: 2 }],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      }),
-    },
-    lessons: {
-      listCandidates: vi.fn().mockResolvedValue({
-        items: [
-          {
-            id: "lesson-1",
-            organization_id: "org",
-            user_id: "user",
-            source_type: "runner_analysis",
-            lesson_text: "Review runner rules before entry.",
-            mistake_type: "early_exit",
-            severity: "medium",
-            status: "pending_review",
-            proposed_rule_update: { summary: "Hold runner until structure break" },
-            created_at: new Date().toISOString(),
-          },
-        ],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      }),
-      listAccepted: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
-      accept: acceptMock,
-      reject: vi.fn().mockResolvedValue({}),
-    },
-  },
-}));
-
-const lesson = {
-  id: "lesson-1",
-  organization_id: "org",
-  user_id: "user",
-  source_type: "runner_analysis",
-  lesson_text: "Review runner rules before entry.",
-  mistake_type: "early_exit",
-  severity: "medium",
-  status: "pending_review",
-  proposed_rule_update: { summary: "Hold runner until structure break" },
-  created_at: new Date().toISOString(),
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "fallback",
 };
+
+const search = new URLSearchParams();
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => search,
+}));
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => ({
+    killSwitchActive: false,
+    killSwitchBusy: false,
+    killSwitchError: null,
+    setKillSwitchActive: vi.fn(),
+  }),
+  useSafetyPosture: () => safetyPosture,
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
+}));
+
+function ok<T>(data: T): SourceResult<T> {
+  return { data, available: true, error: null, fallbackUsed: false };
+}
+
+function failed<T>(error = "down"): SourceResult<T> {
+  return { data: null, available: false, error, fallbackUsed: false };
+}
+
+function lesson(overrides: Partial<LessonCandidate> & { id: string }): LessonCandidate {
+  return {
+    organization_id: "org",
+    user_id: "user",
+    source_type: "runner_analysis",
+    lesson_text: "Review runner rules before entry.",
+    mistake_type: "early_exit",
+    severity: "medium",
+    status: "pending_review",
+    proposed_rule_update: { summary: "Hold runner until structure break" },
+    created_at: "2026-07-20T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const pendingLesson = lesson({ id: "lesson-1" });
+const acceptedLesson = lesson({
+  id: "lesson-accepted",
+  status: "accepted",
+  reviewed_at: "2026-07-21T10:00:00.000Z",
+});
+const rejectedLesson = lesson({
+  id: "lesson-rejected",
+  status: "rejected",
+  reviewed_at: "2026-07-22T10:00:00.000Z",
+});
+
+let asyncState = {
+  data: {
+    pending: ok<PaginatedLessonCandidates>({
+      items: [pendingLesson],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    accepted: ok<PaginatedLessonCandidates>({
+      items: [acceptedLesson],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    rejected: ok<PaginatedLessonCandidates>({
+      items: [rejectedLesson],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+  } as {
+    pending: SourceResult<PaginatedLessonCandidates>;
+    accepted: SourceResult<PaginatedLessonCandidates>;
+    rejected: SourceResult<PaginatedLessonCandidates>;
+  } | null,
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn(),
+};
+
+const acceptMock = vi.fn().mockResolvedValue({});
+const rejectMock = vi.fn().mockResolvedValue({});
+const getCandidateMock = vi.fn();
+
+vi.mock("@/hooks/useAsyncData", () => ({
+  useAsyncData: () => asyncState,
+}));
+
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      strategies: {
+        ...actual.api.strategies,
+        list: vi.fn().mockResolvedValue({
+          items: [{ id: "strategy-1", name: "HTF Pullback", current_version: 2 }],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      },
+      lessons: {
+        ...actual.api.lessons,
+        listCandidates: vi.fn().mockImplementation(async ({ status }: { status?: string }) => {
+          if (status === "rejected") {
+            return asyncState.data?.rejected.data ?? { items: [], total: 0, limit: 50, offset: 0 };
+          }
+          return asyncState.data?.pending.data ?? { items: [], total: 0, limit: 50, offset: 0 };
+        }),
+        listAccepted: vi.fn().mockImplementation(async () => {
+          return asyncState.data?.accepted.data ?? { items: [], total: 0, limit: 50, offset: 0 };
+        }),
+        accept: (...args: unknown[]) => acceptMock(...args),
+        reject: (...args: unknown[]) => rejectMock(...args),
+        getCandidate: (...args: unknown[]) => getCandidateMock(...args),
+      },
+    },
+  };
+});
+
+function resetAsyncState() {
+  asyncState = {
+    data: {
+      pending: ok({
+        items: [pendingLesson],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      accepted: ok({
+        items: [acceptedLesson],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      rejected: ok({
+        items: [rejectedLesson],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    },
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  };
+}
+
+beforeEach(() => {
+  resetAsyncState();
+  safetyPosture.executionMode = "paper";
+  safetyPosture.realTradingEnabled = false;
+  search.forEach((_, key) => search.delete(key));
+  acceptMock.mockClear();
+  rejectMock.mockClear();
+  getCandidateMock.mockReset();
+  getCandidateMock.mockResolvedValue(pendingLesson);
+});
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
-describe("LessonsPage", () => {
-  it("renders lessons page", async () => {
+describe("LessonsPage hub", () => {
+  it("renders loading state initially", () => {
+    asyncState = { data: null, loading: true, error: null, reload: vi.fn() };
     render(<LessonsPage />);
-    expect(await screen.findByTestId("lessons-page")).toBeInTheDocument();
-    expect(await screen.findByTestId("lesson-candidate-card")).toBeInTheDocument();
+    expect(screen.getByText(/loading lessons review hub/i)).toBeInTheDocument();
   });
 
-  it("clarifies that pending observations are not accepted rules", async () => {
+  it("renders lessons review hub sections", async () => {
     render(<LessonsPage />);
-    expect(await screen.findByTestId("lessons-tab-description")).toHaveTextContent(
-      "not accepted trading rules",
+    expect(await screen.findByTestId("lessons-hub-page")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-attention-queue")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-recent-reviewed")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-source-availability")).toBeInTheDocument();
+  });
+
+  it("shows honest empty attention queue", async () => {
+    asyncState.data!.pending = ok({ items: [], total: 0, limit: 50, offset: 0 });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-empty")).toBeInTheDocument();
+  });
+
+  it("does not show empty queue when pending source failed", async () => {
+    asyncState.data!.pending = failed("pending down");
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-attention-empty")).not.toBeInTheDocument();
+  });
+
+  it("shows partial warning when rejected history fails", async () => {
+    asyncState.data!.rejected = failed("rejected down");
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-recent-partial")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-recent-item-lesson-accepted")).toBeInTheDocument();
+  });
+
+  it("shows recently reviewed accepted and rejected lessons", async () => {
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-recent-item-lesson-rejected")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-recent-item-lesson-accepted")).toBeInTheDocument();
+  });
+
+  it("links journal entry when related_journal_entry_id exists", async () => {
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "lj", related_journal_entry_id: "entry-99" })],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    const card = await screen.findByTestId("lessons-attention-item-lj");
+    expect(within(card).getByRole("link", { name: /open/i })).toHaveAttribute(
+      "href",
+      "/journal?entry=entry-99",
     );
   });
 
-  it("opens accept panel for accept lesson only flow", async () => {
+  it("shows unavailable journal message when id missing", async () => {
+    render(<LessonsPage />);
+    const card = await screen.findByTestId("lessons-attention-item-lesson-1");
+    expect(
+      within(card).getByTestId("lesson-relationship-unavailable-journal"),
+    ).toHaveTextContent(/no related_journal_entry_id/i);
+  });
+
+  it("shows stale message for invalid candidate deep link", async () => {
+    search.set("candidate", "missing-lesson");
+    getCandidateMock.mockRejectedValueOnce(new Error("not found"));
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-candidate-stale")).toHaveTextContent(
+      /missing-lesson/i,
+    );
+    expect(screen.queryByTestId("lessons-attention-item-missing-lesson")).not.toBeInTheDocument();
+  });
+
+  it("supports accept mutation with confirmation", async () => {
     render(<LessonsPage />);
     fireEvent.click(await screen.findByTestId("accept-lesson-btn"));
-    expect(await screen.findByTestId("lesson-accept-panel")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("accept-path-accept_only"));
     fireEvent.click(screen.getByTestId("accept-confirm-checkbox"));
     fireEvent.click(screen.getByTestId("confirm-accept"));
     await waitFor(() => expect(acceptMock).toHaveBeenCalled());
   });
 
-  it("filters coaching lessons client-side", async () => {
-    const { api } = await import("@/lib/api");
-    vi.mocked(api.lessons.listCandidates).mockResolvedValueOnce({
-      items: [
-        {
-          id: "lesson-coach",
-          organization_id: "org",
-          user_id: "user",
-          source_type: "coaching",
-          lesson_text: "Review this behavior: invalidation was hit often.",
-          mistake_type: "invalidation_hit",
-          severity: "medium",
-          status: "pending_review",
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: "lesson-journal",
-          organization_id: "org",
-          user_id: "user",
-          source_type: "journal",
-          lesson_text: "Journal lesson.",
-          mistake_type: "early_exit",
-          severity: "low",
-          status: "pending_review",
-          created_at: new Date().toISOString(),
-        },
-      ],
-      total: 2,
-      limit: 50,
-      offset: 0,
-    });
+  it("shows failed reject mutation and allows retry", async () => {
+    rejectMock.mockRejectedValueOnce(new Error("reject failed"));
     render(<LessonsPage />);
-    expect(await screen.findByTestId("lesson-source-coaching")).toBeInTheDocument();
-    expect(screen.getByTestId("lesson-source-label")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("lessons-source-coaching"));
-    expect(screen.getByTestId("lesson-source-coaching")).toBeInTheDocument();
-    expect(screen.queryByTestId("lesson-source-label")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("reject-lesson-btn"));
+    expect(await screen.findByTestId("lesson-mutation-error")).toHaveTextContent(/reject failed/i);
+    rejectMock.mockResolvedValueOnce({});
+    fireEvent.click(screen.getByTestId("reject-lesson-btn"));
+    await waitFor(() => expect(rejectMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("prevents duplicate reject submissions while busy", async () => {
+    let resolveReject: (() => void) | undefined;
+    rejectMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReject = resolve;
+        }),
+    );
+    render(<LessonsPage />);
+    const rejectBtn = await screen.findByTestId("reject-lesson-btn");
+    fireEvent.click(rejectBtn);
+    expect(rejectBtn).toBeDisabled();
+    fireEvent.click(rejectBtn);
+    expect(rejectMock).toHaveBeenCalledTimes(1);
+    resolveReject?.();
+    await waitFor(() => expect(rejectMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows confirmed paper posture when verified", async () => {
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-hub-page")).toBeInTheDocument();
+    expect(screen.getByTestId("journal-hub-safety")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-limitations")).toHaveTextContent(
+      /runtime posture verified as paper-only/i,
+    );
+  });
+
+  it("uses conservative posture wording when paper is unverified", async () => {
+    safetyPosture.executionMode = null;
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-limitations")).toHaveTextContent(
+      /paper posture is not fully verified/i,
+    );
+  });
+
+  it("uses card layout without horizontal scroll container at mobile width", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390, writable: true });
+    render(<LessonsPage />);
+    const list = await screen.findByTestId("lessons-attention-list");
+    expect(list.className).not.toMatch(/overflow-x/);
+    expect(within(list).getAllByTestId("lesson-review-card").length).toBeGreaterThan(0);
+  });
+
+  it("keeps lessons route reachable via journal hub nav", async () => {
+    render(<LessonsPage />);
+    expect(await screen.findByRole("link", { name: "Lessons" })).toHaveAttribute(
+      "href",
+      "/lessons",
+    );
   });
 });
 
@@ -138,7 +341,7 @@ describe("LessonAcceptPanel", () => {
     const onAccept = vi.fn().mockResolvedValue(undefined);
     render(
       <LessonAcceptPanel
-        lesson={{ ...lesson, related_strategy_id: "strategy-1" }}
+        lesson={{ ...pendingLesson, related_strategy_id: "strategy-1" }}
         busy={false}
         onAccept={onAccept}
         onCancel={vi.fn()}
@@ -197,7 +400,7 @@ describe("PaperValidationPanel", () => {
           blockers: ["Sample size below minimum"],
           eligibility_reasons: [],
           accepted_lessons: [],
-          unresolved_lesson_candidates: [{ ...lesson, id: "pending-1" }],
+          unresolved_lesson_candidates: [{ ...pendingLesson, id: "pending-1" }],
           recommendation: "improve",
           real_trading_enabled: false,
           limitations: ["Paper only"],

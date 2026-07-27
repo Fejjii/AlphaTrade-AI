@@ -1,0 +1,27 @@
+export { buildLessonsAttentionQueue, type AttentionQueueResult, type AttentionQueueStatus } from "@/components/lessons/buildLessonsAttention";
+export { buildRecentReviewedLessons, type RecentReviewedResult, type RecentReviewedStatus } from "@/components/lessons/buildRecentReviewed";
+export {
+  filterLessonsBySource,
+  formatLessonTimestamp,
+  formatMistakeType,
+  formatSourceType,
+  latestLessonTimestamp,
+  nextActionForLesson,
+  requiresAttention,
+  resolveLessonRelationships,
+  type LessonRelationshipLink,
+} from "@/components/lessons/lessonDisplay";
+export { LessonAcceptPanel, type AcceptPath } from "@/components/lessons/LessonAcceptPanel";
+export { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
+export { LessonReviewCard } from "@/components/lessons/LessonReviewCard";
+export { LessonsAttentionQueue } from "@/components/lessons/LessonsAttentionQueue";
+export {
+  LessonsSourceAvailability,
+  type LessonsSourceStatus,
+} from "@/components/lessons/LessonsSourceAvailability";
+export {
+  lessonsCandidateHref,
+  parseLessonsQuery,
+  type LessonsQueryContext,
+} from "@/components/lessons/lessonsContext";
+export { RecentReviewedLessons } from "@/components/lessons/RecentReviewedLessons";
