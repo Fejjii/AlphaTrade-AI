@@ -190,10 +190,11 @@ export default function JournalPage() {
     : null;
 
   const nextAction = useMemo(() => {
-    if (queue.countAvailable && queue.items && queue.items.length > 0) {
+    const firstConfirmed = queue.items?.find((item) => item.verification === "confirmed");
+    if (queue.countDefinitive && firstConfirmed) {
       return {
         label: "Journal next closed trade",
-        href: queue.items[0].href,
+        href: firstConfirmed.href,
       };
     }
     return {
@@ -344,7 +345,8 @@ export default function JournalPage() {
         sources={sourceStatuses}
         onRetry={() => void reload()}
         limitations={[
-          ...queue.limitations,
+          ...(queue.coverageMessage ? [queue.coverageMessage] : []),
+          ...queue.limitations.filter((item) => item !== queue.coverageMessage),
           "Needs-journaling uses closed positions (status=closed) and linked_position_id on loaded journal entries only.",
           "Validation session query context can show a related link when verified, but is not persisted on journal entries.",
           "Canonical JournalTrade detail routes are out of scope for this hub.",

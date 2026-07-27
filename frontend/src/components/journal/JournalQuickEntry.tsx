@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
+  hasPrefillContext,
   relatedPlanHref,
   relatedValidationHref,
   type JournalQueryContext,
@@ -20,6 +21,28 @@ import {
 
 const RESULT_OPTIONS = ["open", "win", "loss", "breakeven"] as const;
 const DIRECTION_OPTIONS: TradeDirection[] = ["long", "short"];
+const DEFAULT_SYMBOL = "BTCUSDT";
+const DEFAULT_TIMEFRAME: Timeframe = "1h";
+const DEFAULT_DIRECTION: TradeDirection = "long";
+
+function prefillContextKey(context: JournalQueryContext): string {
+  return `${context.proposalId ?? ""}|${context.positionId ?? ""}`;
+}
+
+function resetPrefillDerivedFields(setters: {
+  setSymbol: (value: string) => void;
+  setTimeframe: (value: Timeframe) => void;
+  setDirection: (value: TradeDirection) => void;
+  setStrategyId: (value: StrategyId | "") => void;
+  setRationale: (value: string) => void;
+}) {
+  setters.setSymbol(DEFAULT_SYMBOL);
+  setters.setTimeframe(DEFAULT_TIMEFRAME);
+  setters.setDirection(DEFAULT_DIRECTION);
+  setters.setStrategyId("");
+  setters.setRationale("");
+}
+
 const TIMEFRAME_OPTIONS: Timeframe[] = [
   "1m",
   "3m",
@@ -82,9 +105,9 @@ export function JournalQuickEntry({
 }: JournalQuickEntryProps) {
   const formId = useId();
   const summaryRef = useRef<HTMLDivElement | null>(null);
-  const [symbol, setSymbol] = useState("BTCUSDT");
-  const [timeframe, setTimeframe] = useState<Timeframe>("1h");
-  const [direction, setDirection] = useState<TradeDirection>("long");
+  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
+  const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
+  const [direction, setDirection] = useState<TradeDirection>(DEFAULT_DIRECTION);
   const [strategyId, setStrategyId] = useState<StrategyId | "">("");
   const [rationale, setRationale] = useState("");
   const [exitRationale, setExitRationale] = useState("");
@@ -102,8 +125,52 @@ export function JournalQuickEntry({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedEntry, setSavedEntry] = useState<JournalEntry | null>(null);
 
+  const contextKey = prefillContextKey(context);
+  const activePrefillContext = hasPrefillContext(context);
+  const relationshipsReady = prefill.status === "ready";
+  const showProposalLink = relationshipsReady && Boolean(linkedProposalId);
+  const showPositionLink = relationshipsReady && Boolean(linkedPositionId);
+  const showValidationLink = relatedSession.status === "ready";
+  const showRelatedLinks = showProposalLink || showPositionLink || showValidationLink;
+
   useEffect(() => {
+    setLinkedProposalId(undefined);
+    setLinkedPositionId(undefined);
+    if (activePrefillContext) {
+      resetPrefillDerivedFields({
+        setSymbol,
+        setTimeframe,
+        setDirection,
+        setStrategyId,
+        setRationale,
+      });
+    }
+  }, [contextKey, activePrefillContext]);
+
+  useEffect(() => {
+    if (prefill.status === "loading" || prefill.status === "invalid") {
+      setLinkedProposalId(undefined);
+      setLinkedPositionId(undefined);
+      if (activePrefillContext) {
+        resetPrefillDerivedFields({
+          setSymbol,
+          setTimeframe,
+          setDirection,
+          setStrategyId,
+          setRationale,
+        });
+      }
+      return;
+    }
+
+    if (prefill.status === "idle") {
+      setLinkedProposalId(undefined);
+      setLinkedPositionId(undefined);
+      return;
+    }
+
     if (prefill.status !== "ready") return;
+
     setSymbol(prefill.symbol);
     if (TIMEFRAME_OPTIONS.includes(prefill.timeframe as Timeframe)) {
       setTimeframe(prefill.timeframe as Timeframe);
@@ -117,7 +184,7 @@ export function JournalQuickEntry({
     setLinkedPositionId(prefill.linkedPositionId ?? undefined);
     setSaveError(null);
     setSavedEntry(null);
-  }, [prefill]);
+  }, [prefill, activePrefillContext]);
 
   const errorSummary = useMemo(() => Object.values(fieldErrors).filter(Boolean), [fieldErrors]);
 
@@ -163,8 +230,8 @@ export function JournalQuickEntry({
         emotions: splitTags(emotions),
         mistakes: splitTags(mistakes),
         strategy_id: strategyId || undefined,
-        linked_proposal_id: linkedProposalId,
-        linked_position_id: linkedPositionId,
+        linked_proposal_id: relationshipsReady ? linkedProposalId : undefined,
+        linked_position_id: relationshipsReady ? linkedPositionId : undefined,
         result,
         pnl: pnl.trim() || undefined,
         stress_score: stressScore.trim() ? Number(stressScore) : undefined,
@@ -240,12 +307,12 @@ export function JournalQuickEntry({
         </div>
       ) : null}
 
-      {(linkedProposalId || linkedPositionId || relatedSession.status === "ready") && (
+      {showRelatedLinks ? (
         <div
           className="flex flex-wrap gap-2 text-sm"
           data-testid="journal-related-context"
         >
-          {linkedProposalId ? (
+          {showProposalLink && linkedProposalId ? (
             <Link
               href={relatedPlanHref(linkedProposalId)}
               className="underline text-text-secondary"
@@ -254,12 +321,12 @@ export function JournalQuickEntry({
               Related plan
             </Link>
           ) : null}
-          {linkedPositionId ? (
+          {showPositionLink && linkedPositionId ? (
             <span className="text-text-muted" data-testid="quick-entry-related-position">
               Related position {linkedPositionId.slice(0, 8)}… (stored link on save)
             </span>
           ) : null}
-          {relatedSession.status === "ready" ? (
+          {showValidationLink ? (
             <Link
               href={relatedValidationHref(relatedSession.sessionId)}
               className="underline text-text-secondary"
@@ -268,9 +335,8 @@ export function JournalQuickEntry({
               Related validation (link context only — not stored on journal entry)
             </Link>
           ) : null}
-          {!linkedProposalId && context.proposalId && prefill.status !== "ready" ? null : null}
         </div>
-      )}
+      ) : null}
 
       {errorSummary.length > 0 ? (
         <div

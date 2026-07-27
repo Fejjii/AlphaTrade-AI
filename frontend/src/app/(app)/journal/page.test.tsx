@@ -266,6 +266,106 @@ describe("Journal hub Phase C3A", () => {
     expect(screen.queryByTestId("quick-entry-related-validation")).not.toBeInTheDocument();
   });
 
+  it("shows unverified queue when journal entries are truncated", () => {
+    asyncState.data = {
+      entries: ok({
+        items: [recentEntry],
+        total: 120,
+        limit: 50,
+        offset: 0,
+      }),
+      closedPositions: ok({
+        items: [closedPosition, journaledPosition],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+    };
+    render(<JournalPage />);
+    expect(screen.getByTestId("needs-journaling-coverage")).toHaveTextContent(
+      /only 1 of 120 journal entries are loaded/i,
+    );
+    expect(screen.queryByTestId("needs-journaling-count")).not.toBeInTheDocument();
+    expect(screen.getByTestId("needs-journaling-count-unavailable")).toBeInTheDocument();
+    expect(screen.getByTestId("needs-journaling-item-pos-needs")).toHaveAttribute(
+      "data-verification",
+      "unverified",
+    );
+    expect(
+      screen.getByTestId("needs-journaling-unverified-label-pos-needs"),
+    ).toHaveTextContent(/Possibly needs journaling/i);
+    expect(screen.queryByRole("link", { name: /Journal this trade/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("needs-journaling-possible-action-pos-needs")).toBeInTheDocument();
+  });
+
+  it("clears related context while prefill reloads for a new position", async () => {
+    search.set("position_id", "pos-needs");
+    prefillMock.mockResolvedValue({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      direction: "short",
+      strategy_id: "htf_trend_pullback",
+      entry_rationale: "Position A rationale",
+      linked_proposal_id: null,
+      linked_position_id: "pos-needs",
+      tags: [],
+    });
+    const view = render(<JournalPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-entry-related-position")).toBeInTheDocument();
+    });
+
+    view.unmount();
+    search.set("position_id", "pos-other");
+    prefillMock.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* keep loading */
+        }),
+    );
+    render(<JournalPage />);
+
+    expect(screen.getByTestId("journal-prefill-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("quick-entry-related-position")).not.toBeInTheDocument();
+  });
+
+  it("does not send stale linked IDs after invalid position prefill", async () => {
+    search.set("position_id", "pos-needs");
+    prefillMock.mockResolvedValueOnce({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      direction: "short",
+      entry_rationale: "Position A rationale",
+      linked_proposal_id: null,
+      linked_position_id: "pos-needs",
+      tags: [],
+    });
+    const first = render(<JournalPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-entry-related-position")).toBeInTheDocument();
+    });
+
+    first.unmount();
+    search.set("position_id", "missing-pos");
+    prefillMock.mockRejectedValueOnce(new Error("Position not found"));
+    render(<JournalPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("journal-prefill-invalid")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("quick-entry-related-position")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/What happened versus plan/i), {
+      target: { value: "Manual after invalid context." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save journal entry/i }));
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalled();
+    });
+    const payload = createMock.mock.calls.at(-1)?.[0];
+    expect(payload.linked_position_id).toBeUndefined();
+    expect(payload.linked_proposal_id).toBeUndefined();
+  });
+
   it("prefills quick entry from valid proposal/position context", async () => {
     search.set("position_id", "pos-needs");
     prefillMock.mockResolvedValue({

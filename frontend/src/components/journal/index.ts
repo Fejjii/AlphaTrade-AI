@@ -3,6 +3,8 @@ export {
   type NeedsJournalingItem,
   type NeedsJournalingQueueStatus,
   type NeedsJournalingResult,
+  type NeedsJournalingVerification,
+  type SourceCoverage,
 } from "@/components/journal/buildNeedsJournaling";
 export { DisciplineAnalysisPanel } from "@/components/journal/DisciplineAnalysisPanel";
 export { JournalHubChrome } from "@/components/journal/JournalHubChrome";

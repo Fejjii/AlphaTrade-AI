@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SourceResult } from "@/components/workflows/sourceResult";
-import type { PaginatedJournalEntries, PaginatedPositions, Position } from "@/lib/api/types";
+import type { Position } from "@/lib/api/types";
 
 import { buildNeedsJournalingQueue } from "./buildNeedsJournaling";
 
@@ -32,11 +32,31 @@ function position(overrides: Partial<Position> & { id: string; symbol: string })
   };
 }
 
+function entryForPosition(positionId: string, symbol: string) {
+  return {
+    id: `j-${positionId}`,
+    organization_id: "org",
+    user_id: "user",
+    symbol,
+    timeframe: "1h" as const,
+    direction: "long" as const,
+    entry_rationale: "done",
+    emotions: [],
+    mistakes: [],
+    result: "win",
+    tags: [],
+    screenshot_refs: [],
+    linked_position_id: positionId,
+    created_at: "2026-07-21T13:00:00.000Z",
+  };
+}
+
 describe("buildNeedsJournalingQueue", () => {
   it("returns loading when sources are not ready", () => {
     const result = buildNeedsJournalingQueue(null, null);
     expect(result.queueStatus).toBe("loading");
     expect(result.countAvailable).toBe(false);
+    expect(result.countDefinitive).toBe(false);
     expect(result.items).toBeNull();
   });
 
@@ -67,49 +87,35 @@ describe("buildNeedsJournalingQueue", () => {
     expect(result.reasonUnavailable).toMatch(/cannot be confirmed/i);
   });
 
-  it("lists closed positions without a linked journal entry", () => {
-    const positions: SourceResult<PaginatedPositions> = ok({
-      items: [
-        position({ id: "p1", symbol: "BTCUSDT", closed_at: "2026-07-22T12:00:00.000Z" }),
-        position({ id: "p2", symbol: "ETHUSDT", closed_at: "2026-07-21T12:00:00.000Z" }),
-      ],
-      total: 2,
-      limit: 50,
-      offset: 0,
-    });
-    const entries: SourceResult<PaginatedJournalEntries> = ok({
-      items: [
-        {
-          id: "j1",
-          organization_id: "org",
-          user_id: "user",
-          symbol: "ETHUSDT",
-          timeframe: "1h",
-          direction: "long",
-          entry_rationale: "done",
-          emotions: [],
-          mistakes: [],
-          result: "win",
-          tags: [],
-          screenshot_refs: [],
-          linked_position_id: "p2",
-          created_at: "2026-07-21T13:00:00.000Z",
-        },
-      ],
-      total: 1,
-      limit: 50,
-      offset: 0,
-    });
+  it("lists confirmed items when both sources are complete", () => {
+    const result = buildNeedsJournalingQueue(
+      ok({
+        items: [
+          position({ id: "p1", symbol: "BTCUSDT", closed_at: "2026-07-22T12:00:00.000Z" }),
+          position({ id: "p2", symbol: "ETHUSDT", closed_at: "2026-07-21T12:00:00.000Z" }),
+        ],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({
+        items: [entryForPosition("p2", "ETHUSDT")],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    );
 
-    const result = buildNeedsJournalingQueue(positions, entries);
-    expect(result.countAvailable).toBe(true);
+    expect(result.journalCoverage).toBe("complete");
+    expect(result.positionsCoverage).toBe("complete");
+    expect(result.countDefinitive).toBe(true);
     expect(result.queueStatus).toBe("available");
     expect(result.items).toHaveLength(1);
     expect(result.items?.[0]?.positionId).toBe("p1");
-    expect(result.items?.[0]?.href).toBe("/journal?position_id=p1");
+    expect(result.items?.[0]?.verification).toBe("confirmed");
   });
 
-  it("returns honest empty when every closed position is already journaled", () => {
+  it("returns definitive empty when both sources complete and all positions journaled", () => {
     const result = buildNeedsJournalingQueue(
       ok({
         items: [position({ id: "p1", symbol: "BTCUSDT" })],
@@ -118,35 +124,63 @@ describe("buildNeedsJournalingQueue", () => {
         offset: 0,
       }),
       ok({
-        items: [
-          {
-            id: "j1",
-            organization_id: "org",
-            user_id: "user",
-            symbol: "BTCUSDT",
-            timeframe: "1h",
-            direction: "long",
-            entry_rationale: "done",
-            emotions: [],
-            mistakes: [],
-            result: "win",
-            tags: [],
-            screenshot_refs: [],
-            linked_position_id: "p1",
-            created_at: "2026-07-21T13:00:00.000Z",
-          },
-        ],
+        items: [entryForPosition("p1", "BTCUSDT")],
         total: 1,
         limit: 50,
         offset: 0,
       }),
     );
     expect(result.queueStatus).toBe("empty");
-    expect(result.countAvailable).toBe(true);
+    expect(result.countDefinitive).toBe(true);
     expect(result.items).toEqual([]);
   });
 
-  it("marks truncated lists as limited without fabricating a full queue", () => {
+  it("does not show definitive count when journal entries are truncated", () => {
+    const result = buildNeedsJournalingQueue(
+      ok({
+        items: [position({ id: "p1", symbol: "BTCUSDT" })],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({ items: [], total: 120, limit: 50, offset: 0 }),
+    );
+
+    expect(result.journalCoverage).toBe("truncated");
+    expect(result.countDefinitive).toBe(false);
+    expect(result.countAvailable).toBe(false);
+    expect(result.queueStatus).toBe("unverified");
+    expect(result.coverageMessage).toMatch(/only 0 of 120 journal entries are loaded/i);
+    expect(result.items?.[0]?.verification).toBe("unverified");
+  });
+
+  it("labels unmatched positions as unverified when journal coverage is truncated", () => {
+    const result = buildNeedsJournalingQueue(
+      ok({
+        items: [
+          position({ id: "p1", symbol: "BTCUSDT" }),
+          position({ id: "p2", symbol: "ETHUSDT" }),
+        ],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({
+        items: [entryForPosition("p2", "ETHUSDT")],
+        total: 75,
+        limit: 50,
+        offset: 0,
+      }),
+    );
+
+    expect(result.queueStatus).toBe("unverified");
+    expect(result.items).toHaveLength(1);
+    expect(result.items?.[0]?.positionId).toBe("p1");
+    expect(result.items?.[0]?.verification).toBe("unverified");
+    expect(result.coverageMessage).toMatch(/only 1 of 75 journal entries are loaded/i);
+  });
+
+  it("shows loaded-coverage count when journal is complete but positions are truncated", () => {
     const result = buildNeedsJournalingQueue(
       ok({
         items: [position({ id: "p1", symbol: "BTCUSDT" })],
@@ -156,8 +190,53 @@ describe("buildNeedsJournalingQueue", () => {
       }),
       ok({ items: [], total: 0, limit: 50, offset: 0 }),
     );
+
+    expect(result.journalCoverage).toBe("complete");
+    expect(result.positionsCoverage).toBe("truncated");
+    expect(result.countAvailable).toBe(true);
+    expect(result.countDefinitive).toBe(false);
     expect(result.queueStatus).toBe("limited");
-    expect(result.limitations[0]).toMatch(/truncated/i);
-    expect(result.items).toHaveLength(1);
+    expect(result.items?.[0]?.verification).toBe("confirmed");
+    expect(result.limitations[0]).toMatch(/overall queue may be incomplete/i);
+  });
+
+  it("treats both truncated sources as unverified for unmatched positions", () => {
+    const result = buildNeedsJournalingQueue(
+      ok({
+        items: [position({ id: "p1", symbol: "BTCUSDT" })],
+        total: 20,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({ items: [], total: 80, limit: 50, offset: 0 }),
+    );
+
+    expect(result.journalCoverage).toBe("truncated");
+    expect(result.positionsCoverage).toBe("truncated");
+    expect(result.queueStatus).toBe("unverified");
+    expect(result.countDefinitive).toBe(false);
+    expect(result.countAvailable).toBe(false);
+  });
+
+  it("does not allow definitive empty when journal coverage is truncated with no unmatched loaded positions", () => {
+    const result = buildNeedsJournalingQueue(
+      ok({
+        items: [position({ id: "p1", symbol: "BTCUSDT" })],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({
+        items: [entryForPosition("p1", "BTCUSDT")],
+        total: 100,
+        limit: 50,
+        offset: 0,
+      }),
+    );
+
+    expect(result.items).toEqual([]);
+    expect(result.queueStatus).not.toBe("empty");
+    expect(result.countDefinitive).toBe(false);
+    expect(result.coverageMessage).toMatch(/cannot be fully verified/i);
   });
 });

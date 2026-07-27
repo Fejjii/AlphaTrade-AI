@@ -10,6 +10,13 @@ type NeedsJournalingQueueProps = {
 };
 
 export function NeedsJournalingQueue({ queue, onRetry }: NeedsJournalingQueueProps) {
+  const showItems =
+    (queue.queueStatus === "available" ||
+      queue.queueStatus === "limited" ||
+      queue.queueStatus === "unverified") &&
+    queue.items &&
+    queue.items.length > 0;
+
   return (
     <section
       aria-labelledby="needs-journaling-heading"
@@ -28,9 +35,16 @@ export function NeedsJournalingQueue({ queue, onRetry }: NeedsJournalingQueuePro
             Closed paper positions without a linked journal entry in the loaded page.
           </p>
         </div>
-        {queue.countAvailable ? (
+        {queue.countDefinitive ? (
           <p className="text-sm text-text-secondary" data-testid="needs-journaling-count">
             {queue.items?.length ?? 0} need journaling
+          </p>
+        ) : queue.countAvailable && !queue.countDefinitive ? (
+          <p
+            className="text-sm text-text-secondary"
+            data-testid="needs-journaling-count-loaded"
+          >
+            {queue.items?.length ?? 0} need journaling (loaded coverage only)
           </p>
         ) : (
           <p className="text-sm text-text-muted" data-testid="needs-journaling-count-unavailable">
@@ -38,6 +52,30 @@ export function NeedsJournalingQueue({ queue, onRetry }: NeedsJournalingQueuePro
           </p>
         )}
       </div>
+
+      {queue.coverageMessage ? (
+        <div
+          role="status"
+          data-testid="needs-journaling-coverage"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          {queue.coverageMessage}
+        </div>
+      ) : null}
+
+      {queue.limitations.length > 0 && !queue.coverageMessage ? (
+        <div
+          role="status"
+          data-testid="needs-journaling-limitations"
+          className="rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-secondary"
+        >
+          <ul className="list-disc space-y-1 pl-5">
+            {queue.limitations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {queue.queueStatus === "loading" ? (
         <p className="text-sm text-text-muted" data-testid="needs-journaling-loading">
@@ -66,24 +104,44 @@ export function NeedsJournalingQueue({ queue, onRetry }: NeedsJournalingQueuePro
           data-testid="needs-journaling-empty"
           className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary"
         >
-          No loaded closed positions currently need journaling.
+          No closed positions currently need journaling.
         </div>
       ) : null}
 
-      {(queue.queueStatus === "available" || queue.queueStatus === "limited") &&
+      {(queue.queueStatus === "limited" || queue.queueStatus === "unverified") &&
       queue.items &&
-      queue.items.length > 0 ? (
+      queue.items.length === 0 ? (
+        <div
+          role="status"
+          data-testid="needs-journaling-unverified-empty"
+          className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary"
+        >
+          Loaded closed positions appear journaled, but full coverage is unavailable so an
+          all-clear cannot be confirmed.
+        </div>
+      ) : null}
+
+      {showItems ? (
         <ul className="grid gap-2" data-testid="needs-journaling-list">
-          {queue.items.map((item) => (
+          {queue.items!.map((item) => (
             <li
               key={item.positionId}
               className="flex flex-col gap-2 rounded-control border border-border-subtle px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
               data-testid={`needs-journaling-item-${item.positionId}`}
+              data-verification={item.verification}
             >
               <div className="min-w-0 space-y-1">
                 <p className="font-medium text-text-primary">
                   {item.symbol} · {item.direction.toUpperCase()} · {item.status}
                 </p>
+                {item.verification === "unverified" ? (
+                  <p
+                    className="text-caption text-warning"
+                    data-testid={`needs-journaling-unverified-label-${item.positionId}`}
+                  >
+                    Possibly needs journaling — full journal coverage unavailable
+                  </p>
+                ) : null}
                 <p className="text-caption text-text-muted">
                   Closed:{" "}
                   {item.closedAt && Number.isFinite(Date.parse(item.closedAt))
@@ -94,12 +152,23 @@ export function NeedsJournalingQueue({ queue, onRetry }: NeedsJournalingQueuePro
                     : ""}
                 </p>
               </div>
-              <Link
-                href={item.href}
-                className="inline-flex h-10 min-w-[8rem] items-center justify-center rounded-control border border-border bg-surface-1 px-4 text-sm font-medium text-text-primary hover:bg-surface-2"
-              >
-                Journal this trade
-              </Link>
+              {item.verification === "confirmed" ? (
+                <Link
+                  href={item.href}
+                  className="inline-flex h-10 min-w-[8rem] items-center justify-center rounded-control border border-border bg-surface-1 px-4 text-sm font-medium text-text-primary hover:bg-surface-2"
+                  data-testid={`needs-journaling-action-${item.positionId}`}
+                >
+                  Journal this trade
+                </Link>
+              ) : (
+                <Link
+                  href={item.href}
+                  className="inline-flex h-10 min-w-[8rem] items-center justify-center rounded-control border border-border bg-surface-1 px-4 text-sm font-medium text-text-secondary hover:bg-surface-2"
+                  data-testid={`needs-journaling-possible-action-${item.positionId}`}
+                >
+                  Review for journaling
+                </Link>
+              )}
             </li>
           ))}
         </ul>
