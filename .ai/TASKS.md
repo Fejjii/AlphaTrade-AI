@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 DONE; C3A draft PR) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A DONE) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -546,7 +546,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   aggregation (available sources with missing/invalid/future timestamps
   contribute unavailable; live + unknown cannot yield page-level Live), signal
   deep-link honesty, Plan signal context query, and session-only dismiss
-  labeling. Phase C1 complete; Phase C2 Validate pipeline complete.
+  labeling. Phase C1 complete; Phase C2 Validate pipeline complete; Phase C3A Journal
+  hub + quick-entry complete.
 - Phase C1 deliverables: Dashboard attention queue; Signals inbox on
   `/tradingview-signals`; Plan hub on `/workspace`; `WorkflowFreshnessAdapter`;
   unknown-route identity `AlphaTrade`; account-menu Escape focus restore;
@@ -576,19 +577,19 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `921929e`; pre-merge CI 30224234541 success; post-merge main CI 30225088594
   success — frontend, backend, docker-build, deployment-safety, evaluation,
   e2e-smoke). Phase C2 complete.
-- Phase C3A (Journal hub + quick-entry) draft PR:
-  https://github.com/Fejjii/AlphaTrade-AI/pull/34 — frontend-only Journal landing
-  hub at `/journal` with needs-journaling queue (closed positions ∩ linked journal
-  entries), recent entries, SourceResult honesty, quick-entry prefill from
-  proposal/position context, verified validation-session link context (not
-  persisted), confirmed-PAPER posture wording, preserved Import/Lessons/Knowledge/
-  Statistics/Comparison reachability. Correction pass: prefill relationship reset
-  on context change/loading/invalid/cleared; needs-journaling coverage model
-  (`journalCoverage`/`positionsCoverage`) suppresses definitive counts/actions when
-  journal entries are truncated. Validated implementation commit `d2aa71e`. No
-  backend/API/migration changes. No Lessons/Knowledge/Portfolio/Analyze redesign.
-- Phase C remaining after C3A: Lessons/Knowledge redesign; Portfolio/risk split;
-  analytics/charts (Phase D+).
+- Phase C3A deliverables: Journal hub at `/journal`; needs-journaling queue with
+  `journalCoverage`/`positionsCoverage` honesty; recent entries; quick-entry using
+  existing journal create/prefill fields; prefill relationship reset on context
+  change/loading/invalid/cleared; SourceResult multi-source honesty; confirmed-PAPER
+  posture; preserved Import/Lessons/Knowledge/Statistics/Comparison reachability;
+  no backend/API/migration changes.
+  Phase C3A PR https://github.com/Fejjii/AlphaTrade-AI/pull/34 merged
+  (`dc19bc8`; pre-merge head `8b57a68`; validated implementation commit
+  `d2aa71e`; pre-merge CI 30229681876 success; post-merge main CI 30231014521
+  success — frontend, backend, docker-build, deployment-safety, evaluation,
+  e2e-smoke). Phase C3A complete.
+- Phase C remaining (unstarted): Phase C3B Lessons/Knowledge redesign;
+  Portfolio/risk split; analytics/charts (Phase D+).
 
 ---
 
