@@ -492,8 +492,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/28 merged
   (`853d96b`). Head commit `7ebc8df`.
 
-### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A + C3B1 DONE) · Dependencies: AT-039 · Risk: Low (frontend-only)
+### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows + Phase D analytics planning
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A + C3B1 + C3B2 DONE; Phase D Analytics & Charts blueprint DONE) · Dependencies: AT-039 · Risk: Low (frontend-only / docs)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -617,7 +617,23 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `a4aed6fc9913ae2c5bc6cf8d300ff56eab4b2495`; pre-merge CI 30264373051 success;
   post-merge main CI 30267507921 success — frontend, backend, docker-build,
   deployment-safety, evaluation, e2e-smoke). Phase C3B2 / Knowledge Hub DONE.
-- Phase C remaining: Portfolio/risk split; analytics/charts (Phase D+).
+- Phase D Analytics & Charts blueprint deliverables (documentation only — no
+  frontend/backend/chart implementation): authoritative implementation plan at
+  `docs/product/at040_analytics_and_charts_blueprint.md`; verified capability
+  inventory + metric availability matrix; six-tab Analytics IA; chart specs;
+  filter model with setup-identity integrity; currency-agnostic monetary display;
+  App Router URL-history contract (`router.push` for committed actions;
+  `router.replace` only for cleanup/canonicalisation); four-PR sequence;
+  complete-CI merge evidence; Composer 2.5 for PRs 1–4.
+  Analytics & Charts Blueprint PR https://github.com/Fejjii/AlphaTrade-AI/pull/38
+  merged (`ee7cf9d`; pre-merge / implementation head
+  `e82d4fc3287a693ea755901e01e2b5d868ee8ecb`; pre-merge CI 30271331488 success;
+  post-merge main CI 30273039335 success — frontend, backend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). Analytics & Charts blueprint DONE.
+- Phase C remaining: Portfolio/risk split (PR #37 parallel).
+- Next implementation: Analytics PR 1 (foundation, filters, Overview + Performance)
+  per blueprint §12 — new Composer 2.5 agent chat, fresh branch from latest main;
+  do not touch Portfolio/Risk files.
 
 ---
 
