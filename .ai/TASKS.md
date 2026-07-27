@@ -644,6 +644,17 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `0ab606984edab99550d70d77b70a51111f8a861d`; pre-merge CI 30287687997 success;
   post-merge main CI 30291493531 — frontend, backend, docker-build, deployment-safety,
   evaluation, e2e-smoke). Critical data-honesty / RiskBlock fixes DONE.
+- Analytics PR 1 deliverables (foundation, filters, Overview + Performance):
+  `/analytics` with Overview + Performance tabs; URL-synced filters; honest SourceResult
+  loading per widget; Overview stats with journal/portfolio provenance; Performance charts
+  (daily P&L, cumulative realised P&L) via lazy-mounted Recharts; freshness gating;
+  ISO-week roll-up; chart transforms with malformed-value honesty; no changes to audit,
+  invitations, portfolio, or `useAsyncData.ts`.
+  Analytics PR 1 PR https://github.com/Fejjii/AlphaTrade-AI/pull/43 merged
+  (`257f3a2`; pre-merge / implementation head
+  `82202e6fd7d3c527b958b6622dc3ec8f2a58c60e`; pre-merge CI 30294572981 success;
+  post-merge main CI 30296686361 success — frontend, backend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). Analytics PR 1 DONE.
 - Phase D Analytics & Charts blueprint deliverables (documentation only — no
   frontend/backend/chart implementation): authoritative implementation plan at
   `docs/product/at040_analytics_and_charts_blueprint.md`; verified capability
@@ -660,9 +671,9 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Governance record PR https://github.com/Fejjii/AlphaTrade-AI/pull/40 merged
   (`9d42d10`).
 - Phase C remaining: none (Portfolio/Risk merged).
-- Next implementation: Analytics PR 1 (foundation, filters, Overview + Performance)
-  per blueprint §12 — new Composer 2.5 agent chat, fresh branch from latest main;
-  do not reopen Portfolio/Risk scope in that chat.
+- Next implementation: Analytics PR 2 (setup analytics) and Analytics PR 3 (behaviour /
+  comparison) in parallel per blueprint §8 — fresh Composer 2.5 agent chats from latest
+  `main`; do not reopen Portfolio/Risk or Analytics PR 1 scope in those chats.
 
 ---
 
