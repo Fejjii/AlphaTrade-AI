@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
-import type { PortfolioSourceFilter, UserStrategy } from "@/lib/api/types";
+import type { JournalTradeSource, PortfolioSourceFilter, UserStrategy } from "@/lib/api/types";
 
 import { formatDateRangeLabel } from "./format";
+import { JOURNAL_TRADE_SOURCE_OPTIONS } from "./filterValidation";
 import type { AnalyticsFilterState, AnalyticsTab, DatePreset } from "./useAnalyticsFilters";
 
 const PRESETS: { value: DatePreset; label: string }[] = [
@@ -29,6 +30,7 @@ type Draft = {
   symbol: string;
   timeframe: string;
   portfolioSource: PortfolioSourceFilter;
+  journalSource: JournalTradeSource | "";
   setupId: string;
   userStrategyId: string;
 };
@@ -40,6 +42,7 @@ function draftFromState(state: AnalyticsFilterState): Draft {
     symbol: state.symbol ?? "",
     timeframe: state.timeframe ?? "",
     portfolioSource: state.portfolioSource ?? "all",
+    journalSource: state.journalSource ?? "",
     setupId: state.setupId ?? "",
     userStrategyId: state.userStrategyId ?? "",
   };
@@ -58,6 +61,7 @@ export type AnalyticsFilterBarProps = {
     symbol?: string | null;
     timeframe?: string | null;
     portfolioSource?: PortfolioSourceFilter | null;
+    journalSource?: JournalTradeSource | null;
     setupId?: string | null;
     userStrategyId?: string | null;
   }) => void;
@@ -154,6 +158,27 @@ export function AnalyticsFilterBar({
         {showSetupFilters ? (
           <>
             <div className="space-y-1">
+              <Label htmlFor="analytics-journal-source">Journal source</Label>
+              <Select
+                id="analytics-journal-source"
+                value={draft.journalSource}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    journalSource: event.target.value as JournalTradeSource | "",
+                  }))
+                }
+                data-testid="analytics-journal-source"
+              >
+                <option value="">All journal sources</option>
+                {JOURNAL_TRADE_SOURCE_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="analytics-setup-id">Journal setup ID</Label>
               <Input
                 id="analytics-setup-id"
@@ -238,6 +263,7 @@ export function AnalyticsFilterBar({
               symbol: draft.symbol.trim() || null,
               timeframe: draft.timeframe.trim() || null,
               portfolioSource: showPortfolioSource ? draft.portfolioSource : null,
+              journalSource: showSetupFilters ? draft.journalSource || null : undefined,
               setupId: showSetupFilters ? draft.setupId.trim() || null : undefined,
               userStrategyId: showSetupFilters ? draft.userStrategyId.trim() || null : undefined,
             })
@@ -274,6 +300,7 @@ export function AnalyticsFilterBar({
         {showPortfolioSource && state.portfolioSource && state.portfolioSource !== "all"
           ? ` · Source ${state.portfolioSource}`
           : ""}
+        {showSetupFilters && state.journalSource ? ` · Source ${state.journalSource}` : ""}
         {showSetupFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
         {showSetupFilters && state.userStrategyId
           ? ` · strategy ${state.userStrategyId}`

@@ -37,11 +37,20 @@ describe("useAnalyticsFilters hook", () => {
 
   it("uses push for Setups tab and drops setup params when leaving", () => {
     searchParams = new URLSearchParams(
-      `tab=setups&setup_id=${SETUP_UUID}&group_by=strategy&offset=20&symbol=BTCUSDT`,
+      `tab=setups&setup_id=${SETUP_UUID}&group_by=strategy&offset=20&symbol=BTCUSDT&source=manual`,
     );
     const { result } = renderHook(() => useAnalyticsFilters());
     result.current.setTab("overview");
     expect(pushMock).toHaveBeenCalledWith("/analytics?symbol=BTCUSDT", { scroll: false });
+  });
+
+  it("resets bucket offset when journal source changes", () => {
+    searchParams = new URLSearchParams("tab=setups&offset=20");
+    const { result } = renderHook(() => useAnalyticsFilters());
+    result.current.applyDraft({ journalSource: "imported" });
+    expect(pushMock).toHaveBeenCalledWith("/analytics?tab=setups&source=imported", {
+      scroll: false,
+    });
   });
 
   it("uses push for grouping toggle and bucket pagination", () => {

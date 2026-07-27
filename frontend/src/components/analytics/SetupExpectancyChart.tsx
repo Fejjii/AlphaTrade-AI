@@ -19,13 +19,16 @@ import type { SourceResult } from "@/components/workflows";
 import type { JournalStatsResponse } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
+import { JournalStatisticsLink } from "./JournalStatisticsLink";
 import { formatMonetary } from "./format";
+import type { SetupGroupBy } from "./filterValidation";
 import {
   SETUP_CHART_MOBILE_CAP,
   buildSetupBucketRows,
   visibleSetupChartRows,
   type SetupBucketRow,
 } from "./setupBucketTransforms";
+import { setupExpectancyAriaLabel, setupGroupCopy } from "./setupGroupCopy";
 
 type ExpectancyPlotRow = SetupBucketRow & {
   plotExpectancy: number | null;
@@ -55,6 +58,7 @@ function ExpectancyTooltip({ active, payload }: TooltipProps<number, string>) {
 
 export type SetupExpectancyChartProps = {
   source: SourceResult<JournalStatsResponse> | null;
+  groupBy: SetupGroupBy;
   loading?: boolean;
   onRetry?: () => void;
   filtersSummary?: string;
@@ -63,12 +67,14 @@ export type SetupExpectancyChartProps = {
 
 export function SetupExpectancyChart({
   source,
+  groupBy,
   loading = false,
   onRetry,
   filtersSummary,
   staleWholeTab = false,
 }: SetupExpectancyChartProps) {
   const [showAll, setShowAll] = useState(false);
+  const copy = setupGroupCopy(groupBy);
 
   const derived = useMemo(() => {
     if (!source?.available || !source.data) {
@@ -111,17 +117,17 @@ export function SetupExpectancyChart({
         : current,
     null,
   );
-  const ariaLabel =
-    visible.length > 0
-      ? `Setup expectancy chart (mean net P&L per trade) with ${derived.rows.length} journal setup buckets.${
-          best ? ` Highest expectancy ${best.displayLabel} at ${formatMonetary(best.plotExpectancy)}.` : ""
-        }`
-      : "Setup expectancy chart with no data";
+  const ariaLabel = setupExpectancyAriaLabel(
+    groupBy,
+    derived.rows.length,
+    best?.displayLabel ?? null,
+    best ? formatMonetary(best.plotExpectancy) : null,
+  );
 
   return (
     <ChartFrame
       title="Expectancy (mean net P&L per trade)"
-      sourceLabel="GET /journal/statistics · group_by setup buckets · expectancy"
+      sourceLabel={copy.expectancySourceLabel}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.sampleSize}
@@ -130,8 +136,11 @@ export function SetupExpectancyChart({
       error={source && !source.available ? source.error ?? "Journal statistics unavailable" : null}
       onRetry={onRetry}
       empty={!loading && source?.available ? derived.empty : false}
-      emptyTitle="No closed trades have a recorded setup in this range."
-      emptyDescription="Journal closed trades with a setup definition, or widen filters."
+      emptyTitle={copy.expectancyEmptyTitle}
+      emptyDescription={copy.expectancyEmptyDescription}
+      emptyAction={
+        <JournalStatisticsLink data-testid="setup-expectancy-empty-journal-link" />
+      }
       truncated={derived.truncated}
       staleWholeTab={staleWholeTab}
       data-testid="setup-expectancy-chart"
@@ -185,7 +194,11 @@ export function SetupExpectancyChart({
         </ResponsiveContainer>
       </div>
 
-      <ul className="space-y-1 text-sm" data-testid="setup-expectancy-list" aria-label="Setup expectancy">
+      <ul
+        className="space-y-1 text-sm"
+        data-testid="setup-expectancy-list"
+        aria-label={copy.expectancyListAriaLabel}
+      >
         {visible.map((row) => (
           <li
             key={row.key}
@@ -215,7 +228,7 @@ export function SetupExpectancyChart({
       ) : null}
 
       <table className="sr-only" data-testid="setup-expectancy-a11y-table">
-        <caption>Setup expectancy values (journal setup identity by key)</caption>
+        <caption>{copy.expectancyA11yCaption}</caption>
         <thead>
           <tr>
             <th>Key</th>

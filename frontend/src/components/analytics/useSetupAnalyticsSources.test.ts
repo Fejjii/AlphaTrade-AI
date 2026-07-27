@@ -84,6 +84,7 @@ function baseParams() {
     symbol: null,
     timeframe: null,
     portfolioSource: null,
+    journalSource: null,
     setupId: SETUP_UUID,
     userStrategyId: null,
     groupBy: "setup",
@@ -130,6 +131,44 @@ describe("useSetupAnalyticsSources", () => {
     );
     expect(api.performance.portfolio).not.toHaveBeenCalled();
     expect(result.current.strategies[0]?.id).toBe(strategyItem.id);
+  });
+
+  it("passes journal source to statistics only, not setup-evidence", async () => {
+    mockJournalOk();
+    vi.mocked(api.strategies.list).mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 200,
+      offset: 0,
+    } as never);
+
+    const params = buildSetupAnalyticsApiParams({
+      tab: "setups",
+      dateFrom: null,
+      dateTo: null,
+      symbol: null,
+      timeframe: null,
+      portfolioSource: null,
+      journalSource: "manual",
+      setupId: SETUP_UUID,
+      userStrategyId: null,
+      groupBy: "setup",
+      bucketOffset: 0,
+      ignoredParams: [],
+    });
+    const { result } = renderHook(() =>
+      useSetupAnalyticsSources(params, { enabled: true }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(api.journal.statistics).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "manual", setup_id: SETUP_UUID }),
+    );
+    expect(api.journal.setupEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({ setup_id: SETUP_UUID }),
+    );
+    const evidenceParams = vi.mocked(api.journal.setupEvidence).mock.calls.at(-1)?.[0];
+    expect(evidenceParams).not.toHaveProperty("source");
   });
 
   it("exposes strategies loading separately from a confirmed empty list", async () => {
@@ -233,6 +272,7 @@ describe("useSetupAnalyticsSources", () => {
       symbol: null,
       timeframe: null,
       portfolioSource: null,
+      journalSource: null,
       setupId: null,
       userStrategyId: null,
       groupBy: "setup",

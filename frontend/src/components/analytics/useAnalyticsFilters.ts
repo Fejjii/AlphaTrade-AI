@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import type { PortfolioSourceFilter } from "@/lib/api/types";
+import type { JournalTradeSource, PortfolioSourceFilter } from "@/lib/api/types";
 
 import { isoDateOnly, addDays } from "./format";
 import {
@@ -55,6 +55,7 @@ function dropSetupsParams(params: URLSearchParams): void {
   params.delete("user_strategy_id");
   params.delete("group_by");
   params.delete("offset");
+  params.delete("source");
 }
 
 export function useAnalyticsFilters() {
@@ -107,6 +108,7 @@ export function useAnalyticsFilters() {
       symbol?: string | null;
       timeframe?: string | null;
       portfolioSource?: PortfolioSourceFilter | null;
+      journalSource?: JournalTradeSource | null;
       setupId?: string | null;
       userStrategyId?: string | null;
     }) => {
@@ -125,6 +127,14 @@ export function useAnalyticsFilters() {
           } else {
             params.delete("source");
           }
+        }
+        if ("journalSource" in draft) {
+          if (draft.journalSource) {
+            params.set("source", draft.journalSource);
+          } else {
+            params.delete("source");
+          }
+          params.delete("offset");
         }
         if ("setupId" in draft) {
           setOrDelete("setup_id", draft.setupId);

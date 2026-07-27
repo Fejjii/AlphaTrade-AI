@@ -18,13 +18,16 @@ import type { SourceResult } from "@/components/workflows";
 import type { JournalStatsResponse } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
+import { JournalStatisticsLink } from "./JournalStatisticsLink";
 import { formatPercent } from "./format";
+import type { SetupGroupBy } from "./filterValidation";
 import {
   SETUP_CHART_MOBILE_CAP,
   buildSetupBucketRows,
   visibleSetupChartRows,
   type SetupBucketRow,
 } from "./setupBucketTransforms";
+import { setupGroupCopy, setupWinRateAriaLabel } from "./setupGroupCopy";
 
 function WinRateTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
@@ -47,6 +50,7 @@ function WinRateTooltip({ active, payload }: TooltipProps<number, string>) {
 
 export type SetupWinRateChartProps = {
   source: SourceResult<JournalStatsResponse> | null;
+  groupBy: SetupGroupBy;
   loading?: boolean;
   onRetry?: () => void;
   filtersSummary?: string;
@@ -55,12 +59,14 @@ export type SetupWinRateChartProps = {
 
 export function SetupWinRateChart({
   source,
+  groupBy,
   loading = false,
   onRetry,
   filtersSummary,
   staleWholeTab = false,
 }: SetupWinRateChartProps) {
   const [showAll, setShowAll] = useState(false);
+  const copy = setupGroupCopy(groupBy);
 
   const derived = useMemo(() => {
     if (!source?.available || !source.data) {
@@ -94,19 +100,17 @@ export function SetupWinRateChart({
     return current;
   }, null);
 
-  const ariaLabel =
-    visible.length > 0
-      ? `Setup win-rate chart with ${derived.rows.length} journal setup buckets.${
-          highestWinRate
-            ? ` Highest win rate ${highestWinRate.displayLabel} at ${formatPercent(highestWinRate.winRate)}.`
-            : ""
-        } Sample confidence ranks display order separately.`
-      : "Setup win-rate chart with no data";
+  const ariaLabel = setupWinRateAriaLabel(
+    groupBy,
+    derived.rows.length,
+    highestWinRate?.displayLabel ?? null,
+    highestWinRate ? formatPercent(highestWinRate.winRate) : null,
+  );
 
   return (
     <ChartFrame
-      title="Which setups win most often — with enough sample to matter?"
-      sourceLabel="GET /journal/statistics · group_by setup buckets · win_rate"
+      title={copy.winRateChartTitle}
+      sourceLabel={copy.winRateSourceLabel}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.sampleSize}
@@ -115,8 +119,11 @@ export function SetupWinRateChart({
       error={source && !source.available ? source.error ?? "Journal statistics unavailable" : null}
       onRetry={onRetry}
       empty={!loading && source?.available ? derived.empty : false}
-      emptyTitle="No closed trades have a recorded setup in this range."
-      emptyDescription="Journal closed trades with a setup definition, or widen filters. Open journal statistics for the numeric table."
+      emptyTitle={copy.winRateEmptyTitle}
+      emptyDescription={copy.winRateEmptyDescription}
+      emptyAction={
+        <JournalStatisticsLink data-testid="setup-win-rate-empty-journal-link" />
+      }
       truncated={derived.truncated}
       staleWholeTab={staleWholeTab}
       data-testid="setup-win-rate-chart"
@@ -162,7 +169,11 @@ export function SetupWinRateChart({
         </ResponsiveContainer>
       </div>
 
-      <ul className="space-y-1 text-sm" data-testid="setup-win-rate-list" aria-label="Setup win rates">
+      <ul
+        className="space-y-1 text-sm"
+        data-testid="setup-win-rate-list"
+        aria-label={copy.winRateListAriaLabel}
+      >
         {visible.map((row) => (
           <li
             key={row.key}
@@ -191,7 +202,7 @@ export function SetupWinRateChart({
       ) : null}
 
       <table className="sr-only" data-testid="setup-win-rate-a11y-table">
-        <caption>Setup win-rate values (journal setup identity by key)</caption>
+        <caption>{copy.winRateA11yCaption}</caption>
         <thead>
           <tr>
             <th>Key</th>

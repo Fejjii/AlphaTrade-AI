@@ -9,10 +9,12 @@ import type { SourceResult } from "@/components/workflows";
 import type { JournalStatsResponse, SampleConfidence } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
+import { JournalStatisticsLink } from "./JournalStatisticsLink";
 import { SETUP_BUCKET_PAGE_SIZE, type SetupGroupBy } from "./filterValidation";
 import { formatMonetary, formatPercent } from "./format";
 import { buildSetupBucketLinks } from "./setupBucketLinks";
 import { buildSetupBucketRows, type SetupBucketRow } from "./setupBucketTransforms";
+import { setupGroupCopy } from "./setupGroupCopy";
 
 const CONFIDENCE_TONE: Record<SampleConfidence, "ok" | "warn" | "critical"> = {
   high: "ok",
@@ -42,6 +44,8 @@ export function SetupBucketTable({
   bucketOffset,
   onPageChange,
 }: SetupBucketTableProps) {
+  const copy = setupGroupCopy(groupBy);
+
   const derived = useMemo(() => {
     if (!source?.available || !source.data) {
       return {
@@ -77,8 +81,8 @@ export function SetupBucketTable({
 
   return (
     <ChartFrame
-      title="Setup and strategy buckets"
-      sourceLabel="GET /journal/statistics · buckets"
+      title={copy.bucketTableTitle}
+      sourceLabel={copy.bucketTableSourceLabel}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.sampleSize}
@@ -87,8 +91,11 @@ export function SetupBucketTable({
       error={source && !source.available ? source.error ?? "Journal statistics unavailable" : null}
       onRetry={onRetry}
       empty={!loading && source?.available ? derived.empty : false}
-      emptyTitle="No setup buckets in this range"
-      emptyDescription="Closed journal trades with setup or strategy assignments appear here."
+      emptyTitle={copy.bucketTableEmptyTitle}
+      emptyDescription={copy.bucketTableEmptyDescription}
+      emptyAction={
+        <JournalStatisticsLink data-testid="setup-bucket-table-empty-journal-link" />
+      }
       truncated={derived.truncated}
       staleWholeTab={staleWholeTab}
       data-testid="setup-bucket-table"
@@ -134,9 +141,7 @@ export function SetupBucketTable({
 
       <div className="w-full max-w-full overflow-x-auto" data-testid="setup-bucket-table-scroll">
         <table className="min-w-full text-left text-sm" data-testid="setup-bucket-data-table">
-          <caption className="sr-only">
-            Journal buckets with identity from group_by contract, not display name
-          </caption>
+          <caption className="sr-only">{copy.bucketTableCaption}</caption>
           <thead>
             <tr className="border-b border-border-subtle text-text-muted">
               <th className="px-2 py-2 font-medium">Label</th>

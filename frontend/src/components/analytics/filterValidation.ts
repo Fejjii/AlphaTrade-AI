@@ -1,5 +1,6 @@
 import type {
   JournalStatsParams,
+  JournalTradeSource,
   PaperPortfolioParams,
   PortfolioSourceFilter,
   SetupEvidenceParams,
@@ -18,6 +19,8 @@ export type AnalyticsFilterState = {
   symbol: string | null;
   timeframe: string | null;
   portfolioSource: PortfolioSourceFilter | null;
+  /** Journal trade source — Setups tab only; never sent to portfolio or setup-evidence. */
+  journalSource: JournalTradeSource | null;
   /** Journal setup-definition UUID only — never a Portfolio setup identity. */
   setupId: string | null;
   userStrategyId: string | null;
@@ -51,6 +54,15 @@ const VALID_PP_SOURCES = new Set<PortfolioSourceFilter>([
   "proposal_flow",
   "paper_validation",
 ]);
+export const JOURNAL_TRADE_SOURCE_OPTIONS: JournalTradeSource[] = [
+  "manual",
+  "paper_execution",
+  "paper_validation",
+  "backtest",
+  "imported",
+  "system",
+];
+const VALID_JOURNAL_SOURCES = new Set<JournalTradeSource>(JOURNAL_TRADE_SOURCE_OPTIONS);
 const VALID_SETUP_GROUP_BY = new Set<SetupGroupBy>(["setup", "setup_version", "strategy"]);
 
 /** Params never accepted as Portfolio identities on Analytics (PR 2). */
@@ -137,12 +149,21 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
   }
 
   let portfolioSource: PortfolioSourceFilter | null = null;
+  let journalSource: JournalTradeSource | null = null;
   const sourceParam = searchParams.get("source");
   if (sourceParam) {
-    if (tab !== "performance") {
-      ignoredParams.push("source");
-    } else if (VALID_PP_SOURCES.has(sourceParam as PortfolioSourceFilter)) {
-      portfolioSource = sourceParam as PortfolioSourceFilter;
+    if (tab === "performance") {
+      if (VALID_PP_SOURCES.has(sourceParam as PortfolioSourceFilter)) {
+        portfolioSource = sourceParam as PortfolioSourceFilter;
+      } else {
+        ignoredParams.push("source");
+      }
+    } else if (tab === "setups") {
+      if (VALID_JOURNAL_SOURCES.has(sourceParam as JournalTradeSource)) {
+        journalSource = sourceParam as JournalTradeSource;
+      } else {
+        ignoredParams.push("source");
+      }
     } else {
       ignoredParams.push("source");
     }
@@ -207,6 +228,7 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
     symbol,
     timeframe,
     portfolioSource,
+    journalSource,
     setupId,
     userStrategyId,
     groupBy,
@@ -260,6 +282,7 @@ export function buildSetupAnalyticsApiParams(state: AnalyticsFilterState): Setup
   applySharedJournalFilters(journal, state);
   if (state.setupId) journal.setup_id = state.setupId;
   if (state.userStrategyId) journal.user_strategy_id = state.userStrategyId;
+  if (state.journalSource) journal.source = state.journalSource;
 
   const evidence: SetupEvidenceParams = {};
   if (state.setupId) evidence.setup_id = state.setupId;
@@ -292,6 +315,7 @@ export function formatAppliedFiltersSummary(state: AnalyticsFilterState): string
   }
   if (state.tab === "setups") {
     parts.push(`group ${state.groupBy}`);
+    if (state.journalSource) parts.push(`source ${state.journalSource}`);
     if (state.setupId) parts.push(`setup_id ${state.setupId}`);
     if (state.userStrategyId) parts.push(`strategy ${state.userStrategyId}`);
   }

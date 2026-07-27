@@ -50,6 +50,7 @@ export function SetupsCharts({
 
       <SetupWinRateChart
         source={source}
+        groupBy={groupBy}
         loading={loading}
         onRetry={onRetry}
         filtersSummary={filtersSummary}
@@ -57,6 +58,7 @@ export function SetupsCharts({
       />
       <SetupExpectancyChart
         source={source}
+        groupBy={groupBy}
         loading={loading}
         onRetry={onRetry}
         filtersSummary={filtersSummary}

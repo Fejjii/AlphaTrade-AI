@@ -150,7 +150,7 @@ describe("Setup analytics charts", () => {
   afterEach(() => cleanup());
 
   it("aria-label uses highest win rate from complete set, not confidence-ranked first row", () => {
-    render(<SetupWinRateChart source={ok(rankedJournal)} />);
+    render(<SetupWinRateChart source={ok(rankedJournal)} groupBy="setup_version" />);
     const plot = screen.getByTestId("setup-win-rate-chart-plot");
     expect(plot).toHaveAttribute("aria-label", expect.stringContaining("Beta"));
     expect(plot.getAttribute("aria-label")).toMatch(/90\.0%/);
@@ -191,20 +191,20 @@ describe("Setup analytics charts", () => {
       ],
       total_buckets: 11,
     };
-    render(<SetupExpectancyChart source={ok(many)} />);
+    render(<SetupExpectancyChart source={ok(many)} groupBy="setup_version" />);
     const plot = screen.getByTestId("setup-expectancy-chart-plot");
     expect(plot.getAttribute("aria-label")).toContain("HiddenHigh");
     expect(plot.getAttribute("aria-label")).toContain("+99.00");
   });
 
   it("renders null expectancy as No P&L data and never fabricates zero bars on error", () => {
-    render(<SetupExpectancyChart source={ok(rankedJournal)} />);
+    render(<SetupExpectancyChart source={ok(rankedJournal)} groupBy="setup_version" />);
     expect(screen.getByTestId("setup-expectancy-row-unassigned")).toHaveTextContent("No P&L data");
     const monetary = screen.getByTestId(`setup-expectancy-row-${SETUP_A}`).textContent ?? "";
     expect(containsCurrencySymbol(monetary)).toBe(false);
 
     cleanup();
-    render(<SetupExpectancyChart source={failed("journal down")} />);
+    render(<SetupExpectancyChart source={failed("journal down")} groupBy="setup" />);
     expect(screen.getByTestId("setup-expectancy-chart-error")).toBeInTheDocument();
     expect(screen.queryByTestId("setup-expectancy-chart-plot")).not.toBeInTheDocument();
     expect(screen.queryByText("0.00")).not.toBeInTheDocument();
@@ -408,5 +408,44 @@ describe("Setup analytics charts", () => {
     expect(screen.getByTestId("setup-bucket-pager")).toHaveTextContent(/Showing 21–40 of 45/);
     fireEvent.click(screen.getByTestId("setup-bucket-prev"));
     expect(onPageChange).toHaveBeenCalledWith(0);
+  });
+
+  it("uses strategy wording when group_by is strategy", () => {
+    const emptyJournal: JournalStatsResponse = {
+      ...rankedJournal,
+      group_by: "strategy",
+      overall: metrics({ trade_count: 0 }),
+      buckets: [],
+      total_buckets: 0,
+    };
+    render(<SetupWinRateChart source={ok(emptyJournal)} groupBy="strategy" />);
+    expect(screen.getByText(/Which strategies win most often/i)).toBeInTheDocument();
+    expect(screen.getByTestId("setup-win-rate-chart-source")).toHaveTextContent(/strategy buckets/i);
+    expect(screen.getByText(/No closed trades have a recorded strategy/i)).toBeInTheDocument();
+
+    cleanup();
+    const strategyJournal: JournalStatsResponse = {
+      ...rankedJournal,
+      group_by: "strategy",
+    };
+    render(<SetupWinRateChart source={ok(strategyJournal)} groupBy="strategy" />);
+    expect(screen.getByTestId("setup-win-rate-chart-plot")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Strategy win-rate chart"),
+    );
+  });
+
+  it("renders Journal statistics link in Setups empty states", () => {
+    const emptyJournal: JournalStatsResponse = {
+      ...rankedJournal,
+      overall: metrics({ trade_count: 0 }),
+      buckets: [],
+      total_buckets: 0,
+    };
+    render(<SetupWinRateChart source={ok(emptyJournal)} groupBy="setup" />);
+    expect(screen.getByTestId("setup-win-rate-empty-journal-link")).toHaveAttribute(
+      "href",
+      "/journal/statistics",
+    );
   });
 });

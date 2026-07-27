@@ -27,6 +27,7 @@ export type ChartFrameProps = {
   empty?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyAction?: ReactNode;
   limitations?: string[];
   truncated?: { maxRows: number } | null;
   insufficientSample?: { n: number; min?: number } | null;
@@ -50,6 +51,7 @@ export function ChartFrame({
   empty = false,
   emptyTitle = "No data in this range",
   emptyDescription,
+  emptyAction,
   limitations = [],
   truncated = null,
   insufficientSample = null,
@@ -115,7 +117,12 @@ export function ChartFrame({
           </div>
         ) : null}
         {!loading && !error && empty ? (
-          <EmptyState title={emptyTitle} description={emptyDescription} />
+          <div className="space-y-3" data-testid={`${testId}-empty`}>
+            <EmptyState title={emptyTitle} description={emptyDescription} />
+            {emptyAction ? (
+              <div className="flex justify-center">{emptyAction}</div>
+            ) : null}
+          </div>
         ) : null}
         {!loading && !error && !empty ? children : null}
       </CardContent>

@@ -1,6 +1,7 @@
 "use client";
 
 import type { SetupGroupBy } from "./filterValidation";
+import { setupGroupCopy } from "./setupGroupCopy";
 
 const OPTIONS: { value: SetupGroupBy; label: string }[] = [
   { value: "setup", label: "Setup" },
@@ -14,10 +15,12 @@ export type SetupGroupToggleProps = {
 };
 
 export function SetupGroupToggle({ value, onChange }: SetupGroupToggleProps) {
+  const ariaLabel = setupGroupCopy(value).groupToggleAriaLabel;
+
   return (
     <div
       role="radiogroup"
-      aria-label="Group setups by"
+      aria-label={ariaLabel}
       className="flex flex-wrap gap-2"
       data-testid="setup-group-toggle"
     >

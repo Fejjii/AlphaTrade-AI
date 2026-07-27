@@ -41,6 +41,7 @@ describe("parseAnalyticsSearchParams", () => {
       new URLSearchParams("source=proposal_flow"),
     );
     expect(state.portfolioSource).toBeNull();
+    expect(state.journalSource).toBeNull();
     expect(state.ignoredParams).toContain("source");
   });
 
@@ -50,6 +51,31 @@ describe("parseAnalyticsSearchParams", () => {
     );
     expect(state.tab).toBe("performance");
     expect(state.portfolioSource).toBe("proposal_flow");
+    expect(state.journalSource).toBeNull();
+  });
+
+  it("accepts journal trade source on Setups tab and rejects portfolio values", () => {
+    const valid = parseAnalyticsSearchParams(
+      new URLSearchParams("tab=setups&source=manual"),
+    );
+    expect(valid.journalSource).toBe("manual");
+    expect(valid.portfolioSource).toBeNull();
+    expect(valid.ignoredParams).not.toContain("source");
+
+    const invalid = parseAnalyticsSearchParams(
+      new URLSearchParams("tab=setups&source=proposal_flow"),
+    );
+    expect(invalid.journalSource).toBeNull();
+    expect(invalid.ignoredParams).toContain("source");
+  });
+
+  it("rejects journal trade source on Performance tab", () => {
+    const state = parseAnalyticsSearchParams(
+      new URLSearchParams("tab=performance&source=manual"),
+    );
+    expect(state.portfolioSource).toBeNull();
+    expect(state.journalSource).toBeNull();
+    expect(state.ignoredParams).toContain("source");
   });
 
   it("accepts journal setup_id deep links only on Setups tab", () => {
@@ -98,6 +124,7 @@ describe("buildAnalyticsApiParams", () => {
       symbol: null,
       timeframe: null,
       portfolioSource: "proposal_flow",
+      journalSource: null,
       setupId: SETUP_UUID,
       userStrategyId: STRATEGY_UUID,
       groupBy: "setup",
@@ -120,6 +147,7 @@ describe("buildSetupAnalyticsApiParams", () => {
       symbol: "BTCUSDT",
       timeframe: "1h",
       portfolioSource: null,
+      journalSource: null,
       setupId: SETUP_UUID,
       userStrategyId: STRATEGY_UUID,
       groupBy: "setup_version",
@@ -146,6 +174,7 @@ describe("formatAppliedFiltersSummary", () => {
       symbol: "BTCUSDT",
       timeframe: "1h",
       portfolioSource: "proposal_flow",
+      journalSource: null,
       setupId: null,
       userStrategyId: null,
       groupBy: "setup",
@@ -166,6 +195,7 @@ describe("formatAppliedFiltersSummary", () => {
       symbol: null,
       timeframe: null,
       portfolioSource: null,
+      journalSource: null,
       setupId: SETUP_UUID,
       userStrategyId: STRATEGY_UUID,
       groupBy: "setup",
@@ -175,5 +205,46 @@ describe("formatAppliedFiltersSummary", () => {
     expect(summary).toContain(`setup_id ${SETUP_UUID}`);
     expect(summary).toContain(`strategy ${STRATEGY_UUID}`);
     expect(summary).toContain("group setup");
+  });
+
+  it("includes journal trade source in provenance text on Setups tab", () => {
+    const summary = formatAppliedFiltersSummary({
+      tab: "setups",
+      dateFrom: null,
+      dateTo: null,
+      symbol: null,
+      timeframe: null,
+      portfolioSource: null,
+      journalSource: "paper_execution",
+      setupId: null,
+      userStrategyId: null,
+      groupBy: "strategy",
+      bucketOffset: 0,
+      ignoredParams: [],
+    });
+    expect(summary).toContain("source paper_execution");
+    expect(summary).toContain("group strategy");
+  });
+});
+
+describe("buildSetupAnalyticsApiParams journal source", () => {
+  it("sends journal source only to journal statistics, not evidence", () => {
+    const params = buildSetupAnalyticsApiParams({
+      tab: "setups",
+      dateFrom: null,
+      dateTo: null,
+      symbol: null,
+      timeframe: null,
+      portfolioSource: null,
+      journalSource: "backtest",
+      setupId: null,
+      userStrategyId: null,
+      groupBy: "setup",
+      bucketOffset: 0,
+      ignoredParams: [],
+    });
+    expect(params.journal.source).toBe("backtest");
+    expect(params.evidence).not.toHaveProperty("source");
+    expect(params).not.toHaveProperty("portfolio");
   });
 });
