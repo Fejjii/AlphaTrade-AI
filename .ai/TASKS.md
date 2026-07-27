@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows + Phase D analytics planning
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A + C3B1 + C3B2 DONE; Phase D Analytics & Charts blueprint DONE) · Dependencies: AT-039 · Risk: Low (frontend-only / docs)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 + C3A + C3B1 + C3B2 DONE; Portfolio/Risk command centre DRAFT; Phase D Analytics & Charts blueprint DONE) · Dependencies: AT-039 · Risk: Low (frontend-only / docs)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -617,6 +617,19 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `a4aed6fc9913ae2c5bc6cf8d300ff56eab4b2495`; pre-merge CI 30264373051 success;
   post-merge main CI 30267507921 success — frontend, backend, docker-build,
   deployment-safety, evaluation, e2e-smoke). Phase C3B2 / Knowledge Hub DONE.
+- Portfolio/Risk command centre (draft PR):
+  Branch `feat/at040-portfolio-risk-command-centre`; draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/37.
+  `/portfolio` owns paper account overview, exposure, history, and risk posture
+  (daily discipline + kill-switch fail-closed); `/risk` remains configuration-only.
+  Honesty corrections: unresolved/stale kill-switch never means clear; cached BLOCK
+  remains authoritative after refresh failure; drawdown/daily P&L wording distinguishes
+  today vs selected-range; journal `?entry=` deep links; empty equity is confirmed empty
+  (not truncated); positions link labeled "View positions"; separate Daily discipline /
+  Kill switch source rows. Frontend-only; no Knowledge/nav/backend changes.
+  Rebased onto `origin/main` @ `9d42d10` (Analytics blueprint + governance on main).
+  Knowledge files unchanged on this branch. Awaiting green CI then ready-for-review /
+  merge — do not deploy from this entry alone.
 - Phase D Analytics & Charts blueprint deliverables (documentation only — no
   frontend/backend/chart implementation): authoritative implementation plan at
   `docs/product/at040_analytics_and_charts_blueprint.md`; verified capability
@@ -630,10 +643,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `e82d4fc3287a693ea755901e01e2b5d868ee8ecb`; pre-merge CI 30271331488 success;
   post-merge main CI 30273039335 success — frontend, backend, docker-build,
   deployment-safety, evaluation, e2e-smoke). Analytics & Charts blueprint DONE.
-- Phase C remaining: Portfolio/risk split (PR #37 parallel).
-- Next implementation: Analytics PR 1 (foundation, filters, Overview + Performance)
-  per blueprint §12 — new Composer 2.5 agent chat, fresh branch from latest main;
-  do not touch Portfolio/Risk files.
+  Governance record PR https://github.com/Fejjii/AlphaTrade-AI/pull/40 merged
+  (`9d42d10`).
+- Phase C remaining: Portfolio/Risk draft PR #37 (finalize/merge in progress).
+- Next implementation after Portfolio/Risk merge: Analytics PR 1 (foundation,
+  filters, Overview + Performance) per blueprint §12 — new Composer 2.5 agent chat,
+  fresh branch from latest main; do not touch Portfolio/Risk files until that merge.
 
 ---
 
