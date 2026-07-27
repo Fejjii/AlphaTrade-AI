@@ -5,12 +5,16 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ErrorState, SuccessState } from "@/components/states";
+import { ErrorState, LoadingState, SuccessState } from "@/components/states";
 import { api, ApiError } from "@/lib/api";
 import type { MembershipRole, OrganizationInvitation } from "@/lib/api/types";
 
+type InvitationsLoadState = "loading" | "loaded" | "failed";
+
 export default function InvitationsPage() {
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([]);
+  const [loadState, setLoadState] = useState<InvitationsLoadState>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MembershipRole>("trader");
   const [error, setError] = useState<string | null>(null);
@@ -21,8 +25,11 @@ export default function InvitationsPage() {
     try {
       const response = await api.organizations.listInvitations();
       setInvitations(response.invitations);
+      setLoadState("loaded");
+      setLoadError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load invitations.");
+      setLoadState("failed");
+      setLoadError(err instanceof ApiError ? err.message : "Could not load invitations.");
     }
   }, []);
 
@@ -103,7 +110,14 @@ export default function InvitationsPage() {
           <CardTitle>Pending and recent invitations</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          {invitations.length === 0 ? (
+          {loadState === "loading" ? (
+            <LoadingState label="Loading invitations…" />
+          ) : loadState === "failed" ? (
+            <ErrorState
+              message={loadError ?? "Could not load invitations."}
+              onRetry={() => void load()}
+            />
+          ) : invitations.length === 0 ? (
             <p className="text-zinc-400">No invitations yet.</p>
           ) : (
             invitations.map((inv) => (
