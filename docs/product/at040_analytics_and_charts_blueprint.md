@@ -728,9 +728,10 @@ picked up later, it ships with its own pytest coverage in that separate task.
 | Endpoint drift while PRs land | each PR re-verifies the §2 references it consumes; types in `frontend/src/lib/api/types.ts` are the contract checkpoint |
 
 Dependencies: PR 1 → PR 2/3 → PR 4 (PR 2 and PR 3 are independent of each other). Backend
-items below are independent of all four PRs and unblock the deferred charts. Analytics PR 1
-may start from latest `main` after #38 merges even while #36/#37 remain open, as long as it
-uses a new chat, a fresh branch, and does not touch those workstreams' files.
+items below are independent of all four PRs and unblock the deferred charts. Knowledge Hub
+PR #36 is merged. Analytics PR 1 may start from latest `main` after #38 merges while
+Portfolio/Risk PR #37 remains open, provided it uses a new chat, a fresh branch, and does
+not touch Portfolio/Risk (or other parallel workstream) files — workstreams remain isolated.
 
 ---
 
