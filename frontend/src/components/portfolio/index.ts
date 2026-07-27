@@ -1,4 +1,8 @@
-export { AccountOverviewPanel } from "@/components/portfolio/AccountOverviewPanel";
+export {
+  AccountOverviewPanel,
+  resolveDailyPnlDisplay,
+  type DailyPnlDisplay,
+} from "@/components/portfolio/AccountOverviewPanel";
 export {
   buildClosedPositionRows,
   type ClosedPositionRow,
@@ -12,12 +16,18 @@ export {
 } from "@/components/portfolio/buildOpenPositionRows";
 export {
   buildRiskPosture,
+  resolveKillSwitchState,
   type BuildRiskPostureInput,
+  type KillSwitchResolution,
   type RiskPostureView,
   type RiskTradingState,
 } from "@/components/portfolio/buildRiskPosture";
 export { ClosedPositionsPanel } from "@/components/portfolio/ClosedPositionsPanel";
 export { OpenPositionsPanel } from "@/components/portfolio/OpenPositionsPanel";
+export {
+  assessPortfolioHistoryCoverage,
+  portfolioSourceCoverage,
+} from "@/components/portfolio/portfolioHistoryCoverage";
 export { PortfolioHistoryPanel } from "@/components/portfolio/PortfolioHistoryPanel";
 export { PortfolioHubChrome } from "@/components/portfolio/PortfolioHubChrome";
 export {

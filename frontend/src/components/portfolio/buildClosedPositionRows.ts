@@ -1,5 +1,6 @@
-import type { SourceResult } from "@/components/workflows/sourceResult";
+import { journalEntryHref } from "@/components/journal/journalContext";
 import { coverageFromPage } from "@/components/portfolio/portfolioMetricDisplay";
+import type { SourceResult } from "@/components/workflows/sourceResult";
 import type { JournalEntry, PaginatedJournalEntries, PaginatedPositions, Position } from "@/lib/api/types";
 
 export type JournalLinkStatus =
@@ -51,7 +52,7 @@ function journalStatusForPosition(
     return {
       journalStatus: "journaled",
       journalStatusLabel: "Journaled",
-      journalHref: `/journal?entry_id=${encodeURIComponent(entry.id)}`,
+      journalHref: journalEntryHref(entry.id),
       journalEntryId: entry.id,
     };
   }

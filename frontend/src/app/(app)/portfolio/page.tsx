@@ -20,6 +20,7 @@ import { PaperPortfolioFilters } from "@/components/portfolio/PaperPortfolioFilt
 import { PaperPortfolioSafetyBanner } from "@/components/portfolio/PaperPortfolioSafetyBanner";
 import { PortfolioBreakdownTable } from "@/components/portfolio/PortfolioBreakdownTable";
 import { PortfolioTrendBadge } from "@/components/portfolio/PortfolioTrendBadge";
+import { portfolioSourceCoverage } from "@/components/portfolio/portfolioHistoryCoverage";
 import { coverageFromPage } from "@/components/portfolio/portfolioMetricDisplay";
 import { LoadingState } from "@/components/states";
 import {
@@ -71,7 +72,7 @@ export default function PaperPortfolioPage() {
   const [endDate, setEndDate] = useState("");
   const [source, setSource] = useState<PortfolioSourceFilter>("all");
   const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
-  const { killSwitchStatus, killSwitchError } = useAppContext();
+  const { killSwitchStatus, killSwitchError, loading: appLoading } = useAppContext();
   const posture = describeSafetyPosture(executionMode, realTradingEnabled);
 
   const loader = useCallback(async (): Promise<PortfolioCommandCentreData> => {
@@ -99,9 +100,10 @@ export default function PaperPortfolioPage() {
         discipline,
         killSwitchStatus,
         killSwitchError,
+        killSwitchLoading: appLoading && killSwitchStatus == null && !killSwitchError,
         posture,
       }),
-    [discipline, killSwitchStatus, killSwitchError, posture],
+    [discipline, killSwitchStatus, killSwitchError, appLoading, posture],
   );
 
   const openPositionsView = useMemo(
@@ -140,11 +142,8 @@ export default function PaperPortfolioPage() {
         error: data.portfolio.error,
         timestamp: data.portfolio.data?.account.as_of ?? null,
         required: true,
-        coverage: data.portfolio.available
-          ? data.portfolio.data?.equity_curve.length
-            ? ("complete" as const)
-            : ("truncated" as const)
-          : null,
+        // Portfolio response is not paginated — empty equity is confirmed empty, not truncated.
+        coverage: portfolioSourceCoverage(data.portfolio.available),
       },
       {
         name: "Risk state",
@@ -271,7 +270,6 @@ export default function PaperPortfolioPage() {
 
           <AccountOverviewPanel
             portfolio={data.portfolio}
-            dailyPnl={riskPosture.dailyPnl}
             paperConfirmed={posture.paperConfirmed}
             discipline={discipline}
           />

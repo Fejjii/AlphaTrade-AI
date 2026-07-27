@@ -36,9 +36,22 @@ const appContext = {
     scope: "org",
     global_active: false,
     execution_blocked: false,
-  },
+  } as {
+    organization_id: string;
+    active: boolean;
+    reason: string | null;
+    activated_by: string | null;
+    activated_at: string | null;
+    deactivated_by: string | null;
+    deactivated_at: string | null;
+    version: number;
+    scope: string;
+    global_active: boolean;
+    execution_blocked: boolean;
+  } | null,
   killSwitchError: null as string | null,
   killSwitchBusy: false,
+  loading: false,
   setKillSwitchActive: vi.fn(),
   refreshKillSwitch: vi.fn(),
   health: null,
@@ -287,7 +300,20 @@ describe("Portfolio & Risk command centre", () => {
     safetyPosture.realTradingEnabled = false;
     safetyPosture.postureKnown = true;
     appContext.killSwitchError = null;
-    appContext.killSwitchStatus.execution_blocked = false;
+    appContext.loading = false;
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: false,
+      reason: null,
+      activated_by: null,
+      activated_at: null,
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 1,
+      scope: "org",
+      global_active: false,
+      execution_blocked: false,
+    };
     asyncState = {
       data: completeData(),
       loading: false,
@@ -377,6 +403,7 @@ describe("Portfolio & Risk command centre", () => {
             unrealized_pnl: null,
             as_of: "",
           },
+          daily_series: [],
         }),
         dashboard: ok(
           makeDashboard({
@@ -401,7 +428,69 @@ describe("Portfolio & Risk command centre", () => {
     expect(screen.getByTestId("portfolio-snapshot-time")).toHaveTextContent(
       /freshness unavailable/i,
     );
+    expect(screen.getByTestId("portfolio-daily-pnl-unavailable")).toBeInTheDocument();
     expect(screen.getByTestId("risk-daily-pnl-unavailable")).toBeInTheDocument();
+  });
+
+  it("labels daily P&L and drawdown honestly without inventing current drawdown", () => {
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("portfolio-daily-pnl")).toHaveTextContent(/Today's paper P&L/i);
+    expect(screen.getByTestId("portfolio-daily-pnl-source")).toHaveTextContent(
+      /today's paper discipline/i,
+    );
+    expect(screen.getByTestId("portfolio-latest-daily-drawdown")).toHaveTextContent(
+      /Latest daily drawdown in selected range/i,
+    );
+    expect(screen.getByTestId("portfolio-max-drawdown")).toHaveTextContent(/Max drawdown/i);
+    expect(screen.queryByText(/Current drawdown/i)).not.toBeInTheDocument();
+  });
+
+  it("labels latest selected-range daily P&L when discipline today P&L is missing", () => {
+    asyncState = {
+      data: completeData({
+        dashboard: ok(makeDashboard({ net_pnl_today_paper: null })),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("portfolio-daily-pnl")).toHaveTextContent(
+      /Latest daily P&L in selected range/i,
+    );
+    expect(screen.getByTestId("portfolio-daily-pnl-source")).toHaveTextContent(
+      /not claimed as today/i,
+    );
+  });
+
+  it("does not mark empty equity curve as truncated portfolio coverage", () => {
+    asyncState = {
+      data: completeData({
+        portfolio: ok({
+          ...samplePortfolio,
+          equity_curve: [],
+          daily_series: [],
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("portfolio-source-coverage-portfolio-performance")).toHaveTextContent(
+      /complete/i,
+    );
+    expect(screen.getByTestId("portfolio-history-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("portfolio-history-partial")).not.toBeInTheDocument();
+  });
+
+  it("does not claim trading allowed when kill-switch is null without error while loading", () => {
+    appContext.killSwitchStatus = null;
+    appContext.killSwitchError = null;
+    appContext.loading = true;
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("risk-trading-state")).not.toHaveTextContent(/^Trading allowed$/i);
+    expect(screen.getByTestId("portfolio-risk-attention-summary")).toHaveTextContent(/loading/i);
   });
 
   it("confirms no open positions only with complete coverage", () => {
@@ -521,9 +610,16 @@ describe("Portfolio & Risk command centre", () => {
       "href",
       "/strategy-lab/strat-1",
     );
+    expect(screen.getByTestId("open-position-positions-link-pos-open-1")).toHaveAttribute(
+      "href",
+      "/positions",
+    );
+    expect(screen.getByTestId("open-position-positions-link-pos-open-1")).toHaveTextContent(
+      /View positions/i,
+    );
     expect(screen.getByTestId("closed-position-journal-link-pos-closed-1")).toHaveAttribute(
       "href",
-      expect.stringContaining("entry_id=entry-1"),
+      "/journal?entry=entry-1",
     );
     expect(screen.getByTestId("closed-position-journal-link-pos-closed-2")).toHaveAttribute(
       "href",

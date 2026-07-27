@@ -123,9 +123,9 @@ export function OpenPositionsPanel({ view }: { view: OpenPositionsView }) {
                     <Link
                       href={row.relationships.positionDetailHref}
                       className="underline text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                      data-testid={`open-position-detail-link-${row.position.id}`}
+                      data-testid={`open-position-positions-link-${row.position.id}`}
                     >
-                      Position detail
+                      View positions
                     </Link>
                     {row.relationships.strategyHref ? (
                       <Link

@@ -64,6 +64,7 @@ describe("buildRiskPosture", () => {
       discipline: null,
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.tradingState).toBe("unavailable");
@@ -75,6 +76,7 @@ describe("buildRiskPosture", () => {
       discipline: failed(),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.tradingState).toBe("unavailable");
@@ -82,17 +84,47 @@ describe("buildRiskPosture", () => {
     expect(view.attentionSummary).toMatch(/failed|unavailable/i);
   });
 
-  it("reports allowed when discipline is calm and kill switch clear", () => {
+  it("reports allowed when discipline is calm and kill switch is explicitly clear", () => {
     const view = buildRiskPosture({
       discipline: ok(discipline()),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.tradingState).toBe("allowed");
+    expect(view.killSwitchResolution).toBe("clear");
     expect(view.dailyLossStatus).toBe("clear");
     expect(view.cooldownStatus).toBe("clear");
     expect(view.showRiskBlock).toBe(false);
+  });
+
+  it("does not claim allowed when kill switch is null with no error while loading", () => {
+    const view = buildRiskPosture({
+      discipline: ok(discipline()),
+      killSwitchStatus: null,
+      killSwitchError: null,
+      killSwitchLoading: true,
+      posture,
+    });
+    expect(view.killSwitchResolution).toBe("loading");
+    expect(view.tradingState).toBe("unavailable");
+    expect(view.tradingStateLabel).not.toMatch(/^Trading allowed$/i);
+    expect(view.attentionSummary).toMatch(/loading/i);
+  });
+
+  it("does not claim allowed for calm discipline + null kill-switch status + no error", () => {
+    const view = buildRiskPosture({
+      discipline: ok(discipline()),
+      killSwitchStatus: null,
+      killSwitchError: null,
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.killSwitchResolution).toBe("unavailable");
+    expect(view.tradingState).toBe("unavailable");
+    expect(view.tradingStateLabel).not.toMatch(/^Trading allowed$/i);
+    expect(view.attentionSummary).toMatch(/unavailable|unverified/i);
   });
 
   it("reports warning on caution / overtrading", () => {
@@ -106,6 +138,7 @@ describe("buildRiskPosture", () => {
       ),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.tradingState).toBe("warned");
@@ -124,6 +157,7 @@ describe("buildRiskPosture", () => {
       ),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.tradingState).toBe("blocked");
@@ -137,6 +171,7 @@ describe("buildRiskPosture", () => {
       discipline: ok(discipline()),
       killSwitchStatus: { ...killClear, execution_blocked: true, reason: "Manual halt" },
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.tradingState).toBe("blocked");
@@ -144,13 +179,15 @@ describe("buildRiskPosture", () => {
     expect(view.activeBlockReasons.join(" ")).toMatch(/Kill switch/i);
   });
 
-  it("does not claim allowed when kill switch status is unknown", () => {
+  it("does not claim allowed when kill switch status has an error", () => {
     const view = buildRiskPosture({
       discipline: ok(discipline()),
       killSwitchStatus: null,
       killSwitchError: "kill switch down",
+      killSwitchLoading: false,
       posture,
     });
+    expect(view.killSwitchResolution).toBe("unavailable");
     expect(view.tradingState).toBe("unavailable");
     expect(view.tradingStateLabel).not.toMatch(/^Trading allowed$/i);
   });
@@ -160,6 +197,7 @@ describe("buildRiskPosture", () => {
       discipline: ok(discipline({ green_day_protection_active: true })),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.cooldownStatus).toBe("active");
@@ -171,6 +209,7 @@ describe("buildRiskPosture", () => {
       discipline: ok(discipline()),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture,
     });
     expect(view.paperConfirmed).toBe(true);
@@ -184,6 +223,7 @@ describe("buildRiskPosture", () => {
       discipline: ok(discipline()),
       killSwitchStatus: killClear,
       killSwitchError: null,
+      killSwitchLoading: false,
       posture: unverified,
     });
     expect(view.paperConfirmed).toBe(false);

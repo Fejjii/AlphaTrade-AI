@@ -1,5 +1,5 @@
 import { PaperPortfolioCharts } from "@/components/portfolio/PaperPortfolioCharts";
-import { isValidTimestamp } from "@/components/portfolio/portfolioMetricDisplay";
+import { assessPortfolioHistoryCoverage } from "@/components/portfolio/portfolioHistoryCoverage";
 import type { SourceResult } from "@/components/workflows/sourceResult";
 import { Panel, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import type { PaperPortfolioResponse } from "@/lib/api/types";
@@ -46,13 +46,7 @@ export function PortfolioHistoryPanel({
 
   const equity = portfolio.data.equity_curve;
   const daily = portfolio.data.daily_series;
-  const validEquityTimestamps = equity.filter((point) => isValidTimestamp(point.timestamp)).length;
-  const missingEquityTimestamps = equity.length - validEquityTimestamps;
-  const partial =
-    equity.length === 0 ||
-    daily.length === 0 ||
-    missingEquityTimestamps > 0 ||
-    portfolio.data.account.limitations.length > 0;
+  const coverage = assessPortfolioHistoryCoverage(portfolio.data);
 
   return (
     <section aria-labelledby="portfolio-history-heading" data-testid="portfolio-history-panel">
@@ -61,25 +55,43 @@ export function PortfolioHistoryPanel({
           <div>
             <PanelTitle id="portfolio-history-heading">Portfolio history</PanelTitle>
             <p className="mt-1 text-sm text-text-muted">
-              Equity and drawdown from existing snapshot / daily-series data only.
+              Equity and drawdown from existing snapshot / daily-series data only. Empty series are
+              confirmed empty, not truncated API coverage.
             </p>
           </div>
         </PanelHeader>
 
-        {partial ? (
+        {coverage.kind === "partial_timestamps" ? (
           <p className="mb-3 text-sm text-warning" data-testid="portfolio-history-partial">
-            Partial history coverage
-            {missingEquityTimestamps > 0
-              ? ` — ${missingEquityTimestamps} equity point(s) lack valid timestamps`
-              : ""}
-            {equity.length === 0 ? " — equity curve empty" : ""}
-            {daily.length === 0 ? " — daily series empty" : ""}.
+            {coverage.message}
           </p>
-        ) : (
+        ) : null}
+
+        {coverage.kind === "empty" ? (
+          <p className="mb-3 text-sm text-text-muted" data-testid="portfolio-history-empty">
+            {coverage.message}
+          </p>
+        ) : null}
+
+        {coverage.kind === "complete" ? (
           <p className="mb-3 text-sm text-text-muted" data-testid="portfolio-history-complete">
-            History coverage appears complete for the loaded series.
+            {coverage.message}
           </p>
-        )}
+        ) : null}
+
+        {coverage.limitations.length > 0 ? (
+          <div
+            className="mb-3 rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-secondary"
+            data-testid="portfolio-history-limitations"
+          >
+            <p className="font-medium text-text-primary">Backend limitations</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {coverage.limitations.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <PaperPortfolioCharts equityCurve={equity} dailySeries={daily} />
       </Panel>

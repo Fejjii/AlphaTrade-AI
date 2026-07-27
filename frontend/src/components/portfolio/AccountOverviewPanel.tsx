@@ -10,9 +10,14 @@ import { DataNumber } from "@/components/ui/data-number";
 import { Panel, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import type { DailyDisciplineSnapshot, PaperPortfolioResponse } from "@/lib/api/types";
 
+export type DailyPnlDisplay = {
+  value: string | null;
+  source: "discipline_today" | "daily_series_range" | "none";
+  label: string;
+};
+
 type AccountOverviewPanelProps = {
   portfolio: SourceResult<PaperPortfolioResponse> | null | undefined;
-  dailyPnl: string | null;
   paperConfirmed: boolean;
   discipline: SourceResult<DailyDisciplineSnapshot | null> | null | undefined;
 };
@@ -52,9 +57,33 @@ function MetricCell({
   );
 }
 
+export function resolveDailyPnlDisplay(
+  discipline: SourceResult<DailyDisciplineSnapshot | null> | null | undefined,
+  latestDailyPnl: string | null | undefined,
+): DailyPnlDisplay {
+  if (discipline?.available && discipline.data?.net_pnl_today_paper != null) {
+    return {
+      value: discipline.data.net_pnl_today_paper,
+      source: "discipline_today",
+      label: "Today's paper P&L",
+    };
+  }
+  if (latestDailyPnl != null && latestDailyPnl !== "") {
+    return {
+      value: latestDailyPnl,
+      source: "daily_series_range",
+      label: "Latest daily P&L in selected range",
+    };
+  }
+  return {
+    value: null,
+    source: "none",
+    label: "Daily P&L",
+  };
+}
+
 export function AccountOverviewPanel({
   portfolio,
-  dailyPnl,
   paperConfirmed,
   discipline,
 }: AccountOverviewPanelProps) {
@@ -97,12 +126,8 @@ export function AccountOverviewPanel({
   const account = portfolio.data.account;
   const metrics = portfolio.data.metrics;
   const latestDaily = portfolio.data.daily_series.at(-1);
-  const resolvedDailyPnl =
-    dailyPnl ??
-    (discipline?.available ? discipline.data?.net_pnl_today_paper ?? null : null) ??
-    latestDaily?.daily_pnl ??
-    null;
-  const currentDrawdown = latestDaily?.daily_drawdown ?? metrics.max_drawdown ?? null;
+  const dailyPnl = resolveDailyPnlDisplay(discipline, latestDaily?.daily_pnl);
+  const latestDailyDrawdown = latestDaily?.daily_drawdown ?? null;
 
   return (
     <section aria-labelledby="account-overview-heading" data-testid="account-overview-panel">
@@ -154,14 +179,19 @@ export function AccountOverviewPanel({
             signed
           />
           <MetricCell
-            testId="portfolio-current-drawdown"
-            label="Current drawdown"
-            value={currentDrawdown}
+            testId="portfolio-latest-daily-drawdown"
+            label="Latest daily drawdown in selected range"
+            value={latestDailyDrawdown}
           />
-          <MetricCell testId="portfolio-daily-pnl" label="Daily P&L" value={resolvedDailyPnl} signed />
+          <MetricCell
+            testId="portfolio-daily-pnl"
+            label={dailyPnl.label}
+            value={dailyPnl.value}
+            signed
+          />
           <MetricCell
             testId="portfolio-max-drawdown"
-            label="Max drawdown (metrics)"
+            label="Max drawdown"
             value={metrics.max_drawdown}
           />
           <MetricCell
@@ -171,8 +201,20 @@ export function AccountOverviewPanel({
           />
         </div>
 
+        <p className="mt-2 text-caption text-text-muted" data-testid="portfolio-daily-pnl-source">
+          Daily P&amp;L source:{" "}
+          {dailyPnl.source === "discipline_today"
+            ? "today's paper discipline snapshot"
+            : dailyPnl.source === "daily_series_range"
+              ? "latest daily series point in selected range (not claimed as today)"
+              : "unavailable"}
+        </p>
+
         {account.limitations.length > 0 ? (
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-warning" data-testid="account-overview-limitations">
+          <ul
+            className="mt-3 list-disc space-y-1 pl-5 text-xs text-warning"
+            data-testid="account-overview-limitations"
+          >
             {account.limitations.map((item) => (
               <li key={item}>{item}</li>
             ))}

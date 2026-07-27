@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildClosedPositionRows } from "@/components/portfolio/buildClosedPositionRows";
+import { parseJournalQuery } from "@/components/journal/journalContext";
 import type { SourceResult } from "@/components/workflows/sourceResult";
 import type { JournalEntry, PaginatedJournalEntries, PaginatedPositions, Position } from "@/lib/api/types";
 
@@ -73,7 +74,25 @@ describe("buildClosedPositionRows", () => {
       }),
     );
     expect(view.rows?.[0]?.journalStatus).toBe("journaled");
-    expect(view.rows?.[0]?.journalHref).toContain("entry_id=entry-1");
+    expect(view.rows?.[0]?.journalHref).toBe("/journal?entry=entry-1");
+    expect(view.rows?.[0]?.journalHref).not.toContain("entry_id=");
+  });
+
+  it("generates a journal entry deep link understood by parseJournalQuery", () => {
+    const view = buildClosedPositionRows(
+      ok({ items: [makePosition({ id: "pos-link" })], total: 1, limit: 50, offset: 0 }),
+      ok({
+        items: [makeEntry({ id: "entry-42", linked_position_id: "pos-link" })],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    const href = view.rows?.[0]?.journalHref;
+    expect(href).toBeTruthy();
+    const params = new URLSearchParams(href!.split("?")[1] ?? "");
+    const parsed = parseJournalQuery(params);
+    expect(parsed.entryId).toBe("entry-42");
   });
 
   it("marks not journaled only with complete journal coverage", () => {

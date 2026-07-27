@@ -8,6 +8,12 @@ export type CooldownStatus = "clear" | "active" | "unavailable";
 
 export type DailyLossStatus = "clear" | "active" | "unavailable";
 
+export type KillSwitchResolution =
+  | "clear"
+  | "blocked"
+  | "loading"
+  | "unavailable";
+
 export type RiskPostureView = {
   tradingState: RiskTradingState;
   tradingStateLabel: string;
@@ -29,12 +35,15 @@ export type RiskPostureView = {
   dailyPnl: string | null;
   freshnessTimestamp: string | null;
   settingsHref: string;
+  killSwitchResolution: KillSwitchResolution;
 };
 
 export type BuildRiskPostureInput = {
   discipline: SourceResult<DailyDisciplineSnapshot | null> | null | undefined;
   killSwitchStatus: KillSwitchStatus | null;
   killSwitchError: string | null;
+  /** AppContext loading — null kill-switch with no error while loading is unverified. */
+  killSwitchLoading: boolean;
   posture: SafetyPostureDisplay;
 };
 
@@ -46,20 +55,46 @@ function disciplineSnapshot(
 }
 
 /**
+ * Resolve kill-switch state fail-closed.
+ * null status never means clear. Only an explicit returned status with
+ * execution_blocked=false may support "Trading allowed".
+ */
+export function resolveKillSwitchState(input: {
+  killSwitchStatus: KillSwitchStatus | null;
+  killSwitchError: string | null;
+  killSwitchLoading: boolean;
+}): KillSwitchResolution {
+  const { killSwitchStatus, killSwitchError, killSwitchLoading } = input;
+  if (killSwitchStatus != null) {
+    return killSwitchStatus.execution_blocked ? "blocked" : "clear";
+  }
+  if (killSwitchError) return "unavailable";
+  if (killSwitchLoading) return "loading";
+  // null status with no error and not loading — still unresolved, never clear
+  return "unavailable";
+}
+
+/**
  * Derive Portfolio risk posture from existing dashboard discipline + kill-switch fields.
- * Never invents "Trading allowed" when a risk source failed.
+ * Never invents "Trading allowed" when a risk source failed or kill-switch is unresolved.
  * Risk engine BLOCK / kill-switch execution_blocked remain authoritative.
  */
 export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView {
-  const { discipline, killSwitchStatus, killSwitchError, posture } = input;
+  const { discipline, killSwitchStatus, killSwitchError, killSwitchLoading, posture } = input;
   const limitations: string[] = [];
   const settingsHref = "/risk";
+  const killSwitchResolution = resolveKillSwitchState({
+    killSwitchStatus,
+    killSwitchError,
+    killSwitchLoading,
+  });
 
   const base = {
     executionModeLabel: posture.executionLabel,
     realTradingLabel: posture.realTradingLabel,
     paperConfirmed: posture.paperConfirmed,
     settingsHref,
+    killSwitchResolution,
   };
 
   if (!discipline) {
@@ -138,11 +173,15 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
 
   limitations.push(...snapshot.limitations);
 
-  const killSwitchBlocked = Boolean(killSwitchStatus?.execution_blocked);
-  const killSwitchUnknown = killSwitchStatus == null && Boolean(killSwitchError);
-  if (killSwitchUnknown) {
+  if (killSwitchResolution === "unavailable") {
     limitations.push(
-      `Kill-switch status unavailable: ${killSwitchError ?? "unknown error"}. Trading allowed is not confirmed.`,
+      killSwitchError
+        ? `Kill-switch status unavailable: ${killSwitchError}. Trading allowed is not confirmed.`
+        : "Kill-switch status is unresolved. Trading allowed is not confirmed.",
+    );
+  } else if (killSwitchResolution === "loading") {
+    limitations.push(
+      "Kill-switch status is still loading. Trading allowed is not confirmed.",
     );
   }
 
@@ -151,6 +190,7 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
   const overtrading = snapshot.overtrading_warning_active;
   const status = snapshot.discipline_status;
   const lockedByDiscipline = status === "locked" || status === "review_only";
+  const killSwitchBlocked = killSwitchResolution === "blocked";
 
   const cooldownDetails: string[] = [];
   if (lossLock) cooldownDetails.push("Daily loss lock is active");
@@ -196,7 +236,12 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
     riskBlockReason =
       activeBlockReasons.join("; ") ||
       "Risk engine BLOCK is final. There is no override on Portfolio.";
-  } else if (killSwitchUnknown) {
+  } else if (killSwitchResolution === "loading") {
+    tradingState = "unavailable";
+    tradingStateLabel = "Trading allowance unverified";
+    attentionSummary =
+      "Kill-switch status is still loading, so trading allowed cannot be confirmed.";
+  } else if (killSwitchResolution === "unavailable") {
     tradingState = "unavailable";
     tradingStateLabel = "Trading allowance unverified";
     attentionSummary =
@@ -207,13 +252,14 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
     overtrading ||
     (snapshot.remaining_trades_allowed != null && snapshot.remaining_trades_allowed <= 1)
   ) {
+    // killSwitchResolution === "clear" is required to reach here after the guards above
     tradingState = "warned";
     tradingStateLabel = "Trading warned";
     attentionSummary =
       snapshot.recommended_action ||
       cooldownDetails[0] ||
       "Risk conditions require attention before adding exposure.";
-  } else if (status === "calm") {
+  } else if (status === "calm" && killSwitchResolution === "clear") {
     tradingState = "allowed";
     tradingStateLabel = "Trading allowed";
     attentionSummary =
