@@ -2,6 +2,7 @@ export { AnalyticsFilterBar } from "./AnalyticsFilterBar";
 export { ChartFrame } from "./ChartFrame";
 export { ChartTooltip } from "./ChartTooltip";
 export { OverviewStats } from "./OverviewStats";
+export { PerformanceCharts } from "./PerformanceCharts";
 export * from "./chartTransforms";
 export * from "./filterValidation";
 export * from "./format";

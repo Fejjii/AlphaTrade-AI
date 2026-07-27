@@ -3,11 +3,13 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AnalyticsPage from "@/app/(app)/analytics/page";
-import { DailyPnlChart } from "@/components/analytics/DailyPnlChart";
-import { CumulativePnlChart } from "@/components/analytics/CumulativePnlChart";
 import type { JournalStatsResponse, PaperPortfolioResponse } from "@/lib/api/types";
 import type { SourceResult } from "@/components/workflows";
 import type { AnalyticsFilterState } from "@/components/analytics/useAnalyticsFilters";
+
+const { performanceChartsMounted } = vi.hoisted(() => ({
+  performanceChartsMounted: vi.fn(),
+}));
 
 const mockReload = vi.fn();
 const mockSetTab = vi.fn();
@@ -209,12 +211,26 @@ vi.mock("@/components/analytics/useAnalyticsSources", () => ({
   }),
 }));
 
-vi.mock("@/components/analytics/AnalyticsCharts", () => ({
-  DailyPnlChart: (props: ComponentProps<typeof DailyPnlChart>) => <DailyPnlChart {...props} />,
-  CumulativePnlChart: (props: ComponentProps<typeof CumulativePnlChart>) => (
-    <CumulativePnlChart {...props} />
-  ),
-}));
+vi.mock("@/components/analytics/AnalyticsCharts", async () => {
+  const daily = await import("@/components/analytics/DailyPnlChart");
+  const cumulative = await import("@/components/analytics/CumulativePnlChart");
+  return {
+    DailyPnlChart: daily.DailyPnlChart,
+    CumulativePnlChart: cumulative.CumulativePnlChart,
+  };
+});
+
+vi.mock("@/components/analytics/PerformanceCharts", async () => {
+  const actual = await vi.importActual<typeof import("@/components/analytics/PerformanceCharts")>(
+    "@/components/analytics/PerformanceCharts",
+  );
+  return {
+    PerformanceCharts: (props: ComponentProps<typeof actual.PerformanceCharts>) => {
+      performanceChartsMounted();
+      return <actual.PerformanceCharts {...props} />;
+    },
+  };
+});
 
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => ({
@@ -247,6 +263,48 @@ describe("AnalyticsPage PR1", () => {
       loadedFilterKey: "key",
     };
     vi.clearAllMocks();
+    performanceChartsMounted.mockClear();
+  });
+
+  it("keeps overview and performance tabpanels in the DOM with overview active by default", () => {
+    render(<AnalyticsPage />);
+
+    const overviewTab = screen.getByRole("tab", { name: "Overview" });
+    const performanceTab = screen.getByRole("tab", { name: "Performance" });
+
+    expect(overviewTab).toHaveAttribute("aria-selected", "true");
+    expect(performanceTab).toHaveAttribute("aria-selected", "false");
+
+    const overviewPanelId = overviewTab.getAttribute("aria-controls");
+    const performancePanelId = performanceTab.getAttribute("aria-controls");
+    expect(overviewPanelId).toBeTruthy();
+    expect(performancePanelId).toBeTruthy();
+
+    const overviewPanel = document.getElementById(overviewPanelId!);
+    const performancePanel = document.getElementById(performancePanelId!);
+    expect(overviewPanel).toBeTruthy();
+    expect(performancePanel).toBeTruthy();
+    expect(overviewPanel).toHaveAttribute("role", "tabpanel");
+    expect(performancePanel).toHaveAttribute("role", "tabpanel");
+    expect(overviewPanel).not.toHaveAttribute("hidden");
+    expect(performancePanel).toHaveAttribute("hidden");
+  });
+
+  it("does not mount performance charts while overview is active", () => {
+    render(<AnalyticsPage />);
+    expect(performanceChartsMounted).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("performance-charts")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("daily-pnl-chart")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cumulative-pnl-chart")).not.toBeInTheDocument();
+  });
+
+  it("mounts performance charts when the performance tab is active", () => {
+    filterState = { ...filterState, tab: "performance" };
+    render(<AnalyticsPage />);
+    expect(performanceChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("performance-charts")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-pnl-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("cumulative-pnl-chart")).toBeInTheDocument();
   });
 
   it("renders overview stats from available sources", () => {

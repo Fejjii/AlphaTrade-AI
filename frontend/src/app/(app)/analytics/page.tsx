@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo } from "react";
 
-import { CumulativePnlChart, DailyPnlChart } from "@/components/analytics/AnalyticsCharts";
 import {
   AnalyticsFilterBar,
   OverviewStats,
+  PerformanceCharts,
   formatAppliedFiltersSummary,
   gateSourceByFreshness,
   journalFreshnessTimestamp,
@@ -118,22 +118,15 @@ export default function AnalyticsPage() {
               />
             </TabPanel>
             <TabPanel id="performance">
-              <div className="space-y-6">
-                <DailyPnlChart
+              {state.tab === "performance" ? (
+                <PerformanceCharts
                   source={gatedPortfolio}
                   loading={loading && !portfolio}
                   onRetry={() => void reload()}
                   filtersSummary={filtersSummary}
                   staleWholeTab={staleWholeTab}
                 />
-                <CumulativePnlChart
-                  source={gatedPortfolio}
-                  loading={loading && !portfolio}
-                  onRetry={() => void reload()}
-                  filtersSummary={filtersSummary}
-                  staleWholeTab={staleWholeTab}
-                />
-              </div>
+              ) : null}
             </TabPanel>
           </>
         ) : null}
