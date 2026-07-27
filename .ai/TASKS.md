@@ -493,7 +493,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   (`853d96b`). Head commit `7ebc8df`.
 
 ### AT-040 — Premium design-system foundation (Phase A) + navigation/app shell (Phase B) + Phase C daily workflows
-- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 DONE) · Dependencies: AT-039 · Risk: Low (frontend-only)
+- Priority: P1 · Status: IN_PROGRESS (Phase A + B + C1 + C2 DONE; C3A draft PR) · Dependencies: AT-039 · Risk: Low (frontend-only)
 - Safety classification: UI foundation / shell IA / daily workflow UX; no trading/execution/risk-authority change
 - Goal: Introduce dark-first semantic tokens, typography utilities, shared UI
   primitives (incl. PageHeader, FreshnessPill, StatusBadge, Skeleton, Empty/Error/
@@ -510,6 +510,7 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Branch (Phase B): `cursor/at040-phase-b-nav-shell-ae93`
 - Branch (Phase C1): `feat/at040-phase-c1-daily-decision-loop`
 - Branch (Phase C2): `cursor/at040-phase-c2-validate-pipeline-53f5`
+- Branch (Phase C3A): `cursor/at040-phase-c3a-journal-quick-entry-a54b`
 - Deliverables (Phase A): `frontend/src/styles/tokens.css`, tokenized Tailwind + globals,
   `frontend/src/components/ui/*` primitives, states updates, representative page
   adoption (Dashboard, TradingView signals, paper-signal orchestration, journal
@@ -575,7 +576,15 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `921929e`; pre-merge CI 30224234541 success; post-merge main CI 30225088594
   success — frontend, backend, docker-build, deployment-safety, evaluation,
   e2e-smoke). Phase C2 complete.
-- Phase C remaining after C2: Journal redesign; Portfolio/risk split;
+- Phase C3A (Journal hub + quick-entry) draft PR:
+  https://github.com/Fejjii/AlphaTrade-AI/pull/34 — frontend-only Journal landing
+  hub at `/journal` with needs-journaling queue (closed positions ∩ linked journal
+  entries), recent entries, SourceResult honesty, quick-entry prefill from
+  proposal/position context, verified validation-session link context (not
+  persisted), confirmed-PAPER posture wording, preserved Import/Lessons/Knowledge/
+  Statistics/Comparison reachability. No backend/API/migration changes. No Lessons/
+  Knowledge/Portfolio/Analyze redesign.
+- Phase C remaining after C3A: Lessons/Knowledge redesign; Portfolio/risk split;
   analytics/charts (Phase D+).
 
 ---
