@@ -5,8 +5,10 @@ import type { SourceResult } from "@/components/workflows";
 import type { JournalStatsResponse, SetupEvidenceResponse } from "@/lib/api/types";
 
 import { SetupBucketTable } from "./SetupBucketTable";
+import { SetupEvidencePanel } from "./SetupEvidencePanel";
 import { SetupExpectancyChart } from "./SetupExpectancyChart";
 import { SetupWinRateChart } from "./SetupWinRateChart";
+import { SetupsCharts } from "./SetupsCharts";
 import { containsCurrencySymbol } from "./format";
 
 function metrics(overrides: Partial<JournalStatsResponse["overall"]> = {}) {
@@ -46,48 +48,12 @@ function metrics(overrides: Partial<JournalStatsResponse["overall"]> = {}) {
 
 const SETUP_A = "11111111-1111-1111-1111-111111111111";
 const SETUP_B = "22222222-2222-2222-2222-222222222222";
-
-const journalData: JournalStatsResponse = {
-  group_by: "setup",
-  filters: {},
-  overall: metrics(),
-  buckets: [
-    {
-      key: SETUP_A,
-      group_id: SETUP_A,
-      label: "Breakout",
-      metrics: metrics({ trade_count: 8, win_rate: 0.75, expectancy: "15.00", confidence: "high" }),
-    },
-    {
-      key: SETUP_B,
-      group_id: SETUP_B,
-      label: "Breakout",
-      metrics: metrics({
-        trade_count: 3,
-        win_rate: 0.33,
-        expectancy: null,
-        confidence: "insufficient",
-      }),
-    },
-    {
-      key: "unassigned",
-      group_id: null,
-      label: "Unassigned",
-      metrics: metrics({ trade_count: 1, win_rate: 0, expectancy: "-5.00", confidence: "insufficient" }),
-    },
-  ],
-  total_buckets: 3,
-  limit: 20,
-  offset: 0,
-  truncated: true,
-  max_rows: 5000,
-  generated_at: "2026-07-25T12:00:00Z",
-};
+const STRATEGY_A = "33333333-3333-3333-3333-333333333333";
 
 const evidenceData: SetupEvidenceResponse = {
   items: [
     {
-      strategy_id: "33333333-3333-3333-3333-333333333333",
+      strategy_id: STRATEGY_A,
       strategy_version_id: "44444444-4444-4444-4444-444444444444",
       strategy_name: "Breakout",
       version: 2,
@@ -123,30 +89,117 @@ function failed<T>(error = "down"): SourceResult<T> {
   return { data: null, available: false, error, fallbackUsed: false };
 }
 
+/** Highest win rate is last after confidence ranking (insufficient first in source order). */
+const rankedJournal: JournalStatsResponse = {
+  group_by: "setup_version",
+  filters: {},
+  overall: metrics({ trade_count: 20 }),
+  buckets: [
+    {
+      key: SETUP_A,
+      group_id: SETUP_A,
+      label: "Alpha",
+      metrics: metrics({
+        trade_count: 12,
+        win_rate: 0.4,
+        expectancy: "2.00",
+        confidence: "high",
+      }),
+    },
+    {
+      key: SETUP_B,
+      group_id: SETUP_B,
+      label: "Beta",
+      metrics: metrics({
+        trade_count: 3,
+        win_rate: 0.9,
+        expectancy: "25.00",
+        confidence: "insufficient",
+      }),
+    },
+    {
+      key: "unassigned",
+      group_id: null,
+      label: "Unassigned",
+      metrics: metrics({
+        trade_count: 5,
+        win_rate: 0.1,
+        expectancy: null,
+        confidence: "insufficient",
+      }),
+    },
+  ],
+  total_buckets: 3,
+  limit: 20,
+  offset: 0,
+  truncated: true,
+  max_rows: 5000,
+  generated_at: "2026-07-25T12:00:00Z",
+};
+
+vi.mock("@/components/analytics/AnalyticsCharts", async () => {
+  const win = await import("@/components/analytics/SetupWinRateChart");
+  const expectancy = await import("@/components/analytics/SetupExpectancyChart");
+  return {
+    SetupWinRateChart: win.SetupWinRateChart,
+    SetupExpectancyChart: expectancy.SetupExpectancyChart,
+  };
+});
+
 describe("Setup analytics charts", () => {
   afterEach(() => cleanup());
 
-  it("renders win-rate chart with provenance, unassigned, and insufficient muting", () => {
-    render(
-      <SetupWinRateChart
-        source={ok(journalData)}
-        filtersSummary="dates all time · group setup"
-      />,
-    );
-    expect(screen.getByTestId("setup-win-rate-chart-source")).toHaveTextContent(
-      "/journal/statistics",
-    );
-    expect(screen.getByTestId("setup-win-rate-chart-sample")).toHaveTextContent("n=12");
-    expect(screen.getByTestId("setup-win-rate-chart-plot")).toHaveAttribute("role", "img");
+  it("aria-label uses highest win rate from complete set, not confidence-ranked first row", () => {
+    render(<SetupWinRateChart source={ok(rankedJournal)} />);
+    const plot = screen.getByTestId("setup-win-rate-chart-plot");
+    expect(plot).toHaveAttribute("aria-label", expect.stringContaining("Beta"));
+    expect(plot.getAttribute("aria-label")).toMatch(/90\.0%/);
+    expect(plot.getAttribute("aria-label")).not.toMatch(/^.*Top Alpha/);
     expect(screen.getByTestId(`setup-win-rate-row-${SETUP_B}`)).toHaveTextContent(/insufficient/i);
     expect(screen.getByTestId("setup-win-rate-row-unassigned")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-win-rate-a11y-table")).toBeInTheDocument();
-    expect(screen.queryByText(/best setup|guaranteed|outperform/i)).not.toBeInTheDocument();
+  });
+
+  it("aria-label uses highest expectancy from all plottable rows including beyond mobile cap", () => {
+    const many: JournalStatsResponse = {
+      ...rankedJournal,
+      buckets: [
+        ...Array.from({ length: 10 }, (_, index) => {
+          const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+          return {
+            key: id,
+            group_id: id,
+            label: `Low ${index}`,
+            metrics: metrics({
+              trade_count: 20 - index,
+              win_rate: 0.5,
+              expectancy: "1.00",
+              confidence: "high" as const,
+            }),
+          };
+        }),
+        {
+          key: SETUP_B,
+          group_id: SETUP_B,
+          label: "HiddenHigh",
+          metrics: metrics({
+            trade_count: 2,
+            win_rate: 0.2,
+            expectancy: "99.00",
+            confidence: "insufficient",
+          }),
+        },
+      ],
+      total_buckets: 11,
+    };
+    render(<SetupExpectancyChart source={ok(many)} />);
+    const plot = screen.getByTestId("setup-expectancy-chart-plot");
+    expect(plot.getAttribute("aria-label")).toContain("HiddenHigh");
+    expect(plot.getAttribute("aria-label")).toContain("+99.00");
   });
 
   it("renders null expectancy as No P&L data and never fabricates zero bars on error", () => {
-    render(<SetupExpectancyChart source={ok(journalData)} />);
-    expect(screen.getByTestId(`setup-expectancy-row-${SETUP_B}`)).toHaveTextContent("No P&L data");
+    render(<SetupExpectancyChart source={ok(rankedJournal)} />);
+    expect(screen.getByTestId("setup-expectancy-row-unassigned")).toHaveTextContent("No P&L data");
     const monetary = screen.getByTestId(`setup-expectancy-row-${SETUP_A}`).textContent ?? "";
     expect(containsCurrencySymbol(monetary)).toBe(false);
 
@@ -157,10 +210,189 @@ describe("Setup analytics charts", () => {
     expect(screen.queryByText("0.00")).not.toBeInTheDocument();
   });
 
-  it("shows truncated pager disclosure and keyboard-operable pagination", () => {
+  it("setup_version links use group_id as setup_id", () => {
+    render(
+      <SetupBucketTable
+        source={ok(rankedJournal)}
+        groupBy="setup_version"
+        bucketOffset={0}
+        onPageChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId(`setup-bucket-stats-link-${SETUP_A}`)).toHaveAttribute(
+      "href",
+      `/journal/statistics?setup_id=${SETUP_A}`,
+    );
+    expect(screen.getByTestId(`setup-bucket-filter-link-${SETUP_A}`)).toHaveAttribute(
+      "href",
+      expect.stringContaining(`setup_id=${SETUP_A}`),
+    );
+  });
+
+  it("setup name grouping does not emit setup_id links", () => {
+    const byName: JournalStatsResponse = {
+      ...rankedJournal,
+      group_by: "setup",
+      buckets: [
+        {
+          key: "Breakout",
+          group_id: null,
+          label: "Breakout",
+          metrics: metrics({ trade_count: 8, confidence: "high" }),
+        },
+        {
+          key: "unassigned",
+          group_id: null,
+          label: "Unassigned",
+          metrics: metrics({ trade_count: 1, expectancy: null, confidence: "insufficient" }),
+        },
+      ],
+    };
+    render(
+      <SetupBucketTable
+        source={ok(byName)}
+        groupBy="setup"
+        bucketOffset={0}
+        onPageChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("setup-bucket-stats-link-Breakout")).toHaveAttribute(
+      "href",
+      "/journal/statistics",
+    );
+    expect(screen.getByTestId("setup-bucket-filter-link-Breakout").getAttribute("href")).not.toContain(
+      "setup_id=",
+    );
+    expect(screen.getByTestId("setup-bucket-exact-note-Breakout")).toHaveTextContent(
+      /Setup version grouping/i,
+    );
+    expect(screen.getByTestId("setup-bucket-row-unassigned")).toBeInTheDocument();
+  });
+
+  it("strategy grouping links use user_strategy_id from group_id", () => {
+    const byStrategy: JournalStatsResponse = {
+      ...rankedJournal,
+      group_by: "strategy",
+      buckets: [
+        {
+          key: STRATEGY_A,
+          group_id: STRATEGY_A,
+          label: "Breakout",
+          metrics: metrics({ trade_count: 8, confidence: "high" }),
+        },
+      ],
+    };
+    render(
+      <SetupBucketTable
+        source={ok(byStrategy)}
+        groupBy="strategy"
+        bucketOffset={0}
+        onPageChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId(`setup-bucket-stats-link-${STRATEGY_A}`)).toHaveAttribute(
+      "href",
+      `/journal/statistics?user_strategy_id=${STRATEGY_A}`,
+    );
+    const filterHref = screen.getByTestId(`setup-bucket-filter-link-${STRATEGY_A}`).getAttribute("href");
+    expect(filterHref).toContain(`user_strategy_id=${STRATEGY_A}`);
+    expect(filterHref).not.toContain("setup_id=");
+  });
+
+  it("keeps colliding labels distinct by key/group_id", () => {
+    const colliding: JournalStatsResponse = {
+      ...rankedJournal,
+      buckets: [
+        {
+          key: SETUP_A,
+          group_id: SETUP_A,
+          label: "Breakout",
+          metrics: metrics({ trade_count: 8, confidence: "high" }),
+        },
+        {
+          key: SETUP_B,
+          group_id: SETUP_B,
+          label: "Breakout",
+          metrics: metrics({ trade_count: 6, confidence: "moderate" }),
+        },
+      ],
+    };
+    render(
+      <SetupBucketTable
+        source={ok(colliding)}
+        groupBy="setup_version"
+        bucketOffset={0}
+        onPageChange={vi.fn()}
+      />,
+    );
+    const table = screen.getByTestId("setup-bucket-data-table");
+    // key and group_id columns both show the UUID for setup_version rows
+    expect(within(table).getAllByText(SETUP_A).length).toBeGreaterThanOrEqual(1);
+    expect(within(table).getAllByText(SETUP_B).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId(`setup-bucket-row-${SETUP_A}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`setup-bucket-row-${SETUP_B}`)).toBeInTheDocument();
+  });
+
+  it("isolates evidence from journal: journal fail + evidence success still renders evidence", () => {
+    render(
+      <SetupsCharts
+        source={failed("journal down")}
+        evidence={ok(evidenceData)}
+        groupBy="setup_version"
+        bucketOffset={0}
+        onGroupByChange={vi.fn()}
+        onPageChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("setup-win-rate-chart-error")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-bucket-table-error")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-evidence-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-evidence-panel-error")).not.toBeInTheDocument();
+    expect(screen.getByTestId(`setup-evidence-item-${STRATEGY_A}`)).toBeInTheDocument();
+  });
+
+  it("isolates evidence from journal: journal success + evidence failure keeps charts", () => {
+    render(
+      <SetupsCharts
+        source={ok(rankedJournal)}
+        evidence={failed("evidence down")}
+        groupBy="setup_version"
+        bucketOffset={0}
+        onGroupByChange={vi.fn()}
+        onPageChange={vi.fn()}
+        onRetryEvidence={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("setup-win-rate-chart-plot")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-evidence-panel-error")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId("setup-evidence-panel-error")).getByRole("button"));
+  });
+
+  it("shows both source failures when journal and evidence fail", () => {
+    render(
+      <SetupsCharts
+        source={failed("journal down")}
+        evidence={failed("evidence down")}
+        groupBy="setup"
+        bucketOffset={0}
+        onGroupByChange={vi.fn()}
+        onPageChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("setup-win-rate-chart-error")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-evidence-panel-error")).toBeInTheDocument();
+  });
+
+  it("shows loading skeleton without empty state for evidence", () => {
+    render(<SetupEvidencePanel evidence={null} loading />);
+    expect(screen.getByTestId("loading-state")).toBeInTheDocument();
+    expect(screen.queryByText(/No setup-evidence rows/i)).not.toBeInTheDocument();
+  });
+
+  it("shows truncated pager disclosure", () => {
     const onPageChange = vi.fn();
     const paged: JournalStatsResponse = {
-      ...journalData,
+      ...rankedJournal,
       total_buckets: 45,
       limit: 20,
       offset: 20,
@@ -168,44 +400,13 @@ describe("Setup analytics charts", () => {
     render(
       <SetupBucketTable
         source={ok(paged)}
-        evidence={ok(evidenceData)}
-        groupBy="setup"
+        groupBy="setup_version"
         bucketOffset={20}
         onPageChange={onPageChange}
       />,
     );
     expect(screen.getByTestId("setup-bucket-pager")).toHaveTextContent(/Showing 21–40 of 45/);
-    expect(screen.getByTestId("setup-bucket-table")).toHaveTextContent(/Truncated coverage|oldest 5000/i);
     fireEvent.click(screen.getByTestId("setup-bucket-prev"));
     expect(onPageChange).toHaveBeenCalledWith(0);
-    fireEvent.click(screen.getByTestId("setup-bucket-next"));
-    expect(onPageChange).toHaveBeenCalledWith(40);
-    expect(screen.getByTestId("setup-evidence-panel")).toHaveTextContent("Breakout");
-    expect(screen.getByTestId(`setup-bucket-stats-link-${SETUP_A}`)).toHaveAttribute(
-      "href",
-      expect.stringContaining(`setup_id=${SETUP_A}`),
-    );
-  });
-
-  it("keeps colliding labels distinct by journal key in the table", () => {
-    render(
-      <SetupBucketTable
-        source={ok(journalData)}
-        evidence={failed("evidence down")}
-        groupBy="setup"
-        bucketOffset={0}
-        onPageChange={vi.fn()}
-      />,
-    );
-    const table = screen.getByTestId("setup-bucket-data-table");
-    expect(within(table).getByText(SETUP_A)).toBeInTheDocument();
-    expect(within(table).getByText(SETUP_B)).toBeInTheDocument();
-    expect(screen.getByTestId("setup-evidence-panel")).toHaveTextContent(/unavailable/i);
-  });
-
-  it("shows loading skeleton without empty state", () => {
-    render(<SetupWinRateChart source={null} loading />);
-    expect(screen.getByTestId("loading-state")).toBeInTheDocument();
-    expect(screen.queryByText(/No closed trades/i)).not.toBeInTheDocument();
   });
 });

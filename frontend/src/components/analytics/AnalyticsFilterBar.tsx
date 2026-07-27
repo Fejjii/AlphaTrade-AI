@@ -49,6 +49,9 @@ export type AnalyticsFilterBarProps = {
   state: AnalyticsFilterState;
   strategies?: UserStrategy[];
   strategiesLoading?: boolean;
+  strategiesLoaded?: boolean;
+  strategiesError?: string | null;
+  onRetryStrategies?: () => void;
   onApplyDraft: (draft: {
     dateFrom?: string | null;
     dateTo?: string | null;
@@ -66,6 +69,9 @@ export function AnalyticsFilterBar({
   state,
   strategies = [],
   strategiesLoading = false,
+  strategiesLoaded = false,
+  strategiesError = null,
+  onRetryStrategies,
   onApplyDraft,
   onApplyPreset,
   onClear,
@@ -168,15 +174,58 @@ export function AnalyticsFilterBar({
                   setDraft((current) => ({ ...current, userStrategyId: event.target.value }))
                 }
                 data-testid="analytics-strategy-id"
-                disabled={strategiesLoading}
+                disabled={strategiesLoading || Boolean(strategiesError)}
               >
-                <option value="">All strategies</option>
-                {strategies.map((strategy) => (
-                  <option key={strategy.id} value={strategy.id}>
-                    {strategy.name}
-                  </option>
-                ))}
+                <option value="">
+                  {strategiesLoading
+                    ? "Loading strategies…"
+                    : strategiesError
+                      ? "Strategies unavailable"
+                      : "All strategies"}
+                </option>
+                {!strategiesLoading &&
+                  !strategiesError &&
+                  strategies.map((strategy) => (
+                    <option key={strategy.id} value={strategy.id}>
+                      {strategy.name}
+                    </option>
+                  ))}
               </Select>
+              {strategiesLoading ? (
+                <p className="text-caption text-text-muted" data-testid="analytics-strategies-loading" role="status">
+                  Loading strategy options…
+                </p>
+              ) : null}
+              {strategiesError ? (
+                <div
+                  className="flex flex-wrap items-center gap-2 text-sm text-amber-500/90"
+                  data-testid="analytics-strategies-error"
+                  role="status"
+                >
+                  <span>Strategy options unavailable: {strategiesError}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onRetryStrategies?.()}
+                    data-testid="analytics-strategies-retry"
+                  >
+                    Retry strategies
+                  </Button>
+                </div>
+              ) : null}
+              {!strategiesLoading &&
+              !strategiesError &&
+              strategiesLoaded &&
+              strategies.length === 0 ? (
+                <p
+                  className="text-caption text-text-muted"
+                  data-testid="analytics-strategies-empty"
+                  role="status"
+                >
+                  No strategies available
+                </p>
+              ) : null}
             </div>
           </>
         ) : null}

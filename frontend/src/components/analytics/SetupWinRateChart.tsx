@@ -87,9 +87,20 @@ export function SetupWinRateChart({
   const { visible, hiddenCount } = visibleSetupChartRows(derived.rows, showAll);
   const chartHeight = Math.max(220, visible.length * 36 + 40);
 
+  // Highest win rate from the complete valid metric set — not confidence/sample rank order.
+  const highestWinRate = derived.rows.reduce<SetupBucketRow | null>((current, row) => {
+    if (row.winRate === null || row.winRate === undefined) return current;
+    if (!current || (row.winRate ?? -1) > (current.winRate ?? -1)) return row;
+    return current;
+  }, null);
+
   const ariaLabel =
     visible.length > 0
-      ? `Setup win-rate chart with ${visible.length} journal setup buckets. Top ${visible[0]?.displayLabel} at ${formatPercent(visible[0]?.winRate)}.`
+      ? `Setup win-rate chart with ${derived.rows.length} journal setup buckets.${
+          highestWinRate
+            ? ` Highest win rate ${highestWinRate.displayLabel} at ${formatPercent(highestWinRate.winRate)}.`
+            : ""
+        } Sample confidence ranks display order separately.`
       : "Setup win-rate chart with no data";
 
   return (
@@ -113,7 +124,7 @@ export function SetupWinRateChart({
       <div
         role="img"
         aria-label={ariaLabel}
-        className="w-full max-w-full overflow-x-hidden"
+        className="w-full max-w-full"
         style={{ height: chartHeight }}
         data-testid="setup-win-rate-chart-plot"
       >

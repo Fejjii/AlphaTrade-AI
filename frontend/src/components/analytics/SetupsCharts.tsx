@@ -4,6 +4,7 @@ import type { SourceResult } from "@/components/workflows";
 import type { JournalStatsResponse, SetupEvidenceResponse } from "@/lib/api/types";
 
 import { SetupBucketTable } from "./SetupBucketTable";
+import { SetupEvidencePanel } from "./SetupEvidencePanel";
 import { SetupExpectancyChart, SetupWinRateChart } from "./AnalyticsCharts";
 import { SetupGroupToggle } from "./SetupGroupToggle";
 import type { SetupGroupBy } from "./filterValidation";
@@ -12,7 +13,9 @@ export type SetupsChartsProps = {
   source: SourceResult<JournalStatsResponse> | null;
   evidence: SourceResult<SetupEvidenceResponse> | null;
   loading?: boolean;
+  evidenceLoading?: boolean;
   onRetry?: () => void;
+  onRetryEvidence?: () => void;
   filtersSummary?: string;
   staleWholeTab?: boolean;
   groupBy: SetupGroupBy;
@@ -25,7 +28,9 @@ export function SetupsCharts({
   source,
   evidence,
   loading = false,
+  evidenceLoading = false,
   onRetry,
+  onRetryEvidence,
   filtersSummary,
   staleWholeTab = false,
   groupBy,
@@ -59,7 +64,6 @@ export function SetupsCharts({
       />
       <SetupBucketTable
         source={source}
-        evidence={evidence}
         loading={loading}
         onRetry={onRetry}
         filtersSummary={filtersSummary}
@@ -67,6 +71,12 @@ export function SetupsCharts({
         groupBy={groupBy}
         bucketOffset={bucketOffset}
         onPageChange={onPageChange}
+      />
+      <SetupEvidencePanel
+        evidence={evidence}
+        loading={evidenceLoading}
+        onRetry={onRetryEvidence ?? onRetry}
+        filtersSummary={filtersSummary}
       />
     </div>
   );

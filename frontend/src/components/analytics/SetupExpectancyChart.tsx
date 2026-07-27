@@ -97,18 +97,24 @@ export function SetupExpectancyChart({
   }, [source]);
 
   const { visible, hiddenCount } = visibleSetupChartRows(derived.rows, showAll);
-  const plottable = visible.filter((row) => !row.noPnlData && row.plotExpectancy !== null);
+  // Highest expectancy from all plottable rows, not only the mobile-capped visible set.
+  const plottableAll = derived.rows.filter(
+    (row) => !row.noPnlData && row.plotExpectancy !== null,
+  );
   const chartHeight = Math.max(220, visible.length * 36 + 40);
 
-  const best = plottable.reduce<ExpectancyPlotRow | null>(
+  const best = plottableAll.reduce<ExpectancyPlotRow | null>(
     (current, row) =>
-      !current || (row.plotExpectancy ?? 0) > (current.plotExpectancy ?? 0) ? row : current,
+      !current || (row.plotExpectancy ?? Number.NEGATIVE_INFINITY) >
+        (current.plotExpectancy ?? Number.NEGATIVE_INFINITY)
+        ? row
+        : current,
     null,
   );
   const ariaLabel =
     visible.length > 0
-      ? `Setup expectancy chart (mean net P&L per trade) with ${visible.length} journal setup buckets.${
-          best ? ` Highest ${best.displayLabel} at ${formatMonetary(best.plotExpectancy)}.` : ""
+      ? `Setup expectancy chart (mean net P&L per trade) with ${derived.rows.length} journal setup buckets.${
+          best ? ` Highest expectancy ${best.displayLabel} at ${formatMonetary(best.plotExpectancy)}.` : ""
         }`
       : "Setup expectancy chart with no data";
 
@@ -133,7 +139,7 @@ export function SetupExpectancyChart({
       <div
         role="img"
         aria-label={ariaLabel}
-        className="w-full max-w-full overflow-x-hidden"
+        className="w-full max-w-full"
         style={{ height: chartHeight }}
         data-testid="setup-expectancy-chart-plot"
       >

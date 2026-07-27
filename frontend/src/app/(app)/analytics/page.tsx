@@ -72,18 +72,11 @@ export default function AnalyticsPage() {
     return tabSourcesStale(state.tab, shared.journal, shared.portfolio);
   }, [setups.journal, shared.journal, shared.portfolio, state.tab]);
 
-  const initialLoad =
-    state.tab === "setups"
-      ? setups.loading && !setups.journal
-      : shared.loading && !shared.journal && !shared.portfolio;
-
-  const blockPage =
-    state.tab === "setups"
-      ? Boolean(setups.journal && !setups.journal.available && setups.evidence && !setups.evidence.available)
-      : shared.bothFailed;
+  const sharedInitialLoad = shared.loading && !shared.journal && !shared.portfolio;
+  const setupsInitialLoad = setups.loading && !setups.journal && !setups.evidence;
 
   return (
-    <div className="space-y-8 max-w-full overflow-x-hidden" data-testid="analytics-page">
+    <div className="space-y-8 max-w-full" data-testid="analytics-page">
       <PageHeader
         title="Analytics"
         description="Paper-only statistical hub — overview, performance, and journal setup analytics with honest source states."
@@ -99,6 +92,9 @@ export default function AnalyticsPage() {
           state={state}
           strategies={setups.strategies}
           strategiesLoading={setups.strategiesLoading}
+          strategiesLoaded={setups.strategiesLoaded}
+          strategiesError={setups.strategiesError}
+          onRetryStrategies={() => void setups.reloadStrategies()}
           onApplyDraft={applyDraft}
           onApplyPreset={applyDatePreset}
           onClear={clearFilters}
@@ -116,35 +112,30 @@ export default function AnalyticsPage() {
         ) : null}
 
         {state.tab === "setups" &&
-        setups.evidence &&
-        !setups.evidence.available &&
-        setups.journal?.available ? (
+        ((setups.evidence && !setups.evidence.available && setups.journal?.available) ||
+          (setups.journal && !setups.journal.available && setups.evidence?.available)) ? (
           <p
             className="text-sm text-amber-500/90"
             data-testid="analytics-partial-data"
             role="status"
           >
-            Partial analytics data — setup evidence failed. Bucket charts remain from journal
-            statistics.
+            Partial analytics data — one Setups source failed. Retry unavailable sections before
+            treating this as complete.
           </p>
         ) : null}
 
-        {initialLoad ? <LoadingState label="Loading analytics…" /> : null}
-
-        {blockPage ? (
-          <ErrorState
-            message={
-              state.tab === "setups"
-                ? "Setups analytics unavailable. Journal statistics and setup evidence both failed."
-                : "Analytics sources unavailable. Journal statistics and paper portfolio both failed."
-            }
-            onRetry={() => void (state.tab === "setups" ? setups.reload() : shared.reload())}
-          />
-        ) : null}
-
-        {!blockPage ? (
-          <>
-            <TabPanel id="overview">
+        <TabPanel id="overview">
+          {state.tab === "overview" && sharedInitialLoad ? (
+            <LoadingState label="Loading analytics…" />
+          ) : null}
+          {state.tab === "overview" && shared.bothFailed ? (
+            <ErrorState
+              message="Analytics sources unavailable. Journal statistics and paper portfolio both failed."
+              onRetry={() => void shared.reload()}
+            />
+          ) : null}
+          {state.tab === "overview" && !shared.bothFailed ? (
+            <>
               {staleWholeTab ? (
                 <div data-testid="overview-stale-state">
                   <StaleState message="Analytics sources may be delayed or stale for this view." />
@@ -157,36 +148,52 @@ export default function AnalyticsPage() {
                 onRetryJournal={() => void shared.reload()}
                 onRetryPortfolio={() => void shared.reload()}
               />
-            </TabPanel>
-            <TabPanel id="performance">
-              {state.tab === "performance" ? (
-                <PerformanceCharts
-                  source={gatedPortfolio}
-                  loading={shared.loading && !shared.portfolio}
-                  onRetry={() => void shared.reload()}
-                  filtersSummary={filtersSummary}
-                  staleWholeTab={staleWholeTab}
-                />
-              ) : null}
-            </TabPanel>
-            <TabPanel id="setups">
-              {state.tab === "setups" ? (
-                <SetupsCharts
-                  source={gatedSetupJournal}
-                  evidence={setups.evidence}
-                  loading={setups.loading && !setups.journal}
-                  onRetry={() => void setups.reload()}
-                  filtersSummary={filtersSummary}
-                  staleWholeTab={staleWholeTab}
-                  groupBy={state.groupBy}
-                  onGroupByChange={setGroupBy}
-                  bucketOffset={state.bucketOffset}
-                  onPageChange={setBucketOffset}
-                />
-              ) : null}
-            </TabPanel>
-          </>
-        ) : null}
+            </>
+          ) : null}
+        </TabPanel>
+
+        <TabPanel id="performance">
+          {state.tab === "performance" && sharedInitialLoad ? (
+            <LoadingState label="Loading analytics…" />
+          ) : null}
+          {state.tab === "performance" && shared.bothFailed ? (
+            <ErrorState
+              message="Analytics sources unavailable. Journal statistics and paper portfolio both failed."
+              onRetry={() => void shared.reload()}
+            />
+          ) : null}
+          {state.tab === "performance" && !shared.bothFailed ? (
+            <PerformanceCharts
+              source={gatedPortfolio}
+              loading={shared.loading && !shared.portfolio}
+              onRetry={() => void shared.reload()}
+              filtersSummary={filtersSummary}
+              staleWholeTab={staleWholeTab}
+            />
+          ) : null}
+        </TabPanel>
+
+        <TabPanel id="setups">
+          {state.tab === "setups" && setupsInitialLoad ? (
+            <LoadingState label="Loading analytics…" />
+          ) : null}
+          {state.tab === "setups" && !setupsInitialLoad ? (
+            <SetupsCharts
+              source={gatedSetupJournal}
+              evidence={setups.evidence}
+              loading={setups.loading && !setups.journal}
+              evidenceLoading={setups.loading && !setups.evidence}
+              onRetry={() => void setups.reload()}
+              onRetryEvidence={() => void setups.reload()}
+              filtersSummary={filtersSummary}
+              staleWholeTab={staleWholeTab}
+              groupBy={state.groupBy}
+              onGroupByChange={setGroupBy}
+              bucketOffset={state.bucketOffset}
+              onPageChange={setBucketOffset}
+            />
+          ) : null}
+        </TabPanel>
       </TabsRoot>
     </div>
   );

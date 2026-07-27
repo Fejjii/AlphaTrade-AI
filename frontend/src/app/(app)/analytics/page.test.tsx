@@ -18,6 +18,7 @@ const { performanceChartsMounted, setupsChartsMounted } = vi.hoisted(() => ({
 
 const mockReload = vi.fn();
 const mockSetupReload = vi.fn();
+const mockReloadStrategies = vi.fn();
 const mockSetTab = vi.fn();
 const mockApplyDraft = vi.fn();
 const mockApplyPreset = vi.fn();
@@ -71,7 +72,7 @@ const journalData: JournalStatsResponse = {
 
 const setupJournalData: JournalStatsResponse = {
   ...journalData,
-  group_by: "setup",
+  group_by: "setup_version",
   buckets: [
     {
       key: "11111111-1111-1111-1111-111111111111",
@@ -249,6 +250,7 @@ let setupSourcesState = {
   strategies: [] as Array<{ id: string; name: string }>,
   strategiesError: null as string | null,
   strategiesLoading: false,
+  strategiesLoaded: false,
   loading: false,
   loadedFilterKey: "setup-key",
 };
@@ -284,6 +286,7 @@ vi.mock("@/components/analytics/useSetupAnalyticsSources", () => ({
   useSetupAnalyticsSources: () => ({
     ...setupSourcesState,
     reload: mockSetupReload,
+    reloadStrategies: mockReloadStrategies,
   }),
 }));
 
@@ -333,7 +336,7 @@ vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({ health: { version: "test" } }),
 }));
 
-describe("AnalyticsPage PR2", () => {
+describe("AnalyticsPage PR1 + PR2", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
@@ -364,6 +367,7 @@ describe("AnalyticsPage PR2", () => {
       strategies: [],
       strategiesError: null,
       strategiesLoading: false,
+      strategiesLoaded: false,
       loading: false,
       loadedFilterKey: "setup-key",
     };
@@ -372,7 +376,7 @@ describe("AnalyticsPage PR2", () => {
     setupsChartsMounted.mockClear();
   });
 
-  it("keeps overview, performance, and setups tabpanels in the DOM", () => {
+  it("keeps overview, performance, and setups tabpanels in the DOM with overview active by default", () => {
     render(<AnalyticsPage />);
 
     const overviewTab = screen.getByRole("tab", { name: "Overview" });
@@ -383,52 +387,31 @@ describe("AnalyticsPage PR2", () => {
     expect(performanceTab).toHaveAttribute("aria-selected", "false");
     expect(setupsTab).toHaveAttribute("aria-selected", "false");
 
+    const overviewPanelId = overviewTab.getAttribute("aria-controls");
+    const performancePanelId = performanceTab.getAttribute("aria-controls");
+    const setupsPanelId = setupsTab.getAttribute("aria-controls");
+    expect(document.getElementById(overviewPanelId!)).toBeTruthy();
+    expect(document.getElementById(performancePanelId!)).toBeTruthy();
+    expect(document.getElementById(setupsPanelId!)).toBeTruthy();
+    expect(document.getElementById(performancePanelId!)).toHaveAttribute("hidden");
+    expect(document.getElementById(setupsPanelId!)).toHaveAttribute("hidden");
+  });
+
+  it("does not mount performance charts while overview is active", () => {
+    render(<AnalyticsPage />);
     expect(performanceChartsMounted).not.toHaveBeenCalled();
-    expect(setupsChartsMounted).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("performance-charts")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("daily-pnl-chart")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cumulative-pnl-chart")).not.toBeInTheDocument();
   });
 
-  it("mounts setups charts only when the setups tab is active", () => {
-    filterState = {
-      ...filterState,
-      tab: "setups",
-      setupId: "11111111-1111-1111-1111-111111111111",
-    };
+  it("mounts performance charts when the performance tab is active", () => {
+    filterState = { ...filterState, tab: "performance" };
     render(<AnalyticsPage />);
-    expect(setupsChartsMounted).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("setups-charts")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-win-rate-chart")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-expectancy-chart")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-bucket-table")).toBeInTheDocument();
-    expect(screen.getByTestId("analytics-setup-id")).toHaveValue(
-      "11111111-1111-1111-1111-111111111111",
-    );
-  });
-
-  it("does not fabricate zero charts when setups journal fails", () => {
-    filterState = { ...filterState, tab: "setups" };
-    setupSourcesState = {
-      ...setupSourcesState,
-      journal: failed("journal down"),
-      evidence: ok(evidenceData),
-    };
-    render(<AnalyticsPage />);
-    expect(screen.getByTestId("setup-win-rate-chart-error")).toBeInTheDocument();
-    expect(screen.queryByTestId("setup-win-rate-chart-plot")).not.toBeInTheDocument();
-    expect(screen.queryByText("0.00")).not.toBeInTheDocument();
-  });
-
-  it("shows unassigned and No P&L data on setups tab", () => {
-    filterState = { ...filterState, tab: "setups" };
-    render(<AnalyticsPage />);
-    expect(screen.getByTestId("setup-win-rate-row-unassigned")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-expectancy-row-unassigned")).toHaveTextContent("No P&L data");
-  });
-
-  it("wires grouping toggle through push handler", () => {
-    filterState = { ...filterState, tab: "setups" };
-    render(<AnalyticsPage />);
-    fireEvent.click(screen.getByTestId("setup-group-strategy"));
-    expect(mockSetGroupBy).toHaveBeenCalledWith("strategy");
+    expect(performanceChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("performance-charts")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-pnl-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("cumulative-pnl-chart")).toBeInTheDocument();
   });
 
   it("renders overview stats from available sources", () => {
@@ -439,7 +422,7 @@ describe("AnalyticsPage PR2", () => {
     expect(screen.getByTestId("overview-tile-trend")).toHaveTextContent("Improving");
   });
 
-  it("shows partial banner when one shared source fails", () => {
+  it("shows partial banner when one source fails", () => {
     sourcesState = {
       journal: failed("journal down"),
       portfolio: ok(portfolioData),
@@ -453,7 +436,7 @@ describe("AnalyticsPage PR2", () => {
     expect(screen.getByTestId("overview-journal-error")).toBeInTheDocument();
   });
 
-  it("shows full error when both shared sources fail", () => {
+  it("shows full error when both sources fail and keeps tabpanels mounted", () => {
     sourcesState = {
       journal: failed(),
       portfolio: failed(),
@@ -465,13 +448,30 @@ describe("AnalyticsPage PR2", () => {
     render(<AnalyticsPage />);
     expect(screen.getByTestId("error-state")).toHaveTextContent(/both failed/i);
     expect(screen.queryByTestId("overview-stats")).not.toBeInTheDocument();
+    const tablist = screen.getByRole("tablist", { name: "Analytics sections" });
+    expect(within(tablist).getAllByRole("tab")).toHaveLength(3);
+    for (const tab of within(tablist).getAllByRole("tab")) {
+      const panel = document.getElementById(tab.getAttribute("aria-controls")!);
+      expect(panel).toBeTruthy();
+      expect(panel).toHaveAttribute("role", "tabpanel");
+    }
   });
 
-  it("mounts performance charts when the performance tab is active", () => {
+  it("renders performance charts without zero fabrication on portfolio failure", () => {
     filterState = { ...filterState, tab: "performance" };
+    sourcesState = {
+      journal: ok(journalData),
+      portfolio: failed("portfolio down"),
+      loading: false,
+      bothFailed: false,
+      partialData: true,
+      loadedFilterKey: "key",
+    };
     render(<AnalyticsPage />);
-    expect(performanceChartsMounted).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("performance-charts")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-pnl-chart-error")).toBeInTheDocument();
+    expect(screen.getByTestId("cumulative-pnl-chart-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("daily-pnl-chart-plot")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cumulative-pnl-chart-plot")).not.toBeInTheDocument();
   });
 
   it("wires tab aria-controls to tabpanels and aria-labelledby back to tabs", () => {
@@ -496,5 +496,144 @@ describe("AnalyticsPage PR2", () => {
     expect(mockApplyPreset).toHaveBeenCalledWith("30d");
     fireEvent.click(screen.getByTestId("analytics-clear-filters"));
     expect(mockClear).toHaveBeenCalled();
+  });
+
+  it("shows tab-level stale state on overview when all available sources are stale", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
+    sourcesState = {
+      journal: ok({ ...journalData, generated_at: "2026-07-25T11:00:00Z" }),
+      portfolio: ok({
+        ...portfolioData,
+        account: { ...portfolioData.account, as_of: "2026-07-25T11:00:00Z" },
+      }),
+      loading: false,
+      bothFailed: false,
+      partialData: false,
+      loadedFilterKey: "key",
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("overview-stale-state")).toHaveTextContent(/stale for this view/i);
+    vi.useRealTimers();
+  });
+
+  it("treats future-skewed portfolio as unavailable on performance tab", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
+    filterState = { ...filterState, tab: "performance" };
+    sourcesState = {
+      journal: ok(journalData),
+      portfolio: ok({
+        ...portfolioData,
+        account: { ...portfolioData.account, as_of: "2026-07-25T12:05:00Z" },
+      }),
+      loading: false,
+      bothFailed: false,
+      partialData: false,
+      loadedFilterKey: "key",
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("daily-pnl-chart-error")).toHaveTextContent(/clock-skewed/i);
+    expect(screen.getByTestId("cumulative-pnl-chart-error")).toHaveTextContent(/clock-skewed/i);
+    expect(screen.queryByTestId("daily-pnl-chart-plot")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cumulative-pnl-chart-plot")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("mounts setups charts only when the setups tab is active", () => {
+    filterState = {
+      ...filterState,
+      tab: "setups",
+      groupBy: "setup_version",
+      setupId: "11111111-1111-1111-1111-111111111111",
+    };
+    render(<AnalyticsPage />);
+    expect(setupsChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("setups-charts")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-win-rate-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-expectancy-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-bucket-table")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-evidence-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("analytics-setup-id")).toHaveValue(
+      "11111111-1111-1111-1111-111111111111",
+    );
+  });
+
+  it("keeps setups tabpanels mounted when both setups sources fail and shows both errors", () => {
+    filterState = { ...filterState, tab: "setups" };
+    setupSourcesState = {
+      ...setupSourcesState,
+      journal: failed("journal down"),
+      evidence: failed("evidence down"),
+    };
+    render(<AnalyticsPage />);
+    const setupsTab = screen.getByRole("tab", { name: "Setups" });
+    const panel = document.getElementById(setupsTab.getAttribute("aria-controls")!);
+    expect(panel).toBeTruthy();
+    expect(panel).not.toHaveAttribute("hidden");
+    expect(screen.getByTestId("setup-win-rate-chart-error")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-evidence-panel-error")).toBeInTheDocument();
+    expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+  });
+
+  it("shows unassigned and No P&L data on setups tab", () => {
+    filterState = { ...filterState, tab: "setups", groupBy: "setup_version" };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("setup-win-rate-row-unassigned")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-expectancy-row-unassigned")).toHaveTextContent("No P&L data");
+  });
+
+  it("wires grouping toggle through push handler", () => {
+    filterState = { ...filterState, tab: "setups" };
+    render(<AnalyticsPage />);
+    fireEvent.click(screen.getByTestId("setup-group-strategy"));
+    expect(mockSetGroupBy).toHaveBeenCalledWith("strategy");
+  });
+
+  it("shows strategies loading without treating it as confirmed empty", () => {
+    filterState = { ...filterState, tab: "setups" };
+    setupSourcesState = {
+      ...setupSourcesState,
+      strategiesLoading: true,
+      strategiesLoaded: false,
+      strategies: [],
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("analytics-strategies-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("analytics-strategies-empty")).not.toBeInTheDocument();
+  });
+
+  it("shows strategies failure with independent retry and does not collapse charts", () => {
+    filterState = { ...filterState, tab: "setups" };
+    setupSourcesState = {
+      ...setupSourcesState,
+      strategiesError: "strategies down",
+      strategiesLoaded: false,
+      strategies: [],
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("analytics-strategies-error")).toHaveTextContent(/strategies down/i);
+    expect(screen.getByTestId("setup-win-rate-chart-plot")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("analytics-strategies-retry"));
+    expect(mockReloadStrategies).toHaveBeenCalled();
+  });
+
+  it("shows successful empty strategies message after load", () => {
+    filterState = { ...filterState, tab: "setups" };
+    setupSourcesState = {
+      ...setupSourcesState,
+      strategiesLoaded: true,
+      strategiesLoading: false,
+      strategies: [],
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("analytics-strategies-empty")).toHaveTextContent(
+      /No strategies available/i,
+    );
+  });
+
+  it("does not use page-level overflow-x-hidden", () => {
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("analytics-page").className).not.toMatch(/overflow-x-hidden/);
   });
 });
