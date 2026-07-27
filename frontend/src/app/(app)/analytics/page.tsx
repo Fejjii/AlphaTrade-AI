@@ -1,29 +1,41 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 import {
   AnalyticsFilterBar,
   CumulativePnlChart,
   DailyPnlChart,
   OverviewStats,
+  formatAppliedFiltersSummary,
   useAnalyticsFilters,
   useAnalyticsSources,
 } from "@/components/analytics";
-import { formatDateRangeLabel } from "@/components/analytics/format";
+import { freshnessFromTimestamp } from "@/components/workflows/freshness";
 import { PageHeader } from "@/components/ui/page-header";
 import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
-import { Tabs, TabsRoot } from "@/components/ui/tabs";
+import { TabPanel, Tabs, TabsRoot } from "@/components/ui/tabs";
 import { ErrorState, LoadingState } from "@/components/states";
 
 const TAB_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "performance", label: "Performance" },
-  { id: "setups", label: "Setups", disabled: true },
-  { id: "behaviour", label: "Behaviour", disabled: true },
-  { id: "validation", label: "Validation", disabled: true },
-  { id: "comparison", label: "Comparison", disabled: true },
 ];
+
+function tabSourcesStale(
+  tab: "overview" | "performance",
+  journalAsOf: string | null | undefined,
+  portfolioAsOf: string | null | undefined,
+): boolean {
+  const timestamps =
+    tab === "overview"
+      ? [journalAsOf, portfolioAsOf]
+      : [portfolioAsOf];
+  const states = timestamps
+    .filter(Boolean)
+    .map((timestamp) => freshnessFromTimestamp(timestamp)?.state);
+  return states.length > 0 && states.every((state) => state === "stale");
+}
 
 export default function AnalyticsPage() {
   const {
@@ -43,7 +55,19 @@ export default function AnalyticsPage() {
     cleanupIgnoredParams();
   }, [cleanupIgnoredParams]);
 
-  const filtersSummary = formatDateRangeLabel(state.dateFrom, state.dateTo);
+  const filtersSummary = formatAppliedFiltersSummary(state);
+
+  const staleWholeTab = useMemo(
+    () =>
+      tabSourcesStale(
+        state.tab,
+        journal?.available ? journal.data?.generated_at : null,
+        portfolio?.available ? portfolio.data?.account.as_of : null,
+      ),
+    [journal, portfolio, state.tab],
+  );
+
+  const initialLoad = loading && !journal && !portfolio;
 
   return (
     <div className="space-y-8" data-testid="analytics-page">
@@ -76,9 +100,7 @@ export default function AnalyticsPage() {
           </p>
         ) : null}
 
-        {loading && !journal && !portfolio ? (
-          <LoadingState label="Loading analytics…" />
-        ) : null}
+        {initialLoad ? <LoadingState label="Loading analytics…" /> : null}
 
         {bothFailed ? (
           <ErrorState
@@ -87,30 +109,36 @@ export default function AnalyticsPage() {
           />
         ) : null}
 
-        {!bothFailed && state.tab === "overview" ? (
-          <OverviewStats
-            journal={journal}
-            portfolio={portfolio}
-            onRetryJournal={() => void reload()}
-            onRetryPortfolio={() => void reload()}
-          />
-        ) : null}
-
-        {!bothFailed && state.tab === "performance" ? (
-          <div className="space-y-6">
-            <DailyPnlChart
-              source={portfolio}
-              loading={loading && !portfolio}
-              onRetry={() => void reload()}
-              filtersSummary={filtersSummary}
-            />
-            <CumulativePnlChart
-              source={portfolio}
-              loading={loading && !portfolio}
-              onRetry={() => void reload()}
-              filtersSummary={filtersSummary}
-            />
-          </div>
+        {!bothFailed ? (
+          <>
+            <TabPanel id="overview">
+              <OverviewStats
+                journal={journal}
+                portfolio={portfolio}
+                loading={loading}
+                onRetryJournal={() => void reload()}
+                onRetryPortfolio={() => void reload()}
+              />
+            </TabPanel>
+            <TabPanel id="performance">
+              <div className="space-y-6">
+                <DailyPnlChart
+                  source={portfolio}
+                  loading={loading && !portfolio}
+                  onRetry={() => void reload()}
+                  filtersSummary={filtersSummary}
+                  staleWholeTab={staleWholeTab}
+                />
+                <CumulativePnlChart
+                  source={portfolio}
+                  loading={loading && !portfolio}
+                  onRetry={() => void reload()}
+                  filtersSummary={filtersSummary}
+                  staleWholeTab={staleWholeTab}
+                />
+              </div>
+            </TabPanel>
+          </>
         ) : null}
       </TabsRoot>
     </div>

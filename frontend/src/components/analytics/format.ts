@@ -59,6 +59,15 @@ export function addDays(date: Date, days: number): Date {
   return copy;
 }
 
+export function formatTrendLabel(label: string | null | undefined): string {
+  if (!label) return "—";
+  if (label === "insufficient_data") return "Insufficient data";
+  if (label === "improving") return "Improving";
+  if (label === "flat") return "Flat";
+  if (label === "deteriorating") return "Deteriorating";
+  return label.replaceAll("_", " ");
+}
+
 /** Returns true when a rendered monetary string accidentally contains currency markers. */
 export function containsCurrencySymbol(text: string): boolean {
   return /[$£€]|USD|EUR|GBP/i.test(text);

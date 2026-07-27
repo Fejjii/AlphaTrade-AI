@@ -1,10 +1,13 @@
 export { AnalyticsFilterBar } from "./AnalyticsFilterBar";
 export { ChartFrame } from "./ChartFrame";
+export { ChartTooltip } from "./ChartTooltip";
 export { CumulativePnlChart } from "./CumulativePnlChart";
-export { DailyPnlChart, dailyPnlFiltersSummary } from "./DailyPnlChart";
+export { DailyPnlChart } from "./DailyPnlChart";
 export { OverviewStats } from "./OverviewStats";
+export * from "./chartTransforms";
+export * from "./filterValidation";
 export * from "./format";
-export { useAnalyticsFilters, buildAnalyticsApiParams } from "./useAnalyticsFilters";
+export { useAnalyticsFilters } from "./useAnalyticsFilters";
 export type {
   AnalyticsFilterParams,
   AnalyticsFilterState,

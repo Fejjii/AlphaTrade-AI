@@ -5,6 +5,7 @@ import {
   formatMonetary,
   formatPercent,
   formatProfitFactor,
+  formatTrendLabel,
 } from "./format";
 
 describe("analytics format", () => {
@@ -20,5 +21,6 @@ describe("analytics format", () => {
     expect(formatPercent(null)).toBe("—");
     expect(formatProfitFactor(null, ["no_losing_trades"])).toBe("n/a — no losing trades");
     expect(formatProfitFactor(1.8)).toBe("1.80");
+    expect(formatTrendLabel("insufficient_data")).toBe("Insufficient data");
   });
 });

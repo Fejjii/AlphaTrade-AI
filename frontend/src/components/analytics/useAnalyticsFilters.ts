@@ -3,43 +3,20 @@
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import type { JournalStatsParams, PaperPortfolioParams, PortfolioSourceFilter } from "@/lib/api/types";
+import type { PortfolioSourceFilter } from "@/lib/api/types";
 
 import { isoDateOnly, addDays } from "./format";
+import {
+  buildAnalyticsApiParams,
+  parseAnalyticsSearchParams,
+  type AnalyticsTab,
+} from "./filterValidation";
 
-export type AnalyticsTab = "overview" | "performance";
+export type { AnalyticsFilterParams, AnalyticsFilterState, AnalyticsTab } from "./filterValidation";
 
 export type DatePreset = "7d" | "30d" | "90d" | "ytd" | "all";
 
-export type AnalyticsFilterState = {
-  tab: AnalyticsTab;
-  dateFrom: string | null;
-  dateTo: string | null;
-  symbol: string | null;
-  timeframe: string | null;
-  portfolioSource: PortfolioSourceFilter | null;
-  ignoredParams: string[];
-};
-
-export type AnalyticsFilterParams = {
-  journal: JournalStatsParams;
-  portfolio: PaperPortfolioParams;
-  state: AnalyticsFilterState;
-};
-
-const VALID_TABS = new Set<AnalyticsTab>(["overview", "performance"]);
 const VALID_PRESETS = new Set<DatePreset>(["7d", "30d", "90d", "ytd", "all"]);
-const VALID_PP_SOURCES = new Set<PortfolioSourceFilter>([
-  "all",
-  "proposal_flow",
-  "paper_validation",
-]);
-
-function parseTab(value: string | null): { tab: AnalyticsTab; ignored: boolean } {
-  if (!value || value === "overview") return { tab: "overview", ignored: false };
-  if (VALID_TABS.has(value as AnalyticsTab)) return { tab: value as AnalyticsTab, ignored: false };
-  return { tab: "overview", ignored: true };
-}
 
 function buildHref(pathname: string, params: URLSearchParams): string {
   const query = params.toString();
@@ -63,82 +40,17 @@ function presetToRange(preset: DatePreset, now = new Date()): { from: string | n
   }
 }
 
-function toJournalDatetime(date: string | null, endOfDay: boolean): string | undefined {
-  if (!date) return undefined;
-  return endOfDay ? `${date}T23:59:59.999Z` : `${date}T00:00:00.000Z`;
-}
-
-export function buildAnalyticsApiParams(state: AnalyticsFilterState): AnalyticsFilterParams {
-  const journal: JournalStatsParams = {
-    group_by: "overall",
-  };
-  const portfolio: PaperPortfolioParams = {
-    timezone: "UTC",
-  };
-
-  if (state.dateFrom) {
-    journal.date_from = toJournalDatetime(state.dateFrom, false);
-    portfolio.start_date = state.dateFrom;
-  }
-  if (state.dateTo) {
-    journal.date_to = toJournalDatetime(state.dateTo, true);
-    portfolio.end_date = state.dateTo;
-  }
-  if (state.symbol) {
-    journal.symbol = state.symbol;
-    portfolio.symbol = state.symbol;
-  }
-  if (state.timeframe) {
-    journal.timeframe = state.timeframe;
-    portfolio.timeframe = state.timeframe;
-  }
-  if (state.tab === "performance" && state.portfolioSource && state.portfolioSource !== "all") {
-    portfolio.source = state.portfolioSource;
-  }
-
-  return { journal, portfolio, state };
-}
+export { buildAnalyticsApiParams, buildFilterKey, formatAppliedFiltersSummary } from "./filterValidation";
 
 export function useAnalyticsFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const state = useMemo((): AnalyticsFilterState => {
-    const ignoredParams: string[] = [];
-    const tabParam = searchParams.get("tab");
-    const { tab, ignored: tabIgnored } = parseTab(tabParam);
-    if (tabIgnored && tabParam) ignoredParams.push("tab");
-
-    const dateFrom = searchParams.get("date_from");
-    const dateTo = searchParams.get("date_to");
-    const symbol = searchParams.get("symbol");
-    const timeframe = searchParams.get("timeframe");
-
-    let portfolioSource: PortfolioSourceFilter | null = null;
-    const sourceParam = searchParams.get("source");
-    if (sourceParam) {
-      if (VALID_PP_SOURCES.has(sourceParam as PortfolioSourceFilter)) {
-        portfolioSource = sourceParam as PortfolioSourceFilter;
-      } else {
-        ignoredParams.push("source");
-      }
-    }
-
-    for (const key of ["setup_id", "portfolio_setup", "min_sample", "rule_compliance"]) {
-      if (searchParams.get(key)) ignoredParams.push(key);
-    }
-
-    return {
-      tab,
-      dateFrom,
-      dateTo,
-      symbol,
-      timeframe,
-      portfolioSource,
-      ignoredParams,
-    };
-  }, [searchParams]);
+  const state = useMemo(
+    () => parseAnalyticsSearchParams(searchParams),
+    [searchParams],
+  );
 
   const apiParams = useMemo(() => buildAnalyticsApiParams(state), [state]);
 

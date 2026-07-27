@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AnalyticsPage from "@/app/(app)/analytics/page";
@@ -183,6 +183,7 @@ let sourcesState = {
   loading: false,
   bothFailed: false,
   partialData: false,
+  loadedFilterKey: "key",
 };
 
 vi.mock("@/components/analytics/useAnalyticsFilters", () => ({
@@ -233,6 +234,7 @@ describe("AnalyticsPage PR1", () => {
       loading: false,
       bothFailed: false,
       partialData: false,
+      loadedFilterKey: "key",
     };
     vi.clearAllMocks();
   });
@@ -242,7 +244,7 @@ describe("AnalyticsPage PR1", () => {
     expect(screen.getByTestId("analytics-page")).toBeInTheDocument();
     expect(screen.getByTestId("overview-stats")).toBeInTheDocument();
     expect(screen.getByText("Realised P&L")).toBeInTheDocument();
-    expect(screen.getByTestId("overview-tile-trend")).toHaveTextContent("improving");
+    expect(screen.getByTestId("overview-tile-trend")).toHaveTextContent("Improving");
   });
 
   it("shows partial banner when one source fails", () => {
@@ -252,6 +254,7 @@ describe("AnalyticsPage PR1", () => {
       loading: false,
       bothFailed: false,
       partialData: true,
+      loadedFilterKey: "key",
     };
     render(<AnalyticsPage />);
     expect(screen.getByTestId("analytics-partial-data")).toHaveTextContent(/partial analytics data/i);
@@ -265,6 +268,7 @@ describe("AnalyticsPage PR1", () => {
       loading: false,
       bothFailed: true,
       partialData: false,
+      loadedFilterKey: "key",
     };
     render(<AnalyticsPage />);
     expect(screen.getByTestId("error-state")).toHaveTextContent(/both failed/i);
@@ -279,12 +283,29 @@ describe("AnalyticsPage PR1", () => {
       loading: false,
       bothFailed: false,
       partialData: true,
+      loadedFilterKey: "key",
     };
     render(<AnalyticsPage />);
     expect(screen.getByTestId("daily-pnl-chart-error")).toBeInTheDocument();
     expect(screen.getByTestId("cumulative-pnl-chart-error")).toBeInTheDocument();
     expect(screen.queryByTestId("daily-pnl-chart-plot")).not.toBeInTheDocument();
     expect(screen.queryByTestId("cumulative-pnl-chart-plot")).not.toBeInTheDocument();
+  });
+
+  it("wires tab aria-controls to tabpanels and aria-labelledby back to tabs", () => {
+    render(<AnalyticsPage />);
+    const tablist = screen.getByRole("tablist", { name: "Analytics sections" });
+    const tabs = within(tablist).getAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    for (const tab of tabs) {
+      const panelId = tab.getAttribute("aria-controls");
+      expect(panelId).toBeTruthy();
+      const panel = document.getElementById(panelId!);
+      expect(panel).toBeTruthy();
+      expect(panel).toHaveAttribute("role", "tabpanel");
+      expect(panel?.getAttribute("aria-labelledby")).toBe(tab.id);
+      expect(panel?.hasAttribute("hidden")).toBe(tab.getAttribute("aria-selected") !== "true");
+    }
   });
 
   it("uses filter bar actions", () => {

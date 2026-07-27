@@ -1,17 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, type ReactNode } from "react";
 
 import type { SourceResult } from "@/components/workflows";
 import { DataNumber } from "@/components/ui/data-number";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ErrorState } from "@/components/states";
+import { ErrorState, LimitationsState } from "@/components/states";
 import type { JournalStatsResponse, PaperPortfolioResponse, SampleConfidence } from "@/lib/api/types";
 
 import {
   formatMonetary,
   formatPercent,
   formatProfitFactor,
+  formatTrendLabel,
   monetaryTone,
   parseDecimal,
 } from "./format";
@@ -19,125 +21,256 @@ import {
 type OverviewStatsProps = {
   journal: SourceResult<JournalStatsResponse> | null;
   portfolio: SourceResult<PaperPortfolioResponse> | null;
+  loading?: boolean;
   onRetryJournal?: () => void;
   onRetryPortfolio?: () => void;
+};
+
+type TileSource = "journal" | "portfolio";
+
+type OverviewTile = {
+  label: string;
+  value: string;
+  tone: "default" | "positive" | "negative" | "muted";
+  numeric: number | null;
+  signed?: boolean;
+  source: TileSource;
+  insufficient: boolean;
+  n: number | null;
+  fallback?: boolean;
 };
 
 function confidenceInsufficient(confidence: SampleConfidence | undefined): boolean {
   return confidence === "insufficient";
 }
 
-function EquitySparkline({ points }: { points: { index: number; equity: string }[] }) {
-  if (!points.length) return null;
-  const values = points.map((point) => parseDecimal(point.equity) ?? 0);
+function buildEquitySparkline(points: { index: number; equity: string }[]): {
+  sparkline: ReactNode;
+  limitation: string | null;
+} {
+  const invalidCount = points.filter(
+    (point) => point.equity != null && point.equity !== "" && parseDecimal(point.equity) === null,
+  ).length;
+
+  const valid = points
+    .map((point) => ({ index: point.index, equity: parseDecimal(point.equity) }))
+    .filter((point): point is { index: number; equity: number } => point.equity !== null);
+  if (!valid.length) {
+    return {
+      sparkline: null,
+      limitation: invalidCount
+        ? "Equity sparkline omitted — source contains invalid monetary values."
+        : "Equity sparkline unavailable — no valid equity points.",
+    };
+  }
+
+  const values = valid.map((point) => point.equity);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
   const width = 160;
   const height = 40;
-  const coords = values
-    .map((value, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * width;
-      const y = height - ((value - min) / span) * height;
+  const coords = valid
+    .map((point, index) => {
+      const x = (index / Math.max(valid.length - 1, 1)) * width;
+      const y = height - ((point.equity - min) / span) * height;
       return `${x},${y}`;
     })
     .join(" ");
 
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="h-10 w-40 text-accent"
-      role="img"
-      aria-label="Equity sparkline from paper portfolio"
-      data-testid="overview-equity-sparkline"
-    >
-      <polyline fill="none" stroke="currentColor" strokeWidth="2" points={coords} />
-    </svg>
-  );
+  return {
+    sparkline: (
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-10 w-40 text-accent"
+        role="img"
+        aria-label="Equity sparkline from paper portfolio"
+        data-testid="overview-equity-sparkline"
+      >
+        <polyline fill="none" stroke="currentColor" strokeWidth="2" points={coords} />
+      </svg>
+    ),
+    limitation:
+      invalidCount > 0
+        ? `${invalidCount} equity point(s) omitted from sparkline — invalid monetary values.`
+        : null,
+  };
+}
+
+function buildJournalTiles(
+  journalMetrics: JournalStatsResponse["overall"],
+): OverviewTile[] {
+  const pfWarnings = journalMetrics.warnings.map((warning) => warning.message);
+  return [
+    {
+      label: "Realised P&L",
+      value: formatMonetary(parseDecimal(journalMetrics.net_pnl_total)),
+      tone: monetaryTone(parseDecimal(journalMetrics.net_pnl_total)),
+      numeric: parseDecimal(journalMetrics.net_pnl_total),
+      signed: true,
+      source: "journal",
+      insufficient: confidenceInsufficient(journalMetrics.confidence),
+      n: journalMetrics.pnl_sample_count,
+    },
+    {
+      label: "Win rate",
+      value: formatPercent(journalMetrics.win_rate),
+      tone: "default",
+      numeric: journalMetrics.win_rate,
+      source: "journal",
+      insufficient: confidenceInsufficient(journalMetrics.confidence),
+      n: journalMetrics.trade_count,
+    },
+    {
+      label: "Closed trades",
+      value: String(journalMetrics.trade_count),
+      tone: "default",
+      numeric: journalMetrics.trade_count,
+      source: "journal",
+      insufficient: false,
+      n: journalMetrics.trade_count,
+    },
+    {
+      label: "Expectancy",
+      value: formatMonetary(parseDecimal(journalMetrics.expectancy)),
+      tone: monetaryTone(parseDecimal(journalMetrics.expectancy)),
+      numeric: parseDecimal(journalMetrics.expectancy),
+      signed: true,
+      source: "journal",
+      insufficient: confidenceInsufficient(journalMetrics.confidence),
+      n: journalMetrics.pnl_sample_count,
+    },
+    {
+      label: "Profit factor",
+      value: formatProfitFactor(journalMetrics.profit_factor, pfWarnings),
+      tone: "default",
+      numeric: journalMetrics.profit_factor,
+      source: "journal",
+      insufficient: confidenceInsufficient(journalMetrics.confidence),
+      n: journalMetrics.pnl_sample_count,
+    },
+  ];
+}
+
+function buildPortfolioFallbackTiles(
+  portfolioData: PaperPortfolioResponse,
+): OverviewTile[] {
+  const metrics = portfolioData.metrics;
+  const account = portfolioData.account;
+  return [
+    {
+      label: "Realised P&L",
+      value: formatMonetary(parseDecimal(account.cumulative_realized_pnl)),
+      tone: monetaryTone(parseDecimal(account.cumulative_realized_pnl)),
+      numeric: parseDecimal(account.cumulative_realized_pnl),
+      signed: true,
+      source: "portfolio",
+      insufficient: false,
+      n: metrics.trade_count,
+      fallback: true,
+    },
+    {
+      label: "Win rate",
+      value: formatPercent(metrics.win_rate),
+      tone: "default",
+      numeric: metrics.win_rate,
+      source: "portfolio",
+      insufficient: false,
+      n: metrics.trade_count,
+      fallback: true,
+    },
+    {
+      label: "Closed trades",
+      value: String(account.closed_trade_count),
+      tone: "default",
+      numeric: account.closed_trade_count,
+      source: "portfolio",
+      insufficient: false,
+      n: account.closed_trade_count,
+      fallback: true,
+    },
+    {
+      label: "Expectancy",
+      value: formatMonetary(parseDecimal(metrics.expectancy)),
+      tone: monetaryTone(parseDecimal(metrics.expectancy)),
+      numeric: parseDecimal(metrics.expectancy),
+      signed: true,
+      source: "portfolio",
+      insufficient: false,
+      n: metrics.trade_count,
+      fallback: true,
+    },
+    {
+      label: "Profit factor",
+      value: formatProfitFactor(metrics.profit_factor),
+      tone: "default",
+      numeric: metrics.profit_factor,
+      source: "portfolio",
+      insufficient: false,
+      n: metrics.trade_count,
+      fallback: true,
+    },
+  ];
 }
 
 export function OverviewStats({
   journal,
   portfolio,
+  loading = false,
   onRetryJournal,
   onRetryPortfolio,
 }: OverviewStatsProps) {
-  const journalMetrics = journal?.available ? journal.data?.overall : null;
-  const portfolioAccount = portfolio?.available ? portfolio.data?.account : null;
-  const portfolioTrend = portfolio?.available ? portfolio.data?.trend : null;
-  const equityCurve = portfolio?.available ? portfolio.data?.equity_curve ?? [] : [];
+  const journalAvailable = journal?.available ?? false;
+  const portfolioAvailable = portfolio?.available ?? false;
 
-  const netPnl =
-    parseDecimal(journalMetrics?.net_pnl_total) ??
-    parseDecimal(portfolioAccount?.cumulative_realized_pnl);
-  const winRate = journalMetrics?.win_rate ?? portfolio?.data?.metrics.win_rate ?? null;
-  const tradeCount =
-    journalMetrics?.trade_count ?? portfolioAccount?.closed_trade_count ?? null;
-  const expectancy = parseDecimal(journalMetrics?.expectancy ?? portfolio?.data?.metrics.expectancy);
-  const profitFactor =
-    journalMetrics?.profit_factor ?? portfolio?.data?.metrics.profit_factor ?? null;
-  const pfWarnings = journalMetrics?.warnings.map((warning) => warning.message);
+  const tiles = useMemo(() => {
+    const metricTiles = journalAvailable
+      ? buildJournalTiles(journal!.data!.overall)
+      : portfolioAvailable
+        ? buildPortfolioFallbackTiles(portfolio!.data!)
+        : [];
 
-  const tiles = [
-    {
-      label: "Realised P&L",
-      value: formatMonetary(netPnl),
-      tone: monetaryTone(netPnl),
-      numeric: netPnl,
-      signed: true,
-      insufficient: journalMetrics ? confidenceInsufficient(journalMetrics.confidence) : false,
-      n: journalMetrics?.pnl_sample_count ?? tradeCount,
-    },
-    {
-      label: "Win rate",
-      value: formatPercent(winRate),
-      tone: "default" as const,
-      numeric: winRate,
-      insufficient: journalMetrics ? confidenceInsufficient(journalMetrics.confidence) : false,
-      n: journalMetrics?.trade_count ?? tradeCount,
-    },
-    {
-      label: "Closed trades",
-      value: tradeCount ?? "—",
-      tone: "default" as const,
-      numeric: tradeCount,
-      insufficient: false,
-      n: tradeCount,
-    },
-    {
-      label: "Expectancy",
-      value: formatMonetary(expectancy),
-      tone: monetaryTone(expectancy),
-      numeric: expectancy,
-      signed: true,
-      insufficient: journalMetrics ? confidenceInsufficient(journalMetrics.confidence) : false,
-      n: journalMetrics?.pnl_sample_count ?? null,
-    },
-    {
-      label: "Profit factor",
-      value: formatProfitFactor(profitFactor, pfWarnings),
-      tone: "default" as const,
-      numeric: profitFactor,
-      insufficient: journalMetrics ? confidenceInsufficient(journalMetrics.confidence) : false,
-      n: journalMetrics?.pnl_sample_count ?? null,
-    },
-    {
-      label: "Current equity",
-      value: formatMonetary(parseDecimal(portfolioAccount?.current_equity)),
-      tone: "default" as const,
-      numeric: parseDecimal(portfolioAccount?.current_equity),
-      insufficient: false,
-      n: null,
-    },
-    {
-      label: "Trend",
-      value: portfolioTrend?.label ?? "—",
-      tone: "default" as const,
-      numeric: null,
-      insufficient: portfolioTrend?.label === "insufficient_data",
-      n: portfolioTrend?.window_days ?? null,
-    },
-  ].slice(0, 7);
+    const portfolioTiles: OverviewTile[] = portfolioAvailable
+      ? [
+          {
+            label: "Current equity",
+            value: formatMonetary(parseDecimal(portfolio!.data!.account.current_equity)),
+            tone: "default",
+            numeric: parseDecimal(portfolio!.data!.account.current_equity),
+            source: "portfolio",
+            insufficient: false,
+            n: null,
+          },
+          {
+            label: "Trend",
+            value: formatTrendLabel(portfolio!.data!.trend.label),
+            tone: "default",
+            numeric: null,
+            source: "portfolio",
+            insufficient: portfolio!.data!.trend.label === "insufficient_data",
+            n: portfolio!.data!.trend.window_days,
+          },
+        ]
+      : [];
+
+    return [...metricTiles, ...portfolioTiles].slice(0, 7);
+  }, [journal, journalAvailable, portfolio, portfolioAvailable]);
+
+  const sparkline = useMemo(() => {
+    if (!portfolioAvailable) return { sparkline: null, limitation: null };
+    return buildEquitySparkline(portfolio!.data!.equity_curve ?? []);
+  }, [portfolio, portfolioAvailable]);
+
+  if (loading) {
+    return (
+      <section className="space-y-3" data-testid="overview-stats">
+        <h2 className="text-lg font-medium">Overview</h2>
+        <p className="text-sm text-text-muted" role="status">
+          Loading overview metrics…
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-3" data-testid="overview-stats">
@@ -148,7 +281,7 @@ export function OverviewStats({
         </Link>
       </div>
 
-      {!journal?.available ? (
+      {!journalAvailable ? (
         <div data-testid="overview-journal-error">
           <ErrorState
             message={`Journal statistics unavailable${journal?.error ? `: ${journal.error}` : "."}`}
@@ -157,7 +290,7 @@ export function OverviewStats({
         </div>
       ) : null}
 
-      {!portfolio?.available ? (
+      {!portfolioAvailable ? (
         <div data-testid="overview-portfolio-error">
           <ErrorState
             message={`Paper portfolio unavailable${portfolio?.error ? `: ${portfolio.error}` : "."}`}
@@ -166,21 +299,30 @@ export function OverviewStats({
         </div>
       ) : null}
 
-      {(journal?.available || portfolio?.available) && (
+      {(journalAvailable || portfolioAvailable) && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {tiles.map((tile) => (
-            <Card key={tile.label} data-testid={`overview-tile-${tile.label.toLowerCase().replace(/\s+/g, "-")}`}>
+            <Card
+              key={tile.label}
+              data-testid={`overview-tile-${tile.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-text-secondary">{tile.label}</CardTitle>
+                <CardTitle className="text-sm font-medium text-text-secondary">
+                  {tile.label}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
                 <DataNumber
                   value={tile.value}
                   tone={tile.tone}
                   numeric={tile.numeric}
-                  signed={"signed" in tile ? tile.signed : false}
+                  signed={tile.signed ?? false}
                   className="text-xl"
                 />
+                <p className="text-caption text-text-muted" data-testid={`overview-source-${tile.label}`}>
+                  Source: {tile.source === "journal" ? "Journal statistics" : "Paper portfolio"}
+                  {tile.fallback ? " (fallback)" : ""}
+                </p>
                 {tile.insufficient && tile.n != null ? (
                   <p className="text-caption text-text-muted">n={tile.n} — insufficient</p>
                 ) : null}
@@ -190,20 +332,22 @@ export function OverviewStats({
         </div>
       )}
 
-      {portfolio?.available && equityCurve.length ? (
+      {portfolioAvailable && sparkline.sparkline ? (
         <Card data-testid="overview-sparkline-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-text-secondary">
               Equity sparkline (paper)
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <EquitySparkline points={equityCurve} />
-          </CardContent>
+          <CardContent>{sparkline.sparkline}</CardContent>
         </Card>
       ) : null}
 
-      {journal?.available && journal.data?.truncated ? (
+      {sparkline.limitation ? (
+        <LimitationsState message={sparkline.limitation} title="Sparkline limitation" />
+      ) : null}
+
+      {journalAvailable && journal?.data?.truncated ? (
         <p className="text-sm text-text-muted" data-testid="overview-truncated">
           Journal statistics truncated at {journal.data.max_rows} rows — narrow the date range.
         </p>
