@@ -13,6 +13,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams,
 }));
 
+const SETUP_UUID = "11111111-1111-1111-1111-111111111111";
+
 describe("useAnalyticsFilters hook", () => {
   beforeEach(() => {
     pushMock.mockClear();
@@ -31,6 +33,35 @@ describe("useAnalyticsFilters hook", () => {
     rerender();
     result.current.setTab("performance");
     expect(pushMock).toHaveBeenLastCalledWith("/analytics?tab=performance", { scroll: false });
+  });
+
+  it("uses push for Setups tab and drops setup params when leaving", () => {
+    searchParams = new URLSearchParams(
+      `tab=setups&setup_id=${SETUP_UUID}&group_by=strategy&offset=20&symbol=BTCUSDT&source=manual`,
+    );
+    const { result } = renderHook(() => useAnalyticsFilters());
+    result.current.setTab("overview");
+    expect(pushMock).toHaveBeenCalledWith("/analytics?symbol=BTCUSDT", { scroll: false });
+  });
+
+  it("resets bucket offset when journal source changes", () => {
+    searchParams = new URLSearchParams("tab=setups&offset=20");
+    const { result } = renderHook(() => useAnalyticsFilters());
+    result.current.applyDraft({ journalSource: "imported" });
+    expect(pushMock).toHaveBeenCalledWith("/analytics?tab=setups&source=imported", {
+      scroll: false,
+    });
+  });
+
+  it("uses push for grouping toggle and bucket pagination", () => {
+    searchParams = new URLSearchParams("tab=setups");
+    const { result } = renderHook(() => useAnalyticsFilters());
+    result.current.setGroupBy("setup_version");
+    expect(pushMock).toHaveBeenCalledWith("/analytics?tab=setups&group_by=setup_version", {
+      scroll: false,
+    });
+    result.current.setBucketOffset(20);
+    expect(pushMock).toHaveBeenCalledWith("/analytics?tab=setups&offset=20", { scroll: false });
   });
 
   it("uses push for submitted filters, presets, and clear", () => {
@@ -57,16 +88,15 @@ describe("useAnalyticsFilters hook", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("derives validated state from external URL changes", () => {
-    searchParams = new URLSearchParams("date_from=2026-01-01&date_to=2026-01-31&symbol=BTCUSDT");
-    const { result, rerender } = renderHook(() => useAnalyticsFilters());
-    expect(result.current.state.dateFrom).toBe("2026-01-01");
-    expect(result.current.apiParams.journal.symbol).toBe("BTCUSDT");
-
-    searchParams = new URLSearchParams("date_from=not-a-date");
-    rerender();
-    expect(result.current.state.dateFrom).toBeNull();
-    expect(result.current.state.ignoredParams).toContain("date_from");
-    expect(result.current.apiParams.journal.date_from).toBeUndefined();
+  it("derives validated setup deep-link state without portfolio params", () => {
+    searchParams = new URLSearchParams(
+      `tab=setups&setup_id=${SETUP_UUID}&date_from=2026-01-01&portfolio_setup=breakout`,
+    );
+    const { result } = renderHook(() => useAnalyticsFilters());
+    expect(result.current.state.setupId).toBe(SETUP_UUID);
+    expect(result.current.setupApiParams.journal.setup_id).toBe(SETUP_UUID);
+    expect(result.current.apiParams.portfolio).not.toHaveProperty("setup");
+    expect(result.current.apiParams.journal.setup_id).toBeUndefined();
+    expect(result.current.state.ignoredParams).toContain("portfolio_setup");
   });
 });
