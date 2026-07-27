@@ -491,6 +491,55 @@ describe("Portfolio & Risk command centre", () => {
     render(<PaperPortfolioPage />);
     expect(screen.getByTestId("risk-trading-state")).not.toHaveTextContent(/^Trading allowed$/i);
     expect(screen.getByTestId("portfolio-risk-attention-summary")).toHaveTextContent(/loading/i);
+    expect(screen.getByTestId("portfolio-source-kill-switch")).toHaveTextContent(/Unavailable/i);
+  });
+
+  it("marks kill-switch source unavailable for cached clear + refresh error and never allows trading", () => {
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: false,
+      reason: null,
+      activated_by: null,
+      activated_at: null,
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 1,
+      scope: "org",
+      global_active: false,
+      execution_blocked: false,
+    };
+    appContext.killSwitchError = "refresh failed";
+    appContext.loading = false;
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("portfolio-source-kill-switch")).toHaveTextContent(/Unavailable/i);
+    expect(screen.getByTestId("portfolio-source-kill-switch")).toHaveTextContent(/Freshness timestamp: unavailable/i);
+    expect(screen.getByTestId("risk-trading-state")).not.toHaveTextContent(/^Trading allowed$/i);
+    expect(screen.getByTestId("portfolio-source-daily-discipline")).toHaveTextContent(/Available/i);
+  });
+
+  it("keeps authoritative BLOCK when cached blocked status remains after refresh error", () => {
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: true,
+      reason: "Manual halt",
+      activated_by: "user",
+      activated_at: "2026-07-27T10:00:00.000Z",
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 2,
+      scope: "org",
+      global_active: false,
+      execution_blocked: true,
+    };
+    appContext.killSwitchError = "refresh failed";
+    appContext.loading = false;
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("risk-trading-state")).toHaveTextContent(/blocked/i);
+    expect(screen.getByTestId("portfolio-risk-block")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-source-kill-switch")).toHaveTextContent(/Unavailable/i);
+    expect(screen.getByTestId("portfolio-source-kill-switch")).toHaveTextContent(
+      /Freshness timestamp: unavailable/i,
+    );
   });
 
   it("confirms no open positions only with complete coverage", () => {

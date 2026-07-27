@@ -122,6 +122,16 @@ export default function PaperPortfolioPage() {
     [data?.closedPositions, data?.journal],
   );
 
+  const killSwitchSourceAvailable =
+    killSwitchError == null && killSwitchStatus != null && !appLoading;
+  const killSwitchSourceError =
+    killSwitchError ??
+    (appLoading && killSwitchStatus == null
+      ? "Kill-switch status is still loading."
+      : killSwitchStatus == null
+        ? "Kill-switch status is unresolved."
+        : null);
+
   const sourceStatuses = useMemo(() => {
     if (!data) return [];
     const openCoverage =
@@ -146,12 +156,23 @@ export default function PaperPortfolioPage() {
         coverage: portfolioSourceCoverage(data.portfolio.available),
       },
       {
-        name: "Risk state",
+        name: "Daily discipline",
         available: data.dashboard.available,
         error: data.dashboard.error,
         timestamp: data.dashboard.data?.daily_discipline?.date ?? null,
         required: true,
         coverage: data.dashboard.available ? ("complete" as const) : null,
+      },
+      {
+        name: "Kill switch",
+        available: killSwitchSourceAvailable,
+        error: killSwitchSourceAvailable ? null : killSwitchSourceError,
+        // Freshness unavailable when the latest read failed, even if a prior BLOCK is retained.
+        timestamp: killSwitchSourceAvailable
+          ? (killSwitchStatus?.activated_at ?? killSwitchStatus?.deactivated_at ?? null)
+          : null,
+        required: true,
+        coverage: killSwitchSourceAvailable ? ("complete" as const) : null,
       },
       {
         name: "Open positions",
@@ -184,7 +205,7 @@ export default function PaperPortfolioPage() {
             : null,
       },
     ];
-  }, [data]);
+  }, [data, killSwitchSourceAvailable, killSwitchSourceError, killSwitchStatus]);
 
   const freshnessSources = sourceStatuses.map((sourceStatus) => ({
     name: sourceStatus.name,

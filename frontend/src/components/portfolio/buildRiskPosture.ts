@@ -56,8 +56,16 @@ function disciplineSnapshot(
 
 /**
  * Resolve kill-switch state fail-closed.
- * null status never means clear. Only an explicit returned status with
- * execution_blocked=false may support "Trading allowed".
+ *
+ * Precedence:
+ * 1. Explicit execution_blocked=true remains BLOCKED even if a later refresh failed
+ *    (AppContext retains the previous status while setting killSwitchError).
+ * 2. Any killSwitchError with no active block => UNAVAILABLE (stale clear is not clear).
+ * 3. Non-null status with execution_blocked=false and no error => CLEAR.
+ * 4. null + loading => LOADING.
+ * 5. Otherwise => UNAVAILABLE.
+ *
+ * Only CLEAR may support "Trading allowed".
  */
 export function resolveKillSwitchState(input: {
   killSwitchStatus: KillSwitchStatus | null;
@@ -65,12 +73,18 @@ export function resolveKillSwitchState(input: {
   killSwitchLoading: boolean;
 }): KillSwitchResolution {
   const { killSwitchStatus, killSwitchError, killSwitchLoading } = input;
-  if (killSwitchStatus != null) {
-    return killSwitchStatus.execution_blocked ? "blocked" : "clear";
+  if (killSwitchStatus?.execution_blocked === true) {
+    return "blocked";
   }
-  if (killSwitchError) return "unavailable";
-  if (killSwitchLoading) return "loading";
-  // null status with no error and not loading — still unresolved, never clear
+  if (killSwitchError) {
+    return "unavailable";
+  }
+  if (killSwitchStatus != null && killSwitchStatus.execution_blocked === false) {
+    return "clear";
+  }
+  if (killSwitchLoading) {
+    return "loading";
+  }
   return "unavailable";
 }
 
@@ -173,7 +187,11 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
 
   limitations.push(...snapshot.limitations);
 
-  if (killSwitchResolution === "unavailable") {
+  if (killSwitchResolution === "blocked" && killSwitchError) {
+    limitations.push(
+      `Kill-switch refresh failed: ${killSwitchError}. Preserving last known BLOCK; freshness is unavailable.`,
+    );
+  } else if (killSwitchResolution === "unavailable") {
     limitations.push(
       killSwitchError
         ? `Kill-switch status unavailable: ${killSwitchError}. Trading allowed is not confirmed.`

@@ -192,6 +192,50 @@ describe("buildRiskPosture", () => {
     expect(view.tradingStateLabel).not.toMatch(/^Trading allowed$/i);
   });
 
+  it("treats cached clear status + refresh error as unavailable, never Trading allowed", () => {
+    const view = buildRiskPosture({
+      discipline: ok(discipline()),
+      killSwitchStatus: killClear,
+      killSwitchError: "refresh failed",
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.killSwitchResolution).toBe("unavailable");
+    expect(view.tradingState).toBe("unavailable");
+    expect(view.tradingStateLabel).not.toMatch(/^Trading allowed$/i);
+    expect(view.limitations.join(" ")).toMatch(/refresh failed|unavailable/i);
+  });
+
+  it("keeps cached blocked status authoritative when refresh also fails", () => {
+    const view = buildRiskPosture({
+      discipline: ok(discipline()),
+      killSwitchStatus: {
+        ...killClear,
+        execution_blocked: true,
+        reason: "Manual halt",
+      },
+      killSwitchError: "refresh failed",
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.killSwitchResolution).toBe("blocked");
+    expect(view.tradingState).toBe("blocked");
+    expect(view.showRiskBlock).toBe(true);
+    expect(view.limitations.join(" ")).toMatch(/Preserving last known BLOCK/i);
+  });
+
+  it("supports allowed only for clear status with no kill-switch error", () => {
+    const view = buildRiskPosture({
+      discipline: ok(discipline()),
+      killSwitchStatus: killClear,
+      killSwitchError: null,
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.killSwitchResolution).toBe("clear");
+    expect(view.tradingState).toBe("allowed");
+  });
+
   it("marks cooldown active when green-day protection is engaged", () => {
     const view = buildRiskPosture({
       discipline: ok(discipline({ green_day_protection_active: true })),
