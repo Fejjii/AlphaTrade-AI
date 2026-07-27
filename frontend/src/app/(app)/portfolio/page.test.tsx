@@ -542,6 +542,82 @@ describe("Portfolio & Risk command centre", () => {
     );
   });
 
+  it("renders RiskBlock for blocked kill switch while portfolio data is still loading", () => {
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: true,
+      reason: "Manual halt",
+      activated_by: "user",
+      activated_at: "2026-07-27T10:00:00.000Z",
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 2,
+      scope: "org",
+      global_active: false,
+      execution_blocked: true,
+    };
+    asyncState = { data: null, loading: true, error: null, reload: vi.fn() };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("portfolio-risk-block")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-risk-block")).toHaveTextContent(/Manual halt/);
+  });
+
+  it("renders RiskBlock for blocked kill switch when the discipline source failed", () => {
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: true,
+      reason: "Manual halt",
+      activated_by: "user",
+      activated_at: "2026-07-27T10:00:00.000Z",
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 2,
+      scope: "org",
+      global_active: false,
+      execution_blocked: true,
+    };
+    asyncState = {
+      data: completeData({ dashboard: failed("Risk state unavailable") }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("risk-trading-state")).toHaveTextContent(/blocked/i);
+    expect(screen.getByTestId("portfolio-risk-block")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-risk-block")).toHaveTextContent(/Manual halt/);
+    expect(screen.getByTestId("risk-daily-loss-status")).toHaveTextContent(/unavailable/i);
+  });
+
+  it("renders RiskBlock for blocked kill switch when the discipline snapshot is missing", () => {
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: true,
+      reason: "Manual halt",
+      activated_by: "user",
+      activated_at: "2026-07-27T10:00:00.000Z",
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 2,
+      scope: "org",
+      global_active: false,
+      execution_blocked: true,
+    };
+    asyncState = {
+      data: completeData({
+        dashboard: ok({ ...makeDashboard(), daily_discipline: null }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("risk-trading-state")).toHaveTextContent(/blocked/i);
+    expect(screen.getByTestId("portfolio-risk-block")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-risk-block")).toHaveTextContent(/Manual halt/);
+    expect(screen.getByTestId("risk-daily-loss-status")).toHaveTextContent(/unavailable/i);
+  });
+
   it("confirms no open positions only with complete coverage", () => {
     asyncState = {
       data: completeData({

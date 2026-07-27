@@ -224,6 +224,83 @@ describe("buildRiskPosture", () => {
     expect(view.limitations.join(" ")).toMatch(/Preserving last known BLOCK/i);
   });
 
+  it("keeps kill-switch BLOCK visible while discipline is absent (loading)", () => {
+    const view = buildRiskPosture({
+      discipline: null,
+      killSwitchStatus: { ...killClear, execution_blocked: true, reason: "Manual halt" },
+      killSwitchError: null,
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.killSwitchResolution).toBe("blocked");
+    expect(view.tradingState).toBe("blocked");
+    expect(view.tradingStateLabel).toBe("Trading blocked");
+    expect(view.showRiskBlock).toBe(true);
+    expect(view.activeBlockReasons.join(" ")).toMatch(/Kill switch/i);
+    expect(view.riskBlockReason).toMatch(/Manual halt/);
+    expect(view.dailyLossStatus).toBe("unavailable");
+    expect(view.cooldownStatus).toBe("unavailable");
+    expect(view.disciplineStatus).toBeNull();
+    expect(view.dailyPnl).toBeNull();
+    expect(view.freshnessTimestamp).toBeNull();
+    expect(view.limitations.join(" ")).toMatch(/discipline is still loading/i);
+  });
+
+  it("keeps kill-switch BLOCK visible when the discipline source failed", () => {
+    const view = buildRiskPosture({
+      discipline: failed("risk down"),
+      killSwitchStatus: { ...killClear, execution_blocked: true, reason: "Manual halt" },
+      killSwitchError: null,
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.tradingState).toBe("blocked");
+    expect(view.tradingStateLabel).toBe("Trading blocked");
+    expect(view.showRiskBlock).toBe(true);
+    expect(view.activeBlockReasons.join(" ")).toMatch(/Kill switch/i);
+    expect(view.riskBlockReason).toMatch(/Manual halt/);
+    expect(view.dailyLossStatus).toBe("unavailable");
+    expect(view.cooldownStatus).toBe("unavailable");
+    expect(view.disciplineStatus).toBeNull();
+    expect(view.dailyPnl).toBeNull();
+    expect(view.limitations.join(" ")).toMatch(/Risk state source failed: risk down/);
+  });
+
+  it("keeps kill-switch BLOCK visible when the discipline snapshot is missing", () => {
+    const view = buildRiskPosture({
+      discipline: ok<DailyDisciplineSnapshot | null>(null),
+      killSwitchStatus: { ...killClear, execution_blocked: true, reason: "Manual halt" },
+      killSwitchError: null,
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.tradingState).toBe("blocked");
+    expect(view.tradingStateLabel).toBe("Trading blocked");
+    expect(view.showRiskBlock).toBe(true);
+    expect(view.activeBlockReasons.join(" ")).toMatch(/Kill switch/i);
+    expect(view.riskBlockReason).toMatch(/Manual halt/);
+    expect(view.dailyLossStatus).toBe("unavailable");
+    expect(view.cooldownStatus).toBe("unavailable");
+    expect(view.disciplineStatus).toBeNull();
+    expect(view.dailyPnl).toBeNull();
+    expect(view.limitations.join(" ")).toMatch(/no daily discipline snapshot/i);
+  });
+
+  it("uses the fallback block reason and preserves BLOCK on refresh error while discipline failed", () => {
+    const view = buildRiskPosture({
+      discipline: failed("risk down"),
+      killSwitchStatus: { ...killClear, execution_blocked: true, reason: null },
+      killSwitchError: "refresh failed",
+      killSwitchLoading: false,
+      posture,
+    });
+    expect(view.tradingState).toBe("blocked");
+    expect(view.showRiskBlock).toBe(true);
+    expect(view.riskBlockReason).toBe("Kill switch is blocking execution");
+    expect(view.limitations.join(" ")).toMatch(/Preserving last known BLOCK/i);
+    expect(view.limitations.join(" ")).toMatch(/Risk state source failed: risk down/);
+  });
+
   it("supports allowed only for clear status with no kill-switch error", () => {
     const view = buildRiskPosture({
       discipline: ok(discipline()),
