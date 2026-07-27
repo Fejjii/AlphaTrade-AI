@@ -88,10 +88,84 @@ export function resolveKillSwitchState(input: {
   return "unavailable";
 }
 
+function killSwitchBlockReason(killSwitchStatus: KillSwitchStatus | null): string {
+  return killSwitchStatus?.reason?.trim()
+    ? `Kill switch blocking execution: ${killSwitchStatus.reason}`
+    : "Kill switch is blocking execution";
+}
+
+type RiskPostureBaseFields = Pick<
+  RiskPostureView,
+  | "executionModeLabel"
+  | "realTradingLabel"
+  | "paperConfirmed"
+  | "settingsHref"
+  | "killSwitchResolution"
+>;
+
+/**
+ * View for the discipline-unavailable branches (source loading, source failed, or
+ * snapshot missing). Daily discipline values stay unavailable and are never invented.
+ * An explicit kill-switch execution_blocked=true remains authoritative: the view is
+ * BLOCKED with the stored kill-switch reason instead of a plain "unavailable" posture.
+ */
+function disciplineUnavailableView(params: {
+  base: RiskPostureBaseFields;
+  limitations: string[];
+  killSwitchStatus: KillSwitchStatus | null;
+  killSwitchError: string | null;
+  unavailableLabel: string;
+  unavailableSummary: string;
+}): RiskPostureView {
+  const { base, limitations, killSwitchStatus, killSwitchError } = params;
+  const fields = {
+    ...base,
+    dailyLossStatus: "unavailable" as DailyLossStatus,
+    dailyLossLabel: "Daily-loss status unavailable",
+    cooldownStatus: "unavailable" as CooldownStatus,
+    cooldownLabel: "Cooldown status unavailable",
+    cooldownDetails: [],
+    disciplineStatus: null,
+    recommendedAction: null,
+    limitations,
+    dailyPnl: null,
+    freshnessTimestamp: null,
+  };
+
+  if (base.killSwitchResolution !== "blocked") {
+    return {
+      ...fields,
+      tradingState: "unavailable",
+      tradingStateLabel: params.unavailableLabel,
+      attentionSummary: params.unavailableSummary,
+      activeBlockReasons: [],
+      showRiskBlock: false,
+      riskBlockReason: null,
+    };
+  }
+
+  if (killSwitchError) {
+    limitations.push(
+      `Kill-switch refresh failed: ${killSwitchError}. Preserving last known BLOCK; freshness is unavailable.`,
+    );
+  }
+  const blockReason = killSwitchBlockReason(killSwitchStatus);
+  return {
+    ...fields,
+    tradingState: "blocked",
+    tradingStateLabel: "Trading blocked",
+    attentionSummary: blockReason,
+    activeBlockReasons: [blockReason],
+    showRiskBlock: true,
+    riskBlockReason: blockReason,
+  };
+}
+
 /**
  * Derive Portfolio risk posture from existing dashboard discipline + kill-switch fields.
  * Never invents "Trading allowed" when a risk source failed or kill-switch is unresolved.
- * Risk engine BLOCK / kill-switch execution_blocked remain authoritative.
+ * Risk engine BLOCK / kill-switch execution_blocked remain authoritative, including when
+ * the daily discipline source is loading, failed, or missing its snapshot.
  */
 export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView {
   const { discipline, killSwitchStatus, killSwitchError, killSwitchLoading, posture } = input;
@@ -112,25 +186,19 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
   };
 
   if (!discipline) {
-    return {
-      ...base,
-      tradingState: "unavailable",
-      tradingStateLabel: "Risk posture loading",
-      attentionSummary: "Risk posture is still loading.",
-      dailyLossStatus: "unavailable",
-      dailyLossLabel: "Daily-loss status unavailable",
-      cooldownStatus: "unavailable",
-      cooldownLabel: "Cooldown status unavailable",
-      cooldownDetails: [],
-      activeBlockReasons: [],
-      disciplineStatus: null,
-      recommendedAction: null,
-      showRiskBlock: false,
-      riskBlockReason: null,
+    if (killSwitchResolution === "blocked") {
+      limitations.push(
+        "Daily discipline is still loading; discipline values are unavailable while the kill-switch BLOCK is shown.",
+      );
+    }
+    return disciplineUnavailableView({
+      base,
       limitations,
-      dailyPnl: null,
-      freshnessTimestamp: null,
-    };
+      killSwitchStatus,
+      killSwitchError,
+      unavailableLabel: "Risk posture loading",
+      unavailableSummary: "Risk posture is still loading.",
+    });
   }
 
   if (!discipline.available) {
@@ -139,50 +207,28 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
         ? `Risk state source failed: ${discipline.error}`
         : "Risk state source is unavailable.",
     );
-    return {
-      ...base,
-      tradingState: "unavailable",
-      tradingStateLabel: "Risk posture unavailable",
-      attentionSummary:
-        "Trading allowance cannot be confirmed because the risk-state source failed.",
-      dailyLossStatus: "unavailable",
-      dailyLossLabel: "Daily-loss status unavailable",
-      cooldownStatus: "unavailable",
-      cooldownLabel: "Cooldown status unavailable",
-      cooldownDetails: [],
-      activeBlockReasons: [],
-      disciplineStatus: null,
-      recommendedAction: null,
-      showRiskBlock: false,
-      riskBlockReason: null,
+    return disciplineUnavailableView({
+      base,
       limitations,
-      dailyPnl: null,
-      freshnessTimestamp: null,
-    };
+      killSwitchStatus,
+      killSwitchError,
+      unavailableLabel: "Risk posture unavailable",
+      unavailableSummary:
+        "Trading allowance cannot be confirmed because the risk-state source failed.",
+    });
   }
 
   const snapshot = disciplineSnapshot(discipline);
   if (!snapshot) {
     limitations.push("Dashboard returned no daily discipline snapshot.");
-    return {
-      ...base,
-      tradingState: "unavailable",
-      tradingStateLabel: "Risk posture unavailable",
-      attentionSummary: "Daily risk discipline snapshot is missing.",
-      dailyLossStatus: "unavailable",
-      dailyLossLabel: "Daily-loss status unavailable",
-      cooldownStatus: "unavailable",
-      cooldownLabel: "Cooldown status unavailable",
-      cooldownDetails: [],
-      activeBlockReasons: [],
-      disciplineStatus: null,
-      recommendedAction: null,
-      showRiskBlock: false,
-      riskBlockReason: null,
+    return disciplineUnavailableView({
+      base,
       limitations,
-      dailyPnl: null,
-      freshnessTimestamp: null,
-    };
+      killSwitchStatus,
+      killSwitchError,
+      unavailableLabel: "Risk posture unavailable",
+      unavailableSummary: "Daily risk discipline snapshot is missing.",
+    });
   }
 
   limitations.push(...snapshot.limitations);
@@ -223,11 +269,7 @@ export function buildRiskPosture(input: BuildRiskPostureInput): RiskPostureView 
 
   const activeBlockReasons: string[] = [];
   if (killSwitchBlocked) {
-    activeBlockReasons.push(
-      killSwitchStatus?.reason?.trim()
-        ? `Kill switch blocking execution: ${killSwitchStatus.reason}`
-        : "Kill switch is blocking execution",
-    );
+    activeBlockReasons.push(killSwitchBlockReason(killSwitchStatus));
   }
   if (lossLock) activeBlockReasons.push("Daily loss lock is active");
   if (lockedByDiscipline) {
