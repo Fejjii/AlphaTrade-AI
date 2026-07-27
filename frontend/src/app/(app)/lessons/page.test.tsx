@@ -227,7 +227,7 @@ describe("LessonsPage hub", () => {
     expect(screen.getByTestId("lessons-recent-item-lesson-accepted")).toBeInTheDocument();
   });
 
-  it("shows truncated pending coverage count", async () => {
+  it("shows truncated pending coverage count with all-source wording", async () => {
     asyncState.data!.pending = ok({
       items: [pendingLesson],
       total: 4,
@@ -236,9 +236,143 @@ describe("LessonsPage hub", () => {
     });
     render(<LessonsPage />);
     expect(await screen.findByTestId("lessons-attention-count-loaded")).toHaveTextContent(
-      /1 of 4 pending lessons loaded/i,
+      /1 of 4 pending lessons loaded\./i,
     );
     expect(screen.getByTestId("lessons-attention-coverage")).toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-attention-count-all-sources")).not.toBeInTheDocument();
+  });
+
+  it("shows truncated coaching-filter count wording separately from all-source load", async () => {
+    search.set("source", "coaching");
+    asyncState.data!.pending = ok({
+      items: [
+        lesson({ id: "coach-1", source_type: "coaching" }),
+        lesson({ id: "journal-1", source_type: "journal" }),
+      ],
+      total: 100,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-count-filtered-loaded")).toHaveTextContent(
+      /1 coaching lesson found in the loaded page\./i,
+    );
+    expect(screen.getByTestId("lessons-attention-count-all-sources")).toHaveTextContent(
+      /2 of 100 pending lessons loaded across all sources\./i,
+    );
+  });
+
+  it("shows complete coaching-filter count wording when coverage is complete", async () => {
+    search.set("source", "coaching");
+    asyncState.data!.pending = ok({
+      items: [
+        lesson({ id: "coach-1", source_type: "coaching" }),
+        lesson({ id: "coach-2", source_type: "coaching" }),
+        lesson({ id: "journal-1", source_type: "journal" }),
+      ],
+      total: 3,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-count-filtered")).toHaveTextContent(
+      /2 coaching lessons/i,
+    );
+    expect(screen.queryByTestId("lessons-attention-count-all-sources")).not.toBeInTheDocument();
+  });
+
+  it("renders loaded non-coaching pending lesson in deeplink section with coaching filter", async () => {
+    search.set("candidate", "journal-pending");
+    search.set("source", "coaching");
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "journal-pending", source_type: "journal", status: "pending_review" })],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    const deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).getByTestId("lesson-filter-mismatch-notice")).toHaveTextContent(
+      /does not match the active coaching filter/i,
+    );
+    expect(within(deeplink).queryByTestId("lesson-deeplink-notice")).not.toBeInTheDocument();
+    expect(within(deeplink).getByTestId("accept-lesson-btn")).toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-attention-item-journal-pending")).not.toBeInTheDocument();
+  });
+
+  it("renders loaded non-coaching accepted lesson in deeplink section with coaching filter", async () => {
+    search.set("candidate", "journal-accepted");
+    search.set("source", "coaching");
+    asyncState.data!.accepted = ok({
+      items: [
+        lesson({
+          id: "journal-accepted",
+          source_type: "journal",
+          status: "accepted",
+          reviewed_at: "2026-07-21T10:00:00.000Z",
+        }),
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    const deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).getByTestId("lesson-filter-mismatch-notice")).toBeInTheDocument();
+    expect(within(deeplink).queryByTestId("lesson-actions")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-recent-item-journal-accepted")).not.toBeInTheDocument();
+  });
+
+  it("shows loaded coaching lesson in attention queue with coaching filter and candidate", async () => {
+    search.set("candidate", "coach-pending");
+    search.set("source", "coaching");
+    asyncState.data!.pending = ok({
+      items: [lesson({ id: "coach-pending", source_type: "coaching", status: "pending_review" })],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-attention-item-coach-pending")).toBeInTheDocument();
+    expect(screen.queryByTestId("lessons-deeplink-only")).not.toBeInTheDocument();
+  });
+
+  it("renders deep-linked pending lesson outside loaded page with coaching filter", async () => {
+    search.set("candidate", "deep-pending");
+    search.set("source", "coaching");
+    getCandidateMock.mockResolvedValueOnce(
+      lesson({ id: "deep-pending", source_type: "journal", status: "pending_review" }),
+    );
+    render(<LessonsPage />);
+    const deeplink = await screen.findByTestId("lessons-deeplink-only");
+    expect(within(deeplink).getByTestId("lesson-deeplink-notice")).toBeInTheDocument();
+    expect(within(deeplink).queryByTestId("lesson-filter-mismatch-notice")).not.toBeInTheDocument();
+    expect(within(deeplink).getByTestId("accept-lesson-btn")).toBeInTheDocument();
+  });
+
+  it("shows stale message for invalid candidate with coaching filter", async () => {
+    search.set("candidate", "missing-lesson");
+    search.set("source", "coaching");
+    getCandidateMock.mockRejectedValueOnce(new Error("not found"));
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-candidate-stale")).toHaveTextContent(
+      /missing-lesson/i,
+    );
+    expect(screen.queryByTestId("lessons-deeplink-only")).not.toBeInTheDocument();
+  });
+
+  it("preserves candidate query param in filter links", async () => {
+    search.set("candidate", "lesson-1");
+    search.set("source", "coaching");
+    render(<LessonsPage />);
+    expect(await screen.findByTestId("lessons-source-all")).toHaveAttribute(
+      "href",
+      "/lessons?candidate=lesson-1",
+    );
+    expect(screen.getByTestId("lessons-source-coaching")).toHaveAttribute(
+      "href",
+      "/lessons?source=coaching&candidate=lesson-1",
+    );
   });
 
   it("does not show definitive empty when truncated pending total is nonzero", async () => {

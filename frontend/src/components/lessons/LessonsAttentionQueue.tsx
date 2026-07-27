@@ -72,16 +72,49 @@ export function LessonsAttentionQueue({
           <p className="text-sm text-text-muted" data-testid="lessons-attention-count-unavailable">
             Count unavailable
           </p>
+        ) : sourceFilter === "coaching" ? (
+          <div className="space-y-1 text-right">
+            {queue.countDefinitive ? (
+              <p className="text-sm text-text-secondary" data-testid="lessons-attention-count-filtered">
+                {queue.filteredLoadedCount} coaching{" "}
+                {queue.filteredLoadedCount === 1 ? "lesson" : "lessons"}
+              </p>
+            ) : queue.countAvailable ? (
+              <p
+                className="text-sm text-text-secondary"
+                data-testid="lessons-attention-count-filtered-loaded"
+              >
+                {queue.filteredLoadedCount} coaching{" "}
+                {queue.filteredLoadedCount === 1 ? "lesson" : "lessons"} found in the loaded page.
+              </p>
+            ) : (
+              <p
+                className="text-sm text-text-muted"
+                data-testid="lessons-attention-count-unavailable"
+              >
+                Count unavailable
+              </p>
+            )}
+            {queue.coverage === "truncated" && queue.countAvailable ? (
+              <p
+                className="text-sm text-text-muted"
+                data-testid="lessons-attention-count-all-sources"
+              >
+                {queue.loadedPendingCount} of {queue.totalPendingCount} pending lessons loaded
+                across all sources.
+              </p>
+            ) : null}
+          </div>
         ) : queue.countDefinitive ? (
           <p className="text-sm text-text-secondary" data-testid="lessons-attention-count">
-            {queue.items?.length ?? 0} pending
+            {queue.filteredLoadedCount} pending
           </p>
         ) : queue.countAvailable ? (
           <p
             className="text-sm text-text-secondary"
             data-testid="lessons-attention-count-loaded"
           >
-            {queue.items?.length ?? 0} of {queue.totalPendingCount} pending lessons loaded
+            {queue.loadedPendingCount} of {queue.totalPendingCount} pending lessons loaded.
           </p>
         ) : (
           <p className="text-sm text-text-muted" data-testid="lessons-attention-count-unavailable">

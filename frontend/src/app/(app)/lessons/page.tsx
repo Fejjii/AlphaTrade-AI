@@ -14,6 +14,8 @@ import {
   LessonsAttentionQueue,
   LessonsSourceAvailability,
   latestLessonTimestamp,
+  lessonsAllSourcesHref,
+  lessonsCoachingFilterHref,
   parseLessonsQuery,
   RecentReviewedLessons,
   type AcceptPath,
@@ -164,27 +166,48 @@ export default function LessonsPage() {
     };
   });
 
-  const loadedLessonIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const lesson of data?.pending.data?.items ?? []) ids.add(lesson.id);
-    for (const lesson of data?.accepted.data?.items ?? []) ids.add(lesson.id);
-    for (const lesson of data?.rejected.data?.items ?? []) ids.add(lesson.id);
-    return ids;
-  }, [data?.accepted.data?.items, data?.pending.data?.items, data?.rejected.data?.items]);
-
-  const highlightedLessonId = useMemo(() => {
+  const candidateLessonFromLoaded = useMemo(() => {
     if (!context.candidateId) return null;
-    if (loadedLessonIds.has(context.candidateId)) return context.candidateId;
-    if (deepLinkLesson?.available && deepLinkLesson.data?.id === context.candidateId) {
-      return context.candidateId;
+    for (const lesson of data?.pending.data?.items ?? []) {
+      if (lesson.id === context.candidateId) return lesson;
+    }
+    for (const lesson of data?.accepted.data?.items ?? []) {
+      if (lesson.id === context.candidateId) return lesson;
+    }
+    for (const lesson of data?.rejected.data?.items ?? []) {
+      if (lesson.id === context.candidateId) return lesson;
     }
     return null;
-  }, [context.candidateId, deepLinkLesson, loadedLessonIds]);
+  }, [
+    context.candidateId,
+    data?.accepted.data?.items,
+    data?.pending.data?.items,
+    data?.rejected.data?.items,
+  ]);
+
+  const candidateLesson = useMemo(() => {
+    if (candidateLessonFromLoaded) return candidateLessonFromLoaded;
+    if (deepLinkLesson?.available && deepLinkLesson.data?.id === context.candidateId) {
+      return deepLinkLesson.data;
+    }
+    return null;
+  }, [candidateLessonFromLoaded, context.candidateId, deepLinkLesson]);
+
+  const visibleInFilteredQueues = useMemo(() => {
+    if (!context.candidateId) return false;
+    const inAttention =
+      attentionQueue.items?.some((lesson) => lesson.id === context.candidateId) ?? false;
+    const inRecent =
+      recentReviewed.items?.some((lesson) => lesson.id === context.candidateId) ?? false;
+    return inAttention || inRecent;
+  }, [attentionQueue.items, context.candidateId, recentReviewed.items]);
+
+  const highlightedLessonId = visibleInFilteredQueues ? context.candidateId : null;
 
   const staleCandidateMessage = useMemo(() => {
     if (!context.candidateId) return null;
     if (loading || deepLinkLoading) return null;
-    if (highlightedLessonId) return null;
+    if (candidateLesson) return null;
     if (deepLinkLesson && !deepLinkLesson.available) {
       return `Lesson candidate ${context.candidateId} could not be verified (${deepLinkLesson.error ?? "unavailable"}). No unrelated lesson was opened.`;
     }
@@ -192,15 +215,19 @@ export default function LessonsPage() {
       return `Lesson candidate ${context.candidateId} did not match the loaded record. No unrelated lesson was opened.`;
     }
     return `Lesson candidate ${context.candidateId} was not found in loaded review queues. No unrelated lesson was opened.`;
-  }, [context.candidateId, deepLinkLesson, deepLinkLoading, highlightedLessonId, loading]);
+  }, [candidateLesson, context.candidateId, deepLinkLesson, deepLinkLoading, loading]);
 
-  const deepLinkOnlyLesson =
-    highlightedLessonId &&
-    context.candidateId &&
-    !loadedLessonIds.has(context.candidateId) &&
-    deepLinkLesson?.available
-      ? deepLinkLesson.data
-      : null;
+  const dedicatedDeepLinkLesson =
+    candidateLesson && !visibleInFilteredQueues ? candidateLesson : null;
+
+  const deepLinkOutsideLoadedPage = Boolean(
+    dedicatedDeepLinkLesson && !candidateLessonFromLoaded,
+  );
+  const deepLinkFilterMismatch = Boolean(
+    dedicatedDeepLinkLesson &&
+      candidateLessonFromLoaded &&
+      context.sourceFilter === "coaching",
+  );
 
   const handleAcceptSubmit = async (
     id: string,
@@ -338,7 +365,7 @@ export default function LessonsPage() {
       >
         <span className="text-zinc-500">Show:</span>
         <Link
-          href="/lessons"
+          href={lessonsAllSourcesHref(context.candidateId)}
           data-testid="lessons-source-all"
           aria-current={context.sourceFilter === "all" ? "true" : undefined}
           className={
@@ -350,7 +377,7 @@ export default function LessonsPage() {
           All sources
         </Link>
         <Link
-          href="/lessons?source=coaching"
+          href={lessonsCoachingFilterHref(context.candidateId)}
           data-testid="lessons-source-coaching"
           aria-current={context.sourceFilter === "coaching" ? "true" : undefined}
           className={
@@ -405,7 +432,7 @@ export default function LessonsPage() {
         </div>
       ) : null}
 
-      {deepLinkOnlyLesson ? (
+      {dedicatedDeepLinkLesson ? (
         <section
           aria-labelledby="lessons-deeplink-heading"
           data-testid="lessons-deeplink-only"
@@ -414,34 +441,35 @@ export default function LessonsPage() {
           <h2 id="lessons-deeplink-heading" className="text-lg font-semibold text-text-primary">
             Deep-linked lesson
           </h2>
-          {deepLinkOnlyLesson.status === "pending_review" &&
-          acceptingId === deepLinkOnlyLesson.id ? (
+          {dedicatedDeepLinkLesson.status === "pending_review" &&
+          acceptingId === dedicatedDeepLinkLesson.id ? (
             <LessonAcceptPanel
-              lesson={deepLinkOnlyLesson}
-              busy={busyId === deepLinkOnlyLesson.id}
-              onAccept={(payload) => handleAcceptSubmit(deepLinkOnlyLesson.id, payload)}
+              lesson={dedicatedDeepLinkLesson}
+              busy={busyId === dedicatedDeepLinkLesson.id}
+              onAccept={(payload) => handleAcceptSubmit(dedicatedDeepLinkLesson.id, payload)}
               onCancel={() => setAcceptingId(null)}
             />
           ) : (
             <LessonReviewCard
-              lesson={deepLinkOnlyLesson}
+              lesson={dedicatedDeepLinkLesson}
               highlighted
-              deepLinkNotice
-              busy={busyId === deepLinkOnlyLesson.id}
+              deepLinkNotice={deepLinkOutsideLoadedPage}
+              filterMismatchNotice={deepLinkFilterMismatch}
+              busy={busyId === dedicatedDeepLinkLesson.id}
               mutationLocked={mutationLocked}
-              mutationError={mutationErrors[deepLinkOnlyLesson.id] ?? null}
-              reviewerNotes={notes[deepLinkOnlyLesson.id]}
+              mutationError={mutationErrors[dedicatedDeepLinkLesson.id] ?? null}
+              reviewerNotes={notes[dedicatedDeepLinkLesson.id]}
               onReviewerNotesChange={(value: string) =>
-                setNotes((prev) => ({ ...prev, [deepLinkOnlyLesson.id]: value }))
+                setNotes((prev) => ({ ...prev, [dedicatedDeepLinkLesson.id]: value }))
               }
               onAccept={
-                deepLinkOnlyLesson.status === "pending_review" && !mutationLocked
-                  ? () => handleOpenAccept(deepLinkOnlyLesson)
+                dedicatedDeepLinkLesson.status === "pending_review" && !mutationLocked
+                  ? () => handleOpenAccept(dedicatedDeepLinkLesson)
                   : undefined
               }
               onReject={
-                deepLinkOnlyLesson.status === "pending_review"
-                  ? () => void handleReject(deepLinkOnlyLesson)
+                dedicatedDeepLinkLesson.status === "pending_review"
+                  ? () => void handleReject(dedicatedDeepLinkLesson)
                   : undefined
               }
             />

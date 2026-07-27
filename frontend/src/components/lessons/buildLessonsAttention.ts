@@ -27,6 +27,7 @@ export type AttentionQueueResult = {
   coverage: SourceCoverage | null;
   loadedPendingCount: number;
   totalPendingCount: number;
+  filteredLoadedCount: number;
   coverageMessage: string | null;
 };
 
@@ -47,6 +48,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
       coverage: null,
       loadedPendingCount: 0,
       totalPendingCount: 0,
+      filteredLoadedCount: 0,
       coverageMessage: null,
     };
   }
@@ -64,6 +66,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
       coverage: null,
       loadedPendingCount: 0,
       totalPendingCount: 0,
+      filteredLoadedCount: 0,
       coverageMessage: null,
     };
   }
@@ -77,6 +80,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
 
   const pendingItems = (page?.items ?? []).filter(requiresAttention);
   const filtered = filterLessonsBySource(pendingItems, input.sourceFilter);
+  const filteredLoadedCount = filtered.length;
   const countDefinitive = coverage === "complete";
   const countAvailable = true;
 
@@ -90,6 +94,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
       coverage,
       loadedPendingCount,
       totalPendingCount,
+      filteredLoadedCount,
       coverageMessage: null,
     };
   }
@@ -104,6 +109,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
       coverage,
       loadedPendingCount,
       totalPendingCount,
+      filteredLoadedCount,
       coverageMessage: null,
     };
   }
@@ -119,6 +125,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
       coverage,
       loadedPendingCount,
       totalPendingCount,
+      filteredLoadedCount,
       coverageMessage,
     };
   }
@@ -132,6 +139,7 @@ export function buildLessonsAttentionQueue(input: BuildAttentionInput): Attentio
     coverage,
     loadedPendingCount,
     totalPendingCount,
+    filteredLoadedCount,
     coverageMessage,
   };
 }

@@ -19,6 +19,7 @@ type LessonReviewCardProps = {
   busy?: boolean;
   mutationLocked?: boolean;
   deepLinkNotice?: boolean;
+  filterMismatchNotice?: boolean;
   mutationError?: string | null;
   onAccept?: () => void;
   onReject?: () => void;
@@ -36,6 +37,7 @@ export function LessonReviewCard({
   busy = false,
   mutationLocked = false,
   deepLinkNotice = false,
+  filterMismatchNotice = false,
   mutationError = null,
   onAccept,
   onReject,
@@ -88,6 +90,15 @@ export function LessonReviewCard({
             data-testid="lesson-deeplink-notice"
           >
             Loaded directly because this lesson is outside the current paginated queues.
+          </p>
+        ) : null}
+        {filterMismatchNotice ? (
+          <p
+            className="rounded border border-amber-700/50 bg-amber-950/30 p-2 text-xs text-amber-100"
+            data-testid="lesson-filter-mismatch-notice"
+          >
+            This lesson does not match the active coaching filter but was loaded because it was
+            requested directly.
           </p>
         ) : null}
         <div>

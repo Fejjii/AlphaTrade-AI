@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLessonsQuery } from "@/components/lessons/lessonsContext";
+import {
+  lessonsAllSourcesHref,
+  lessonsCoachingFilterHref,
+  parseLessonsQuery,
+} from "@/components/lessons/lessonsContext";
 import { resolveLessonRelationships } from "@/components/lessons/lessonDisplay";
 
 describe("parseLessonsQuery", () => {
@@ -10,6 +14,18 @@ describe("parseLessonsQuery", () => {
       candidateId: "abc",
       sourceFilter: "coaching",
     });
+  });
+});
+
+describe("lessons filter href helpers", () => {
+  it("preserves candidate in all-sources and coaching filter links", () => {
+    expect(lessonsAllSourcesHref("abc")).toBe("/lessons?candidate=abc");
+    expect(lessonsCoachingFilterHref("abc")).toBe("/lessons?source=coaching&candidate=abc");
+  });
+
+  it("omits candidate param when not provided", () => {
+    expect(lessonsAllSourcesHref()).toBe("/lessons");
+    expect(lessonsCoachingFilterHref()).toBe("/lessons?source=coaching");
   });
 });
 

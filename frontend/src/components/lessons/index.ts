@@ -26,7 +26,9 @@ export {
   type LessonsSourceStatus,
 } from "@/components/lessons/LessonsSourceAvailability";
 export {
+  lessonsAllSourcesHref,
   lessonsCandidateHref,
+  lessonsCoachingFilterHref,
   parseLessonsQuery,
   type LessonsQueryContext,
 } from "@/components/lessons/lessonsContext";

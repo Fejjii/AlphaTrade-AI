@@ -16,3 +16,19 @@ export function parseLessonsQuery(searchParams: SearchParamsLike): LessonsQueryC
 export function lessonsCandidateHref(candidateId: string): string {
   return `/lessons?candidate=${encodeURIComponent(candidateId)}`;
 }
+
+/** All-sources filter link, optionally preserving a deep-link candidate. */
+export function lessonsAllSourcesHref(candidateId?: string | null): string {
+  if (candidateId) {
+    return `/lessons?candidate=${encodeURIComponent(candidateId)}`;
+  }
+  return "/lessons";
+}
+
+/** Coaching filter link, optionally preserving a deep-link candidate. */
+export function lessonsCoachingFilterHref(candidateId?: string | null): string {
+  if (candidateId) {
+    return `/lessons?source=coaching&candidate=${encodeURIComponent(candidateId)}`;
+  }
+  return "/lessons?source=coaching";
+}

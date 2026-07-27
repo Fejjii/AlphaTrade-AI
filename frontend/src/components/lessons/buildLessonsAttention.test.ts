@@ -104,4 +104,23 @@ describe("buildLessonsAttentionQueue", () => {
     expect(result.queueStatus).toBe("unavailable");
     expect(result.countDefinitive).toBe(false);
   });
+
+  it("tracks filteredLoadedCount separately from loadedPendingCount", () => {
+    const result = buildLessonsAttentionQueue({
+      pending: ok({
+        items: [
+          lesson({ id: "l-coach", source_type: "coaching" }),
+          lesson({ id: "l-journal", source_type: "journal" }),
+        ],
+        total: 100,
+        limit: 50,
+        offset: 0,
+      }),
+      loading: false,
+      sourceFilter: "coaching",
+    });
+    expect(result.loadedPendingCount).toBe(2);
+    expect(result.filteredLoadedCount).toBe(1);
+    expect(result.totalPendingCount).toBe(100);
+  });
 });
