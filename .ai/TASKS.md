@@ -603,8 +603,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `219f2c8`; pre-merge CI 30257024612 success; post-merge main CI 30258584822
   success — frontend, backend, docker-build, deployment-safety, evaluation,
   e2e-smoke). Phase C3B1 complete.
-- Phase C remaining: Phase C3B2+ Knowledge redesign (unstarted);
-  Portfolio/risk split; analytics/charts (Phase D+).
+- Phase C3B2 deliverables (Knowledge hub only — no Portfolio/Risk/Analytics):
+  Premium Knowledge hub at `/knowledge`; list documents/chunks via existing APIs;
+  loaded-page library search + semantic search; source_type filters; recently added
+  (created_at desc); category honesty (definitive totals only for unfiltered complete
+  coverage); source context; `source_uri` relationship links only
+  (`journal://` / `lesson://` / `strategy://…/vN`); `?document=` deep-link verification
+  within loaded coverage; chunk detail retry; confirmed-PAPER posture; correction pass
+  for category/search/URL-sync/deeplink/retry/lockfile/mobile wrap;
+  no backend/API/migration changes.
+  Phase C3B2 / Knowledge Hub PR https://github.com/Fejjii/AlphaTrade-AI/pull/36 merged
+  (`041f0c4`; pre-merge head / implementation head
+  `a4aed6fc9913ae2c5bc6cf8d300ff56eab4b2495`; pre-merge CI 30264373051 success;
+  post-merge main CI 30267507921 success — frontend, backend, docker-build,
+  deployment-safety, evaluation, e2e-smoke). Phase C3B2 / Knowledge Hub DONE.
+- Phase C remaining: Portfolio/risk split; analytics/charts (Phase D+).
 
 ---
 
