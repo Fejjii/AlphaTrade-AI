@@ -1,10 +1,11 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { JournalHubChrome } from "@/components/journal/JournalHubChrome";
 import {
+  buildDeepLinkExclusionNotices,
   coverageFromPage,
   documentsCoverageMessage,
   filterDocumentsByLibraryQuery,
@@ -36,7 +37,13 @@ const DOCUMENT_PAGE_LIMIT = 50;
 
 export default function KnowledgePage() {
   const searchParams = useSearchParams();
-  const context = useMemo(() => parseKnowledgeQuery(searchParams), [searchParams]);
+  // Depend on serialized params so back/forward and mutated test params recompute context.
+  const searchKey = searchParams.toString();
+  const context = useMemo(
+    () => parseKnowledgeQuery(searchParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- searchKey captures URL changes
+    [searchKey],
+  );
   const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
   const posture = describeSafetyPosture(executionMode, realTradingEnabled);
 
@@ -64,6 +71,7 @@ export default function KnowledgePage() {
     Record<string, SourceResult<PaginatedRagChunks>>
   >({});
   const [chunkLoadingId, setChunkLoadingId] = useState<string | null>(null);
+  const chunkInFlightRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!context.documentId) {
@@ -147,29 +155,37 @@ export default function KnowledgePage() {
     };
   }, [context.documentId]);
 
-  useEffect(() => {
-    if (!expandedDocumentId) return;
-    if (chunkResults[expandedDocumentId]) return;
-
-    let cancelled = false;
-    setChunkLoadingId(expandedDocumentId);
-    void (async () => {
+  const fetchChunks = useCallback(async (documentId: string) => {
+    if (chunkInFlightRef.current === documentId) return;
+    chunkInFlightRef.current = documentId;
+    setChunkLoadingId(documentId);
+    try {
       const result = await loadSource(
         api.knowledge.listChunks({
-          document_id: expandedDocumentId,
+          document_id: documentId,
           limit: DOCUMENT_PAGE_LIMIT,
           offset: 0,
         }),
       );
-      if (cancelled) return;
-      setChunkResults((prev) => ({ ...prev, [expandedDocumentId]: result }));
-      setChunkLoadingId(null);
-    })();
+      setChunkResults((prev) => ({ ...prev, [documentId]: result }));
+    } finally {
+      if (chunkInFlightRef.current === documentId) {
+        chunkInFlightRef.current = null;
+      }
+      setChunkLoadingId((current) => (current === documentId ? null : current));
+    }
+  }, []);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [chunkResults, expandedDocumentId]);
+  useEffect(() => {
+    if (!expandedDocumentId) return;
+    if (chunkResults[expandedDocumentId]) return;
+    void fetchChunks(expandedDocumentId);
+  }, [chunkResults, expandedDocumentId, fetchChunks]);
+
+  const handleRetryChunks = (documentId: string) => {
+    if (chunkInFlightRef.current === documentId || chunkLoadingId === documentId) return;
+    void fetchChunks(documentId);
+  };
 
   const documentsAvailable = Boolean(data?.documents.available);
   const page = documentsAvailable ? data?.documents.data : null;
@@ -208,13 +224,22 @@ export default function KnowledgePage() {
   const dedicatedDeepLinkDocument =
     candidateDocument && !visibleInFilteredList ? candidateDocument : null;
 
-  const deepLinkOutsideLoadedPage = Boolean(
-    dedicatedDeepLinkDocument && !matchedFromLoaded,
-  );
-  const deepLinkFilterMismatch = Boolean(
-    dedicatedDeepLinkDocument &&
-      (context.sourceFilter !== "all" || Boolean(context.query.trim())),
-  );
+  const deepLinkNotices = useMemo(() => {
+    if (!dedicatedDeepLinkDocument) return [];
+    return buildDeepLinkExclusionNotices({
+      document: dedicatedDeepLinkDocument,
+      inActiveSourcePage: Boolean(matchedFromLoaded),
+      visibleInLibraryResults: visibleInFilteredList,
+      sourceFilter: context.sourceFilter,
+      libraryQuery: context.query,
+    });
+  }, [
+    context.query,
+    context.sourceFilter,
+    dedicatedDeepLinkDocument,
+    matchedFromLoaded,
+    visibleInFilteredList,
+  ]);
 
   const staleDocumentMessage = useMemo(() => {
     if (!context.documentId) return null;
@@ -269,6 +294,7 @@ export default function KnowledgePage() {
           documentId={expandedDocumentId}
           chunks={chunkResults[expandedDocumentId] ?? null}
           loading={chunkLoadingId === expandedDocumentId}
+          onRetry={() => handleRetryChunks(expandedDocumentId)}
         />
       );
     }
@@ -342,7 +368,7 @@ export default function KnowledgePage() {
         <section
           aria-labelledby="knowledge-deeplink-heading"
           data-testid="knowledge-deeplink-only"
-          className="space-y-3"
+          className="min-w-0 space-y-3"
         >
           <h2 id="knowledge-deeplink-heading" className="text-lg font-semibold text-text-primary">
             Deep-linked knowledge
@@ -350,8 +376,7 @@ export default function KnowledgePage() {
           <KnowledgeDocumentCard
             document={dedicatedDeepLinkDocument}
             highlighted
-            deepLinkNotice={deepLinkOutsideLoadedPage}
-            filterMismatchNotice={deepLinkFilterMismatch}
+            deepLinkNotices={deepLinkNotices}
             expanded={expandedDocumentId === dedicatedDeepLinkDocument.id}
             onToggleExpand={() => handleToggleExpand(dedicatedDeepLinkDocument.id)}
             detailSlot={detailByDocumentId[dedicatedDeepLinkDocument.id]}
@@ -363,6 +388,7 @@ export default function KnowledgePage() {
         documents={page?.items ?? null}
         available={documentsAvailable}
         coverage={coverage}
+        sourceFilter={context.sourceFilter}
         loading={loading && !data}
       />
 
@@ -373,6 +399,7 @@ export default function KnowledgePage() {
         coverage={coverage}
         loadedCount={page ? page.items.length : null}
         totalCount={page ? page.total : null}
+        matchCount={libraryFiltered ? libraryFiltered.length : null}
         sourceFilter={context.sourceFilter}
         libraryQuery={context.query}
         searchLimitedToLoadedPage={Boolean(context.query.trim())}
@@ -404,7 +431,8 @@ export default function KnowledgePage() {
           "Deep link ?document= is verified within loaded unfiltered coverage; there is no get-by-id API.",
           "Relationship links require stored source_uri schemes (journal://, lesson://, strategy://). IDs are never inferred across types.",
           "Edit, archive, and delete actions are not available through the current knowledge API.",
-          "Category distinctions use stored source_type values only (review_note, strategy_template, trade_journal, trading_playbook/general_note).",
+          "Category labels reflect primary backend producers: review_note←accepted lessons, trade_journal←journal sync, strategy_template←strategy library sync.",
+          "Global cross-category counts require sourceFilter=all with complete coverage; active filters never invent zeros for unrequested categories.",
           posture.paperConfirmed
             ? "Runtime posture verified as paper-only for this session."
             : "Paper posture is not fully verified — treat execution labels as conservative guidance only.",

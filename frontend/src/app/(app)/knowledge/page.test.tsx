@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceResult } from "@/components/workflows/sourceResult";
@@ -143,7 +143,10 @@ beforeEach(() => {
   resetAsyncState();
   safetyPosture.executionMode = "paper";
   safetyPosture.realTradingEnabled = false;
-  search.forEach((_, key) => search.delete(key));
+  // Copy keys first — deleting inside forEach can skip remaining params.
+  for (const key of [...search.keys()]) {
+    search.delete(key);
+  }
   pushMock.mockReset();
   listDocumentsMock.mockReset();
   listChunksMock.mockReset();
@@ -233,14 +236,108 @@ describe("KnowledgePage hub", () => {
     );
   });
 
-  it("supports loaded-page library search and states coverage limit", async () => {
+  it("supports loaded-page library search with match count under complete coverage", async () => {
     search.set("q", "pullback");
     render(<KnowledgePage />);
-    expect(await screen.findByTestId("knowledge-search-loaded-coverage")).toHaveTextContent(
+    expect(await screen.findByTestId("knowledge-search-match-count")).toHaveTextContent(
+      /1 match in the loaded page \(complete source coverage\)/i,
+    );
+    expect(screen.getByTestId("knowledge-search-loaded-coverage")).toHaveTextContent(
       /covers only the loaded page/i,
     );
+    expect(screen.queryByTestId("knowledge-count-loaded")).not.toBeInTheDocument();
     expect(screen.getByTestId("knowledge-document-card-doc-playbook")).toBeInTheDocument();
     expect(screen.queryByTestId("knowledge-document-card-doc-journal")).not.toBeInTheDocument();
+  });
+
+  it("keeps source loaded count separate from search matches when truncated", async () => {
+    search.set("q", "pullback");
+    asyncState.data!.documents = ok({
+      items: [playbookDoc, journalDoc],
+      total: 9,
+      limit: 2,
+      offset: 0,
+    });
+    render(<KnowledgePage />);
+    expect(await screen.findByTestId("knowledge-search-match-count")).toHaveTextContent(
+      /^1 match in the loaded page$/i,
+    );
+    expect(screen.getByTestId("knowledge-count-loaded")).toHaveTextContent(
+      /2 of 9 source documents loaded/i,
+    );
+    expect(screen.getByTestId("knowledge-search-loaded-coverage")).toHaveTextContent(
+      /2 of 9 source documents loaded/i,
+    );
+    expect(screen.queryByTestId("knowledge-count-complete")).not.toBeInTheDocument();
+  });
+
+  it("shows definitive category counts for all sources with complete coverage", async () => {
+    render(<KnowledgePage />);
+    expect(await screen.findByTestId("knowledge-category-count-manually_stored")).toHaveTextContent(
+      /1 document/i,
+    );
+    expect(screen.getByTestId("knowledge-category-count-journal_derived")).toHaveTextContent(
+      /1 document/i,
+    );
+    expect(screen.getByTestId("knowledge-category-count-accepted_lesson")).toHaveTextContent(
+      /1 document/i,
+    );
+    expect(screen.queryByTestId("knowledge-categories-filter-limited")).not.toBeInTheDocument();
+  });
+
+  it("shows presence-only categories for all sources when truncated", async () => {
+    asyncState.data!.documents = ok({
+      items: [playbookDoc],
+      total: 4,
+      limit: 1,
+      offset: 0,
+    });
+    render(<KnowledgePage />);
+    expect(await screen.findByTestId("knowledge-categories-truncated")).toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-category-presence-manually_stored")).toBeInTheDocument();
+    expect(screen.queryByTestId("knowledge-category-count-manually_stored")).not.toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-category-presence-journal_derived")).toHaveTextContent(
+      /not seen in loaded page/i,
+    );
+  });
+
+  it("limits category overview to the active source filter without false zeros", async () => {
+    search.set("source", "trading_playbook");
+    asyncState.data!.documents = ok({
+      items: [playbookDoc],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    render(<KnowledgePage />);
+    expect(await screen.findByTestId("knowledge-categories-filter-limited")).toHaveTextContent(
+      /limited to the active source filter/i,
+    );
+    expect(screen.getByTestId("knowledge-category-manually_stored")).toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-category-count-manually_stored")).toHaveTextContent(
+      /1 document/i,
+    );
+    expect(screen.queryByTestId("knowledge-category-journal_derived")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("knowledge-category-accepted_lesson")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("knowledge-category-strategy_or_rule")).not.toBeInTheDocument();
+  });
+
+  it("shows truncated active-filter category presence without inventing other zeros", async () => {
+    search.set("source", "trade_journal");
+    asyncState.data!.documents = ok({
+      items: [journalDoc],
+      total: 3,
+      limit: 1,
+      offset: 0,
+    });
+    render(<KnowledgePage />);
+    expect(await screen.findByTestId("knowledge-categories-filter-limited")).toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-categories-truncated")).toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-category-presence-journal_derived")).toHaveTextContent(
+      /present in loaded page/i,
+    );
+    expect(screen.queryByTestId("knowledge-category-count-journal_derived")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("knowledge-category-manually_stored")).not.toBeInTheDocument();
   });
 
   it("preserves query parameters through source filter links", async () => {
@@ -268,7 +365,7 @@ describe("KnowledgePage hub", () => {
     expect(screen.queryByTestId("knowledge-document-stale")).not.toBeInTheDocument();
   });
 
-  it("keeps a deep-linked document visible when excluded by active filter", async () => {
+  it("keeps a deep-linked document visible when excluded by active source filter", async () => {
     search.set("document", "doc-journal");
     search.set("source", "trading_playbook");
     asyncState.data!.documents = ok({
@@ -286,10 +383,67 @@ describe("KnowledgePage hub", () => {
     render(<KnowledgePage />);
     const deeplink = await screen.findByTestId("knowledge-deeplink-only");
     expect(within(deeplink).getByTestId("knowledge-document-card-doc-journal")).toBeInTheDocument();
-    expect(within(deeplink).getByTestId("knowledge-filter-mismatch-notice")).toBeInTheDocument();
-    expect(screen.queryByTestId("knowledge-document-card-doc-journal")).toBe(
-      within(deeplink).getByTestId("knowledge-document-card-doc-journal"),
+    expect(within(deeplink).getByTestId("knowledge-deeplink-notice")).toHaveTextContent(
+      /not present in the loaded page/i,
     );
+    expect(within(deeplink).getByTestId("knowledge-filter-mismatch-notice")).toHaveTextContent(
+      /active source filter/i,
+    );
+    expect(within(deeplink).queryByTestId("knowledge-query-mismatch-notice")).not.toBeInTheDocument();
+  });
+
+  it("uses library-query mismatch wording when only q excludes a deep-linked document", async () => {
+    search.set("document", "doc-playbook");
+    search.set("q", "zzz-no-match");
+    render(<KnowledgePage />);
+    const deeplink = await screen.findByTestId("knowledge-deeplink-only");
+    expect(within(deeplink).getByTestId("knowledge-query-mismatch-notice")).toHaveTextContent(
+      /library search query/i,
+    );
+    expect(within(deeplink).queryByTestId("knowledge-filter-mismatch-notice")).not.toBeInTheDocument();
+    expect(within(deeplink).getByTestId("knowledge-query-mismatch-notice")).not.toHaveTextContent(
+      /source filter/i,
+    );
+  });
+
+  it("reports both source-filter and library-query exclusion when both apply", async () => {
+    search.set("document", "doc-journal");
+    search.set("source", "trading_playbook");
+    search.set("q", "zzz-no-match");
+    asyncState.data!.documents = ok({
+      items: [playbookDoc],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    listDocumentsMock.mockResolvedValueOnce({
+      items: [playbookDoc, journalDoc, lessonDoc, strategyDoc],
+      total: 4,
+      limit: 50,
+      offset: 0,
+    });
+    render(<KnowledgePage />);
+    const deeplink = await screen.findByTestId("knowledge-deeplink-only");
+    expect(within(deeplink).getByTestId("knowledge-deeplink-notice")).toBeInTheDocument();
+    expect(within(deeplink).getByTestId("knowledge-filter-mismatch-notice")).toHaveTextContent(
+      /both the active source filter and the loaded-page library search query/i,
+    );
+  });
+
+  it("synchronises draft library search input when URL query changes", async () => {
+    search.set("q", "pullback");
+    const { rerender } = render(<KnowledgePage />);
+    const input = await screen.findByTestId("knowledge-library-search-input");
+    expect(input).toHaveValue("pullback");
+    fireEvent.change(input, { target: { value: "typing-in-progress" } });
+    expect(input).toHaveValue("typing-in-progress");
+    // URL unchanged: preserve in-progress typing
+    rerender(<KnowledgePage />);
+    expect(screen.getByTestId("knowledge-library-search-input")).toHaveValue("typing-in-progress");
+    // URL/navigation change: sync draft to libraryQuery
+    search.set("q", "discipline");
+    rerender(<KnowledgePage />);
+    expect(screen.getByTestId("knowledge-library-search-input")).toHaveValue("discipline");
   });
 
   it("shows stale message for invalid deep link and opens no unrelated record", async () => {
@@ -365,12 +519,30 @@ describe("KnowledgePage hub", () => {
   });
 
   it("uses mobile card layout structure without horizontal overflow wrappers", async () => {
+    asyncState.data!.documents = ok({
+      items: [
+        documentFixture({
+          id: "doc-long-id-abcdefghijklmnopqrstuvwxyz",
+          title: "Very long knowledge title that should wrap on narrow mobile viewports without overflow",
+          source_uri: "journal://entry-very-long-identifier-that-must-break-all",
+        }),
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
     render(<KnowledgePage />);
     const page = await screen.findByTestId("knowledge-hub-page");
     expect(page.className).toMatch(/pb-24/);
     const grid = screen.getByTestId("knowledge-document-grid");
     expect(grid.className).toMatch(/grid-cols-1/);
     expect(grid.className).not.toMatch(/overflow-x/);
+    const card = screen.getByTestId(
+      "knowledge-document-card-doc-long-id-abcdefghijklmnopqrstuvwxyz",
+    );
+    expect(card.className).toMatch(/min-w-0/);
+    expect(within(card).getByTestId("knowledge-document-id").className).toMatch(/break-all/);
+    expect(within(card).getByText(/source uri:/i).closest("p")?.className).toMatch(/break-all/);
   });
 
   it("runs semantic search through the existing API", async () => {
@@ -435,6 +607,54 @@ describe("KnowledgePage hub", () => {
     fireEvent.click(await screen.findByTestId("knowledge-expand-doc-playbook"));
     expect(await screen.findByTestId("knowledge-detail-doc-playbook")).toHaveTextContent(
       /detail chunk body/i,
+    );
+  });
+
+  it("shows detail failure with retrying state and recovers after successful retry", async () => {
+    listChunksMock.mockRejectedValueOnce(new Error("chunks down"));
+    render(<KnowledgePage />);
+    fireEvent.click(await screen.findByTestId("knowledge-expand-doc-playbook"));
+    expect(await screen.findByTestId("knowledge-detail-unavailable-doc-playbook")).toHaveTextContent(
+      /chunks down/i,
+    );
+    expect(screen.getByTestId("knowledge-detail-retry-doc-playbook")).toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-document-card-doc-playbook")).toBeInTheDocument();
+    expect(screen.getByTestId("knowledge-document-card-doc-journal")).toBeInTheDocument();
+
+    let resolveRetry: ((value: PaginatedRagChunks) => void) | undefined;
+    listChunksMock.mockImplementationOnce(
+      () =>
+        new Promise<PaginatedRagChunks>((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    const retryButton = screen.getByTestId("knowledge-detail-retry-doc-playbook");
+    fireEvent.click(retryButton);
+    fireEvent.click(retryButton);
+    expect(await screen.findByTestId("knowledge-detail-loading-doc-playbook")).toHaveTextContent(
+      /retrying document chunks/i,
+    );
+    expect(screen.queryByTestId("knowledge-detail-retry-doc-playbook")).not.toBeInTheDocument();
+    expect(listChunksMock).toHaveBeenCalledTimes(2); // initial failure + one retry
+    await act(async () => {
+      resolveRetry?.({
+        items: [
+          {
+            id: "chunk-retry",
+            document_id: "doc-playbook",
+            chunk_ordinal: 0,
+            content: "Recovered chunk",
+            metadata: { source_type: "trading_playbook" },
+            created_at: "2026-07-20T10:00:00.000Z",
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      });
+    });
+    expect(await screen.findByTestId("knowledge-detail-doc-playbook")).toHaveTextContent(
+      /recovered chunk/i,
     );
   });
 });

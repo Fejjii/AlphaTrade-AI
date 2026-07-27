@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import {
   KNOWLEDGE_SOURCE_FILTERS,
@@ -27,6 +27,12 @@ export function KnowledgeSearchFilters({
 }: KnowledgeSearchFiltersProps) {
   const router = useRouter();
   const [draftQuery, setDraftQuery] = useState(libraryQuery);
+
+  // Sync draft input to URL-controlled libraryQuery on navigation/clear/back-forward.
+  // Preserve in-progress typing while the URL value has not changed.
+  useEffect(() => {
+    setDraftQuery(libraryQuery);
+  }, [libraryQuery]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -96,7 +102,7 @@ export function KnowledgeSearchFilters({
       >
         <span className="text-text-muted">Type:</span>
         {KNOWLEDGE_SOURCE_FILTERS.map((filter) => {
-          const active = sourceFilter === filter;
+          const active = sourceFilter === "all" ? filter === "all" : sourceFilter === filter;
           return (
             <Link
               key={filter}

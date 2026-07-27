@@ -1,5 +1,10 @@
 import type { SourceCoverage } from "@/components/knowledge/knowledgeCoverage";
 import {
+  knowledgeSourceFilterLabel,
+  type KnowledgeSourceFilter,
+} from "@/components/knowledge/knowledgeContext";
+import {
+  categoryKindForSourceFilter,
   knowledgeCategory,
   type KnowledgeCategoryKind,
 } from "@/components/knowledge/knowledgeDisplay";
@@ -17,6 +22,7 @@ type KnowledgeCategorySummaryProps = {
   documents: RagDocument[] | null;
   available: boolean;
   coverage: SourceCoverage | null;
+  sourceFilter: KnowledgeSourceFilter;
   loading?: boolean;
 };
 
@@ -24,8 +30,13 @@ export function KnowledgeCategorySummary({
   documents,
   available,
   coverage,
+  sourceFilter,
   loading = false,
 }: KnowledgeCategorySummaryProps) {
+  const filteredView = sourceFilter !== "all";
+  const activeKind = categoryKindForSourceFilter(sourceFilter);
+  const globalCountsDefinitive = !filteredView && coverage === "complete";
+
   const counts = new Map<KnowledgeCategoryKind, number>();
   for (const kind of CATEGORY_ORDER.map((item) => item.kind)) {
     counts.set(kind, 0);
@@ -34,6 +45,13 @@ export function KnowledgeCategorySummary({
     const kind = knowledgeCategory(doc).kind;
     counts.set(kind, (counts.get(kind) ?? 0) + 1);
   }
+
+  const cards = filteredView
+    ? CATEGORY_ORDER.filter((item) => item.kind === activeKind).map((item) => ({
+        ...item,
+        label: knowledgeSourceFilterLabel(sourceFilter),
+      }))
+    : CATEGORY_ORDER;
 
   return (
     <section
@@ -46,7 +64,8 @@ export function KnowledgeCategorySummary({
           Knowledge categories
         </h2>
         <p className="mt-1 text-sm text-text-muted">
-          Distinctions use stored source_type values only. Counts require complete list coverage.
+          Distinctions use stored source_type values only. Global cross-category counts require an
+          unfiltered complete list.
         </p>
       </div>
 
@@ -66,7 +85,18 @@ export function KnowledgeCategorySummary({
         </div>
       ) : null}
 
-      {!loading && available && coverage === "truncated" ? (
+      {!loading && available && filteredView ? (
+        <div
+          role="status"
+          data-testid="knowledge-categories-filter-limited"
+          className="rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-secondary"
+        >
+          Category overview is limited to the active source filter (
+          {knowledgeSourceFilterLabel(sourceFilter)}). Unrequested categories are not shown as zero.
+        </div>
+      ) : null}
+
+      {!loading && available && !filteredView && coverage === "truncated" ? (
         <div
           role="status"
           data-testid="knowledge-categories-truncated"
@@ -77,20 +107,37 @@ export function KnowledgeCategorySummary({
         </div>
       ) : null}
 
+      {!loading && available && filteredView && coverage === "truncated" ? (
+        <div
+          role="status"
+          data-testid="knowledge-categories-truncated"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
+        >
+          Active-filter coverage is truncated. Showing loaded-page presence for this filter only,
+          without a definitive total.
+        </div>
+      ) : null}
+
       {!loading && available ? (
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {CATEGORY_ORDER.map(({ kind, label }) => {
+          {cards.map(({ kind, label }) => {
             const count = counts.get(kind) ?? 0;
             const presentOnLoadedPage = count > 0;
+            const showDefinitiveCount = filteredView
+              ? coverage === "complete"
+              : globalCountsDefinitive;
             return (
               <li
-                key={kind}
-                className="rounded-control border border-border-subtle px-3 py-2 text-sm"
+                key={`${kind}-${label}`}
+                className="min-w-0 rounded-control border border-border-subtle px-3 py-2 text-sm"
                 data-testid={`knowledge-category-${kind}`}
               >
-                <p className="font-medium text-text-primary">{label}</p>
-                {coverage === "complete" ? (
-                  <p className="mt-1 text-text-secondary" data-testid={`knowledge-category-count-${kind}`}>
+                <p className="break-words font-medium text-text-primary">{label}</p>
+                {showDefinitiveCount ? (
+                  <p
+                    className="mt-1 text-text-secondary"
+                    data-testid={`knowledge-category-count-${kind}`}
+                  >
                     {count} {count === 1 ? "document" : "documents"}
                   </p>
                 ) : (

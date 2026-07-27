@@ -23,6 +23,8 @@ type KnowledgeRecentListProps = {
   coverage: SourceCoverage | null;
   loadedCount: number | null;
   totalCount: number | null;
+  /** Matches found in the loaded page for the active library query. */
+  matchCount: number | null;
   sourceFilter: KnowledgeSourceFilter;
   libraryQuery: string;
   searchLimitedToLoadedPage: boolean;
@@ -41,6 +43,7 @@ export function KnowledgeRecentList({
   coverage,
   loadedCount,
   totalCount,
+  matchCount,
   sourceFilter,
   libraryQuery,
   searchLimitedToLoadedPage,
@@ -52,6 +55,7 @@ export function KnowledgeRecentList({
   coverageMessage,
 }: KnowledgeRecentListProps) {
   const filterLabel = knowledgeSourceFilterLabel(sourceFilter);
+  const queryActive = Boolean(libraryQuery.trim());
 
   return (
     <section
@@ -60,7 +64,7 @@ export function KnowledgeRecentList({
       className="space-y-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <h2 id="knowledge-recent-heading" className="text-lg font-semibold text-text-primary">
             Recently added knowledge
           </h2>
@@ -73,6 +77,31 @@ export function KnowledgeRecentList({
           <p className="text-sm text-text-muted" data-testid="knowledge-count-unavailable">
             Count unavailable
           </p>
+        ) : queryActive ? (
+          <div className="space-y-1 text-right">
+            {matchCount !== null ? (
+              <p
+                className="text-sm text-text-secondary"
+                data-testid="knowledge-search-match-count"
+              >
+                {matchCount} {matchCount === 1 ? "match" : "matches"} in the loaded page
+                {coverage === "complete" ? " (complete source coverage)" : ""}
+              </p>
+            ) : (
+              <p className="text-sm text-text-muted" data-testid="knowledge-count-unavailable">
+                Count unavailable
+              </p>
+            )}
+            {coverage === "truncated" && loadedCount !== null && totalCount !== null ? (
+              <p
+                className="text-sm text-text-muted"
+                data-testid="knowledge-count-loaded"
+              >
+                {loadedCount} of {totalCount} source documents loaded
+                {sourceFilter !== "all" ? ` · ${filterLabel}` : ""}
+              </p>
+            ) : null}
+          </div>
         ) : coverage === "complete" && loadedCount !== null && totalCount !== null ? (
           <p className="text-sm text-text-secondary" data-testid="knowledge-count-complete">
             {totalCount} {totalCount === 1 ? "document" : "documents"}
@@ -90,17 +119,19 @@ export function KnowledgeRecentList({
         )}
       </div>
 
-      {searchLimitedToLoadedPage && libraryQuery.trim() ? (
+      {searchLimitedToLoadedPage && queryActive ? (
         <div
           role="status"
           data-testid="knowledge-search-loaded-coverage"
           className="rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-secondary"
         >
           Library search for “{libraryQuery.trim()}” covers only the loaded page
-          {loadedCount !== null && totalCount !== null
-            ? ` (${loadedCount} of ${totalCount} documents)`
+          {matchCount !== null ? ` · ${matchCount} matches in the loaded page` : ""}
+          {coverage === "truncated" && loadedCount !== null && totalCount !== null
+            ? ` · ${loadedCount} of ${totalCount} source documents loaded`
             : ""}
-          . It is not a full-corpus scan.
+          . Match counts are not full-corpus result totals
+          {coverage === "complete" ? " beyond this complete loaded source page" : ""}.
         </div>
       ) : null}
 
@@ -142,7 +173,7 @@ export function KnowledgeRecentList({
           data-testid="knowledge-recent-empty"
           className="rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-secondary"
         >
-          {libraryQuery.trim()
+          {queryActive
             ? `No knowledge documents matched “${libraryQuery.trim()}” in the loaded page.`
             : sourceFilter === "all"
               ? "No knowledge documents are stored yet."
@@ -156,7 +187,7 @@ export function KnowledgeRecentList({
           data-testid="knowledge-recent-truncated-empty"
           className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
         >
-          {libraryQuery.trim()
+          {queryActive
             ? `No matches for “${libraryQuery.trim()}” were found in the loaded page. Coverage is truncated, so this is not an all-clear for the full library.`
             : `No ${sourceFilter === "all" ? "" : `${filterLabel.toLowerCase()} `}documents were found in the loaded page. Coverage is truncated, so empty results are not definitive.`}
         </div>

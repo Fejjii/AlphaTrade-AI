@@ -8,6 +8,7 @@ import {
   formatSourceType,
   knowledgeCategory,
   resolveKnowledgeRelationships,
+  type DeepLinkExclusionNotice,
 } from "@/components/knowledge/knowledgeDisplay";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,8 +17,7 @@ import type { RagDocument } from "@/lib/api/types";
 type KnowledgeDocumentCardProps = {
   document: RagDocument;
   highlighted?: boolean;
-  deepLinkNotice?: boolean;
-  filterMismatchNotice?: boolean;
+  deepLinkNotices?: DeepLinkExclusionNotice[];
   expanded?: boolean;
   onToggleExpand?: () => void;
   detailSlot?: ReactNode;
@@ -26,8 +26,7 @@ type KnowledgeDocumentCardProps = {
 export function KnowledgeDocumentCard({
   document,
   highlighted = false,
-  deepLinkNotice = false,
-  filterMismatchNotice = false,
+  deepLinkNotices = [],
   expanded = false,
   onToggleExpand,
   detailSlot,
@@ -43,13 +42,15 @@ export function KnowledgeDocumentCard({
       data-testid={`knowledge-document-card-${document.id}`}
       className={
         highlighted
-          ? "border-info-border ring-2 ring-focus"
-          : "border-border-subtle"
+          ? "min-w-0 border-info-border ring-2 ring-focus"
+          : "min-w-0 border-border-subtle"
       }
     >
-      <CardHeader className="space-y-2 pb-2">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <CardTitle className="text-base text-text-primary">{document.title}</CardTitle>
+      <CardHeader className="min-w-0 space-y-2 pb-2">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+          <CardTitle className="min-w-0 break-words text-base text-text-primary">
+            {document.title}
+          </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="info" data-testid="knowledge-category-badge">
               {category.label}
@@ -59,34 +60,27 @@ export function KnowledgeDocumentCard({
             </Badge>
           </div>
         </div>
-        {deepLinkNotice ? (
+        <p className="break-all text-xs text-text-muted" data-testid="knowledge-document-id">
+          ID: {document.id}
+        </p>
+        {deepLinkNotices.map((notice) => (
           <p
+            key={notice.kind}
             role="status"
-            data-testid="knowledge-deeplink-notice"
-            className="text-sm text-warning"
+            data-testid={notice.testId}
+            className="break-words text-sm text-warning"
           >
-            This document was opened from a direct link and was not present in the active filtered
-            list page.
+            {notice.message}
           </p>
-        ) : null}
-        {filterMismatchNotice ? (
-          <p
-            role="status"
-            data-testid="knowledge-filter-mismatch-notice"
-            className="text-sm text-warning"
-          >
-            This document does not match the active source filter, but remains visible because it
-            was requested directly.
-          </p>
-        ) : null}
+        ))}
       </CardHeader>
-      <CardContent className="space-y-3 text-sm text-text-secondary">
-        <div data-testid="knowledge-source-context" className="space-y-1">
-          <p>
+      <CardContent className="min-w-0 space-y-3 text-sm text-text-secondary">
+        <div data-testid="knowledge-source-context" className="min-w-0 space-y-1">
+          <p className="break-words">
             <span className="text-text-muted">Source type: </span>
             {formatSourceType(document.source_type)}
           </p>
-          <p>
+          <p className="break-all">
             <span className="text-text-muted">Source URI: </span>
             {document.source_uri?.trim() ? document.source_uri : "unavailable"}
           </p>
@@ -104,7 +98,7 @@ export function KnowledgeDocumentCard({
           </p>
         </div>
 
-        <ul className="space-y-1" data-testid="knowledge-relationships">
+        <ul className="min-w-0 space-y-1" data-testid="knowledge-relationships">
           {relationships.length === 0 ? (
             <li
               className="text-text-muted"
@@ -116,10 +110,11 @@ export function KnowledgeDocumentCard({
             relationships.map((link) => (
               <li
                 key={`${link.kind}-${link.id ?? "missing"}`}
+                className="min-w-0 break-words"
                 data-testid={`knowledge-relationship-${link.kind}`}
               >
                 {link.href && link.id ? (
-                  <Link href={link.href} className="underline text-text-primary">
+                  <Link href={link.href} className="break-all underline text-text-primary">
                     {link.label}: open
                   </Link>
                 ) : (

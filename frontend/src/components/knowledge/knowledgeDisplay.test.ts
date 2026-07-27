@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildDeepLinkExclusionNotices,
+  categoryKindForSourceFilter,
   filterDocumentsByLibraryQuery,
   knowledgeCategory,
   parseStoredSourceUri,
@@ -91,6 +93,51 @@ describe("knowledgeDisplay", () => {
     ]);
     expect(filterDocumentsByLibraryQuery(items, "entry-99").map((item) => item.id)).toEqual([
       "b",
+    ]);
+  });
+
+  it("maps source filters to category kinds", () => {
+    expect(categoryKindForSourceFilter("all")).toBeNull();
+    expect(categoryKindForSourceFilter("review_note")).toBe("accepted_lesson");
+    expect(categoryKindForSourceFilter("trade_journal")).toBe("journal_derived");
+    expect(categoryKindForSourceFilter("strategy_template")).toBe("strategy_or_rule");
+  });
+
+  it("describes deep-link exclusions without mislabeling query as source filter", () => {
+    const sample = doc({ id: "doc-1", title: "Alpha", source_type: "trade_journal" });
+    const queryOnly = buildDeepLinkExclusionNotices({
+      document: sample,
+      inActiveSourcePage: true,
+      visibleInLibraryResults: false,
+      sourceFilter: "all",
+      libraryQuery: "zzz",
+    });
+    expect(queryOnly.map((item) => item.kind)).toEqual(["library_query"]);
+    expect(queryOnly[0]?.message).toMatch(/library search query/i);
+    expect(queryOnly[0]?.message).not.toMatch(/source filter/i);
+
+    const sourceOnly = buildDeepLinkExclusionNotices({
+      document: sample,
+      inActiveSourcePage: false,
+      visibleInLibraryResults: false,
+      sourceFilter: "trading_playbook",
+      libraryQuery: "",
+    });
+    expect(sourceOnly.map((item) => item.kind)).toEqual([
+      "outside_loaded_page",
+      "source_filter",
+    ]);
+
+    const both = buildDeepLinkExclusionNotices({
+      document: sample,
+      inActiveSourcePage: false,
+      visibleInLibraryResults: false,
+      sourceFilter: "trading_playbook",
+      libraryQuery: "zzz",
+    });
+    expect(both.map((item) => item.kind)).toEqual([
+      "outside_loaded_page",
+      "source_filter_and_library_query",
     ]);
   });
 });

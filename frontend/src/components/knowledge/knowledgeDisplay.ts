@@ -1,3 +1,4 @@
+import type { KnowledgeSourceFilter } from "@/components/knowledge/knowledgeContext";
 import type { RagDocument } from "@/lib/api/types";
 
 export type KnowledgeCategoryKind =
@@ -6,6 +7,12 @@ export type KnowledgeCategoryKind =
   | "journal_derived"
   | "manually_stored"
   | "other";
+
+export type DeepLinkExclusionNotice = {
+  kind: "outside_loaded_page" | "source_filter" | "library_query" | "source_filter_and_library_query";
+  message: string;
+  testId: string;
+};
 
 export type KnowledgeRelationshipLink = {
   kind: "lesson" | "journal" | "strategy";
@@ -167,4 +174,92 @@ export function filterDocumentsByLibraryQuery(
       .toLowerCase();
     return haystack.includes(needle);
   });
+}
+
+export function documentMatchesLibraryQuery(document: RagDocument, query: string): boolean {
+  return filterDocumentsByLibraryQuery([document], query).length > 0;
+}
+
+/** Map an API source_type filter to the hub category kind it contributes to. */
+export function categoryKindForSourceFilter(
+  sourceFilter: KnowledgeSourceFilter,
+): KnowledgeCategoryKind | null {
+  switch (sourceFilter) {
+    case "all":
+      return null;
+    case "review_note":
+      return "accepted_lesson";
+    case "strategy_template":
+      return "strategy_or_rule";
+    case "trade_journal":
+      return "journal_derived";
+    case "trading_playbook":
+    case "general_note":
+      return "manually_stored";
+    case "risk_policy":
+      return "other";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build accurate deep-link exclusion notices.
+ * Distinguishes source-filter exclusion, library-query exclusion, both, and outside-loaded-page.
+ */
+export function buildDeepLinkExclusionNotices(input: {
+  document: RagDocument;
+  inActiveSourcePage: boolean;
+  visibleInLibraryResults: boolean;
+  sourceFilter: KnowledgeSourceFilter;
+  libraryQuery: string;
+}): DeepLinkExclusionNotice[] {
+  const { document, inActiveSourcePage, visibleInLibraryResults, sourceFilter, libraryQuery } =
+    input;
+  if (visibleInLibraryResults) return [];
+
+  const queryActive = Boolean(libraryQuery.trim());
+  const excludedBySourceFilter = sourceFilter !== "all" && !inActiveSourcePage;
+  const excludedByLibraryQuery =
+    queryActive &&
+    (inActiveSourcePage
+      ? true
+      : !documentMatchesLibraryQuery(document, libraryQuery));
+  const outsideLoadedPage = !inActiveSourcePage;
+
+  const notices: DeepLinkExclusionNotice[] = [];
+
+  if (outsideLoadedPage) {
+    notices.push({
+      kind: "outside_loaded_page",
+      testId: "knowledge-deeplink-notice",
+      message:
+        "This document was opened from a direct link and was not present in the loaded page for the active view.",
+    });
+  }
+
+  if (excludedBySourceFilter && excludedByLibraryQuery) {
+    notices.push({
+      kind: "source_filter_and_library_query",
+      testId: "knowledge-filter-mismatch-notice",
+      message:
+        "Excluded by both the active source filter and the loaded-page library search query, but remains visible because it was requested directly.",
+    });
+  } else if (excludedBySourceFilter) {
+    notices.push({
+      kind: "source_filter",
+      testId: "knowledge-filter-mismatch-notice",
+      message:
+        "Excluded by the active source filter, but remains visible because it was requested directly.",
+    });
+  } else if (excludedByLibraryQuery) {
+    notices.push({
+      kind: "library_query",
+      testId: "knowledge-query-mismatch-notice",
+      message:
+        "Excluded by the loaded-page library search query, but remains visible because it was requested directly.",
+    });
+  }
+
+  return notices;
 }

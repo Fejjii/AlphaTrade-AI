@@ -14,6 +14,9 @@ export {
   type KnowledgeSourceFilter,
 } from "@/components/knowledge/knowledgeContext";
 export {
+  buildDeepLinkExclusionNotices,
+  categoryKindForSourceFilter,
+  documentMatchesLibraryQuery,
   filterDocumentsByLibraryQuery,
   formatKnowledgeTimestamp,
   formatSourceType,
@@ -21,6 +24,7 @@ export {
   latestDocumentTimestamp,
   parseStoredSourceUri,
   resolveKnowledgeRelationships,
+  type DeepLinkExclusionNotice,
   type KnowledgeCategoryKind,
   type KnowledgeRelationshipLink,
 } from "@/components/knowledge/knowledgeDisplay";
