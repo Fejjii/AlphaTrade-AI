@@ -92,11 +92,11 @@ export function buildSetupBucketRows(buckets: JournalStatsBucket[]): SetupBucket
   return rows;
 }
 
-export function visibleSetupChartRows(
-  rows: SetupBucketRow[],
+export function visibleSetupChartRows<T extends SetupBucketRow>(
+  rows: T[],
   showAll: boolean,
   cap = SETUP_CHART_MOBILE_CAP,
-): { visible: SetupBucketRow[]; hiddenCount: number } {
+): { visible: T[]; hiddenCount: number } {
   if (showAll || rows.length <= cap) {
     return { visible: rows, hiddenCount: 0 };
   }

@@ -142,6 +142,10 @@ const defaultParams: AnalyticsFilterParams = {
     symbol: null,
     timeframe: null,
     portfolioSource: null,
+    setupId: null,
+    userStrategyId: null,
+    groupBy: "setup" as const,
+    bucketOffset: 0,
     ignoredParams: [],
   },
 };
@@ -157,6 +161,10 @@ function paramsForSymbol(symbol: string | null): AnalyticsFilterParams {
       symbol,
       timeframe: null,
       portfolioSource: null,
+      setupId: null,
+      userStrategyId: null,
+      groupBy: "setup" as const,
+      bucketOffset: 0,
       ignoredParams: [],
     },
   };
