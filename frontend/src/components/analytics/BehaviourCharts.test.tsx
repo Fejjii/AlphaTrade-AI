@@ -32,6 +32,8 @@ const apiParams: AnalyticsFilterParams = {
   comparison: {},
   analyticsWindow: { start_date: "2026-01-01", end_date: "2026-01-31" },
   learningWindow: { start_date: "2026-01-01", end_date: "2026-01-31" },
+  validation: { dimension: "condition", min_sample: 5 },
+  strategyQuality: { min_sample: 5 },
   state: {
     tab: "behaviour",
     dateFrom: "2026-01-01",
@@ -47,6 +49,8 @@ const apiParams: AnalyticsFilterParams = {
     marketRegime: null,
     groupBy: "setup",
     bucketOffset: 0,
+    minSample: 5,
+    dimension: "condition" as const,
     ignoredParams: [],
   },
 };

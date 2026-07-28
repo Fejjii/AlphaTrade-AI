@@ -12,12 +12,15 @@ import type {
 
 import { isoDateOnly, addDays } from "./format";
 import {
+  DEFAULT_VALIDATION_DIMENSION,
+  DEFAULT_VALIDATION_MIN_SAMPLE,
   TAB_SCOPED_PARAM_KEYS,
   buildAnalyticsApiParams,
   buildSetupAnalyticsApiParams,
   parseAnalyticsSearchParams,
   type AnalyticsTab,
   type SetupGroupBy,
+  type ValidationDimension,
 } from "./filterValidation";
 
 export type {
@@ -26,6 +29,7 @@ export type {
   AnalyticsTab,
   SetupAnalyticsApiParams,
   SetupGroupBy,
+  ValidationDimension,
 } from "./filterValidation";
 
 export type DatePreset = "7d" | "30d" | "90d" | "ytd" | "all";
@@ -57,6 +61,7 @@ function presetToRange(preset: DatePreset, now = new Date()): { from: string | n
 export {
   buildAnalyticsApiParams,
   buildFilterKey,
+  buildSharedAnalyticsFilterKey,
   buildSetupAnalyticsApiParams,
   buildSetupFilterKey,
   formatAnalyticsWindowFiltersSummary,
@@ -64,8 +69,10 @@ export {
   formatComparisonFiltersSummary,
   formatJournalStatsFiltersSummary,
   formatLearningAnalyticsFiltersSummary,
+  formatStrategyQualityFiltersSummary,
   formatSetupEvidenceFiltersSummary,
   formatSetupEvidenceLimitationNote,
+  formatValidationFiltersSummary,
 } from "./filterValidation";
 
 export type AnalyticsDraft = {
@@ -80,6 +87,7 @@ export type AnalyticsDraft = {
   journalSource?: JournalTradeSource | null;
   ruleCompliance?: TradeRuleCompliance | null;
   marketRegime?: MarketRegime | null;
+  minSample?: number | null;
 };
 
 function setOrDelete(params: URLSearchParams, key: string, value: string | null | undefined): void {
@@ -171,6 +179,16 @@ export function useAnalyticsFilters() {
         if ("marketRegime" in draft) {
           setOrDelete(params, "market_regime", draft.marketRegime);
         }
+        if ("minSample" in draft) {
+          if (
+            draft.minSample != null &&
+            draft.minSample !== DEFAULT_VALIDATION_MIN_SAMPLE
+          ) {
+            params.set("min_sample", String(draft.minSample));
+          } else if (state.tab === "validation") {
+            params.delete("min_sample");
+          }
+        }
       });
     },
     [pushParams, state.tab],
@@ -206,6 +224,16 @@ export function useAnalyticsFilters() {
     [pushParams],
   );
 
+  const setDimension = useCallback(
+    (dimension: ValidationDimension) => {
+      pushParams((params) => {
+        if (dimension === DEFAULT_VALIDATION_DIMENSION) params.delete("dimension");
+        else params.set("dimension", dimension);
+      });
+    },
+    [pushParams],
+  );
+
   const clearFilters = useCallback(() => {
     pushParams((params) => {
       params.delete("date_from");
@@ -232,6 +260,7 @@ export function useAnalyticsFilters() {
     applyDatePreset,
     setGroupBy,
     setBucketOffset,
+    setDimension,
     clearFilters,
     cleanupIgnoredParams,
   };

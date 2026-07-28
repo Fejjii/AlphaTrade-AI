@@ -170,7 +170,9 @@ export function CumulativePnlChart({
         </ResponsiveContainer>
       </div>
       <table className="sr-only" data-testid="cumulative-pnl-a11y-table">
-        <caption>Cumulative realised P&L (every 10th point plus final)</caption>
+        <caption>
+          Cumulative realised P&L (decimated evenly; first, last, and extremes kept)
+        </caption>
         <thead>
           <tr>
             <th>Point</th>

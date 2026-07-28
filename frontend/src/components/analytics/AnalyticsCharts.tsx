@@ -55,3 +55,23 @@ export const ComparisonChart = dynamic(
     loading: () => <ChartLoadingFallback title="Where does the human beat the system?" />,
   },
 );
+
+export const ValidationOutcomeChart = dynamic(
+  () =>
+    import("./ValidationOutcomeChart").then((module) => module.ValidationOutcomeChart),
+  {
+    ssr: false,
+    loading: () => (
+      <ChartLoadingFallback title="How do manual validation sessions actually end?" />
+    ),
+  },
+);
+
+export const SetupSuccessByDimension = dynamic(
+  () =>
+    import("./SetupSuccessByDimension").then((module) => module.SetupSuccessByDimension),
+  {
+    ssr: false,
+    loading: () => <ChartLoadingFallback title="Setup success rate by dimension" />,
+  },
+);

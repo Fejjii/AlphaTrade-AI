@@ -6,15 +6,36 @@ import type {
   MarketRegime,
   PaperPortfolioParams,
   PortfolioSourceFilter,
+  SetupDimension,
   SetupEvidenceParams,
+  StrategyQualityParams,
   TradeRuleCompliance,
 } from "@/lib/api/types";
 
 import { isoDateOnly } from "./format";
 
-export type AnalyticsTab = "overview" | "performance" | "setups" | "behaviour" | "comparison";
+export type AnalyticsTab =
+  | "overview"
+  | "performance"
+  | "setups"
+  | "behaviour"
+  | "validation"
+  | "comparison";
 
 export type SetupGroupBy = "setup" | "setup_version" | "strategy";
+
+export type ValidationDimension = SetupDimension;
+
+export const DEFAULT_VALIDATION_MIN_SAMPLE = 5;
+export const DEFAULT_VALIDATION_DIMENSION: ValidationDimension = "condition";
+
+export const VALIDATION_DIMENSION_OPTIONS: ValidationDimension[] = [
+  "condition",
+  "timeframe",
+  "symbol",
+  "direction",
+  "confidence_bucket",
+];
 
 export type AnalyticsFilterState = {
   tab: AnalyticsTab;
@@ -34,6 +55,10 @@ export type AnalyticsFilterState = {
   marketRegime: MarketRegime | null;
   groupBy: SetupGroupBy;
   bucketOffset: number;
+  /** Validation-tab sample gate (1–100). Default 5 when tab=validation. */
+  minSample: number;
+  /** Validation-tab LA setup-performance / ranking dimension. */
+  dimension: ValidationDimension;
   ignoredParams: string[];
 };
 
@@ -42,13 +67,21 @@ export type AnalyticsWindowParams = {
   end_date?: string;
 };
 
+export type ValidationApiParams = LearningAnalyticsParams & {
+  dimension: ValidationDimension;
+};
+
 export type AnalyticsFilterParams = {
   journal: JournalStatsParams;
   portfolio: PaperPortfolioParams;
   ruleComplianceJournal: JournalStatsParams;
   comparison: JournalComparisonParams;
   analyticsWindow: AnalyticsWindowParams;
+  /** Dates only — Behaviour learning discipline must not inherit Validation min_sample. */
   learningWindow: LearningAnalyticsParams;
+  /** Validation LA/SQ window: dates + min_sample (+ dimension for setup endpoints). */
+  validation: ValidationApiParams;
+  strategyQuality: StrategyQualityParams;
   state: AnalyticsFilterState;
 };
 
@@ -70,8 +103,10 @@ const VALID_TABS = new Set<AnalyticsTab>([
   "performance",
   "setups",
   "behaviour",
+  "validation",
   "comparison",
 ]);
+const VALID_DIMENSIONS = new Set<ValidationDimension>(VALIDATION_DIMENSION_OPTIONS);
 const VALID_PP_SOURCES = new Set<PortfolioSourceFilter>([
   "all",
   "proposal_flow",
@@ -104,11 +139,12 @@ const VALID_MARKET_REGIMES = new Set<MarketRegime>([
 
 const SETUPS_TAB: AnalyticsTab = "setups";
 const BEHAVIOUR_TAB: AnalyticsTab = "behaviour";
+const VALIDATION_TAB: AnalyticsTab = "validation";
 const COMPARISON_TAB: AnalyticsTab = "comparison";
 const JOURNAL_IDENTITY_TABS = new Set<AnalyticsTab>([SETUPS_TAB, BEHAVIOUR_TAB, COMPARISON_TAB]);
 
 /** Params never accepted as Portfolio identities on Analytics. */
-const ALWAYS_UNSUPPORTED_PARAM_KEYS = ["portfolio_setup", "min_sample"] as const;
+const ALWAYS_UNSUPPORTED_PARAM_KEYS = ["portfolio_setup"] as const;
 
 export function isValidIsoDate(value: string): boolean {
   if (!ISO_DATE_PATTERN.test(value)) return false;
@@ -150,6 +186,37 @@ function parseNonNegativeInt(value: string): number | null {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
   return parsed;
+}
+
+function parseMinSample(value: string): number | null {
+  const result = validateMinSampleInput(value);
+  return result.valid ? result.value : null;
+}
+
+export type MinSampleValidationResult =
+  | { valid: true; value: number }
+  | { valid: false; message: string };
+
+/** Interactive Validation filter validation — rejects blank, zero, negative, non-integer, >100. */
+export function validateMinSampleInput(value: string): MinSampleValidationResult {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { valid: false, message: "Enter an integer from 1 to 100." };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return { valid: false, message: "Min sample must be a whole number from 1 to 100." };
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return { valid: false, message: "Min sample must be a whole number from 1 to 100." };
+  }
+  if (parsed < 1) {
+    return { valid: false, message: "Min sample must be at least 1." };
+  }
+  if (parsed > 100) {
+    return { valid: false, message: "Min sample cannot exceed 100." };
+  }
+  return { valid: true, value: parsed };
 }
 
 function applySharedJournalStatsFilters(
@@ -336,6 +403,30 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
     }
   }
 
+  let minSample = DEFAULT_VALIDATION_MIN_SAMPLE;
+  const rawMinSample = searchParams.get("min_sample");
+  if (rawMinSample) {
+    if (tab !== VALIDATION_TAB) {
+      ignoredParams.push("min_sample");
+    } else {
+      const parsed = parseMinSample(rawMinSample);
+      if (parsed === null) ignoredParams.push("min_sample");
+      else minSample = parsed;
+    }
+  }
+
+  let dimension: ValidationDimension = DEFAULT_VALIDATION_DIMENSION;
+  const rawDimension = searchParams.get("dimension");
+  if (rawDimension) {
+    if (tab !== VALIDATION_TAB) {
+      ignoredParams.push("dimension");
+    } else if (VALID_DIMENSIONS.has(rawDimension as ValidationDimension)) {
+      dimension = rawDimension as ValidationDimension;
+    } else {
+      ignoredParams.push("dimension");
+    }
+  }
+
   for (const key of ALWAYS_UNSUPPORTED_PARAM_KEYS) {
     if (searchParams.get(key)) ignoredParams.push(key);
   }
@@ -355,6 +446,8 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
     marketRegime,
     groupBy,
     bucketOffset,
+    minSample,
+    dimension,
     ignoredParams: [...new Set(ignoredParams)],
   };
 }
@@ -370,6 +463,13 @@ export function buildAnalyticsApiParams(state: AnalyticsFilterState): AnalyticsF
   const comparison: JournalComparisonParams = {};
   const analyticsWindow: AnalyticsWindowParams = {};
   const learningWindow: LearningAnalyticsParams = {};
+  const validation: ValidationApiParams = {
+    dimension: state.dimension,
+    min_sample: state.minSample,
+  };
+  const strategyQuality: StrategyQualityParams = {
+    min_sample: state.minSample,
+  };
 
   applySharedJournalStatsFilters(journal, state);
 
@@ -389,6 +489,8 @@ export function buildAnalyticsApiParams(state: AnalyticsFilterState): AnalyticsF
   applyComparisonFilters(comparison, state);
   applyDateWindow(analyticsWindow, state);
   applyDateWindow(learningWindow, state);
+  applyDateWindow(validation, state);
+  applyDateWindow(strategyQuality, state);
 
   return {
     journal,
@@ -397,6 +499,8 @@ export function buildAnalyticsApiParams(state: AnalyticsFilterState): AnalyticsF
     comparison,
     analyticsWindow,
     learningWindow,
+    validation,
+    strategyQuality,
     state,
   };
 }
@@ -428,7 +532,21 @@ export function buildFilterKey(params: AnalyticsFilterParams): string {
     comparison: params.comparison,
     analyticsWindow: params.analyticsWindow,
     learningWindow: params.learningWindow,
+    validation: params.validation,
+    strategyQuality: params.strategyQuality,
   });
+}
+
+/** Request key for shared Overview sources: journal statistics + portfolio only. */
+export function buildSharedAnalyticsFilterKey(params: AnalyticsFilterParams): string {
+  return buildSharedJournalPortfolioKey(params.journal, params.portfolio);
+}
+
+export function buildSharedJournalPortfolioKey(
+  journal: JournalStatsParams,
+  portfolio: PaperPortfolioParams,
+): string {
+  return JSON.stringify({ journal, portfolio });
 }
 
 /** Request key for Behaviour rule-compliance journal statistics. */
@@ -443,6 +561,18 @@ export function buildAnalyticsWindowFilterKey(params: AnalyticsWindowParams): st
 
 /** Request key for validation-session learning discipline. */
 export function buildLearningWindowFilterKey(params: LearningAnalyticsParams): string {
+  return JSON.stringify(params);
+}
+
+/** Request key for Validation-tab LA endpoints (dates + min_sample + optional dimension). */
+export function buildValidationFilterKey(
+  params: LearningAnalyticsParams & { dimension?: ValidationDimension },
+): string {
+  return JSON.stringify(params);
+}
+
+/** Request key for Validation-tab strategy-quality summary. */
+export function buildStrategyQualityFilterKey(params: StrategyQualityParams): string {
   return JSON.stringify(params);
 }
 
@@ -507,15 +637,26 @@ function summarizeComparisonParams(params: JournalComparisonParams): string {
 }
 
 function summarizeDateWindowParams(
-  params: AnalyticsWindowParams | LearningAnalyticsParams,
+  params: AnalyticsWindowParams | LearningAnalyticsParams | StrategyQualityParams,
 ): string {
   return summarizeDateRangeFromIso(params.start_date ?? null, params.end_date ?? null);
+}
+
+function summarizeLearningAnalyticsParams(params: LearningAnalyticsParams): string {
+  const parts: string[] = [summarizeDateWindowParams(params)];
+  if (params.min_sample != null) parts.push(`min_sample ${params.min_sample}`);
+  return parts.join(" · ");
 }
 
 /** Filter-bar summary for shared controls (not endpoint-specific provenance). */
 export function formatAppliedFiltersSummary(state: AnalyticsFilterState): string {
   const parts: string[] = [];
   parts.push(summarizeDateRangeFromIso(state.dateFrom, state.dateTo));
+  if (state.tab === VALIDATION_TAB) {
+    parts.push(`min_sample ${state.minSample}`);
+    parts.push(`dimension ${state.dimension}`);
+    return parts.join(" · ");
+  }
   if (state.symbol) parts.push(`symbol ${state.symbol}`);
   if (state.timeframe) parts.push(`timeframe ${state.timeframe}`);
   if (state.tab === "performance" && state.portfolioSource && state.portfolioSource !== "all") {
@@ -552,9 +693,23 @@ export function formatAnalyticsWindowFiltersSummary(params: AnalyticsWindowParam
   return summarizeDateWindowParams(params);
 }
 
-/** Provenance for GET /learning-analytics/discipline (dates only). */
+/** Provenance for GET /learning-analytics/* — only dates (+ min_sample when sent). */
 export function formatLearningAnalyticsFiltersSummary(params: LearningAnalyticsParams): string {
-  return summarizeDateWindowParams(params);
+  return summarizeLearningAnalyticsParams(params);
+}
+
+/** Provenance for Validation setup-performance / ranking (dates + min_sample + dimension). */
+export function formatValidationFiltersSummary(
+  params: LearningAnalyticsParams & { dimension?: ValidationDimension },
+): string {
+  const parts: string[] = [summarizeLearningAnalyticsParams(params)];
+  if (params.dimension) parts.push(`dimension ${params.dimension}`);
+  return parts.join(" · ");
+}
+
+/** Provenance for GET /strategy-quality/summary. */
+export function formatStrategyQualityFiltersSummary(params: StrategyQualityParams): string {
+  return summarizeLearningAnalyticsParams(params);
 }
 
 /** Provenance for GET /journal/comparison (uses strategy_id query param). */
@@ -602,4 +757,5 @@ export const TAB_SCOPED_PARAM_KEYS = [
   "offset",
   "portfolio_setup",
   "min_sample",
+  "dimension",
 ] as const;
