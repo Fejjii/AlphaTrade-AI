@@ -170,10 +170,11 @@ describe("AppContext posture lifecycle (FP2-105)", () => {
     }
   });
 
-  it("never overlaps background refreshes while one is in flight", async () => {
+  it("never overlaps background requests for the same source, while siblings keep refreshing", async () => {
     const { result } = renderAppContext();
     await flushAsync();
     expect(api.health.get).toHaveBeenCalledTimes(1);
+    expect(api.providers.status).toHaveBeenCalledTimes(1);
 
     let resolveSlow: (value: HealthResponse) => void = () => undefined;
     vi.mocked(api.health.get).mockImplementationOnce(
@@ -183,13 +184,15 @@ describe("AppContext posture lifecycle (FP2-105)", () => {
         }),
     );
 
-    // First tick starts a refresh that stays in flight…
+    // First tick starts a health request that stays in flight…
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
     });
     expect(api.health.get).toHaveBeenCalledTimes(2);
+    expect(api.providers.status).toHaveBeenCalledTimes(2);
 
-    // …so further ticks and focus events must not start another one.
+    // …so further ticks and focus events must not stack another /health
+    // request, but the healthy sibling sources keep refreshing on schedule.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
     });
@@ -197,7 +200,10 @@ describe("AppContext posture lifecycle (FP2-105)", () => {
       window.dispatchEvent(new Event("focus"));
       await Promise.resolve();
     });
+    await flushAsync();
     expect(api.health.get).toHaveBeenCalledTimes(2);
+    expect(api.providers.status).toHaveBeenCalledTimes(4);
+    expect(api.risk.killSwitch).toHaveBeenCalledTimes(4);
 
     await act(async () => {
       resolveSlow(healthOk);
@@ -243,7 +249,7 @@ describe("AppContext posture lifecycle (FP2-105)", () => {
     expect(result.current.ctx.health?.version).toBe("newest");
   });
 
-  it("fails closed when a background refresh fails: posture becomes unverified, never a fake healthy state", async () => {
+  it("health-only failure makes posture unverified but keeps the provider result honest", async () => {
     const { result } = renderAppContext();
     await flushAsync();
     expect(result.current.posture.postureKnown).toBe(true);
@@ -256,11 +262,33 @@ describe("AppContext posture lifecycle (FP2-105)", () => {
     await flushAsync();
 
     expect(result.current.ctx.health).toBeNull();
-    expect(result.current.ctx.providers).toBeNull();
     expect(result.current.ctx.error).toBe("health unreachable");
     expect(result.current.posture.postureKnown).toBe(false);
     expect(result.current.posture.executionMode).toBeNull();
     expect(result.current.posture.realTradingEnabled).toBeNull();
+    // The successfully refreshed provider result is not erased by the
+    // sibling failure.
+    expect(result.current.ctx.providers).toEqual(providersOk);
+  });
+
+  it("provider-only failure sets providers unknown but preserves the verified health posture", async () => {
+    const { result } = renderAppContext();
+    await flushAsync();
+    expect(result.current.ctx.providers).toEqual(providersOk);
+
+    vi.mocked(api.providers.status).mockRejectedValueOnce(new Error("providers down"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
+    });
+    await flushAsync();
+
+    expect(result.current.ctx.providers).toBeNull();
+    expect(result.current.ctx.health).toEqual(healthOk);
+    expect(result.current.ctx.error).toBeNull();
+    expect(result.current.posture.postureKnown).toBe(true);
+    expect(result.current.posture.executionMode).toBe("paper");
+    expect(result.current.posture.realTradingEnabled).toBe(false);
   });
 
   it("keeps the authoritative kill-switch state with an explicit error when only its read fails", async () => {
@@ -297,5 +325,144 @@ describe("AppContext posture lifecycle (FP2-105)", () => {
     await flushAsync();
     expect(result.current.posture.postureKnown).toBe(true);
     expect(result.current.ctx.error).toBeNull();
+  });
+});
+
+describe("AppContext posture-source isolation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockHappyPath();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("a hanging /health request does not delay kill-switch or provider results", async () => {
+    let resolveHealth: (value: HealthResponse) => void = () => undefined;
+    vi.mocked(api.health.get).mockImplementationOnce(
+      () =>
+        new Promise<HealthResponse>((resolve) => {
+          resolveHealth = resolve;
+        }),
+    );
+
+    const { result } = renderAppContext();
+    await flushAsync();
+
+    // Kill switch and providers land while health is still pending.
+    expect(result.current.ctx.killSwitchStatus).toEqual(killSwitchOk);
+    expect(result.current.ctx.providers).toEqual(providersOk);
+    expect(result.current.ctx.health).toBeNull();
+    expect(result.current.posture.postureKnown).toBe(false);
+
+    await act(async () => {
+      resolveHealth(healthOk);
+      await Promise.resolve();
+    });
+    await flushAsync();
+    expect(result.current.ctx.health).toEqual(healthOk);
+    expect(result.current.posture.postureKnown).toBe(true);
+    expect(result.current.ctx.loading).toBe(false);
+  });
+
+  it("a hanging provider-status request does not delay health or kill-switch results", async () => {
+    let resolveProviders: (value: ProviderStatusResponse) => void = () => undefined;
+    vi.mocked(api.providers.status).mockImplementationOnce(
+      () =>
+        new Promise<ProviderStatusResponse>((resolve) => {
+          resolveProviders = resolve;
+        }),
+    );
+
+    const { result } = renderAppContext();
+    await flushAsync();
+
+    expect(result.current.ctx.health).toEqual(healthOk);
+    expect(result.current.posture.postureKnown).toBe(true);
+    expect(result.current.ctx.killSwitchStatus).toEqual(killSwitchOk);
+    expect(result.current.ctx.providers).toBeNull();
+
+    await act(async () => {
+      resolveProviders(providersOk);
+      await Promise.resolve();
+    });
+    await flushAsync();
+    expect(result.current.ctx.providers).toEqual(providersOk);
+  });
+
+  it("failed sources recover independently on the next refresh", async () => {
+    const { result } = renderAppContext();
+    await flushAsync();
+
+    // Tick 1: providers fail while health keeps succeeding.
+    vi.mocked(api.providers.status).mockRejectedValueOnce(new Error("providers down"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
+    });
+    await flushAsync();
+    expect(result.current.ctx.providers).toBeNull();
+    expect(result.current.ctx.health).toEqual(healthOk);
+
+    // Tick 2: providers recover on their own; health stayed verified all along.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
+    });
+    await flushAsync();
+    expect(result.current.ctx.providers).toEqual(providersOk);
+    expect(result.current.ctx.health).toEqual(healthOk);
+    expect(result.current.posture.postureKnown).toBe(true);
+  });
+
+  it("kill-switch mutation authority survives a stale background read and stays unblocked", async () => {
+    const { result } = renderAppContext();
+    await flushAsync();
+    expect(result.current.ctx.killSwitchStatus).toEqual(killSwitchOk);
+
+    // A background kill-switch read hangs…
+    let resolveStaleRead: (value: KillSwitchStatus) => void = () => undefined;
+    vi.mocked(api.risk.killSwitch).mockImplementationOnce(
+      () =>
+        new Promise<KillSwitchStatus>((resolve) => {
+          resolveStaleRead = resolve;
+        }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
+    });
+
+    // …while a mutation completes with the authoritative state.
+    const activated: KillSwitchStatus = {
+      ...killSwitchOk,
+      active: true,
+      execution_blocked: true,
+      version: 2,
+    };
+    vi.mocked(api.risk.activateKillSwitch).mockResolvedValueOnce(activated);
+    await act(async () => {
+      await result.current.ctx.setKillSwitchActive(true, "isolation test");
+    });
+    expect(result.current.ctx.killSwitchStatus).toEqual(activated);
+
+    // The pre-mutation read resolving late must be discarded.
+    await act(async () => {
+      resolveStaleRead(killSwitchOk);
+      await Promise.resolve();
+    });
+    await flushAsync();
+    expect(result.current.ctx.killSwitchStatus).toEqual(activated);
+
+    // Background kill-switch refreshes remain unblocked after the mutation
+    // invalidated the hanging read.
+    vi.mocked(api.risk.killSwitch).mockResolvedValueOnce(activated);
+    const readsBefore = vi.mocked(api.risk.killSwitch).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POSTURE_REFRESH_INTERVAL_MS);
+    });
+    await flushAsync();
+    expect(vi.mocked(api.risk.killSwitch).mock.calls.length).toBe(readsBefore + 1);
+    expect(result.current.ctx.killSwitchStatus).toEqual(activated);
   });
 });
