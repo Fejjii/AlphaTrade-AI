@@ -183,7 +183,7 @@ describe("useValidationSources", () => {
   });
 
   it("ignores stale responses when request keys change", async () => {
-    let resolveFirst: ((value: unknown) => void) | null = null;
+    let resolveFirst: (value: unknown) => void = () => undefined;
     vi.mocked(api.learningAnalytics.summary).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -238,7 +238,7 @@ describe("useValidationSources", () => {
     rerender({ next: newer });
 
     await waitFor(() => expect(result.current.summary?.data?.results_count).toBe(99));
-    resolveFirst?.({ ...summaryResponse, results_count: 1 });
+    resolveFirst({ ...summaryResponse, results_count: 1 });
     await act(async () => {
       await Promise.resolve();
     });
