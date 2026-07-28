@@ -18,19 +18,12 @@ import type { SetupPerformanceResponse } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
 import {
-  VALIDATION_DIMENSION_OPTIONS,
   type ValidationDimension,
 } from "./filterValidation";
 import { formatPercent } from "./format";
 import { NO_SERVER_FRESHNESS_TIMESTAMP_NOTE } from "./sourceFreshness";
-
-const DIMENSION_LABELS: Record<ValidationDimension, string> = {
-  condition: "Condition",
-  timeframe: "Timeframe",
-  symbol: "Symbol",
-  direction: "Direction",
-  confidence_bucket: "Confidence bucket",
-};
+import { ValidationDimensionToggle } from "./ValidationDimensionToggle";
+import { VALIDATION_DIMENSION_LABELS } from "./validationDimensionCopy";
 
 type DimensionRow = {
   key: string;
@@ -103,7 +96,7 @@ export function SetupSuccessByDimension({
   }, [source]);
 
   const chartHeight = Math.max(220, derived.rows.length * 36 + 40);
-  const ariaLabel = `Setup success rate by ${DIMENSION_LABELS[dimension]}, ${derived.rows.length} groups`;
+  const ariaLabel = `Setup success rate by ${VALIDATION_DIMENSION_LABELS[dimension]}, ${derived.rows.length} groups`;
 
   return (
     <ChartFrame
@@ -121,43 +114,11 @@ export function SetupSuccessByDimension({
       onRetry={onRetry}
       empty={!loading && source?.available ? derived.empty : false}
       emptyTitle="No setup-performance groups in this range"
-      emptyDescription="Complete validation sessions so detector-condition groups can be ranked by categorical success rate."
+      emptyDescription="Complete validation sessions so groups can be ranked by categorical success rate."
       derivedNote={NO_SERVER_FRESHNESS_TIMESTAMP_NOTE}
       data-testid="setup-success-by-dimension"
     >
-      <div
-        role="radiogroup"
-        aria-label="Validation setup-performance dimension"
-        className="flex flex-wrap gap-2"
-        data-testid="validation-dimension-toggle"
-      >
-        {VALIDATION_DIMENSION_OPTIONS.map((option) => {
-          const selected = option === dimension;
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              data-testid={`validation-dimension-${option}`}
-              className={
-                selected
-                  ? "rounded-control border border-accent bg-accent/15 px-3 py-1.5 text-sm text-text-primary"
-                  : "rounded-control border border-border-subtle bg-surface-0 px-3 py-1.5 text-sm text-text-secondary hover:border-border-strong"
-              }
-              onClick={() => onDimensionChange(option)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onDimensionChange(option);
-                }
-              }}
-            >
-              {DIMENSION_LABELS[option]}
-            </button>
-          );
-        })}
-      </div>
+      <ValidationDimensionToggle value={dimension} onChange={onDimensionChange} />
 
       <p
         className="text-caption text-text-muted"
@@ -218,7 +179,7 @@ export function SetupSuccessByDimension({
       <ul
         className="space-y-1 text-sm"
         data-testid="setup-success-by-dimension-list"
-        aria-label={`Success rate by ${DIMENSION_LABELS[dimension]}`}
+        aria-label={`Success rate by ${VALIDATION_DIMENSION_LABELS[dimension]}`}
       >
         {derived.rows.map((row) => (
           <li
@@ -236,7 +197,7 @@ export function SetupSuccessByDimension({
 
       <table className="sr-only" data-testid="setup-success-by-dimension-a11y-table">
         <caption>
-          Setup success rate by {DIMENSION_LABELS[dimension]} (categorical session outcomes)
+          Setup success rate by {VALIDATION_DIMENSION_LABELS[dimension]} (categorical session outcomes)
         </caption>
         <thead>
           <tr>

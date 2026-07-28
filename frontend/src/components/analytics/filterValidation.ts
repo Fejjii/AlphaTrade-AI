@@ -189,9 +189,34 @@ function parseNonNegativeInt(value: string): number | null {
 }
 
 function parseMinSample(value: string): number | null {
-  const parsed = parseNonNegativeInt(value);
-  if (parsed === null || parsed < 1 || parsed > 100) return null;
-  return parsed;
+  const result = validateMinSampleInput(value);
+  return result.valid ? result.value : null;
+}
+
+export type MinSampleValidationResult =
+  | { valid: true; value: number }
+  | { valid: false; message: string };
+
+/** Interactive Validation filter validation — rejects blank, zero, negative, non-integer, >100. */
+export function validateMinSampleInput(value: string): MinSampleValidationResult {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { valid: false, message: "Enter an integer from 1 to 100." };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return { valid: false, message: "Min sample must be a whole number from 1 to 100." };
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return { valid: false, message: "Min sample must be a whole number from 1 to 100." };
+  }
+  if (parsed < 1) {
+    return { valid: false, message: "Min sample must be at least 1." };
+  }
+  if (parsed > 100) {
+    return { valid: false, message: "Min sample cannot exceed 100." };
+  }
+  return { valid: true, value: parsed };
 }
 
 function applySharedJournalStatsFilters(

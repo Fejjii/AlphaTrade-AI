@@ -13,7 +13,11 @@ import type {
 } from "@/lib/api/types";
 
 import { formatDateRangeLabel } from "./format";
-import { JOURNAL_TRADE_SOURCE_OPTIONS } from "./filterValidation";
+import {
+  DEFAULT_VALIDATION_MIN_SAMPLE,
+  JOURNAL_TRADE_SOURCE_OPTIONS,
+  validateMinSampleInput,
+} from "./filterValidation";
 import type { AnalyticsDraft, AnalyticsFilterState, AnalyticsTab, DatePreset } from "./useAnalyticsFilters";
 
 const PRESETS: { value: DatePreset; label: string }[] = [
@@ -102,9 +106,11 @@ export function AnalyticsFilterBar({
   onClear,
 }: AnalyticsFilterBarProps) {
   const [draft, setDraft] = useState<Draft>(() => draftFromState(state));
+  const [minSampleError, setMinSampleError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(draftFromState(state));
+    setMinSampleError(null);
   }, [state]);
 
   const showPortfolioSource = state.tab === "performance";
@@ -176,11 +182,24 @@ export function AnalyticsFilterBar({
               min={1}
               max={100}
               value={draft.minSample}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, minSample: event.target.value }))
-              }
+              onChange={(event) => {
+                setMinSampleError(null);
+                setDraft((current) => ({ ...current, minSample: event.target.value }));
+              }}
               data-testid="analytics-min-sample"
+              aria-invalid={minSampleError ? true : undefined}
+              aria-describedby={minSampleError ? "analytics-min-sample-error" : undefined}
             />
+            {minSampleError ? (
+              <p
+                id="analytics-min-sample-error"
+                className="text-sm text-amber-500/90"
+                data-testid="analytics-min-sample-error"
+                role="alert"
+              >
+                {minSampleError}
+              </p>
+            ) : null}
           </div>
         ) : null}
         {showPortfolioSource ? (
@@ -389,8 +408,16 @@ export function AnalyticsFilterBar({
             if (showBehaviourFilters) next.ruleCompliance = draft.ruleCompliance || null;
             if (showComparisonFilters) next.marketRegime = draft.marketRegime || null;
             if (showValidationFilters) {
-              const parsed = Number(draft.minSample);
-              next.minSample = Number.isInteger(parsed) ? parsed : null;
+              const minSampleResult = validateMinSampleInput(draft.minSample);
+              if (!minSampleResult.valid) {
+                setMinSampleError(minSampleResult.message);
+                return;
+              }
+              setMinSampleError(null);
+              next.minSample =
+                minSampleResult.value === DEFAULT_VALIDATION_MIN_SAMPLE
+                  ? null
+                  : minSampleResult.value;
             }
             onApplyDraft(next);
           }}
@@ -457,8 +484,9 @@ export function AnalyticsFilterBar({
 
       {showValidationFilters ? (
         <p className="text-caption text-text-muted" data-testid="analytics-validation-filter-note">
-          Validation endpoints accept date range and min_sample only. Symbol, timeframe, setup, and
-          journal filters are not sent.
+          Validation endpoints receive date range and min_sample; setup-performance and
+          setup-ranking also receive the selected dimension. Journal and portfolio filters are
+          not sent.
         </p>
       ) : null}
 

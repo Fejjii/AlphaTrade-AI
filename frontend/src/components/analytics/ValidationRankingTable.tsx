@@ -11,6 +11,13 @@ import type {
 
 import { ChartFrame } from "./ChartFrame";
 import { NO_SERVER_FRESHNESS_TIMESTAMP_NOTE } from "./sourceFreshness";
+import type { ValidationDimension } from "./filterValidation";
+import {
+  validationDimensionIdentityLabel,
+  validationRankingCaption,
+  validationRankingSampleGateLabel,
+  validationRankingTitle,
+} from "./validationDimensionCopy";
 
 function formatScore(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -45,7 +52,7 @@ export function ValidationRankingTable({
         note: null as string | null,
         minSample: null as number | null,
         empty: true,
-        dimension: null as string | null,
+        dimension: null as ValidationDimension | null,
       };
     }
     return {
@@ -74,14 +81,27 @@ export function ValidationRankingTable({
     };
   }, [strategyQualitySource]);
 
+  const rankingTitle =
+    ranking.dimension != null
+      ? validationRankingTitle(ranking.dimension)
+      : "Validation ranking";
+  const identityColumnLabel =
+    ranking.dimension != null
+      ? validationDimensionIdentityLabel(ranking.dimension)
+      : "Group";
+  const tableCaption =
+    ranking.dimension != null
+      ? validationRankingCaption(ranking.dimension)
+      : "Learning-analytics setup ranking";
+
   return (
     <div className="space-y-6" data-testid="validation-ranking-section">
       <ChartFrame
-        title="Validation setup ranking"
+        title={rankingTitle}
         sourceLabel="GET /learning-analytics/setup-ranking"
         filtersSummary={rankingFiltersSummary}
         sampleSize={rankingSource?.available ? ranking.rows.length : null}
-        sampleLabel="ranked setups"
+        sampleLabel="ranked groups"
         loading={rankingLoading}
         error={
           rankingSource && !rankingSource.available
@@ -140,55 +160,50 @@ export function ValidationRankingTable({
             className="w-full min-w-[480px] text-left text-sm"
             data-testid="validation-ranking-data-table"
           >
-            <caption className="sr-only">
-              Learning-analytics setup ranking by detector condition identity
+            <caption className="sr-only" data-testid="validation-ranking-caption">
+              {tableCaption}
             </caption>
             <thead>
               <tr className="border-b border-border-subtle text-caption text-text-muted">
                 <th className="px-2 py-2 font-medium">Rank</th>
-                <th className="px-2 py-2 font-medium">Setup / condition</th>
+                <th
+                  className="px-2 py-2 font-medium"
+                  data-testid="validation-ranking-identity-header"
+                >
+                  {identityColumnLabel}
+                </th>
                 <th className="px-2 py-2 font-medium">Quality score</th>
                 <th className="px-2 py-2 font-medium">Sample size</th>
-                <th className="px-2 py-2 font-medium">Reliability</th>
+                <th className="px-2 py-2 font-medium">Sample gate</th>
               </tr>
             </thead>
             <tbody>
-              {ranking.rows.map((row) => {
-                const insufficient =
-                  ranking.minSample != null && row.sample_size < ranking.minSample;
-                return (
-                  <tr
-                    key={`${row.rank}-${row.setup_key}`}
-                    className={
-                      insufficient
-                        ? "border-b border-border-subtle/60 text-text-muted"
-                        : "border-b border-border-subtle/60 text-text-secondary"
-                    }
-                    data-testid={`validation-ranking-row-${row.setup_key}`}
+              {ranking.rows.map((row) => (
+                <tr
+                  key={`${row.rank}-${row.setup_key}`}
+                  className="border-b border-border-subtle/60 text-text-secondary"
+                  data-testid={`validation-ranking-row-${row.setup_key}`}
+                >
+                  <td className="px-2 py-2 font-data">
+                    {row.rank == null ? "—" : row.rank}
+                  </td>
+                  <td className="px-2 py-2">{row.setup_key || "—"}</td>
+                  <td className="px-2 py-2 font-data">
+                    {formatScore(row.quality_score)}
+                  </td>
+                  <td className="px-2 py-2 font-data" data-testid={`validation-ranking-n-${row.setup_key}`}>
+                    {row.sample_size == null ? "—" : row.sample_size}
+                  </td>
+                  <td
+                    className="px-2 py-2 font-data"
+                    data-testid={`validation-ranking-gate-${row.setup_key}`}
                   >
-                    <td className="px-2 py-2 font-data">
-                      {row.rank == null ? "—" : row.rank}
-                    </td>
-                    <td className="px-2 py-2">
-                      <Link
-                        href="/strategy-quality"
-                        className="text-accent underline-offset-2 hover:underline"
-                      >
-                        {row.setup_key || "—"}
-                      </Link>
-                    </td>
-                    <td className="px-2 py-2 font-data">
-                      {formatScore(row.quality_score)}
-                    </td>
-                    <td className="px-2 py-2 font-data" data-testid={`validation-ranking-n-${row.setup_key}`}>
-                      {row.sample_size == null ? "—" : row.sample_size}
-                    </td>
-                    <td className="px-2 py-2">
-                      {insufficient ? "insufficient data" : "ranked"}
-                    </td>
-                  </tr>
-                );
-              })}
+                    {ranking.minSample != null
+                      ? validationRankingSampleGateLabel(ranking.minSample)
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

@@ -19,19 +19,6 @@ function okSq(
   return { data, available: true, error: null, fallbackUsed: false };
 }
 
-const ranking: SetupRankingResponse = {
-  organization_id: "org",
-  user_id: null,
-  date_range: {},
-  min_sample: 5,
-  dimension: "condition",
-  note: "Ranking is observational — not an automation signal.",
-  ranked: [
-    { setup_key: "breakout", rank: 1, quality_score: 0.72, sample_size: 10 },
-    { setup_key: "thin", rank: 2, quality_score: 0.9, sample_size: 2 },
-  ],
-};
-
 const strategyQuality: StrategyQualitySummaryResponse = {
   organization_id: "org",
   user_id: null,
@@ -47,35 +34,101 @@ const strategyQuality: StrategyQualitySummaryResponse = {
   warnings: [],
 };
 
+function rankingForDimension(
+  dimension: SetupRankingResponse["dimension"],
+  ranked: SetupRankingResponse["ranked"],
+): SetupRankingResponse {
+  return {
+    organization_id: "org",
+    user_id: null,
+    date_range: {},
+    min_sample: 5,
+    dimension,
+    note: "Ranking is observational — not an automation signal.",
+    ranked,
+  };
+}
+
 describe("ValidationRankingTable", () => {
   afterEach(() => cleanup());
 
-  it("shows server ranking fields with sample-size honesty and links", () => {
+  it("uses condition dimension semantics from the ranking response", () => {
     render(
       <ValidationRankingTable
-        rankingSource={okRanking(ranking)}
+        rankingSource={okRanking(
+          rankingForDimension("condition", [
+            { setup_key: "breakout", rank: 1, quality_score: 0.72, sample_size: 10 },
+            { setup_key: "pullback", rank: 2, quality_score: 0.61, sample_size: 8 },
+          ]),
+        )}
         strategyQualitySource={okSq(strategyQuality)}
       />,
     );
-    expect(screen.getByTestId("validation-ranking-row-breakout")).toHaveTextContent("breakout");
-    expect(screen.getByTestId("validation-ranking-n-breakout")).toHaveTextContent("10");
-    expect(screen.getByTestId("validation-ranking-row-thin")).toHaveTextContent(/insufficient data/);
-    expect(screen.getByTestId("validation-ranking-n-thin")).toHaveTextContent("2");
-    expect(screen.getByTestId("validation-ranking-note")).toHaveTextContent(/not an automation/i);
-    expect(screen.getByTestId("validation-ranking-links")).toHaveTextContent("/strategy-quality");
-    expect(screen.getByTestId("validation-ranking-links")).toHaveTextContent(
-      "/paper-validation/run-sessions",
+    expect(screen.getByTestId("validation-ranking-table")).toHaveTextContent(
+      "Validation ranking by Condition",
     );
-    expect(screen.getByTestId("validation-sq-counts")).toHaveTextContent("2 of 4");
+    expect(screen.getByTestId("validation-ranking-identity-header")).toHaveTextContent("Condition");
+    expect(screen.getByTestId("validation-ranking-caption")).toHaveTextContent(
+      "Learning-analytics setup ranking by condition",
+    );
+    expect(screen.getByTestId("validation-ranking-table")).toHaveTextContent("ranked groups");
+    expect(screen.getByTestId("validation-ranking-gate-breakout")).toHaveTextContent("≥ 5");
+    expect(screen.getByTestId("validation-ranking-row-breakout")).not.toHaveTextContent(
+      /insufficient/i,
+    );
+    expect(screen.queryByRole("link", { name: "breakout" })).not.toBeInTheDocument();
+  });
+
+  it("uses symbol dimension semantics without calling values detector conditions", () => {
+    render(
+      <ValidationRankingTable
+        rankingSource={okRanking(
+          rankingForDimension("symbol", [
+            { setup_key: "BTCUSDT", rank: 1, quality_score: 0.55, sample_size: 12 },
+          ]),
+        )}
+        strategyQualitySource={okSq(strategyQuality)}
+      />,
+    );
+    expect(screen.getByTestId("validation-ranking-table")).toHaveTextContent(
+      "Validation ranking by Symbol",
+    );
+    expect(screen.getByTestId("validation-ranking-identity-header")).toHaveTextContent("Symbol");
+    expect(screen.getByTestId("validation-ranking-caption")).toHaveTextContent(
+      "Learning-analytics setup ranking by symbol",
+    );
+    expect(screen.getByTestId("validation-ranking-row-BTCUSDT")).toHaveTextContent("BTCUSDT");
+    expect(screen.getByTestId("validation-ranking-row-BTCUSDT")).not.toHaveTextContent(
+      /condition|detector/i,
+    );
+  });
+
+  it("shows general context links without row-specific strategy-quality links", () => {
+    render(
+      <ValidationRankingTable
+        rankingSource={okRanking(
+          rankingForDimension("condition", [
+            { setup_key: "breakout", rank: 1, quality_score: 0.72, sample_size: 10 },
+          ]),
+        )}
+        strategyQualitySource={okSq(strategyQuality)}
+      />,
+    );
+    expect(screen.getByTestId("validation-ranking-links")).toHaveTextContent("/strategy-quality");
+    expect(
+      screen.getByTestId("validation-ranking-links").querySelector('a[href="/strategy-quality"]'),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "breakout" })).not.toBeInTheDocument();
   });
 
   it("renders null-like missing scores as em dash, never zero", () => {
     render(
       <ValidationRankingTable
-        rankingSource={okRanking({
-          ...ranking,
-          ranked: [{ setup_key: "x", rank: 1, quality_score: Number.NaN, sample_size: 6 }],
-        })}
+        rankingSource={okRanking(
+          rankingForDimension("condition", [
+            { setup_key: "x", rank: 1, quality_score: Number.NaN, sample_size: 6 },
+          ]),
+        )}
         strategyQualitySource={null}
         strategyQualityLoading
       />,

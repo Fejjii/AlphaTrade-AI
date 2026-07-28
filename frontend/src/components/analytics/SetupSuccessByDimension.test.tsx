@@ -67,6 +67,29 @@ describe("SetupSuccessByDimension", () => {
     expect(onDimensionChange).toHaveBeenCalledWith("timeframe");
   });
 
+  it("supports arrow-key dimension navigation with roving focus", () => {
+    const onDimensionChange = vi.fn();
+    const { rerender } = render(
+      <SetupSuccessByDimension
+        source={ok(performance)}
+        dimension="condition"
+        onDimensionChange={onDimensionChange}
+      />,
+    );
+    const condition = screen.getByTestId("validation-dimension-condition");
+    condition.focus();
+    fireEvent.keyDown(condition, { key: "ArrowDown" });
+    expect(onDimensionChange).toHaveBeenCalledWith("timeframe");
+    rerender(
+      <SetupSuccessByDimension
+        source={ok(performance)}
+        dimension="timeframe"
+        onDimensionChange={onDimensionChange}
+      />,
+    );
+    expect(screen.getByTestId("validation-dimension-timeframe")).toHaveFocus();
+  });
+
   it("does not fabricate zeros on failure", () => {
     render(
       <SetupSuccessByDimension

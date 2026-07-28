@@ -13,6 +13,7 @@ import {
   formatSetupEvidenceFiltersSummary,
   formatSetupEvidenceLimitationNote,
   parseAnalyticsSearchParams,
+  validateMinSampleInput,
 } from "./filterValidation";
 
 const SETUP_UUID = "11111111-1111-1111-1111-111111111111";
@@ -30,6 +31,21 @@ const EMPTY_SCOPED = {
   minSample: 5,
   dimension: "condition" as const,
 };
+
+describe("validateMinSampleInput", () => {
+  it("accepts integers from 1 to 100", () => {
+    expect(validateMinSampleInput("5")).toEqual({ valid: true, value: 5 });
+    expect(validateMinSampleInput("100")).toEqual({ valid: true, value: 100 });
+  });
+
+  it("rejects blank, zero, non-integers, and values above 100", () => {
+    expect(validateMinSampleInput("").valid).toBe(false);
+    expect(validateMinSampleInput("0").valid).toBe(false);
+    expect(validateMinSampleInput("101").valid).toBe(false);
+    expect(validateMinSampleInput("3.5").valid).toBe(false);
+    expect(validateMinSampleInput("-1").valid).toBe(false);
+  });
+});
 
 describe("parseAnalyticsSearchParams", () => {
   it("rejects invalid ISO dates and reversed ranges", () => {
