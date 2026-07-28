@@ -27,6 +27,8 @@ const EMPTY_SCOPED = {
   marketRegime: null,
   groupBy: "setup" as const,
   bucketOffset: 0,
+  minSample: 5,
+  dimension: "condition" as const,
 };
 
 describe("parseAnalyticsSearchParams", () => {
@@ -133,13 +135,53 @@ describe("parseAnalyticsSearchParams", () => {
     expect(state.bucketOffset).toBe(20);
   });
 
-  it("accepts behaviour and comparison tabs", () => {
+  it("accepts behaviour, validation, and comparison tabs", () => {
     expect(parseAnalyticsSearchParams(new URLSearchParams("tab=behaviour")).tab).toBe(
       "behaviour",
+    );
+    expect(parseAnalyticsSearchParams(new URLSearchParams("tab=validation")).tab).toBe(
+      "validation",
     );
     expect(parseAnalyticsSearchParams(new URLSearchParams("tab=comparison")).tab).toBe(
       "comparison",
     );
+  });
+
+  it("accepts Validation min_sample and dimension with defaults", () => {
+    const defaults = parseAnalyticsSearchParams(new URLSearchParams("tab=validation"));
+    expect(defaults.minSample).toBe(5);
+    expect(defaults.dimension).toBe("condition");
+
+    const parsed = parseAnalyticsSearchParams(
+      new URLSearchParams("tab=validation&min_sample=12&dimension=timeframe"),
+    );
+    expect(parsed.minSample).toBe(12);
+    expect(parsed.dimension).toBe("timeframe");
+    expect(parsed.ignoredParams).not.toContain("min_sample");
+    expect(parsed.ignoredParams).not.toContain("dimension");
+  });
+
+  it("ignores invalid Validation filters without coercion", () => {
+    const state = parseAnalyticsSearchParams(
+      new URLSearchParams(
+        "tab=validation&min_sample=0&dimension=setup_name&setup_id=11111111-1111-1111-1111-111111111111&source=manual",
+      ),
+    );
+    expect(state.minSample).toBe(5);
+    expect(state.dimension).toBe("condition");
+    expect(state.setupId).toBeNull();
+    expect(state.ignoredParams).toEqual(
+      expect.arrayContaining(["min_sample", "dimension", "setup_id", "source"]),
+    );
+  });
+
+  it("ignores min_sample and dimension outside Validation tab", () => {
+    const state = parseAnalyticsSearchParams(
+      new URLSearchParams("tab=behaviour&min_sample=8&dimension=symbol"),
+    );
+    expect(state.minSample).toBe(5);
+    expect(state.dimension).toBe("condition");
+    expect(state.ignoredParams).toEqual(expect.arrayContaining(["min_sample", "dimension"]));
   });
 
   it("accepts journal setup_id UUID only on behaviour/comparison", () => {
@@ -217,6 +259,8 @@ describe("buildAnalyticsApiParams", () => {
       marketRegime: null,
       groupBy: "setup",
       bucketOffset: 0,
+      minSample: 5,
+      dimension: "condition" as const,
       ignoredParams: [],
     });
     expect(params.journal.user_strategy_id).toBe(STRATEGY_UUID);
@@ -241,6 +285,8 @@ describe("buildSetupAnalyticsApiParams", () => {
       marketRegime: null,
       groupBy: "setup_version",
       bucketOffset: 40,
+      minSample: 5,
+      dimension: "condition" as const,
       ignoredParams: [],
     });
     expect(params.journal.group_by).toBe("setup_version");
@@ -269,6 +315,8 @@ describe("buildSetupAnalyticsApiParams", () => {
       marketRegime: null,
       groupBy: "setup",
       bucketOffset: 0,
+      minSample: 5,
+      dimension: "condition" as const,
       ignoredParams: [],
     });
     expect(behaviour.ruleComplianceJournal.group_by).toBe("rule_compliance");
@@ -281,6 +329,52 @@ describe("buildSetupAnalyticsApiParams", () => {
       end_date: "2026-01-31",
     });
     expect(behaviour.portfolio.setup).toBeUndefined();
+    expect(behaviour.learningWindow).toEqual({
+      start_date: "2026-01-01",
+      end_date: "2026-01-31",
+    });
+    expect(behaviour.learningWindow.min_sample).toBeUndefined();
+  });
+
+  it("builds Validation API params with dates and min_sample only", () => {
+    const validation = buildAnalyticsApiParams({
+      tab: "validation",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      portfolioSource: null,
+      setupId: SETUP_UUID,
+      userStrategyId: STRATEGY_UUID,
+      strategyVersionId: null,
+      journalSource: "manual",
+      ruleCompliance: "compliant",
+      marketRegime: "trending_up",
+      groupBy: "setup",
+      bucketOffset: 0,
+      minSample: 8,
+      dimension: "direction",
+      ignoredParams: [],
+    });
+    expect(validation.validation).toEqual({
+      start_date: "2026-01-01",
+      end_date: "2026-01-31",
+      min_sample: 8,
+      dimension: "direction",
+    });
+    expect(validation.strategyQuality).toEqual({
+      start_date: "2026-01-01",
+      end_date: "2026-01-31",
+      min_sample: 8,
+    });
+    expect(validation.learningWindow).toEqual({
+      start_date: "2026-01-01",
+      end_date: "2026-01-31",
+    });
+    expect(validation.validation).not.toHaveProperty("symbol");
+    expect(validation.validation).not.toHaveProperty("timeframe");
+    expect(validation.validation).not.toHaveProperty("setup_id");
+    expect(validation.validation).not.toHaveProperty("source");
   });
 });
 
@@ -330,12 +424,20 @@ describe("endpoint-specific provenance summaries", () => {
     expect(summary).not.toContain("setup");
   });
 
-  it("formatLearningAnalyticsFiltersSummary shows dates only", () => {
+  it("formatLearningAnalyticsFiltersSummary shows dates and min_sample when sent", () => {
     const summary = formatLearningAnalyticsFiltersSummary({
       start_date: "2026-02-01",
     });
     expect(summary).toBe("from 2026-02-01");
     expect(summary).not.toContain("symbol");
+
+    const withMin = formatLearningAnalyticsFiltersSummary({
+      start_date: "2026-02-01",
+      min_sample: 8,
+    });
+    expect(withMin).toContain("from 2026-02-01");
+    expect(withMin).toContain("min_sample 8");
+    expect(withMin).not.toContain("symbol");
   });
 });
 
@@ -373,6 +475,8 @@ describe("formatAppliedFiltersSummary", () => {
       marketRegime: null,
       groupBy: "setup",
       bucketOffset: 0,
+      minSample: 5,
+      dimension: "condition" as const,
       ignoredParams: [],
     });
     expect(summary).toContain(`setup_id ${SETUP_UUID}`);
@@ -396,6 +500,8 @@ describe("formatAppliedFiltersSummary", () => {
       marketRegime: null,
       groupBy: "strategy",
       bucketOffset: 0,
+      minSample: 5,
+      dimension: "condition" as const,
       ignoredParams: [],
     });
     expect(summary).toContain("source paper_execution");
@@ -420,6 +526,8 @@ describe("buildSetupAnalyticsApiParams journal source", () => {
       marketRegime: null,
       groupBy: "setup",
       bucketOffset: 0,
+      minSample: 5,
+      dimension: "condition" as const,
       ignoredParams: [],
     });
     expect(params.journal.source).toBe("backtest");
@@ -444,6 +552,8 @@ describe("setup evidence provenance", () => {
     marketRegime: null,
     groupBy: "setup" as const,
     bucketOffset: 0,
+    minSample: 5,
+    dimension: "condition" as const,
     ignoredParams: [] as string[],
   };
 

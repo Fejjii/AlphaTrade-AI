@@ -9,6 +9,7 @@ import {
   OverviewStats,
   PerformanceCharts,
   SetupsCharts,
+  ValidationCharts,
   formatAppliedFiltersSummary,
   formatSetupEvidenceFiltersSummary,
   formatSetupEvidenceLimitationNote,
@@ -30,6 +31,7 @@ const TAB_ITEMS = [
   { id: "performance", label: "Performance" },
   { id: "setups", label: "Setups" },
   { id: "behaviour", label: "Behaviour" },
+  { id: "validation", label: "Validation" },
   { id: "comparison", label: "Comparison" },
 ];
 
@@ -43,6 +45,7 @@ export default function AnalyticsPage() {
     applyDatePreset,
     setGroupBy,
     setBucketOffset,
+    setDimension,
     clearFilters,
     cleanupIgnoredParams,
   } = useAnalyticsFilters();
@@ -87,7 +90,7 @@ export default function AnalyticsPage() {
     <div className="space-y-8 max-w-full" data-testid="analytics-page">
       <PageHeader
         title="Analytics"
-        description="Paper-only statistical hub — overview, performance, setups, behaviour, and human-versus-system comparison with honest source states."
+        description="Paper-only statistical hub — overview, performance, setups, behaviour, validation, and human-versus-system comparison with honest source states."
         meta={<VerifiedPaperModeIndicator />}
       />
 
@@ -110,6 +113,7 @@ export default function AnalyticsPage() {
 
         {state.tab !== "setups" &&
         state.tab !== "behaviour" &&
+        state.tab !== "validation" &&
         state.tab !== "comparison" &&
         shared.partialData ? (
           <p
@@ -211,6 +215,16 @@ export default function AnalyticsPage() {
         <TabPanel id="behaviour">
           {state.tab === "behaviour" ? (
             <BehaviourCharts apiParams={apiParams} enabled />
+          ) : null}
+        </TabPanel>
+
+        <TabPanel id="validation">
+          {state.tab === "validation" ? (
+            <ValidationCharts
+              apiParams={apiParams}
+              enabled
+              onDimensionChange={setDimension}
+            />
           ) : null}
         </TabPanel>
 

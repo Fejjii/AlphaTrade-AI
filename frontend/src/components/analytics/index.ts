@@ -14,6 +14,10 @@ export { SetupBucketTable } from "./SetupBucketTable";
 export { SetupEvidencePanel } from "./SetupEvidencePanel";
 export { SetupWinRateChart } from "./SetupWinRateChart";
 export { SetupExpectancyChart } from "./SetupExpectancyChart";
+export { SetupSuccessByDimension } from "./SetupSuccessByDimension";
+export { ValidationCharts } from "./ValidationCharts";
+export { ValidationOutcomeChart } from "./ValidationOutcomeChart";
+export { ValidationRankingTable } from "./ValidationRankingTable";
 export { useSetupAnalyticsSources } from "./useSetupAnalyticsSources";
 export * from "./chartTransforms";
 export * from "./comparisonTransforms";
@@ -32,7 +36,9 @@ export type {
   DatePreset,
   SetupAnalyticsApiParams,
   SetupGroupBy,
+  ValidationDimension,
 } from "./useAnalyticsFilters";
 export { useAnalyticsSources } from "./useAnalyticsSources";
 export { useBehaviourSources } from "./useBehaviourSources";
 export { useComparisonSources } from "./useComparisonSources";
+export { useValidationSources } from "./useValidationSources";

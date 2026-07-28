@@ -148,6 +148,8 @@ function baseState(symbol: string | null = null) {
     marketRegime: null,
     groupBy: "setup" as const,
     bucketOffset: 0,
+    minSample: 5,
+    dimension: "condition" as const,
     ignoredParams: [],
   };
 }
@@ -159,6 +161,8 @@ const defaultParams: AnalyticsFilterParams = {
   comparison: {},
   analyticsWindow: {},
   learningWindow: {},
+  validation: { dimension: "condition", min_sample: 5 },
+  strategyQuality: { min_sample: 5 },
   state: baseState(),
 };
 
@@ -174,6 +178,8 @@ function paramsForSymbol(symbol: string | null): AnalyticsFilterParams {
     comparison: symbol ? { symbol } : {},
     analyticsWindow: {},
     learningWindow: {},
+    validation: { dimension: "condition", min_sample: 5 },
+    strategyQuality: { min_sample: 5 },
     state: baseState(symbol),
   };
 }

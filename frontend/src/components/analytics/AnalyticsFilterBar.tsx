@@ -59,6 +59,7 @@ type Draft = {
   userStrategyId: string;
   ruleCompliance: "" | TradeRuleCompliance;
   marketRegime: "" | MarketRegime;
+  minSample: string;
 };
 
 function draftFromState(state: AnalyticsFilterState): Draft {
@@ -73,6 +74,7 @@ function draftFromState(state: AnalyticsFilterState): Draft {
     userStrategyId: state.userStrategyId ?? "",
     ruleCompliance: state.ruleCompliance ?? "",
     marketRegime: state.marketRegime ?? "",
+    minSample: String(state.minSample),
   };
 }
 
@@ -109,6 +111,8 @@ export function AnalyticsFilterBar({
   const showSetupsFilters = state.tab === "setups";
   const showBehaviourFilters = state.tab === "behaviour";
   const showComparisonFilters = state.tab === "comparison";
+  const showValidationFilters = state.tab === "validation";
+  const showSharedSymbolTimeframe = !showValidationFilters;
   const showJournalIdentityFilters =
     showSetupsFilters || showBehaviourFilters || showComparisonFilters;
 
@@ -137,26 +141,48 @@ export function AnalyticsFilterBar({
             onChange={(event) => setDraft((current) => ({ ...current, dateTo: event.target.value }))}
           />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="analytics-symbol">Symbol</Label>
-          <Input
-            id="analytics-symbol"
-            value={draft.symbol}
-            placeholder="e.g. BTCUSDT"
-            onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="analytics-timeframe">Timeframe</Label>
-          <Input
-            id="analytics-timeframe"
-            value={draft.timeframe}
-            placeholder="e.g. 1h"
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, timeframe: event.target.value }))
-            }
-          />
-        </div>
+        {showSharedSymbolTimeframe ? (
+          <>
+            <div className="space-y-1">
+              <Label htmlFor="analytics-symbol">Symbol</Label>
+              <Input
+                id="analytics-symbol"
+                value={draft.symbol}
+                placeholder="e.g. BTCUSDT"
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, symbol: event.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="analytics-timeframe">Timeframe</Label>
+              <Input
+                id="analytics-timeframe"
+                value={draft.timeframe}
+                placeholder="e.g. 1h"
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, timeframe: event.target.value }))
+                }
+              />
+            </div>
+          </>
+        ) : null}
+        {showValidationFilters ? (
+          <div className="space-y-1">
+            <Label htmlFor="analytics-min-sample">Min sample</Label>
+            <Input
+              id="analytics-min-sample"
+              type="number"
+              min={1}
+              max={100}
+              value={draft.minSample}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, minSample: event.target.value }))
+              }
+              data-testid="analytics-min-sample"
+            />
+          </div>
+        ) : null}
         {showPortfolioSource ? (
           <div className="space-y-1">
             <Label htmlFor="analytics-pp-source">Trade source</Label>
@@ -347,9 +373,11 @@ export function AnalyticsFilterBar({
             const next: AnalyticsDraft = {
               dateFrom: draft.dateFrom || null,
               dateTo: draft.dateTo || null,
-              symbol: draft.symbol.trim() || null,
-              timeframe: draft.timeframe.trim() || null,
             };
+            if (showSharedSymbolTimeframe) {
+              next.symbol = draft.symbol.trim() || null;
+              next.timeframe = draft.timeframe.trim() || null;
+            }
             if (showPortfolioSource) next.portfolioSource = draft.portfolioSource;
             if (showJournalIdentityFilters) {
               next.journalSource = draft.journalSource || null;
@@ -360,6 +388,10 @@ export function AnalyticsFilterBar({
             }
             if (showBehaviourFilters) next.ruleCompliance = draft.ruleCompliance || null;
             if (showComparisonFilters) next.marketRegime = draft.marketRegime || null;
+            if (showValidationFilters) {
+              const parsed = Number(draft.minSample);
+              next.minSample = Number.isInteger(parsed) ? parsed : null;
+            }
             onApplyDraft(next);
           }}
           data-testid="analytics-apply-filters"
@@ -389,8 +421,8 @@ export function AnalyticsFilterBar({
 
       <p className="text-caption text-text-muted" data-testid="analytics-filter-summary">
         Range: {formatDateRangeLabel(state.dateFrom, state.dateTo)}
-        {state.symbol ? ` · Symbol ${state.symbol}` : ""}
-        {state.timeframe ? ` · Timeframe ${state.timeframe}` : ""}
+        {showSharedSymbolTimeframe && state.symbol ? ` · Symbol ${state.symbol}` : ""}
+        {showSharedSymbolTimeframe && state.timeframe ? ` · Timeframe ${state.timeframe}` : ""}
         {showPortfolioSource && state.portfolioSource && state.portfolioSource !== "all"
           ? ` · Source ${state.portfolioSource}`
           : ""}
@@ -419,7 +451,16 @@ export function AnalyticsFilterBar({
         {showComparisonFilters && state.marketRegime
           ? ` · market_regime ${state.marketRegime}`
           : ""}
+        {showValidationFilters ? ` · min_sample ${state.minSample}` : ""}
+        {showValidationFilters ? ` · dimension ${state.dimension}` : ""}
       </p>
+
+      {showValidationFilters ? (
+        <p className="text-caption text-text-muted" data-testid="analytics-validation-filter-note">
+          Validation endpoints accept date range and min_sample only. Symbol, timeframe, setup, and
+          journal filters are not sent.
+        </p>
+      ) : null}
 
       {showJournalIdentityFilters ? (
         <p className="text-caption text-text-muted" data-testid="analytics-setup-identity-note">

@@ -34,6 +34,8 @@ const baseState = {
   marketRegime: null,
   groupBy: "setup" as const,
   bucketOffset: 0,
+  minSample: 5,
+  dimension: "condition" as const,
   ignoredParams: [],
 };
 
@@ -44,6 +46,8 @@ const params: AnalyticsFilterParams = {
   comparison: {},
   analyticsWindow: { start_date: "2026-01-01" },
   learningWindow: { start_date: "2026-01-01" },
+  validation: { dimension: "condition", min_sample: 5 },
+  strategyQuality: { min_sample: 5 },
   state: baseState,
 };
 
@@ -328,6 +332,8 @@ describe("useBehaviourSources", () => {
       },
       analyticsWindow: { start_date: "2026-02-01" },
       learningWindow: { start_date: "2026-02-01" },
+      validation: { dimension: "condition", min_sample: 5 },
+      strategyQuality: { min_sample: 5 },
       state: { ...params.state, dateFrom: "2026-02-01" },
     };
 

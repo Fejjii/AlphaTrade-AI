@@ -27,6 +27,8 @@ const scopedDefaults = {
   strategyVersionId: null,
   ruleCompliance: null,
   marketRegime: null,
+  minSample: 5,
+  dimension: "condition" as const,
 } as const;
 
 const journalResponse = {

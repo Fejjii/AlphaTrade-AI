@@ -134,4 +134,50 @@ describe("useAnalyticsFilters hook", () => {
     expect(result.current.state.ignoredParams).toContain("date_from");
     expect(result.current.apiParams.journal.date_from).toBeUndefined();
   });
+
+  it("uses push for Validation dimension deep links and committed changes", () => {
+    searchParams = new URLSearchParams(
+      "tab=validation&date_from=2026-01-01&dimension=symbol&min_sample=9",
+    );
+    const { result } = renderHook(() => useAnalyticsFilters());
+    expect(result.current.state.tab).toBe("validation");
+    expect(result.current.state.dimension).toBe("symbol");
+    expect(result.current.state.minSample).toBe(9);
+    expect(result.current.apiParams.validation).toEqual({
+      start_date: "2026-01-01",
+      min_sample: 9,
+      dimension: "symbol",
+    });
+    expect(result.current.apiParams.validation).not.toHaveProperty("timeframe");
+
+    result.current.setDimension("direction");
+    expect(pushMock).toHaveBeenCalledWith(
+      "/analytics?tab=validation&date_from=2026-01-01&dimension=direction&min_sample=9",
+      { scroll: false },
+    );
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("uses replace only to clean invalid Validation dimension values", () => {
+    searchParams = new URLSearchParams("tab=validation&dimension=not-real&min_sample=abc");
+    const { result } = renderHook(() => useAnalyticsFilters());
+    expect(result.current.state.ignoredParams).toEqual(
+      expect.arrayContaining(["dimension", "min_sample"]),
+    );
+    result.current.cleanupIgnoredParams();
+    expect(replaceMock).toHaveBeenCalledWith("/analytics?tab=validation", { scroll: false });
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("drops Validation-scoped filters when leaving the Validation tab", () => {
+    searchParams = new URLSearchParams(
+      "tab=validation&date_from=2026-01-01&symbol=BTCUSDT&min_sample=8&dimension=timeframe",
+    );
+    const { result } = renderHook(() => useAnalyticsFilters());
+    result.current.setTab("overview");
+    expect(pushMock).toHaveBeenCalledWith(
+      "/analytics?date_from=2026-01-01&symbol=BTCUSDT",
+      { scroll: false },
+    );
+  });
 });
