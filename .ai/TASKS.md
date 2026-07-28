@@ -655,6 +655,29 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   `82202e6fd7d3c527b958b6622dc3ec8f2a58c60e`; pre-merge CI 30294572981 success;
   post-merge main CI 30296686361 success — frontend, backend, docker-build,
   deployment-safety, evaluation, e2e-smoke). Analytics PR 1 DONE.
+- Analytics PR 2 deliverables (Setup and Strategy Analytics):
+  `/analytics?tab=setups` with win-rate and expectancy charts, paged bucket table,
+  grouping toggle, URL-synced journal setup_id deep links, setup-identity integrity
+  (journal UUIDs never routed to portfolio), Setups journal source filter, honest
+  setup-evidence provenance, and compact chart labels; no reopen of Portfolio/Risk
+  or Analytics PR 1 scope.
+  Analytics PR 2 PR https://github.com/Fejjii/AlphaTrade-AI/pull/47 merged
+  (`1c3077b03737fa8f60c15cb673ff58e6d14b58ea`; pre-merge / implementation head
+  `e4bfdacd90c9965f738f7c13c88d14d523d4c642`; pre-merge CI 30313626587 success —
+  frontend, backend, docker-build, deployment-safety, evaluation, e2e-smoke;
+  post-merge main CI 30315387747 success — same six jobs). Analytics PR 2 DONE.
+- Analytics PR 3 deliverables (Behaviour and human-versus-system comparison):
+  `/analytics?tab=behaviour` with rule-compliance chart, dual discipline score cards
+  (proposal-flow vs validation-session, distinctly labeled and linked), risk-behaviour
+  warning counts (counts, not performance), independent per-widget source slots and
+  freshness presentation; `/analytics?tab=comparison` with human-vs-system paired bars
+  and decision-quality tiles; all five Analytics tabs functional; no backend/API changes;
+  no reopen of Portfolio/Risk, Analytics PR 1, or Analytics PR 2 scope.
+  Analytics PR 3 PR https://github.com/Fejjii/AlphaTrade-AI/pull/46 merged
+  (`8fffc0ff0e861f4b553f4ae3babd384d006f3b83`; pre-merge / implementation head
+  `1ae5b3e43297ba4cbffb881a897315fe6ae1a564`; pre-merge CI 30350773804 success —
+  frontend, backend, docker-build, deployment-safety, evaluation, e2e-smoke;
+  post-merge main CI 30352734328 success — same six jobs). Analytics PR 3 DONE.
 - Phase D Analytics & Charts blueprint deliverables (documentation only — no
   frontend/backend/chart implementation): authoritative implementation plan at
   `docs/product/at040_analytics_and_charts_blueprint.md`; verified capability
@@ -671,9 +694,12 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Governance record PR https://github.com/Fejjii/AlphaTrade-AI/pull/40 merged
   (`9d42d10`).
 - Phase C remaining: none (Portfolio/Risk merged).
-- Next implementation: Analytics PR 2 (setup analytics) and Analytics PR 3 (behaviour /
-  comparison) in parallel per blueprint §8 — fresh Composer 2.5 agent chats from latest
-  `main`; do not reopen Portfolio/Risk or Analytics PR 1 scope in those chats.
+- Analytics implementation roadmap: Analytics PR 1 complete; Analytics PR 2 complete;
+  Analytics PR 3 complete; **Analytics PR 4** (validation analytics and final chart polish)
+  is the immediate next implementation — fresh Composer 2.5 agent chat from latest `main`;
+  do not reopen Portfolio/Risk or Analytics PRs 1–3 scope in that chat. Final readiness
+  audit follows Analytics PR 4 and final polish (see blueprint §8 PR 4 and
+  `docs/product/at040_final_polish_and_readiness_audit.md` when merged).
 
 ---
 
