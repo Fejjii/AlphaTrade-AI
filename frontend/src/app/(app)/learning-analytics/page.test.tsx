@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LearningAnalyticsPage from "./page";
 
@@ -141,16 +141,25 @@ const sampleData = {
   },
 };
 
+const asyncState = {
+  data: sampleData as typeof sampleData | null,
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn(),
+};
+
 vi.mock("@/hooks/useAsyncData", () => ({
-  useAsyncData: () => ({
-    data: sampleData,
-    loading: false,
-    error: null,
-    reload: vi.fn(),
-  }),
+  useAsyncData: () => ({ ...asyncState }),
 }));
 
 describe("LearningAnalyticsPage Slice 84", () => {
+  beforeEach(() => {
+    asyncState.data = sampleData;
+    asyncState.loading = false;
+    asyncState.error = null;
+    asyncState.reload = vi.fn();
+  });
+
   afterEach(() => {
     cleanup();
   });
@@ -171,6 +180,23 @@ describe("LearningAnalyticsPage Slice 84", () => {
   it("shows insufficient-data flag for small groups", () => {
     render(<LearningAnalyticsPage />);
     expect(screen.getByTestId("learning-group-pullback")).toHaveTextContent(/insufficient data/i);
+  });
+
+  it("never renders stale metrics beside an error after a failed reload (FP2-101)", () => {
+    // With the shared hook's honest failure semantics, a failed reload clears
+    // data — the page must show only the error state, never old metrics.
+    asyncState.data = null;
+    asyncState.error = "learning analytics unavailable";
+
+    render(<LearningAnalyticsPage />);
+
+    expect(screen.getByText("learning analytics unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("learning-funnel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("learning-setup-performance")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("learning-discipline-card")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(asyncState.reload).toHaveBeenCalled();
   });
 
   it("has no order, execution, proposal, or automation controls", () => {
