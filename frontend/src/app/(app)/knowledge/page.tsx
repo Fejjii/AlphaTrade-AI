@@ -108,7 +108,7 @@ export default function KnowledgePage() {
           setDeepLinkDocument({
             data: null,
             available: false,
-            error: `Document ${context.documentId} was not present in the loaded unfiltered page (${unfiltered.data.items.length} of ${unfiltered.data.total}). No unrelated record was opened.`,
+            error: `Document ${context.documentId} was not found in the most recent ${DOCUMENT_PAGE_LIMIT} knowledge documents (searched ${unfiltered.data.items.length} of ${unfiltered.data.total}). No unrelated record was opened.`,
             fallbackUsed: false,
           });
           setDeepLinkLoading(false);
@@ -129,21 +129,21 @@ export default function KnowledgePage() {
         setDeepLinkDocument({
           data: null,
           available: false,
-          error: `Document ${context.documentId} appears to have stored chunks but was not present in the loaded documents page. No unrelated record was opened.`,
+          error: `Document ${context.documentId} appears to have stored chunks but was not found in the most recent ${DOCUMENT_PAGE_LIMIT} knowledge documents. No unrelated record was opened.`,
           fallbackUsed: false,
         });
       } else if (!chunks.available) {
         setDeepLinkDocument({
           data: null,
           available: false,
-          error: `Document ${context.documentId} could not be verified (${chunks.error ?? unfiltered.error ?? "unavailable"}). No unrelated record was opened.`,
+          error: `Document ${context.documentId} could not be verified in the most recent ${DOCUMENT_PAGE_LIMIT} knowledge documents (${chunks.error ?? unfiltered.error ?? "unavailable"}). No unrelated record was opened.`,
           fallbackUsed: false,
         });
       } else {
         setDeepLinkDocument({
           data: null,
           available: false,
-          error: `Document ${context.documentId} was not found in loaded knowledge coverage. No unrelated record was opened.`,
+          error: `Document ${context.documentId} was not found in the most recent ${DOCUMENT_PAGE_LIMIT} knowledge documents. No unrelated record was opened.`,
           fallbackUsed: false,
         });
       }
@@ -251,7 +251,7 @@ export default function KnowledgePage() {
     if (deepLinkDocument && !deepLinkDocument.available) {
       return deepLinkDocument.error;
     }
-    return `Document ${context.documentId} was not found in loaded knowledge coverage. No unrelated record was opened.`;
+    return `Document ${context.documentId} was not found in the most recent ${DOCUMENT_PAGE_LIMIT} knowledge documents. No unrelated record was opened.`;
   }, [
     candidateDocument,
     context.documentId,

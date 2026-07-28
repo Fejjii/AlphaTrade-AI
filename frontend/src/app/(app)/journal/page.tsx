@@ -57,6 +57,7 @@ export default function JournalPage() {
   > | null>(null);
   const [disciplineError, setDisciplineError] = useState<string | null>(null);
   const [savedHighlightId, setSavedHighlightId] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const proposalId = context.proposalId;
   const positionId = context.positionId;
@@ -182,7 +183,8 @@ export default function JournalPage() {
     }
     const found = data.entries.data?.items.some((entry) => entry.id === context.entryId);
     if (found) return null;
-    return `Journal entry ${context.entryId} was not found in the loaded recent entries. No unrelated entry was opened.`;
+    const windowSize = data.entries.data?.limit ?? 50;
+    return `Journal entry ${context.entryId} was not found in the most recent ${windowSize} journal entries. No unrelated entry was opened.`;
   }, [context.entryId, data]);
 
   const unsupportedTradeMessage = context.tradeId
@@ -224,6 +226,7 @@ export default function JournalPage() {
       discipline?.comparison.stop_loss_analysis?.lesson;
     if (!lesson) return;
     setBusy(true);
+    setMutationError(null);
     try {
       await api.lessons.createCandidate({
         source_type: "journal",
@@ -237,6 +240,12 @@ export default function JournalPage() {
       });
       const result = await api.journalDiscipline.analyze(entry.id);
       setDiscipline(result);
+    } catch (err) {
+      setMutationError(
+        err instanceof Error
+          ? `Create lesson failed: ${err.message}`
+          : "Create lesson failed.",
+      );
     } finally {
       setBusy(false);
     }
@@ -244,9 +253,16 @@ export default function JournalPage() {
 
   async function handleDelete(entryId: string) {
     setBusy(true);
+    setMutationError(null);
     try {
       await api.journal.delete(entryId);
       await reload();
+    } catch (err) {
+      setMutationError(
+        err instanceof Error
+          ? `Delete entry failed: ${err.message}`
+          : "Delete entry failed.",
+      );
     } finally {
       setBusy(false);
     }
@@ -320,6 +336,7 @@ export default function JournalPage() {
         error={data?.entries.error}
         highlightedEntryId={highlightedEntryId}
         staleEntryMessage={staleEntryMessage}
+        mutationError={mutationError}
         onRetry={() => void reload()}
         busy={busy}
         disciplineId={disciplineId}

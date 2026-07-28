@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { JournalEntryCard } from "@/components/JournalEntryCard";
 import { DisciplineAnalysisPanel } from "@/components/journal/DisciplineAnalysisPanel";
@@ -18,6 +19,7 @@ type RecentJournalEntriesProps = {
   error?: string | null;
   highlightedEntryId?: string | null;
   staleEntryMessage?: string | null;
+  mutationError?: string | null;
   onRetry?: () => void;
   busy?: boolean;
   disciplineId?: string | null;
@@ -37,6 +39,7 @@ export function RecentJournalEntries({
   error,
   highlightedEntryId,
   staleEntryMessage,
+  mutationError,
   onRetry,
   busy,
   disciplineId,
@@ -46,6 +49,8 @@ export function RecentJournalEntries({
   onCreateLesson,
   onDelete,
 }: RecentJournalEntriesProps) {
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
   return (
     <section
       aria-labelledby="recent-journal-entries-heading"
@@ -71,6 +76,16 @@ export function RecentJournalEntries({
           className="rounded-control border border-warning-border bg-warning-muted/40 px-3 py-2 text-sm text-warning"
         >
           {staleEntryMessage}
+        </div>
+      ) : null}
+
+      {mutationError ? (
+        <div
+          role="alert"
+          data-testid="journal-mutation-error"
+          className="rounded-control border border-danger-border bg-danger-muted/40 px-3 py-2 text-sm text-danger"
+        >
+          {mutationError}
         </div>
       ) : null}
 
@@ -106,6 +121,7 @@ export function RecentJournalEntries({
         <ul className="grid gap-4" data-testid="recent-entries-list">
           {entries.map((entry) => {
             const highlighted = highlightedEntryId === entry.id;
+            const confirmingDelete = pendingDeleteId === entry.id;
             return (
               <li
                 key={entry.id}
@@ -159,18 +175,56 @@ export function RecentJournalEntries({
                       Discipline analysis
                     </Button>
                   ) : null}
-                  {onDelete ? (
+                  {onDelete && !confirmingDelete ? (
                     <Button
                       type="button"
                       variant="destructive"
                       size="sm"
                       disabled={busy}
-                      onClick={() => onDelete(entry.id)}
+                      onClick={() => setPendingDeleteId(entry.id)}
+                      data-testid={`delete-entry-${entry.id}`}
                     >
                       Delete entry
                     </Button>
                   ) : null}
                 </div>
+                {onDelete && confirmingDelete ? (
+                  <div
+                    role="group"
+                    aria-label="Confirm delete journal entry"
+                    data-testid={`delete-confirm-${entry.id}`}
+                    className="space-y-2 rounded-control border border-danger-border bg-danger-muted/30 px-3 py-2"
+                  >
+                    <p className="text-sm text-danger">
+                      Delete this journal entry permanently? This cannot be undone from the UI.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          onDelete(entry.id);
+                          setPendingDeleteId(null);
+                        }}
+                        data-testid={`confirm-delete-${entry.id}`}
+                      >
+                        Confirm delete
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => setPendingDeleteId(null)}
+                        data-testid={`cancel-delete-${entry.id}`}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 {disciplineId === entry.id ? (
                   <DisciplineAnalysisPanel
                     comparison={discipline?.comparison ?? null}

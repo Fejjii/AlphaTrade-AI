@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
+import { loadSource, type SourceResult } from "@/components/workflows";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { strategyStatusFor } from "@/lib/strategy-status";
@@ -25,12 +26,30 @@ import type {
   PaperSchedulerStatus,
   PaperSignalResult,
   PaperTradeRecord,
+  PaperValidationSummary,
 } from "@/lib/api/types";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
 
 function setupLabel(value: string) {
   return SETUP_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
+
+type PaperSources = {
+  summary: SourceResult<PaperValidationSummary>;
+  eligibility: SourceResult<PaperEligibilityReport>;
+  scheduler: SourceResult<PaperSchedulerStatus>;
+  alerts: SourceResult<{ items: PaperAlert[] }>;
+  history: SourceResult<{ items: PaperRuntimeHistoryRecord[] }>;
+  signals: SourceResult<{ items: PaperSignalResult[] }>;
+  trades: SourceResult<{ items: PaperTradeRecord[] }>;
+};
+
+const idleSource = <T,>(): SourceResult<T> => ({
+  data: null,
+  available: false,
+  error: null,
+  fallbackUsed: false,
+});
 
 export default function StrategyDetailPage() {
   const params = useParams();
@@ -40,16 +59,18 @@ export default function StrategyDetailPage() {
   const [versionBusy, setVersionBusy] = useState(false);
   const [paperBusy, setPaperBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [paperSummary, setPaperSummary] = useState<Awaited<
-    ReturnType<typeof api.strategies.paperValidation>
-  > | null>(null);
-  const [eligibility, setEligibility] = useState<PaperEligibilityReport | null>(null);
-  const [signals, setSignals] = useState<PaperSignalResult[]>([]);
-  const [trades, setTrades] = useState<PaperTradeRecord[]>([]);
-  const [scheduler, setScheduler] = useState<PaperSchedulerStatus | null>(null);
-  const [history, setHistory] = useState<PaperRuntimeHistoryRecord[]>([]);
-  const [alerts, setAlerts] = useState<PaperAlert[]>([]);
+  const [paperLoading, setPaperLoading] = useState(true);
+  const [paperSources, setPaperSources] = useState<PaperSources>({
+    summary: idleSource(),
+    eligibility: idleSource(),
+    scheduler: idleSource(),
+    alerts: idleSource(),
+    history: idleSource(),
+    signals: idleSource(),
+    trades: idleSource(),
+  });
   const [rulesBusy, setRulesBusy] = useState(false);
+  const paperLoadGeneration = useRef(0);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
   const { data: testabilityData, reload: reloadTestability } = useAsyncData(testabilityLoader, [id]);
@@ -57,57 +78,130 @@ export default function StrategyDetailPage() {
   const versionsLoader = useCallback(() => api.strategies.listVersions(id), [id]);
   const { data: versionsData } = useAsyncData(versionsLoader, [id]);
 
-  const latestRunId = paperSummary?.runs[0]?.id;
-
-  async function refreshPaperData() {
-    const [summary, report, sched, alertList] = await Promise.all([
-      api.strategies.paperValidation(id),
-      api.strategies.paperEligibility(id),
-      api.strategies.schedulerStatus(),
-      api.alerts.list({ limit: 10 }),
+  const loadPaperSources = useCallback(async () => {
+    const generation = ++paperLoadGeneration.current;
+    setPaperLoading(true);
+    const [summary, eligibility, scheduler, alerts] = await Promise.all([
+      loadSource(api.strategies.paperValidation(id)),
+      loadSource(api.strategies.paperEligibility(id)),
+      loadSource(api.strategies.schedulerStatus()),
+      loadSource(api.alerts.list({ limit: 10 })),
     ]);
-    setPaperSummary(summary);
-    setEligibility(report);
-    setScheduler(sched);
-    setAlerts(alertList.items);
-    const runId = summary.runs[0]?.id;
+    if (generation !== paperLoadGeneration.current) return;
+
+    const runId = summary.data?.runs[0]?.id;
+    let signals: SourceResult<{ items: PaperSignalResult[] }> = {
+      data: { items: [] },
+      available: true,
+      error: null,
+      fallbackUsed: false,
+    };
+    let trades: SourceResult<{ items: PaperTradeRecord[] }> = {
+      data: { items: [] },
+      available: true,
+      error: null,
+      fallbackUsed: false,
+    };
+    let history: SourceResult<{ items: PaperRuntimeHistoryRecord[] }>;
+
     if (runId) {
       const [sig, tr, hist] = await Promise.all([
-        api.strategies.paperValidationSignals(runId),
-        api.strategies.paperValidationTrades(runId),
-        api.strategies.schedulerHistory({ run_id: runId, limit: 10 }),
+        loadSource(api.strategies.paperValidationSignals(runId)),
+        loadSource(api.strategies.paperValidationTrades(runId)),
+        loadSource(api.strategies.schedulerHistory({ run_id: runId, limit: 10 })),
       ]);
-      setSignals(sig.items);
-      setTrades(tr.items);
-      setHistory(hist.items);
+      signals = sig;
+      trades = tr;
+      history = hist;
     } else {
-      const hist = await api.strategies.schedulerHistory({ limit: 10 });
-      setHistory(hist.items);
+      history = await loadSource(api.strategies.schedulerHistory({ limit: 10 }));
+      if (!summary.available) {
+        signals = {
+          data: null,
+          available: false,
+          error: "Paper signals unavailable until paper validation summary loads.",
+          fallbackUsed: false,
+        };
+        trades = {
+          data: null,
+          available: false,
+          error: "Paper trades unavailable until paper validation summary loads.",
+          fallbackUsed: false,
+        };
+      }
     }
-  }
+
+    if (generation !== paperLoadGeneration.current) return;
+    setPaperSources({
+      summary,
+      eligibility,
+      scheduler,
+      alerts,
+      history,
+      signals,
+      trades,
+    });
+    setPaperLoading(false);
+  }, [id]);
 
   useEffect(() => {
-    void api.strategies.paperEligibility(id).then(setEligibility).catch(() => setEligibility(null));
-    void api.strategies.paperValidation(id).then(setPaperSummary).catch(() => setPaperSummary(null));
-  }, [id, data?.current_version, data?.backtest_status]);
-
-  useEffect(() => {
-    if (!latestRunId) return;
-    void Promise.all([
-      api.strategies.paperValidationSignals(latestRunId),
-      api.strategies.paperValidationTrades(latestRunId),
-    ])
-      .then(([sig, tr]) => {
-        setSignals(sig.items);
-        setTrades(tr.items);
-      })
-      .catch(() => {
-        setSignals([]);
-        setTrades([]);
-      });
-  }, [latestRunId]);
+    void loadPaperSources();
+  }, [loadPaperSources, data?.current_version, data?.backtest_status]);
 
   const card = data?.latest_card;
+  const latestRunId = paperSources.summary.data?.runs[0]?.id;
+  const eligibility = paperSources.eligibility.data;
+  const paperSummary = paperSources.summary.data;
+  const scheduler = paperSources.scheduler.data;
+  const history = paperSources.history.data?.items ?? [];
+  const alerts = paperSources.alerts.data?.items ?? [];
+  const signals = paperSources.signals.data?.items ?? [];
+  const trades = paperSources.trades.data?.items ?? [];
+
+  const paperSourceStatuses = [
+    {
+      name: "Paper validation summary",
+      available: paperSources.summary.available,
+      error: paperSources.summary.error,
+      empty: paperSources.summary.available && (paperSources.summary.data?.runs.length ?? 0) === 0,
+    },
+    {
+      name: "Paper eligibility",
+      available: paperSources.eligibility.available,
+      error: paperSources.eligibility.error,
+      empty: false,
+    },
+    {
+      name: "Scheduler status",
+      available: paperSources.scheduler.available,
+      error: paperSources.scheduler.error,
+      empty: false,
+    },
+    {
+      name: "Paper alerts",
+      available: paperSources.alerts.available,
+      error: paperSources.alerts.error,
+      empty: paperSources.alerts.available && (paperSources.alerts.data?.items.length ?? 0) === 0,
+    },
+    {
+      name: "Runtime history",
+      available: paperSources.history.available,
+      error: paperSources.history.error,
+      empty: paperSources.history.available && history.length === 0,
+    },
+    {
+      name: "Paper signals",
+      available: paperSources.signals.available,
+      error: paperSources.signals.error,
+      empty: paperSources.signals.available && signals.length === 0,
+    },
+    {
+      name: "Paper trades",
+      available: paperSources.trades.available,
+      error: paperSources.trades.error,
+      empty: paperSources.trades.available && trades.length === 0,
+    },
+  ];
 
   async function createVersion() {
     if (!data) return;
@@ -132,7 +226,7 @@ export default function StrategyDetailPage() {
     setActionError(null);
     try {
       await action();
-      await refreshPaperData();
+      await loadPaperSources();
       await reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Paper validation failed");
@@ -142,7 +236,7 @@ export default function StrategyDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="strategy-detail-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{data?.name ?? "Strategy"}</h1>
@@ -241,6 +335,55 @@ export default function StrategyDetailPage() {
 
       {versionsData ? <StrategyVersionHistory versions={versionsData.items} /> : null}
 
+      <section
+        aria-labelledby="strategy-paper-sources-heading"
+        className="space-y-2"
+        data-testid="strategy-paper-sources"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2
+            id="strategy-paper-sources-heading"
+            className="text-lg font-semibold text-text-primary"
+          >
+            Paper validation sources
+          </h2>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={paperLoading || paperBusy}
+            onClick={() => void loadPaperSources()}
+            data-testid="strategy-paper-sources-retry"
+          >
+            Retry paper sources
+          </Button>
+        </div>
+        {paperLoading ? (
+          <LoadingState label="Loading paper validation sources…" />
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2" data-testid="strategy-paper-source-list">
+            {paperSourceStatuses.map((source) => (
+              <li
+                key={source.name}
+                data-testid={`strategy-paper-source-${source.name.toLowerCase().replace(/\s+/g, "-")}`}
+                className="rounded-control border border-border-subtle px-3 py-2 text-sm"
+              >
+                <p className="font-medium text-text-primary">{source.name}</p>
+                {!source.available ? (
+                  <p className="mt-1 text-danger" role="alert">
+                    Unavailable{source.error ? `: ${source.error}` : "."}
+                  </p>
+                ) : source.empty ? (
+                  <p className="mt-1 text-text-muted">Loaded — empty.</p>
+                ) : (
+                  <p className="mt-1 text-text-secondary">Loaded.</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <div className="grid gap-4 md:grid-cols-2">
         <BacktestPanel
           strategyId={id}
@@ -252,11 +395,11 @@ export default function StrategyDetailPage() {
           summary={paperSummary}
           eligibility={eligibility}
           scheduler={scheduler}
-          history={history}
-          alerts={alerts}
-          busy={paperBusy}
-          signals={signals}
-          trades={trades}
+          history={paperSources.history.available ? history : []}
+          alerts={paperSources.alerts.available ? alerts : []}
+          busy={paperBusy || paperLoading}
+          signals={paperSources.signals.available ? signals : []}
+          trades={paperSources.trades.available ? trades : []}
           onStart={() =>
             void withPaperAction(async () => {
               await api.strategies.startPaperValidation(id, { runtime_mode: "scan_only" });
