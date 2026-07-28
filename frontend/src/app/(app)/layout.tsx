@@ -2,6 +2,7 @@
 
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingState } from "@/components/states";
+import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useRequireAuth } from "@/contexts/AuthContext";
 
 function ProtectedShell({ children }: { children: React.ReactNode }) {
@@ -25,9 +26,13 @@ function ProtectedShell({ children }: { children: React.ReactNode }) {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  // AppProvider owns the single shared /health, providers, and kill-switch
+  // source; AuthProvider consumes it instead of fetching /health itself.
   return (
-    <AuthProvider>
-      <ProtectedShell>{children}</ProtectedShell>
-    </AuthProvider>
+    <AppProvider>
+      <AuthProvider>
+        <ProtectedShell>{children}</ProtectedShell>
+      </AuthProvider>
+    </AppProvider>
   );
 }

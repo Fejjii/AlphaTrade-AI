@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { FreshnessPill } from "@/components/ui/freshness-pill";
 import { IconButton } from "@/components/ui/icon-button";
-import { useAppContext, useMockProviders } from "@/contexts/AppContext";
+import { useAppContext } from "@/contexts/AppContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useShellFreshness } from "@/contexts/ShellFreshnessContext";
 import { cn } from "@/lib/utils";
@@ -23,10 +23,10 @@ type TopBarProps = {
 export function TopBar({ onOpenCommandMenu }: TopBarProps) {
   const pathname = usePathname();
   const identity = resolvePageIdentity(pathname);
-  const { refreshStatus, loading } = useAppContext();
+  const { refreshStatus, loading, providers } = useAppContext();
   const { user, organization, logout } = useAuth();
-  const providers = useMockProviders();
-  const mockCount = providers.filter((p) => p.is_mock).length;
+  // Providers unknown (null) must never look like a healthy "0 mock" (FP2-110).
+  const mockCount = providers ? providers.providers.filter((p) => p.is_mock).length : null;
   const { freshness } = useShellFreshness();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountWrapRef = useRef<HTMLDivElement>(null);
@@ -90,8 +90,12 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
             Search ⌘K
           </button>
 
-          <span className="hidden lg:inline-flex">
-            <StatusBadge label={`${mockCount} mock`} tone="info" />
+          <span className="hidden lg:inline-flex" data-testid="topbar-providers-chip">
+            {mockCount == null ? (
+              <StatusBadge label="Providers unknown" tone="warn" />
+            ) : (
+              <StatusBadge label={`${mockCount} mock`} tone="info" />
+            )}
           </span>
 
           <IconButton

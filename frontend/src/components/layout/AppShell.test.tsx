@@ -38,7 +38,6 @@ vi.mock("@/contexts/AppContext", () => ({
     health: { status: "ok" },
     providers: { providers: [] },
   }),
-  useMockProviders: () => [],
   useSafetyPosture: () => posture,
 }));
 

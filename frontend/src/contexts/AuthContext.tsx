@@ -14,6 +14,7 @@ import { api, ApiError } from "@/lib/api";
 import type { AuthResponse, MeResponse } from "@/lib/api/types";
 import { sanitizeNextPath } from "@/lib/auth/boundary";
 import { clearTokens, getRefreshToken, isAuthenticated, setTokens } from "@/lib/auth/session";
+import { useAppContext } from "@/contexts/AppContext";
 
 interface AuthContextValue {
   user: MeResponse["user"] | null;
@@ -30,14 +31,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [mustVerifyEmail, setMustVerifyEmail] = useState(true);
-
-  useEffect(() => {
-    void api.health
-      .get()
-      .then((health) => setMustVerifyEmail(health.must_verify_email))
-      .catch(() => setMustVerifyEmail(true));
-  }, []);
+  // Single shared /health source (FP2-105): read the verification policy from
+  // AppContext instead of issuing a duplicate /health request. Conservative
+  // default (verify) until posture is verified.
+  const { health } = useAppContext();
+  const mustVerifyEmail = health?.must_verify_email ?? true;
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
   const [organization, setOrganization] = useState<MeResponse["organization"] | null>(null);
   const [loading, setLoading] = useState(true);
