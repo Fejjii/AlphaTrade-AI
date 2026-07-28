@@ -158,7 +158,7 @@ class DashboardSummaryService:
         watcher_status = self._safe_section(
             "market_watcher",
             limitations,
-            lambda: self._market_watcher_status(organization_id),
+            lambda: self._market_watcher_status(organization_id, user_id),
         )
 
         bridge_status = self._safe_section(
@@ -170,7 +170,10 @@ class DashboardSummaryService:
         mw_raw = None
         bridge_raw = None
         try:
-            mw_raw = self._market_watcher.get_status(organization_id=organization_id)
+            mw_raw = self._market_watcher.get_status(
+                organization_id=organization_id,
+                user_id=user_id,
+            )
         except Exception as exc:
             logger.warning("dashboard_market_watcher_raw_failed", error=str(exc))
         try:
@@ -206,8 +209,10 @@ class DashboardSummaryService:
         try:
             return builder()
         except Exception as exc:
+            # Raw exception details stay in internal logs only; user-facing
+            # limitation copy must never leak Python internals (FP2-003).
             logger.warning("dashboard_section_failed", section=name, error=str(exc))
-            limitations.append(f"{name} unavailable: {exc}")
+            limitations.append(f"{name} unavailable: source temporarily unavailable")
             return default
 
     def _build_strategy_readiness(self, organization_id: uuid.UUID, user_id: uuid.UUID):
@@ -407,16 +412,25 @@ class DashboardSummaryService:
             top_pending_lessons=top_pending,
         )
 
-    def _market_watcher_status(self, organization_id: uuid.UUID) -> MarketWatcherDashboardStatus:
-        status = self._market_watcher.get_status(organization_id=organization_id)
+    def _market_watcher_status(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> MarketWatcherDashboardStatus:
+        status = self._market_watcher.get_status(
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        last_scan_at = status.last_scan_at
+        if last_scan_at is not None and last_scan_at.tzinfo is None:
+            # SQLite returns naive datetimes; treat stored values as UTC.
+            last_scan_at = last_scan_at.replace(tzinfo=UTC)
         fresh = 0
-        if status.last_scan_at is not None:
+        if last_scan_at is not None:
             cutoff = datetime.now(UTC) - timedelta(hours=6)
-            if status.last_scan_at >= cutoff:
+            if last_scan_at >= cutoff:
                 fresh = 1
         return MarketWatcherDashboardStatus(
             effective_enabled=status.effective_enabled,
-            last_scan_at=status.last_scan_at.isoformat() if status.last_scan_at else None,
+            last_scan_at=last_scan_at.isoformat() if last_scan_at else None,
             fresh_observations=fresh,
         )
 
