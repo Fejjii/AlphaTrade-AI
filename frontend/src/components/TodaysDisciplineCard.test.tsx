@@ -1,7 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { TodaysDisciplineCard } from "@/components/TodaysDisciplineCard";
+import {
+  TodaysDisciplineCard,
+  type DisciplineSnapshotView,
+} from "@/components/TodaysDisciplineCard";
 import type { DailyDisciplineSnapshot } from "@/lib/api/types";
 
 const snapshot: DailyDisciplineSnapshot = {
@@ -72,5 +75,39 @@ describe("TodaysDisciplineCard", () => {
     const { container } = render(<TodaysDisciplineCard snapshot={null} />);
     expect(container.textContent?.toLowerCase()).not.toContain("revenge");
     expect(container.textContent?.toLowerCase()).not.toContain("you failed");
+  });
+
+  it("renders unmeasured metrics as unavailable, never zero or clear (FP2-102)", () => {
+    const unmeasured: DisciplineSnapshotView = {
+      ...snapshot,
+      trades_today: null,
+      paper_trades_opened_today: null,
+      paper_trades_closed_today: null,
+      journal_entries_today: null,
+      loss_lock_active: null,
+      green_day_protection_active: null,
+      overtrading_warning_active: null,
+      discipline_status: null,
+    };
+    render(<TodaysDisciplineCard snapshot={unmeasured} />);
+
+    expect(screen.getByTestId("trades-today")).toHaveTextContent("Trades today: —");
+    expect(screen.getByTestId("trades-today")).not.toHaveTextContent("0");
+    expect(screen.getByTestId("discipline-status-badge")).toHaveTextContent("status unavailable");
+    expect(screen.getByTestId("discipline-loss-protection")).toHaveTextContent(
+      "Loss protection: unknown",
+    );
+    expect(screen.getByTestId("discipline-green-day-protection")).toHaveTextContent(
+      "Green-day protection: unknown",
+    );
+    expect(screen.getByTestId("discipline-frequency-notice")).toHaveTextContent(
+      "Frequency notice: unknown",
+    );
+  });
+
+  it("does not show protection state without a snapshot (unknown, not clear)", () => {
+    render(<TodaysDisciplineCard snapshot={null} />);
+    expect(screen.getByTestId("discipline-loss-protection")).toHaveTextContent("unknown");
+    expect(screen.getByTestId("discipline-loss-protection")).not.toHaveTextContent("clear");
   });
 });

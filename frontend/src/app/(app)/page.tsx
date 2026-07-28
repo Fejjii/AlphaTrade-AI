@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useCallback, useMemo } from "react";
 
-import { TodaysDisciplineCard } from "@/components/TodaysDisciplineCard";
+import {
+  TodaysDisciplineCard,
+  type DisciplineSnapshotView,
+} from "@/components/TodaysDisciplineCard";
 import {
   AttentionQueue,
   WorkflowFreshnessAdapter,
@@ -224,32 +227,42 @@ export default function DashboardPage() {
     });
   }, [data, summary, executionMode, realTradingEnabled, posture.paperConfirmed]);
 
-  const disciplineSnapshot = useMemo(() => {
+  const disciplineSnapshot = useMemo((): DisciplineSnapshotView | null => {
     if (summary?.daily_discipline) return summary.daily_discipline;
     if (!data) return null;
     const hasFallback =
       data.discipline.available || data.risk.available || data.tradeReview.available;
     if (!hasFallback) return null;
     if (!data.summary.available) {
-      // Explicit fallback limitations; do not invent zero-valued metrics as confirmed facts.
+      // Explicit fallback limitations; unmeasured fields stay null so they
+      // render as unavailable — never as fabricated zeros or "clear" (FP2-102).
       return {
         date: new Date().toISOString().slice(0, 10),
         timezone: "UTC",
-        trades_today: data.tradeReview.data?.total_journaled_trades ?? 0,
-        paper_trades_opened_today: 0,
-        paper_trades_closed_today: 0,
-        journal_entries_today: 0,
+        trades_today: countOrNull(
+          data.tradeReview.available,
+          data.tradeReview.data?.total_journaled_trades,
+        ),
+        paper_trades_opened_today: null,
+        paper_trades_closed_today: null,
+        journal_entries_today: null,
         realized_pnl_today_paper: null,
         unrealized_pnl_paper: null,
         net_pnl_today_paper: null,
         daily_loss_limit: null,
         daily_target: null,
-        loss_lock_active: (data.risk.data?.daily_loss_warnings ?? 0) > 0,
-        green_day_protection_active: (data.risk.data?.green_day_warnings ?? 0) > 0,
-        overtrading_warning_active: (data.risk.data?.overtrading_warnings ?? 0) > 0,
+        loss_lock_active: data.risk.available
+          ? (data.risk.data?.daily_loss_warnings ?? 0) > 0
+          : null,
+        green_day_protection_active: data.risk.available
+          ? (data.risk.data?.green_day_warnings ?? 0) > 0
+          : null,
+        overtrading_warning_active: data.risk.available
+          ? (data.risk.data?.overtrading_warnings ?? 0) > 0
+          : null,
         max_trades_per_day: null,
         remaining_trades_allowed: null,
-        discipline_status: "calm",
+        discipline_status: null,
         risk_settings_source: "system_default",
         pnl_sources: {},
         reasons: [],
