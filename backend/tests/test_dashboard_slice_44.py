@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 
 import pytest
+import structlog.testing
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,6 +20,7 @@ from app.db.base import Base
 from app.db.models import (
     DailyRiskState,
     LessonCandidate,
+    MarketWatcherScanRecord,
     Membership,
     Organization,
     PaperTrade,
@@ -49,10 +52,12 @@ from app.schemas.dashboard import (
     StrategyReadinessCounts,
     StrategyReadinessSummary,
 )
+from app.schemas.market_watcher import MarketWatcherStatus
 from app.security.passwords import hash_password
 from app.services.dashboard.daily_discipline import build_daily_discipline_snapshot
 from app.services.dashboard.next_action import resolve_next_recommended_action
 from app.services.dashboard_summary_service import DashboardSummaryService
+from app.services.market_watcher_service import MarketWatcherService
 
 ORG_A = uuid.UUID("00000000-0000-0000-0000-000000000050")
 USER_A = uuid.UUID("00000000-0000-0000-0000-000000000051")
@@ -474,3 +479,134 @@ def test_no_real_trading_path_added(dashboard_client: TestClient) -> None:
     assert summary.status_code == 200
     assert health.json()["real_trading_enabled"] is False
     assert summary.json()["safety"]["real_trading_enabled"] is False
+
+
+# --------------------------------------------------------------------------- #
+# FP2-003 — market-watcher status must receive the requesting user_id
+# --------------------------------------------------------------------------- #
+
+
+class _RecordingMarketWatcher:
+    """Stub matching MarketWatcherService.get_status's keyword-only signature."""
+
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self.calls: list[dict[str, uuid.UUID]] = []
+        self._error = error
+
+    def get_status(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> MarketWatcherStatus:
+        self.calls.append({"organization_id": organization_id, "user_id": user_id})
+        if self._error is not None:
+            raise self._error
+        return MarketWatcherStatus(
+            env_enabled=True,
+            effective_enabled=True,
+            last_scan_at=datetime.now(UTC),
+        )
+
+
+def _service_with_watcher(
+    session: Session,
+    settings: Settings,
+    watcher: _RecordingMarketWatcher,
+) -> DashboardSummaryService:
+    return DashboardSummaryService(
+        session,
+        settings,
+        market_watcher=cast(MarketWatcherService, watcher),
+    )
+
+
+def test_market_watcher_receives_requesting_user_id(
+    dashboard_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, settings = dashboard_db
+    watcher = _RecordingMarketWatcher()
+    with factory() as session:
+        service = _service_with_watcher(session, settings, watcher)
+        summary = service.summarize(organization_id=ORG_A, user_id=USER_A)
+
+    assert summary.market_watcher is not None
+    # get_status is called for the status section and for next-action resolution;
+    # both calls must carry the tenant and the requesting user.
+    assert len(watcher.calls) == 2
+    for call in watcher.calls:
+        assert call["organization_id"] == ORG_A
+        assert call["user_id"] == USER_A
+
+
+def test_seeded_market_watcher_status_appears_in_summary(
+    dashboard_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, settings = dashboard_db
+    scanned_at = datetime.now(UTC) - timedelta(minutes=5)
+    with factory() as session:
+        session.add(
+            MarketWatcherScanRecord(
+                organization_id=ORG_A,
+                scanned_at=scanned_at,
+                status="success",
+            )
+        )
+        session.commit()
+        service = DashboardSummaryService(session, settings)
+        summary = service.summarize(organization_id=ORG_A, user_id=USER_A)
+
+    assert summary.market_watcher is not None
+    assert summary.market_watcher.last_scan_at is not None
+    assert summary.market_watcher.fresh_observations == 1
+    assert not any("market_watcher unavailable" in item for item in summary.limitations)
+
+
+def test_market_watcher_failure_does_not_crash_summary(
+    dashboard_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, settings = dashboard_db
+    watcher = _RecordingMarketWatcher(
+        error=TypeError(
+            "MarketWatcherService.get_status() missing 1 required keyword-only argument: 'user_id'"
+        )
+    )
+    with factory() as session:
+        service = _service_with_watcher(session, settings, watcher)
+        summary = service.summarize(organization_id=ORG_A, user_id=USER_A)
+
+    assert summary.market_watcher is None
+    assert summary.safety.real_trading_enabled is False
+    assert any(item.startswith("market_watcher unavailable") for item in summary.limitations)
+
+
+def test_market_watcher_failure_hides_raw_exception_from_limitations(
+    dashboard_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, settings = dashboard_db
+    internal_detail = "get_status() missing 1 required keyword-only argument: 'user_id'"
+    watcher = _RecordingMarketWatcher(error=TypeError(internal_detail))
+    with factory() as session:
+        service = _service_with_watcher(session, settings, watcher)
+        with structlog.testing.capture_logs() as captured:
+            summary = service.summarize(organization_id=ORG_A, user_id=USER_A)
+
+    # Raw exception details are logged internally for operators…
+    internal_errors = [
+        entry
+        for entry in captured
+        if entry.get("event") == "dashboard_section_failed"
+        and entry.get("section") == "market_watcher"
+    ]
+    assert internal_errors, "expected an internal dashboard_section_failed log entry"
+    assert internal_detail in str(internal_errors[0].get("error"))
+
+    # …but never surface as user-facing limitation copy.
+    for item in summary.limitations:
+        assert internal_detail not in item
+        assert "keyword-only" not in item
+        assert "TypeError" not in item
+    assert any(
+        item == "market_watcher unavailable: source temporarily unavailable"
+        for item in summary.limitations
+    )
