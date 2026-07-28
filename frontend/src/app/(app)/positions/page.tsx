@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import { KillSwitchButton } from "@/components/KillSwitchButton";
 import { PositionCard } from "@/components/PositionCard";
@@ -9,9 +9,22 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 
 export default function PositionsPage() {
-  const [busy, setBusy] = useState(false);
   const loader = useCallback(() => api.positions.list({ limit: 50 }), []);
   const { data, loading, error, reload } = useAsyncData(loader, []);
+
+  const closePaperPosition = useCallback(
+    async (id: string, exitPrice: string) => {
+      // The exit price is exactly what the user entered and confirmed — never a
+      // fallback or the entry price. Failures propagate to the card, which keeps
+      // the position visible and open; the list reloads only after success.
+      await api.positions.closePaper(id, {
+        exit_price: exitPrice,
+        reason: "Paper close at user-entered exit price",
+      });
+      await reload();
+    },
+    [reload],
+  );
 
   return (
     <div className="space-y-6">
@@ -23,34 +36,28 @@ export default function PositionsPage() {
         <KillSwitchButton />
       </div>
 
-      {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
-      <div className="grid gap-4">
-        {data?.items.length ? (
-          data.items.map((position) => (
-            <PositionCard
-              key={position.id}
-              position={position}
-              busy={busy}
-              onClosePaper={async (id) => {
-                setBusy(true);
-                try {
-                  const current = data.items.find((item) => item.id === id);
-                  await api.positions.closePaper(id, {
-                    exit_price: current?.entry_price ?? "1",
-                    reason: "Closed from UI",
-                  });
-                  await reload();
-                } finally {
-                  setBusy(false);
-                }
-              }}
+      {loading ? (
+        <LoadingState label="Loading positions…" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={() => void reload()} />
+      ) : data ? (
+        <div className="grid gap-4">
+          {data.items.length ? (
+            data.items.map((position) => (
+              <PositionCard
+                key={position.id}
+                position={position}
+                onClosePaper={closePaperPosition}
+              />
+            ))
+          ) : (
+            <EmptyState
+              title="No positions"
+              description="Paper positions appear after approved execution."
             />
-          ))
-        ) : (
-          <EmptyState title="No positions" description="Paper positions appear after approved execution." />
-        )}
-      </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
