@@ -11,6 +11,7 @@ type RiskBehaviourCountersProps = {
   loading?: boolean;
   onRetry?: () => void;
   filtersSummary?: string;
+  freshnessNote?: string;
   staleWholeTab?: boolean;
 };
 
@@ -46,6 +47,7 @@ export function RiskBehaviourCounters({
   loading = false,
   onRetry,
   filtersSummary,
+  freshnessNote,
   staleWholeTab = false,
 }: RiskBehaviourCountersProps) {
   const data = source?.available ? source.data : null;
@@ -55,6 +57,7 @@ export function RiskBehaviourCounters({
       title="Risk behaviour warning counts"
       sourceLabel="GET /analytics/risk-behavior"
       filtersSummary={filtersSummary}
+      derivedNote={freshnessNote}
       loading={loading && !source}
       error={source && !source.available ? source.error ?? "Risk behaviour unavailable" : null}
       onRetry={onRetry}

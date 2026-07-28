@@ -431,6 +431,21 @@ export function buildFilterKey(params: AnalyticsFilterParams): string {
   });
 }
 
+/** Request key for Behaviour rule-compliance journal statistics. */
+export function buildRuleComplianceFilterKey(params: JournalStatsParams): string {
+  return JSON.stringify(params);
+}
+
+/** Request key for proposal-flow discipline and risk-behaviour analytics window. */
+export function buildAnalyticsWindowFilterKey(params: AnalyticsWindowParams): string {
+  return JSON.stringify(params);
+}
+
+/** Request key for validation-session learning discipline. */
+export function buildLearningWindowFilterKey(params: LearningAnalyticsParams): string {
+  return JSON.stringify(params);
+}
+
 export function buildSetupFilterKey(params: SetupAnalyticsApiParams): string {
   return JSON.stringify({ journal: params.journal, evidence: params.evidence });
 }

@@ -6,6 +6,9 @@ import type { AnalyticsTab } from "./filterValidation";
 export const FRESHNESS_UNAVAILABLE_MESSAGE =
   "Source timestamp is invalid or clock-skewed — data treated as unavailable.";
 
+export const NO_SERVER_FRESHNESS_TIMESTAMP_NOTE =
+  "This endpoint does not expose a server freshness timestamp.";
+
 export function journalFreshnessTimestamp(
   journal: SourceResult<{ generated_at?: string | null }> | null,
 ): string | null {
@@ -18,6 +21,16 @@ export function portfolioFreshnessTimestamp(
 ): string | null {
   if (!portfolio?.available || !portfolio.data) return null;
   return portfolio.data.account.as_of ?? null;
+}
+
+/** True when a journal statistics source with generated_at is stale (not unavailable). */
+export function journalSourceStale(
+  journal: SourceResult<{ generated_at?: string | null }> | null,
+  nowMs?: number,
+): boolean {
+  const timestamp = journalFreshnessTimestamp(journal);
+  if (!journal?.available || !timestamp) return false;
+  return freshnessFromTimestamp(timestamp, { nowMs })?.state === "stale";
 }
 
 /** Treat future-skewed or invalid timestamps as unavailable for display. */

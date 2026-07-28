@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAnalyticsApiParams,
+  buildAnalyticsWindowFilterKey,
+  buildLearningWindowFilterKey,
+  buildRuleComplianceFilterKey,
   buildSetupAnalyticsApiParams,
   formatAnalyticsWindowFiltersSummary,
   formatAppliedFiltersSummary,
@@ -278,6 +281,25 @@ describe("buildSetupAnalyticsApiParams", () => {
       end_date: "2026-01-31",
     });
     expect(behaviour.portfolio.setup).toBeUndefined();
+  });
+});
+
+describe("behaviour source filter keys", () => {
+  it("builds independent keys per endpoint parameter set", () => {
+    const journalParams = {
+      group_by: "rule_compliance" as const,
+      limit: 20,
+      symbol: "BTCUSDT",
+    };
+    const analyticsWindow = { start_date: "2026-01-01", end_date: "2026-01-31" };
+    const learningWindow = { start_date: "2026-02-01" };
+
+    expect(buildRuleComplianceFilterKey(journalParams)).not.toBe(
+      buildAnalyticsWindowFilterKey(analyticsWindow),
+    );
+    expect(buildAnalyticsWindowFilterKey(analyticsWindow)).not.toBe(
+      buildLearningWindowFilterKey(learningWindow),
+    );
   });
 });
 

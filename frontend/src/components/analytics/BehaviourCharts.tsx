@@ -14,7 +14,8 @@ import { RuleComplianceChart } from "./AnalyticsCharts";
 import {
   gateSourceByFreshness,
   journalFreshnessTimestamp,
-  tabSourcesStale,
+  journalSourceStale,
+  NO_SERVER_FRESHNESS_TIMESTAMP_NOTE,
 } from "./sourceFreshness";
 import { useBehaviourSources } from "./useBehaviourSources";
 
@@ -26,10 +27,17 @@ export type BehaviourChartsProps = {
 export function BehaviourCharts({ apiParams, enabled = true }: BehaviourChartsProps) {
   const {
     ruleCompliance,
+    ruleComplianceLoading,
+    ruleComplianceRetryLoading,
     proposalDiscipline,
+    proposalDisciplineLoading,
+    proposalDisciplineRetryLoading,
     learningDiscipline,
+    learningDisciplineLoading,
+    learningDisciplineRetryLoading,
     riskBehavior,
-    loading,
+    riskBehaviorLoading,
+    riskBehaviorRetryLoading,
     reloadRuleCompliance,
     reloadProposalDiscipline,
     reloadLearningDiscipline,
@@ -51,8 +59,8 @@ export function BehaviourCharts({ apiParams, enabled = true }: BehaviourChartsPr
     [ruleCompliance],
   );
 
-  const staleWholeTab = useMemo(
-    () => tabSourcesStale("behaviour", null, null, undefined, [ruleCompliance]),
+  const ruleComplianceStale = useMemo(
+    () => journalSourceStale(ruleCompliance),
     [ruleCompliance],
   );
 
@@ -62,27 +70,29 @@ export function BehaviourCharts({ apiParams, enabled = true }: BehaviourChartsPr
     <div className="space-y-6" data-testid="behaviour-charts">
       <RuleComplianceChart
         source={gatedRuleCompliance}
-        loading={loading && !ruleCompliance}
+        loading={ruleComplianceLoading || ruleComplianceRetryLoading}
         onRetry={() => void reloadRuleCompliance()}
         filtersSummary={ruleComplianceSummary}
-        staleWholeTab={staleWholeTab}
+        staleWholeTab={ruleComplianceStale}
       />
       <DisciplineScoreCards
         proposalSource={proposalDiscipline}
         learningSource={learningDiscipline}
-        loading={loading}
+        proposalLoading={proposalDisciplineLoading || proposalDisciplineRetryLoading}
+        learningLoading={learningDisciplineLoading || learningDisciplineRetryLoading}
         onRetryProposal={() => void reloadProposalDiscipline()}
         onRetryLearning={() => void reloadLearningDiscipline()}
         proposalFiltersSummary={analyticsWindowSummary}
         learningFiltersSummary={learningWindowSummary}
-        staleWholeTab={staleWholeTab}
+        proposalFreshnessNote={NO_SERVER_FRESHNESS_TIMESTAMP_NOTE}
+        learningFreshnessNote={NO_SERVER_FRESHNESS_TIMESTAMP_NOTE}
       />
       <RiskBehaviourCounters
         source={riskBehavior}
-        loading={loading && !riskBehavior}
+        loading={riskBehaviorLoading || riskBehaviorRetryLoading}
         onRetry={() => void reloadRiskBehavior()}
         filtersSummary={analyticsWindowSummary}
-        staleWholeTab={staleWholeTab}
+        freshnessNote={NO_SERVER_FRESHNESS_TIMESTAMP_NOTE}
       />
     </div>
   );

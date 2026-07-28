@@ -11,11 +11,14 @@ import { ChartFrame } from "./ChartFrame";
 type DisciplineScoreCardsProps = {
   proposalSource: SourceResult<DisciplineScoreResult> | null;
   learningSource: SourceResult<DisciplineAnalyticsResponse> | null;
-  loading?: boolean;
+  proposalLoading?: boolean;
+  learningLoading?: boolean;
   onRetryProposal?: () => void;
   onRetryLearning?: () => void;
   proposalFiltersSummary?: string;
   learningFiltersSummary?: string;
+  proposalFreshnessNote?: string;
+  learningFreshnessNote?: string;
   staleWholeTab?: boolean;
 };
 
@@ -27,23 +30,24 @@ function scoreLabel(value: number | null | undefined): string {
 export function DisciplineScoreCards({
   proposalSource,
   learningSource,
-  loading = false,
+  proposalLoading = false,
+  learningLoading = false,
   onRetryProposal,
   onRetryLearning,
   proposalFiltersSummary,
   learningFiltersSummary,
+  proposalFreshnessNote,
+  learningFreshnessNote,
   staleWholeTab = false,
 }: DisciplineScoreCardsProps) {
-  const proposalLoading = loading && !proposalSource;
-  const learningLoading = loading && !learningSource;
-
   return (
     <div className="grid gap-4 lg:grid-cols-2" data-testid="discipline-score-cards">
       <ChartFrame
         title="Proposal-flow discipline score"
         sourceLabel="GET /analytics/discipline"
         filtersSummary={proposalFiltersSummary}
-        loading={proposalLoading}
+        derivedNote={proposalFreshnessNote}
+        loading={proposalLoading && !proposalSource}
         error={
           proposalSource && !proposalSource.available
             ? proposalSource.error ?? "Proposal-flow discipline unavailable"
@@ -89,9 +93,10 @@ export function DisciplineScoreCards({
         title="Validation-session discipline score"
         sourceLabel="GET /learning-analytics/discipline"
         filtersSummary={learningFiltersSummary}
+        derivedNote={learningFreshnessNote}
         sampleSize={learningSource?.available ? learningSource.data?.sample_size ?? null : null}
         sampleLabel="validation sessions"
-        loading={learningLoading}
+        loading={learningLoading && !learningSource}
         error={
           learningSource && !learningSource.available
             ? learningSource.error ?? "Validation-session discipline unavailable"

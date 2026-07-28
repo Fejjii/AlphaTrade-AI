@@ -4,33 +4,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { loadSource, type SourceResult } from "@/components/workflows";
 import { api } from "@/lib/api";
-import type {
-  DisciplineAnalyticsResponse,
-  DisciplineScoreResult,
-  JournalStatsResponse,
-  RiskBehaviorAnalytics,
-} from "@/lib/api/types";
 
-import { buildFilterKey, type AnalyticsFilterParams } from "./filterValidation";
+import {
+  buildAnalyticsWindowFilterKey,
+  buildLearningWindowFilterKey,
+  buildRuleComplianceFilterKey,
+  type AnalyticsFilterParams,
+} from "./filterValidation";
 
-type BehaviourSnapshot = {
-  filterKey: string;
-  ruleCompliance: SourceResult<JournalStatsResponse>;
-  proposalDiscipline: SourceResult<DisciplineScoreResult>;
-  learningDiscipline: SourceResult<DisciplineAnalyticsResponse>;
-  riskBehavior: SourceResult<RiskBehaviorAnalytics>;
+type IndependentSourceReturn<T> = {
+  source: SourceResult<T> | null;
+  loading: boolean;
+  retryLoading: boolean;
+  reload: () => Promise<void>;
+  loadedKey: string | null;
 };
 
-/**
- * Independent Behaviour-tab loaders. One failed source never blocks sibling widgets,
- * and stale filter responses are never displayed under the current filter key.
- */
-export function useBehaviourSources(params: AnalyticsFilterParams, enabled: boolean) {
-  const filterKey = useMemo(() => buildFilterKey(params), [params]);
-  const [snapshot, setSnapshot] = useState<BehaviourSnapshot | null>(null);
+function useIndependentBehaviourSource<T>(
+  enabled: boolean,
+  requestKey: string,
+  fetcher: () => Promise<SourceResult<T>>,
+): IndependentSourceReturn<T> {
+  const [result, setResult] = useState<SourceResult<T> | null>(null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -39,109 +41,144 @@ export function useBehaviourSources(params: AnalyticsFilterParams, enabled: bool
     };
   }, []);
 
-  const load = useCallback(async () => {
-    if (!enabled) return;
+  useEffect(() => {
+    if (!enabled) {
+      setResult(null);
+      setLoadedKey(null);
+      setLoading(false);
+      setRetryLoading(false);
+      return;
+    }
+
     const generation = ++generationRef.current;
     setLoading(true);
+    setResult(null);
 
-    const [ruleCompliance, proposalDiscipline, learningDiscipline, riskBehavior] =
-      await Promise.all([
-        loadSource(api.journal.statistics(params.ruleComplianceJournal)),
-        loadSource(api.analytics.discipline(params.analyticsWindow)),
-        loadSource(api.learningAnalytics.discipline(params.learningWindow)),
-        loadSource(api.analytics.riskBehavior(params.analyticsWindow)),
-      ]);
-
-    if (!mountedRef.current || generation !== generationRef.current) return;
-
-    setSnapshot({
-      filterKey,
-      ruleCompliance,
-      proposalDiscipline,
-      learningDiscipline,
-      riskBehavior,
+    void fetcherRef.current().then((next) => {
+      if (!mountedRef.current || generation !== generationRef.current) return;
+      setResult(next);
+      setLoadedKey(requestKey);
+      setLoading(false);
     });
-    setLoading(false);
-  }, [
-    enabled,
-    filterKey,
-    params.analyticsWindow,
-    params.learningWindow,
-    params.ruleComplianceJournal,
-  ]);
+  }, [enabled, requestKey]);
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
     if (!enabled) return;
-    void load();
-  }, [enabled, load]);
+    const generation = ++generationRef.current;
+    setRetryLoading(true);
+    try {
+      const next = await fetcherRef.current();
+      if (!mountedRef.current || generation !== generationRef.current) return;
+      setResult(next);
+      setLoadedKey(requestKey);
+    } finally {
+      if (mountedRef.current && generation === generationRef.current) {
+        setRetryLoading(false);
+      }
+    }
+  }, [enabled, requestKey]);
 
-  const matchesCurrentFilter = enabled && snapshot?.filterKey === filterKey;
-  const ruleCompliance = matchesCurrentFilter ? snapshot?.ruleCompliance ?? null : null;
-  const proposalDiscipline = matchesCurrentFilter ? snapshot?.proposalDiscipline ?? null : null;
-  const learningDiscipline = matchesCurrentFilter ? snapshot?.learningDiscipline ?? null : null;
-  const riskBehavior = matchesCurrentFilter ? snapshot?.riskBehavior ?? null : null;
-  const isLoading = enabled && (loading || !matchesCurrentFilter);
-
-  const reloadRuleCompliance = useCallback(async () => {
-    if (!enabled) return;
-    const generation = generationRef.current;
-    const next = await loadSource(api.journal.statistics(params.ruleComplianceJournal));
-    if (!mountedRef.current || generation !== generationRef.current) return;
-    setSnapshot((current) =>
-      current && current.filterKey === filterKey
-        ? { ...current, ruleCompliance: next }
-        : current,
-    );
-  }, [enabled, filterKey, params.ruleComplianceJournal]);
-
-  const reloadProposalDiscipline = useCallback(async () => {
-    if (!enabled) return;
-    const generation = generationRef.current;
-    const next = await loadSource(api.analytics.discipline(params.analyticsWindow));
-    if (!mountedRef.current || generation !== generationRef.current) return;
-    setSnapshot((current) =>
-      current && current.filterKey === filterKey
-        ? { ...current, proposalDiscipline: next }
-        : current,
-    );
-  }, [enabled, filterKey, params.analyticsWindow]);
-
-  const reloadLearningDiscipline = useCallback(async () => {
-    if (!enabled) return;
-    const generation = generationRef.current;
-    const next = await loadSource(api.learningAnalytics.discipline(params.learningWindow));
-    if (!mountedRef.current || generation !== generationRef.current) return;
-    setSnapshot((current) =>
-      current && current.filterKey === filterKey
-        ? { ...current, learningDiscipline: next }
-        : current,
-    );
-  }, [enabled, filterKey, params.learningWindow]);
-
-  const reloadRiskBehavior = useCallback(async () => {
-    if (!enabled) return;
-    const generation = generationRef.current;
-    const next = await loadSource(api.analytics.riskBehavior(params.analyticsWindow));
-    if (!mountedRef.current || generation !== generationRef.current) return;
-    setSnapshot((current) =>
-      current && current.filterKey === filterKey
-        ? { ...current, riskBehavior: next }
-        : current,
-    );
-  }, [enabled, filterKey, params.analyticsWindow]);
+  const displaySource = enabled && loadedKey === requestKey ? result : null;
+  const isLoading = enabled && (loading || loadedKey !== requestKey);
 
   return {
-    ruleCompliance,
-    proposalDiscipline,
-    learningDiscipline,
-    riskBehavior,
+    source: displaySource,
     loading: isLoading,
-    reload: load,
+    retryLoading,
+    reload,
+    loadedKey: enabled ? loadedKey : null,
+  };
+}
+
+/**
+ * Behaviour-tab loaders with independent source slots, keys, and retry actions.
+ * A slow or failed source never delays already completed sibling widgets.
+ */
+export function useBehaviourSources(params: AnalyticsFilterParams, enabled: boolean) {
+  const ruleComplianceKey = useMemo(
+    () => buildRuleComplianceFilterKey(params.ruleComplianceJournal),
+    [params.ruleComplianceJournal],
+  );
+  const analyticsWindowKey = useMemo(
+    () => buildAnalyticsWindowFilterKey(params.analyticsWindow),
+    [params.analyticsWindow],
+  );
+  const learningWindowKey = useMemo(
+    () => buildLearningWindowFilterKey(params.learningWindow),
+    [params.learningWindow],
+  );
+
+  const ruleComplianceSlot = useIndependentBehaviourSource(
+    enabled,
+    ruleComplianceKey,
+    () => loadSource(api.journal.statistics(params.ruleComplianceJournal)),
+  );
+  const proposalDisciplineSlot = useIndependentBehaviourSource(
+    enabled,
+    analyticsWindowKey,
+    () => loadSource(api.analytics.discipline(params.analyticsWindow)),
+  );
+  const learningDisciplineSlot = useIndependentBehaviourSource(
+    enabled,
+    learningWindowKey,
+    () => loadSource(api.learningAnalytics.discipline(params.learningWindow)),
+  );
+  const riskBehaviorSlot = useIndependentBehaviourSource(
+    enabled,
+    analyticsWindowKey,
+    () => loadSource(api.analytics.riskBehavior(params.analyticsWindow)),
+  );
+
+  const reloadRuleCompliance = ruleComplianceSlot.reload;
+  const reloadProposalDiscipline = proposalDisciplineSlot.reload;
+  const reloadLearningDiscipline = learningDisciplineSlot.reload;
+  const reloadRiskBehavior = riskBehaviorSlot.reload;
+
+  const reload = useCallback(async () => {
+    await Promise.all([
+      reloadRuleCompliance(),
+      reloadProposalDiscipline(),
+      reloadLearningDiscipline(),
+      reloadRiskBehavior(),
+    ]);
+  }, [
     reloadRuleCompliance,
     reloadProposalDiscipline,
     reloadLearningDiscipline,
     reloadRiskBehavior,
-    filterKey,
-    loadedFilterKey: matchesCurrentFilter ? snapshot?.filterKey ?? null : null,
+  ]);
+
+  const loading =
+    ruleComplianceSlot.loading ||
+    proposalDisciplineSlot.loading ||
+    learningDisciplineSlot.loading ||
+    riskBehaviorSlot.loading;
+
+  return {
+    ruleCompliance: ruleComplianceSlot.source,
+    ruleComplianceLoading: ruleComplianceSlot.loading,
+    ruleComplianceRetryLoading: ruleComplianceSlot.retryLoading,
+    proposalDiscipline: proposalDisciplineSlot.source,
+    proposalDisciplineLoading: proposalDisciplineSlot.loading,
+    proposalDisciplineRetryLoading: proposalDisciplineSlot.retryLoading,
+    learningDiscipline: learningDisciplineSlot.source,
+    learningDisciplineLoading: learningDisciplineSlot.loading,
+    learningDisciplineRetryLoading: learningDisciplineSlot.retryLoading,
+    riskBehavior: riskBehaviorSlot.source,
+    riskBehaviorLoading: riskBehaviorSlot.loading,
+    riskBehaviorRetryLoading: riskBehaviorSlot.retryLoading,
+    loading,
+    reload,
+    reloadRuleCompliance,
+    reloadProposalDiscipline,
+    reloadLearningDiscipline,
+    reloadRiskBehavior,
+    ruleComplianceKey,
+    analyticsWindowKey,
+    learningWindowKey,
+    ruleComplianceLoadedKey: ruleComplianceSlot.loadedKey,
+    proposalDisciplineLoadedKey: proposalDisciplineSlot.loadedKey,
+    learningDisciplineLoadedKey: learningDisciplineSlot.loadedKey,
+    riskBehaviorLoadedKey: riskBehaviorSlot.loadedKey,
   };
 }

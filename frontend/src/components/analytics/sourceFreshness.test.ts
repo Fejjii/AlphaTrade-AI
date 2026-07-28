@@ -6,6 +6,7 @@ import {
   FRESHNESS_UNAVAILABLE_MESSAGE,
   gateSourceByFreshness,
   journalFreshnessTimestamp,
+  journalSourceStale,
   portfolioFreshnessTimestamp,
   tabSourcesStale,
 } from "./sourceFreshness";
@@ -51,5 +52,11 @@ describe("sourceFreshness", () => {
     const journal = ok({ generated_at: "2026-07-25T11:59:00Z" });
     const portfolio = ok({ account: { as_of: "2026-07-25T12:05:00Z" } });
     expect(tabSourcesStale("overview", journal, portfolio, nowMs)).toBe(false);
+  });
+
+  it("reports rule compliance stale without requiring sibling sources", () => {
+    const staleTs = "2026-07-25T11:00:00Z";
+    const journal = ok({ generated_at: staleTs });
+    expect(journalSourceStale(journal, nowMs)).toBe(true);
   });
 });

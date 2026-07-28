@@ -2,7 +2,10 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AnalyticsFilterParams } from "./filterValidation";
-import { FRESHNESS_UNAVAILABLE_MESSAGE } from "./sourceFreshness";
+import {
+  FRESHNESS_UNAVAILABLE_MESSAGE,
+  NO_SERVER_FRESHNESS_TIMESTAMP_NOTE,
+} from "./sourceFreshness";
 import { BehaviourCharts } from "./BehaviourCharts";
 import type { SourceResult } from "@/components/workflows";
 import type {
@@ -147,12 +150,25 @@ function mockBehaviourSources(
 ): ReturnType<typeof useBehaviourSources> {
   return {
     ruleCompliance: null,
+    ruleComplianceLoading: false,
+    ruleComplianceRetryLoading: false,
     proposalDiscipline: null,
+    proposalDisciplineLoading: false,
+    proposalDisciplineRetryLoading: false,
     learningDiscipline: null,
+    learningDisciplineLoading: false,
+    learningDisciplineRetryLoading: false,
     riskBehavior: null,
+    riskBehaviorLoading: false,
+    riskBehaviorRetryLoading: false,
     loading: false,
-    filterKey: "key",
-    loadedFilterKey: "key",
+    ruleComplianceKey: "rule-key",
+    analyticsWindowKey: "analytics-key",
+    learningWindowKey: "learning-key",
+    ruleComplianceLoadedKey: "rule-key",
+    proposalDisciplineLoadedKey: "analytics-key",
+    learningDisciplineLoadedKey: "learning-key",
+    riskBehaviorLoadedKey: "analytics-key",
     reload: vi.fn(),
     reloadRuleCompliance: vi.fn(),
     reloadProposalDiscipline: vi.fn(),
@@ -184,6 +200,34 @@ describe("BehaviourCharts integration", () => {
     );
     expect(screen.getByTestId("discipline-proposal-score")).toHaveTextContent("82");
     expect(screen.getByTestId("risk-behaviour-counters")).toBeInTheDocument();
+    expect(screen.queryByTestId("discipline-proposal-card-error")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("does not mark discipline or risk widgets stale when rule compliance is stale", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
+    vi.mocked(useBehaviourSources).mockReturnValue(
+      mockBehaviourSources({
+        ruleCompliance: ok({
+          ...ruleComplianceData,
+          generated_at: "2026-07-25T11:00:00Z",
+        }),
+        proposalDiscipline: ok(proposal),
+        learningDiscipline: ok(learning),
+        riskBehavior: ok(risk),
+      }),
+    );
+
+    render(<BehaviourCharts apiParams={apiParams} enabled />);
+
+    expect(screen.getByTestId("rule-compliance-chart")).toHaveTextContent(/stale for this view/i);
+    expect(screen.queryByTestId("discipline-proposal-card")).not.toHaveTextContent(
+      /stale for this view/i,
+    );
+    expect(screen.queryByTestId("risk-behaviour-counters")).not.toHaveTextContent(
+      /stale for this view/i,
+    );
     vi.useRealTimers();
   });
 
@@ -202,6 +246,7 @@ describe("BehaviourCharts integration", () => {
     const proposalCard = screen.getByTestId("discipline-proposal-card");
     expect(proposalCard).toHaveTextContent("dates 2026-01-01 → 2026-01-31");
     expect(proposalCard).not.toHaveTextContent("symbol BTCUSDT");
+    expect(proposalCard).toHaveTextContent(NO_SERVER_FRESHNESS_TIMESTAMP_NOTE);
 
     const ruleCard = screen.getByTestId("rule-compliance-chart");
     expect(ruleCard).toHaveTextContent("symbol BTCUSDT");
