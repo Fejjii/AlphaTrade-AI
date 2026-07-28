@@ -15,6 +15,12 @@ const navigationState = {
   pathname: "/",
 };
 
+type ProvidersState = { providers: { is_mock: boolean }[] } | null;
+
+const appState: { providers: ProvidersState } = {
+  providers: { providers: [] },
+};
+
 vi.mock("next/navigation", () => ({
   usePathname: () => navigationState.pathname,
 }));
@@ -39,9 +45,8 @@ vi.mock("@/contexts/AppContext", () => ({
     },
     killSwitchError: null,
     health: { status: "ok", version: "0.1", execution_mode: "paper", real_trading_enabled: false },
-    providers: { providers: [] },
+    providers: appState.providers,
   }),
-  useMockProviders: () => [],
   useSafetyPosture: () => posture,
 }));
 
@@ -125,12 +130,41 @@ describe("TopBar status strip PaperModeIndicator", () => {
   });
 });
 
+describe("TopBar provider status chip (FP2-110)", () => {
+  beforeEach(() => {
+    posture.executionMode = "paper";
+    posture.realTradingEnabled = false;
+    posture.postureKnown = true;
+    navigationState.pathname = "/";
+    appState.providers = { providers: [] };
+  });
+
+  afterEach(() => cleanup());
+
+  it("shows the mock count when provider status is loaded", () => {
+    appState.providers = {
+      providers: [{ is_mock: true }, { is_mock: true }, { is_mock: false }],
+    };
+    renderTopBar();
+    expect(screen.getByTestId("topbar-providers-chip")).toHaveTextContent("2 mock");
+  });
+
+  it("shows a distinct providers-unknown state instead of a healthy-looking zero when status failed", () => {
+    appState.providers = null;
+    renderTopBar();
+    const chip = screen.getByTestId("topbar-providers-chip");
+    expect(chip).toHaveTextContent("Providers unknown");
+    expect(chip).not.toHaveTextContent("0 mock");
+  });
+});
+
 describe("TopBar page identity and account control", () => {
   beforeEach(() => {
     posture.executionMode = "paper";
     posture.realTradingEnabled = false;
     posture.postureKnown = true;
     navigationState.pathname = "/";
+    appState.providers = { providers: [] };
     logout.mockReset();
   });
 

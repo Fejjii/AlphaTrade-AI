@@ -5,8 +5,35 @@ import { Badge } from "@/components/ui/badge";
 import type { DailyDisciplineSnapshot, DisciplineScoreSummary } from "@/lib/api/types";
 import { formatDecimal } from "@/lib/utils";
 
+/**
+ * Snapshot view with honest per-metric availability (FP2-102): fields the
+ * current sources could not measure are null and render as unavailable —
+ * never as fabricated zeros or "clear" protections. The full backend
+ * DailyDisciplineSnapshot remains assignable.
+ */
+export type DisciplineSnapshotView = Omit<
+  DailyDisciplineSnapshot,
+  | "trades_today"
+  | "paper_trades_opened_today"
+  | "paper_trades_closed_today"
+  | "journal_entries_today"
+  | "loss_lock_active"
+  | "green_day_protection_active"
+  | "overtrading_warning_active"
+  | "discipline_status"
+> & {
+  trades_today: number | null;
+  paper_trades_opened_today: number | null;
+  paper_trades_closed_today: number | null;
+  journal_entries_today: number | null;
+  loss_lock_active: boolean | null;
+  green_day_protection_active: boolean | null;
+  overtrading_warning_active: boolean | null;
+  discipline_status: DailyDisciplineSnapshot["discipline_status"] | null;
+};
+
 type Props = {
-  snapshot: DailyDisciplineSnapshot | null;
+  snapshot: DisciplineSnapshotView | null;
   disciplineScore?: DisciplineScoreSummary | null;
 };
 
@@ -30,16 +57,25 @@ const SOURCE_LABEL: Record<string, string> = {
   system_default: "System defaults",
 };
 
-function protectionBadge(active: boolean, label: string) {
+/**
+ * Tri-state protection badge: null means the backing source is unavailable
+ * and must never look like an all-clear (FP2-102).
+ */
+function protectionBadge(active: boolean | null, label: string) {
   return (
-    <Badge variant={active ? "warning" : "muted"} data-testid={`discipline-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      {label}: {active ? "engaged" : "clear"}
+    <Badge
+      variant={active === true ? "warning" : "muted"}
+      data-testid={`discipline-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      {label}: {active === true ? "engaged" : active === false ? "clear" : "unknown"}
     </Badge>
   );
 }
 
 export function TodaysDisciplineCard({ snapshot, disciplineScore }: Props) {
-  const statusVariant = STATUS_VARIANT[snapshot?.discipline_status ?? "calm"] ?? "muted";
+  const statusVariant = snapshot?.discipline_status
+    ? (STATUS_VARIANT[snapshot.discipline_status] ?? "muted")
+    : "muted";
   const scoreBand = disciplineScore?.band ?? null;
   const scoreVariant = SCORE_BAND_VARIANT[scoreBand ?? ""] ?? "muted";
 
@@ -52,7 +88,7 @@ export function TodaysDisciplineCard({ snapshot, disciplineScore }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           {snapshot ? (
             <Badge variant={statusVariant} data-testid="discipline-status-badge">
-              {snapshot.discipline_status}
+              {snapshot.discipline_status ?? "status unavailable"}
             </Badge>
           ) : (
             <span className="text-zinc-500">Daily discipline snapshot not available yet.</span>
@@ -85,9 +121,9 @@ export function TodaysDisciplineCard({ snapshot, disciplineScore }: Props) {
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          {protectionBadge(snapshot?.loss_lock_active ?? false, "Loss protection")}
-          {protectionBadge(snapshot?.green_day_protection_active ?? false, "Green-day protection")}
-          {protectionBadge(snapshot?.overtrading_warning_active ?? false, "Frequency notice")}
+          {protectionBadge(snapshot?.loss_lock_active ?? null, "Loss protection")}
+          {protectionBadge(snapshot?.green_day_protection_active ?? null, "Green-day protection")}
+          {protectionBadge(snapshot?.overtrading_warning_active ?? null, "Frequency notice")}
         </div>
 
         {disciplineScore?.main_contributors.length ? (

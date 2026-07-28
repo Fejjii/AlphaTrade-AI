@@ -19,7 +19,7 @@ export type ComparisonChartsProps = {
 };
 
 export function ComparisonCharts({ apiParams, enabled = true }: ComparisonChartsProps) {
-  const { comparison, loading, reload } = useComparisonSources(apiParams, enabled);
+  const { comparison, loading, retryLoading, reload } = useComparisonSources(apiParams, enabled);
 
   const comparisonSummary = formatComparisonFiltersSummary(apiParams.comparison);
 
@@ -39,14 +39,14 @@ export function ComparisonCharts({ apiParams, enabled = true }: ComparisonCharts
     <div className="space-y-6" data-testid="comparison-charts">
       <ComparisonChart
         source={gatedComparison}
-        loading={loading && !comparison}
+        loading={(loading && !comparison) || retryLoading}
         onRetry={() => void reload()}
         filtersSummary={comparisonSummary}
         staleWholeTab={staleWholeTab}
       />
       <DecisionQualityTiles
         source={gatedComparison}
-        loading={loading && !comparison}
+        loading={(loading && !comparison) || retryLoading}
         onRetry={() => void reload()}
         filtersSummary={comparisonSummary}
         staleWholeTab={staleWholeTab}

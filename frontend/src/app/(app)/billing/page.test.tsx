@@ -1,12 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import BillingPage from "@/app/(app)/billing/page";
 
-vi.mock("@/hooks/useAsyncData", () => ({
-  useAsyncData: () => ({
-    data: {
-      status: {
+const billingData = {
+  status: {
         billing_enabled: false,
         provider: "mock",
         is_mock: true,
@@ -81,12 +79,24 @@ vi.mock("@/hooks/useAsyncData", () => ({
         warnings: [],
         blocked_features: [],
       },
-    },
-    loading: false,
-    error: null,
-    reload: vi.fn(),
-  }),
+};
+
+const asyncState = {
+  data: billingData as typeof billingData | null,
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn(),
+};
+
+vi.mock("@/hooks/useAsyncData", () => ({
+  useAsyncData: () => ({ ...asyncState }),
 }));
+
+beforeEach(() => {
+  asyncState.data = billingData;
+  asyncState.loading = false;
+  asyncState.error = null;
+});
 
 afterEach(() => {
   cleanup();
@@ -118,5 +128,28 @@ describe("BillingPage", () => {
   it("renders usage quota panel", () => {
     render(<BillingPage />);
     expect(screen.getByText(/monthly tokens/i)).toBeInTheDocument();
+  });
+
+  it("does not assert a billing mode while status is loading (FP2-103)", () => {
+    asyncState.data = null;
+    asyncState.loading = true;
+
+    render(<BillingPage />);
+
+    expect(screen.queryByTestId("billing-mock-badge")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("billing-status-unavailable")).not.toBeInTheDocument();
+  });
+
+  it("shows 'billing status unavailable' instead of a mode badge when status fails (FP2-103)", () => {
+    asyncState.data = null;
+    asyncState.error = "billing status failed";
+
+    render(<BillingPage />);
+
+    expect(screen.queryByTestId("billing-mock-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("billing-status-unavailable")).toHaveTextContent(
+      "Billing status unavailable",
+    );
+    expect(screen.getByText("billing status failed")).toBeInTheDocument();
   });
 });

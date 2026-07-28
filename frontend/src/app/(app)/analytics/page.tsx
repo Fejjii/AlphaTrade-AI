@@ -159,7 +159,7 @@ export default function AnalyticsPage() {
               <OverviewStats
                 journal={gatedJournal}
                 portfolio={gatedPortfolio}
-                loading={shared.loading}
+                loading={shared.loading || shared.retryLoading}
                 onRetryJournal={() => void shared.reload()}
                 onRetryPortfolio={() => void shared.reload()}
               />
@@ -180,7 +180,7 @@ export default function AnalyticsPage() {
           {state.tab === "performance" && !shared.bothFailed ? (
             <PerformanceCharts
               source={gatedPortfolio}
-              loading={shared.loading && !shared.portfolio}
+              loading={(shared.loading && !shared.portfolio) || shared.retryLoading}
               onRetry={() => void shared.reload()}
               filtersSummary={filtersSummary}
               staleWholeTab={staleWholeTab}

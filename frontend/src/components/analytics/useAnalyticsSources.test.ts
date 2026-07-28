@@ -259,6 +259,38 @@ describe("useAnalyticsSources", () => {
     expect(result.current.loadedFilterKey).toBe(buildSharedAnalyticsFilterKey(defaultParams));
   });
 
+  it("reports retryLoading during a same-filter reload while prior data stays mounted (FP2-126)", async () => {
+    vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
+    vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);
+
+    const { result } = renderHook(() => useAnalyticsSources(defaultParams));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.retryLoading).toBe(false);
+
+    let resolveSlow: (value: unknown) => void = () => undefined;
+    vi.mocked(api.journal.statistics).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSlow = resolve;
+      }) as never,
+    );
+
+    act(() => {
+      void result.current.reload();
+    });
+
+    // Same-filter retry: prior data stays mounted, but retryLoading is
+    // exposed so consumers can show an honest loading state.
+    expect(result.current.retryLoading).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.journal).not.toBeNull();
+
+    await act(async () => {
+      resolveSlow(journalResponse);
+    });
+    await waitFor(() => expect(result.current.retryLoading).toBe(false));
+    expect(result.current.journal?.data).toBeTruthy();
+  });
+
   it("reports partial source behavior honestly", async () => {
     vi.mocked(api.journal.statistics).mockRejectedValue(new Error("journal down"));
     vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);

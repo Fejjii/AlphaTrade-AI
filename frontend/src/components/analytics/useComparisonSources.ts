@@ -21,6 +21,7 @@ export function useComparisonSources(params: AnalyticsFilterParams, enabled: boo
   const filterKey = useMemo(() => buildFilterKey(params), [params]);
   const [snapshot, setSnapshot] = useState<ComparisonSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -31,18 +32,32 @@ export function useComparisonSources(params: AnalyticsFilterParams, enabled: boo
     };
   }, []);
 
-  const load = useCallback(async () => {
-    if (!enabled) return;
-    const generation = ++generationRef.current;
-    setLoading(true);
+  const runLoad = useCallback(
+    async (mode: "initial" | "retry") => {
+      if (!enabled) return;
+      const generation = ++generationRef.current;
+      if (mode === "retry") {
+        // Same-filter reloads keep prior data mounted; retryLoading lets
+        // consumers show an honest loading state instead of stale figures
+        // with no reload indication (FP2-126).
+        setRetryLoading(true);
+      } else {
+        setLoading(true);
+      }
 
-    const comparison = await loadSource(api.journal.comparison(params.comparison));
+      const comparison = await loadSource(api.journal.comparison(params.comparison));
 
-    if (!mountedRef.current || generation !== generationRef.current) return;
+      if (!mountedRef.current || generation !== generationRef.current) return;
 
-    setSnapshot({ filterKey, comparison });
-    setLoading(false);
-  }, [enabled, filterKey, params.comparison]);
+      setSnapshot({ filterKey, comparison });
+      setLoading(false);
+      setRetryLoading(false);
+    },
+    [enabled, filterKey, params.comparison],
+  );
+
+  const load = useCallback(() => runLoad("initial"), [runLoad]);
+  const reload = useCallback(() => runLoad("retry"), [runLoad]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -56,7 +71,8 @@ export function useComparisonSources(params: AnalyticsFilterParams, enabled: boo
   return {
     comparison,
     loading: isLoading,
-    reload: load,
+    retryLoading: enabled && retryLoading,
+    reload,
     filterKey,
     loadedFilterKey: matchesCurrentFilter ? snapshot?.filterKey ?? null : null,
   };

@@ -27,7 +27,11 @@ export default function BillingPage() {
 
   const { data, loading, error, reload } = useAsyncData(loader, []);
 
-  const mockMode = data ? data.status.is_mock || !data.status.billing_enabled : true;
+  // Tri-state billing mode (FP2-103): unknown until the status is verified.
+  // Never assert "mock billing" (or any mode) while loading or after failure.
+  const mockMode: boolean | null = data
+    ? data.status.is_mock || !data.status.billing_enabled
+    : null;
   const livePayments =
     data?.status.billing_enabled === true && data.status.live_checkout_available;
 
@@ -54,7 +58,7 @@ export default function BillingPage() {
         </p>
       </div>
 
-      {mockMode ? (
+      {mockMode === true ? (
         <div
           className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
           data-testid="billing-mock-badge"
@@ -63,14 +67,25 @@ export default function BillingPage() {
           <code className="rounded bg-zinc-900 px-1">BILLING_ENABLED=true</code> and Stripe keys
           for live checkout (staging/production only).
         </div>
-      ) : livePayments ? (
+      ) : mockMode === false && livePayments ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
           Live billing provider configured. Checkout uses Stripe placeholder URLs until API wiring.
         </div>
       ) : null}
 
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
+      {error ? (
+        <>
+          <p
+            className="text-sm text-amber-500/90"
+            data-testid="billing-status-unavailable"
+            role="status"
+          >
+            Billing status unavailable — the billing mode has not been verified.
+          </p>
+          <ErrorState message={error} onRetry={() => void reload()} />
+        </>
+      ) : null}
       {actionError ? <ErrorState message={actionError} /> : null}
       {actionMessage ? <SuccessState message={actionMessage} /> : null}
 
@@ -120,9 +135,9 @@ export default function BillingPage() {
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={busy || mockMode}
+                      disabled={busy || mockMode === true}
                       title={
-                        mockMode
+                        mockMode === true
                           ? "Mock checkout — billing disabled or mock provider"
                           : "OWNER only"
                       }
@@ -140,7 +155,7 @@ export default function BillingPage() {
                         })
                       }
                     >
-                      {mockMode ? "Mock checkout" : "Checkout"}
+                      {mockMode === true ? "Mock checkout" : "Checkout"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -182,7 +197,7 @@ export default function BillingPage() {
                   })
                 }
               >
-                {mockMode ? "Mock customer portal" : "Customer portal"}
+                {mockMode === true ? "Mock customer portal" : "Customer portal"}
               </Button>
               <Button
                 type="button"

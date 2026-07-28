@@ -29,6 +29,7 @@ export function useAnalyticsSources(params: AnalyticsFilterParams) {
   );
   const [snapshot, setSnapshot] = useState<SourcesSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retryLoading, setRetryLoading] = useState(false);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -39,20 +40,34 @@ export function useAnalyticsSources(params: AnalyticsFilterParams) {
     };
   }, []);
 
-  const load = useCallback(async () => {
-    const generation = ++generationRef.current;
-    setLoading(true);
+  const runLoad = useCallback(
+    async (mode: "initial" | "retry") => {
+      const generation = ++generationRef.current;
+      if (mode === "retry") {
+        // Same-filter reloads keep prior data mounted; retryLoading lets
+        // consumers show an honest loading state instead of stale figures
+        // with no reload indication (FP2-126).
+        setRetryLoading(true);
+      } else {
+        setLoading(true);
+      }
 
-    const [journal, portfolio] = await Promise.all([
-      loadSource(api.journal.statistics(params.journal)),
-      loadSource(api.performance.portfolio(params.portfolio)),
-    ]);
+      const [journal, portfolio] = await Promise.all([
+        loadSource(api.journal.statistics(params.journal)),
+        loadSource(api.performance.portfolio(params.portfolio)),
+      ]);
 
-    if (!mountedRef.current || generation !== generationRef.current) return;
+      if (!mountedRef.current || generation !== generationRef.current) return;
 
-    setSnapshot({ filterKey, journal, portfolio });
-    setLoading(false);
-  }, [filterKey, params.journal, params.portfolio]);
+      setSnapshot({ filterKey, journal, portfolio });
+      setLoading(false);
+      setRetryLoading(false);
+    },
+    [filterKey, params.journal, params.portfolio],
+  );
+
+  const load = useCallback(() => runLoad("initial"), [runLoad]);
+  const reload = useCallback(() => runLoad("retry"), [runLoad]);
 
   useEffect(() => {
     void load();
@@ -74,7 +89,8 @@ export function useAnalyticsSources(params: AnalyticsFilterParams) {
     journal,
     portfolio,
     loading: isLoading,
-    reload: load,
+    retryLoading,
+    reload,
     bothFailed,
     partialData,
     filterKey,

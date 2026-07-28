@@ -54,7 +54,6 @@ vi.mock("@/contexts/AppContext", () => ({
     },
     providers: { providers: [] },
   }),
-  useMockProviders: () => [],
   useSafetyPosture: () => ({
     executionMode: "paper",
     realTradingEnabled: false,
