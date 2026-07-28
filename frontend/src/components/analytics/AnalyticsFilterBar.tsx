@@ -4,11 +4,17 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
-import type { JournalTradeSource, PortfolioSourceFilter, UserStrategy } from "@/lib/api/types";
+import type {
+  JournalTradeSource,
+  MarketRegime,
+  PortfolioSourceFilter,
+  TradeRuleCompliance,
+  UserStrategy,
+} from "@/lib/api/types";
 
 import { formatDateRangeLabel } from "./format";
 import { JOURNAL_TRADE_SOURCE_OPTIONS } from "./filterValidation";
-import type { AnalyticsFilterState, AnalyticsTab, DatePreset } from "./useAnalyticsFilters";
+import type { AnalyticsDraft, AnalyticsFilterState, AnalyticsTab, DatePreset } from "./useAnalyticsFilters";
 
 const PRESETS: { value: DatePreset; label: string }[] = [
   { value: "7d", label: "7 days" },
@@ -24,6 +30,24 @@ const PP_SOURCE_OPTIONS: { value: PortfolioSourceFilter; label: string }[] = [
   { value: "paper_validation", label: "Paper validation" },
 ];
 
+const RULE_COMPLIANCE_OPTIONS: { value: "" | TradeRuleCompliance; label: string }[] = [
+  { value: "", label: "All compliance" },
+  { value: "compliant", label: "Compliant" },
+  { value: "partial", label: "Partial" },
+  { value: "violated", label: "Violated" },
+  { value: "unassessed", label: "Unassessed" },
+];
+
+const REGIME_OPTIONS: { value: "" | MarketRegime; label: string }[] = [
+  { value: "", label: "All regimes" },
+  { value: "trending_up", label: "Trending up" },
+  { value: "trending_down", label: "Trending down" },
+  { value: "ranging", label: "Ranging" },
+  { value: "volatile", label: "Volatile" },
+  { value: "quiet", label: "Quiet" },
+  { value: "unknown", label: "Unknown" },
+];
+
 type Draft = {
   dateFrom: string;
   dateTo: string;
@@ -33,6 +57,8 @@ type Draft = {
   journalSource: JournalTradeSource | "";
   setupId: string;
   userStrategyId: string;
+  ruleCompliance: "" | TradeRuleCompliance;
+  marketRegime: "" | MarketRegime;
 };
 
 function draftFromState(state: AnalyticsFilterState): Draft {
@@ -45,6 +71,8 @@ function draftFromState(state: AnalyticsFilterState): Draft {
     journalSource: state.journalSource ?? "",
     setupId: state.setupId ?? "",
     userStrategyId: state.userStrategyId ?? "",
+    ruleCompliance: state.ruleCompliance ?? "",
+    marketRegime: state.marketRegime ?? "",
   };
 }
 
@@ -55,16 +83,7 @@ export type AnalyticsFilterBarProps = {
   strategiesLoaded?: boolean;
   strategiesError?: string | null;
   onRetryStrategies?: () => void;
-  onApplyDraft: (draft: {
-    dateFrom?: string | null;
-    dateTo?: string | null;
-    symbol?: string | null;
-    timeframe?: string | null;
-    portfolioSource?: PortfolioSourceFilter | null;
-    journalSource?: JournalTradeSource | null;
-    setupId?: string | null;
-    userStrategyId?: string | null;
-  }) => void;
+  onApplyDraft: (draft: AnalyticsDraft) => void;
   onApplyPreset: (preset: DatePreset) => void;
   onClear: () => void;
 };
@@ -87,7 +106,11 @@ export function AnalyticsFilterBar({
   }, [state]);
 
   const showPortfolioSource = state.tab === "performance";
-  const showSetupFilters = state.tab === "setups";
+  const showSetupsFilters = state.tab === "setups";
+  const showBehaviourFilters = state.tab === "behaviour";
+  const showComparisonFilters = state.tab === "comparison";
+  const showJournalIdentityFilters =
+    showSetupsFilters || showBehaviourFilters || showComparisonFilters;
 
   return (
     <section
@@ -155,7 +178,7 @@ export function AnalyticsFilterBar({
             </Select>
           </div>
         ) : null}
-        {showSetupFilters ? (
+        {showJournalIdentityFilters ? (
           <>
             <div className="space-y-1">
               <Label htmlFor="analytics-journal-source">Journal source</Label>
@@ -190,84 +213,155 @@ export function AnalyticsFilterBar({
                 data-testid="analytics-setup-id"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="analytics-strategy-id">Strategy</Label>
-              <Select
-                id="analytics-strategy-id"
-                value={draft.userStrategyId}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, userStrategyId: event.target.value }))
-                }
-                data-testid="analytics-strategy-id"
-                disabled={strategiesLoading || Boolean(strategiesError)}
-              >
-                <option value="">
-                  {strategiesLoading
-                    ? "Loading strategies…"
-                    : strategiesError
-                      ? "Strategies unavailable"
-                      : "All strategies"}
-                </option>
-                {!strategiesLoading &&
-                  !strategiesError &&
-                  strategies.map((strategy) => (
-                    <option key={strategy.id} value={strategy.id}>
-                      {strategy.name}
-                    </option>
-                  ))}
-              </Select>
-              {strategiesLoading ? (
-                <p className="text-caption text-text-muted" data-testid="analytics-strategies-loading" role="status">
-                  Loading strategy options…
-                </p>
-              ) : null}
-              {strategiesError ? (
-                <div
-                  className="flex flex-wrap items-center gap-2 text-sm text-amber-500/90"
-                  data-testid="analytics-strategies-error"
-                  role="status"
-                >
-                  <span>Strategy options unavailable: {strategiesError}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onRetryStrategies?.()}
-                    data-testid="analytics-strategies-retry"
-                  >
-                    Retry strategies
-                  </Button>
-                </div>
-              ) : null}
-              {!strategiesLoading &&
-              !strategiesError &&
-              strategiesLoaded &&
-              strategies.length === 0 ? (
-                <p
-                  className="text-caption text-text-muted"
-                  data-testid="analytics-strategies-empty"
-                  role="status"
-                >
-                  No strategies available
-                </p>
-              ) : null}
-            </div>
           </>
+        ) : null}
+        {showSetupsFilters ? (
+          <div className="space-y-1">
+            <Label htmlFor="analytics-strategy-id">Strategy</Label>
+            <Select
+              id="analytics-strategy-id"
+              value={draft.userStrategyId}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, userStrategyId: event.target.value }))
+              }
+              data-testid="analytics-strategy-id"
+              disabled={strategiesLoading || Boolean(strategiesError)}
+            >
+              <option value="">
+                {strategiesLoading
+                  ? "Loading strategies…"
+                  : strategiesError
+                    ? "Strategies unavailable"
+                    : "All strategies"}
+              </option>
+              {!strategiesLoading &&
+                !strategiesError &&
+                strategies.map((strategy) => (
+                  <option key={strategy.id} value={strategy.id}>
+                    {strategy.name}
+                  </option>
+                ))}
+            </Select>
+            {strategiesLoading ? (
+              <p
+                className="text-caption text-text-muted"
+                data-testid="analytics-strategies-loading"
+                role="status"
+              >
+                Loading strategy options…
+              </p>
+            ) : null}
+            {strategiesError ? (
+              <div
+                className="flex flex-wrap items-center gap-2 text-sm text-amber-500/90"
+                data-testid="analytics-strategies-error"
+                role="status"
+              >
+                <span>Strategy options unavailable: {strategiesError}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onRetryStrategies?.()}
+                  data-testid="analytics-strategies-retry"
+                >
+                  Retry strategies
+                </Button>
+              </div>
+            ) : null}
+            {!strategiesLoading &&
+            !strategiesError &&
+            strategiesLoaded &&
+            strategies.length === 0 ? (
+              <p
+                className="text-caption text-text-muted"
+                data-testid="analytics-strategies-empty"
+                role="status"
+              >
+                No strategies available
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {(showBehaviourFilters || showComparisonFilters) && !showSetupsFilters ? (
+          <div className="space-y-1">
+            <Label htmlFor="analytics-user-strategy-id">User strategy ID</Label>
+            <Input
+              id="analytics-user-strategy-id"
+              value={draft.userStrategyId}
+              placeholder="UserStrategy UUID"
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, userStrategyId: event.target.value }))
+              }
+              data-testid="analytics-user-strategy-id"
+            />
+          </div>
+        ) : null}
+        {showBehaviourFilters ? (
+          <div className="space-y-1">
+            <Label htmlFor="analytics-rule-compliance">Rule compliance</Label>
+            <Select
+              id="analytics-rule-compliance"
+              value={draft.ruleCompliance}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  ruleCompliance: event.target.value as "" | TradeRuleCompliance,
+                }))
+              }
+              data-testid="analytics-rule-compliance"
+            >
+              {RULE_COMPLIANCE_OPTIONS.map((option) => (
+                <option key={option.value || "all"} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        ) : null}
+        {showComparisonFilters ? (
+          <div className="space-y-1">
+            <Label htmlFor="analytics-market-regime">Market regime</Label>
+            <Select
+              id="analytics-market-regime"
+              value={draft.marketRegime}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  marketRegime: event.target.value as "" | MarketRegime,
+                }))
+              }
+              data-testid="analytics-market-regime"
+            >
+              {REGIME_OPTIONS.map((option) => (
+                <option key={option.value || "all"} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
         ) : null}
         <Button
           type="button"
-          onClick={() =>
-            onApplyDraft({
+          onClick={() => {
+            const next: AnalyticsDraft = {
               dateFrom: draft.dateFrom || null,
               dateTo: draft.dateTo || null,
               symbol: draft.symbol.trim() || null,
               timeframe: draft.timeframe.trim() || null,
-              portfolioSource: showPortfolioSource ? draft.portfolioSource : null,
-              journalSource: showSetupFilters ? draft.journalSource || null : undefined,
-              setupId: showSetupFilters ? draft.setupId.trim() || null : undefined,
-              userStrategyId: showSetupFilters ? draft.userStrategyId.trim() || null : undefined,
-            })
-          }
+            };
+            if (showPortfolioSource) next.portfolioSource = draft.portfolioSource;
+            if (showJournalIdentityFilters) {
+              next.journalSource = draft.journalSource || null;
+              next.setupId = draft.setupId.trim() || null;
+            }
+            if (showSetupsFilters || showBehaviourFilters || showComparisonFilters) {
+              next.userStrategyId = draft.userStrategyId.trim() || null;
+            }
+            if (showBehaviourFilters) next.ruleCompliance = draft.ruleCompliance || null;
+            if (showComparisonFilters) next.marketRegime = draft.marketRegime || null;
+            onApplyDraft(next);
+          }}
           data-testid="analytics-apply-filters"
         >
           Apply filters
@@ -300,12 +394,39 @@ export function AnalyticsFilterBar({
         {showPortfolioSource && state.portfolioSource && state.portfolioSource !== "all"
           ? ` · Source ${state.portfolioSource}`
           : ""}
-        {showSetupFilters && state.journalSource ? ` · Source ${state.journalSource}` : ""}
-        {showSetupFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
-        {showSetupFilters && state.userStrategyId
-          ? ` · strategy ${state.userStrategyId}`
+        {showSetupsFilters && state.journalSource ? ` · Source ${state.journalSource}` : ""}
+        {showSetupsFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showSetupsFilters && state.userStrategyId
+          ? ` · user_strategy_id ${state.userStrategyId}`
+          : ""}
+        {showBehaviourFilters && state.journalSource
+          ? ` · Source ${state.journalSource}`
+          : ""}
+        {showBehaviourFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showBehaviourFilters && state.userStrategyId
+          ? ` · user_strategy_id ${state.userStrategyId}`
+          : ""}
+        {showBehaviourFilters && state.ruleCompliance
+          ? ` · rule_compliance ${state.ruleCompliance}`
+          : ""}
+        {showComparisonFilters && state.journalSource
+          ? ` · Source ${state.journalSource}`
+          : ""}
+        {showComparisonFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showComparisonFilters && state.userStrategyId
+          ? ` · user_strategy_id ${state.userStrategyId}`
+          : ""}
+        {showComparisonFilters && state.marketRegime
+          ? ` · market_regime ${state.marketRegime}`
           : ""}
       </p>
+
+      {showJournalIdentityFilters ? (
+        <p className="text-caption text-text-muted" data-testid="analytics-setup-identity-note">
+          Journal setup ID is a setup-definition UUID. It is never sent to Portfolio APIs and is
+          never translated by name.
+        </p>
+      ) : null}
 
       {state.ignoredParams.length ? (
         <p className="text-sm text-amber-500/90" data-testid="analytics-ignored-filters" role="status">

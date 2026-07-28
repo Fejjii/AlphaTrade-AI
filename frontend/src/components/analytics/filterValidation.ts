@@ -1,14 +1,18 @@
 import type {
+  JournalComparisonParams,
   JournalStatsParams,
   JournalTradeSource,
+  LearningAnalyticsParams,
+  MarketRegime,
   PaperPortfolioParams,
   PortfolioSourceFilter,
   SetupEvidenceParams,
+  TradeRuleCompliance,
 } from "@/lib/api/types";
 
 import { isoDateOnly } from "./format";
 
-export type AnalyticsTab = "overview" | "performance" | "setups";
+export type AnalyticsTab = "overview" | "performance" | "setups" | "behaviour" | "comparison";
 
 export type SetupGroupBy = "setup" | "setup_version" | "strategy";
 
@@ -19,19 +23,32 @@ export type AnalyticsFilterState = {
   symbol: string | null;
   timeframe: string | null;
   portfolioSource: PortfolioSourceFilter | null;
-  /** Journal trade source — Setups tab only; never sent to portfolio or setup-evidence. */
+  /** Journal trade source — Setups / Behaviour / Comparison; never portfolio setup-evidence dates. */
   journalSource: JournalTradeSource | null;
   /** Journal setup-definition UUID only — never a Portfolio setup identity. */
   setupId: string | null;
+  /** UserStrategy identity — journal statistics use user_strategy_id only. */
   userStrategyId: string | null;
+  strategyVersionId: string | null;
+  ruleCompliance: TradeRuleCompliance | null;
+  marketRegime: MarketRegime | null;
   groupBy: SetupGroupBy;
   bucketOffset: number;
   ignoredParams: string[];
 };
 
+export type AnalyticsWindowParams = {
+  start_date?: string;
+  end_date?: string;
+};
+
 export type AnalyticsFilterParams = {
   journal: JournalStatsParams;
   portfolio: PaperPortfolioParams;
+  ruleComplianceJournal: JournalStatsParams;
+  comparison: JournalComparisonParams;
+  analyticsWindow: AnalyticsWindowParams;
+  learningWindow: LearningAnalyticsParams;
   state: AnalyticsFilterState;
 };
 
@@ -48,7 +65,13 @@ const MAX_SYMBOL_LENGTH = 30;
 const MAX_TIMEFRAME_LENGTH = 8;
 export const SETUP_BUCKET_PAGE_SIZE = 20;
 
-const VALID_TABS = new Set<AnalyticsTab>(["overview", "performance", "setups"]);
+const VALID_TABS = new Set<AnalyticsTab>([
+  "overview",
+  "performance",
+  "setups",
+  "behaviour",
+  "comparison",
+]);
 const VALID_PP_SOURCES = new Set<PortfolioSourceFilter>([
   "all",
   "proposal_flow",
@@ -64,9 +87,28 @@ export const JOURNAL_TRADE_SOURCE_OPTIONS: JournalTradeSource[] = [
 ];
 const VALID_JOURNAL_SOURCES = new Set<JournalTradeSource>(JOURNAL_TRADE_SOURCE_OPTIONS);
 const VALID_SETUP_GROUP_BY = new Set<SetupGroupBy>(["setup", "setup_version", "strategy"]);
+const VALID_RULE_COMPLIANCE = new Set<TradeRuleCompliance>([
+  "compliant",
+  "partial",
+  "violated",
+  "unassessed",
+]);
+const VALID_MARKET_REGIMES = new Set<MarketRegime>([
+  "trending_up",
+  "trending_down",
+  "ranging",
+  "volatile",
+  "quiet",
+  "unknown",
+]);
 
-/** Params never accepted as Portfolio identities on Analytics (PR 2). */
-const ALWAYS_UNSUPPORTED_PARAM_KEYS = ["portfolio_setup", "min_sample", "rule_compliance"] as const;
+const SETUPS_TAB: AnalyticsTab = "setups";
+const BEHAVIOUR_TAB: AnalyticsTab = "behaviour";
+const COMPARISON_TAB: AnalyticsTab = "comparison";
+const JOURNAL_IDENTITY_TABS = new Set<AnalyticsTab>([SETUPS_TAB, BEHAVIOUR_TAB, COMPARISON_TAB]);
+
+/** Params never accepted as Portfolio identities on Analytics. */
+const ALWAYS_UNSUPPORTED_PARAM_KEYS = ["portfolio_setup", "min_sample"] as const;
 
 export function isValidIsoDate(value: string): boolean {
   if (!ISO_DATE_PATTERN.test(value)) return false;
@@ -85,10 +127,13 @@ export function isValidTimeframe(value: string): boolean {
   return trimmed.length > 0 && trimmed.length <= MAX_TIMEFRAME_LENGTH;
 }
 
-/** Journal setup-definition / strategy UUID validator — display names are never accepted. */
+/** Journal setup-definition / UserStrategy UUID validator — display names are never accepted. */
 export function isValidUuid(value: string): boolean {
   return UUID_PATTERN.test(value.trim());
 }
+
+/** @deprecated alias kept for PR3 tests — prefer isValidUuid */
+export const isValidSetupDefinitionUuid = isValidUuid;
 
 function parseTab(value: string | null): { tab: AnalyticsTab; ignored: boolean } {
   if (!value || value === "overview") return { tab: "overview", ignored: false };
@@ -105,6 +150,51 @@ function parseNonNegativeInt(value: string): number | null {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
   return parsed;
+}
+
+function applySharedJournalStatsFilters(
+  journal: JournalStatsParams,
+  state: AnalyticsFilterState,
+): void {
+  if (state.dateFrom) journal.date_from = toJournalDatetime(state.dateFrom, false);
+  if (state.dateTo) journal.date_to = toJournalDatetime(state.dateTo, true);
+  if (state.symbol) journal.symbol = state.symbol;
+  if (state.timeframe) journal.timeframe = state.timeframe;
+}
+
+function applyBehaviourJournalFilters(
+  journal: JournalStatsParams,
+  state: AnalyticsFilterState,
+): void {
+  applySharedJournalStatsFilters(journal, state);
+  if (state.setupId) journal.setup_id = state.setupId;
+  if (state.userStrategyId) journal.user_strategy_id = state.userStrategyId;
+  if (state.strategyVersionId) journal.strategy_version_id = state.strategyVersionId;
+  if (state.journalSource) journal.source = state.journalSource;
+  if (state.ruleCompliance) journal.rule_compliance = state.ruleCompliance;
+}
+
+function applyComparisonFilters(
+  comparison: JournalComparisonParams,
+  state: AnalyticsFilterState,
+): void {
+  if (state.dateFrom) comparison.date_from = toJournalDatetime(state.dateFrom, false);
+  if (state.dateTo) comparison.date_to = toJournalDatetime(state.dateTo, true);
+  if (state.symbol) comparison.symbol = state.symbol;
+  if (state.timeframe) comparison.timeframe = state.timeframe;
+  if (state.setupId) comparison.setup_id = state.setupId;
+  if (state.userStrategyId) comparison.strategy_id = state.userStrategyId;
+  if (state.strategyVersionId) comparison.strategy_version_id = state.strategyVersionId;
+  if (state.journalSource) comparison.source = state.journalSource;
+  if (state.marketRegime) comparison.market_regime = state.marketRegime;
+}
+
+function applyDateWindow(
+  target: AnalyticsWindowParams | LearningAnalyticsParams,
+  state: AnalyticsFilterState,
+): void {
+  if (state.dateFrom) target.start_date = state.dateFrom;
+  if (state.dateTo) target.end_date = state.dateTo;
 }
 
 /** Parse URL search params into validated filter state. Invalid values are ignored, never sent to APIs. */
@@ -158,7 +248,7 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
       } else {
         ignoredParams.push("source");
       }
-    } else if (tab === "setups") {
+    } else if (JOURNAL_IDENTITY_TABS.has(tab)) {
       if (VALID_JOURNAL_SOURCES.has(sourceParam as JournalTradeSource)) {
         journalSource = sourceParam as JournalTradeSource;
       } else {
@@ -172,9 +262,7 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
   let setupId: string | null = null;
   const rawSetupId = searchParams.get("setup_id");
   if (rawSetupId) {
-    if (tab !== "setups") {
-      ignoredParams.push("setup_id");
-    } else if (isValidUuid(rawSetupId)) {
+    if (JOURNAL_IDENTITY_TABS.has(tab) && isValidUuid(rawSetupId)) {
       setupId = rawSetupId.trim().toLowerCase();
     } else {
       ignoredParams.push("setup_id");
@@ -184,19 +272,50 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
   let userStrategyId: string | null = null;
   const rawStrategyId = searchParams.get("user_strategy_id");
   if (rawStrategyId) {
-    if (tab !== "setups") {
-      ignoredParams.push("user_strategy_id");
-    } else if (isValidUuid(rawStrategyId)) {
+    if (JOURNAL_IDENTITY_TABS.has(tab) && isValidUuid(rawStrategyId)) {
       userStrategyId = rawStrategyId.trim().toLowerCase();
     } else {
       ignoredParams.push("user_strategy_id");
     }
   }
 
+  let strategyVersionId: string | null = null;
+  const rawStrategyVersionId = searchParams.get("strategy_version_id");
+  if (rawStrategyVersionId) {
+    if (
+      (tab === BEHAVIOUR_TAB || tab === COMPARISON_TAB) &&
+      isValidUuid(rawStrategyVersionId)
+    ) {
+      strategyVersionId = rawStrategyVersionId.trim().toLowerCase();
+    } else {
+      ignoredParams.push("strategy_version_id");
+    }
+  }
+
+  let ruleCompliance: TradeRuleCompliance | null = null;
+  const rawRuleCompliance = searchParams.get("rule_compliance");
+  if (rawRuleCompliance) {
+    if (tab === BEHAVIOUR_TAB && VALID_RULE_COMPLIANCE.has(rawRuleCompliance as TradeRuleCompliance)) {
+      ruleCompliance = rawRuleCompliance as TradeRuleCompliance;
+    } else {
+      ignoredParams.push("rule_compliance");
+    }
+  }
+
+  let marketRegime: MarketRegime | null = null;
+  const rawMarketRegime = searchParams.get("market_regime");
+  if (rawMarketRegime) {
+    if (tab === COMPARISON_TAB && VALID_MARKET_REGIMES.has(rawMarketRegime as MarketRegime)) {
+      marketRegime = rawMarketRegime as MarketRegime;
+    } else {
+      ignoredParams.push("market_regime");
+    }
+  }
+
   let groupBy: SetupGroupBy = "setup";
   const rawGroupBy = searchParams.get("group_by");
   if (rawGroupBy) {
-    if (tab !== "setups") {
+    if (tab !== SETUPS_TAB) {
       ignoredParams.push("group_by");
     } else if (VALID_SETUP_GROUP_BY.has(rawGroupBy as SetupGroupBy)) {
       groupBy = rawGroupBy as SetupGroupBy;
@@ -208,7 +327,7 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
   let bucketOffset = 0;
   const rawOffset = searchParams.get("offset");
   if (rawOffset) {
-    if (tab !== "setups") {
+    if (tab !== SETUPS_TAB) {
       ignoredParams.push("offset");
     } else {
       const parsed = parseNonNegativeInt(rawOffset);
@@ -231,20 +350,13 @@ export function parseAnalyticsSearchParams(searchParams: URLSearchParams): Analy
     journalSource,
     setupId,
     userStrategyId,
+    strategyVersionId,
+    ruleCompliance,
+    marketRegime,
     groupBy,
     bucketOffset,
     ignoredParams: [...new Set(ignoredParams)],
   };
-}
-
-function applySharedJournalFilters(
-  journal: JournalStatsParams,
-  state: AnalyticsFilterState,
-): void {
-  if (state.dateFrom) journal.date_from = toJournalDatetime(state.dateFrom, false);
-  if (state.dateTo) journal.date_to = toJournalDatetime(state.dateTo, true);
-  if (state.symbol) journal.symbol = state.symbol;
-  if (state.timeframe) journal.timeframe = state.timeframe;
 }
 
 /**
@@ -254,8 +366,12 @@ function applySharedJournalFilters(
 export function buildAnalyticsApiParams(state: AnalyticsFilterState): AnalyticsFilterParams {
   const journal: JournalStatsParams = { group_by: "overall" };
   const portfolio: PaperPortfolioParams = { timezone: "UTC" };
+  const ruleComplianceJournal: JournalStatsParams = { group_by: "rule_compliance", limit: 20 };
+  const comparison: JournalComparisonParams = {};
+  const analyticsWindow: AnalyticsWindowParams = {};
+  const learningWindow: LearningAnalyticsParams = {};
 
-  applySharedJournalFilters(journal, state);
+  applySharedJournalStatsFilters(journal, state);
 
   if (state.dateFrom) portfolio.start_date = state.dateFrom;
   if (state.dateTo) portfolio.end_date = state.dateTo;
@@ -269,7 +385,20 @@ export function buildAnalyticsApiParams(state: AnalyticsFilterState): AnalyticsF
     portfolio.source = state.portfolioSource;
   }
 
-  return { journal, portfolio, state };
+  applyBehaviourJournalFilters(ruleComplianceJournal, state);
+  applyComparisonFilters(comparison, state);
+  applyDateWindow(analyticsWindow, state);
+  applyDateWindow(learningWindow, state);
+
+  return {
+    journal,
+    portfolio,
+    ruleComplianceJournal,
+    comparison,
+    analyticsWindow,
+    learningWindow,
+    state,
+  };
 }
 
 /** Setups-tab journal + evidence params. setup_id is journal UUID only. */
@@ -279,7 +408,7 @@ export function buildSetupAnalyticsApiParams(state: AnalyticsFilterState): Setup
     limit: SETUP_BUCKET_PAGE_SIZE,
     offset: state.bucketOffset,
   };
-  applySharedJournalFilters(journal, state);
+  applySharedJournalStatsFilters(journal, state);
   if (state.setupId) journal.setup_id = state.setupId;
   if (state.userStrategyId) journal.user_strategy_id = state.userStrategyId;
   if (state.journalSource) journal.source = state.journalSource;
@@ -292,34 +421,145 @@ export function buildSetupAnalyticsApiParams(state: AnalyticsFilterState): Setup
 }
 
 export function buildFilterKey(params: AnalyticsFilterParams): string {
-  return JSON.stringify({ journal: params.journal, portfolio: params.portfolio });
+  return JSON.stringify({
+    journal: params.journal,
+    portfolio: params.portfolio,
+    ruleComplianceJournal: params.ruleComplianceJournal,
+    comparison: params.comparison,
+    analyticsWindow: params.analyticsWindow,
+    learningWindow: params.learningWindow,
+  });
+}
+
+/** Request key for Behaviour rule-compliance journal statistics. */
+export function buildRuleComplianceFilterKey(params: JournalStatsParams): string {
+  return JSON.stringify(params);
+}
+
+/** Request key for proposal-flow discipline and risk-behaviour analytics window. */
+export function buildAnalyticsWindowFilterKey(params: AnalyticsWindowParams): string {
+  return JSON.stringify(params);
+}
+
+/** Request key for validation-session learning discipline. */
+export function buildLearningWindowFilterKey(params: LearningAnalyticsParams): string {
+  return JSON.stringify(params);
 }
 
 export function buildSetupFilterKey(params: SetupAnalyticsApiParams): string {
   return JSON.stringify({ journal: params.journal, evidence: params.evidence });
 }
 
+function summarizeDateRangeFromIso(
+  dateFrom?: string | null,
+  dateTo?: string | null,
+): string {
+  if (dateFrom || dateTo) {
+    if (dateFrom && dateTo) return `dates ${dateFrom} → ${dateTo}`;
+    if (dateFrom) return `from ${dateFrom}`;
+    if (dateTo) return `until ${dateTo}`;
+  }
+  return "dates all time";
+}
+
+function summarizeJournalStatsParams(params: JournalStatsParams): string {
+  const parts: string[] = [];
+  parts.push(
+    summarizeDateRangeFromIso(
+      params.date_from?.slice(0, 10) ?? null,
+      params.date_to?.slice(0, 10) ?? null,
+    ),
+  );
+  if (params.symbol) parts.push(`symbol ${params.symbol}`);
+  if (params.timeframe) parts.push(`timeframe ${params.timeframe}`);
+  if (params.setup_id) parts.push(`setup_id ${params.setup_id}`);
+  if (params.user_strategy_id) parts.push(`user_strategy_id ${params.user_strategy_id}`);
+  if (params.strategy_version_id) {
+    parts.push(`strategy_version_id ${params.strategy_version_id}`);
+  }
+  if (params.source) parts.push(`source ${params.source}`);
+  if (params.rule_compliance) parts.push(`rule_compliance ${params.rule_compliance}`);
+  if (params.market_regime) parts.push(`market_regime ${params.market_regime}`);
+  if (params.group_by && params.group_by !== "overall") {
+    parts.push(`group_by ${params.group_by}`);
+  }
+  return parts.join(" · ");
+}
+
+function summarizeComparisonParams(params: JournalComparisonParams): string {
+  const parts: string[] = [];
+  parts.push(
+    summarizeDateRangeFromIso(
+      params.date_from?.slice(0, 10) ?? null,
+      params.date_to?.slice(0, 10) ?? null,
+    ),
+  );
+  if (params.symbol) parts.push(`symbol ${params.symbol}`);
+  if (params.timeframe) parts.push(`timeframe ${params.timeframe}`);
+  if (params.setup_id) parts.push(`setup_id ${params.setup_id}`);
+  if (params.strategy_id) parts.push(`strategy_id ${params.strategy_id}`);
+  if (params.strategy_version_id) {
+    parts.push(`strategy_version_id ${params.strategy_version_id}`);
+  }
+  if (params.source) parts.push(`source ${params.source}`);
+  if (params.market_regime) parts.push(`market_regime ${params.market_regime}`);
+  return parts.join(" · ");
+}
+
+function summarizeDateWindowParams(
+  params: AnalyticsWindowParams | LearningAnalyticsParams,
+): string {
+  return summarizeDateRangeFromIso(params.start_date ?? null, params.end_date ?? null);
+}
+
+/** Filter-bar summary for shared controls (not endpoint-specific provenance). */
 export function formatAppliedFiltersSummary(state: AnalyticsFilterState): string {
   const parts: string[] = [];
-  if (state.dateFrom || state.dateTo) {
-    if (state.dateFrom && state.dateTo) parts.push(`dates ${state.dateFrom} → ${state.dateTo}`);
-    else if (state.dateFrom) parts.push(`from ${state.dateFrom}`);
-    else if (state.dateTo) parts.push(`until ${state.dateTo}`);
-  } else {
-    parts.push("dates all time");
-  }
+  parts.push(summarizeDateRangeFromIso(state.dateFrom, state.dateTo));
   if (state.symbol) parts.push(`symbol ${state.symbol}`);
   if (state.timeframe) parts.push(`timeframe ${state.timeframe}`);
   if (state.tab === "performance" && state.portfolioSource && state.portfolioSource !== "all") {
     parts.push(`source ${state.portfolioSource}`);
   }
-  if (state.tab === "setups") {
+  if (state.tab === SETUPS_TAB) {
     parts.push(`group ${state.groupBy}`);
     if (state.journalSource) parts.push(`source ${state.journalSource}`);
     if (state.setupId) parts.push(`setup_id ${state.setupId}`);
-    if (state.userStrategyId) parts.push(`strategy ${state.userStrategyId}`);
+    if (state.userStrategyId) parts.push(`user_strategy_id ${state.userStrategyId}`);
+  }
+  if (state.tab === BEHAVIOUR_TAB) {
+    if (state.setupId) parts.push(`setup_id ${state.setupId}`);
+    if (state.userStrategyId) parts.push(`user_strategy_id ${state.userStrategyId}`);
+    if (state.journalSource) parts.push(`source ${state.journalSource}`);
+    if (state.ruleCompliance) parts.push(`rule_compliance ${state.ruleCompliance}`);
+  }
+  if (state.tab === COMPARISON_TAB) {
+    if (state.setupId) parts.push(`setup_id ${state.setupId}`);
+    if (state.userStrategyId) parts.push(`user_strategy_id ${state.userStrategyId}`);
+    if (state.journalSource) parts.push(`source ${state.journalSource}`);
+    if (state.marketRegime) parts.push(`market_regime ${state.marketRegime}`);
   }
   return parts.join(" · ");
+}
+
+/** Provenance for GET /journal/statistics payloads (includes user_strategy_id, never strategy_id). */
+export function formatJournalStatsFiltersSummary(params: JournalStatsParams): string {
+  return summarizeJournalStatsParams(params);
+}
+
+/** Provenance for GET /analytics/discipline and /analytics/risk-behavior (dates only). */
+export function formatAnalyticsWindowFiltersSummary(params: AnalyticsWindowParams): string {
+  return summarizeDateWindowParams(params);
+}
+
+/** Provenance for GET /learning-analytics/discipline (dates only). */
+export function formatLearningAnalyticsFiltersSummary(params: LearningAnalyticsParams): string {
+  return summarizeDateWindowParams(params);
+}
+
+/** Provenance for GET /journal/comparison (uses strategy_id query param). */
+export function formatComparisonFiltersSummary(params: JournalComparisonParams): string {
+  return summarizeComparisonParams(params);
 }
 
 /** Filters actually sent to GET /journal/setup-evidence (setup_id + strategy_id only). */
@@ -349,3 +589,17 @@ export function formatSetupEvidenceLimitationNote(state: AnalyticsFilterState): 
   if (unsupported.length === 0) return null;
   return `Active ${unsupported.join(", ")} filter(s) apply to journal statistics only — not setup evidence.`;
 }
+
+/** Tab-specific URL keys dropped on tab change (shared filters are preserved). */
+export const TAB_SCOPED_PARAM_KEYS = [
+  "source",
+  "setup_id",
+  "user_strategy_id",
+  "strategy_version_id",
+  "rule_compliance",
+  "market_regime",
+  "group_by",
+  "offset",
+  "portfolio_setup",
+  "min_sample",
+] as const;

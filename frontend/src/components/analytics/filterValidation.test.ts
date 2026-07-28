@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAnalyticsApiParams,
+  buildAnalyticsWindowFilterKey,
+  buildLearningWindowFilterKey,
+  buildRuleComplianceFilterKey,
   buildSetupAnalyticsApiParams,
+  formatAnalyticsWindowFiltersSummary,
   formatAppliedFiltersSummary,
+  formatJournalStatsFiltersSummary,
+  formatLearningAnalyticsFiltersSummary,
   formatSetupEvidenceFiltersSummary,
   formatSetupEvidenceLimitationNote,
   parseAnalyticsSearchParams,
@@ -11,6 +17,17 @@ import {
 
 const SETUP_UUID = "11111111-1111-1111-1111-111111111111";
 const STRATEGY_UUID = "22222222-2222-2222-2222-222222222222";
+
+const EMPTY_SCOPED = {
+  setupId: null,
+  userStrategyId: null,
+  strategyVersionId: null,
+  journalSource: null,
+  ruleCompliance: null,
+  marketRegime: null,
+  groupBy: "setup" as const,
+  bucketOffset: 0,
+};
 
 describe("parseAnalyticsSearchParams", () => {
   it("rejects invalid ISO dates and reversed ranges", () => {
@@ -115,6 +132,55 @@ describe("parseAnalyticsSearchParams", () => {
     expect(state.groupBy).toBe("strategy");
     expect(state.bucketOffset).toBe(20);
   });
+
+  it("accepts behaviour and comparison tabs", () => {
+    expect(parseAnalyticsSearchParams(new URLSearchParams("tab=behaviour")).tab).toBe(
+      "behaviour",
+    );
+    expect(parseAnalyticsSearchParams(new URLSearchParams("tab=comparison")).tab).toBe(
+      "comparison",
+    );
+  });
+
+  it("accepts journal setup_id UUID only on behaviour/comparison", () => {
+    const uuid = "11111111-2222-4333-8444-555555555555";
+    const ignored = parseAnalyticsSearchParams(new URLSearchParams(`setup_id=${uuid}`));
+    expect(ignored.setupId).toBeNull();
+    expect(ignored.ignoredParams).toContain("setup_id");
+
+    const behaviour = parseAnalyticsSearchParams(
+      new URLSearchParams(`tab=behaviour&setup_id=${uuid}`),
+    );
+    expect(behaviour.setupId).toBe(uuid);
+    expect(behaviour.ignoredParams).not.toContain("setup_id");
+  });
+
+  it("accepts journal source and rule_compliance on behaviour", () => {
+    const state = parseAnalyticsSearchParams(
+      new URLSearchParams(
+        "tab=behaviour&source=manual&rule_compliance=unassessed",
+      ),
+    );
+    expect(state.journalSource).toBe("manual");
+    expect(state.ruleCompliance).toBe("unassessed");
+    expect(state.portfolioSource).toBeNull();
+  });
+
+  it("never treats setup_id as a portfolio setup identity", () => {
+    const state = parseAnalyticsSearchParams(
+      new URLSearchParams(
+        "tab=behaviour&setup_id=11111111-2222-4333-8444-555555555555&portfolio_setup=trend_pullback",
+      ),
+    );
+    expect(state.setupId).toBe("11111111-2222-4333-8444-555555555555");
+    expect(state.ignoredParams).toContain("portfolio_setup");
+    const params = buildAnalyticsApiParams(state);
+    expect(params.portfolio.setup).toBeUndefined();
+    expect(params.ruleComplianceJournal.setup_id).toBe(
+      "11111111-2222-4333-8444-555555555555",
+    );
+    expect(params.comparison.setup_id).toBe("11111111-2222-4333-8444-555555555555");
+  });
 });
 
 describe("buildAnalyticsApiParams", () => {
@@ -126,17 +192,35 @@ describe("buildAnalyticsApiParams", () => {
       symbol: null,
       timeframe: null,
       portfolioSource: "proposal_flow",
-      journalSource: null,
-      setupId: SETUP_UUID,
-      userStrategyId: STRATEGY_UUID,
-      groupBy: "setup",
-      bucketOffset: 0,
+      ...EMPTY_SCOPED,
       ignoredParams: ["source"],
     });
     expect(params.portfolio.source).toBeUndefined();
     expect(params.journal.symbol).toBeUndefined();
     expect(params.journal.setup_id).toBeUndefined();
     expect((params.portfolio as { setup?: string }).setup).toBeUndefined();
+  });
+
+  it("maps UserStrategy identity to user_strategy_id for journal stats, not strategy_id", () => {
+    const params = buildSetupAnalyticsApiParams({
+      tab: "setups",
+      dateFrom: null,
+      dateTo: null,
+      symbol: null,
+      timeframe: null,
+      portfolioSource: null,
+      journalSource: null,
+      setupId: null,
+      userStrategyId: STRATEGY_UUID,
+      strategyVersionId: null,
+      ruleCompliance: null,
+      marketRegime: null,
+      groupBy: "setup",
+      bucketOffset: 0,
+      ignoredParams: [],
+    });
+    expect(params.journal.user_strategy_id).toBe(STRATEGY_UUID);
+    expect(params.journal).not.toHaveProperty("strategy_id");
   });
 });
 
@@ -152,6 +236,9 @@ describe("buildSetupAnalyticsApiParams", () => {
       journalSource: null,
       setupId: SETUP_UUID,
       userStrategyId: STRATEGY_UUID,
+      strategyVersionId: null,
+      ruleCompliance: null,
+      marketRegime: null,
       groupBy: "setup_version",
       bucketOffset: 40,
       ignoredParams: [],
@@ -165,6 +252,91 @@ describe("buildSetupAnalyticsApiParams", () => {
     expect(params.evidence.strategy_id).toBe(STRATEGY_UUID);
     expect(params).not.toHaveProperty("portfolio");
   });
+
+  it("builds rule_compliance and comparison params for behaviour/comparison", () => {
+    const behaviour = buildAnalyticsApiParams({
+      tab: "behaviour",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      portfolioSource: null,
+      setupId: "11111111-2222-4333-8444-555555555555",
+      userStrategyId: null,
+      strategyVersionId: null,
+      journalSource: "manual",
+      ruleCompliance: "partial",
+      marketRegime: null,
+      groupBy: "setup",
+      bucketOffset: 0,
+      ignoredParams: [],
+    });
+    expect(behaviour.ruleComplianceJournal.group_by).toBe("rule_compliance");
+    expect(behaviour.ruleComplianceJournal.setup_id).toBe(
+      "11111111-2222-4333-8444-555555555555",
+    );
+    expect(behaviour.ruleComplianceJournal.rule_compliance).toBe("partial");
+    expect(behaviour.analyticsWindow).toEqual({
+      start_date: "2026-01-01",
+      end_date: "2026-01-31",
+    });
+    expect(behaviour.portfolio.setup).toBeUndefined();
+  });
+});
+
+describe("behaviour source filter keys", () => {
+  it("builds independent keys per endpoint parameter set", () => {
+    const journalParams = {
+      group_by: "rule_compliance" as const,
+      limit: 20,
+      symbol: "BTCUSDT",
+    };
+    const analyticsWindow = { start_date: "2026-01-01", end_date: "2026-01-31" };
+    const learningWindow = { start_date: "2026-02-01" };
+
+    expect(buildRuleComplianceFilterKey(journalParams)).not.toBe(
+      buildAnalyticsWindowFilterKey(analyticsWindow),
+    );
+    expect(buildAnalyticsWindowFilterKey(analyticsWindow)).not.toBe(
+      buildLearningWindowFilterKey(learningWindow),
+    );
+  });
+});
+
+describe("endpoint-specific provenance summaries", () => {
+  it("formatJournalStatsFiltersSummary reflects only journal statistics params", () => {
+    const summary = formatJournalStatsFiltersSummary({
+      group_by: "rule_compliance",
+      date_from: "2026-01-01T00:00:00Z",
+      date_to: "2026-01-31T23:59:59Z",
+      symbol: "BTCUSDT",
+      setup_id: SETUP_UUID,
+      user_strategy_id: STRATEGY_UUID,
+      rule_compliance: "partial",
+    });
+    expect(summary).toContain("dates 2026-01-01 → 2026-01-31");
+    expect(summary).toContain("symbol BTCUSDT");
+    expect(summary).toContain(`user_strategy_id ${STRATEGY_UUID}`);
+    expect(summary).not.toMatch(/\bstrategy_id\b/);
+  });
+
+  it("formatAnalyticsWindowFiltersSummary shows dates only", () => {
+    const summary = formatAnalyticsWindowFiltersSummary({
+      start_date: "2026-01-01",
+      end_date: "2026-01-31",
+    });
+    expect(summary).toBe("dates 2026-01-01 → 2026-01-31");
+    expect(summary).not.toContain("symbol");
+    expect(summary).not.toContain("setup");
+  });
+
+  it("formatLearningAnalyticsFiltersSummary shows dates only", () => {
+    const summary = formatLearningAnalyticsFiltersSummary({
+      start_date: "2026-02-01",
+    });
+    expect(summary).toBe("from 2026-02-01");
+    expect(summary).not.toContain("symbol");
+  });
 });
 
 describe("formatAppliedFiltersSummary", () => {
@@ -176,11 +348,7 @@ describe("formatAppliedFiltersSummary", () => {
       symbol: "BTCUSDT",
       timeframe: "1h",
       portfolioSource: "proposal_flow",
-      journalSource: null,
-      setupId: null,
-      userStrategyId: null,
-      groupBy: "setup",
-      bucketOffset: 0,
+      ...EMPTY_SCOPED,
       ignoredParams: [],
     });
     expect(summary).toContain("dates 2026-01-01 → 2026-01-31");
@@ -200,12 +368,15 @@ describe("formatAppliedFiltersSummary", () => {
       journalSource: null,
       setupId: SETUP_UUID,
       userStrategyId: STRATEGY_UUID,
+      strategyVersionId: null,
+      ruleCompliance: null,
+      marketRegime: null,
       groupBy: "setup",
       bucketOffset: 0,
       ignoredParams: [],
     });
     expect(summary).toContain(`setup_id ${SETUP_UUID}`);
-    expect(summary).toContain(`strategy ${STRATEGY_UUID}`);
+    expect(summary).toContain(`user_strategy_id ${STRATEGY_UUID}`);
     expect(summary).toContain("group setup");
   });
 
@@ -220,6 +391,9 @@ describe("formatAppliedFiltersSummary", () => {
       journalSource: "paper_execution",
       setupId: null,
       userStrategyId: null,
+      strategyVersionId: null,
+      ruleCompliance: null,
+      marketRegime: null,
       groupBy: "strategy",
       bucketOffset: 0,
       ignoredParams: [],
@@ -241,6 +415,9 @@ describe("buildSetupAnalyticsApiParams journal source", () => {
       journalSource: "backtest",
       setupId: null,
       userStrategyId: null,
+      strategyVersionId: null,
+      ruleCompliance: null,
+      marketRegime: null,
       groupBy: "setup",
       bucketOffset: 0,
       ignoredParams: [],
@@ -262,6 +439,9 @@ describe("setup evidence provenance", () => {
     journalSource: null,
     setupId: null,
     userStrategyId: null,
+    strategyVersionId: null,
+    ruleCompliance: null,
+    marketRegime: null,
     groupBy: "setup" as const,
     bucketOffset: 0,
     ignoredParams: [] as string[],

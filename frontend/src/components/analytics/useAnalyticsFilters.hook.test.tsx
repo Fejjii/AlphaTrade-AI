@@ -22,8 +22,10 @@ describe("useAnalyticsFilters hook", () => {
     searchParams = new URLSearchParams();
   });
 
-  it("uses push for tab changes and removes source outside Performance", () => {
-    searchParams = new URLSearchParams("tab=performance&source=proposal_flow");
+  it("uses push for tab changes and drops tab-scoped params", () => {
+    searchParams = new URLSearchParams(
+      "tab=performance&source=proposal_flow&setup_id=11111111-2222-4333-8444-555555555555",
+    );
     const { result, rerender } = renderHook(() => useAnalyticsFilters());
     result.current.setTab("overview");
     expect(pushMock).toHaveBeenCalledWith("/analytics", { scroll: false });
@@ -31,8 +33,15 @@ describe("useAnalyticsFilters hook", () => {
 
     searchParams = new URLSearchParams("tab=overview");
     rerender();
-    result.current.setTab("performance");
-    expect(pushMock).toHaveBeenLastCalledWith("/analytics?tab=performance", { scroll: false });
+    result.current.setTab("behaviour");
+    expect(pushMock).toHaveBeenLastCalledWith("/analytics?tab=behaviour", { scroll: false });
+
+    searchParams = new URLSearchParams(
+      "tab=behaviour&setup_id=11111111-2222-4333-8444-555555555555&rule_compliance=unassessed",
+    );
+    rerender();
+    result.current.setTab("comparison");
+    expect(pushMock).toHaveBeenLastCalledWith("/analytics?tab=comparison", { scroll: false });
   });
 
   it("uses push for Setups tab and drops setup params when leaving", () => {
@@ -98,5 +107,31 @@ describe("useAnalyticsFilters hook", () => {
     expect(result.current.apiParams.portfolio).not.toHaveProperty("setup");
     expect(result.current.apiParams.journal.setup_id).toBeUndefined();
     expect(result.current.state.ignoredParams).toContain("portfolio_setup");
+  });
+
+  it("preserves shared filters and accepts behaviour setup_id deep links", () => {
+    searchParams = new URLSearchParams(
+      "tab=behaviour&date_from=2026-01-01&date_to=2026-01-31&symbol=BTCUSDT&setup_id=11111111-2222-4333-8444-555555555555",
+    );
+    const { result } = renderHook(() => useAnalyticsFilters());
+    expect(result.current.state.tab).toBe("behaviour");
+    expect(result.current.state.setupId).toBe("11111111-2222-4333-8444-555555555555");
+    expect(result.current.apiParams.ruleComplianceJournal.setup_id).toBe(
+      "11111111-2222-4333-8444-555555555555",
+    );
+    expect(result.current.apiParams.portfolio.setup).toBeUndefined();
+  });
+
+  it("derives validated state from external URL changes", () => {
+    searchParams = new URLSearchParams("date_from=2026-01-01&date_to=2026-01-31&symbol=BTCUSDT");
+    const { result, rerender } = renderHook(() => useAnalyticsFilters());
+    expect(result.current.state.dateFrom).toBe("2026-01-01");
+    expect(result.current.apiParams.journal.symbol).toBe("BTCUSDT");
+
+    searchParams = new URLSearchParams("date_from=not-a-date");
+    rerender();
+    expect(result.current.state.dateFrom).toBeNull();
+    expect(result.current.state.ignoredParams).toContain("date_from");
+    expect(result.current.apiParams.journal.date_from).toBeUndefined();
   });
 });

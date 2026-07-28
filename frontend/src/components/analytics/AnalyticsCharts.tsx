@@ -37,3 +37,21 @@ export const SetupExpectancyChart = dynamic(
     loading: () => <ChartLoadingFallback title="Expectancy (mean net P&L per trade)" />,
   },
 );
+
+export const RuleComplianceChart = dynamic(
+  () => import("./RuleComplianceChart").then((module) => module.RuleComplianceChart),
+  {
+    ssr: false,
+    loading: () => (
+      <ChartLoadingFallback title="Do I perform better when I follow my rules?" />
+    ),
+  },
+);
+
+export const ComparisonChart = dynamic(
+  () => import("./ComparisonChart").then((module) => module.ComparisonChart),
+  {
+    ssr: false,
+    loading: () => <ChartLoadingFallback title="Where does the human beat the system?" />,
+  },
+);

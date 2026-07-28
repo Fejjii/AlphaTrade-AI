@@ -11,9 +11,16 @@ import type {
 import type { SourceResult } from "@/components/workflows";
 import type { AnalyticsFilterState } from "@/components/analytics/useAnalyticsFilters";
 
-const { performanceChartsMounted, setupsChartsMounted } = vi.hoisted(() => ({
+const {
+  performanceChartsMounted,
+  setupsChartsMounted,
+  behaviourChartsMounted,
+  comparisonChartsMounted,
+} = vi.hoisted(() => ({
   performanceChartsMounted: vi.fn(),
   setupsChartsMounted: vi.fn(),
+  behaviourChartsMounted: vi.fn(),
+  comparisonChartsMounted: vi.fn(),
 }));
 
 const mockReload = vi.fn();
@@ -221,6 +228,15 @@ function failed<T>(error = "down"): SourceResult<T> {
   return { data: null, available: false, error, fallbackUsed: false };
 }
 
+const emptyScoped = {
+  setupId: null,
+  userStrategyId: null,
+  strategyVersionId: null,
+  journalSource: null,
+  ruleCompliance: null,
+  marketRegime: null,
+} as const;
+
 let filterState: AnalyticsFilterState = {
   tab: "overview",
   dateFrom: null,
@@ -228,11 +244,9 @@ let filterState: AnalyticsFilterState = {
   symbol: null,
   timeframe: null,
   portfolioSource: null,
-  journalSource: null,
-  setupId: null,
-  userStrategyId: null,
   groupBy: "setup",
   bucketOffset: 0,
+  ...emptyScoped,
   ignoredParams: [],
 };
 
@@ -259,7 +273,15 @@ let setupSourcesState = {
 vi.mock("@/components/analytics/useAnalyticsFilters", () => ({
   useAnalyticsFilters: () => ({
     state: filterState,
-    apiParams: { journal: { group_by: "overall" }, portfolio: { timezone: "UTC" }, state: filterState },
+    apiParams: {
+      journal: { group_by: "overall" },
+      portfolio: { timezone: "UTC" },
+      ruleComplianceJournal: { group_by: "rule_compliance", limit: 20 },
+      comparison: {},
+      analyticsWindow: {},
+      learningWindow: {},
+      state: filterState,
+    },
     setupApiParams: {
       journal: { group_by: filterState.groupBy, setup_id: filterState.setupId ?? undefined },
       evidence: { setup_id: filterState.setupId ?? undefined },
@@ -301,6 +323,8 @@ vi.mock("@/components/analytics/AnalyticsCharts", async () => {
     CumulativePnlChart: cumulative.CumulativePnlChart,
     SetupWinRateChart: win.SetupWinRateChart,
     SetupExpectancyChart: expectancy.SetupExpectancyChart,
+    RuleComplianceChart: () => <div data-testid="rule-compliance-chart" />,
+    ComparisonChart: () => <div data-testid="comparison-chart" />,
   };
 });
 
@@ -328,6 +352,20 @@ vi.mock("@/components/analytics/SetupsCharts", async () => {
   };
 });
 
+vi.mock("@/components/analytics/BehaviourCharts", () => ({
+  BehaviourCharts: () => {
+    behaviourChartsMounted();
+    return <div data-testid="behaviour-charts">Behaviour charts</div>;
+  },
+}));
+
+vi.mock("@/components/analytics/ComparisonCharts", () => ({
+  ComparisonCharts: () => {
+    comparisonChartsMounted();
+    return <div data-testid="comparison-charts">Comparison charts</div>;
+  },
+}));
+
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => ({
     executionMode: "paper",
@@ -337,7 +375,7 @@ vi.mock("@/contexts/AppContext", () => ({
   useAppContext: () => ({ health: { version: "test" } }),
 }));
 
-describe("AnalyticsPage PR1 + PR2", () => {
+describe("AnalyticsPage PR1–PR3 integration", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
@@ -348,11 +386,9 @@ describe("AnalyticsPage PR1 + PR2", () => {
       symbol: null,
       timeframe: null,
       portfolioSource: null,
-  journalSource: null,
-      setupId: null,
-      userStrategyId: null,
       groupBy: "setup",
       bucketOffset: 0,
+      ...emptyScoped,
       ignoredParams: [],
     };
     sourcesState = {
@@ -376,44 +412,79 @@ describe("AnalyticsPage PR1 + PR2", () => {
     vi.clearAllMocks();
     performanceChartsMounted.mockClear();
     setupsChartsMounted.mockClear();
+    behaviourChartsMounted.mockClear();
+    comparisonChartsMounted.mockClear();
   });
 
-  it("keeps overview, performance, and setups tabpanels in the DOM with overview active by default", () => {
+  it("keeps all five tabpanels in the DOM with overview active by default", () => {
     render(<AnalyticsPage />);
 
     const overviewTab = screen.getByRole("tab", { name: "Overview" });
     const performanceTab = screen.getByRole("tab", { name: "Performance" });
     const setupsTab = screen.getByRole("tab", { name: "Setups" });
+    const behaviourTab = screen.getByRole("tab", { name: "Behaviour" });
+    const comparisonTab = screen.getByRole("tab", { name: "Comparison" });
 
     expect(overviewTab).toHaveAttribute("aria-selected", "true");
     expect(performanceTab).toHaveAttribute("aria-selected", "false");
     expect(setupsTab).toHaveAttribute("aria-selected", "false");
+    expect(behaviourTab).toHaveAttribute("aria-selected", "false");
+    expect(comparisonTab).toHaveAttribute("aria-selected", "false");
 
-    const overviewPanelId = overviewTab.getAttribute("aria-controls");
-    const performancePanelId = performanceTab.getAttribute("aria-controls");
-    const setupsPanelId = setupsTab.getAttribute("aria-controls");
-    expect(document.getElementById(overviewPanelId!)).toBeTruthy();
-    expect(document.getElementById(performancePanelId!)).toBeTruthy();
-    expect(document.getElementById(setupsPanelId!)).toBeTruthy();
-    expect(document.getElementById(performancePanelId!)).toHaveAttribute("hidden");
-    expect(document.getElementById(setupsPanelId!)).toHaveAttribute("hidden");
+    for (const tab of [overviewTab, performanceTab, setupsTab, behaviourTab, comparisonTab]) {
+      const panelId = tab.getAttribute("aria-controls");
+      expect(document.getElementById(panelId!)).toBeTruthy();
+    }
+
+    expect(document.getElementById(performanceTab.getAttribute("aria-controls")!)).toHaveAttribute(
+      "hidden",
+    );
+    expect(document.getElementById(setupsTab.getAttribute("aria-controls")!)).toHaveAttribute(
+      "hidden",
+    );
+    expect(document.getElementById(behaviourTab.getAttribute("aria-controls")!)).toHaveAttribute(
+      "hidden",
+    );
+    expect(document.getElementById(comparisonTab.getAttribute("aria-controls")!)).toHaveAttribute(
+      "hidden",
+    );
   });
 
-  it("does not mount performance charts while overview is active", () => {
+  it("does not mount performance/setups/behaviour/comparison charts while overview is active", () => {
     render(<AnalyticsPage />);
     expect(performanceChartsMounted).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("performance-charts")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("daily-pnl-chart")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("cumulative-pnl-chart")).not.toBeInTheDocument();
+    expect(setupsChartsMounted).not.toHaveBeenCalled();
+    expect(behaviourChartsMounted).not.toHaveBeenCalled();
+    expect(comparisonChartsMounted).not.toHaveBeenCalled();
   });
 
-  it("mounts performance charts when the performance tab is active", () => {
-    filterState = { ...filterState, tab: "performance" };
+  it("mounts behaviour charts when the behaviour tab is active", () => {
+    filterState = { ...filterState, tab: "behaviour" };
     render(<AnalyticsPage />);
-    expect(performanceChartsMounted).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("performance-charts")).toBeInTheDocument();
-    expect(screen.getByTestId("daily-pnl-chart")).toBeInTheDocument();
-    expect(screen.getByTestId("cumulative-pnl-chart")).toBeInTheDocument();
+    expect(behaviourChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("behaviour-charts")).toBeInTheDocument();
+  });
+
+  it("mounts comparison charts when the comparison tab is active", () => {
+    filterState = { ...filterState, tab: "comparison" };
+    render(<AnalyticsPage />);
+    expect(comparisonChartsMounted).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("comparison-charts")).toBeInTheDocument();
+  });
+
+  it("still mounts behaviour charts when overview/performance sources both fail", () => {
+    filterState = { ...filterState, tab: "behaviour" };
+    sourcesState = {
+      journal: failed(),
+      portfolio: failed(),
+      loading: false,
+      bothFailed: true,
+      partialData: false,
+      loadedFilterKey: "key",
+    };
+    render(<AnalyticsPage />);
+    expect(screen.getByTestId("behaviour-charts")).toBeInTheDocument();
+    expect(screen.queryByTestId("error-state")).not.toBeInTheDocument();
   });
 
   it("renders overview stats from available sources", () => {
@@ -438,7 +509,7 @@ describe("AnalyticsPage PR1 + PR2", () => {
     expect(screen.getByTestId("overview-journal-error")).toBeInTheDocument();
   });
 
-  it("shows full error when both sources fail and keeps tabpanels mounted", () => {
+  it("shows full error when both sources fail and keeps all tabpanels mounted", () => {
     sourcesState = {
       journal: failed(),
       portfolio: failed(),
@@ -451,7 +522,7 @@ describe("AnalyticsPage PR1 + PR2", () => {
     expect(screen.getByTestId("error-state")).toHaveTextContent(/both failed/i);
     expect(screen.queryByTestId("overview-stats")).not.toBeInTheDocument();
     const tablist = screen.getByRole("tablist", { name: "Analytics sections" });
-    expect(within(tablist).getAllByRole("tab")).toHaveLength(3);
+    expect(within(tablist).getAllByRole("tab")).toHaveLength(5);
     for (const tab of within(tablist).getAllByRole("tab")) {
       const panel = document.getElementById(tab.getAttribute("aria-controls")!);
       expect(panel).toBeTruthy();
@@ -480,7 +551,7 @@ describe("AnalyticsPage PR1 + PR2", () => {
     render(<AnalyticsPage />);
     const tablist = screen.getByRole("tablist", { name: "Analytics sections" });
     const tabs = within(tablist).getAllByRole("tab");
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(5);
     for (const tab of tabs) {
       const panelId = tab.getAttribute("aria-controls");
       expect(panelId).toBeTruthy();

@@ -23,6 +23,12 @@ vi.mock("@/lib/api", () => ({
 
 const SETUP_UUID = "11111111-1111-1111-1111-111111111111";
 
+const scopedDefaults = {
+  strategyVersionId: null,
+  ruleCompliance: null,
+  marketRegime: null,
+} as const;
+
 const journalResponse = {
   group_by: "setup" as const,
   filters: { setup_id: SETUP_UUID },
@@ -89,6 +95,7 @@ function baseParams() {
     userStrategyId: null,
     groupBy: "setup",
     bucketOffset: 0,
+    ...scopedDefaults,
     ignoredParams: [],
   });
 }
@@ -154,6 +161,7 @@ describe("useSetupAnalyticsSources", () => {
       userStrategyId: null,
       groupBy: "setup",
       bucketOffset: 0,
+      ...scopedDefaults,
       ignoredParams: [],
     });
     const { result } = renderHook(() =>
@@ -277,6 +285,7 @@ describe("useSetupAnalyticsSources", () => {
       userStrategyId: null,
       groupBy: "setup",
       bucketOffset: 0,
+      ...scopedDefaults,
       ignoredParams: [],
     });
     renderHook(() => useSetupAnalyticsSources(params, { enabled: false }));
