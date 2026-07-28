@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
@@ -14,63 +14,41 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
-import { loadSource, type SourceResult } from "@/components/workflows";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { strategyStatusFor } from "@/lib/strategy-status";
 import { buildWorkflowSteps } from "@/lib/workflow-steps";
-import type {
-  PaperAlert,
-  PaperEligibilityReport,
-  PaperRuntimeHistoryRecord,
-  PaperSchedulerStatus,
-  PaperSignalResult,
-  PaperTradeRecord,
-  PaperValidationSummary,
-} from "@/lib/api/types";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
+
+import {
+  PAPER_SOURCE_KEYS,
+  PAPER_SOURCE_LABELS,
+  paperSourcePresentation,
+  paperSourceTestId,
+  useStrategyPaperSources,
+} from "./useStrategyPaperSources";
 
 function setupLabel(value: string) {
   return SETUP_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
-
-type PaperSources = {
-  summary: SourceResult<PaperValidationSummary>;
-  eligibility: SourceResult<PaperEligibilityReport>;
-  scheduler: SourceResult<PaperSchedulerStatus>;
-  alerts: SourceResult<{ items: PaperAlert[] }>;
-  history: SourceResult<{ items: PaperRuntimeHistoryRecord[] }>;
-  signals: SourceResult<{ items: PaperSignalResult[] }>;
-  trades: SourceResult<{ items: PaperTradeRecord[] }>;
-};
-
-const idleSource = <T,>(): SourceResult<T> => ({
-  data: null,
-  available: false,
-  error: null,
-  fallbackUsed: false,
-});
 
 export default function StrategyDetailPage() {
   const params = useParams();
   const id = String(params.id);
   const loader = useCallback(() => api.strategies.get(id), [id]);
   const { data, loading, error, reload } = useAsyncData(loader, [id]);
+  const strategyReady = Boolean(data) && !loading && !error;
+
+  const { sources, refreshAllPaperSources, retryPaperSource, anyPaperSourceLoading } =
+    useStrategyPaperSources({
+      strategyId: id,
+      strategyReady,
+    });
+
   const [versionBusy, setVersionBusy] = useState(false);
   const [paperBusy, setPaperBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [paperLoading, setPaperLoading] = useState(true);
-  const [paperSources, setPaperSources] = useState<PaperSources>({
-    summary: idleSource(),
-    eligibility: idleSource(),
-    scheduler: idleSource(),
-    alerts: idleSource(),
-    history: idleSource(),
-    signals: idleSource(),
-    trades: idleSource(),
-  });
   const [rulesBusy, setRulesBusy] = useState(false);
-  const paperLoadGeneration = useRef(0);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
   const { data: testabilityData, reload: reloadTestability } = useAsyncData(testabilityLoader, [id]);
@@ -78,130 +56,36 @@ export default function StrategyDetailPage() {
   const versionsLoader = useCallback(() => api.strategies.listVersions(id), [id]);
   const { data: versionsData } = useAsyncData(versionsLoader, [id]);
 
-  const loadPaperSources = useCallback(async () => {
-    const generation = ++paperLoadGeneration.current;
-    setPaperLoading(true);
-    const [summary, eligibility, scheduler, alerts] = await Promise.all([
-      loadSource(api.strategies.paperValidation(id)),
-      loadSource(api.strategies.paperEligibility(id)),
-      loadSource(api.strategies.schedulerStatus()),
-      loadSource(api.alerts.list({ limit: 10 })),
-    ]);
-    if (generation !== paperLoadGeneration.current) return;
-
-    const runId = summary.data?.runs[0]?.id;
-    let signals: SourceResult<{ items: PaperSignalResult[] }> = {
-      data: { items: [] },
-      available: true,
-      error: null,
-      fallbackUsed: false,
-    };
-    let trades: SourceResult<{ items: PaperTradeRecord[] }> = {
-      data: { items: [] },
-      available: true,
-      error: null,
-      fallbackUsed: false,
-    };
-    let history: SourceResult<{ items: PaperRuntimeHistoryRecord[] }>;
-
-    if (runId) {
-      const [sig, tr, hist] = await Promise.all([
-        loadSource(api.strategies.paperValidationSignals(runId)),
-        loadSource(api.strategies.paperValidationTrades(runId)),
-        loadSource(api.strategies.schedulerHistory({ run_id: runId, limit: 10 })),
-      ]);
-      signals = sig;
-      trades = tr;
-      history = hist;
-    } else {
-      history = await loadSource(api.strategies.schedulerHistory({ limit: 10 }));
-      if (!summary.available) {
-        signals = {
-          data: null,
-          available: false,
-          error: "Paper signals unavailable until paper validation summary loads.",
-          fallbackUsed: false,
-        };
-        trades = {
-          data: null,
-          available: false,
-          error: "Paper trades unavailable until paper validation summary loads.",
-          fallbackUsed: false,
-        };
-      }
-    }
-
-    if (generation !== paperLoadGeneration.current) return;
-    setPaperSources({
-      summary,
-      eligibility,
-      scheduler,
-      alerts,
-      history,
-      signals,
-      trades,
-    });
-    setPaperLoading(false);
-  }, [id]);
-
-  useEffect(() => {
-    void loadPaperSources();
-  }, [loadPaperSources, data?.current_version, data?.backtest_status]);
-
   const card = data?.latest_card;
-  const latestRunId = paperSources.summary.data?.runs[0]?.id;
-  const eligibility = paperSources.eligibility.data;
-  const paperSummary = paperSources.summary.data;
-  const scheduler = paperSources.scheduler.data;
-  const history = paperSources.history.data?.items ?? [];
-  const alerts = paperSources.alerts.data?.items ?? [];
-  const signals = paperSources.signals.data?.items ?? [];
-  const trades = paperSources.trades.data?.items ?? [];
+  const latestRunId =
+    sources.summary.status === "ready" || sources.summary.status === "empty"
+      ? sources.summary.data?.runs[0]?.id
+      : undefined;
 
-  const paperSourceStatuses = [
-    {
-      name: "Paper validation summary",
-      available: paperSources.summary.available,
-      error: paperSources.summary.error,
-      empty: paperSources.summary.available && (paperSources.summary.data?.runs.length ?? 0) === 0,
-    },
-    {
-      name: "Paper eligibility",
-      available: paperSources.eligibility.available,
-      error: paperSources.eligibility.error,
-      empty: false,
-    },
-    {
-      name: "Scheduler status",
-      available: paperSources.scheduler.available,
-      error: paperSources.scheduler.error,
-      empty: false,
-    },
-    {
-      name: "Paper alerts",
-      available: paperSources.alerts.available,
-      error: paperSources.alerts.error,
-      empty: paperSources.alerts.available && (paperSources.alerts.data?.items.length ?? 0) === 0,
-    },
-    {
-      name: "Runtime history",
-      available: paperSources.history.available,
-      error: paperSources.history.error,
-      empty: paperSources.history.available && history.length === 0,
-    },
-    {
-      name: "Paper signals",
-      available: paperSources.signals.available,
-      error: paperSources.signals.error,
-      empty: paperSources.signals.available && signals.length === 0,
-    },
-    {
-      name: "Paper trades",
-      available: paperSources.trades.available,
-      error: paperSources.trades.error,
-      empty: paperSources.trades.available && trades.length === 0,
-    },
-  ];
+  const panelSummary =
+    sources.summary.status === "ready" || sources.summary.status === "empty"
+      ? sources.summary.data
+      : null;
+  const panelEligibility =
+    sources.eligibility.status === "ready" ? sources.eligibility.data : null;
+  const panelScheduler =
+    sources.scheduler.status === "ready" ? sources.scheduler.data : null;
+  const panelHistory =
+    sources.history.status === "ready" || sources.history.status === "empty"
+      ? (sources.history.data?.items ?? [])
+      : [];
+  const panelAlerts =
+    sources.alerts.status === "ready" || sources.alerts.status === "empty"
+      ? (sources.alerts.data?.items ?? [])
+      : [];
+  const panelSignals =
+    sources.signals.status === "ready" || sources.signals.status === "empty"
+      ? (sources.signals.data?.items ?? [])
+      : [];
+  const panelTrades =
+    sources.trades.status === "ready" || sources.trades.status === "empty"
+      ? (sources.trades.data?.items ?? [])
+      : [];
 
   async function createVersion() {
     if (!data) return;
@@ -226,8 +110,8 @@ export default function StrategyDetailPage() {
     setActionError(null);
     try {
       await action();
-      await loadPaperSources();
       await reload();
+      await refreshAllPaperSources("refresh");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Paper validation failed");
     } finally {
@@ -268,8 +152,8 @@ export default function StrategyDetailPage() {
           </Badge>
           <span>Backtest: {data.backtest_status ?? "not_run"}</span>
           <span>Paper: {data.paper_validation_status ?? "not_started"}</span>
-          {eligibility ? (
-            <span data-testid="strategy-paper-status">Eligibility: {eligibility.status}</span>
+          {panelEligibility ? (
+            <span data-testid="strategy-paper-status">Eligibility: {panelEligibility.status}</span>
           ) : null}
         </div>
       ) : null}
@@ -282,8 +166,8 @@ export default function StrategyDetailPage() {
             readyForBacktest: testabilityData?.ready_for_backtest,
             backtestStatus: data.backtest_status,
             paperValidationStatus: data.paper_validation_status,
-            paperEligible: eligibility?.paper_eligible ?? data.paper_eligible,
-            unresolvedLessonCount: eligibility?.unresolved_lesson_candidates.length,
+            paperEligible: panelEligibility?.paper_eligible ?? data.paper_eligible,
+            unresolvedLessonCount: panelEligibility?.unresolved_lesson_candidates.length,
           })}
         />
       ) : null}
@@ -351,37 +235,69 @@ export default function StrategyDetailPage() {
             type="button"
             size="sm"
             variant="outline"
-            disabled={paperLoading || paperBusy}
-            onClick={() => void loadPaperSources()}
+            disabled={!strategyReady || anyPaperSourceLoading || paperBusy}
+            onClick={() => void refreshAllPaperSources("refresh")}
             data-testid="strategy-paper-sources-retry"
           >
-            Retry paper sources
+            Retry all paper sources
           </Button>
         </div>
-        {paperLoading ? (
-          <LoadingState label="Loading paper validation sources…" />
-        ) : (
-          <ul className="grid gap-2 sm:grid-cols-2" data-testid="strategy-paper-source-list">
-            {paperSourceStatuses.map((source) => (
+
+        <ul className="grid gap-2 sm:grid-cols-2" data-testid="strategy-paper-source-list">
+          {PAPER_SOURCE_KEYS.map((key) => {
+            const slot = sources[key];
+            const presentation = paperSourcePresentation(slot);
+            const testId = paperSourceTestId(key);
+            return (
               <li
-                key={source.name}
-                data-testid={`strategy-paper-source-${source.name.toLowerCase().replace(/\s+/g, "-")}`}
+                key={key}
+                data-testid={testId}
+                data-source-status={slot.status}
+                data-source-stale={slot.stale ? "true" : "false"}
                 className="rounded-control border border-border-subtle px-3 py-2 text-sm"
               >
-                <p className="font-medium text-text-primary">{source.name}</p>
-                {!source.available ? (
-                  <p className="mt-1 text-danger" role="alert">
-                    Unavailable{source.error ? `: ${source.error}` : "."}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-medium text-text-primary">{PAPER_SOURCE_LABELS[key]}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      !strategyReady ||
+                      slot.status === "loading" ||
+                      slot.status === "idle" ||
+                      paperBusy
+                    }
+                    onClick={() => retryPaperSource(key)}
+                    data-testid={`${testId}-retry`}
+                  >
+                    Retry
+                  </Button>
+                </div>
+                <p
+                  className={
+                    presentation.tone === "failed"
+                      ? "mt-1 text-danger"
+                      : presentation.tone === "waiting"
+                        ? "mt-1 text-warning"
+                        : presentation.tone === "loading"
+                          ? "mt-1 text-text-secondary"
+                          : "mt-1 text-text-secondary"
+                  }
+                  role={presentation.tone === "failed" ? "alert" : "status"}
+                  data-testid={`${testId}-message`}
+                >
+                  {presentation.message}
+                </p>
+                {slot.stale ? (
+                  <p className="mt-1 text-xs text-warning" data-testid={`${testId}-stale`}>
+                    Previous snapshot cleared while reloading.
                   </p>
-                ) : source.empty ? (
-                  <p className="mt-1 text-text-muted">Loaded — empty.</p>
-                ) : (
-                  <p className="mt-1 text-text-secondary">Loaded.</p>
-                )}
+                ) : null}
               </li>
-            ))}
-          </ul>
-        )}
+            );
+          })}
+        </ul>
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -392,14 +308,14 @@ export default function StrategyDetailPage() {
           onListRuns={() => api.strategies.listBacktests(id)}
         />
         <PaperValidationPanel
-          summary={paperSummary}
-          eligibility={eligibility}
-          scheduler={scheduler}
-          history={paperSources.history.available ? history : []}
-          alerts={paperSources.alerts.available ? alerts : []}
-          busy={paperBusy || paperLoading}
-          signals={paperSources.signals.available ? signals : []}
-          trades={paperSources.trades.available ? trades : []}
+          summary={panelSummary}
+          eligibility={panelEligibility}
+          scheduler={panelScheduler}
+          history={panelHistory}
+          alerts={panelAlerts}
+          busy={paperBusy || anyPaperSourceLoading}
+          signals={panelSignals}
+          trades={panelTrades}
           onStart={() =>
             void withPaperAction(async () => {
               await api.strategies.startPaperValidation(id, { runtime_mode: "scan_only" });
