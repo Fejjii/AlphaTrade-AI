@@ -5,7 +5,6 @@ import { useMemo } from "react";
 import type { AnalyticsFilterParams } from "./filterValidation";
 import {
   formatAnalyticsWindowFiltersSummary,
-  formatComparisonFiltersSummary,
   formatJournalStatsFiltersSummary,
   formatLearningAnalyticsFiltersSummary,
 } from "./filterValidation";

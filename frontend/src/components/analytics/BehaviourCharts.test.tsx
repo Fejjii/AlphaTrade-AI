@@ -9,7 +9,7 @@ import type {
   DisciplineAnalyticsResponse,
   DisciplineScoreResult,
   JournalStatsResponse,
-  RiskBehaviorResponse,
+  RiskBehaviorAnalytics,
 } from "@/lib/api/types";
 
 function ok<T>(data: T): SourceResult<T> {
@@ -116,7 +116,7 @@ const learning: DisciplineAnalyticsResponse = {
   improvement_suggestions: [],
 };
 
-const risk: RiskBehaviorResponse = {
+const risk: RiskBehaviorAnalytics = {
   risk_blocks_count: 0,
   daily_loss_warnings: 0,
   green_day_warnings: 0,
@@ -135,7 +135,32 @@ vi.mock("./useBehaviourSources", () => ({
   useBehaviourSources: vi.fn(),
 }));
 
+vi.mock("./AnalyticsCharts", async () => {
+  const { RuleComplianceChart } = await import("./RuleComplianceChart");
+  return { RuleComplianceChart };
+});
+
 import { useBehaviourSources } from "./useBehaviourSources";
+
+function mockBehaviourSources(
+  overrides: Partial<ReturnType<typeof useBehaviourSources>> = {},
+): ReturnType<typeof useBehaviourSources> {
+  return {
+    ruleCompliance: null,
+    proposalDiscipline: null,
+    learningDiscipline: null,
+    riskBehavior: null,
+    loading: false,
+    filterKey: "key",
+    loadedFilterKey: "key",
+    reload: vi.fn(),
+    reloadRuleCompliance: vi.fn(),
+    reloadProposalDiscipline: vi.fn(),
+    reloadLearningDiscipline: vi.fn(),
+    reloadRiskBehavior: vi.fn(),
+    ...overrides,
+  };
+}
 
 describe("BehaviourCharts integration", () => {
   afterEach(() => cleanup());
@@ -143,17 +168,14 @@ describe("BehaviourCharts integration", () => {
   it("treats future-skewed rule compliance as unavailable while other widgets remain", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-25T12:00:00Z"));
-    vi.mocked(useBehaviourSources).mockReturnValue({
-      ruleCompliance: ok(ruleComplianceData),
-      proposalDiscipline: ok(proposal),
-      learningDiscipline: ok(learning),
-      riskBehavior: ok(risk),
-      loading: false,
-      reloadRuleCompliance: vi.fn(),
-      reloadProposalDiscipline: vi.fn(),
-      reloadLearningDiscipline: vi.fn(),
-      reloadRiskBehavior: vi.fn(),
-    });
+    vi.mocked(useBehaviourSources).mockReturnValue(
+      mockBehaviourSources({
+        ruleCompliance: ok(ruleComplianceData),
+        proposalDiscipline: ok(proposal),
+        learningDiscipline: ok(learning),
+        riskBehavior: ok(risk),
+      }),
+    );
 
     render(<BehaviourCharts apiParams={apiParams} enabled />);
 
@@ -166,17 +188,14 @@ describe("BehaviourCharts integration", () => {
   });
 
   it("shows date-only provenance on discipline cards, not symbol/timeframe from URL", () => {
-    vi.mocked(useBehaviourSources).mockReturnValue({
-      ruleCompliance: ok({ ...ruleComplianceData, generated_at: "2026-07-25T12:00:00Z" }),
-      proposalDiscipline: ok(proposal),
-      learningDiscipline: ok(learning),
-      riskBehavior: ok(risk),
-      loading: false,
-      reloadRuleCompliance: vi.fn(),
-      reloadProposalDiscipline: vi.fn(),
-      reloadLearningDiscipline: vi.fn(),
-      reloadRiskBehavior: vi.fn(),
-    });
+    vi.mocked(useBehaviourSources).mockReturnValue(
+      mockBehaviourSources({
+        ruleCompliance: ok({ ...ruleComplianceData, generated_at: "2026-07-25T12:00:00Z" }),
+        proposalDiscipline: ok(proposal),
+        learningDiscipline: ok(learning),
+        riskBehavior: ok(risk),
+      }),
+    );
 
     render(<BehaviourCharts apiParams={apiParams} enabled />);
 
@@ -190,17 +209,7 @@ describe("BehaviourCharts integration", () => {
   });
 
   it("returns null when not enabled", () => {
-    vi.mocked(useBehaviourSources).mockReturnValue({
-      ruleCompliance: null,
-      proposalDiscipline: null,
-      learningDiscipline: null,
-      riskBehavior: null,
-      loading: false,
-      reloadRuleCompliance: vi.fn(),
-      reloadProposalDiscipline: vi.fn(),
-      reloadLearningDiscipline: vi.fn(),
-      reloadRiskBehavior: vi.fn(),
-    });
+    vi.mocked(useBehaviourSources).mockReturnValue(mockBehaviourSources());
 
     const { container } = render(<BehaviourCharts apiParams={apiParams} enabled={false} />);
     expect(container).toBeEmptyDOMElement();

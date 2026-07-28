@@ -295,7 +295,7 @@ describe("endpoint-specific provenance summaries", () => {
     expect(summary).toContain("dates 2026-01-01 → 2026-01-31");
     expect(summary).toContain("symbol BTCUSDT");
     expect(summary).toContain(`user_strategy_id ${STRATEGY_UUID}`);
-    expect(summary).not.toContain("strategy_id");
+    expect(summary).not.toMatch(/\bstrategy_id\b/);
   });
 
   it("formatAnalyticsWindowFiltersSummary shows dates only", () => {
