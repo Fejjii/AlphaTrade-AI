@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api";
 
-import { buildFilterKey, type AnalyticsFilterParams } from "./filterValidation";
+import {
+  buildSharedAnalyticsFilterKey,
+  type AnalyticsFilterParams,
+} from "./filterValidation";
 import { useAnalyticsSources } from "./useAnalyticsSources";
 
 vi.mock("@/lib/api", () => ({
@@ -222,7 +225,7 @@ describe("useAnalyticsSources", () => {
     });
 
     expect(result.current.journal?.data).toBeTruthy();
-    expect(result.current.loadedFilterKey).toBe(buildFilterKey(ethParams));
+    expect(result.current.loadedFilterKey).toBe(buildSharedAnalyticsFilterKey(ethParams));
   });
 
   it("clears displayed data while a new filter loads", async () => {
@@ -253,7 +256,7 @@ describe("useAnalyticsSources", () => {
     });
 
     expect(api.journal.statistics).toHaveBeenCalledTimes(2);
-    expect(result.current.loadedFilterKey).toBe(buildFilterKey(defaultParams));
+    expect(result.current.loadedFilterKey).toBe(buildSharedAnalyticsFilterKey(defaultParams));
   });
 
   it("reports partial source behavior honestly", async () => {
@@ -266,5 +269,116 @@ describe("useAnalyticsSources", () => {
     expect(result.current.partialData).toBe(true);
     expect(result.current.journal?.available).toBe(false);
     expect(result.current.portfolio?.available).toBe(true);
+  });
+
+  it("does not refetch journal or portfolio when validation dimension changes", async () => {
+    vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
+    vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);
+
+    const conditionParams: AnalyticsFilterParams = {
+      ...defaultParams,
+      validation: { dimension: "condition", min_sample: 5 },
+    };
+    const symbolParams: AnalyticsFilterParams = {
+      ...defaultParams,
+      validation: { dimension: "symbol", min_sample: 5 },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ params }) => useAnalyticsSources(params),
+      { initialProps: { params: conditionParams } },
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const journalCallsAfterLoad = vi.mocked(api.journal.statistics).mock.calls.length;
+    const portfolioCallsAfterLoad = vi.mocked(api.performance.portfolio).mock.calls.length;
+
+    rerender({ params: symbolParams });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.journal).not.toBeNull();
+    expect(result.current.portfolio).not.toBeNull();
+    expect(api.journal.statistics).toHaveBeenCalledTimes(journalCallsAfterLoad);
+    expect(api.performance.portfolio).toHaveBeenCalledTimes(portfolioCallsAfterLoad);
+    expect(result.current.filterKey).toBe(buildSharedAnalyticsFilterKey(symbolParams));
+  });
+
+  it("does not refetch journal or portfolio when validation min_sample changes", async () => {
+    vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
+    vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);
+
+    const minFive: AnalyticsFilterParams = {
+      ...defaultParams,
+      validation: { dimension: "condition", min_sample: 5 },
+    };
+    const minTen: AnalyticsFilterParams = {
+      ...defaultParams,
+      validation: { dimension: "condition", min_sample: 10 },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ params }) => useAnalyticsSources(params),
+      { initialProps: { params: minFive } },
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const journalCallsAfterLoad = vi.mocked(api.journal.statistics).mock.calls.length;
+    const portfolioCallsAfterLoad = vi.mocked(api.performance.portfolio).mock.calls.length;
+
+    rerender({ params: minTen });
+
+    expect(result.current.loading).toBe(false);
+    expect(api.journal.statistics).toHaveBeenCalledTimes(journalCallsAfterLoad);
+    expect(api.performance.portfolio).toHaveBeenCalledTimes(portfolioCallsAfterLoad);
+  });
+
+  it("does not refetch journal or portfolio when strategy-quality parameters change", async () => {
+    vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
+    vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);
+
+    const sqFive: AnalyticsFilterParams = {
+      ...defaultParams,
+      strategyQuality: { min_sample: 5 },
+    };
+    const sqTen: AnalyticsFilterParams = {
+      ...defaultParams,
+      strategyQuality: { min_sample: 10, start_date: "2026-01-01", end_date: "2026-06-30" },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ params }) => useAnalyticsSources(params),
+      { initialProps: { params: sqFive } },
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const journalCallsAfterLoad = vi.mocked(api.journal.statistics).mock.calls.length;
+    const portfolioCallsAfterLoad = vi.mocked(api.performance.portfolio).mock.calls.length;
+
+    rerender({ params: sqTen });
+
+    expect(result.current.loading).toBe(false);
+    expect(api.journal.statistics).toHaveBeenCalledTimes(journalCallsAfterLoad);
+    expect(api.performance.portfolio).toHaveBeenCalledTimes(portfolioCallsAfterLoad);
+  });
+
+  it("reloads shared snapshots when journal or portfolio request parameters change", async () => {
+    vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
+    vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);
+
+    const { result, rerender } = renderHook(
+      ({ params }: { params: AnalyticsFilterParams }) => useAnalyticsSources(params),
+      { initialProps: { params: defaultParams } },
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(api.journal.statistics).toHaveBeenCalledTimes(1);
+    expect(api.performance.portfolio).toHaveBeenCalledTimes(1);
+
+    rerender({ params: paramsForSymbol("BTCUSDT") });
+    expect(result.current.loading).toBe(true);
+    expect(result.current.journal).toBeNull();
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(api.journal.statistics).toHaveBeenCalledTimes(2);
+    expect(api.performance.portfolio).toHaveBeenCalledTimes(2);
+    expect(result.current.loadedFilterKey).toBe(
+      buildSharedAnalyticsFilterKey(paramsForSymbol("BTCUSDT")),
+    );
   });
 });

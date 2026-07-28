@@ -6,7 +6,10 @@ import { loadSource, type SourceResult } from "@/components/workflows";
 import { api } from "@/lib/api";
 import type { JournalStatsResponse, PaperPortfolioResponse } from "@/lib/api/types";
 
-import { buildFilterKey, type AnalyticsFilterParams } from "./filterValidation";
+import {
+  buildSharedJournalPortfolioKey,
+  type AnalyticsFilterParams,
+} from "./filterValidation";
 
 type SourcesSnapshot = {
   filterKey: string;
@@ -19,7 +22,11 @@ type SourcesSnapshot = {
  * Never displays stale-filter data under current filter captions.
  */
 export function useAnalyticsSources(params: AnalyticsFilterParams) {
-  const filterKey = useMemo(() => buildFilterKey(params), [params]);
+  const { journal: journalParams, portfolio: portfolioParams } = params;
+  const filterKey = useMemo(
+    () => buildSharedJournalPortfolioKey(journalParams, portfolioParams),
+    [journalParams, portfolioParams],
+  );
   const [snapshot, setSnapshot] = useState<SourcesSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const generationRef = useRef(0);

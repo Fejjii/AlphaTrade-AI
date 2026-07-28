@@ -61,6 +61,7 @@ function presetToRange(preset: DatePreset, now = new Date()): { from: string | n
 export {
   buildAnalyticsApiParams,
   buildFilterKey,
+  buildSharedAnalyticsFilterKey,
   buildSetupAnalyticsApiParams,
   buildSetupFilterKey,
   formatAnalyticsWindowFiltersSummary,

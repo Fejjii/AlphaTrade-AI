@@ -537,6 +537,18 @@ export function buildFilterKey(params: AnalyticsFilterParams): string {
   });
 }
 
+/** Request key for shared Overview sources: journal statistics + portfolio only. */
+export function buildSharedAnalyticsFilterKey(params: AnalyticsFilterParams): string {
+  return buildSharedJournalPortfolioKey(params.journal, params.portfolio);
+}
+
+export function buildSharedJournalPortfolioKey(
+  journal: JournalStatsParams,
+  portfolio: PaperPortfolioParams,
+): string {
+  return JSON.stringify({ journal, portfolio });
+}
+
 /** Request key for Behaviour rule-compliance journal statistics. */
 export function buildRuleComplianceFilterKey(params: JournalStatsParams): string {
   return JSON.stringify(params);

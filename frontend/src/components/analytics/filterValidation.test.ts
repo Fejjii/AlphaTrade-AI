@@ -6,6 +6,7 @@ import {
   buildLearningWindowFilterKey,
   buildRuleComplianceFilterKey,
   buildSetupAnalyticsApiParams,
+  buildSharedAnalyticsFilterKey,
   formatAnalyticsWindowFiltersSummary,
   formatAppliedFiltersSummary,
   formatJournalStatsFiltersSummary,
@@ -614,5 +615,63 @@ describe("setup evidence provenance", () => {
         setupId: SETUP_UUID,
       }),
     ).toBeNull();
+  });
+});
+
+describe("buildSharedAnalyticsFilterKey", () => {
+  const baseState = {
+    tab: "validation" as const,
+    dateFrom: "2026-01-01",
+    dateTo: "2026-06-30",
+    symbol: "BTCUSDT",
+    timeframe: "1h",
+    portfolioSource: null,
+    journalSource: null,
+    setupId: null,
+    userStrategyId: null,
+    strategyVersionId: null,
+    ruleCompliance: null,
+    marketRegime: null,
+    groupBy: "setup" as const,
+    bucketOffset: 0,
+    minSample: 5,
+    dimension: "condition" as const,
+    ignoredParams: [],
+  };
+
+  it("depends only on journal and portfolio request params", () => {
+    const sharedOnly = buildSharedAnalyticsFilterKey(
+      buildAnalyticsApiParams({ ...baseState, tab: "overview" }),
+    );
+    const withValidationChanges = buildSharedAnalyticsFilterKey(
+      buildAnalyticsApiParams({
+        ...baseState,
+        tab: "validation",
+        dimension: "symbol",
+        minSample: 20,
+      }),
+    );
+    const withBehaviourChanges = buildSharedAnalyticsFilterKey(
+      buildAnalyticsApiParams({
+        ...baseState,
+        tab: "behaviour",
+        ruleCompliance: "compliant",
+        marketRegime: "trending_up",
+      }),
+    );
+
+    expect(withValidationChanges).toBe(sharedOnly);
+    expect(withBehaviourChanges).toBe(sharedOnly);
+  });
+
+  it("changes when journal or portfolio request params change", () => {
+    const overview = buildSharedAnalyticsFilterKey(
+      buildAnalyticsApiParams({ ...baseState, tab: "overview", symbol: null }),
+    );
+    const filtered = buildSharedAnalyticsFilterKey(
+      buildAnalyticsApiParams({ ...baseState, tab: "overview", symbol: "ETHUSDT" }),
+    );
+
+    expect(filtered).not.toBe(overview);
   });
 });
