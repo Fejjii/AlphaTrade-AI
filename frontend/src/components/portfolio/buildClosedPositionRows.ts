@@ -22,7 +22,7 @@ export type ClosedPositionRow = {
 export type ClosedPositionsView = {
   status: "loading" | "available" | "empty" | "unavailable" | "truncated";
   rows: ClosedPositionRow[] | null;
-  coverage: "complete" | "truncated" | null;
+  coverage: "complete" | "truncated" | "unknown" | null;
   coverageMessage: string | null;
   loaded: number | null;
   total: number | null;
@@ -112,9 +112,12 @@ export function buildClosedPositionRows(
   );
   const loaded = positions.data.items.length;
   const total = positions.data.total;
-  const coverage = coverageFromPage(loaded, total);
-  const coverageMessage =
-    coverage === "truncated"
+  const partialSourceError = positions.error?.trim() || null;
+  const pageCoverage = coverageFromPage(loaded, total);
+  const coverage = partialSourceError ? "unknown" : pageCoverage;
+  const coverageMessage = partialSourceError
+    ? partialSourceError
+    : coverage === "truncated"
       ? `Showing ${loaded} of ${total} closed positions (truncated coverage).`
       : null;
 
@@ -149,7 +152,7 @@ export function buildClosedPositionRows(
     });
 
   if (rows.length === 0) {
-    if (coverage === "complete") {
+    if (coverage === "complete" && !partialSourceError) {
       return {
         status: "empty",
         rows: [],
@@ -164,9 +167,10 @@ export function buildClosedPositionRows(
       status: "truncated",
       rows: [],
       coverage,
-      coverageMessage:
-        coverageMessage ??
-        "Loaded closed-position page is empty, but full coverage is not confirmed.",
+      coverageMessage: partialSourceError
+        ? `${partialSourceError} Full closed-position history cannot be confirmed.`
+        : coverageMessage ??
+          "Loaded closed-position page is empty, but full closed-position history cannot be confirmed.",
       loaded,
       total,
       reasonUnavailable: null,
@@ -174,7 +178,7 @@ export function buildClosedPositionRows(
   }
 
   return {
-    status: coverage === "truncated" ? "truncated" : "available",
+    status: partialSourceError || coverage !== "complete" ? "truncated" : "available",
     rows,
     coverage,
     coverageMessage,

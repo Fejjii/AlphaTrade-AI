@@ -20,20 +20,52 @@ type PortfolioSourceAvailabilityProps = {
   limitations?: string[];
 };
 
+export function isPortfolioSourceFullyHealthy(source: PortfolioSourceStatus): boolean {
+  return (
+    source.available &&
+    !source.error &&
+    (source.coverage == null || source.coverage === "complete")
+  );
+}
+
+function sourceBadgeLabel(source: PortfolioSourceStatus): string {
+  if (!source.available) {
+    return "Unavailable";
+  }
+  if (source.error || source.coverage === "truncated" || source.coverage === "unknown") {
+    return "Partial";
+  }
+  return "Available";
+}
+
+function sourceBadgeVariant(source: PortfolioSourceStatus): "success" | "warning" {
+  return isPortfolioSourceFullyHealthy(source) ? "success" : "warning";
+}
+
 export function PortfolioSourceAvailability({
   sources,
   onRetry,
   limitations = [],
 }: PortfolioSourceAvailabilityProps) {
   const unavailable = sources.filter((source) => !source.available);
+  const degraded = sources.filter((source) => !isPortfolioSourceFullyHealthy(source));
+  const partialCoverage = sources.filter(
+    (source) =>
+      source.available &&
+      (Boolean(source.error) ||
+        source.coverage === "truncated" ||
+        source.coverage === "unknown"),
+  );
   const allFailed = sources.length > 0 && sources.every((source) => !source.available);
-  const partial = unavailable.length > 0 && !allFailed;
+  const partial = degraded.length > 0 && !allFailed;
+  const allFullyHealthy =
+    sources.length > 0 && sources.every(isPortfolioSourceFullyHealthy) && limitations.length === 0;
   // Degraded coverage always stays open; only a fully healthy set is collapsed,
   // so progressive disclosure never hides a problem (FP2-124).
-  const degraded = unavailable.length > 0 || limitations.length > 0;
+  const showDegradedDetail = !allFullyHealthy;
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
-  const detailsVisible = degraded || expanded;
+  const detailsVisible = showDegradedDetail || expanded;
 
   return (
     <section
@@ -55,7 +87,7 @@ export function PortfolioSourceAvailability({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {degraded ? null : (
+          {showDegradedDetail ? null : (
             <Button
               type="button"
               size="sm"
@@ -69,13 +101,14 @@ export function PortfolioSourceAvailability({
               {expanded ? "Hide source detail" : "Show source detail"}
             </Button>
           )}
-          {onRetry && unavailable.length > 0 ? (
+          {onRetry && degraded.length > 0 ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
               className="min-h-11"
               onClick={onRetry}
+              data-testid="portfolio-sources-retry"
             >
               Retry sources
             </Button>
@@ -83,14 +116,14 @@ export function PortfolioSourceAvailability({
         </div>
       </div>
 
-      {degraded ? null : (
+      {allFullyHealthy ? (
         <p
           className="rounded-control border border-success-border bg-success-muted/40 px-3 py-2 text-sm text-success"
           data-testid="portfolio-sources-all-healthy"
         >
           All {sources.length} Portfolio sources available with complete coverage.
         </p>
-      )}
+      ) : null}
 
       {allFailed ? (
         <div
@@ -111,8 +144,13 @@ export function PortfolioSourceAvailability({
         >
           <p className="font-medium">Partial data</p>
           <p className="mt-1">
-            {unavailable.map((source) => source.name).join(", ")} unavailable. Showing available
-            sections only.
+            {unavailable.length > 0
+              ? `${unavailable.map((source) => source.name).join(", ")} unavailable. `
+              : null}
+            {partialCoverage.length > 0
+              ? `${partialCoverage.map((source) => source.name).join(", ")} reporting partial or degraded coverage. `
+              : null}
+            Showing available sections only.
           </p>
         </div>
       ) : null}
@@ -142,8 +180,8 @@ export function PortfolioSourceAvailability({
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium text-text-primary">{source.name}</span>
-              <Badge variant={source.available ? "success" : "warning"}>
-                {source.available ? "Available" : "Unavailable"}
+              <Badge variant={sourceBadgeVariant(source)} data-testid={`portfolio-source-badge-${source.name.toLowerCase().replaceAll(" ", "-")}`}>
+                {sourceBadgeLabel(source)}
               </Badge>
             </div>
             {source.coverage ? (
@@ -151,8 +189,10 @@ export function PortfolioSourceAvailability({
                 Coverage: {source.coverage}
               </p>
             ) : null}
-            {!source.available && source.error ? (
-              <p className="mt-1 text-caption text-text-muted">{source.error}</p>
+            {source.error ? (
+              <p className="mt-1 text-caption text-text-muted" data-testid={`portfolio-source-error-${source.name.toLowerCase().replaceAll(" ", "-")}`}>
+                {source.error}
+              </p>
             ) : null}
             <p className="mt-1 text-caption text-text-muted">
               Freshness timestamp:{" "}

@@ -45,12 +45,7 @@ export function mergeClosedAndLiquidatedSources(
     (closed.available && closed.data ? closed.data.total : 0) +
     (liquidated.available && liquidated.data ? liquidated.data.total : 0);
 
-  const partialError =
-    !closed.available
-      ? closed.error
-      : !liquidated.available
-        ? liquidated.error
-        : null;
+  const partialError = partialClosedPositionsFailureMessage(closed, liquidated);
 
   return {
     data: {
@@ -63,6 +58,38 @@ export function mergeClosedAndLiquidatedSources(
     error: partialError,
     fallbackUsed: Boolean(closed.fallbackUsed || liquidated.fallbackUsed),
   };
+}
+
+function partialClosedPositionsFailureMessage(
+  closed: SourceResult<PaginatedPositions>,
+  liquidated: SourceResult<PaginatedPositions>,
+): string | null {
+  const closedFailed = !closed.available;
+  const liquidatedFailed = !liquidated.available;
+  if (!closedFailed && !liquidatedFailed) {
+    return null;
+  }
+  if (closedFailed && !liquidatedFailed) {
+    return withSafeDetail(
+      "Closed positions unavailable; showing liquidated positions only.",
+      closed.error,
+    );
+  }
+  if (liquidatedFailed && !closedFailed) {
+    return withSafeDetail(
+      "Liquidated positions unavailable; showing closed positions only.",
+      liquidated.error,
+    );
+  }
+  return closed.error ?? liquidated.error ?? "Closed paper positions are unavailable.";
+}
+
+function withSafeDetail(message: string, detail: string | null | undefined): string {
+  const trimmed = detail?.trim();
+  if (!trimmed || trimmed === message) {
+    return message;
+  }
+  return `${message} (${trimmed})`;
 }
 
 function compareClosedPositions(a: Position, b: Position): number {

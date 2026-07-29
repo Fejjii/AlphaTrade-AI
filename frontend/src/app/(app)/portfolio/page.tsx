@@ -141,10 +141,12 @@ export default function PaperPortfolioPage() {
         : null;
     const closedCoverage =
       data.closedPositions.available && data.closedPositions.data
-        ? coverageFromPage(
-            data.closedPositions.data.items.length,
-            data.closedPositions.data.total,
-          )
+        ? data.closedPositions.error
+          ? ("unknown" as const)
+          : coverageFromPage(
+              data.closedPositions.data.items.length,
+              data.closedPositions.data.total,
+            )
         : null;
     return [
       {
@@ -223,6 +225,9 @@ export default function PaperPortfolioPage() {
     }
     if (data?.dashboard.available) {
       items.push(...(data.dashboard.data?.limitations ?? []));
+    }
+    if (data?.closedPositions.available && data.closedPositions.error) {
+      items.push(data.closedPositions.error);
     }
     return items;
   }, [data, riskPosture.limitations]);

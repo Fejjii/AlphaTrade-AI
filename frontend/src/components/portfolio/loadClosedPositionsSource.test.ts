@@ -66,7 +66,39 @@ describe("mergeClosedAndLiquidatedSources (FP2-221)", () => {
     expect(merged.available).toBe(true);
     expect(merged.data?.items).toHaveLength(1);
     expect(merged.data?.items[0]?.status).toBe("liquidated");
-    expect(merged.error).toBe("closed down");
+    expect(merged.error).toBe(
+      "Closed positions unavailable; showing liquidated positions only. (closed down)",
+    );
+  });
+
+  it("keeps closed rows when the liquidated source fails", () => {
+    const closed = makePosition({ id: "c1", status: "closed" });
+    const merged = mergeClosedAndLiquidatedSources(ok([closed], 1), failed("liquidated down"));
+    expect(merged.available).toBe(true);
+    expect(merged.data?.items).toHaveLength(1);
+    expect(merged.data?.items[0]?.status).toBe("closed");
+    expect(merged.error).toBe(
+      "Liquidated positions unavailable; showing closed positions only. (liquidated down)",
+    );
+  });
+
+  it("merges both sources with complete coverage when both succeed", () => {
+    const closed = makePosition({ id: "c1", status: "closed", closed_at: "2026-07-21T10:00:00.000Z" });
+    const liquidated = makePosition({
+      id: "l1",
+      status: "liquidated",
+      closed_at: "2026-07-22T10:00:00.000Z",
+    });
+    const merged = mergeClosedAndLiquidatedSources(ok([closed], 1), ok([liquidated], 1));
+    expect(merged.available).toBe(true);
+    expect(merged.error).toBeNull();
+    expect(merged.data?.total).toBe(2);
+  });
+
+  it("does not fabricate rows or totals when both sources fail", () => {
+    const merged = mergeClosedAndLiquidatedSources(failed("closed down"), failed("liquidated down"));
+    expect(merged.available).toBe(false);
+    expect(merged.data).toBeNull();
   });
 });
 
