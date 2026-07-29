@@ -74,6 +74,12 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
           <div data-testid="topbar-freshness" className="hidden sm:inline-flex">
             {freshness.state ? (
               <FreshnessPill state={freshness.state} ageLabel={freshness.ageLabel} />
+            ) : pathname?.startsWith("/analytics") ? (
+              // FP2-226: Analytics charts own per-source freshness pills; do not imply
+              // shell-level absence while tab charts show live/stale states.
+              <span className="sr-only" data-testid="topbar-freshness-hub-managed">
+                Chart freshness is shown in Analytics panels
+              </span>
             ) : (
               <span className="rounded-control border border-border-subtle px-2 py-1 text-caption text-text-muted">
                 Freshness unavailable

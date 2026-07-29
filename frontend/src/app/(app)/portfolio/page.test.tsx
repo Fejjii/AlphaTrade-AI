@@ -101,6 +101,10 @@ function failed<T>(error: string): SourceResult<T> {
   return { data: null, available: false, error, fallbackUsed: false };
 }
 
+function okWithError<T>(data: T, error: string): SourceResult<T> {
+  return { data, available: true, error, fallbackUsed: false };
+}
+
 function makeDiscipline(
   overrides: Partial<DailyDisciplineSnapshot> = {},
 ): DailyDisciplineSnapshot {
@@ -759,6 +763,124 @@ describe("Portfolio & Risk command centre", () => {
     expect(screen.getByRole("heading", { name: /risk posture/i })).toBeInTheDocument();
     expect(screen.queryByTestId("portfolio-hub-nav")).not.toBeInTheDocument();
     expect(screen.queryByTestId("portfolio-hub-safety")).not.toBeInTheDocument();
+  });
+
+  it("surfaces liquidated closed positions with an explicit status cell (FP2-221)", () => {
+    asyncState = {
+      data: completeData({
+        closedPositions: ok({
+          items: [
+            makePosition({
+              id: "pos-liq-1",
+              status: "liquidated",
+              symbol: "ETHUSDT",
+              realized_pnl: "-120",
+            }),
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("closed-position-status-pos-liq-1")).toHaveTextContent("liquidated");
+    expect(screen.getByTestId("closed-position-status-row-pos-liq-1")).toHaveTextContent(
+      "liquidated",
+    );
+  });
+
+  describe("closed-position partial coverage honesty (FP2-221)", () => {
+    it("shows surviving liquidated rows with partial warning when closed source failed", () => {
+      asyncState = {
+        data: completeData({
+          closedPositions: okWithError(
+            {
+              items: [
+                makePosition({
+                  id: "pos-liq-partial",
+                  status: "liquidated",
+                  symbol: "ETHUSDT",
+                  realized_pnl: "-50",
+                }),
+              ],
+              total: 1,
+              limit: 50,
+              offset: 0,
+            },
+            "Closed positions unavailable; showing liquidated positions only.",
+          ),
+        }),
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+      render(<PaperPortfolioPage />);
+      expect(screen.getByTestId("closed-position-pos-liq-partial")).toBeInTheDocument();
+      expect(screen.getByTestId("closed-positions-coverage")).toHaveTextContent(
+        /Closed positions unavailable/,
+      );
+      expect(screen.queryByTestId("closed-positions-empty")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("portfolio-sources-all-healthy")).not.toBeInTheDocument();
+      expect(screen.getByTestId("portfolio-sources-partial")).toBeInTheDocument();
+      expect(screen.getByTestId("portfolio-source-badge-closed-positions")).toHaveTextContent(
+        "Partial",
+      );
+      expect(screen.getByTestId("portfolio-sources-retry")).toBeInTheDocument();
+    });
+
+    it("shows surviving closed rows with partial warning when liquidated source failed", () => {
+      asyncState = {
+        data: completeData({
+          closedPositions: okWithError(
+            {
+              items: [
+                makePosition({
+                  id: "pos-closed-partial",
+                  status: "closed",
+                  symbol: "SOLUSDT",
+                }),
+              ],
+              total: 1,
+              limit: 50,
+              offset: 0,
+            },
+            "Liquidated positions unavailable; showing closed positions only.",
+          ),
+        }),
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+      render(<PaperPortfolioPage />);
+      expect(screen.getByTestId("closed-position-pos-closed-partial")).toBeInTheDocument();
+      expect(screen.getByTestId("closed-positions-coverage")).toHaveTextContent(
+        /Liquidated positions unavailable/,
+      );
+      expect(screen.queryByTestId("closed-positions-empty")).not.toBeInTheDocument();
+    });
+
+    it("does not claim complete empty history when partial merge returns no rows", () => {
+      asyncState = {
+        data: completeData({
+          closedPositions: okWithError(
+            { items: [], total: 0, limit: 50, offset: 0 },
+            "Closed positions unavailable; showing liquidated positions only.",
+          ),
+        }),
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+      render(<PaperPortfolioPage />);
+      expect(screen.queryByTestId("closed-positions-empty")).not.toBeInTheDocument();
+      expect(screen.getByTestId("closed-positions-coverage")).toHaveTextContent(
+        /cannot be confirmed/i,
+      );
+    });
   });
 
   it("keeps portfolio filters wired and has no unsafe live CTAs", () => {

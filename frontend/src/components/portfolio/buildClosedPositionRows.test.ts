@@ -51,6 +51,10 @@ function makeEntry(overrides: Partial<JournalEntry> & { id: string }): JournalEn
   };
 }
 
+function okWithError<T>(data: T, error: string): SourceResult<T> {
+  return { data, available: true, error, fallbackUsed: false };
+}
+
 describe("buildClosedPositionRows", () => {
   it("returns unavailable when closed positions fail", () => {
     const view = buildClosedPositionRows(failed(), ok({ items: [], total: 0, limit: 50, offset: 0 }));
@@ -147,4 +151,80 @@ describe("buildClosedPositionRows", () => {
     );
     expect(view.rows?.[0]?.realizedPnl).toBe("33.5");
   });
+
+  it("keeps liquidated closed positions in the closed history rows (FP2-221)", () => {
+    const view = buildClosedPositionRows(
+      ok({
+        items: [
+          makePosition({ id: "pos-closed", status: "closed" }),
+          makePosition({ id: "pos-liq", status: "liquidated", symbol: "ETHUSDT" }),
+          makePosition({ id: "pos-open", status: "open" }),
+        ],
+        total: 3,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    expect(view.rows?.map((row) => row.position.id)).toEqual(["pos-closed", "pos-liq"]);
+    expect(view.rows?.map((row) => row.position.status)).toEqual(["closed", "liquidated"]);
+  });
+
+  it("shows surviving rows with a partial warning when closed source failed (FP2-221)", () => {
+    const view = buildClosedPositionRows(
+      okWithError(
+        {
+          items: [makePosition({ id: "pos-liq", status: "liquidated", symbol: "ETHUSDT" })],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        },
+        "Closed positions unavailable; showing liquidated positions only.",
+      ),
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    expect(view.status).toBe("truncated");
+    expect(view.rows).toHaveLength(1);
+    expect(view.coverage).toBe("unknown");
+    expect(view.coverageMessage).toMatch(/Closed positions unavailable/);
+    expect(screenSafeEmptyMessage(view)).not.toMatch(/complete coverage/i);
+  });
+
+  it("shows surviving rows with a partial warning when liquidated source failed (FP2-221)", () => {
+    const view = buildClosedPositionRows(
+      okWithError(
+        {
+          items: [makePosition({ id: "pos-closed", status: "closed" })],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        },
+        "Liquidated positions unavailable; showing closed positions only.",
+      ),
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    expect(view.status).toBe("truncated");
+    expect(view.rows).toHaveLength(1);
+    expect(view.coverage).toBe("unknown");
+    expect(view.coverageMessage).toMatch(/Liquidated positions unavailable/);
+  });
+
+  it("never claims complete empty history during partial source failure (FP2-221)", () => {
+    const view = buildClosedPositionRows(
+      okWithError(
+        { items: [], total: 0, limit: 50, offset: 0 },
+        "Closed positions unavailable; showing liquidated positions only.",
+      ),
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    expect(view.status).toBe("truncated");
+    expect(view.status).not.toBe("empty");
+    expect(view.coverage).toBe("unknown");
+    expect(view.coverageMessage).toMatch(/Closed positions unavailable/);
+    expect(view.coverageMessage).toMatch(/cannot be confirmed/i);
+  });
 });
+
+function screenSafeEmptyMessage(view: ReturnType<typeof buildClosedPositionRows>): string {
+  return view.status === "empty" ? "No closed paper positions in complete coverage." : "";
+}

@@ -25,6 +25,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { TabPanel, Tabs, TabsRoot } from "@/components/ui/tabs";
 import { ErrorState, LoadingState, StaleState } from "@/components/states";
+import { WorkflowFreshnessAdapter } from "@/components/workflows";
 
 /**
  * Section heading for a tab panel, so tab content starts at `h2` instead of
@@ -96,8 +97,48 @@ export default function AnalyticsPage() {
   const sharedInitialLoad = shared.loading && !shared.journal && !shared.portfolio;
   const setupsInitialLoad = setups.loading && !setups.journal && !setups.evidence;
 
+  // FP2-226: feed shell freshness from tab sources when timestamps exist; otherwise the
+  // TopBar suppresses the misleading "Freshness unavailable" label on this hub.
+  const freshnessSources = useMemo(() => {
+    if (state.tab === "setups" && setups.journal) {
+      return [
+        {
+          name: "Setup journal statistics",
+          available: setups.journal.available,
+          required: true,
+          timestamp: journalFreshnessTimestamp(setups.journal),
+          fallbackUsed: setups.journal.fallbackUsed,
+        },
+      ];
+    }
+    if ((state.tab === "overview" || state.tab === "performance") && sharedEnabled) {
+      const sources = [];
+      if (shared.journal) {
+        sources.push({
+          name: "Journal statistics",
+          available: shared.journal.available,
+          required: true,
+          timestamp: journalFreshnessTimestamp(shared.journal),
+          fallbackUsed: shared.journal.fallbackUsed,
+        });
+      }
+      if (shared.portfolio) {
+        sources.push({
+          name: "Paper portfolio",
+          available: shared.portfolio.available,
+          required: true,
+          timestamp: portfolioFreshnessTimestamp(shared.portfolio),
+          fallbackUsed: shared.portfolio.fallbackUsed,
+        });
+      }
+      return sources;
+    }
+    return [];
+  }, [setups.journal, shared.journal, shared.portfolio, sharedEnabled, state.tab]);
+
   return (
     <div className="space-y-8 max-w-full" data-testid="analytics-page">
+      <WorkflowFreshnessAdapter sources={freshnessSources} />
       <PageHeader
         title="Analytics"
         description="Paper-only statistical hub — overview, performance, setups, behaviour, validation, and human-versus-system comparison with honest source states."

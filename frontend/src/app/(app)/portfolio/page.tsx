@@ -15,6 +15,7 @@ import {
   PortfolioSourceAvailability,
   RiskPosturePanel,
 } from "@/components/portfolio";
+import { loadClosedPositionsSource } from "@/components/portfolio/loadClosedPositionsSource";
 import { OpenExposurePanel } from "@/components/portfolio/OpenExposurePanel";
 import { PaperPortfolioFilters } from "@/components/portfolio/PaperPortfolioFilters";
 import { PaperPortfolioSafetyBanner } from "@/components/portfolio/PaperPortfolioSafetyBanner";
@@ -85,7 +86,7 @@ export default function PaperPortfolioPage() {
       loadSource(api.performance.portfolio(dateParams)),
       loadSource(api.dashboard.summary()),
       loadSource(api.positions.list({ status: "open", limit: 50 })),
-      loadSource(api.positions.list({ status: "closed", limit: 50 })),
+      loadClosedPositionsSource((params) => api.positions.list(params)),
       loadSource(api.journal.list({ limit: 50 })),
     ]);
     return { portfolio, dashboard, openPositions, closedPositions, journal };
@@ -140,10 +141,12 @@ export default function PaperPortfolioPage() {
         : null;
     const closedCoverage =
       data.closedPositions.available && data.closedPositions.data
-        ? coverageFromPage(
-            data.closedPositions.data.items.length,
-            data.closedPositions.data.total,
-          )
+        ? data.closedPositions.error
+          ? ("unknown" as const)
+          : coverageFromPage(
+              data.closedPositions.data.items.length,
+              data.closedPositions.data.total,
+            )
         : null;
     return [
       {
@@ -222,6 +225,9 @@ export default function PaperPortfolioPage() {
     }
     if (data?.dashboard.available) {
       items.push(...(data.dashboard.data?.limitations ?? []));
+    }
+    if (data?.closedPositions.available && data.closedPositions.error) {
+      items.push(data.closedPositions.error);
     }
     return items;
   }, [data, riskPosture.limitations]);
