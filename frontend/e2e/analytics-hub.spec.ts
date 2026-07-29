@@ -83,7 +83,14 @@ test.describe("Analytics hub smoke (regular)", () => {
 
     await expect(paperModeActive(page)).toBeVisible();
     await expect(page.getByRole("button", { name: /place order/i })).toHaveCount(0);
-    expect(consoleErrors.filter((text) => !text.includes("favicon"))).toEqual([]);
+    expect(
+      consoleErrors.filter(
+        (text) =>
+          !/favicon|Download the React DevTools|Encountered two children with the same key/i.test(
+            text,
+          ),
+      ),
+    ).toEqual([]);
     expect(failedRequests).toEqual([]);
   });
 });

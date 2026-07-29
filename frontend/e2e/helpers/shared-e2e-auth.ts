@@ -2,7 +2,7 @@ import { APIRequestContext, Page, expect } from "@playwright/test";
 
 import { installSmokeSession } from "./staging-smoke-auth";
 
-const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
 
 /**
  * One registration per Playwright worker.

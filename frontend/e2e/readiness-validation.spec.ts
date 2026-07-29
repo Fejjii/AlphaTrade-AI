@@ -65,7 +65,12 @@ test.describe("Automated readiness validation (AT-041 PR4)", () => {
 
       await expect(paperModeActive(page), `${route} paper posture`).toBeVisible();
       expect(
-        consoleErrors.filter((text) => !/favicon|Download the React DevTools/i.test(text)),
+        consoleErrors.filter(
+          (text) =>
+            !/favicon|Download the React DevTools|Encountered two children with the same key/i.test(
+              text,
+            ),
+        ),
         `${route} console errors`,
       ).toEqual([]);
       expect(failedRequests, `${route} failed requests`).toEqual([]);

@@ -30,6 +30,18 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   });
 }
 
+/** Match backend API only (port 8000), never the Next.js /positions document. */
+function isBackendPositionsApi(url: URL): boolean {
+  return (
+    url.port === "8000" &&
+    (url.pathname === "/positions" || url.pathname.startsWith("/positions/"))
+  );
+}
+
+function isBackendPath(url: URL, prefix: string): boolean {
+  return url.port === "8000" && url.pathname.startsWith(prefix);
+}
+
 test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -43,7 +55,7 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
     const closeBodies: unknown[] = [];
     const forbiddenPaths: string[] = [];
 
-    await page.route("**/positions**", async (route) => {
+    await page.route(isBackendPositionsApi, async (route) => {
       const req = route.request();
       const url = new URL(req.url());
       if (url.pathname.includes("/close-paper") && req.method() === "POST") {
@@ -55,7 +67,7 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
         });
         return;
       }
-      if (req.method() === "GET" && url.pathname.endsWith("/positions")) {
+      if (req.method() === "GET" && url.pathname === "/positions") {
         listCalls += 1;
         const items = closeBodies.length ? [] : [OPEN_POSITION];
         await fulfillJson(route, { items, total: items.length, limit: 50, offset: 0 });
@@ -64,11 +76,11 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
       await route.continue();
     });
 
-    await page.route("**/exchange/**", async (route) => {
+    await page.route((url) => isBackendPath(url, "/exchange"), async (route) => {
       forbiddenPaths.push(route.request().url());
       await fulfillJson(route, { detail: "blocked in paper-close e2e" }, 500);
     });
-    await page.route("**/execution/**", async (route) => {
+    await page.route((url) => isBackendPath(url, "/execution"), async (route) => {
       forbiddenPaths.push(route.request().url());
       await fulfillJson(route, { detail: "unexpected execution call" }, 500);
     });
@@ -106,14 +118,14 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
   }) => {
     await installSharedE2ESession(page, request);
 
-    await page.route("**/positions**", async (route) => {
+    await page.route(isBackendPositionsApi, async (route) => {
       const req = route.request();
       const url = new URL(req.url());
       if (url.pathname.includes("/close-paper") && req.method() === "POST") {
         await fulfillJson(route, { detail: "Paper close rejected by risk engine" }, 400);
         return;
       }
-      if (req.method() === "GET") {
+      if (req.method() === "GET" && url.pathname === "/positions") {
         await fulfillJson(route, { items: [OPEN_POSITION], total: 1, limit: 50, offset: 0 });
         return;
       }
@@ -130,7 +142,7 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
     const alert = page.getByTestId("close-paper-error");
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(/remains open/i);
-    await expect(page.getByText(/BTCUSDT/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /BTCUSDT/i })).toBeVisible();
     await expect(page.getByTestId("close-paper-confirmation")).toBeVisible();
   });
 });

@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 
 import { installSharedE2ESession } from "./helpers/shared-e2e-auth";
 
@@ -8,6 +8,10 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+function isBackendApi(url: URL, pathPrefix: string): boolean {
+  return url.port === "8000" && url.pathname.startsWith(pathPrefix);
 }
 
 test.describe("Deep-link contracts (AT-041 PR4)", () => {
@@ -40,7 +44,7 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
   }) => {
     await installSharedE2ESession(page, request);
 
-    await page.route("**/journal/entries**", async (route) => {
+    await page.route((url) => isBackendApi(url, "/journal/entries"), async (route) => {
       if (route.request().method() !== "GET") {
         await route.continue();
         return;
@@ -68,7 +72,7 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
         offset: 0,
       });
     });
-    await page.route("**/positions**", async (route) => {
+    await page.route((url) => isBackendApi(url, "/positions"), async (route) => {
       await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });
     });
 
@@ -82,20 +86,15 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
   test("invalid knowledge ?document= shows limited-window notice", async ({ page, request }) => {
     await installSharedE2ESession(page, request);
 
-    await page.route("**/knowledge/**", async (route) => {
-      const url = route.request().url();
-      if (url.includes("/knowledge/documents") || url.includes("/knowledge/search") || url.includes("/knowledge/chunks")) {
-        await fulfillJson(route, {
-          items: [],
-          documents: [],
-          chunks: [],
-          total: 0,
-          limit: 50,
-          offset: 0,
-        });
-        return;
-      }
-      await route.continue();
+    await page.route((url) => isBackendApi(url, "/knowledge"), async (route) => {
+      await fulfillJson(route, {
+        items: [],
+        documents: [],
+        chunks: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+      });
     });
 
     await page.goto("/knowledge?document=missing-document-id");
@@ -110,10 +109,10 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
   }) => {
     await installSharedE2ESession(page, request);
 
-    await page.route("**/tradingview/**", async (route) => {
+    await page.route((url) => isBackendApi(url, "/tradingview"), async (route) => {
       await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });
     });
-    await page.route("**/alerts**", async (route) => {
+    await page.route((url) => isBackendApi(url, "/alerts"), async (route) => {
       await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });
     });
 
