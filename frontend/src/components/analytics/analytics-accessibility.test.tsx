@@ -137,8 +137,8 @@ const comparison: JournalComparisonResponse = {
   confidence: "moderate",
   warnings: [],
   generated_at: "2026-07-25T12:00:00Z",
-  truncated: false,
   max_rows: 5000,
+  note: "",
 };
 
 function filterState(overrides: Partial<AnalyticsFilterState> = {}): AnalyticsFilterState {
