@@ -7,6 +7,7 @@ import type { SourceResult } from "@/components/workflows";
 import type { DisciplineAnalyticsResponse, DisciplineScoreResult } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
+import { SOURCE_DISCIPLINE_SCORE, SOURCE_LEARNING_DISCIPLINE } from "./sourceLabels";
 
 type DisciplineScoreCardsProps = {
   proposalSource: SourceResult<DisciplineScoreResult> | null;
@@ -44,7 +45,7 @@ export function DisciplineScoreCards({
     <div className="grid gap-4 lg:grid-cols-2" data-testid="discipline-score-cards">
       <ChartFrame
         title="Proposal-flow discipline score"
-        sourceLabel="GET /analytics/discipline"
+        sourceLabel={SOURCE_DISCIPLINE_SCORE}
         filtersSummary={proposalFiltersSummary}
         derivedNote={proposalFreshnessNote}
         loading={proposalLoading && !proposalSource}
@@ -91,7 +92,7 @@ export function DisciplineScoreCards({
 
       <ChartFrame
         title="Validation-session discipline score"
-        sourceLabel="GET /learning-analytics/discipline"
+        sourceLabel={SOURCE_LEARNING_DISCIPLINE}
         filtersSummary={learningFiltersSummary}
         derivedNote={learningFreshnessNote}
         sampleSize={learningSource?.available ? learningSource.data?.sample_size ?? null : null}

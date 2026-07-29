@@ -162,7 +162,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "signals",
     items: [
-      { href: "/tradingview-signals", label: "Inbox", icon: Radio },
+      { href: "/tradingview-signals", label: "Signals inbox", icon: Radio },
       { href: "/alerts", label: "Alerts", icon: Bell },
       { href: "/alerts/review", label: "Setup Review", icon: ScanSearch },
       { href: "/watcher", label: "Watcher Scanner", icon: Radio },
@@ -206,7 +206,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "analyze",
     items: [
-      { href: "/analytics", label: "Analytics", icon: BarChart3 },
+      { href: "/analytics", label: "Analytics hub", icon: BarChart3 },
       { href: "/journal/statistics", label: "Journal Statistics", icon: BarChart3 },
       { href: "/journal/comparison", label: "Human vs System", icon: GitCompare },
       { href: "/learning-analytics", label: "Learning Analytics", icon: Brain },
@@ -219,13 +219,13 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
     items: [
       { href: "/portfolio", label: "Overview", icon: Wallet },
       { href: "/positions", label: "Positions", icon: Wallet },
-      { href: "/risk", label: "Risk & Cooldowns", icon: Shield },
+      { href: "/risk", label: "Risk settings", icon: Shield },
     ],
   },
   {
     destinationId: "settings",
     items: [
-      { href: "/settings", label: "Profile", icon: Settings },
+      { href: "/settings", label: "Settings", icon: Settings },
       // Billing & Usage are one L2 section; /risk config split is deferred to Phase C.
       { href: "/settings/billing", label: "Billing & Usage", icon: CreditCard },
       { href: "/settings/team", label: "Team", icon: ClipboardCheck },

@@ -1,8 +1,5 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { KillSwitchButton } from "@/components/KillSwitchButton";
-import { StatusBadge } from "@/components/StatusBadge";
 import {
   WorkflowFreshnessAdapter,
   type FreshnessSourceInput,
@@ -11,12 +8,6 @@ import type { SafetyPostureDisplay } from "@/components/workflows/safetyPostureD
 import { PageHeader } from "@/components/ui/page-header";
 import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { RiskBlock } from "@/components/ui/risk-block";
-
-const PORTFOLIO_NAV = [
-  { href: "/portfolio", label: "Portfolio overview" },
-  { href: "/positions", label: "Positions" },
-  { href: "/risk", label: "Risk settings" },
-] as const;
 
 type PortfolioHubChromeProps = {
   title: string;
@@ -29,7 +20,6 @@ type PortfolioHubChromeProps = {
   riskBlocked?: boolean;
   riskBlockReason?: string | null;
   testId?: string;
-  activeHref?: string;
   children: ReactNode;
 };
 
@@ -44,9 +34,10 @@ export function PortfolioHubChrome({
   riskBlocked = false,
   riskBlockReason = null,
   testId = "portfolio-command-centre",
-  activeHref = "/portfolio",
   children,
 }: PortfolioHubChromeProps) {
+  void providerMode;
+
   return (
     <div className="space-y-section pb-24 md:pb-section" data-testid={testId}>
       <WorkflowFreshnessAdapter sources={freshnessSources} />
@@ -56,41 +47,6 @@ export function PortfolioHubChrome({
         description={description}
         meta={<PaperModeIndicator active={posture.paperConfirmed} />}
       />
-
-      <div className="flex flex-wrap items-center gap-2" data-testid="portfolio-hub-safety">
-        <StatusBadge
-          label={posture.executionLabel}
-          tone={
-            posture.paperConfirmed
-              ? "paper"
-              : posture.kind === "safety_conflict"
-                ? "blocked"
-                : "warn"
-          }
-        />
-        <StatusBadge label={`providers: ${providerMode}`} tone="muted" />
-        <StatusBadge
-          label={posture.realTradingLabel}
-          tone={
-            posture.realTradingVariant === "success"
-              ? "healthy"
-              : posture.realTradingVariant === "danger"
-                ? "blocked"
-                : "warn"
-          }
-        />
-        <StatusBadge
-          label={posture.runtimeBadgeLabel}
-          tone={
-            posture.runtimeBadgeVariant === "paper"
-              ? "paper"
-              : posture.runtimeBadgeVariant === "danger"
-                ? "blocked"
-                : "warn"
-          }
-        />
-        <KillSwitchButton />
-      </div>
 
       {posture.conflictMessage ? (
         <p className="text-sm text-danger" role="alert" data-testid="portfolio-safety-conflict">
@@ -130,30 +86,6 @@ export function PortfolioHubChrome({
           />
         </div>
       ) : null}
-
-      <nav
-        aria-label="Portfolio command centre sections"
-        className="flex flex-wrap gap-3 text-sm"
-        data-testid="portfolio-hub-nav"
-      >
-        {PORTFOLIO_NAV.map((item) => {
-          const active = item.href === activeHref;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={
-                active
-                  ? "font-medium text-text-primary underline"
-                  : "text-text-secondary underline"
-              }
-              aria-current={active ? "page" : undefined}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
 
       {children}
     </div>

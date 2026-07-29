@@ -22,7 +22,7 @@ import type {
   SampleConfidence,
   TradeRuleCompliance,
 } from "@/lib/api/types";
-import { formatDecimal } from "@/lib/utils";
+import { formatMonetary, formatPercent, humanizeToken } from "@/lib/format";
 
 const GROUP_BY_OPTIONS: { value: JournalStatsGroupBy; label: string }[] = [
   { value: "overall", label: "Overall" },
@@ -74,15 +74,16 @@ const CONFIDENCE_TONE: Record<SampleConfidence, "ok" | "warn" | "critical"> = {
 const BUCKET_PAGE_SIZE = 20;
 
 function pct(value: number | null): string {
-  return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+  return formatPercent(value);
 }
 
 function num(value: number | null, digits = 2): string {
-  return value === null ? "—" : value.toFixed(digits);
+  if (value === null) return "—";
+  return value.toFixed(digits);
 }
 
 function ConfidenceBadge({ confidence }: { confidence: SampleConfidence }) {
-  return <StatusBadge label={confidence} tone={CONFIDENCE_TONE[confidence]} />;
+  return <StatusBadge label={humanizeToken(confidence)} tone={CONFIDENCE_TONE[confidence]} />;
 }
 
 function MetricsSummary({ metrics }: { metrics: JournalTradeStatsMetrics }) {
@@ -99,7 +100,7 @@ function MetricsSummary({ metrics }: { metrics: JournalTradeStatsMetrics }) {
       <p>
         Net PnL:{" "}
         <DataNumber
-          value={formatDecimal(metrics.net_pnl_total)}
+          value={formatMonetary(metrics.net_pnl_total)}
           tone={
             metrics.net_pnl_total == null
               ? "muted"
@@ -113,24 +114,24 @@ function MetricsSummary({ metrics }: { metrics: JournalTradeStatsMetrics }) {
         (PnL on {metrics.pnl_sample_count} trades)
       </p>
       <p>
-        Expectancy: <DataNumber value={formatDecimal(metrics.expectancy)} />
+        Expectancy: <DataNumber value={formatMonetary(metrics.expectancy)} />
       </p>
       <p>
         Avg R: <DataNumber value={num(metrics.average_r)} /> ({metrics.r_sample_count} trades)
       </p>
       <p>Profit factor: {num(metrics.profit_factor)}</p>
-      <p>Avg winner: {formatDecimal(metrics.average_winner)}</p>
-      <p>Avg loser: {formatDecimal(metrics.average_loser)}</p>
+      <p>Avg winner: {formatMonetary(metrics.average_winner)}</p>
+      <p>Avg loser: {formatMonetary(metrics.average_loser)}</p>
       <p>
-        Costs: {formatDecimal(metrics.total_costs)} (fees {formatDecimal(metrics.fees_total)},
-        funding {formatDecimal(metrics.funding_total)}, slippage{" "}
-        {formatDecimal(metrics.slippage_total)})
+        Costs: {formatMonetary(metrics.total_costs)} (fees {formatMonetary(metrics.fees_total)},
+        funding {formatMonetary(metrics.funding_total)}, slippage{" "}
+        {formatMonetary(metrics.slippage_total)})
       </p>
       <p>
-        Avg MFE: {formatDecimal(metrics.average_mfe_amount)} ({metrics.mfe_sample_count} trades)
+        Avg MFE: {formatMonetary(metrics.average_mfe_amount)} ({metrics.mfe_sample_count} trades)
       </p>
       <p>
-        Avg MAE: {formatDecimal(metrics.average_mae_amount)} ({metrics.mae_sample_count} trades)
+        Avg MAE: {formatMonetary(metrics.average_mae_amount)} ({metrics.mae_sample_count} trades)
       </p>
       <p>
         Realized vs available:{" "}
@@ -213,7 +214,7 @@ export default function JournalStatisticsPage() {
               <option value="">All sources</option>
               {SOURCE_OPTIONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {humanizeToken(value)}
                 </option>
               ))}
             </Select>
@@ -255,7 +256,7 @@ export default function JournalStatisticsPage() {
               <option value="">All regimes</option>
               {REGIME_OPTIONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {humanizeToken(value)}
                 </option>
               ))}
             </Select>
@@ -273,7 +274,7 @@ export default function JournalStatisticsPage() {
               <option value="">All trades</option>
               {COMPLIANCE_OPTIONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {humanizeToken(value)}
                 </option>
               ))}
             </Select>

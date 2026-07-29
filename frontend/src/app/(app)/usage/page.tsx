@@ -10,29 +10,40 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import { formatDate, formatDecimal } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
+import { formatDate } from "@/lib/utils";
 
-export default function UsagePage() {
+export default function UsagePage({
+  embedded = false,
+  /** When composed under Billing & Usage, billing already loads quota (FP2-120). */
+  omitQuota = false,
+}: {
+  embedded?: boolean;
+  omitQuota?: boolean;
+}) {
+  const skipQuota = embedded || omitQuota;
   const loader = useCallback(async () => {
-    const [summary, events, quota, byFeature, byProvider] = await Promise.all([
+    const [summary, events, byFeature, byProvider, quota] = await Promise.all([
       api.usage.summary(),
       api.usage.events({ limit: 20 }),
-      api.usage.quota(),
       api.usage.byFeature(),
       api.usage.byProvider(),
+      skipQuota ? Promise.resolve(null) : api.usage.quota(),
     ]);
     return { summary, events, quota, byFeature, byProvider };
-  }, []);
-  const { data, loading, error, reload } = useAsyncData(loader, []);
+  }, [skipQuota]);
+  const { data, loading, error, reload } = useAsyncData(loader, [skipQuota]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Usage</h1>
-        <p className="text-sm text-zinc-400">
-          Organization token usage, cost estimates, and quota limits.
-        </p>
-      </div>
+      {embedded ? null : (
+        <div>
+          <h1 className="text-2xl font-semibold">Usage</h1>
+          <p className="text-sm text-zinc-400">
+            Organization token usage, cost estimates, and quota limits.
+          </p>
+        </div>
+      )}
 
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
@@ -40,13 +51,13 @@ export default function UsagePage() {
       {data ? (
         <>
           <CostSourceBadge summary={data.summary} />
-          <QuotaPanel quota={data.quota} />
+          {!skipQuota && data.quota ? <QuotaPanel quota={data.quota} /> : null}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <UsageMetricCard label="Events" value={data.summary.event_count} />
             <UsageMetricCard label="Monthly tokens" value={data.summary.total_tokens} />
             <UsageMetricCard
               label="Est. monthly cost"
-              value={formatDecimal(data.summary.total_cost)}
+              value={formatCurrency(data.summary.total_cost, null)}
             />
             <UsageMetricCard label="Fallback count" value={data.summary.fallback_count} />
           </div>
@@ -66,7 +77,8 @@ export default function UsagePage() {
                   </CardHeader>
                   <CardContent className="text-sm text-zinc-400">
                     {event.total_tokens} tokens · {event.cost_source} ·{" "}
-                    {formatDecimal(event.estimated_cost)} est. · {formatDate(event.timestamp)}
+                    {formatCurrency(event.estimated_cost, null)} est. ·{" "}
+                    {formatDate(event.timestamp)}
                     {event.fallback_used ? " · fallback" : ""}
                   </CardContent>
                 </Card>

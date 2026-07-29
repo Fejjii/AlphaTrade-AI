@@ -91,7 +91,7 @@ export default function SettingsPage() {
           </div>
           <p className="text-xs text-zinc-500">
             {postureKnown
-              ? "Reported live by the backend /health endpoint."
+              ? "Confirmed from live backend health status."
               : "Waiting for backend health status — posture is confirmed only from the live backend, never from build configuration."}
           </p>
         </CardContent>
@@ -113,8 +113,8 @@ export default function SettingsPage() {
           <CardTitle>Provider status snapshot</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-zinc-400">
-          Live provider cards load from the backend on other pages. Configure env vars in
-          <code className="mx-1 rounded bg-zinc-900 px-1">frontend/.env.local</code>.
+          Live provider cards load from the backend on other pages. Provider configuration is managed
+          in your deployment environment.
         </CardContent>
       </Card>
       <Card>

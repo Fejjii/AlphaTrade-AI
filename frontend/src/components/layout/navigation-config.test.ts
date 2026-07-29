@@ -109,15 +109,36 @@ describe("AT-040 Phase B navigation config", () => {
   it("resolves route-aware page identity from centralized navigation config", () => {
     expect(resolvePageIdentity("/").title).toBe("Dashboard");
     expect(resolvePageIdentity("/tradingview-signals").title).toBe("Signals");
+    expect(resolvePageIdentity("/tradingview-signals").subtitle).toBeNull();
     expect(resolvePageIdentity("/alerts/review")).toMatchObject({
       title: "Signals",
       subtitle: "Setup Review",
     });
+    expect(resolvePageIdentity("/analytics").subtitle).toBeNull();
+    expect(resolvePageIdentity("/risk")).toMatchObject({
+      title: "Portfolio",
+      subtitle: "Risk settings",
+    });
+    expect(resolvePageIdentity("/settings").subtitle).toBeNull();
     expect(resolvePageIdentity("/paper-validation/candidates/example")).toMatchObject({
       title: "Validate",
       subtitle: "Candidates",
     });
     expect(resolvePageIdentity("/unknown-path").title).toBe("AlphaTrade");
+  });
+
+  it("uses FP2-119 secondary label defaults", () => {
+    const signals = getSecondaryItems("signals");
+    const analyze = getSecondaryItems("analyze");
+    const portfolio = getSecondaryItems("portfolio");
+    const settings = getSecondaryItems("settings");
+
+    expect(signals.find((i) => i.href === "/tradingview-signals")?.label).toBe("Signals inbox");
+    expect(analyze.find((i) => i.href === "/analytics")?.label).toBe("Analytics hub");
+    expect(portfolio.find((i) => i.href === "/risk")?.label).toBe("Risk settings");
+    expect(settings.find((i) => i.href === "/settings")?.label).toBe("Settings");
+    expect(settings.find((i) => i.href === "/settings/billing")?.label).toBe("Billing & Usage");
+    expect(settings.find((i) => i.href === "/settings/team")?.label).toBe("Team");
   });
 
   it("resolves exactly one secondary active href via longest match", () => {

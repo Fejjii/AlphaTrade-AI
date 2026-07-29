@@ -5,12 +5,13 @@ import type { SetupEvidenceResponse } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
 import { formatMonetary } from "./format";
+import { SOURCE_SETUP_EVIDENCE } from "./sourceLabels";
 
 export type SetupEvidencePanelProps = {
   evidence: SourceResult<SetupEvidenceResponse> | null;
   loading?: boolean;
   onRetry?: () => void;
-  /** Only setup_id / strategy_id filters sent to GET /journal/setup-evidence. */
+  /** Only setup and strategy filters are sent to setup evidence (not journal date/symbol filters). */
   evidenceFiltersSummary?: string;
   evidenceLimitationNote?: string | null;
 };
@@ -33,7 +34,7 @@ export function SetupEvidencePanel({
   return (
     <ChartFrame
       title="Setup evidence"
-      sourceLabel="GET /journal/setup-evidence"
+      sourceLabel={SOURCE_SETUP_EVIDENCE}
       generatedAt={generatedAt}
       filtersSummary={evidenceFiltersSummary}
       limitations={evidenceLimitationNote ? [evidenceLimitationNote] : []}

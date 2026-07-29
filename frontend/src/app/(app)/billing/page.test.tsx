@@ -140,6 +140,12 @@ describe("BillingPage", () => {
     expect(screen.queryByTestId("billing-status-unavailable")).not.toBeInTheDocument();
   });
 
+  it("does not expose raw billing env flags in page copy", () => {
+    render(<BillingPage />);
+    expect(document.body.textContent).not.toContain("BILLING_ENABLED");
+    expect(document.body.textContent).not.toContain("billing_enabled");
+  });
+
   it("shows 'billing status unavailable' instead of a mode badge when status fails (FP2-103)", () => {
     asyncState.data = null;
     asyncState.error = "billing status failed";

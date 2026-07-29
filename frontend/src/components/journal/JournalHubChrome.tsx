@@ -1,8 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { KillSwitchButton } from "@/components/KillSwitchButton";
-import { StatusBadge } from "@/components/StatusBadge";
 import {
   WorkflowFreshnessAdapter,
   type FreshnessSourceInput,
@@ -41,6 +39,8 @@ export function JournalHubChrome({
   children,
   activeHref = "/journal",
 }: JournalHubChromeProps) {
+  void providerMode;
+
   return (
     <div className="space-y-section pb-24 md:pb-section" data-testid={testId}>
       <WorkflowFreshnessAdapter sources={freshnessSources} />
@@ -50,41 +50,6 @@ export function JournalHubChrome({
         description={description}
         meta={<PaperModeIndicator active={posture.paperConfirmed} />}
       />
-
-      <div className="flex flex-wrap items-center gap-2" data-testid="journal-hub-safety">
-        <StatusBadge
-          label={posture.executionLabel}
-          tone={
-            posture.paperConfirmed
-              ? "paper"
-              : posture.kind === "safety_conflict"
-                ? "blocked"
-                : "warn"
-          }
-        />
-        <StatusBadge label={`providers: ${providerMode}`} tone="muted" />
-        <StatusBadge
-          label={posture.realTradingLabel}
-          tone={
-            posture.realTradingVariant === "success"
-              ? "healthy"
-              : posture.realTradingVariant === "danger"
-                ? "blocked"
-                : "warn"
-          }
-        />
-        <StatusBadge
-          label={posture.runtimeBadgeLabel}
-          tone={
-            posture.runtimeBadgeVariant === "paper"
-              ? "paper"
-              : posture.runtimeBadgeVariant === "danger"
-                ? "blocked"
-                : "warn"
-          }
-        />
-        <KillSwitchButton />
-      </div>
 
       {posture.conflictMessage ? (
         <p className="text-sm text-danger" role="alert" data-testid="journal-safety-conflict">

@@ -11,6 +11,7 @@ import type {
 
 import { ChartFrame } from "./ChartFrame";
 import { NO_SERVER_FRESHNESS_TIMESTAMP_NOTE } from "./sourceFreshness";
+import { SOURCE_SETUP_RANKING, SOURCE_STRATEGY_QUALITY } from "./sourceLabels";
 import type { ValidationDimension } from "./filterValidation";
 import {
   validationDimensionIdentityLabel,
@@ -98,7 +99,7 @@ export function ValidationRankingTable({
     <div className="space-y-6" data-testid="validation-ranking-section">
       <ChartFrame
         title={rankingTitle}
-        sourceLabel="GET /learning-analytics/setup-ranking"
+        sourceLabel={SOURCE_SETUP_RANKING}
         filtersSummary={rankingFiltersSummary}
         sampleSize={rankingSource?.available ? ranking.rows.length : null}
         sampleLabel="ranked groups"
@@ -211,7 +212,7 @@ export function ValidationRankingTable({
 
       <ChartFrame
         title="Strategy quality context"
-        sourceLabel="GET /strategy-quality/summary"
+        sourceLabel={SOURCE_STRATEGY_QUALITY}
         filtersSummary={strategyQualityFiltersSummary}
         sampleSize={
           strategyContext ? strategyContext.detectorsWithData : null

@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { pnlClassName } from "@/components/portfolio/portfolio-display";
 import type { OpenExposureSummary } from "@/lib/api/types";
-import { formatDecimal } from "@/lib/utils";
+import { formatMonetary, humanizeLimitation } from "@/lib/format";
 
 export function OpenExposurePanel({ exposure }: { exposure: OpenExposureSummary }) {
   return (
@@ -31,7 +31,7 @@ export function OpenExposurePanel({ exposure }: { exposure: OpenExposureSummary 
           <p className="text-xs text-zinc-500">Unrealized PnL total</p>
           <p className={`text-lg font-semibold ${pnlClassName(exposure.unrealized_pnl_total)}`}>
             {exposure.unrealized_pnl_total != null
-              ? formatDecimal(exposure.unrealized_pnl_total)
+              ? formatMonetary(exposure.unrealized_pnl_total)
               : "Partial / unavailable"}
           </p>
         </div>
@@ -39,7 +39,7 @@ export function OpenExposurePanel({ exposure }: { exposure: OpenExposureSummary 
           <div>
             <p className="text-xs text-zinc-500">Notional exposure</p>
             <p className="text-lg font-semibold text-zinc-100">
-              {formatDecimal(exposure.notional_exposure)}
+              {formatMonetary(exposure.notional_exposure)}
             </p>
           </div>
         ) : null}
@@ -48,7 +48,7 @@ export function OpenExposurePanel({ exposure }: { exposure: OpenExposureSummary 
             <p className="text-xs font-medium text-amber-500/90">Limitations</p>
             <ul className="mt-1 space-y-1 text-xs text-amber-500/80">
               {exposure.limitations.map((item) => (
-                <li key={item}>• {item}</li>
+                <li key={item}>• {humanizeLimitation(item)}</li>
               ))}
             </ul>
           </div>

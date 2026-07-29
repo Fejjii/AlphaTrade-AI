@@ -20,6 +20,7 @@ import type { LearningAnalyticsSummaryResponse, OutcomeDistributionItem } from "
 import { ChartFrame } from "./ChartFrame";
 import { formatPercent } from "./format";
 import { NO_SERVER_FRESHNESS_TIMESTAMP_NOTE } from "./sourceFreshness";
+import { SOURCE_VALIDATION_OUTCOMES } from "./sourceLabels";
 
 export const VALIDATION_OUTCOME_CATEGORIES = [
   "success",
@@ -134,7 +135,7 @@ export function ValidationOutcomeChart({
   return (
     <ChartFrame
       title="How do manual validation sessions actually end?"
-      sourceLabel="GET /learning-analytics/summary · outcome_distribution"
+      sourceLabel={SOURCE_VALIDATION_OUTCOMES}
       filtersSummary={filtersSummary}
       sampleSize={source?.available ? derived.sampleSize : null}
       sampleLabel="recorded outcomes"

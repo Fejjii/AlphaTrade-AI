@@ -9,6 +9,7 @@ import type { SourceResult } from "@/components/workflows/sourceResult";
 import { DataNumber } from "@/components/ui/data-number";
 import { Panel, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import type { DailyDisciplineSnapshot, PaperPortfolioResponse } from "@/lib/api/types";
+import { humanizeLimitation } from "@/lib/format";
 
 export type DailyPnlDisplay = {
   value: string | null;
@@ -216,7 +217,7 @@ export function AccountOverviewPanel({
             data-testid="account-overview-limitations"
           >
             {account.limitations.map((item) => (
-              <li key={item}>{item}</li>
+              <li key={item}>{humanizeLimitation(item)}</li>
             ))}
           </ul>
         ) : null}

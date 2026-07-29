@@ -10,7 +10,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError } from "@/lib/api";
 import type { SubscriptionPlan, UsageExportResponse } from "@/lib/api/types";
 
-export default function BillingPage() {
+export default function BillingPage({ embedded = false }: { embedded?: boolean }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [exportResult, setExportResult] = useState<UsageExportResponse | null>(null);
@@ -50,22 +50,22 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Billing</h1>
-        <p className="text-sm text-zinc-400">
-          Subscription plans and usage export groundwork. Paper trading only — no live exchange
-          execution.
-        </p>
-      </div>
+      {embedded ? null : (
+        <div>
+          <h1 className="text-2xl font-semibold">Billing</h1>
+          <p className="text-sm text-zinc-400">
+            Subscription plans and usage export groundwork. Paper trading only — no live exchange
+            execution.
+          </p>
+        </div>
+      )}
 
       {mockMode === true ? (
         <div
           className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
           data-testid="billing-mock-badge"
         >
-          Mock billing mode — no real payments. Enable{" "}
-          <code className="rounded bg-zinc-900 px-1">BILLING_ENABLED=true</code> and Stripe keys
-          for live checkout (staging/production only).
+          Mock billing mode — no real payments. Live checkout is not enabled in this environment.
         </div>
       ) : mockMode === false && livePayments ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
@@ -112,7 +112,13 @@ export default function BillingPage() {
             </CardContent>
           </Card>
 
-          <QuotaPanel quota={data.quota} />
+          <QuotaPanel
+            quota={data.quota}
+            currencyCode={
+              data.plans.find((plan) => plan.plan_id === data.status.current_plan_id)
+                ?.price_currency ?? data.plans[0]?.price_currency ?? null
+            }
+          />
           <p className="text-xs text-zinc-500">
             <a href="#usage" className="text-emerald-400 hover:underline">
               View usage details

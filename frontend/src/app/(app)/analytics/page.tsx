@@ -50,7 +50,8 @@ export default function AnalyticsPage() {
     cleanupIgnoredParams,
   } = useAnalyticsFilters();
 
-  const shared = useAnalyticsSources(apiParams);
+  const sharedEnabled = state.tab === "overview" || state.tab === "performance";
+  const shared = useAnalyticsSources(apiParams, { enabled: sharedEnabled });
   const setups = useSetupAnalyticsSources(setupApiParams, { enabled: state.tab === "setups" });
 
   useEffect(() => {

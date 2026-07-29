@@ -18,6 +18,7 @@ import type { PaperPortfolioResponse } from "@/lib/api/types";
 import { ChartFrame } from "./ChartFrame";
 import { buildCumulativePnlRows, plottableCumulativeRows } from "./chartTransforms";
 import { formatMonetary } from "./format";
+import { SOURCE_PAPER_CUMULATIVE_PNL } from "./sourceLabels";
 
 function CumulativePnlTooltip({ active, payload, label }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
@@ -117,7 +118,7 @@ export function CumulativePnlChart({
   return (
     <ChartFrame
       title="Is realised P&L compounding or churning?"
-      sourceLabel="GET /performance/portfolio · equity_curve.cumulative_realized_pnl (trade_close)"
+      sourceLabel={SOURCE_PAPER_CUMULATIVE_PNL}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.sampleSize}

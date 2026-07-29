@@ -3,6 +3,8 @@
  * Missing values must never render as fabricated zeros or currency amounts.
  */
 
+import { formatDateTime, parseDecimal } from "@/lib/format";
+
 export type MetricDisplay =
   | { kind: "value"; text: string; numeric: number | null }
   | { kind: "unavailable"; text: string }
@@ -10,8 +12,7 @@ export type MetricDisplay =
 
 export function parseMetricNumber(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
-  const num = typeof value === "string" ? Number(value) : value;
-  return Number.isFinite(num) ? num : null;
+  return parseDecimal(typeof value === "number" ? String(value) : value);
 }
 
 export function formatMetricValue(
@@ -30,16 +31,19 @@ export function formatMetricValue(
   }
   return {
     kind: "value",
-    text: numeric.toLocaleString(undefined, { maximumFractionDigits: 6 }),
+    text: numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }),
     numeric,
   };
 }
 
 export function formatOptionalTimestamp(value: string | null | undefined): string {
   if (!value) return "Freshness unavailable";
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return "Freshness unavailable";
-  return new Date(parsed).toLocaleString();
+  const formatted = formatDateTime(value);
+  if (formatted === "—") return "Freshness unavailable";
+  return formatted;
 }
 
 export function isValidTimestamp(value: string | null | undefined): boolean {

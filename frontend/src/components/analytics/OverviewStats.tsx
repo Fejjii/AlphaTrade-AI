@@ -40,8 +40,16 @@ type OverviewTile = {
   fallback?: boolean;
 };
 
+/** Default Analytics sample gate — align with filter min_sample default. */
+const FALLBACK_MIN_SAMPLE = 5;
+
 function confidenceInsufficient(confidence: SampleConfidence | undefined): boolean {
   return confidence === "insufficient";
+}
+
+function sampleInsufficient(tradeCount: number | null | undefined): boolean {
+  if (tradeCount == null) return true;
+  return tradeCount < FALLBACK_MIN_SAMPLE;
 }
 
 function buildEquitySparkline(points: { index: number; equity: string }[]): {
@@ -114,9 +122,13 @@ function buildJournalTiles(
     },
     {
       label: "Win rate",
-      value: formatPercent(journalMetrics.win_rate),
-      tone: "default",
-      numeric: journalMetrics.win_rate,
+      value: confidenceInsufficient(journalMetrics.confidence)
+        ? "—"
+        : formatPercent(journalMetrics.win_rate),
+      tone: confidenceInsufficient(journalMetrics.confidence) ? "muted" : "default",
+      numeric: confidenceInsufficient(journalMetrics.confidence)
+        ? null
+        : journalMetrics.win_rate,
       source: "journal",
       insufficient: confidenceInsufficient(journalMetrics.confidence),
       n: journalMetrics.trade_count,
@@ -157,6 +169,7 @@ function buildPortfolioFallbackTiles(
 ): OverviewTile[] {
   const metrics = portfolioData.metrics;
   const account = portfolioData.account;
+  const insufficient = sampleInsufficient(metrics.trade_count);
   return [
     {
       label: "Realised P&L",
@@ -165,17 +178,17 @@ function buildPortfolioFallbackTiles(
       numeric: parseDecimal(account.cumulative_realized_pnl),
       signed: true,
       source: "portfolio",
-      insufficient: false,
+      insufficient,
       n: metrics.trade_count,
       fallback: true,
     },
     {
       label: "Win rate",
-      value: formatPercent(metrics.win_rate),
-      tone: "default",
-      numeric: metrics.win_rate,
+      value: insufficient ? "—" : formatPercent(metrics.win_rate),
+      tone: insufficient ? "muted" : "default",
+      numeric: insufficient ? null : metrics.win_rate,
       source: "portfolio",
-      insufficient: false,
+      insufficient,
       n: metrics.trade_count,
       fallback: true,
     },
@@ -196,7 +209,7 @@ function buildPortfolioFallbackTiles(
       numeric: parseDecimal(metrics.expectancy),
       signed: true,
       source: "portfolio",
-      insufficient: false,
+      insufficient,
       n: metrics.trade_count,
       fallback: true,
     },
@@ -206,7 +219,7 @@ function buildPortfolioFallbackTiles(
       tone: "default",
       numeric: metrics.profit_factor,
       source: "portfolio",
-      insufficient: false,
+      insufficient,
       n: metrics.trade_count,
       fallback: true,
     },

@@ -247,7 +247,6 @@ export default function PaperPortfolioPage() {
       riskBlocked={riskPosture.showRiskBlock}
       riskBlockReason={riskPosture.riskBlockReason}
       testId="paper-portfolio-page"
-      activeHref="/portfolio"
     >
       {loading && !data ? <LoadingState label="Loading paper portfolio…" /> : null}
 

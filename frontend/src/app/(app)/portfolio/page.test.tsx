@@ -71,10 +71,6 @@ vi.mock("@/contexts/ShellFreshnessContext", () => ({
   }),
 }));
 
-vi.mock("@/components/KillSwitchButton", () => ({
-  KillSwitchButton: () => <button type="button">Kill switch</button>,
-}));
-
 const portfolioMock = vi.fn();
 const dashboardMock = vi.fn();
 const positionsMock = vi.fn();
@@ -759,11 +755,8 @@ describe("Portfolio & Risk command centre", () => {
     expect(screen.getByTestId("paper-portfolio-page").className).toMatch(/pb-24/);
     expect(screen.getByRole("heading", { name: /account overview/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /risk posture/i })).toBeInTheDocument();
-    expect(screen.getByTestId("portfolio-hub-nav")).toBeInTheDocument();
-    expect(within(screen.getByTestId("portfolio-hub-nav")).getByText(/risk settings/i)).toHaveAttribute(
-      "href",
-      "/risk",
-    );
+    expect(screen.queryByTestId("portfolio-hub-nav")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("portfolio-hub-safety")).not.toBeInTheDocument();
   });
 
   it("keeps portfolio filters wired and has no unsafe live CTAs", () => {
@@ -791,9 +784,9 @@ describe("Portfolio & Risk command centre", () => {
   it("keeps /portfolio route reachable with existing page test id", () => {
     render(<PaperPortfolioPage />);
     expect(screen.getByTestId("paper-portfolio-page")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /portfolio overview/i })).toHaveAttribute(
-      "href",
-      "/portfolio",
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
     );
   });
 });

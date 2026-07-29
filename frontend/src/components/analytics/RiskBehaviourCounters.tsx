@@ -5,6 +5,7 @@ import type { SourceResult } from "@/components/workflows";
 import type { RiskBehaviorAnalytics } from "@/lib/api/types";
 
 import { ChartFrame } from "./ChartFrame";
+import { SOURCE_RISK_BEHAVIOUR } from "./sourceLabels";
 
 type RiskBehaviourCountersProps = {
   source: SourceResult<RiskBehaviorAnalytics> | null;
@@ -55,7 +56,7 @@ export function RiskBehaviourCounters({
   return (
     <ChartFrame
       title="Risk behaviour warning counts"
-      sourceLabel="GET /analytics/risk-behavior"
+      sourceLabel={SOURCE_RISK_BEHAVIOUR}
       filtersSummary={filtersSummary}
       derivedNote={freshnessNote}
       loading={loading && !source}

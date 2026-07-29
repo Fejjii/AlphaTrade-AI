@@ -59,7 +59,7 @@ describe("ValidationOutcomeChart", () => {
     render(
       <ValidationOutcomeChart
         source={ok(baseSummary)}
-        filtersSummary="dates 2026-01-01 → 2026-01-31 · min_sample 5"
+        filtersSummary="dates 2026-01-01 → 2026-01-31 · Min sample 5"
       />,
     );
     expect(screen.getByTestId("validation-outcome-chart-plot")).toBeInTheDocument();

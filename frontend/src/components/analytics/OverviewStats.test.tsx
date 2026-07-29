@@ -170,4 +170,51 @@ describe("OverviewStats metric honesty", () => {
       "Paper portfolio (fallback)",
     );
   });
+
+  it("shows insufficient fallback tiles when journal is unavailable and portfolio trade_count is 1", () => {
+    const portfolioOneTrade: SourceResult<PaperPortfolioResponse> = {
+      ...portfolioOk,
+      data: {
+        ...portfolioOk.data!,
+        account: {
+          ...portfolioOk.data!.account,
+          closed_trade_count: 1,
+        },
+        metrics: {
+          ...portfolioOk.data!.metrics,
+          trade_count: 1,
+          wins: 1,
+          losses: 0,
+          win_rate: 1,
+        },
+      },
+    };
+
+    render(
+      <OverviewStats
+        journal={{ available: false, data: null, error: "down", fallbackUsed: false }}
+        portfolio={portfolioOneTrade}
+      />,
+    );
+
+    expect(screen.getByTestId("overview-tile-win-rate")).toHaveTextContent("—");
+    expect(screen.getByTestId("overview-tile-realised-p&l")).toHaveTextContent("n=1 — insufficient");
+    expect(screen.getByTestId("overview-tile-expectancy")).toHaveTextContent("n=1 — insufficient");
+    expect(screen.getByTestId("overview-tile-profit-factor")).toHaveTextContent(
+      "n=1 — insufficient",
+    );
+  });
+
+  it("shows unavailable win rate when journal confidence is insufficient", () => {
+    render(
+      <OverviewStats
+        journal={okJournal({ confidence: "insufficient", trade_count: 1, win_rate: 1 })}
+        portfolio={portfolioOk}
+      />,
+    );
+
+    expect(screen.getByTestId("overview-tile-win-rate")).toHaveTextContent("—");
+    expect(screen.getByTestId("overview-tile-win-rate")).not.toHaveTextContent("100.0%");
+    expect(screen.getByTestId("overview-tile-win-rate")).not.toHaveTextContent("1.0%");
+  });
 });

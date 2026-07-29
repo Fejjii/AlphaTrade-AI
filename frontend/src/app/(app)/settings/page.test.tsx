@@ -61,7 +61,7 @@ describe("SettingsPage", () => {
       "Real trading: disabled",
     );
     expect(screen.getByTestId("settings-runtime-posture")).toHaveTextContent(
-      "Reported live by the backend /health endpoint.",
+      "Confirmed from live backend health status.",
     );
   });
 

@@ -7,7 +7,7 @@ export const FRESHNESS_UNAVAILABLE_MESSAGE =
   "Source timestamp is invalid or clock-skewed — data treated as unavailable.";
 
 export const NO_SERVER_FRESHNESS_TIMESTAMP_NOTE =
-  "This endpoint does not expose a server freshness timestamp.";
+  "This source does not provide a freshness timestamp.";
 
 export function journalFreshnessTimestamp(
   journal: SourceResult<{ generated_at?: string | null }> | null,
