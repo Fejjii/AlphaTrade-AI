@@ -1,18 +1,33 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
 
+import {
+  ADMIN_ACCESS_TITLE,
+  formatBillingProviderLabel,
+  formatUsageExportSummary,
+  resolveBillingCurrencyCode,
+} from "@/components/billing/billingDisplay";
 import { QuotaPanel } from "@/components/usage/QuotaPanel";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState, SuccessState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError } from "@/lib/api";
 import type { SubscriptionPlan, UsageExportResponse } from "@/lib/api/types";
+import { cn } from "@/lib/utils";
+
+type BillingLinkAction = {
+  kind: "checkout" | "portal";
+  url: string;
+  isMock: boolean;
+};
 
 export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [billingLink, setBillingLink] = useState<BillingLinkAction | null>(null);
   const [exportResult, setExportResult] = useState<UsageExportResponse | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -27,18 +42,28 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
 
   const { data, loading, error, reload } = useAsyncData(loader, []);
 
+  const currencyCode = useMemo(
+    () => (data ? resolveBillingCurrencyCode(data.plans, data.status.current_plan_id) : null),
+    [data],
+  );
+
+  const exportSummary = useMemo(
+    () => (exportResult ? formatUsageExportSummary(exportResult, currencyCode) : null),
+    [currencyCode, exportResult],
+  );
+
   // Tri-state billing mode (FP2-103): unknown until the status is verified.
-  // Never assert "mock billing" (or any mode) while loading or after failure.
   const mockMode: boolean | null = data
     ? data.status.is_mock || !data.status.billing_enabled
     : null;
   const livePayments =
     data?.status.billing_enabled === true && data.status.live_checkout_available;
 
-  async function runOwnerAction(action: () => Promise<void>) {
+  async function runAdminAction(action: () => Promise<void>) {
     setBusy(true);
     setActionError(null);
     setActionMessage(null);
+    setBillingLink(null);
     try {
       await action();
     } catch (err) {
@@ -46,6 +71,14 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function adminActionTitle(unavailableReason?: string): string | undefined {
+    if (unavailableReason) return unavailableReason;
+    if (mockMode === true) {
+      return "Live checkout is not available in this environment.";
+    }
+    return ADMIN_ACCESS_TITLE;
   }
 
   return (
@@ -65,11 +98,14 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
           className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
           data-testid="billing-mock-badge"
         >
-          Mock billing mode — no real payments. Live checkout is not enabled in this environment.
+          Simulated billing — no real payments. Live checkout is not enabled in this environment.
         </div>
       ) : mockMode === false && livePayments ? (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-          Live billing provider configured. Checkout uses Stripe placeholder URLs until API wiring.
+        <div
+          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100"
+          data-testid="billing-live-badge"
+        >
+          Live checkout is available for this organization.
         </div>
       ) : null}
 
@@ -89,6 +125,42 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
       {actionError ? <ErrorState message={actionError} /> : null}
       {actionMessage ? <SuccessState message={actionMessage} /> : null}
 
+      {billingLink ? (
+        <Card data-testid="billing-link-action">
+          <CardHeader>
+            <CardTitle className="text-base">
+              {billingLink.kind === "checkout" ? "Checkout" : "Customer portal"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-zinc-300">
+            <p data-testid="billing-link-caption">
+              {billingLink.isMock
+                ? billingLink.kind === "checkout"
+                  ? "Simulated checkout — no payment will be processed."
+                  : "Simulated customer portal — for demonstration only."
+                : billingLink.kind === "checkout"
+                  ? "Your secure checkout session is ready."
+                  : "Your billing portal session is ready."}
+            </p>
+            <Link
+              href={billingLink.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="billing-link-open"
+              className={cn(buttonVariants({ variant: "secondary" }))}
+            >
+              {billingLink.isMock
+                ? billingLink.kind === "checkout"
+                  ? "Open simulated checkout"
+                  : "Open simulated portal"
+                : billingLink.kind === "checkout"
+                  ? "Open checkout"
+                  : "Open customer portal"}
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {data ? (
         <>
           <Card>
@@ -102,23 +174,24 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
                   {data.status.current_plan_id}
                 </span>
               </p>
-              <p>Provider: {data.status.provider}</p>
-              <p>Billing enabled: {data.status.billing_enabled ? "yes" : "no"}</p>
+              <p>
+                Billing provider: {formatBillingProviderLabel(data.status.provider)}
+              </p>
+              <p>
+                Live checkout:{" "}
+                {data.status.live_checkout_available ? "Available" : "Unavailable"}
+              </p>
               {data.status.customer ? (
                 <p>Billing email: {data.status.customer.billing_email ?? "—"}</p>
               ) : (
-                <p className="text-zinc-500">No billing customer yet (OWNER can create one).</p>
+                <p className="text-zinc-500" data-testid="billing-no-customer">
+                  No billing customer on file. An account administrator can add billing details.
+                </p>
               )}
             </CardContent>
           </Card>
 
-          <QuotaPanel
-            quota={data.quota}
-            currencyCode={
-              data.plans.find((plan) => plan.plan_id === data.status.current_plan_id)
-                ?.price_currency ?? data.plans[0]?.price_currency ?? null
-            }
-          />
+          <QuotaPanel quota={data.quota} currencyCode={currencyCode} />
           <p className="text-xs text-zinc-500">
             <a href="#usage" className="text-emerald-400 hover:underline">
               View usage details
@@ -142,26 +215,27 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
                       type="button"
                       variant="secondary"
                       disabled={busy || mockMode === true}
-                      title={
-                        mockMode === true
-                          ? "Mock checkout — billing disabled or mock provider"
-                          : "OWNER only"
-                      }
+                      title={adminActionTitle()}
                       onClick={() =>
-                        void runOwnerAction(async () => {
+                        void runAdminAction(async () => {
                           if (!data.status.customer) {
                             await api.billing.createCustomer({});
                           }
                           const checkout = await api.billing.checkout(plan.plan_id);
+                          setBillingLink({
+                            kind: "checkout",
+                            url: checkout.checkout_url,
+                            isMock: checkout.is_mock,
+                          });
                           setActionMessage(
                             checkout.is_mock
-                              ? `Mock checkout URL: ${checkout.checkout_url}`
-                              : `Checkout started: ${checkout.checkout_url}`,
+                              ? "Simulated checkout is ready — no payment will be processed."
+                              : "Checkout is ready.",
                           );
                         })
                       }
                     >
-                      {mockMode === true ? "Mock checkout" : "Checkout"}
+                      {mockMode === true ? "Simulated checkout" : "Checkout"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -171,17 +245,18 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Account actions (OWNER)</CardTitle>
+              <CardTitle>Account administration</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
               <Button
                 type="button"
                 variant="outline"
                 disabled={busy}
+                title={ADMIN_ACCESS_TITLE}
                 onClick={() =>
-                  void runOwnerAction(async () => {
+                  void runAdminAction(async () => {
                     await api.billing.createCustomer({});
-                    setActionMessage("Billing customer created.");
+                    setActionMessage("Billing customer profile created.");
                     await reload();
                   })
                 }
@@ -192,51 +267,64 @@ export function BillingPageView({ embedded = false }: { embedded?: boolean }) {
                 type="button"
                 variant="outline"
                 disabled={busy || !data.status.customer}
+                title={
+                  !data.status.customer
+                    ? "Add a billing customer before opening the portal."
+                    : adminActionTitle()
+                }
                 onClick={() =>
-                  void runOwnerAction(async () => {
+                  void runAdminAction(async () => {
                     const portal = await api.billing.portal();
+                    setBillingLink({
+                      kind: "portal",
+                      url: portal.portal_url,
+                      isMock: portal.is_mock,
+                    });
                     setActionMessage(
                       portal.is_mock
-                        ? `Mock portal: ${portal.portal_url}`
-                        : `Portal: ${portal.portal_url}`,
+                        ? "Simulated customer portal is ready — for demonstration only."
+                        : "Customer portal is ready.",
                     );
                   })
                 }
               >
-                {mockMode === true ? "Mock customer portal" : "Customer portal"}
+                {mockMode === true ? "Simulated customer portal" : "Customer portal"}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 disabled={busy}
+                title={ADMIN_ACCESS_TITLE}
                 onClick={() =>
-                  void runOwnerAction(async () => {
+                  void runAdminAction(async () => {
                     const exported = await api.billing.exportUsage();
                     setExportResult(exported);
                     setActionMessage(
                       exported.cost_is_billing_grade
-                        ? "Usage export complete (billing-grade costs)."
-                        : "Usage export complete — includes non-billing-grade estimates.",
+                        ? "Usage export complete — billing-grade costs included."
+                        : "Usage export complete — includes estimated costs.",
                     );
                   })
                 }
               >
-                Export usage (OWNER)
+                Export usage
               </Button>
             </CardContent>
           </Card>
 
-          {exportResult ? (
+          {exportResult && exportSummary ? (
             <Card data-testid="usage-export-summary">
               <CardHeader>
                 <CardTitle>Latest usage export</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-zinc-400">
-                <p>Events: {exportResult.total_events}</p>
-                <p>Tokens: {exportResult.total_tokens}</p>
-                <p>Billing-grade cost: {exportResult.billing_grade_cost}</p>
-                <p>
-                  Billing-grade only: {exportResult.cost_is_billing_grade ? "yes" : "no (estimates included)"}
+              <CardContent className="space-y-1 text-sm text-zinc-400">
+                <p data-testid="usage-export-events">Events: {exportSummary.events}</p>
+                <p data-testid="usage-export-tokens">Tokens: {exportSummary.tokens}</p>
+                <p data-testid="usage-export-cost">
+                  Billing-grade cost: {exportSummary.billingGradeCost}
+                </p>
+                <p data-testid="usage-export-cost-basis">
+                  Cost basis: {exportSummary.costBasisLabel}
                 </p>
               </CardContent>
             </Card>
