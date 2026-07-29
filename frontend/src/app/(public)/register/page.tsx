@@ -4,10 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { FieldHint, Input, Label } from "@/components/ui/input";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { ErrorState } from "@/components/states";
 import { getAuthErrorMessage, useAuth } from "@/contexts/AuthContext";
+
+const ERROR_ID = "register-error";
+const PASSWORD_HINT_ID = "register-password-hint";
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -42,27 +45,43 @@ export default function RegisterPage() {
           <Label htmlFor="organization">Organization</Label>
           <Input
             id="organization"
+            autoComplete="organization"
             value={organizationName}
             onChange={(e) => setOrganizationName(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? ERROR_ID : undefined}
             required
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password (min 12 chars)</Label>
           <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={12}
+            id="email"
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? ERROR_ID : undefined}
             required
           />
         </div>
-        {error ? <ErrorState message={error} /> : null}
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={12}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${PASSWORD_HINT_ID} ${ERROR_ID}` : PASSWORD_HINT_ID}
+            required
+          />
+          <FieldHint id={PASSWORD_HINT_ID}>Use at least 12 characters.</FieldHint>
+        </div>
+        {error ? <ErrorState id={ERROR_ID} message={error} /> : null}
         <Button type="submit" disabled={busy} className="w-full">
           Create account
         </Button>

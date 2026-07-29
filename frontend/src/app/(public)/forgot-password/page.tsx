@@ -9,6 +9,8 @@ import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { ErrorState, SuccessState } from "@/components/states";
 import { api, ApiError } from "@/lib/api";
 
+const ERROR_ID = "forgot-password-error";
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -42,9 +44,18 @@ export default function ForgotPasswordPage() {
       <form onSubmit={onSubmit} className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/70 p-5">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Input
+            id="email"
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? ERROR_ID : undefined}
+            required
+          />
         </div>
-        {error ? <ErrorState message={error} /> : null}
+        {error ? <ErrorState id={ERROR_ID} message={error} /> : null}
         {message ? <SuccessState message={message} /> : null}
         <Button type="submit" disabled={busy} className="w-full">
           Send reset link

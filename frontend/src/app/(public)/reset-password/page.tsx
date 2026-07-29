@@ -5,10 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { FieldHint, Input, Label } from "@/components/ui/input";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { ErrorState, SuccessState } from "@/components/states";
 import { api, ApiError } from "@/lib/api";
+
+const ERROR_ID = "reset-password-error";
+const PASSWORD_HINT_ID = "reset-password-hint";
 
 function ResetPasswordForm() {
   const params = useSearchParams();
@@ -41,7 +44,7 @@ function ResetPasswordForm() {
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-50">Reset password</h1>
-        <p className="text-sm text-zinc-400">Choose a new password (minimum 12 characters).</p>
+        <p className="text-sm text-zinc-400">Choose a new password for your account.</p>
       </div>
       <PaperModeBanner />
       <form onSubmit={onSubmit} className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/70 p-5">
@@ -50,13 +53,17 @@ function ResetPasswordForm() {
           <Input
             id="password"
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={12}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${PASSWORD_HINT_ID} ${ERROR_ID}` : PASSWORD_HINT_ID}
             required
           />
+          <FieldHint id={PASSWORD_HINT_ID}>Use at least 12 characters.</FieldHint>
         </div>
-        {error ? <ErrorState message={error} /> : null}
+        {error ? <ErrorState id={ERROR_ID} message={error} /> : null}
         {message ? <SuccessState message={message} /> : null}
         <Button type="submit" disabled={busy || !token} className="w-full">
           Update password

@@ -62,16 +62,20 @@ export function SuccessState({ message, className }: { message: string; classNam
 }
 
 export function ErrorState({
+  id,
   message,
   onRetry,
   className,
 }: {
+  /** Set when a form field must reference this error via `aria-describedby`. */
+  id?: string;
   message: string;
   onRetry?: () => void;
   className?: string;
 }) {
   return (
     <div
+      id={id}
       role="alert"
       data-testid="error-state"
       className={cn(

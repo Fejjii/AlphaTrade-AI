@@ -9,6 +9,8 @@ import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { ErrorState } from "@/components/states";
 import { getAuthErrorMessage, useAuth } from "@/contexts/AuthContext";
 
+const ERROR_ID = "login-error";
+
 export default function LoginPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
@@ -41,7 +43,16 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/70 p-5">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Input
+            id="email"
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? ERROR_ID : undefined}
+            required
+          />
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -53,12 +64,15 @@ export default function LoginPage() {
           <Input
             id="password"
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? ERROR_ID : undefined}
             required
           />
         </div>
-        {error ? <ErrorState message={error} /> : null}
+        {error ? <ErrorState id={ERROR_ID} message={error} /> : null}
         <Button type="submit" disabled={busy} className="w-full">
           Sign in
         </Button>
