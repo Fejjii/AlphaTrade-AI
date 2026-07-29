@@ -1,9 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import {
-  installSmokeSession,
-  obtainPortfolioSmokeAccessToken,
-} from "./helpers/staging-smoke-auth";
+import { installSharedE2ESession, paperModeActive } from "./helpers/shared-e2e-auth";
 
 const TAB_LABELS = [
   "Overview",
@@ -23,9 +20,7 @@ test.describe("Analytics hub smoke (regular)", () => {
     page,
     request,
   }) => {
-    const apiUrl = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-    const { accessToken } = await obtainPortfolioSmokeAccessToken(request, apiUrl);
-    await installSmokeSession(page, accessToken);
+    await installSharedE2ESession(page, request);
 
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
@@ -43,7 +38,7 @@ test.describe("Analytics hub smoke (regular)", () => {
     await page.goto("/analytics?date_from=2026-01-01&date_to=2026-12-31");
     await expect(page.getByTestId("analytics-page")).toBeVisible();
     await expect(page.getByRole("heading", { level: 1, name: "Analytics" })).toHaveCount(1);
-    await expect(page.getByText(/paper/i).first()).toBeVisible();
+    await expect(paperModeActive(page)).toBeVisible();
 
     const tablist = page.getByRole("tablist", { name: "Analytics sections" });
     await expect(tablist.getByRole("tab")).toHaveCount(6);
@@ -73,7 +68,6 @@ test.describe("Analytics hub smoke (regular)", () => {
     await expect(page).toHaveURL(/tab=validation/);
     await expect(page).not.toHaveURL(/min_sample=8/);
 
-    // Mobile accessibility / overflow (PR #54 posture remains intact).
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId("analytics-page")).toBeVisible();
     const overflow = await page.evaluate(() => {
@@ -82,13 +76,12 @@ test.describe("Analytics hub smoke (regular)", () => {
     });
     expect(overflow).toBeFalsy();
 
-    // Collapsed filters on mobile (FP2-219) — disclosure remains available.
     const filterToggle = page.getByRole("button", { name: /filters/i }).first();
     if (await filterToggle.count()) {
       await expect(filterToggle).toBeVisible();
     }
 
-    await expect(page.getByText(/paper/i).first()).toBeVisible();
+    await expect(paperModeActive(page)).toBeVisible();
     await expect(page.getByRole("button", { name: /place order/i })).toHaveCount(0);
     expect(consoleErrors.filter((text) => !text.includes("favicon"))).toEqual([]);
     expect(failedRequests).toEqual([]);

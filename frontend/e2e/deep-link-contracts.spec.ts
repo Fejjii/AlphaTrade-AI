@@ -1,24 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { installSmokeSession } from "./helpers/staging-smoke-auth";
-
-const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-
-async function registerAndInstall(page: Page, request: Page["request"]) {
-  const email = `deeplink-${Date.now()}@example.com`;
-  const password = "secure-password-1";
-  const register = await request.post(`${API_URL}/auth/register`, {
-    data: {
-      email,
-      password,
-      organization_name: `Deep Link Org ${Date.now()}`,
-    },
-  });
-  expect(register.ok()).toBeTruthy();
-  const auth = await register.json();
-  await installSmokeSession(page, auth.tokens.access_token as string);
-  return auth.tokens.access_token as string;
-}
+import { installSharedE2ESession } from "./helpers/shared-e2e-auth";
 
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
@@ -29,11 +11,13 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 test.describe("Deep-link contracts (AT-041 PR4)", () => {
+  test.describe.configure({ mode: "serial" });
+
   test("valid analytics ?tab= resolves and invalid tab is cleaned without stale context", async ({
     page,
     request,
   }) => {
-    await registerAndInstall(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.goto("/analytics?tab=validation");
     await expect(page.getByTestId("analytics-page")).toBeVisible();
@@ -54,7 +38,7 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
     page,
     request,
   }) => {
-    await registerAndInstall(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.route("**/journal/entries**", async (route) => {
       if (route.request().method() !== "GET") {
@@ -96,11 +80,11 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
   });
 
   test("invalid knowledge ?document= shows limited-window notice", async ({ page, request }) => {
-    await registerAndInstall(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.route("**/knowledge/**", async (route) => {
       const url = route.request().url();
-      if (url.includes("/knowledge/documents") || url.includes("/knowledge/search")) {
+      if (url.includes("/knowledge/documents") || url.includes("/knowledge/search") || url.includes("/knowledge/chunks")) {
         await fulfillJson(route, {
           items: [],
           documents: [],
@@ -124,7 +108,7 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
     page,
     request,
   }) => {
-    await registerAndInstall(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.route("**/tradingview/**", async (route) => {
       await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });

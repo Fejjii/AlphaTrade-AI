@@ -1,9 +1,6 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
 
-import {
-  installSmokeSession,
-  obtainPortfolioSmokeAccessToken,
-} from "./helpers/staging-smoke-auth";
+import { installSharedE2ESession, paperModeActive } from "./helpers/shared-e2e-auth";
 
 /**
  * Automated browser readiness checks for AT-041 PR4.
@@ -28,18 +25,14 @@ const ROUTES = [
   "/settings/billing",
 ] as const;
 
-async function authenticate(page: Page, request: Page["request"]): Promise<void> {
-  const apiUrl = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-  const { accessToken } = await obtainPortfolioSmokeAccessToken(request, apiUrl);
-  await installSmokeSession(page, accessToken);
-}
-
 test.describe("Automated readiness validation (AT-041 PR4)", () => {
+  test.describe.configure({ mode: "serial" });
+
   test("representative routes: one h1, no 390px overflow, paper posture, no console/5xx", async ({
     page,
     request,
   }) => {
-    await authenticate(page, request);
+    await installSharedE2ESession(page, request);
 
     const consoleErrors: string[] = [];
     const onConsole = (msg: ConsoleMessage) => {
@@ -70,7 +63,7 @@ test.describe("Automated readiness validation (AT-041 PR4)", () => {
       });
       expect(overflow, `${route} horizontal overflow at 390px`).toBeFalsy();
 
-      await expect(page.getByText(/paper/i).first()).toBeVisible();
+      await expect(paperModeActive(page), `${route} paper posture`).toBeVisible();
       expect(
         consoleErrors.filter((text) => !/favicon|Download the React DevTools/i.test(text)),
         `${route} console errors`,
@@ -83,7 +76,7 @@ test.describe("Automated readiness validation (AT-041 PR4)", () => {
     page,
     request,
   }) => {
-    await authenticate(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.route("**/risk/kill-switch**", async (route) => {
       if (route.request().method() === "GET") {
@@ -111,7 +104,6 @@ test.describe("Automated readiness validation (AT-041 PR4)", () => {
 
     await page.goto("/portfolio");
     await expect(page.getByTestId("paper-portfolio-page")).toBeVisible();
-    // Shell and/or portfolio risk block should disclose BLOCK.
     await expect(page.getByText(/block|kill switch/i).first()).toBeVisible();
   });
 
@@ -119,7 +111,7 @@ test.describe("Automated readiness validation (AT-041 PR4)", () => {
     page,
     request,
   }) => {
-    await authenticate(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.goto("/analytics?tab=comparison");
     await expect(page).toHaveURL(/tab=comparison/);

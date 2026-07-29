@@ -1,8 +1,6 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 
-import { installSmokeSession } from "./helpers/staging-smoke-auth";
-
-const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
+import { installSharedE2ESession, paperModeActive } from "./helpers/shared-e2e-auth";
 
 const OPEN_POSITION = {
   id: "pos-e2e-1",
@@ -24,21 +22,6 @@ const OPEN_POSITION = {
   closed_at: null,
 };
 
-async function registerAndInstall(page: Page, request: Page["request"]) {
-  const email = `paper-close-${Date.now()}@example.com`;
-  const password = "secure-password-1";
-  const register = await request.post(`${API_URL}/auth/register`, {
-    data: {
-      email,
-      password,
-      organization_name: `Paper Close Org ${Date.now()}`,
-    },
-  });
-  expect(register.ok()).toBeTruthy();
-  const auth = await register.json();
-  await installSmokeSession(page, auth.tokens.access_token as string);
-}
-
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -48,11 +31,13 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
+  test.describe.configure({ mode: "serial" });
+
   test("requires exit price, confirms, submits exact price, and never hits live exchange", async ({
     page,
     request,
   }) => {
-    await registerAndInstall(page, request);
+    await installSharedE2ESession(page, request);
 
     let listCalls = 0;
     const closeBodies: unknown[] = [];
@@ -63,7 +48,11 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
       const url = new URL(req.url());
       if (url.pathname.includes("/close-paper") && req.method() === "POST") {
         closeBodies.push(req.postDataJSON());
-        await fulfillJson(route, { ...OPEN_POSITION, status: "closed", closed_at: "2026-07-29T12:00:00.000Z" });
+        await fulfillJson(route, {
+          ...OPEN_POSITION,
+          status: "closed",
+          closed_at: "2026-07-29T12:00:00.000Z",
+        });
         return;
       }
       if (req.method() === "GET" && url.pathname.endsWith("/positions")) {
@@ -80,7 +69,6 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
       await fulfillJson(route, { detail: "blocked in paper-close e2e" }, 500);
     });
     await page.route("**/execution/**", async (route) => {
-      // close-paper must not place a new paper/live order through execution APIs
       forbiddenPaths.push(route.request().url());
       await fulfillJson(route, { detail: "unexpected execution call" }, 500);
     });
@@ -88,7 +76,7 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
     await page.goto("/positions");
     await expect(page.getByTestId("positions-page")).toBeVisible();
     await expect(page.getByText(/BTCUSDT/)).toBeVisible();
-    await expect(page.getByText(/paper/i).first()).toBeVisible();
+    await expect(paperModeActive(page)).toBeVisible();
 
     await page.getByTestId("close-paper-start").click();
     await page.getByTestId("close-paper-review").click();
@@ -116,7 +104,7 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
     page,
     request,
   }) => {
-    await registerAndInstall(page, request);
+    await installSharedE2ESession(page, request);
 
     await page.route("**/positions**", async (route) => {
       const req = route.request();
@@ -133,6 +121,7 @@ test.describe("Paper-close browser flow (AT-041 PR4 / FP2-001)", () => {
     });
 
     await page.goto("/positions");
+    await expect(page.getByTestId("close-paper-start")).toBeVisible();
     await page.getByTestId("close-paper-start").click();
     await page.getByTestId("close-paper-exit-price").fill("51000.5");
     await page.getByTestId("close-paper-review").click();
