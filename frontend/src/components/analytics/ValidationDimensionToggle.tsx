@@ -101,8 +101,8 @@ export function ValidationDimensionToggle({
             data-testid={`validation-dimension-${option}`}
             className={
               selected
-                ? "rounded-control border border-accent bg-accent/15 px-3 py-1.5 text-sm text-text-primary"
-                : "rounded-control border border-border-subtle bg-surface-0 px-3 py-1.5 text-sm text-text-secondary hover:border-border-strong"
+                ? "inline-flex min-h-11 items-center rounded-control border border-accent bg-accent/15 px-3 py-1.5 text-sm text-text-primary"
+                : "inline-flex min-h-11 items-center rounded-control border border-border-subtle bg-surface-0 px-3 py-1.5 text-sm text-text-secondary hover:border-border-strong"
             }
             onClick={() => selectAndFocus(option)}
             onKeyDown={(event) => handleKeyDown(event, option)}

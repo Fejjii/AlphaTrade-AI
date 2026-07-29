@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const controlClass =
   "flex w-full rounded-control border border-border bg-surface-0 px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid=true]:border-danger aria-[invalid=true]:ring-danger/40";
 
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: React.ComponentProps<"input">) {
   return <input className={cn(controlClass, "h-10", className)} {...props} />;
 }
 

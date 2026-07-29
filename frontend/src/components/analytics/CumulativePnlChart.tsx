@@ -176,9 +176,9 @@ export function CumulativePnlChart({
         </caption>
         <thead>
           <tr>
-            <th>Point</th>
-            <th>Cumulative realised P&L</th>
-            <th>Trade counter</th>
+            <th scope="col">Point</th>
+            <th scope="col">Cumulative realised P&L</th>
+            <th scope="col">Trade counter</th>
           </tr>
         </thead>
         <tbody>

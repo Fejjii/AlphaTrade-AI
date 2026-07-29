@@ -60,8 +60,11 @@ export function KnowledgeDocumentCard({
             </Badge>
           </div>
         </div>
-        <p className="break-all text-xs text-text-muted" data-testid="knowledge-document-id">
-          ID: {document.id}
+        <p className="min-w-0 text-xs text-text-muted" data-testid="knowledge-document-id">
+          ID:{" "}
+          <span className="inline-block max-w-full truncate align-bottom font-mono" title={document.id}>
+            {document.id}
+          </span>
         </p>
         {deepLinkNotices.map((notice) => (
           <p
@@ -80,9 +83,14 @@ export function KnowledgeDocumentCard({
             <span className="text-text-muted">Source type: </span>
             {formatSourceType(document.source_type)}
           </p>
-          <p className="break-all">
+          <p className="min-w-0" data-testid="knowledge-source-uri">
             <span className="text-text-muted">Source URI: </span>
-            {document.source_uri?.trim() ? document.source_uri : "unavailable"}
+            <span
+              className="inline-block max-w-full truncate align-bottom font-mono text-caption"
+              title={document.source_uri?.trim() || undefined}
+            >
+              {document.source_uri?.trim() ? document.source_uri : "unavailable"}
+            </span>
           </p>
           <p>
             <span className="text-text-muted">Version: </span>

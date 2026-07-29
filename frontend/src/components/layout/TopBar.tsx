@@ -84,8 +84,8 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
           <button
             type="button"
             onClick={onOpenCommandMenu}
-            className="hidden rounded-control border border-border-subtle px-2 py-1.5 text-caption text-text-muted hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus md:inline-flex"
-            aria-label="Open command menu"
+            className="hidden min-h-11 items-center rounded-control border border-border-subtle px-2 py-1.5 text-caption text-text-muted hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus md:inline-flex"
+            aria-label="Search pages and destinations"
           >
             Search ⌘K
           </button>

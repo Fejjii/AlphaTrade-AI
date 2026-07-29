@@ -21,7 +21,9 @@ const buttonVariants = cva(
         default: "h-10 px-4 py-2",
         sm: "h-8 px-3 text-xs",
         lg: "h-11 px-6",
-        icon: "h-10 w-10",
+        // Icon-only controls carry no text hit area, so they hold the 44 px
+        // minimum touch target on their own.
+        icon: "h-11 w-11",
       },
     },
     defaultVariants: {
@@ -32,7 +34,7 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends React.ComponentProps<"button">,
     VariantProps<typeof buttonVariants> {}
 
 export function Button({ className, variant, size, ...props }: ButtonProps) {

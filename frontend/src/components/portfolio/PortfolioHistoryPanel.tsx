@@ -94,7 +94,11 @@ export function PortfolioHistoryPanel({
           </div>
         ) : null}
 
-        <PaperPortfolioCharts equityCurve={equity} dailySeries={daily} />
+        {/* The coverage message above already states the series are empty; the
+            charts would only repeat it in their own empty states. */}
+        {coverage.kind === "empty" ? null : (
+          <PaperPortfolioCharts equityCurve={equity} dailySeries={daily} />
+        )}
       </Panel>
     </section>
   );

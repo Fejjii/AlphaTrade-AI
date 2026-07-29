@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatLessonTimestamp } from "@/components/lessons/lessonDisplay";
 
 export type LessonsSourceStatus = {
   name: string;
@@ -106,10 +107,7 @@ export function LessonsSourceAvailability({
               <p className="mt-1 text-caption text-text-muted">{source.error}</p>
             ) : null}
             <p className="mt-1 text-caption text-text-muted">
-              Freshness timestamp:{" "}
-              {source.timestamp && Number.isFinite(Date.parse(source.timestamp))
-                ? new Date(source.timestamp).toLocaleString()
-                : "unavailable"}
+              Freshness timestamp: {formatLessonTimestamp(source.timestamp) ?? "unavailable"}
             </p>
           </li>
         ))}

@@ -46,10 +46,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsPage", () => {
-  it("shows email verification status", () => {
+  it("shows email verification with non-colour meaning (FP2-205)", () => {
     render(<SettingsPage />);
-    expect(screen.getByText(/Email verified/i)).toBeInTheDocument();
-    expect(screen.getByText(/Yes/)).toBeInTheDocument();
+    const verified = screen.getByTestId("settings-email-verified");
+    expect(verified).toHaveTextContent(/Email verified/i);
+    expect(verified).toHaveTextContent("Yes — verified");
+  });
+
+  it("replaces the provider snapshot placeholder with a Dashboard link (FP2-205)", () => {
+    render(<SettingsPage />);
+    expect(screen.queryByText("Provider status snapshot")).not.toBeInTheDocument();
+    expect(screen.getByTestId("settings-provider-status-link")).toHaveTextContent(
+      /Open Dashboard for live workspace status/i,
+    );
+    expect(
+      screen.getByRole("link", { name: /Open Dashboard for live workspace status/i }),
+    ).toHaveAttribute("href", "/");
   });
 
   it("shows verified runtime posture when /health confirms paper (FP2-104)", () => {

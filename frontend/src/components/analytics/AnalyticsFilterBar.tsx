@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { humanizeToken } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type {
   JournalTradeSource,
   MarketRegime,
@@ -130,6 +131,11 @@ export function AnalyticsFilterBar({
 }: AnalyticsFilterBarProps) {
   const [draft, setDraft] = useState<Draft>(() => draftFromState(state));
   const [minSampleError, setMinSampleError] = useState<string | null>(null);
+  // Filter controls are a full screen tall at 390 px, so they start collapsed
+  // on mobile and stay open from `lg` up (FP2-219). The applied-filter summary
+  // below is never collapsed, so the active range is always readable.
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const controlsId = useId();
 
   useEffect(() => {
     setDraft(draftFromState(state));
@@ -151,6 +157,23 @@ export function AnalyticsFilterBar({
       data-testid="analytics-filter-bar"
       aria-label="Analytics filters"
     >
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-11 w-full justify-between lg:hidden"
+        aria-expanded={mobileFiltersOpen}
+        aria-controls={controlsId}
+        onClick={() => setMobileFiltersOpen((open) => !open)}
+        data-testid="analytics-filters-disclosure"
+      >
+        {mobileFiltersOpen ? "Hide filters" : "Show filters"}
+      </Button>
+
+      <div
+        id={controlsId}
+        className={cn("space-y-3", mobileFiltersOpen ? undefined : "hidden lg:block")}
+        data-testid="analytics-filter-controls"
+      >
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="analytics-date-from">From</Label>
@@ -444,11 +467,18 @@ export function AnalyticsFilterBar({
             }
             onApplyDraft(next);
           }}
+          className="min-h-11"
           data-testid="analytics-apply-filters"
         >
           Apply filters
         </Button>
-        <Button type="button" variant="outline" onClick={onClear} data-testid="analytics-clear-filters">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11"
+          onClick={onClear}
+          data-testid="analytics-clear-filters"
+        >
           Clear
         </Button>
       </div>
@@ -461,12 +491,14 @@ export function AnalyticsFilterBar({
             type="button"
             size="sm"
             variant="outline"
+            className="min-h-11"
             data-testid={`analytics-preset-${preset.value}`}
             onClick={() => onApplyPreset(preset.value)}
           >
             {preset.label}
           </Button>
         ))}
+      </div>
       </div>
 
       <p className="text-caption text-text-muted" data-testid="analytics-filter-summary">

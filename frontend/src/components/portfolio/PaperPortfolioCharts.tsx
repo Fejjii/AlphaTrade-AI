@@ -33,13 +33,72 @@ function buildDailyPoints(
   }));
 }
 
+/** Non-colour indication of sign, so meaning survives without hue (WCAG 1.4.1). */
+function signMarker(value: number): string {
+  if (value > 0) return "▲";
+  if (value < 0) return "▼";
+  return "–";
+}
+
+function signWord(value: number): string {
+  if (value > 0) return "gain";
+  if (value < 0) return "loss";
+  return "flat";
+}
+
+/**
+ * Screen-reader alternative to a graphic. The same numbers the bars encode,
+ * in a real table, so the chart is never the only way to read the data.
+ */
+function ChartDataTable({
+  caption,
+  valueHeader,
+  points,
+  testId,
+  withSign,
+}: {
+  caption: string;
+  valueHeader: string;
+  points: ChartPoint[];
+  testId: string;
+  withSign?: boolean;
+}) {
+  return (
+    <table className="sr-only" data-testid={testId}>
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Period</th>
+          <th scope="col">{valueHeader}</th>
+          {withSign ? <th scope="col">Direction</th> : null}
+        </tr>
+      </thead>
+      <tbody>
+        {points.map((point) => (
+          <tr key={`${point.label}-${point.value}`}>
+            <th scope="row">{point.label}</th>
+            <td>{formatDecimal(String(point.value))}</td>
+            {withSign ? <td>{signWord(point.value)}</td> : null}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function SimpleBarChart({
   points,
   testId,
+  accessibleName,
+  tableCaption,
+  valueHeader,
   valueFormatter,
 }: {
   points: ChartPoint[];
   testId: string;
+  accessibleName: string;
+  tableCaption: string;
+  valueHeader: string;
   valueFormatter?: (value: number) => string;
 }) {
   if (!points.length) {
@@ -56,7 +115,11 @@ function SimpleBarChart({
 
   return (
     <div className="space-y-2" data-testid={testId}>
-      <div className="flex h-48 items-end gap-1 border-b border-zinc-800 pb-2">
+      <div
+        role="img"
+        aria-label={`${accessibleName}. ${points.length} point${points.length === 1 ? "" : "s"}. The following table lists the same values.`}
+        className="flex h-48 items-end gap-1 border-b border-border-subtle pb-2"
+      >
         {points.map((point) => {
           const heightPct = Math.max(4, (Math.abs(point.value) / maxAbs) * 100);
           const positive = point.value >= 0;
@@ -66,16 +129,29 @@ function SimpleBarChart({
               className="group flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
               title={point.detail ?? point.label}
             >
+              <span
+                aria-hidden="true"
+                className={`text-[10px] leading-none ${positive ? "text-success" : "text-danger"}`}
+              >
+                {signMarker(point.value)}
+              </span>
               <div
-                className={`w-full rounded-t ${positive ? "bg-emerald-500/70" : "bg-rose-500/70"}`}
+                className={`w-full rounded-t ${positive ? "bg-success/70" : "bg-danger/70"}`}
                 style={{ height: `${heightPct}%` }}
               />
-              <span className="truncate text-[10px] text-zinc-500">{point.label.slice(5)}</span>
+              <span className="truncate text-[10px] text-text-muted">{point.label.slice(5)}</span>
             </div>
           );
         })}
       </div>
-      <p className="text-xs text-zinc-500">
+      <ChartDataTable
+        caption={tableCaption}
+        valueHeader={valueHeader}
+        points={points}
+        testId={`${testId}-table`}
+        withSign
+      />
+      <p className="text-xs text-text-muted">
         Latest:{" "}
         {valueFormatter
           ? valueFormatter(points[points.length - 1]?.value ?? 0)
@@ -110,27 +186,36 @@ function EquityLineChart({ points, testId }: { points: ChartPoint[]; testId: str
   });
 
   const polyline = coords.map(({ x, y }) => `${x},${y}`).join(" ");
+  const first = points[0]?.value ?? 0;
+  const last = points[points.length - 1]?.value ?? 0;
+  const direction = signWord(last - first);
 
   return (
     <div data-testid={testId}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="h-48 w-full rounded border border-zinc-800 bg-zinc-950/40"
+        className="h-48 w-full rounded border border-border-subtle bg-surface-0/40"
         role="img"
-        aria-label="Equity curve chart"
+        aria-label={`Simulated equity curve, ${points.length} point${points.length === 1 ? "" : "s"} from ${points[0]?.label} to ${points[points.length - 1]?.label}, ranging ${formatDecimal(String(min))} to ${formatDecimal(String(max))}, overall ${direction}. The following table lists the same values.`}
       >
         <polyline
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
-          className="text-sky-400"
+          className="text-accent"
           points={polyline}
         />
         {coords.map(({ x, y, point }) => (
-          <circle key={point.label} cx={x} cy={y} r="3" className="fill-sky-300" />
+          <circle key={point.label} cx={x} cy={y} r="3" className="fill-accent" />
         ))}
       </svg>
-      <p className="mt-2 text-xs text-zinc-500">
+      <ChartDataTable
+        caption="Simulated equity by point in the selected range"
+        valueHeader="Equity"
+        points={points}
+        testId={`${testId}-table`}
+      />
+      <p className="mt-2 text-xs text-text-muted">
         Range {formatDecimal(String(min))} – {formatDecimal(String(max))} · {points.length} point
         {points.length === 1 ? "" : "s"}
       </p>
@@ -165,7 +250,13 @@ export function PaperPortfolioCharts({
           <CardTitle className="text-base">Daily PnL</CardTitle>
         </CardHeader>
         <CardContent>
-          <SimpleBarChart points={dailyPnlPoints} testId="portfolio-daily-pnl-chart-canvas" />
+          <SimpleBarChart
+            points={dailyPnlPoints}
+            testId="portfolio-daily-pnl-chart-canvas"
+            accessibleName="Daily simulated profit and loss"
+            tableCaption="Daily simulated profit and loss by date"
+            valueHeader="Daily P&L"
+          />
         </CardContent>
       </Card>
 
@@ -177,6 +268,9 @@ export function PaperPortfolioCharts({
           <SimpleBarChart
             points={dailyDrawdownPoints}
             testId="portfolio-daily-drawdown-chart-canvas"
+            accessibleName="Daily simulated drawdown"
+            tableCaption="Daily simulated drawdown by date"
+            valueHeader="Daily drawdown"
             valueFormatter={(value) => formatDecimal(String(Math.abs(value)))}
           />
         </CardContent>

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState, ErrorState } from "@/components/states";
@@ -27,6 +27,10 @@ export function KnowledgeSemanticSearch({
   const [sourceFilter, setSourceFilter] = useState<KnowledgeSourceFilter>(
     initialSourceFilter === "all" ? "all" : initialSourceFilter,
   );
+  // Keep the select in sync when the URL/source prop changes after mount (FP2-210).
+  useEffect(() => {
+    setSourceFilter(initialSourceFilter === "all" ? "all" : initialSourceFilter);
+  }, [initialSourceFilter]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState<RagSearchResponse | null>(null);

@@ -94,6 +94,29 @@ function killSwitchBlockReason(killSwitchStatus: KillSwitchStatus | null): strin
     : "Kill switch is blocking execution";
 }
 
+export type KillSwitchBlockNotice = {
+  blocked: boolean;
+  reason: string | null;
+};
+
+/**
+ * Kill-switch-only BLOCK notice for the hub sibling pages (`/positions`,
+ * `/risk`), which do not aggregate daily discipline. An explicit
+ * `execution_blocked` stays authoritative; anything else shows no block, so an
+ * unknown kill-switch state never reads as a false "trading allowed" claim
+ * either — those pages make no allowance claim at all.
+ */
+export function killSwitchBlockNotice(input: {
+  killSwitchStatus: KillSwitchStatus | null;
+  killSwitchError: string | null;
+  killSwitchLoading: boolean;
+}): KillSwitchBlockNotice {
+  if (resolveKillSwitchState(input) !== "blocked") {
+    return { blocked: false, reason: null };
+  }
+  return { blocked: true, reason: killSwitchBlockReason(input.killSwitchStatus) };
+}
+
 type RiskPostureBaseFields = Pick<
   RiskPostureView,
   | "executionModeLabel"

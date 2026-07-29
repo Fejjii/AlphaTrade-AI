@@ -279,6 +279,16 @@ export default function PaperPortfolioPage() {
             <PaperPortfolioSafetyBanner safety={data.portfolio.data.safety} />
           ) : null}
 
+          {/* Account data comes before filters so the first metric is reachable
+              within roughly one and a half screens at 390 px (FP2-124). */}
+          <AccountOverviewPanel
+            portfolio={data.portfolio}
+            paperConfirmed={posture.paperConfirmed}
+            discipline={discipline}
+          />
+
+          <RiskPosturePanel posture={riskPosture} />
+
           <PaperPortfolioFilters
             startDate={startDate}
             endDate={endDate}
@@ -287,14 +297,6 @@ export default function PaperPortfolioPage() {
             onEndDateChange={setEndDate}
             onSourceChange={setSource}
           />
-
-          <AccountOverviewPanel
-            portfolio={data.portfolio}
-            paperConfirmed={posture.paperConfirmed}
-            discipline={discipline}
-          />
-
-          <RiskPosturePanel posture={riskPosture} />
 
           {data.portfolio.available && data.portfolio.data ? (
             <div className="grid gap-4 lg:grid-cols-2">

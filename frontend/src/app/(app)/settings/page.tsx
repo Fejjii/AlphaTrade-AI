@@ -28,12 +28,12 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="grid gap-2 text-sm text-zinc-300 md:grid-cols-2">
           <span>Email: {user?.email ?? "—"}</span>
-          <span>
+          <span className="inline-flex items-center gap-2" data-testid="settings-email-verified">
             Email verified:{" "}
             {user?.email_verified ? (
-              <span className="text-emerald-400">Yes</span>
+              <StatusBadge label="Yes — verified" tone="success" />
             ) : (
-              <span className="text-amber-400">No</span>
+              <StatusBadge label="No — not verified" tone="warn" />
             )}
           </span>
           <span>
@@ -108,13 +108,18 @@ export default function SettingsPage() {
           <span>Provider mode (build config): {appConfig.providerMode}</span>
         </CardContent>
       </Card>
-      <Card>
+      <Card data-testid="settings-provider-status-link">
         <CardHeader>
-          <CardTitle>Provider status snapshot</CardTitle>
+          <CardTitle>Provider status</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-zinc-400">
-          Live provider cards load from the backend on other pages. Provider configuration is managed
-          in your deployment environment.
+        <CardContent className="space-y-2 text-sm text-zinc-400">
+          <p>
+            Live provider health appears in the top bar after the shell loads providers from the
+            backend. Provider credentials stay in your deployment environment.
+          </p>
+          <Link href="/" className="text-emerald-400 hover:underline">
+            Open Dashboard for live workspace status
+          </Link>
         </CardContent>
       </Card>
       <Card>

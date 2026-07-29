@@ -190,10 +190,10 @@ export function DailyPnlChart({
         <caption>Daily P&L values</caption>
         <thead>
           <tr>
-            <th>Period</th>
-            <th>Daily P&L</th>
-            <th>Trades closed</th>
-            <th>Ending equity</th>
+            <th scope="col">Period</th>
+            <th scope="col">Daily P&L</th>
+            <th scope="col">Trades closed</th>
+            <th scope="col">Ending equity</th>
           </tr>
         </thead>
         <tbody>

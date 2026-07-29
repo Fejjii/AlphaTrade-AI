@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   PRIMARY_DESTINATIONS,
@@ -43,8 +43,11 @@ function buildEntries(): CommandEntry[] {
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const optionRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const listboxId = useId();
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
   useFocusTrap(panelRef, open, close);
 
@@ -57,14 +60,59 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     );
   }, [entries, query]);
 
+  // Filtering can shrink the list underneath the cursor.
+  const boundedIndex = filtered.length ? Math.min(activeIndex, filtered.length - 1) : -1;
+  const activeOptionId = boundedIndex >= 0 ? `${listboxId}-option-${boundedIndex}` : undefined;
+
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setActiveIndex(0);
       return;
     }
     const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
   }, [open]);
+
+  useEffect(() => {
+    const option = optionRefs.current[boundedIndex];
+    // jsdom does not implement scrollIntoView.
+    option?.scrollIntoView?.({ block: "nearest" });
+  }, [boundedIndex]);
+
+  /**
+   * Listbox keyboard control. Focus stays on the input and the active option is
+   * advertised with `aria-activedescendant`, so typing and navigating never
+   * fight over focus.
+   */
+  const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!filtered.length) return;
+    const last = filtered.length - 1;
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        setActiveIndex(boundedIndex >= last ? 0 : boundedIndex + 1);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        setActiveIndex(boundedIndex <= 0 ? last : boundedIndex - 1);
+        break;
+      case "Home":
+        event.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setActiveIndex(last);
+        break;
+      case "Enter":
+        event.preventDefault();
+        optionRefs.current[boundedIndex]?.click();
+        break;
+      default:
+        break;
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -101,28 +149,57 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           <input
             ref={inputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={onInputKeyDown}
             placeholder="Jump to a destination or page…"
             aria-label="Filter command menu"
+            role="combobox"
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-controls={listboxId}
+            aria-activedescendant={activeOptionId}
             className="w-full rounded-control border border-border-subtle bg-surface-1 px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
         </div>
-        <ul className="max-h-80 overflow-y-auto p-2" aria-label="Command results">
+        <ul
+          id={listboxId}
+          role="listbox"
+          className="max-h-80 overflow-y-auto p-2"
+          aria-label="Command results"
+        >
           {filtered.length === 0 ? (
             <li className="px-3 py-4 text-sm text-text-muted">No matches</li>
           ) : (
-            filtered.map((entry) => (
-              <li key={`${entry.group}-${entry.href}`}>
-                <Link
-                  href={entry.href}
-                  onClick={close}
-                  className="flex items-center justify-between rounded-control px-3 py-2.5 text-sm hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                >
-                  <span className="text-text-primary">{entry.label}</span>
-                  <span className="text-caption text-text-muted">{entry.group}</span>
-                </Link>
-              </li>
-            ))
+            filtered.map((entry, index) => {
+              const active = index === boundedIndex;
+              return (
+                <li key={`${entry.group}-${entry.href}`} role="presentation">
+                  <Link
+                    ref={(node) => {
+                      optionRefs.current[index] = node;
+                    }}
+                    id={`${listboxId}-option-${index}`}
+                    role="option"
+                    aria-selected={active}
+                    tabIndex={-1}
+                    href={entry.href}
+                    onClick={close}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    className={cn(
+                      "flex min-h-11 items-center justify-between rounded-control px-3 py-2.5 text-sm",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+                      active ? "bg-surface-2" : "hover:bg-surface-1",
+                    )}
+                  >
+                    <span className="text-text-primary">{entry.label}</span>
+                    <span className="text-caption text-text-muted">{entry.group}</span>
+                  </Link>
+                </li>
+              );
+            })
           )}
         </ul>
       </div>

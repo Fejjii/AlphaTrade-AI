@@ -250,9 +250,9 @@ export function ValidationOutcomeChart({
         <caption>Validation outcome categories, session counts, and rates</caption>
         <thead>
           <tr>
-            <th>Category</th>
-            <th>Count</th>
-            <th>Rate</th>
+            <th scope="col">Category</th>
+            <th scope="col">Count</th>
+            <th scope="col">Rate</th>
           </tr>
         </thead>
         <tbody>

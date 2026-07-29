@@ -92,7 +92,10 @@ describe("usage dashboard components", () => {
         ]}
       />,
     );
-    expect(screen.getByText("mock-llm")).toBeInTheDocument();
-    expect(screen.getByText("800")).toBeInTheDocument();
+    // Mobile cards and desktop table both mount (one is CSS-hidden), so provider
+    // labels appear twice in the DOM.
+    expect(screen.getAllByText("mock-llm").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("800").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("usage-provider-cards")).toBeInTheDocument();
   });
 });

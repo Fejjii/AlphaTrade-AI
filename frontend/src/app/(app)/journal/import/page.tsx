@@ -66,11 +66,11 @@ function ResultTable({
       <table className="w-full text-left text-sm">
         <thead className="sticky top-0 bg-zinc-900 text-xs uppercase text-zinc-500">
           <tr>
-            <th className="px-3 py-2">Row</th>
-            <th className="px-3 py-2">Symbol</th>
-            <th className="px-3 py-2">Outcome</th>
-            <th className="px-3 py-2">External ref</th>
-            <th className="px-3 py-2">Details</th>
+            <th scope="col" className="px-3 py-2">Row</th>
+            <th scope="col" className="px-3 py-2">Symbol</th>
+            <th scope="col" className="px-3 py-2">Outcome</th>
+            <th scope="col" className="px-3 py-2">External ref</th>
+            <th scope="col" className="px-3 py-2">Details</th>
           </tr>
         </thead>
         <tbody>

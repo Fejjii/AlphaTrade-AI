@@ -558,8 +558,12 @@ describe("KnowledgePage hub", () => {
       "knowledge-document-card-doc-long-id-abcdefghijklmnopqrstuvwxyz",
     );
     expect(card.className).toMatch(/min-w-0/);
-    expect(within(card).getByTestId("knowledge-document-id").className).toMatch(/break-all/);
-    expect(within(card).getByText(/source uri:/i).closest("p")?.className).toMatch(/break-all/);
+    // Long identifiers truncate instead of dominating the card (FP2-210).
+    expect(within(card).getByTestId("knowledge-document-id").className).toMatch(/min-w-0/);
+    expect(within(card).getByTestId("knowledge-document-id").innerHTML).toMatch(/truncate/);
+    const uri = within(card).getByTestId("knowledge-source-uri");
+    expect(uri.className).toMatch(/min-w-0/);
+    expect(uri.innerHTML).toMatch(/truncate/);
   });
 
   it("runs semantic search through the existing API", async () => {

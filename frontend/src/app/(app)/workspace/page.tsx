@@ -280,7 +280,10 @@ export default function WorkspacePage() {
       {assistOpen ? (
         <Card data-testid="plan-hub-ai-assist">
           <CardHeader>
-            <CardTitle>AI assistance</CardTitle>
+            {/* Explicit h2 so CardTitle (h3) is not the first heading under the page h1. */}
+            <h2 className="text-base font-semibold tracking-tight text-text-primary">
+              AI assistance
+            </h2>
             <p className="text-sm text-text-muted">
               Embedded ticket assist. Sensitive actions still require approval. No live orders.
             </p>

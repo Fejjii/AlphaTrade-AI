@@ -142,7 +142,7 @@ export function RuleComplianceChart({
             key={value}
             type="button"
             className={cn(
-              "rounded-control border px-2 py-1 text-caption",
+              "inline-flex min-h-11 items-center rounded-control border px-3 py-1 text-caption",
               metric === value
                 ? "border-accent bg-accent/10 text-text-primary"
                 : "border-border-subtle text-text-muted",
@@ -223,11 +223,11 @@ export function RuleComplianceChart({
         <caption>Rule compliance buckets with sample counts and metrics</caption>
         <thead>
           <tr>
-            <th>Compliance</th>
-            <th>Sample count</th>
-            <th>Win rate</th>
-            <th>Expectancy</th>
-            <th>Confidence</th>
+            <th scope="col">Compliance</th>
+            <th scope="col">Sample count</th>
+            <th scope="col">Win rate</th>
+            <th scope="col">Expectancy</th>
+            <th scope="col">Confidence</th>
           </tr>
         </thead>
         <tbody>
