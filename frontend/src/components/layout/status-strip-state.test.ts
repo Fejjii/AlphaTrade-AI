@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPostureAnnouncement,
   resolveAdviceDisplay,
   resolveExecutionDisplay,
   resolveRiskDisplay,
@@ -177,5 +178,51 @@ describe("AT-040 StatusStrip advice truth", () => {
       const advice = resolveAdviceDisplay(mode, real, known);
       expect(advice.text.toLowerCase()).not.toContain("paper-only research");
     }
+  });
+});
+
+describe("buildPostureAnnouncement (FP2-114)", () => {
+  function announce(
+    executionMode: string | null,
+    realTradingEnabled: boolean | null,
+    postureKnown: boolean,
+    status: KillSwitchStatus | null,
+  ): string {
+    return buildPostureAnnouncement({
+      execution: resolveExecutionDisplay(executionMode, realTradingEnabled, postureKnown),
+      realTradingEnabled,
+      risk: resolveRiskDisplay({
+        killSwitchStatus: status,
+        killSwitchError: null,
+        statusLoading: false,
+      }),
+    });
+  }
+
+  it("states verified paper posture, real-trading state and risk level", () => {
+    expect(announce("paper", false, true, killSwitch({}))).toBe(
+      "Trading posture: execution PAPER, verified; real trading disabled; risk low.",
+    );
+  });
+
+  it("reports a blocked kill switch as critical risk", () => {
+    expect(announce("paper", false, true, killSwitch({ execution_blocked: true }))).toContain(
+      "risk critical.",
+    );
+  });
+
+  it("never claims verified paper while posture is unknown", () => {
+    const text = announce(null, null, false, null);
+    expect(text).toBe(
+      "Trading posture: execution unverified; real trading unverified; risk unknown.",
+    );
+    expect(text).not.toContain("PAPER");
+  });
+
+  it("surfaces a safety conflict rather than a paper claim", () => {
+    const text = announce("paper", true, true, killSwitch({}));
+    expect(text).toContain("safety conflict");
+    expect(text).toContain("real trading enabled");
+    expect(text).not.toContain("PAPER");
   });
 });

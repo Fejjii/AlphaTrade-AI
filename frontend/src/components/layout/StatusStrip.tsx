@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 
 import { RiskBadge } from "@/components/RiskBadge";
 import {
+  buildPostureAnnouncement,
   resolveAdviceDisplay,
   resolveExecutionDisplay,
   resolveRiskDisplay,
@@ -32,6 +33,11 @@ export function StatusStrip({ className }: { className?: string }) {
     statusLoading: loading,
   });
   const [adviceDismissed, setAdviceDismissed] = useState(false);
+  const postureAnnouncement = buildPostureAnnouncement({
+    execution,
+    realTradingEnabled,
+    risk,
+  });
 
   useEffect(() => {
     try {
@@ -53,11 +59,18 @@ export function StatusStrip({ className }: { className?: string }) {
   return (
     <div
       data-testid="status-strip"
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      aria-label="Trading posture and risk status"
       className={cn(
         "flex flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-1/80 px-gutter py-2 text-caption lg:px-gutter-lg",
         className,
       )}
     >
+      <p className="sr-only" data-testid="status-strip-announcement">
+        {postureAnnouncement}
+      </p>
       <PaperModeIndicator active={execution.paperConfirmed} />
       <span data-testid="status-strip-execution">
         <StatusBadge label={execution.label} tone={execution.tone} />

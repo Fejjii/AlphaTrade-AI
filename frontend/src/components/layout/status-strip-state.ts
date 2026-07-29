@@ -8,6 +8,8 @@ export type ExecutionDisplay = {
   tone: StatusTone;
   /** True only when paper + real trading disabled. */
   paperConfirmed: boolean;
+  /** Spoken form of `label` for the status strip's live region. */
+  announcement: string;
 };
 
 /**
@@ -21,21 +23,37 @@ export function resolveExecutionDisplay(
 ): ExecutionDisplay {
   const paperConfirmed = isPaperModeConfirmed(executionMode, realTradingEnabled);
   if (paperConfirmed) {
-    return { label: "PAPER", tone: "paper", paperConfirmed: true };
+    return {
+      label: "PAPER",
+      tone: "paper",
+      paperConfirmed: true,
+      announcement: "execution PAPER, verified",
+    };
   }
 
   if (executionMode === "paper" && realTradingEnabled === true) {
-    return { label: "Safety conflict", tone: "blocked", paperConfirmed: false };
+    return {
+      label: "Safety conflict",
+      tone: "blocked",
+      paperConfirmed: false,
+      announcement: "safety conflict between execution mode and real-trading flag",
+    };
   }
 
   if (!postureKnown || executionMode == null || realTradingEnabled == null) {
-    return { label: "Execution unverified", tone: "warn", paperConfirmed: false };
+    return {
+      label: "Execution unverified",
+      tone: "warn",
+      paperConfirmed: false,
+      announcement: "execution unverified",
+    };
   }
 
   return {
     label: String(executionMode).toUpperCase(),
     tone: "warn",
     paperConfirmed: false,
+    announcement: `execution ${String(executionMode).toUpperCase()}, not paper`,
   };
 }
 
@@ -111,4 +129,26 @@ export function resolveRiskDisplay(input: {
     return { label: "Risk critical", level: "critical", known: true };
   }
   return { label: "Risk low", level: "low", known: true };
+}
+
+/**
+ * Single sentence announced by the status strip's polite live region.
+ *
+ * The visible badges convey the same facts; this collapses them into one
+ * utterance so assistive technology reports a posture change once, in order of
+ * safety importance, instead of reading each badge separately.
+ */
+export function buildPostureAnnouncement(input: {
+  execution: ExecutionDisplay;
+  realTradingEnabled: boolean | null | undefined;
+  risk: RiskDisplay;
+}): string {
+  const { execution, realTradingEnabled, risk } = input;
+  const realTrading =
+    realTradingEnabled === true
+      ? "real trading enabled"
+      : realTradingEnabled === false
+        ? "real trading disabled"
+        : "real trading unverified";
+  return `Trading posture: ${execution.announcement}; ${realTrading}; ${risk.label.toLowerCase()}.`;
 }

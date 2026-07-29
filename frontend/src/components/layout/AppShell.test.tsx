@@ -173,4 +173,54 @@ describe("AT-040 Phase B AppShell", () => {
       "safe-area-inset-bottom",
     );
   });
+
+  it("renders a skip link that targets and focuses #main (FP2-113)", () => {
+    render(
+      <AppShell>
+        <div>Page</div>
+      </AppShell>,
+    );
+    const skipLink = screen.getByRole("link", { name: "Skip to main content" });
+    expect(skipLink).toHaveAttribute("href", "#main");
+    // Visually hidden until keyboard focus reveals it.
+    expect(skipLink.className).toContain("sr-only");
+    expect(skipLink.className).toContain("focus:not-sr-only");
+
+    const main = document.getElementById("main");
+    expect(main).not.toBeNull();
+    expect(main).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.click(skipLink);
+    expect(main).toHaveFocus();
+  });
+
+  it("gives every shell control a distinct accessible name (FP2-224)", () => {
+    render(
+      <AppShell>
+        <div>Page</div>
+      </AppShell>,
+    );
+    const names = screen
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "")
+      .filter((name) => /menu/i.test(name));
+    expect(names.length).toBeGreaterThan(0);
+    expect(new Set(names).size).toBe(names.length);
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open navigation menu" })).toBeInTheDocument();
+  });
+
+  it("announces posture politely from the status strip (FP2-114)", () => {
+    render(
+      <AppShell>
+        <div>Page</div>
+      </AppShell>,
+    );
+    const strip = screen.getByTestId("status-strip");
+    expect(strip).toHaveAttribute("role", "status");
+    expect(strip).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByTestId("status-strip-announcement")).toHaveTextContent(
+      "Trading posture: execution PAPER, verified; real trading disabled; risk low.",
+    );
+  });
 });
