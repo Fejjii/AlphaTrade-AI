@@ -19,10 +19,17 @@ type Props = {
   onCancel: () => void;
 };
 
+type StrategiesLoadState =
+  | { status: "loading" }
+  | { status: "ready"; items: UserStrategy[] }
+  | { status: "failed"; message: string };
+
 export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
   const [path, setPath] = useState<AcceptPath>("accept_only");
   const [reviewerNotes, setReviewerNotes] = useState("");
-  const [strategies, setStrategies] = useState<UserStrategy[]>([]);
+  const [strategiesLoad, setStrategiesLoad] = useState<StrategiesLoadState>({
+    status: "loading",
+  });
   const [strategyId, setStrategyId] = useState<string>(lesson.related_strategy_id ?? "");
   const [ruleSummary, setRuleSummary] = useState(
     lesson.proposed_rule_update?.summary ?? "",
@@ -32,39 +39,58 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const loadStrategies = useCallback(async () => {
-    const { api } = await import("@/lib/api");
-    const res = await api.strategies.list({ limit: 50 });
-    setStrategies(res.items);
-    if (!strategyId && res.items[0]) {
-      setStrategyId(res.items[0].id);
+    setStrategiesLoad({ status: "loading" });
+    try {
+      const { api } = await import("@/lib/api");
+      const res = await api.strategies.list({ limit: 50 });
+      setStrategiesLoad({ status: "ready", items: res.items });
+      setStrategyId((current) => current || res.items[0]?.id || "");
+    } catch (err) {
+      setStrategiesLoad({
+        status: "failed",
+        message:
+          err instanceof Error
+            ? `Strategy list failed to load: ${err.message}`
+            : "Strategy list failed to load.",
+      });
     }
-  }, [strategyId]);
+  }, []);
 
   useEffect(() => {
     void loadStrategies();
   }, [loadStrategies]);
 
+  const strategies = strategiesLoad.status === "ready" ? strategiesLoad.items : [];
   const selectedStrategy = strategies.find((s) => s.id === strategyId);
   const needsStrategy = path !== "accept_only";
-  const ruleUpdate: ProposedRuleUpdate | null =
-    path === "accept_only"
-      ? null
-      : {
-          summary: ruleSummary || "Lesson-driven rule update",
-          structured_rules_patch: lesson.proposed_rule_update?.structured_rules_patch ?? null,
-          attach_to_strategy: path === "attach_rule",
-          create_new_version: path === "create_version",
-        };
+  const trimmedRuleSummary = ruleSummary.trim();
 
   async function handleConfirm() {
     if (!confirmed) {
       setError("Confirm you understand the active strategy will not be silently mutated.");
       return;
     }
+    if (needsStrategy && strategiesLoad.status === "failed") {
+      setError("Cannot attach a rule or create a version while strategies failed to load.");
+      return;
+    }
     if (needsStrategy && !strategyId) {
       setError("Select a strategy for rule attachment or version creation.");
       return;
     }
+    if (needsStrategy && !trimmedRuleSummary) {
+      setError("Enter a rule summary before accepting with a rule update. A summary is never invented.");
+      return;
+    }
+    const ruleUpdate: ProposedRuleUpdate | null =
+      path === "accept_only"
+        ? null
+        : {
+            summary: trimmedRuleSummary,
+            structured_rules_patch: lesson.proposed_rule_update?.structured_rules_patch ?? null,
+            attach_to_strategy: path === "attach_rule",
+            create_new_version: path === "create_version",
+          };
     setError(null);
     try {
       await onAccept({
@@ -132,27 +158,57 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
         </fieldset>
 
         {needsStrategy ? (
-          <label className="block space-y-1">
-            <span className="text-zinc-400">Strategy</span>
-            <select
-              className="w-full rounded border border-zinc-700 bg-zinc-900 p-2"
-              value={strategyId}
-              onChange={(e) => setStrategyId(e.target.value)}
-              data-testid="lesson-strategy-select"
-            >
-              <option value="">Select strategy…</option>
-              {strategies.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} (v{s.current_version})
-                </option>
-              ))}
-            </select>
-            {selectedStrategy ? (
-              <p className="text-xs text-zinc-500">
-                Current version: v{selectedStrategy.current_version}
+          <div className="space-y-2">
+            {strategiesLoad.status === "loading" ? (
+              <p className="text-zinc-400" data-testid="lesson-strategies-loading">
+                Loading strategies…
               </p>
             ) : null}
-          </label>
+            {strategiesLoad.status === "failed" ? (
+              <div
+                role="alert"
+                data-testid="lesson-strategies-failed"
+                className="rounded border border-rose-700/50 bg-rose-950/30 p-3 text-rose-200"
+              >
+                <p>{strategiesLoad.message}</p>
+                <p className="mt-1 text-xs">
+                  Rule attachment and version creation stay unavailable until strategies load.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => void loadStrategies()}
+                  data-testid="lesson-strategies-retry"
+                >
+                  Retry strategies
+                </Button>
+              </div>
+            ) : (
+              <label className="block space-y-1">
+                <span className="text-zinc-400">Strategy</span>
+                <select
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 p-2"
+                  value={strategyId}
+                  onChange={(e) => setStrategyId(e.target.value)}
+                  data-testid="lesson-strategy-select"
+                >
+                  <option value="">Select strategy…</option>
+                  {strategies.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} (v{s.current_version})
+                    </option>
+                  ))}
+                </select>
+                {selectedStrategy ? (
+                  <p className="text-xs text-zinc-500">
+                    Current version: v{selectedStrategy.current_version}
+                  </p>
+                ) : null}
+              </label>
+            )}
+          </div>
         ) : null}
 
         {path !== "accept_only" ? (
@@ -164,7 +220,11 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
               value={ruleSummary}
               onChange={(e) => setRuleSummary(e.target.value)}
               data-testid="rule-update-editor"
+              placeholder="Describe the rule change in your own words"
             />
+            <p className="text-xs text-zinc-500">
+              A non-empty rule summary is required. No default summary is invented.
+            </p>
             {lesson.proposed_rule_update?.structured_rules_patch ? (
               <p className="text-xs text-zinc-500">
                 Structured rules patch will be applied when you confirm.
@@ -198,10 +258,21 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
           <span>I confirm this action — no silent strategy mutation.</span>
         </label>
 
-        {error ? <p className="text-red-300">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-red-300" data-testid="lesson-accept-error">
+            {error}
+          </p>
+        ) : null}
 
         <div className="flex gap-2">
-          <Button disabled={busy} onClick={() => void handleConfirm()} data-testid="confirm-accept">
+          <Button
+            disabled={
+              busy ||
+              (needsStrategy && strategiesLoad.status !== "ready")
+            }
+            onClick={() => void handleConfirm()}
+            data-testid="confirm-accept"
+          >
             {busy ? "Accepting…" : "Confirm accept"}
           </Button>
           <Button variant="secondary" disabled={busy} onClick={onCancel}>

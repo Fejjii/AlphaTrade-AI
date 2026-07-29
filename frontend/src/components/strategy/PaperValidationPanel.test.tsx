@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
@@ -119,5 +119,28 @@ describe("PaperValidationPanel human-readable summary", () => {
   it("keeps raw runtime data behind a technical details section", () => {
     render(<PaperValidationPanel {...baseProps} />);
     expect(screen.getByTestId("paper-validation-technical-details")).toBeInTheDocument();
+  });
+
+  it("wraps the paper-trades table in a horizontal-scroll container", () => {
+    render(
+      <PaperValidationPanel
+        {...baseProps}
+        trades={[
+          {
+            id: "t1",
+            symbol: "BTCUSDT",
+            direction: "long",
+            status: "closed",
+            entry_price: "100",
+            net_pnl: "12",
+            exit_reason: "take_profit",
+            created_at: "2024-01-01T00:00:00Z",
+          },
+        ]}
+      />,
+    );
+    const scroll = screen.getByTestId("paper-trades-table-scroll");
+    expect(scroll.className).toMatch(/overflow-x-auto/);
+    expect(within(scroll).getByTestId("paper-trades-table")).toBeInTheDocument();
   });
 });

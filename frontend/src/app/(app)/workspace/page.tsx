@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
@@ -16,7 +16,7 @@ import {
   buildPlanHierarchy,
   describeSafetyPosture,
   loadSource,
-  parsePlanSignalContext,
+  lookupPlanSignalContext,
   type SourceResult,
 } from "@/components/workflows";
 import { Button } from "@/components/ui/button";
@@ -38,10 +38,11 @@ type PlanHubData = {
 
 export default function WorkspacePage() {
   const searchParams = useSearchParams();
-  const signalContext = useMemo(
-    () => parsePlanSignalContext(searchParams),
+  const signalLookup = useMemo(
+    () => lookupPlanSignalContext(searchParams),
     [searchParams],
   );
+  const signalContext = signalLookup.status === "ready" ? signalLookup.context : null;
   const { killSwitchActive } = useAppContext();
   const { executionMode, realTradingEnabled, providerMode } = useSafetyPosture();
   const [message, setMessage] = useState("");
@@ -52,6 +53,17 @@ export default function WorkspacePage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [assistOpen, setAssistOpen] = useState(false);
+  const [invalidContextDismissed, setInvalidContextDismissed] = useState(false);
+
+  const signalLookupKey = searchParams.toString();
+  useEffect(() => {
+    setInvalidContextDismissed(false);
+  }, [signalLookupKey]);
+
+  const invalidContextMessage =
+    signalLookup.status === "invalid" && !invalidContextDismissed
+      ? signalLookup.message
+      : null;
 
   const loader = useCallback(async (): Promise<PlanHubData> => {
     const [proposals, approvals] = await Promise.all([
@@ -188,6 +200,29 @@ export default function WorkspacePage() {
 
       {killSwitchActive ? (
         <ErrorState message="Kill switch is active. Agent requests are paused until you reset it." />
+      ) : null}
+
+      {invalidContextMessage ? (
+        <div
+          role="alert"
+          data-testid="plan-signal-context-invalid"
+          className="rounded-control border border-warning-border bg-warning-muted/40 px-4 py-3 text-sm"
+        >
+          <p className="font-medium text-text-primary">{invalidContextMessage}</p>
+          <p className="mt-1 text-text-secondary">
+            Planning continues without applying the deep-link signal context.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() => setInvalidContextDismissed(true)}
+            data-testid="plan-signal-context-dismiss"
+          >
+            Dismiss
+          </Button>
+        </div>
       ) : null}
 
       <nav aria-label="Plan hub sections" className="flex flex-wrap gap-3 text-sm">

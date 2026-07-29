@@ -204,24 +204,29 @@ export function PaperValidationPanel({
         ) : null}
 
         {closedTrades.length > 0 ? (
-          <table className="w-full text-left text-xs" data-testid="paper-trades-table">
-            <thead>
-              <tr className="text-zinc-500">
-                <th className="py-1">Symbol</th>
-                <th>PnL</th>
-                <th>Exit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {closedTrades.slice(0, 8).map((t) => (
-                <tr key={t.id} className="border-t border-zinc-800">
-                  <td className="py-1">{t.symbol}</td>
-                  <td>{t.net_pnl ?? "—"}</td>
-                  <td>{t.exit_reason ?? "—"}</td>
+          <div
+            className="w-full max-w-full overflow-x-auto"
+            data-testid="paper-trades-table-scroll"
+          >
+            <table className="w-full text-left text-xs" data-testid="paper-trades-table">
+              <thead>
+                <tr className="text-zinc-500">
+                  <th className="py-1">Symbol</th>
+                  <th>PnL</th>
+                  <th>Exit</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {closedTrades.slice(0, 8).map((t) => (
+                  <tr key={t.id} className="border-t border-zinc-800">
+                    <td className="py-1">{t.symbol}</td>
+                    <td>{t.net_pnl ?? "—"}</td>
+                    <td>{t.exit_reason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
 
         {latest?.metrics ? (

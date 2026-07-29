@@ -109,6 +109,12 @@ let asyncState = {
 const acceptMock = vi.fn().mockResolvedValue({});
 const rejectMock = vi.fn().mockResolvedValue({});
 const getCandidateMock = vi.fn();
+const strategiesListMock = vi.fn().mockResolvedValue({
+  items: [{ id: "strategy-1", name: "HTF Pullback", current_version: 2 }],
+  total: 1,
+  limit: 50,
+  offset: 0,
+});
 
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => asyncState,
@@ -122,12 +128,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
       ...actual.api,
       strategies: {
         ...actual.api.strategies,
-        list: vi.fn().mockResolvedValue({
-          items: [{ id: "strategy-1", name: "HTF Pullback", current_version: 2 }],
-          total: 1,
-          limit: 50,
-          offset: 0,
-        }),
+        list: (...args: unknown[]) => strategiesListMock(...args),
       },
       lessons: {
         ...actual.api.lessons,
@@ -185,6 +186,13 @@ beforeEach(() => {
   rejectMock.mockClear();
   getCandidateMock.mockReset();
   getCandidateMock.mockResolvedValue(pendingLesson);
+  strategiesListMock.mockReset();
+  strategiesListMock.mockResolvedValue({
+    items: [{ id: "strategy-1", name: "HTF Pullback", current_version: 2 }],
+    total: 1,
+    limit: 50,
+    offset: 0,
+  });
 });
 
 afterEach(() => {
@@ -701,12 +709,56 @@ describe("LessonAcceptPanel", () => {
       />,
     );
     fireEvent.click(screen.getByTestId("accept-path-create_version"));
+    await waitFor(() => expect(screen.getByTestId("lesson-strategy-select")).toBeInTheDocument());
     fireEvent.change(screen.getByTestId("rule-update-editor"), {
       target: { value: "Edited rule summary" },
     });
     fireEvent.click(screen.getByTestId("accept-confirm-checkbox"));
     fireEvent.click(screen.getByTestId("confirm-accept"));
     await waitFor(() => expect(onAccept).toHaveBeenCalled());
+    expect(onAccept.mock.calls[0]?.[0].ruleUpdate?.summary).toBe("Edited rule summary");
+  });
+
+  it("requires a real rule summary and never fabricates a default", async () => {
+    const onAccept = vi.fn().mockResolvedValue(undefined);
+    render(
+      <LessonAcceptPanel
+        lesson={{
+          ...pendingLesson,
+          related_strategy_id: "strategy-1",
+          proposed_rule_update: undefined,
+        }}
+        busy={false}
+        onAccept={onAccept}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("accept-path-attach_rule"));
+    await waitFor(() => expect(screen.getByTestId("lesson-strategy-select")).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId("rule-update-editor"), { target: { value: "   " } });
+    fireEvent.click(screen.getByTestId("accept-confirm-checkbox"));
+    fireEvent.click(screen.getByTestId("confirm-accept"));
+    expect(await screen.findByTestId("lesson-accept-error")).toHaveTextContent(
+      /rule summary is required|never invented/i,
+    );
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it("exposes strategy-load failure instead of silently continuing", async () => {
+    strategiesListMock.mockRejectedValue(new Error("strategies down"));
+    render(
+      <LessonAcceptPanel
+        lesson={{ ...pendingLesson, related_strategy_id: "strategy-1" }}
+        busy={false}
+        onAccept={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("accept-path-attach_rule"));
+    expect(await screen.findByTestId("lesson-strategies-failed")).toHaveTextContent(
+      /Strategy list failed to load/i,
+    );
+    expect(screen.getByTestId("confirm-accept")).toBeDisabled();
   });
 });
 

@@ -213,6 +213,18 @@ describe("Plan hub Phase C1 corrections", () => {
     );
   });
 
+  it("shows a dismissible notice when plan deep-link context is invalid", () => {
+    search.set("source", "not-a-real-source");
+    search.set("signal", "sig-123");
+    render(<WorkspacePage />);
+    expect(screen.getByTestId("plan-signal-context-invalid")).toHaveTextContent(
+      /signal context could not be applied/i,
+    );
+    expect(screen.queryByTestId("plan-signal-context")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("plan-signal-context-dismiss"));
+    expect(screen.queryByTestId("plan-signal-context-invalid")).not.toBeInTheDocument();
+  });
+
   it("does not claim empty plan when sources failed", () => {
     asyncState = {
       ...asyncState,

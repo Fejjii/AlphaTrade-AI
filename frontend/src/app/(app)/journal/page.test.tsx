@@ -406,8 +406,67 @@ describe("Journal hub Phase C3A", () => {
   it("rejects stale entry deep links instead of opening an unrelated record", () => {
     search.set("entry", "missing-entry");
     render(<JournalPage />);
-    expect(screen.getByTestId("journal-stale-entry")).toHaveTextContent(/was not found/i);
+    expect(screen.getByTestId("journal-stale-entry")).toHaveTextContent(
+      /was not found in the most recent 50 journal entries/i,
+    );
     expect(screen.queryByTestId("recent-entry-missing-entry")).not.toBeInTheDocument();
+  });
+
+  it("requires two-step confirmation before deleting a journal entry", async () => {
+    deleteMock.mockResolvedValue(undefined);
+    render(<JournalPage />);
+    fireEvent.click(screen.getByTestId("delete-entry-entry-1"));
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("delete-confirm-entry-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("cancel-delete-entry-1"));
+    expect(screen.queryByTestId("delete-confirm-entry-1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("delete-entry-entry-1"));
+    fireEvent.click(screen.getByTestId("confirm-delete-entry-1"));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("entry-1"));
+    expect(asyncState.reload).toHaveBeenCalled();
+  });
+
+  it("surfaces delete mutation failures as a visible alert", async () => {
+    deleteMock.mockRejectedValue(new Error("Delete blocked"));
+    render(<JournalPage />);
+    fireEvent.click(screen.getByTestId("delete-entry-entry-1"));
+    fireEvent.click(screen.getByTestId("confirm-delete-entry-1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("journal-mutation-error")).toHaveTextContent(/Delete entry failed/i);
+    });
+    expect(screen.getByTestId("recent-entry-entry-1")).toBeInTheDocument();
+  });
+
+  it("surfaces create-lesson mutation failures as a visible alert", async () => {
+    analyzeMock.mockResolvedValue({
+      comparison: {
+        trade_id: "entry-1",
+        plan_adherence_score: 40,
+        plan_adherence: {
+          entry_followed_plan: 1,
+          size_respected_risk: 1,
+          stop_loss_respected: 1,
+          profit_taking_followed: 0,
+          emotion_controlled: 1,
+          journal_completed: 1,
+        },
+        emotion_tags: [],
+        notes: [],
+        missed_runner: {
+          early_exit_flag: true,
+          recommended_lesson: "Hold the runner longer.",
+        },
+      },
+      lesson_candidate_ids: [],
+    });
+    createLessonMock.mockRejectedValue(new Error("Lesson create blocked"));
+    render(<JournalPage />);
+    fireEvent.click(screen.getByRole("button", { name: /Discipline analysis/i }));
+    await waitFor(() => expect(screen.getByTestId("discipline-panel")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Create lesson candidate/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId("journal-mutation-error")).toHaveTextContent(/Create lesson failed/i);
+    });
   });
 
   it("does not fabricate relationships for unsupported trade_id deep links", () => {

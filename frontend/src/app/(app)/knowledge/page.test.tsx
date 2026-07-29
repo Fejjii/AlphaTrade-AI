@@ -456,9 +456,26 @@ describe("KnowledgePage hub", () => {
     });
     listChunksMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
     render(<KnowledgePage />);
-    expect(await screen.findByTestId("knowledge-document-stale")).toHaveTextContent(/missing-doc/i);
+    expect(await screen.findByTestId("knowledge-document-stale")).toHaveTextContent(
+      /missing-doc.*most recent 50 knowledge documents/i,
+    );
     expect(screen.queryByTestId("knowledge-deeplink-only")).not.toBeInTheDocument();
     expect(screen.getByTestId("knowledge-document-card-doc-playbook")).toBeInTheDocument();
+  });
+
+  it("names the searched window when a deep-linked document is beyond the loaded page", async () => {
+    search.set("document", "beyond-window");
+    listDocumentsMock.mockResolvedValue({
+      items: [playbookDoc],
+      total: 120,
+      limit: 50,
+      offset: 0,
+    });
+    render(<KnowledgePage />);
+    expect(await screen.findByTestId("knowledge-document-stale")).toHaveTextContent(
+      /not found in the most recent 50 knowledge documents \(searched 1 of 120\)/i,
+    );
+    expect(screen.queryByTestId("knowledge-deeplink-only")).not.toBeInTheDocument();
   });
 
   it("links stored relationships only when URI identifiers exist", async () => {

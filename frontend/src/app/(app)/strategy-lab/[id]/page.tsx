@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
@@ -18,15 +18,15 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { strategyStatusFor } from "@/lib/strategy-status";
 import { buildWorkflowSteps } from "@/lib/workflow-steps";
-import type {
-  PaperAlert,
-  PaperEligibilityReport,
-  PaperRuntimeHistoryRecord,
-  PaperSchedulerStatus,
-  PaperSignalResult,
-  PaperTradeRecord,
-} from "@/lib/api/types";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
+
+import {
+  PAPER_SOURCE_KEYS,
+  PAPER_SOURCE_LABELS,
+  paperSourcePresentation,
+  paperSourceTestId,
+  useStrategyPaperSources,
+} from "./useStrategyPaperSources";
 
 function setupLabel(value: string) {
   return SETUP_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
@@ -37,18 +37,17 @@ export default function StrategyDetailPage() {
   const id = String(params.id);
   const loader = useCallback(() => api.strategies.get(id), [id]);
   const { data, loading, error, reload } = useAsyncData(loader, [id]);
+  const strategyReady = Boolean(data) && !loading && !error;
+
+  const { sources, refreshAllPaperSources, retryPaperSource, anyPaperSourceLoading } =
+    useStrategyPaperSources({
+      strategyId: id,
+      strategyReady,
+    });
+
   const [versionBusy, setVersionBusy] = useState(false);
   const [paperBusy, setPaperBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [paperSummary, setPaperSummary] = useState<Awaited<
-    ReturnType<typeof api.strategies.paperValidation>
-  > | null>(null);
-  const [eligibility, setEligibility] = useState<PaperEligibilityReport | null>(null);
-  const [signals, setSignals] = useState<PaperSignalResult[]>([]);
-  const [trades, setTrades] = useState<PaperTradeRecord[]>([]);
-  const [scheduler, setScheduler] = useState<PaperSchedulerStatus | null>(null);
-  const [history, setHistory] = useState<PaperRuntimeHistoryRecord[]>([]);
-  const [alerts, setAlerts] = useState<PaperAlert[]>([]);
   const [rulesBusy, setRulesBusy] = useState(false);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
@@ -57,57 +56,36 @@ export default function StrategyDetailPage() {
   const versionsLoader = useCallback(() => api.strategies.listVersions(id), [id]);
   const { data: versionsData } = useAsyncData(versionsLoader, [id]);
 
-  const latestRunId = paperSummary?.runs[0]?.id;
-
-  async function refreshPaperData() {
-    const [summary, report, sched, alertList] = await Promise.all([
-      api.strategies.paperValidation(id),
-      api.strategies.paperEligibility(id),
-      api.strategies.schedulerStatus(),
-      api.alerts.list({ limit: 10 }),
-    ]);
-    setPaperSummary(summary);
-    setEligibility(report);
-    setScheduler(sched);
-    setAlerts(alertList.items);
-    const runId = summary.runs[0]?.id;
-    if (runId) {
-      const [sig, tr, hist] = await Promise.all([
-        api.strategies.paperValidationSignals(runId),
-        api.strategies.paperValidationTrades(runId),
-        api.strategies.schedulerHistory({ run_id: runId, limit: 10 }),
-      ]);
-      setSignals(sig.items);
-      setTrades(tr.items);
-      setHistory(hist.items);
-    } else {
-      const hist = await api.strategies.schedulerHistory({ limit: 10 });
-      setHistory(hist.items);
-    }
-  }
-
-  useEffect(() => {
-    void api.strategies.paperEligibility(id).then(setEligibility).catch(() => setEligibility(null));
-    void api.strategies.paperValidation(id).then(setPaperSummary).catch(() => setPaperSummary(null));
-  }, [id, data?.current_version, data?.backtest_status]);
-
-  useEffect(() => {
-    if (!latestRunId) return;
-    void Promise.all([
-      api.strategies.paperValidationSignals(latestRunId),
-      api.strategies.paperValidationTrades(latestRunId),
-    ])
-      .then(([sig, tr]) => {
-        setSignals(sig.items);
-        setTrades(tr.items);
-      })
-      .catch(() => {
-        setSignals([]);
-        setTrades([]);
-      });
-  }, [latestRunId]);
-
   const card = data?.latest_card;
+  const latestRunId =
+    sources.summary.status === "ready" || sources.summary.status === "empty"
+      ? sources.summary.data?.runs[0]?.id
+      : undefined;
+
+  const panelSummary =
+    sources.summary.status === "ready" || sources.summary.status === "empty"
+      ? sources.summary.data
+      : null;
+  const panelEligibility =
+    sources.eligibility.status === "ready" ? sources.eligibility.data : null;
+  const panelScheduler =
+    sources.scheduler.status === "ready" ? sources.scheduler.data : null;
+  const panelHistory =
+    sources.history.status === "ready" || sources.history.status === "empty"
+      ? (sources.history.data?.items ?? [])
+      : [];
+  const panelAlerts =
+    sources.alerts.status === "ready" || sources.alerts.status === "empty"
+      ? (sources.alerts.data?.items ?? [])
+      : [];
+  const panelSignals =
+    sources.signals.status === "ready" || sources.signals.status === "empty"
+      ? (sources.signals.data?.items ?? [])
+      : [];
+  const panelTrades =
+    sources.trades.status === "ready" || sources.trades.status === "empty"
+      ? (sources.trades.data?.items ?? [])
+      : [];
 
   async function createVersion() {
     if (!data) return;
@@ -132,8 +110,8 @@ export default function StrategyDetailPage() {
     setActionError(null);
     try {
       await action();
-      await refreshPaperData();
       await reload();
+      await refreshAllPaperSources("refresh");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Paper validation failed");
     } finally {
@@ -142,7 +120,7 @@ export default function StrategyDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="strategy-detail-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{data?.name ?? "Strategy"}</h1>
@@ -174,8 +152,8 @@ export default function StrategyDetailPage() {
           </Badge>
           <span>Backtest: {data.backtest_status ?? "not_run"}</span>
           <span>Paper: {data.paper_validation_status ?? "not_started"}</span>
-          {eligibility ? (
-            <span data-testid="strategy-paper-status">Eligibility: {eligibility.status}</span>
+          {panelEligibility ? (
+            <span data-testid="strategy-paper-status">Eligibility: {panelEligibility.status}</span>
           ) : null}
         </div>
       ) : null}
@@ -188,8 +166,8 @@ export default function StrategyDetailPage() {
             readyForBacktest: testabilityData?.ready_for_backtest,
             backtestStatus: data.backtest_status,
             paperValidationStatus: data.paper_validation_status,
-            paperEligible: eligibility?.paper_eligible ?? data.paper_eligible,
-            unresolvedLessonCount: eligibility?.unresolved_lesson_candidates.length,
+            paperEligible: panelEligibility?.paper_eligible ?? data.paper_eligible,
+            unresolvedLessonCount: panelEligibility?.unresolved_lesson_candidates.length,
           })}
         />
       ) : null}
@@ -241,6 +219,87 @@ export default function StrategyDetailPage() {
 
       {versionsData ? <StrategyVersionHistory versions={versionsData.items} /> : null}
 
+      <section
+        aria-labelledby="strategy-paper-sources-heading"
+        className="space-y-2"
+        data-testid="strategy-paper-sources"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2
+            id="strategy-paper-sources-heading"
+            className="text-lg font-semibold text-text-primary"
+          >
+            Paper validation sources
+          </h2>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!strategyReady || anyPaperSourceLoading || paperBusy}
+            onClick={() => void refreshAllPaperSources("refresh")}
+            data-testid="strategy-paper-sources-retry"
+          >
+            Retry all paper sources
+          </Button>
+        </div>
+
+        <ul className="grid gap-2 sm:grid-cols-2" data-testid="strategy-paper-source-list">
+          {PAPER_SOURCE_KEYS.map((key) => {
+            const slot = sources[key];
+            const presentation = paperSourcePresentation(slot);
+            const testId = paperSourceTestId(key);
+            return (
+              <li
+                key={key}
+                data-testid={testId}
+                data-source-status={slot.status}
+                data-source-stale={slot.stale ? "true" : "false"}
+                className="rounded-control border border-border-subtle px-3 py-2 text-sm"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-medium text-text-primary">{PAPER_SOURCE_LABELS[key]}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      !strategyReady ||
+                      slot.status === "loading" ||
+                      slot.status === "idle" ||
+                      paperBusy
+                    }
+                    onClick={() => retryPaperSource(key)}
+                    data-testid={`${testId}-retry`}
+                  >
+                    Retry
+                  </Button>
+                </div>
+                <p
+                  className={
+                    presentation.tone === "failed"
+                      ? "mt-1 text-danger"
+                      : presentation.tone === "waiting"
+                        ? "mt-1 text-warning"
+                        : presentation.tone === "loading"
+                          ? "mt-1 text-text-secondary"
+                          : "mt-1 text-text-secondary"
+                  }
+                  role={presentation.tone === "failed" ? "alert" : "status"}
+                  data-testid={`${testId}-message`}
+                >
+                  {presentation.message}
+                </p>
+                {slot.stale ? (
+                  <p className="mt-1 text-xs text-warning" data-testid={`${testId}-stale`}>
+                    Previous snapshot cleared while reloading.
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
       <div className="grid gap-4 md:grid-cols-2">
         <BacktestPanel
           strategyId={id}
@@ -249,14 +308,14 @@ export default function StrategyDetailPage() {
           onListRuns={() => api.strategies.listBacktests(id)}
         />
         <PaperValidationPanel
-          summary={paperSummary}
-          eligibility={eligibility}
-          scheduler={scheduler}
-          history={history}
-          alerts={alerts}
-          busy={paperBusy}
-          signals={signals}
-          trades={trades}
+          summary={panelSummary}
+          eligibility={panelEligibility}
+          scheduler={panelScheduler}
+          history={panelHistory}
+          alerts={panelAlerts}
+          busy={paperBusy || anyPaperSourceLoading}
+          signals={panelSignals}
+          trades={panelTrades}
           onStart={() =>
             void withPaperAction(async () => {
               await api.strategies.startPaperValidation(id, { runtime_mode: "scan_only" });

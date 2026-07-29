@@ -19,9 +19,13 @@ export type { FreshnessSourceInput } from "@/components/workflows/freshness";
 export {
   buildPlanHref,
   evidenceHrefForPlanContext,
+  lookupPlanSignalContext,
   parsePlanSignalContext,
 } from "@/components/workflows/planContext";
-export type { PlanSignalContext } from "@/components/workflows/planContext";
+export type {
+  PlanSignalContext,
+  PlanSignalContextLookup,
+} from "@/components/workflows/planContext";
 export { PlanSummary } from "@/components/workflows/PlanSummary";
 export { describeSafetyPosture } from "@/components/workflows/safetyPostureDisplay";
 export type {
