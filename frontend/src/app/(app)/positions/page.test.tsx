@@ -33,6 +33,32 @@ function paginated(items: Position[]): PaginatedPositions {
   return { items, total: items.length, limit: 50, offset: 0 };
 }
 
+const appContext = {
+  killSwitchStatus: null as { execution_blocked: boolean; reason: string | null } | null,
+  killSwitchError: null as string | null,
+  loading: false,
+};
+
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "fallback",
+  postureKnown: true,
+};
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => appContext,
+  useSafetyPosture: () => safetyPosture,
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
+}));
+
 const mockReload = vi.fn<() => Promise<void>>();
 const mockClosePaper = vi.fn();
 const mockList = vi.fn();
@@ -77,8 +103,50 @@ function startCloseFlow(exitPrice?: string) {
   fireEvent.click(screen.getByTestId("close-paper-review"));
 }
 
+describe("PositionsPage hub chrome (FP2-222)", () => {
+  beforeEach(() => {
+    appContext.killSwitchStatus = { execution_blocked: false, reason: null };
+    appContext.killSwitchError = null;
+    appContext.loading = false;
+    mockReload.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("renders the shared hub header with exactly one h1 and verified paper posture", () => {
+    renderWithOpenPosition();
+    expect(screen.getByTestId("positions-page")).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent("Positions");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+  });
+
+  it("surfaces the kill-switch BLOCK on the close-trade surface", () => {
+    appContext.killSwitchStatus = { execution_blocked: true, reason: "Manual halt" };
+    renderWithOpenPosition();
+    expect(screen.getByTestId("portfolio-risk-block")).toHaveTextContent(
+      "Kill switch blocking execution: Manual halt",
+    );
+  });
+
+  it("shows no BLOCK panel while the kill switch is clear", () => {
+    renderWithOpenPosition();
+    expect(screen.queryByTestId("portfolio-risk-block")).not.toBeInTheDocument();
+  });
+});
+
 describe("PositionsPage loading/error/empty honesty (FP2-002)", () => {
   beforeEach(() => {
+    appContext.killSwitchStatus = { execution_blocked: false, reason: null };
+    appContext.killSwitchError = null;
+    appContext.loading = false;
     asyncState = { data: null, loading: true, error: null };
     mockReload.mockResolvedValue(undefined);
   });

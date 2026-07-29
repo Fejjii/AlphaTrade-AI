@@ -24,19 +24,35 @@ export function PortfolioBreakdownTable({
         {rows.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              <caption className="sr-only">{title}</caption>
               <thead>
                 <tr className="border-b border-zinc-800 text-left text-xs text-zinc-500">
-                  <th className="pb-2 pr-3">Key</th>
-                  <th className="pb-2 pr-3">Trades</th>
-                  <th className="pb-2 pr-3">Win rate</th>
-                  <th className="pb-2 pr-3">Net PnL</th>
-                  <th className="pb-2">Profit factor</th>
+                  <th scope="col" className="pb-2 pr-3">
+                    Key
+                  </th>
+                  <th scope="col" className="pb-2 pr-3">
+                    Trades
+                  </th>
+                  <th scope="col" className="pb-2 pr-3">
+                    Win rate
+                  </th>
+                  <th scope="col" className="pb-2 pr-3">
+                    Net PnL
+                  </th>
+                  <th scope="col" className="pb-2">
+                    Profit factor
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.key} className="border-b border-zinc-900/80" data-testid={`${testId}-row-${row.key}`}>
-                    <td className="py-2 pr-3 font-medium text-zinc-200">{row.key || "—"}</td>
+                    <th
+                      scope="row"
+                      className="max-w-[10rem] break-words py-2 pr-3 text-left font-medium text-zinc-200"
+                    >
+                      {row.key || "—"}
+                    </th>
                     <td className="py-2 pr-3 text-zinc-400">{row.metrics.trade_count}</td>
                     <td className="py-2 pr-3 text-zinc-400">{formatPercent(row.metrics.win_rate)}</td>
                     <td className={`py-2 pr-3 ${pnlClassName(row.metrics.net_pnl)}`}>

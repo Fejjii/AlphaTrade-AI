@@ -19,6 +19,11 @@ export function PanelHeader({ className, ...props }: React.HTMLAttributes<HTMLDi
   return <div className={cn("mb-3 flex items-start justify-between gap-3", className)} {...props} />;
 }
 
+/**
+ * Panels are top-level page sections beneath the page `h1`, so their title is an
+ * `h2`. Item headings inside a panel (a position symbol, for example) stay `h3`
+ * and nest correctly instead of colliding with the panel title (FP2-222).
+ */
 export function PanelTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-section", className)} {...props} />;
+  return <h2 className={cn("text-section", className)} {...props} />;
 }

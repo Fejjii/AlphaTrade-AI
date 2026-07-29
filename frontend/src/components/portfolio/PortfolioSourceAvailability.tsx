@@ -1,3 +1,7 @@
+"use client";
+
+import { useId, useState } from "react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +28,12 @@ export function PortfolioSourceAvailability({
   const unavailable = sources.filter((source) => !source.available);
   const allFailed = sources.length > 0 && sources.every((source) => !source.available);
   const partial = unavailable.length > 0 && !allFailed;
+  // Degraded coverage always stays open; only a fully healthy set is collapsed,
+  // so progressive disclosure never hides a problem (FP2-124).
+  const degraded = unavailable.length > 0 || limitations.length > 0;
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const detailsVisible = degraded || expanded;
 
   return (
     <section
@@ -44,12 +54,43 @@ export function PortfolioSourceAvailability({
             freshness unavailable.
           </p>
         </div>
-        {onRetry && unavailable.length > 0 ? (
-          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
-            Retry sources
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {degraded ? null : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="min-h-11"
+              aria-expanded={expanded}
+              aria-controls={detailsId}
+              onClick={() => setExpanded((open) => !open)}
+              data-testid="portfolio-sources-toggle"
+            >
+              {expanded ? "Hide source detail" : "Show source detail"}
+            </Button>
+          )}
+          {onRetry && unavailable.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="min-h-11"
+              onClick={onRetry}
+            >
+              Retry sources
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {degraded ? null : (
+        <p
+          className="rounded-control border border-success-border bg-success-muted/40 px-3 py-2 text-sm text-success"
+          data-testid="portfolio-sources-all-healthy"
+        >
+          All {sources.length} Portfolio sources available with complete coverage.
+        </p>
+      )}
 
       {allFailed ? (
         <div
@@ -91,7 +132,8 @@ export function PortfolioSourceAvailability({
         </div>
       ) : null}
 
-      <ul className="grid gap-2 sm:grid-cols-2" data-testid="portfolio-source-list">
+      {detailsVisible ? (
+      <ul id={detailsId} className="grid gap-2 sm:grid-cols-2" data-testid="portfolio-source-list">
         {sources.map((source) => (
           <li
             key={source.name}
@@ -121,6 +163,7 @@ export function PortfolioSourceAvailability({
           </li>
         ))}
       </ul>
+      ) : null}
     </section>
   );
 }

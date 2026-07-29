@@ -13,9 +13,10 @@ type PortfolioHubChromeProps = {
   title: string;
   description: string;
   posture: SafetyPostureDisplay;
-  providerMode: string;
-  freshnessSources: FreshnessSourceInput[];
-  attentionSummary: string | null;
+  providerMode?: string;
+  /** Omitted by hub siblings that aggregate no sources of their own. */
+  freshnessSources?: FreshnessSourceInput[];
+  attentionSummary?: string | null;
   attentionTone?: "ok" | "warn" | "blocked" | "muted";
   riskBlocked?: boolean;
   riskBlockReason?: string | null;
@@ -23,13 +24,20 @@ type PortfolioHubChromeProps = {
   children: ReactNode;
 };
 
+const NO_FRESHNESS_SOURCES: FreshnessSourceInput[] = [];
+
+/**
+ * Shared chrome for the Portfolio & Risk hub and its sibling pages
+ * (`/positions`, `/risk`): one page header with verified paper posture, the
+ * safety-conflict alert, the attention banner, and the risk BLOCK panel.
+ */
 export function PortfolioHubChrome({
   title,
   description,
   posture,
   providerMode,
-  freshnessSources,
-  attentionSummary,
+  freshnessSources = NO_FRESHNESS_SOURCES,
+  attentionSummary = null,
   attentionTone = "muted",
   riskBlocked = false,
   riskBlockReason = null,

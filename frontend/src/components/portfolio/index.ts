@@ -16,8 +16,10 @@ export {
 } from "@/components/portfolio/buildOpenPositionRows";
 export {
   buildRiskPosture,
+  killSwitchBlockNotice,
   resolveKillSwitchState,
   type BuildRiskPostureInput,
+  type KillSwitchBlockNotice,
   type KillSwitchResolution,
   type RiskPostureView,
   type RiskTradingState,

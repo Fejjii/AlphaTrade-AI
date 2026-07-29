@@ -2,14 +2,25 @@
 
 import { useCallback } from "react";
 
+import { killSwitchBlockNotice, PortfolioHubChrome } from "@/components/portfolio";
 import { PositionCard } from "@/components/PositionCard";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { describeSafetyPosture } from "@/components/workflows";
+import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 
 export default function PositionsPage() {
   const loader = useCallback(() => api.positions.list({ limit: 50 }), []);
   const { data, loading, error, reload } = useAsyncData(loader, []);
+  const { executionMode, realTradingEnabled } = useSafetyPosture();
+  const { killSwitchStatus, killSwitchError, loading: appLoading } = useAppContext();
+  const posture = describeSafetyPosture(executionMode, realTradingEnabled);
+  const block = killSwitchBlockNotice({
+    killSwitchStatus,
+    killSwitchError,
+    killSwitchLoading: appLoading,
+  });
 
   const closePaperPosition = useCallback(
     async (id: string, exitPrice: string) => {
@@ -26,12 +37,14 @@ export default function PositionsPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Positions</h1>
-        <p className="text-sm text-zinc-400">Paper positions only. No real exchange execution.</p>
-      </div>
-
+    <PortfolioHubChrome
+      title="Positions"
+      description="Paper positions only. Close a simulated trade at an exit price you enter — no real exchange execution, no orders, and not investment advice."
+      posture={posture}
+      riskBlocked={block.blocked}
+      riskBlockReason={block.reason}
+      testId="positions-page"
+    >
       {loading ? (
         <LoadingState label="Loading positions…" />
       ) : error ? (
@@ -54,6 +67,6 @@ export default function PositionsPage() {
           )}
         </div>
       ) : null}
-    </div>
+    </PortfolioHubChrome>
   );
 }

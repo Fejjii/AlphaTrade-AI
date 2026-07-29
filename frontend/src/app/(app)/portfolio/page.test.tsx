@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceResult } from "@/components/workflows/sourceResult";
@@ -473,6 +473,8 @@ describe("Portfolio & Risk command centre", () => {
       reload: vi.fn(),
     };
     render(<PaperPortfolioPage />);
+    // All sources healthy, so the per-source detail starts collapsed (FP2-124).
+    fireEvent.click(screen.getByTestId("portfolio-sources-toggle"));
     expect(screen.getByTestId("portfolio-source-coverage-portfolio-performance")).toHaveTextContent(
       /complete/i,
     );
@@ -788,5 +790,123 @@ describe("Portfolio & Risk command centre", () => {
       "aria-label",
       "Paper mode active",
     );
+  });
+
+  describe("mobile ergonomics (FP2-124)", () => {
+    function orderOf(...testIds: string[]): number[] {
+      const page = screen.getByTestId("paper-portfolio-page");
+      const all = Array.from(page.querySelectorAll("[data-testid]"));
+      return testIds.map((id) => all.findIndex((node) => node.getAttribute("data-testid") === id));
+    }
+
+    it("places account overview before the filters", () => {
+      render(<PaperPortfolioPage />);
+      const [account, filters] = orderOf("account-overview-panel", "paper-portfolio-filters");
+      expect(account).toBeGreaterThan(-1);
+      expect(filters).toBeGreaterThan(-1);
+      expect(account).toBeLessThan(filters);
+    });
+
+    it("collapses per-source detail behind a summary while every source is healthy", () => {
+      render(<PaperPortfolioPage />);
+      expect(screen.getByTestId("portfolio-sources-all-healthy")).toHaveTextContent(
+        "All 6 Portfolio sources available with complete coverage.",
+      );
+      expect(screen.queryByTestId("portfolio-source-list")).not.toBeInTheDocument();
+
+      const toggle = screen.getByTestId("portfolio-sources-toggle");
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(toggle.className).toContain("min-h-11");
+
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const list = screen.getByTestId("portfolio-source-list");
+      expect(toggle).toHaveAttribute("aria-controls", list.id);
+    });
+
+    it("keeps source detail expanded and offers no collapse control when a source failed", () => {
+      asyncState = {
+        data: completeData({ journal: failed("journal source down") }),
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+      render(<PaperPortfolioPage />);
+      expect(screen.getByTestId("portfolio-source-list")).toBeInTheDocument();
+      expect(screen.queryByTestId("portfolio-sources-toggle")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("portfolio-sources-all-healthy")).not.toBeInTheDocument();
+      expect(screen.getByTestId("portfolio-sources-partial")).toBeInTheDocument();
+    });
+
+    it("shows account metric tiles two-up from the narrowest viewport", () => {
+      render(<PaperPortfolioPage />);
+      const tiles = screen.getByTestId("paper-portfolio-summary-cards");
+      expect(tiles.className).toContain("grid-cols-2");
+      expect(tiles.className).not.toContain("sm:grid-cols-2");
+    });
+  });
+
+  describe("chart and table accessibility (FP2-117, FP2-222)", () => {
+    it("names each history chart and offers a screen-reader data table", () => {
+      render(<PaperPortfolioPage />);
+      const equity = screen.getByTestId("portfolio-equity-chart-canvas");
+      expect(within(equity).getByRole("img").getAttribute("aria-label")).toMatch(
+        /Simulated equity curve/i,
+      );
+      expect(screen.getByTestId("portfolio-equity-chart-canvas-table")).toBeInTheDocument();
+
+      const pnl = screen.getByTestId("portfolio-daily-pnl-chart-canvas");
+      expect(within(pnl).getByRole("img").getAttribute("aria-label")).toMatch(
+        /Daily simulated profit and loss/i,
+      );
+      const pnlTable = screen.getByTestId("portfolio-daily-pnl-chart-canvas-table");
+      expect(within(pnlTable).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+        "Period",
+        "Daily P&L",
+        "Direction",
+      ]);
+      for (const header of within(pnlTable).getAllByRole("columnheader")) {
+        expect(header).toHaveAttribute("scope", "col");
+      }
+    });
+
+    it("conveys profit and loss direction without relying on colour", () => {
+      render(<PaperPortfolioPage />);
+      const pnlTable = screen.getByTestId("portfolio-daily-pnl-chart-canvas-table");
+      const directions = within(pnlTable)
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) => row.lastElementChild?.textContent);
+      expect(directions.length).toBeGreaterThan(0);
+      for (const direction of directions) {
+        expect(["gain", "loss", "flat"]).toContain(direction);
+      }
+    });
+
+    it("scopes breakdown table headers", () => {
+      render(<PaperPortfolioPage />);
+      const table = screen.getByTestId("portfolio-breakdown-symbol");
+      for (const header of within(table).getAllByRole("columnheader")) {
+        expect(header).toHaveAttribute("scope", "col");
+      }
+      for (const header of within(table).getAllByRole("rowheader")) {
+        expect(header).toHaveAttribute("scope", "row");
+      }
+    });
+
+    it("states an empty history once instead of repeating it per chart", () => {
+      asyncState = {
+        data: completeData({
+          portfolio: ok({ ...samplePortfolio, equity_curve: [], daily_series: [] }),
+        }),
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+      render(<PaperPortfolioPage />);
+      expect(screen.getByTestId("portfolio-history-empty")).toBeInTheDocument();
+      expect(screen.queryByTestId("paper-portfolio-charts")).not.toBeInTheDocument();
+      expect(screen.queryByText("No equity curve yet")).not.toBeInTheDocument();
+    });
   });
 });

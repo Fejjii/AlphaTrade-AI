@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
+import { killSwitchBlockNotice, PortfolioHubChrome } from "@/components/portfolio";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
-import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { describeSafetyPosture } from "@/components/workflows";
+import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError } from "@/lib/api";
 import type { UserRiskSettings, UserRiskSettingsUpdate } from "@/lib/api/types";
@@ -63,6 +64,14 @@ export default function RiskSettingsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const { executionMode, realTradingEnabled } = useSafetyPosture();
+  const { killSwitchStatus, killSwitchError, loading: appLoading } = useAppContext();
+  const posture = describeSafetyPosture(executionMode, realTradingEnabled);
+  const block = killSwitchBlockNotice({
+    killSwitchStatus,
+    killSwitchError,
+    killSwitchLoading: appLoading,
+  });
 
   useEffect(() => {
     if (data) setForm(toFormState(data));
@@ -117,13 +126,14 @@ export default function RiskSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 pb-24 md:pb-section" data-testid="risk-settings-page">
-      <PageHeader
-        title="Risk settings"
-        description="Configure paper discipline limits and protective signals. Current risk posture and cooldowns live on the Portfolio command centre — this page is configuration only."
-        meta={<VerifiedPaperModeIndicator />}
-      />
-
+    <PortfolioHubChrome
+      title="Risk settings"
+      description="Configure paper discipline limits and protective signals. Current risk posture and cooldowns live on the Portfolio command centre — this page is configuration only."
+      posture={posture}
+      riskBlocked={block.blocked}
+      riskBlockReason={block.reason}
+      testId="risk-settings-page"
+    >
       <div
         role="status"
         className="rounded-control border border-border-subtle bg-surface-1 px-3 py-3 text-sm text-text-secondary"
@@ -287,6 +297,6 @@ export default function RiskSettingsPage() {
         Real trading remains disabled. Risk settings affect paper discipline snapshots, dashboard guidance,
         and agent explanations — never broker execution.
       </p>
-    </div>
+    </PortfolioHubChrome>
   );
 }

@@ -20,6 +20,32 @@ const settings = {
   timezone_fallback: false,
 };
 
+const appContext = {
+  killSwitchStatus: null as { execution_blocked: boolean; reason: string | null } | null,
+  killSwitchError: null as string | null,
+  loading: false,
+};
+
+const safetyPosture = {
+  executionMode: "paper" as string | null,
+  realTradingEnabled: false as boolean | null,
+  providerMode: "fallback",
+  postureKnown: true,
+};
+
+vi.mock("@/contexts/AppContext", () => ({
+  useAppContext: () => appContext,
+  useSafetyPosture: () => safetyPosture,
+}));
+
+vi.mock("@/contexts/ShellFreshnessContext", () => ({
+  useShellFreshness: () => ({
+    freshness: { state: null },
+    setFreshness: vi.fn(),
+    clearFreshness: vi.fn(),
+  }),
+}));
+
 const useAsyncDataMock = vi.fn();
 
 vi.mock("@/hooks/useAsyncData", () => ({
@@ -37,10 +63,6 @@ vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-vi.mock("@/components/ui/paper-mode-indicator", () => ({
-  VerifiedPaperModeIndicator: () => <div data-testid="paper-mode-indicator">Paper</div>,
-}));
-
 describe("Risk settings route ownership", () => {
   afterEach(() => {
     cleanup();
@@ -48,12 +70,35 @@ describe("Risk settings route ownership", () => {
   });
 
   beforeEach(() => {
+    appContext.killSwitchStatus = { execution_blocked: false, reason: null };
+    appContext.killSwitchError = null;
+    appContext.loading = false;
     useAsyncDataMock.mockReturnValue({
       data: settings,
       loading: false,
       error: null,
       reload: vi.fn(),
     });
+  });
+
+  it("shares the portfolio hub chrome header (FP2-222)", () => {
+    render(<RiskSettingsPage />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("Risk settings");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("shows the risk BLOCK panel when the kill switch blocks execution", () => {
+    appContext.killSwitchStatus = { execution_blocked: true, reason: "Drawdown breach" };
+    render(<RiskSettingsPage />);
+    expect(screen.getByTestId("portfolio-risk-block")).toHaveTextContent(
+      "Kill switch blocking execution: Drawdown breach",
+    );
+  });
+
+  it("shows no BLOCK panel while the kill switch is clear", () => {
+    render(<RiskSettingsPage />);
+    expect(screen.queryByTestId("portfolio-risk-block")).not.toBeInTheDocument();
   });
 
   it("keeps /risk reachable as configuration-only with link to Portfolio posture", () => {
