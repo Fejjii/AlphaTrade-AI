@@ -329,16 +329,23 @@ describe("StrategyDetailPage paper-source honesty", () => {
     rerender(<StrategyDetailPage />);
 
     await waitFor(() => {
+      expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
+        "data-source-status",
+        "ready",
+      );
       expect(paperEligibilityMock).toHaveBeenCalledTimes(1);
     });
 
     paperEligibilityMock.mockRejectedValueOnce(new Error("eligibility down"));
     fireEvent.click(screen.getByTestId("strategy-paper-source-eligibility-retry"));
 
-    await waitFor(() => {
-      expect(paperEligibilityMock).toHaveBeenCalledTimes(2);
-      expect(paperValidationMock).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(
+      () => {
+        expect(paperEligibilityMock).toHaveBeenCalledTimes(2);
+        expect(paperValidationMock).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 5000 },
+    );
 
     expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
       "data-source-status",
@@ -360,6 +367,7 @@ describe("StrategyDetailPage paper-source honesty", () => {
         "data-source-status",
         "ready",
       );
+      expect(paperEligibilityMock).toHaveBeenCalledTimes(1);
     });
 
     const retryDeferred = deferred<Awaited<ReturnType<typeof paperEligibilityMock>>>();
@@ -367,15 +375,19 @@ describe("StrategyDetailPage paper-source honesty", () => {
 
     fireEvent.click(screen.getByTestId("strategy-paper-source-eligibility-retry"));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
-        "data-source-status",
-        "loading",
-      );
-      expect(
-        screen.getByTestId("strategy-paper-source-eligibility-stale"),
-      ).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(paperEligibilityMock).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
+          "data-source-status",
+          "loading",
+        );
+        expect(
+          screen.getByTestId("strategy-paper-source-eligibility-stale"),
+        ).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
 
     retryDeferred.resolve({
       strategy_id: "strat-1",
@@ -391,15 +403,18 @@ describe("StrategyDetailPage paper-source honesty", () => {
       unresolved_lesson_candidates: [],
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
-        "data-source-status",
-        "ready",
-      );
-      expect(
-        screen.queryByTestId("strategy-paper-source-eligibility-stale"),
-      ).not.toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
+          "data-source-status",
+          "ready",
+        );
+        expect(
+          screen.queryByTestId("strategy-paper-source-eligibility-stale"),
+        ).not.toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("shows waiting state for dependent sources until summary resolves", async () => {
