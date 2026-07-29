@@ -144,7 +144,7 @@ describe("ValidationCharts", () => {
     expect(screen.getByTestId("validation-ranking-table")).toBeInTheDocument();
     expect(screen.getByTestId("validation-strategy-quality-context")).toBeInTheDocument();
     expect(screen.getByTestId("validation-freshness-limitation")).toHaveTextContent(
-      /does not expose a server freshness timestamp/i,
+      /does not provide a freshness timestamp/i,
     );
   });
 

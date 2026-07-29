@@ -1,7 +1,7 @@
 "use client";
 
-import BillingPage from "@/app/(app)/billing/page";
-import UsagePage from "@/app/(app)/usage/page";
+import { BillingPageView } from "@/components/billing/BillingPageView";
+import { UsagePageView } from "@/components/usage/UsagePageView";
 import { PageHeader } from "@/components/ui/page-header";
 
 /**
@@ -15,13 +15,13 @@ export default function SettingsBillingAndUsagePage() {
         title="Billing & Usage"
         description="Subscription plans, billing actions, and organization token usage under one Settings section."
       />
-      <BillingPage embedded />
+      <BillingPageView embedded />
       <section
         id="usage"
         data-testid="billing-usage-section"
         className="space-y-4 border-t border-border-subtle pt-8"
       >
-        <UsagePage embedded omitQuota />
+        <UsagePageView embedded omitQuota />
       </section>
     </div>
   );

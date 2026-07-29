@@ -3,17 +3,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import SettingsBillingAndUsagePage from "./page";
 
-vi.mock("@/app/(app)/billing/page", () => ({
-  default: ({ embedded }: { embedded?: boolean }) => (
+vi.mock("@/components/billing/BillingPageView", () => ({
+  BillingPageView: ({ embedded }: { embedded?: boolean }) => (
     <div data-testid="billing-embedded" data-embedded={embedded ? "true" : "false"}>
       Billing body
     </div>
   ),
 }));
 
-vi.mock("@/app/(app)/usage/page", () => ({
-  default: ({ embedded }: { embedded?: boolean }) => (
-    <div data-testid="usage-embedded" data-embedded={embedded ? "true" : "false"}>
+vi.mock("@/components/usage/UsagePageView", () => ({
+  UsagePageView: ({
+    embedded,
+    omitQuota,
+  }: {
+    embedded?: boolean;
+    omitQuota?: boolean;
+  }) => (
+    <div
+      data-testid="usage-embedded"
+      data-embedded={embedded ? "true" : "false"}
+      data-omit-quota={omitQuota ? "true" : "false"}
+    >
       Usage body
     </div>
   ),
@@ -33,6 +43,7 @@ describe("Settings Billing & Usage page", () => {
 
     expect(screen.getByTestId("billing-embedded")).toHaveAttribute("data-embedded", "true");
     expect(screen.getByTestId("usage-embedded")).toHaveAttribute("data-embedded", "true");
+    expect(screen.getByTestId("usage-embedded")).toHaveAttribute("data-omit-quota", "true");
     expect(screen.getByTestId("billing-usage-section")).toBeInTheDocument();
   });
 });
