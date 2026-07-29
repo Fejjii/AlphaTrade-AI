@@ -12,6 +12,7 @@ import {
   StaleState,
 } from "@/components/states";
 import { freshnessFromTimestamp } from "@/components/workflows/freshness";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ChartFrameProps = {
@@ -70,7 +71,9 @@ export function ChartFrame({
         <div className="flex flex-wrap items-center gap-2 text-caption text-text-muted">
           <span data-testid={`${testId}-source`}>{sourceLabel}</span>
           {generatedAt ? (
-            <span data-testid={`${testId}-generated-at`}>as of {generatedAt}</span>
+            <span data-testid={`${testId}-generated-at`}>
+              as of {formatDateTime(generatedAt)}
+            </span>
           ) : null}
           {filtersSummary ? <span>{filtersSummary}</span> : null}
           {sampleSize != null ? (
@@ -86,8 +89,8 @@ export function ChartFrame({
               className="rounded bg-surface-2 px-2 py-0.5 text-caption text-text-muted"
               data-testid={`${testId}-insufficient`}
             >
-              n={insufficientSample.n}
-              {insufficientSample.min != null ? ` — insufficient (< ${insufficientSample.min})` : " — insufficient"}
+              n={insufficientSample.n} — insufficient
+              {insufficientSample.min != null ? ` (min ${insufficientSample.min})` : ""}
             </span>
           ) : null}
         </div>

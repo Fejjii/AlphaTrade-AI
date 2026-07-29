@@ -25,7 +25,7 @@ import type {
   MarketRegime,
   SampleConfidence,
 } from "@/lib/api/types";
-import { formatDecimal } from "@/lib/utils";
+import { formatMonetary, formatPercent, humanizeToken } from "@/lib/format";
 
 const COHORT_ORDER: JournalComparisonCohort[] = ["human", "paper_system", "backtest"];
 
@@ -74,7 +74,7 @@ const CONFIDENCE_TONE: Record<SampleConfidence, "ok" | "warn" | "critical"> = {
 
 function pct(value: number | null, asRate = false): string {
   if (value === null) return "—";
-  return asRate ? `${(value * 100).toFixed(1)}%` : `${value.toFixed(1)}%`;
+  return formatPercent(value, 1, { alreadyPercent: !asRate });
 }
 
 function num(value: number | null, digits = 2): string {
@@ -82,7 +82,7 @@ function num(value: number | null, digits = 2): string {
 }
 
 function ConfidenceBadge({ confidence }: { confidence: SampleConfidence }) {
-  return <StatusBadge label={confidence} tone={CONFIDENCE_TONE[confidence]} />;
+  return <StatusBadge label={humanizeToken(confidence)} tone={CONFIDENCE_TONE[confidence]} />;
 }
 
 function WarningsList({ warnings }: { warnings: { code: string; message: string }[] }) {
@@ -105,9 +105,9 @@ function MetricsSummary({ metrics }: { metrics: JournalTradeStatsMetrics }) {
       </p>
       <p>Win rate: {pct(metrics.win_rate, true)}</p>
       <p>
-        Net PnL: {formatDecimal(metrics.net_pnl_total)} ({metrics.pnl_sample_count} with PnL)
+        Net PnL: {formatMonetary(metrics.net_pnl_total)} ({metrics.pnl_sample_count} with PnL)
       </p>
-      <p>Expectancy: {formatDecimal(metrics.expectancy)}</p>
+      <p>Expectancy: {formatMonetary(metrics.expectancy)}</p>
       <p>
         Avg R: {num(metrics.average_r)} ({metrics.r_sample_count} trades)
       </p>
@@ -135,7 +135,7 @@ function DecisionQualitySummary({ dq }: { dq: DecisionQualityMetrics }) {
         {dq.early_exit_sample_count} ({pct(dq.early_exit_rate, true)})
       </p>
       <p>
-        Missed profit (avg): {formatDecimal(dq.average_missed_profit)} (
+        Missed profit (avg): {formatMonetary(dq.average_missed_profit)} (
         {dq.missed_profit_sample_count} trades)
       </p>
       <p>Avg capture: {pct(dq.average_capture_pct)}</p>
@@ -422,7 +422,7 @@ export default function JournalComparisonPage() {
               <option value="">All regimes</option>
               {REGIME_OPTIONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {humanizeToken(value)}
                 </option>
               ))}
             </select>
@@ -438,7 +438,7 @@ export default function JournalComparisonPage() {
               <option value="">All methods</option>
               {ENTRY_METHOD_OPTIONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {humanizeToken(value)}
                 </option>
               ))}
             </select>
@@ -454,7 +454,7 @@ export default function JournalComparisonPage() {
               <option value="">All sources</option>
               {SOURCE_OPTIONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {humanizeToken(value)}
                 </option>
               ))}
             </select>

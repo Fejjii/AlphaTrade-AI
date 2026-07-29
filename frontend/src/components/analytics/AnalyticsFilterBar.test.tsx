@@ -37,10 +37,10 @@ describe("AnalyticsFilterBar Validation min_sample", () => {
       />,
     );
     expect(screen.getByTestId("analytics-validation-filter-note")).toHaveTextContent(
-      /setup-performance and setup-ranking also receive the selected dimension/i,
+      /Setup performance and setup ranking also use the selected dimension/i,
     );
     expect(screen.getByTestId("analytics-validation-filter-note")).toHaveTextContent(
-      /Journal and portfolio filters are not sent/i,
+      /Journal and portfolio filters are not applied on this tab/i,
     );
   });
 

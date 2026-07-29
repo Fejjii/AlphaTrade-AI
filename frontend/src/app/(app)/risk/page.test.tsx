@@ -37,8 +37,8 @@ vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-vi.mock("@/components/PaperModeBanner", () => ({
-  PaperModeBanner: () => <div data-testid="paper-mode-banner">Paper mode</div>,
+vi.mock("@/components/ui/paper-mode-indicator", () => ({
+  VerifiedPaperModeIndicator: () => <div data-testid="paper-mode-indicator">Paper</div>,
 }));
 
 describe("Risk settings route ownership", () => {
@@ -63,6 +63,9 @@ describe("Risk settings route ownership", () => {
     expect(screen.getByTestId("risk-settings-portfolio-link")).toHaveAttribute("href", "/portfolio");
     expect(screen.getByTestId("risk-settings-ownership")).toHaveTextContent(/configuration only/i);
     expect(screen.getByTestId("risk-daily-loss-limit")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-mode-indicator")).toBeInTheDocument();
+    expect(screen.queryByTestId("portfolio-hub-safety")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("paper-mode-banner")).not.toBeInTheDocument();
   });
 
   it("renders loading and error states", () => {

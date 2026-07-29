@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 import { ChartFrame } from "./ChartFrame";
 import { formatMonetary, formatPercent } from "./format";
+import { SOURCE_JOURNAL_RULE_COMPLIANCE } from "./sourceLabels";
 import {
   buildRuleComplianceRows,
   totalRuleComplianceSample,
@@ -113,7 +115,7 @@ export function RuleComplianceChart({
   return (
     <ChartFrame
       title="Do I perform better when I follow my rules?"
-      sourceLabel="GET /journal/statistics · group_by=rule_compliance"
+      sourceLabel={SOURCE_JOURNAL_RULE_COMPLIANCE}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.sampleSize}
@@ -180,10 +182,17 @@ export function RuleComplianceChart({
             <Tooltip content={<RuleComplianceTooltip metric={metric} />} />
             <Bar
               dataKey="plotValue"
-              fill="var(--color-accent)"
               isAnimationActive={false}
               name={metric === "win_rate" ? "Win rate %" : "Expectancy"}
-            />
+            >
+              {plotRows.map((row) => (
+                <Cell
+                  key={row.key}
+                  fill={row.muted ? "var(--color-text-muted)" : "var(--color-accent)"}
+                  fillOpacity={row.muted ? 0.45 : 1}
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

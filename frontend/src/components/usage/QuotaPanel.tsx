@@ -1,5 +1,5 @@
 import type { QuotaStatus } from "@/lib/api/types";
-import { formatDecimal } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -7,7 +7,13 @@ function pctLabel(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-export function QuotaPanel({ quota }: { quota: QuotaStatus }) {
+type QuotaPanelProps = {
+  quota: QuotaStatus;
+  /** ISO currency from a plan when the backend provides one — never invent `$`. */
+  currencyCode?: string | null;
+};
+
+export function QuotaPanel({ quota, currencyCode = null }: QuotaPanelProps) {
   const { usage, warnings, soft_limit_reached, hard_limit_reached } = quota;
 
   return (
@@ -43,9 +49,10 @@ export function QuotaPanel({ quota }: { quota: QuotaStatus }) {
           <CardHeader>
             <CardTitle className="text-sm">Monthly cost (est.)</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-zinc-300">
-            ${formatDecimal(usage.monthly_cost_used)} / ${formatDecimal(usage.monthly_cost_limit)}{" "}
-            ({pctLabel(usage.monthly_cost_pct)})
+          <CardContent className="text-sm text-zinc-300" data-testid="quota-monthly-cost">
+            {formatCurrency(usage.monthly_cost_used, currencyCode)} /{" "}
+            {formatCurrency(usage.monthly_cost_limit, currencyCode)} (
+            {pctLabel(usage.monthly_cost_pct)})
           </CardContent>
         </Card>
         <Card>

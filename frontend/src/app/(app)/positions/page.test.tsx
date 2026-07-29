@@ -61,10 +61,6 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-vi.mock("@/components/KillSwitchButton", () => ({
-  KillSwitchButton: () => <div data-testid="kill-switch-stub" />,
-}));
-
 function renderWithOpenPosition(position: Position = makePosition()) {
   asyncState = { data: paginated([position]), loading: false, error: null };
   render(<PositionsPage />);
@@ -139,6 +135,7 @@ describe("PositionsPage loading/error/empty honesty (FP2-002)", () => {
     expect(screen.getByText(/ETHUSDT/)).toBeInTheDocument();
     expect(screen.queryByTestId("empty-state")).not.toBeInTheDocument();
     expect(screen.queryByText(/No positions/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("portfolio-hub-safety")).not.toBeInTheDocument();
   });
 });
 

@@ -2,7 +2,6 @@
 
 import { useCallback } from "react";
 
-import { KillSwitchButton } from "@/components/KillSwitchButton";
 import { PositionCard } from "@/components/PositionCard";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -28,12 +27,9 @@ export default function PositionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Positions</h1>
-          <p className="text-sm text-zinc-400">Paper positions only. No real exchange execution.</p>
-        </div>
-        <KillSwitchButton />
+      <div>
+        <h1 className="text-2xl font-semibold">Positions</h1>
+        <p className="text-sm text-zinc-400">Paper positions only. No real exchange execution.</p>
       </div>
 
       {loading ? (

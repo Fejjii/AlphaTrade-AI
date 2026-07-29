@@ -3,6 +3,7 @@ import { assessPortfolioHistoryCoverage } from "@/components/portfolio/portfolio
 import type { SourceResult } from "@/components/workflows/sourceResult";
 import { Panel, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import type { PaperPortfolioResponse } from "@/lib/api/types";
+import { humanizeLimitation } from "@/lib/format";
 
 export function PortfolioHistoryPanel({
   portfolio,
@@ -87,7 +88,7 @@ export function PortfolioHistoryPanel({
             <p className="font-medium text-text-primary">Backend limitations</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               {coverage.limitations.map((item) => (
-                <li key={item}>{item}</li>
+                <li key={item}>{humanizeLimitation(item)}</li>
               ))}
             </ul>
           </div>

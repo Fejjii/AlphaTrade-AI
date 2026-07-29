@@ -520,7 +520,7 @@ describe("KnowledgePage hub", () => {
   it("shows confirmed paper posture", async () => {
     render(<KnowledgePage />);
     expect(await screen.findByTestId("knowledge-hub-page")).toBeInTheDocument();
-    expect(screen.getByTestId("journal-hub-safety")).toHaveTextContent(/paper/i);
+    expect(screen.getByTestId("paper-mode-indicator")).toBeInTheDocument();
     expect(screen.getByTestId("knowledge-limitations")).toHaveTextContent(
       /runtime posture verified as paper-only/i,
     );

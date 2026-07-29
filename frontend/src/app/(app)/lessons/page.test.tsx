@@ -666,7 +666,7 @@ describe("LessonsPage hub", () => {
   it("shows confirmed paper posture when verified", async () => {
     render(<LessonsPage />);
     expect(await screen.findByTestId("lessons-hub-page")).toBeInTheDocument();
-    expect(screen.getByTestId("journal-hub-safety")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-mode-indicator")).toBeInTheDocument();
     expect(screen.getByTestId("lessons-limitations")).toHaveTextContent(
       /runtime posture verified as paper-only/i,
     );

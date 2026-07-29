@@ -27,6 +27,7 @@ import {
   type ComparisonMetricId,
 } from "./comparisonTransforms";
 import { formatMonetary, formatPercent, formatProfitFactor } from "./format";
+import { SOURCE_JOURNAL_COMPARISON_COHORTS } from "./sourceLabels";
 
 type ComparisonChartProps = {
   source: SourceResult<JournalComparisonResponse> | null;
@@ -142,7 +143,7 @@ export function ComparisonChart({
   return (
     <ChartFrame
       title="Where does the human beat the system?"
-      sourceLabel="GET /journal/comparison · cohorts"
+      sourceLabel={SOURCE_JOURNAL_COMPARISON_COHORTS}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.cohorts.reduce((sum, cohort) => sum + cohort.sampleCount, 0)}

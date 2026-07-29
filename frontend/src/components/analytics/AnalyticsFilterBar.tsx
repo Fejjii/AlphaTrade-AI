@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { humanizeToken } from "@/lib/format";
 import type {
   JournalTradeSource,
   MarketRegime,
@@ -18,6 +19,7 @@ import {
   JOURNAL_TRADE_SOURCE_OPTIONS,
   validateMinSampleInput,
 } from "./filterValidation";
+import { VALIDATION_DIMENSION_LABELS } from "./validationDimensionCopy";
 import type { AnalyticsDraft, AnalyticsFilterState, AnalyticsTab, DatePreset } from "./useAnalyticsFilters";
 
 const PRESETS: { value: DatePreset; label: string }[] = [
@@ -51,6 +53,27 @@ const REGIME_OPTIONS: { value: "" | MarketRegime; label: string }[] = [
   { value: "quiet", label: "Quiet" },
   { value: "unknown", label: "Unknown" },
 ];
+
+function portfolioSourceLabel(value: PortfolioSourceFilter): string {
+  return PP_SOURCE_OPTIONS.find((option) => option.value === value)?.label ?? humanizeToken(value);
+}
+
+function ruleComplianceLabel(value: TradeRuleCompliance): string {
+  return RULE_COMPLIANCE_OPTIONS.find((option) => option.value === value)?.label ?? humanizeToken(value);
+}
+
+function regimeLabel(value: MarketRegime): string {
+  return REGIME_OPTIONS.find((option) => option.value === value)?.label ?? humanizeToken(value);
+}
+
+function strategySummaryLabel(
+  state: AnalyticsFilterState,
+  strategies: UserStrategy[],
+): string | null {
+  if (!state.userStrategyId) return null;
+  const match = strategies.find((strategy) => strategy.id === state.userStrategyId);
+  return match ? `Strategy ${match.name}` : `Strategy ${state.userStrategyId}`;
+}
 
 type Draft = {
   dateFrom: string;
@@ -241,17 +264,17 @@ export function AnalyticsFilterBar({
                 <option value="">All journal sources</option>
                 {JOURNAL_TRADE_SOURCE_OPTIONS.map((value) => (
                   <option key={value} value={value}>
-                    {value}
+                    {humanizeToken(value)}
                   </option>
                 ))}
               </Select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="analytics-setup-id">Journal setup ID</Label>
+              <Label htmlFor="analytics-setup-id">Journal setup</Label>
               <Input
                 id="analytics-setup-id"
                 value={draft.setupId}
-                placeholder="setup-definition UUID"
+                placeholder="Setup identifier"
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, setupId: event.target.value }))
                 }
@@ -330,11 +353,11 @@ export function AnalyticsFilterBar({
         ) : null}
         {(showBehaviourFilters || showComparisonFilters) && !showSetupsFilters ? (
           <div className="space-y-1">
-            <Label htmlFor="analytics-user-strategy-id">User strategy ID</Label>
+            <Label htmlFor="analytics-user-strategy-id">Strategy</Label>
             <Input
               id="analytics-user-strategy-id"
               value={draft.userStrategyId}
-              placeholder="UserStrategy UUID"
+              placeholder="Strategy identifier"
               onChange={(event) =>
                 setDraft((current) => ({ ...current, userStrategyId: event.target.value }))
               }
@@ -451,49 +474,53 @@ export function AnalyticsFilterBar({
         {showSharedSymbolTimeframe && state.symbol ? ` · Symbol ${state.symbol}` : ""}
         {showSharedSymbolTimeframe && state.timeframe ? ` · Timeframe ${state.timeframe}` : ""}
         {showPortfolioSource && state.portfolioSource && state.portfolioSource !== "all"
-          ? ` · Source ${state.portfolioSource}`
+          ? ` · ${portfolioSourceLabel(state.portfolioSource)}`
           : ""}
-        {showSetupsFilters && state.journalSource ? ` · Source ${state.journalSource}` : ""}
-        {showSetupsFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showSetupsFilters && state.journalSource
+          ? ` · Journal source ${humanizeToken(state.journalSource)}`
+          : ""}
+        {showSetupsFilters && state.setupId ? ` · Setup ${state.setupId}` : ""}
         {showSetupsFilters && state.userStrategyId
-          ? ` · user_strategy_id ${state.userStrategyId}`
+          ? ` · ${strategySummaryLabel(state, strategies) ?? `Strategy ${state.userStrategyId}`}`
           : ""}
         {showBehaviourFilters && state.journalSource
-          ? ` · Source ${state.journalSource}`
+          ? ` · Journal source ${humanizeToken(state.journalSource)}`
           : ""}
-        {showBehaviourFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showBehaviourFilters && state.setupId ? ` · Setup ${state.setupId}` : ""}
         {showBehaviourFilters && state.userStrategyId
-          ? ` · user_strategy_id ${state.userStrategyId}`
+          ? ` · Strategy ${state.userStrategyId}`
           : ""}
         {showBehaviourFilters && state.ruleCompliance
-          ? ` · rule_compliance ${state.ruleCompliance}`
+          ? ` · Compliance ${ruleComplianceLabel(state.ruleCompliance)}`
           : ""}
         {showComparisonFilters && state.journalSource
-          ? ` · Source ${state.journalSource}`
+          ? ` · Journal source ${humanizeToken(state.journalSource)}`
           : ""}
-        {showComparisonFilters && state.setupId ? ` · setup_id ${state.setupId}` : ""}
+        {showComparisonFilters && state.setupId ? ` · Setup ${state.setupId}` : ""}
         {showComparisonFilters && state.userStrategyId
-          ? ` · user_strategy_id ${state.userStrategyId}`
+          ? ` · Strategy ${state.userStrategyId}`
           : ""}
         {showComparisonFilters && state.marketRegime
-          ? ` · market_regime ${state.marketRegime}`
+          ? ` · Regime ${regimeLabel(state.marketRegime)}`
           : ""}
-        {showValidationFilters ? ` · min_sample ${state.minSample}` : ""}
-        {showValidationFilters ? ` · dimension ${state.dimension}` : ""}
+        {showValidationFilters ? ` · Min sample ${state.minSample}` : ""}
+        {showValidationFilters
+          ? ` · Dimension ${VALIDATION_DIMENSION_LABELS[state.dimension] ?? humanizeToken(state.dimension)}`
+          : ""}
       </p>
 
       {showValidationFilters ? (
         <p className="text-caption text-text-muted" data-testid="analytics-validation-filter-note">
-          Validation endpoints receive date range and min_sample; setup-performance and
-          setup-ranking also receive the selected dimension. Journal and portfolio filters are
-          not sent.
+          Validation views use the date range and minimum sample size. Setup performance and setup
+          ranking also use the selected dimension. Journal and portfolio filters are not applied on
+          this tab.
         </p>
       ) : null}
 
       {showJournalIdentityFilters ? (
         <p className="text-caption text-text-muted" data-testid="analytics-setup-identity-note">
-          Journal setup ID is a setup-definition UUID. It is never sent to Portfolio APIs and is
-          never translated by name.
+          Journal setup filters apply to journal statistics only. They are not sent to portfolio
+          views and are not translated by setup name.
         </p>
       ) : null}
 

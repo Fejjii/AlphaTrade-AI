@@ -253,7 +253,7 @@ describe("BehaviourCharts integration", () => {
     expect(proposalCard).toHaveTextContent(NO_SERVER_FRESHNESS_TIMESTAMP_NOTE);
 
     const ruleCard = screen.getByTestId("rule-compliance-chart");
-    expect(ruleCard).toHaveTextContent("symbol BTCUSDT");
+    expect(ruleCard).toHaveTextContent("Symbol BTCUSDT");
     expect(ruleCard).toHaveTextContent("dates 2026-01-01 → 2026-01-31");
   });
 

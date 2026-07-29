@@ -23,6 +23,7 @@ import {
   plottableDailyRows,
 } from "./chartTransforms";
 import { formatMonetary } from "./format";
+import { SOURCE_PAPER_DAILY_PNL } from "./sourceLabels";
 
 type DailyPnlRowPayload = {
   label: string;
@@ -138,7 +139,7 @@ export function DailyPnlChart({
   return (
     <ChartFrame
       title="Which days made or lost money?"
-      sourceLabel="GET /performance/portfolio · daily_series"
+      sourceLabel={SOURCE_PAPER_DAILY_PNL}
       generatedAt={derived.generatedAt}
       filtersSummary={filtersSummary}
       sampleSize={derived.sampleSize}

@@ -6,6 +6,7 @@ import type { DecisionQualityMetrics, JournalComparisonResponse } from "@/lib/ap
 
 import { ChartFrame } from "./ChartFrame";
 import { formatMonetary, formatPercent } from "./format";
+import { SOURCE_DECISION_QUALITY } from "./sourceLabels";
 
 type DecisionQualityTilesProps = {
   source: SourceResult<JournalComparisonResponse> | null;
@@ -77,7 +78,7 @@ export function DecisionQualityTiles({
   return (
     <ChartFrame
       title="Decision quality"
-      sourceLabel="GET /journal/comparison · decision_quality"
+      sourceLabel={SOURCE_DECISION_QUALITY}
       generatedAt={source?.available ? source.data?.generated_at ?? null : null}
       filtersSummary={filtersSummary}
       loading={loading}

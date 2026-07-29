@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import type { Position } from "@/lib/api/types";
-import { formatDate, formatDecimal } from "@/lib/utils";
+import { formatMonetary, formatPrice, humanizeToken } from "@/lib/format";
+import { formatDate } from "@/lib/utils";
 
 /**
  * Validate a user-entered paper exit price.
@@ -104,9 +105,9 @@ export function PositionCard({
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-zinc-300">
         <div className="grid gap-1 sm:grid-cols-2">
-          <span>Entry: {formatDecimal(position.entry_price)}</span>
-          <span>Size: {formatDecimal(position.size)}</span>
-          <span>Unrealized PnL: {formatDecimal(position.unrealized_pnl)}</span>
+          <span>Entry: {formatPrice(position.entry_price)}</span>
+          <span>Size: {formatPrice(position.size)}</span>
+          <span>Unrealized PnL: {formatMonetary(position.unrealized_pnl)}</span>
           <span>Opened: {formatDate(position.opened_at)}</span>
         </div>
         {Object.keys(position.risk_state).length > 0 ? (
@@ -114,7 +115,11 @@ export function PositionCard({
             <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Risk state</p>
             <div className="flex flex-wrap gap-2">
               {Object.entries(position.risk_state).map(([key, value]) => (
-                <StatusBadge key={key} label={`${key}: ${value}`} tone="info" />
+                <StatusBadge
+                  key={key}
+                  label={`${humanizeToken(key)}: ${String(value)}`}
+                  tone="info"
+                />
               ))}
             </div>
           </div>
@@ -131,7 +136,7 @@ export function PositionCard({
             >
               <p className="text-xs uppercase tracking-wide text-zinc-500">Close paper position</p>
               <p className="text-xs text-zinc-400">
-                Current entry price: {formatDecimal(position.entry_price)}. The exit price you
+                Current entry price: {formatPrice(position.entry_price)}. The exit price you
                 enter is recorded exactly as typed — no price is assumed for you.
               </p>
               {step === "price" ? (
@@ -175,7 +180,7 @@ export function PositionCard({
                     </div>
                     <div>
                       <dt className="inline text-zinc-500">Size: </dt>
-                      <dd className="inline">{formatDecimal(position.size)}</dd>
+                      <dd className="inline">{formatPrice(position.size)}</dd>
                     </div>
                     <div>
                       <dt className="inline text-zinc-500">Exit price: </dt>

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
-import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api, ApiError } from "@/lib/api";
 import type { UserRiskSettings, UserRiskSettingsUpdate } from "@/lib/api/types";
@@ -121,6 +121,7 @@ export default function RiskSettingsPage() {
       <PageHeader
         title="Risk settings"
         description="Configure paper discipline limits and protective signals. Current risk posture and cooldowns live on the Portfolio command centre — this page is configuration only."
+        meta={<VerifiedPaperModeIndicator />}
       />
 
       <div
@@ -142,8 +143,6 @@ export default function RiskSettingsPage() {
           Saving settings here does not bypass risk engine BLOCK. Real trading remains disabled.
         </p>
       </div>
-
-      <PaperModeBanner />
 
       <Card data-testid="risk-settings-form-card">
         <CardHeader>

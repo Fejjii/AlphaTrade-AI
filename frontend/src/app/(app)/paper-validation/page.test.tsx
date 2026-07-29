@@ -261,15 +261,19 @@ describe("ValidateHubPage Phase C2", () => {
 
   it("keeps paper-confirmed wording only for verified paper posture", () => {
     render(<ValidateHubPage />);
-    expect(screen.getByTestId("validate-safety-strip")).toHaveTextContent("PAPER mode");
-    expect(screen.getByTestId("validate-safety-strip")).toHaveTextContent("Real trading disabled");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+    expect(screen.queryByTestId("portfolio-hub-safety")).not.toBeInTheDocument();
 
     cleanup();
     safetyPosture.executionMode = null;
     safetyPosture.realTradingEnabled = false;
     render(<ValidateHubPage />);
-    expect(screen.getByTestId("validate-safety-strip")).toHaveTextContent(
-      /Paper mode not confirmed|Execution unverified|Runtime posture/,
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
     );
   });
 

@@ -420,7 +420,7 @@ describe("Setup analytics charts", () => {
     };
     render(<SetupWinRateChart source={ok(emptyJournal)} groupBy="strategy" />);
     expect(screen.getByText(/Which strategies win most often/i)).toBeInTheDocument();
-    expect(screen.getByTestId("setup-win-rate-chart-source")).toHaveTextContent(/strategy buckets/i);
+    expect(screen.getByTestId("setup-win-rate-chart-source")).toHaveTextContent(/strategy win rate/i);
     expect(screen.getByText(/No closed trades have a recorded strategy/i)).toBeInTheDocument();
 
     cleanup();
@@ -453,13 +453,13 @@ describe("Setup analytics charts", () => {
     render(
       <SetupEvidencePanel
         evidence={ok(evidenceData)}
-        evidenceFiltersSummary={`setup_id ${SETUP_A} · strategy_id ${STRATEGY_A}`}
+        evidenceFiltersSummary={`Setup ${SETUP_A} · Strategy ${STRATEGY_A}`}
         evidenceLimitationNote="Active dates, symbol filter(s) apply to journal statistics only — not setup evidence."
       />,
     );
     const panel = screen.getByTestId("setup-evidence-panel");
-    expect(panel).toHaveTextContent(`setup_id ${SETUP_A}`);
-    expect(panel).toHaveTextContent(`strategy_id ${STRATEGY_A}`);
+    expect(panel).toHaveTextContent(`Setup ${SETUP_A}`);
+    expect(panel).toHaveTextContent(`Strategy ${STRATEGY_A}`);
     expect(panel).not.toHaveTextContent("dates all time");
     expect(panel).not.toHaveTextContent("symbol BTCUSDT");
     expect(panel).not.toHaveTextContent("group setup");

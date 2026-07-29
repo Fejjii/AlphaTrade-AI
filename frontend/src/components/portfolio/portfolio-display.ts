@@ -7,10 +7,7 @@ export function pnlClassName(value: string | number | null | undefined): string 
   return num > 0 ? "text-emerald-400" : "text-rose-400";
 }
 
-export function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return `${(value * 100).toFixed(1)}%`;
-}
+export { formatPercent } from "@/lib/format";
 
 export function trendLabel(label: PortfolioTrendLabel): string {
   switch (label) {

@@ -22,6 +22,7 @@ import {
 } from "./filterValidation";
 import { formatPercent } from "./format";
 import { NO_SERVER_FRESHNESS_TIMESTAMP_NOTE } from "./sourceFreshness";
+import { SOURCE_SETUP_PERFORMANCE } from "./sourceLabels";
 import { ValidationDimensionToggle } from "./ValidationDimensionToggle";
 import { VALIDATION_DIMENSION_LABELS } from "./validationDimensionCopy";
 
@@ -101,7 +102,7 @@ export function SetupSuccessByDimension({
   return (
     <ChartFrame
       title="Setup success rate by dimension"
-      sourceLabel="GET /learning-analytics/setup-performance"
+      sourceLabel={SOURCE_SETUP_PERFORMANCE}
       filtersSummary={filtersSummary}
       sampleSize={source?.available ? derived.groupCount : null}
       sampleLabel="groups"

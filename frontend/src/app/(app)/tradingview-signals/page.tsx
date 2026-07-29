@@ -243,24 +243,6 @@ export default function TradingViewSignalsPage() {
         meta={<VerifiedPaperModeIndicator />}
       />
 
-      <div className="flex flex-wrap gap-3 text-sm">
-        <Link href="/alerts" className="underline text-text-secondary">
-          Alerts
-        </Link>
-        <Link href="/alerts/review" className="underline text-text-secondary">
-          Setup review
-        </Link>
-        <Link href="/watcher" className="underline text-text-secondary">
-          Watcher scanner
-        </Link>
-        <Link href="/market-watcher" className="underline text-text-secondary">
-          Market watcher
-        </Link>
-        <Link href="/paper-signal-orchestration" className="underline text-text-secondary">
-          Advanced orchestration
-        </Link>
-      </div>
-
       <div
         className="flex flex-wrap gap-2 text-caption"
         data-testid="signals-source-availability"

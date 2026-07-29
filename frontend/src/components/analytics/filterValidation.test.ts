@@ -426,8 +426,8 @@ describe("endpoint-specific provenance summaries", () => {
       rule_compliance: "partial",
     });
     expect(summary).toContain("dates 2026-01-01 → 2026-01-31");
-    expect(summary).toContain("symbol BTCUSDT");
-    expect(summary).toContain(`user_strategy_id ${STRATEGY_UUID}`);
+    expect(summary).toContain("Symbol BTCUSDT");
+    expect(summary).toContain(`Strategy ${STRATEGY_UUID}`);
     expect(summary).not.toMatch(/\bstrategy_id\b/);
   });
 
@@ -453,7 +453,7 @@ describe("endpoint-specific provenance summaries", () => {
       min_sample: 8,
     });
     expect(withMin).toContain("from 2026-02-01");
-    expect(withMin).toContain("min_sample 8");
+    expect(withMin).toContain("Min sample 8");
     expect(withMin).not.toContain("symbol");
   });
 });
@@ -471,9 +471,9 @@ describe("formatAppliedFiltersSummary", () => {
       ignoredParams: [],
     });
     expect(summary).toContain("dates 2026-01-01 → 2026-01-31");
-    expect(summary).toContain("symbol BTCUSDT");
-    expect(summary).toContain("timeframe 1h");
-    expect(summary).toContain("source proposal_flow");
+    expect(summary).toContain("Symbol BTCUSDT");
+    expect(summary).toContain("Timeframe 1h");
+    expect(summary).toContain("Proposal Flow");
   });
 
   it("includes journal setup identity on Setups tab", () => {
@@ -496,9 +496,9 @@ describe("formatAppliedFiltersSummary", () => {
       dimension: "condition" as const,
       ignoredParams: [],
     });
-    expect(summary).toContain(`setup_id ${SETUP_UUID}`);
-    expect(summary).toContain(`user_strategy_id ${STRATEGY_UUID}`);
-    expect(summary).toContain("group setup");
+    expect(summary).toContain(`Setup ${SETUP_UUID}`);
+    expect(summary).toContain(`Strategy ${STRATEGY_UUID}`);
+    expect(summary).toContain("Grouping Setup");
   });
 
   it("includes journal trade source in provenance text on Setups tab", () => {
@@ -521,8 +521,8 @@ describe("formatAppliedFiltersSummary", () => {
       dimension: "condition" as const,
       ignoredParams: [],
     });
-    expect(summary).toContain("source paper_execution");
-    expect(summary).toContain("group strategy");
+    expect(summary).toContain("Journal source Paper Execution");
+    expect(summary).toContain("Grouping Strategy");
   });
 });
 
@@ -586,7 +586,7 @@ describe("setup evidence provenance", () => {
       setupId: SETUP_UUID,
       userStrategyId: STRATEGY_UUID,
     });
-    expect(summary).toBe(`setup_id ${SETUP_UUID} · strategy_id ${STRATEGY_UUID}`);
+    expect(summary).toBe(`Setup ${SETUP_UUID} · Strategy ${STRATEGY_UUID}`);
     expect(summary).not.toContain("dates");
     expect(summary).not.toContain("symbol");
     expect(summary).not.toContain("timeframe");

@@ -390,6 +390,42 @@ describe("useAnalyticsSources", () => {
     expect(api.performance.portfolio).toHaveBeenCalledTimes(portfolioCallsAfterLoad);
   });
 
+  it("does not fetch journal or portfolio when enabled is false", async () => {
+    const { result } = renderHook(() =>
+      useAnalyticsSources(defaultParams, { enabled: false }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(api.journal.statistics).not.toHaveBeenCalled();
+    expect(api.performance.portfolio).not.toHaveBeenCalled();
+    expect(result.current.journal).toBeNull();
+    expect(result.current.portfolio).toBeNull();
+  });
+
+  it("fetches journal and portfolio when enabled becomes true", async () => {
+    vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
+    vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useAnalyticsSources(defaultParams, { enabled }),
+      { initialProps: { enabled: false } },
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(api.journal.statistics).not.toHaveBeenCalled();
+    expect(api.performance.portfolio).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(api.journal.statistics).toHaveBeenCalledTimes(1);
+    expect(api.performance.portfolio).toHaveBeenCalledTimes(1);
+    expect(result.current.journal?.data).toBeTruthy();
+    expect(result.current.portfolio?.data).toBeTruthy();
+  });
+
   it("reloads shared snapshots when journal or portfolio request parameters change", async () => {
     vi.mocked(api.journal.statistics).mockResolvedValue(journalResponse as never);
     vi.mocked(api.performance.portfolio).mockResolvedValue(portfolioResponse as never);

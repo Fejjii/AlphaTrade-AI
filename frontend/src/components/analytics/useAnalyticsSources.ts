@@ -17,18 +17,27 @@ type SourcesSnapshot = {
   portfolio: SourceResult<PaperPortfolioResponse>;
 };
 
+type UseAnalyticsSourcesOptions = {
+  /** When false, skip journal+portfolio fetches (FP2-127). */
+  enabled?: boolean;
+};
+
 /**
  * Local analytics data loader with request-generation guards.
  * Never displays stale-filter data under current filter captions.
  */
-export function useAnalyticsSources(params: AnalyticsFilterParams) {
+export function useAnalyticsSources(
+  params: AnalyticsFilterParams,
+  options: UseAnalyticsSourcesOptions = {},
+) {
+  const enabled = options.enabled ?? true;
   const { journal: journalParams, portfolio: portfolioParams } = params;
   const filterKey = useMemo(
     () => buildSharedJournalPortfolioKey(journalParams, portfolioParams),
     [journalParams, portfolioParams],
   );
   const [snapshot, setSnapshot] = useState<SourcesSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [retryLoading, setRetryLoading] = useState(false);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
@@ -42,6 +51,7 @@ export function useAnalyticsSources(params: AnalyticsFilterParams) {
 
   const runLoad = useCallback(
     async (mode: "initial" | "retry") => {
+      if (!enabled) return;
       const generation = ++generationRef.current;
       if (mode === "retry") {
         // Same-filter reloads keep prior data mounted; retryLoading lets
@@ -63,20 +73,26 @@ export function useAnalyticsSources(params: AnalyticsFilterParams) {
       setLoading(false);
       setRetryLoading(false);
     },
-    [filterKey, params.journal, params.portfolio],
+    [enabled, filterKey, params.journal, params.portfolio],
   );
 
   const load = useCallback(() => runLoad("initial"), [runLoad]);
   const reload = useCallback(() => runLoad("retry"), [runLoad]);
 
   useEffect(() => {
+    if (!enabled) {
+      generationRef.current += 1;
+      setLoading(false);
+      setRetryLoading(false);
+      return;
+    }
     void load();
-  }, [load]);
+  }, [enabled, load]);
 
-  const matchesCurrentFilter = snapshot?.filterKey === filterKey;
+  const matchesCurrentFilter = enabled && snapshot?.filterKey === filterKey;
   const journal = matchesCurrentFilter ? snapshot?.journal ?? null : null;
   const portfolio = matchesCurrentFilter ? snapshot?.portfolio ?? null : null;
-  const isLoading = loading || !matchesCurrentFilter;
+  const isLoading = enabled && (loading || !matchesCurrentFilter);
 
   const bothFailed = Boolean(
     journal && portfolio && !journal.available && !portfolio.available,

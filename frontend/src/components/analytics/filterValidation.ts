@@ -12,7 +12,10 @@ import type {
   TradeRuleCompliance,
 } from "@/lib/api/types";
 
+import { humanizeToken } from "@/lib/format";
+
 import { isoDateOnly } from "./format";
+import { VALIDATION_DIMENSION_LABELS } from "./validationDimensionCopy";
 
 export type AnalyticsTab =
   | "overview"
@@ -600,18 +603,20 @@ function summarizeJournalStatsParams(params: JournalStatsParams): string {
       params.date_to?.slice(0, 10) ?? null,
     ),
   );
-  if (params.symbol) parts.push(`symbol ${params.symbol}`);
-  if (params.timeframe) parts.push(`timeframe ${params.timeframe}`);
-  if (params.setup_id) parts.push(`setup_id ${params.setup_id}`);
-  if (params.user_strategy_id) parts.push(`user_strategy_id ${params.user_strategy_id}`);
+  if (params.symbol) parts.push(`Symbol ${params.symbol}`);
+  if (params.timeframe) parts.push(`Timeframe ${params.timeframe}`);
+  if (params.setup_id) parts.push(`Setup ${params.setup_id}`);
+  if (params.user_strategy_id) parts.push(`Strategy ${params.user_strategy_id}`);
   if (params.strategy_version_id) {
-    parts.push(`strategy_version_id ${params.strategy_version_id}`);
+    parts.push(`Strategy version ${params.strategy_version_id}`);
   }
-  if (params.source) parts.push(`source ${params.source}`);
-  if (params.rule_compliance) parts.push(`rule_compliance ${params.rule_compliance}`);
-  if (params.market_regime) parts.push(`market_regime ${params.market_regime}`);
+  if (params.source) parts.push(`Journal source ${humanizeToken(params.source)}`);
+  if (params.rule_compliance) {
+    parts.push(`Compliance ${humanizeToken(params.rule_compliance)}`);
+  }
+  if (params.market_regime) parts.push(`Regime ${humanizeToken(params.market_regime)}`);
   if (params.group_by && params.group_by !== "overall") {
-    parts.push(`group_by ${params.group_by}`);
+    parts.push(`Grouping ${humanizeToken(params.group_by)}`);
   }
   return parts.join(" · ");
 }
@@ -624,15 +629,15 @@ function summarizeComparisonParams(params: JournalComparisonParams): string {
       params.date_to?.slice(0, 10) ?? null,
     ),
   );
-  if (params.symbol) parts.push(`symbol ${params.symbol}`);
-  if (params.timeframe) parts.push(`timeframe ${params.timeframe}`);
-  if (params.setup_id) parts.push(`setup_id ${params.setup_id}`);
-  if (params.strategy_id) parts.push(`strategy_id ${params.strategy_id}`);
+  if (params.symbol) parts.push(`Symbol ${params.symbol}`);
+  if (params.timeframe) parts.push(`Timeframe ${params.timeframe}`);
+  if (params.setup_id) parts.push(`Setup ${params.setup_id}`);
+  if (params.strategy_id) parts.push(`Strategy ${params.strategy_id}`);
   if (params.strategy_version_id) {
-    parts.push(`strategy_version_id ${params.strategy_version_id}`);
+    parts.push(`Strategy version ${params.strategy_version_id}`);
   }
-  if (params.source) parts.push(`source ${params.source}`);
-  if (params.market_regime) parts.push(`market_regime ${params.market_regime}`);
+  if (params.source) parts.push(`Journal source ${humanizeToken(params.source)}`);
+  if (params.market_regime) parts.push(`Regime ${humanizeToken(params.market_regime)}`);
   return parts.join(" · ");
 }
 
@@ -644,7 +649,7 @@ function summarizeDateWindowParams(
 
 function summarizeLearningAnalyticsParams(params: LearningAnalyticsParams): string {
   const parts: string[] = [summarizeDateWindowParams(params)];
-  if (params.min_sample != null) parts.push(`min_sample ${params.min_sample}`);
+  if (params.min_sample != null) parts.push(`Min sample ${params.min_sample}`);
   return parts.join(" · ");
 }
 
@@ -653,32 +658,34 @@ export function formatAppliedFiltersSummary(state: AnalyticsFilterState): string
   const parts: string[] = [];
   parts.push(summarizeDateRangeFromIso(state.dateFrom, state.dateTo));
   if (state.tab === VALIDATION_TAB) {
-    parts.push(`min_sample ${state.minSample}`);
-    parts.push(`dimension ${state.dimension}`);
+    parts.push(`Min sample ${state.minSample}`);
+    parts.push(
+      `Dimension ${VALIDATION_DIMENSION_LABELS[state.dimension] ?? humanizeToken(state.dimension)}`,
+    );
     return parts.join(" · ");
   }
-  if (state.symbol) parts.push(`symbol ${state.symbol}`);
-  if (state.timeframe) parts.push(`timeframe ${state.timeframe}`);
+  if (state.symbol) parts.push(`Symbol ${state.symbol}`);
+  if (state.timeframe) parts.push(`Timeframe ${state.timeframe}`);
   if (state.tab === "performance" && state.portfolioSource && state.portfolioSource !== "all") {
-    parts.push(`source ${state.portfolioSource}`);
+    parts.push(humanizeToken(state.portfolioSource));
   }
   if (state.tab === SETUPS_TAB) {
-    parts.push(`group ${state.groupBy}`);
-    if (state.journalSource) parts.push(`source ${state.journalSource}`);
-    if (state.setupId) parts.push(`setup_id ${state.setupId}`);
-    if (state.userStrategyId) parts.push(`user_strategy_id ${state.userStrategyId}`);
+    parts.push(`Grouping ${humanizeToken(state.groupBy)}`);
+    if (state.journalSource) parts.push(`Journal source ${humanizeToken(state.journalSource)}`);
+    if (state.setupId) parts.push(`Setup ${state.setupId}`);
+    if (state.userStrategyId) parts.push(`Strategy ${state.userStrategyId}`);
   }
   if (state.tab === BEHAVIOUR_TAB) {
-    if (state.setupId) parts.push(`setup_id ${state.setupId}`);
-    if (state.userStrategyId) parts.push(`user_strategy_id ${state.userStrategyId}`);
-    if (state.journalSource) parts.push(`source ${state.journalSource}`);
-    if (state.ruleCompliance) parts.push(`rule_compliance ${state.ruleCompliance}`);
+    if (state.setupId) parts.push(`Setup ${state.setupId}`);
+    if (state.userStrategyId) parts.push(`Strategy ${state.userStrategyId}`);
+    if (state.journalSource) parts.push(`Journal source ${humanizeToken(state.journalSource)}`);
+    if (state.ruleCompliance) parts.push(`Compliance ${humanizeToken(state.ruleCompliance)}`);
   }
   if (state.tab === COMPARISON_TAB) {
-    if (state.setupId) parts.push(`setup_id ${state.setupId}`);
-    if (state.userStrategyId) parts.push(`user_strategy_id ${state.userStrategyId}`);
-    if (state.journalSource) parts.push(`source ${state.journalSource}`);
-    if (state.marketRegime) parts.push(`market_regime ${state.marketRegime}`);
+    if (state.setupId) parts.push(`Setup ${state.setupId}`);
+    if (state.userStrategyId) parts.push(`Strategy ${state.userStrategyId}`);
+    if (state.journalSource) parts.push(`Journal source ${humanizeToken(state.journalSource)}`);
+    if (state.marketRegime) parts.push(`Regime ${humanizeToken(state.marketRegime)}`);
   }
   return parts.join(" · ");
 }
@@ -703,7 +710,11 @@ export function formatValidationFiltersSummary(
   params: LearningAnalyticsParams & { dimension?: ValidationDimension },
 ): string {
   const parts: string[] = [summarizeLearningAnalyticsParams(params)];
-  if (params.dimension) parts.push(`dimension ${params.dimension}`);
+  if (params.dimension) {
+    parts.push(
+      `Dimension ${VALIDATION_DIMENSION_LABELS[params.dimension] ?? humanizeToken(params.dimension)}`,
+    );
+  }
   return parts.join(" · ");
 }
 
@@ -720,9 +731,9 @@ export function formatComparisonFiltersSummary(params: JournalComparisonParams):
 /** Filters actually sent to GET /journal/setup-evidence (setup_id + strategy_id only). */
 export function formatSetupEvidenceFiltersSummary(state: AnalyticsFilterState): string {
   const parts: string[] = [];
-  if (state.setupId) parts.push(`setup_id ${state.setupId}`);
-  if (state.userStrategyId) parts.push(`strategy_id ${state.userStrategyId}`);
-  if (parts.length === 0) return "no setup_id or strategy_id filter";
+  if (state.setupId) parts.push(`Setup ${state.setupId}`);
+  if (state.userStrategyId) parts.push(`Strategy ${state.userStrategyId}`);
+  if (parts.length === 0) return "No setup or strategy filter";
   return parts.join(" · ");
 }
 

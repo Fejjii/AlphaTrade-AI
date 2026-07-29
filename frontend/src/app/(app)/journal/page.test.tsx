@@ -217,8 +217,10 @@ describe("Journal hub Phase C3A", () => {
     expect(screen.getByTestId("recent-journal-entries")).toBeInTheDocument();
     expect(screen.getByTestId("journal-quick-entry")).toBeInTheDocument();
     expect(screen.getByTestId("journal-source-availability")).toBeInTheDocument();
-    expect(screen.getByTestId("journal-hub-safety")).toHaveTextContent("Paper only");
-    expect(screen.getByTestId("journal-hub-safety")).toHaveTextContent("PAPER mode");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
   });
 
   it("shows honest empty recent entries without treating failure as empty", () => {
@@ -543,8 +545,10 @@ describe("Journal hub Phase C3A", () => {
     safetyPosture.executionMode = null;
     safetyPosture.realTradingEnabled = null;
     render(<JournalPage />);
-    expect(screen.getByTestId("journal-hub-safety")).toHaveTextContent("Runtime posture unverified");
-    expect(screen.getByTestId("journal-hub-safety")).not.toHaveTextContent("Paper only");
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode not confirmed",
+    );
   });
 
   it("keeps existing journal routes reachable from hub navigation", () => {
