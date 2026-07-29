@@ -84,12 +84,24 @@ export function ClosedPositionsPanel({ view }: { view: ClosedPositionsView }) {
                     <h3 className="text-sm font-semibold text-text-primary">
                       {row.position.symbol} · {row.position.direction.toUpperCase()}
                     </h3>
-                    <StatusBadge
-                      label={row.journalStatusLabel}
-                      tone={journalTone(row.journalStatus)}
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span data-testid={`closed-position-status-${row.position.id}`}>
+                        <StatusBadge
+                          label={row.position.status}
+                          tone={row.position.status === "liquidated" ? "warn" : "muted"}
+                        />
+                      </span>
+                      <StatusBadge
+                        label={row.journalStatusLabel}
+                        tone={journalTone(row.journalStatus)}
+                      />
+                    </div>
                   </div>
                   <dl className="mt-3 grid gap-2 text-sm">
+                    <div>
+                      <dt className="text-xs text-text-muted">Status</dt>
+                      <dd className="capitalize">{row.position.status}</dd>
+                    </div>
                     <div>
                       <dt className="text-xs text-text-muted">Realised result</dt>
                       <dd>
@@ -146,6 +158,9 @@ export function ClosedPositionsPanel({ view }: { view: ClosedPositionsView }) {
                     Direction
                   </th>
                   <th scope="col" className="py-2 pr-3 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-medium">
                     Realised result
                   </th>
                   <th scope="col" className="py-2 pr-3 font-medium">
@@ -167,6 +182,12 @@ export function ClosedPositionsPanel({ view }: { view: ClosedPositionsView }) {
                     >
                       <td className="py-2 pr-3 text-text-primary">{row.position.symbol}</td>
                       <td className="py-2 pr-3 uppercase">{row.position.direction}</td>
+                      <td
+                        className="py-2 pr-3 capitalize"
+                        data-testid={`closed-position-status-row-${row.position.id}`}
+                      >
+                        {row.position.status}
+                      </td>
                       <td className="py-2 pr-3">
                         {realized.kind === "value" ? (
                           <DataNumber

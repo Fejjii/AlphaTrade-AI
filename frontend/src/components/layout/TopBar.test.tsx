@@ -221,6 +221,14 @@ describe("TopBar page identity and account control", () => {
     expect(screen.queryByTestId("freshness-pill")).not.toBeInTheDocument();
   });
 
+  it("suppresses shell freshness-unavailable on Analytics hub (FP2-226)", () => {
+    navigationState.pathname = "/analytics";
+    renderTopBar();
+    expect(screen.getByTestId("topbar-freshness-hub-managed")).toBeInTheDocument();
+    expect(screen.getByTestId("topbar-freshness")).not.toHaveTextContent("Freshness unavailable");
+    expect(screen.queryByTestId("freshness-pill")).not.toBeInTheDocument();
+  });
+
   it("keeps account control and logout accessible", () => {
     renderTopBar();
     fireEvent.click(screen.getByRole("button", { name: "Account menu" }));

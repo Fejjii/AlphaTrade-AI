@@ -147,4 +147,22 @@ describe("buildClosedPositionRows", () => {
     );
     expect(view.rows?.[0]?.realizedPnl).toBe("33.5");
   });
+
+  it("keeps liquidated closed positions in the closed history rows (FP2-221)", () => {
+    const view = buildClosedPositionRows(
+      ok({
+        items: [
+          makePosition({ id: "pos-closed", status: "closed" }),
+          makePosition({ id: "pos-liq", status: "liquidated", symbol: "ETHUSDT" }),
+          makePosition({ id: "pos-open", status: "open" }),
+        ],
+        total: 3,
+        limit: 50,
+        offset: 0,
+      }),
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    expect(view.rows?.map((row) => row.position.id)).toEqual(["pos-closed", "pos-liq"]);
+    expect(view.rows?.map((row) => row.position.status)).toEqual(["closed", "liquidated"]);
+  });
 });

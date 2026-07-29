@@ -15,6 +15,7 @@ import {
   PortfolioSourceAvailability,
   RiskPosturePanel,
 } from "@/components/portfolio";
+import { loadClosedPositionsSource } from "@/components/portfolio/loadClosedPositionsSource";
 import { OpenExposurePanel } from "@/components/portfolio/OpenExposurePanel";
 import { PaperPortfolioFilters } from "@/components/portfolio/PaperPortfolioFilters";
 import { PaperPortfolioSafetyBanner } from "@/components/portfolio/PaperPortfolioSafetyBanner";
@@ -85,7 +86,7 @@ export default function PaperPortfolioPage() {
       loadSource(api.performance.portfolio(dateParams)),
       loadSource(api.dashboard.summary()),
       loadSource(api.positions.list({ status: "open", limit: 50 })),
-      loadSource(api.positions.list({ status: "closed", limit: 50 })),
+      loadClosedPositionsSource((params) => api.positions.list(params)),
       loadSource(api.journal.list({ limit: 50 })),
     ]);
     return { portfolio, dashboard, openPositions, closedPositions, journal };

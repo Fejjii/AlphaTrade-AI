@@ -1,0 +1,145 @@
+import { expect, test, type Page, type Route } from "@playwright/test";
+
+import { installSmokeSession } from "./helpers/staging-smoke-auth";
+
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
+
+async function registerAndInstall(page: Page, request: Page["request"]) {
+  const email = `deeplink-${Date.now()}@example.com`;
+  const password = "secure-password-1";
+  const register = await request.post(`${API_URL}/auth/register`, {
+    data: {
+      email,
+      password,
+      organization_name: `Deep Link Org ${Date.now()}`,
+    },
+  });
+  expect(register.ok()).toBeTruthy();
+  const auth = await register.json();
+  await installSmokeSession(page, auth.tokens.access_token as string);
+  return auth.tokens.access_token as string;
+}
+
+async function fulfillJson(route: Route, body: unknown, status = 200) {
+  await route.fulfill({
+    status,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  });
+}
+
+test.describe("Deep-link contracts (AT-041 PR4)", () => {
+  test("valid analytics ?tab= resolves and invalid tab is cleaned without stale context", async ({
+    page,
+    request,
+  }) => {
+    await registerAndInstall(page, request);
+
+    await page.goto("/analytics?tab=validation");
+    await expect(page.getByTestId("analytics-page")).toBeVisible();
+    await expect(page).toHaveURL(/tab=validation/);
+    const tablist = page.getByRole("tablist", { name: "Analytics sections" });
+    await expect(tablist.getByRole("tab", { name: "Validation" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await page.goto("/analytics?tab=not-a-real-tab");
+    await expect(page.getByTestId("analytics-page")).toBeVisible();
+    await expect(page.getByText(/Ignored invalid filter/i)).toBeVisible();
+    await expect(page).not.toHaveURL(/tab=not-a-real-tab/);
+  });
+
+  test("invalid journal ?entry= shows limited-window notice and opens no unrelated entry", async ({
+    page,
+    request,
+  }) => {
+    await registerAndInstall(page, request);
+
+    await page.route("**/journal/entries**", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await fulfillJson(route, {
+        items: [
+          {
+            id: "entry-present",
+            organization_id: "org",
+            user_id: "user",
+            symbol: "BTCUSDT",
+            timeframe: "1h",
+            direction: "long",
+            entry_rationale: "Present entry",
+            emotions: [],
+            mistakes: [],
+            result: "win",
+            tags: [],
+            screenshot_refs: [],
+            created_at: "2026-07-21T12:00:00.000Z",
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      });
+    });
+    await page.route("**/positions**", async (route) => {
+      await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });
+    });
+
+    await page.goto("/journal?entry=missing-entry-id");
+    const journalNotice = page.getByTestId("journal-stale-entry");
+    await expect(journalNotice).toBeVisible();
+    await expect(journalNotice).toContainText(/most recent 50 journal entries/i);
+    await expect(journalNotice).toContainText(/No unrelated entry was opened/i);
+  });
+
+  test("invalid knowledge ?document= shows limited-window notice", async ({ page, request }) => {
+    await registerAndInstall(page, request);
+
+    await page.route("**/knowledge/**", async (route) => {
+      const url = route.request().url();
+      if (url.includes("/knowledge/documents") || url.includes("/knowledge/search")) {
+        await fulfillJson(route, {
+          items: [],
+          documents: [],
+          chunks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto("/knowledge?document=missing-document-id");
+    const knowledgeNotice = page.getByTestId("knowledge-document-stale");
+    await expect(knowledgeNotice).toBeVisible();
+    await expect(knowledgeNotice).toContainText(/not found|limited|recent|window|loaded/i);
+  });
+
+  test("invalid tradingview ?signal= shows missing notice and clears without selecting another", async ({
+    page,
+    request,
+  }) => {
+    await registerAndInstall(page, request);
+
+    await page.route("**/tradingview/**", async (route) => {
+      await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });
+    });
+    await page.route("**/alerts**", async (route) => {
+      await fulfillJson(route, { items: [], total: 0, limit: 50, offset: 0 });
+    });
+
+    await page.goto("/tradingview-signals?signal=missing-signal-id");
+    const signalNotice = page.getByTestId("signal-deep-link-missing");
+    await expect(signalNotice).toBeVisible();
+    await expect(signalNotice).toContainText(/requested signal not found/i);
+    await expect(page.getByRole("button", { name: /clear stale link/i })).toBeVisible();
+    await page.getByRole("button", { name: /clear stale link/i }).click();
+    await expect(page).toHaveURL(/\/tradingview-signals$/);
+    await expect(page).not.toHaveURL(/signal=/);
+  });
+});

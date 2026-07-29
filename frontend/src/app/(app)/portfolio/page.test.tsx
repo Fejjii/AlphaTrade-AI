@@ -761,6 +761,34 @@ describe("Portfolio & Risk command centre", () => {
     expect(screen.queryByTestId("portfolio-hub-safety")).not.toBeInTheDocument();
   });
 
+  it("surfaces liquidated closed positions with an explicit status cell (FP2-221)", () => {
+    asyncState = {
+      data: completeData({
+        closedPositions: ok({
+          items: [
+            makePosition({
+              id: "pos-liq-1",
+              status: "liquidated",
+              symbol: "ETHUSDT",
+              realized_pnl: "-120",
+            }),
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("closed-position-status-pos-liq-1")).toHaveTextContent("liquidated");
+    expect(screen.getByTestId("closed-position-status-row-pos-liq-1")).toHaveTextContent(
+      "liquidated",
+    );
+  });
+
   it("keeps portfolio filters wired and has no unsafe live CTAs", () => {
     render(<PaperPortfolioPage />);
     fireEvent.change(screen.getByTestId("portfolio-filter-start-date"), {

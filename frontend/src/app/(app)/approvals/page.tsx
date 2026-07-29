@@ -50,60 +50,59 @@ function ApprovalsContent() {
     }
   }
 
-  return (
-    <>
-      {loading ? <LoadingState label="Loading approvals…" /> : null}
-      {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section className="grid gap-4">
-          {data?.items.length ? (
-            data.items.map((approval) => (
-              <ApprovalCard
-                key={approval.id}
-                approval={approval}
-                busy={busy}
-                onApprove={(id) => runAction((value) => api.approvals.approve(value, "Approved in UI"), id)}
-                onReject={(id) => runAction((value) => api.approvals.reject(value, "Rejected in UI"), id)}
-                onNeedsAnalysis={(id) =>
-                  runAction((value) => api.approvals.needsMoreAnalysis(value, "Needs review"), id)
-                }
-              />
-            ))
-          ) : (
-            <EmptyState
-              title="No approval requests"
-              description="Proposals requiring human review will appear here."
-            />
-          )}
-        </section>
+  if (loading) return <LoadingState label="Loading approvals…" />;
+  if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
 
-        {selected ? (
-          workflow.loading ? (
-            <LoadingState label="Loading approval workflow…" />
-          ) : workflow.error ? (
-            <ErrorState message={workflow.error} onRetry={() => void workflow.reload()} />
-          ) : (
-            <ApprovalDetailPanel
-              approval={workflow.data?.approval ?? selected}
-              proposal={workflow.data?.proposal}
+  return (
+    <div className="grid gap-6 xl:grid-cols-2">
+      <section className="grid gap-4">
+        {data?.items.length ? (
+          data.items.map((approval) => (
+            <ApprovalCard
+              key={approval.id}
+              approval={approval}
               busy={busy}
               onApprove={(id) => runAction((value) => api.approvals.approve(value, "Approved in UI"), id)}
               onReject={(id) => runAction((value) => api.approvals.reject(value, "Rejected in UI"), id)}
               onNeedsAnalysis={(id) =>
                 runAction((value) => api.approvals.needsMoreAnalysis(value, "Needs review"), id)
               }
-              onModify={runModify}
-              onRefresh={() => {
-                void reload();
-                void workflow.reload();
-              }}
             />
-          )
+          ))
         ) : (
-          <EmptyState title="Select an approval" description="Choose an approval to review details." />
+          <EmptyState
+            title="No approval requests"
+            description="Proposals requiring human review will appear here."
+          />
         )}
-      </div>
-    </>
+      </section>
+
+      {selected ? (
+        workflow.loading ? (
+          <LoadingState label="Loading approval workflow…" />
+        ) : workflow.error ? (
+          <ErrorState message={workflow.error} onRetry={() => void workflow.reload()} />
+        ) : (
+          <ApprovalDetailPanel
+            approval={workflow.data?.approval ?? selected}
+            proposal={workflow.data?.proposal}
+            busy={busy}
+            onApprove={(id) => runAction((value) => api.approvals.approve(value, "Approved in UI"), id)}
+            onReject={(id) => runAction((value) => api.approvals.reject(value, "Rejected in UI"), id)}
+            onNeedsAnalysis={(id) =>
+              runAction((value) => api.approvals.needsMoreAnalysis(value, "Needs review"), id)
+            }
+            onModify={runModify}
+            onRefresh={() => {
+              void reload();
+              void workflow.reload();
+            }}
+          />
+        )
+      ) : (
+        <EmptyState title="Select an approval" description="Choose an approval to review details." />
+      )}
+    </div>
   );
 }
 
