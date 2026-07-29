@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LessonCandidate, ProposedRuleUpdate, UserStrategy } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +37,19 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const successCloseRef = useRef<HTMLButtonElement>(null);
+
+  // When the accept panel replaces a review card, move focus into it so
+  // keyboard users are not stranded on a detached Accept control (FP2-211).
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    successCloseRef.current?.focus();
+  }, [successMessage]);
 
   const loadStrategies = useCallback(async () => {
     setStrategiesLoad({ status: "loading" });
@@ -117,7 +130,7 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
         <CardContent className="space-y-2 p-4 text-sm text-emerald-300">
           <p>{successMessage}</p>
           <p className="text-zinc-400">Paper mode only — no live trading.</p>
-          <Button variant="secondary" onClick={onCancel}>
+          <Button ref={successCloseRef} variant="secondary" onClick={onCancel}>
             Close
           </Button>
         </CardContent>
@@ -128,7 +141,13 @@ export function LessonAcceptPanel({ lesson, busy, onAccept, onCancel }: Props) {
   return (
     <Card data-testid="lesson-accept-panel">
       <CardHeader>
-        <CardTitle className="text-base">Accept lesson</CardTitle>
+        <CardTitle
+          ref={titleRef}
+          tabIndex={-1}
+          className="text-base outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          Accept lesson
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <p className="rounded border border-amber-700/50 bg-amber-950/30 p-3 text-amber-100">

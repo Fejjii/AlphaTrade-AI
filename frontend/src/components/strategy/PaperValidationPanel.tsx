@@ -211,9 +211,9 @@ export function PaperValidationPanel({
             <table className="w-full text-left text-xs" data-testid="paper-trades-table">
               <thead>
                 <tr className="text-zinc-500">
-                  <th className="py-1">Symbol</th>
-                  <th>PnL</th>
-                  <th>Exit</th>
+                  <th scope="col" className="py-1">Symbol</th>
+                  <th scope="col">PnL</th>
+                  <th scope="col">Exit</th>
                 </tr>
               </thead>
               <tbody>

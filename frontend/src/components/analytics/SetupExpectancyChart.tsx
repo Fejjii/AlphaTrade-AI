@@ -233,11 +233,11 @@ export function SetupExpectancyChart({
         <caption>{copy.expectancyA11yCaption}</caption>
         <thead>
           <tr>
-            <th>Key</th>
-            <th>Label</th>
-            <th>Expectancy</th>
-            <th>n</th>
-            <th>Confidence</th>
+            <th scope="col">Key</th>
+            <th scope="col">Label</th>
+            <th scope="col">Expectancy</th>
+            <th scope="col">n</th>
+            <th scope="col">Confidence</th>
           </tr>
         </thead>
         <tbody>

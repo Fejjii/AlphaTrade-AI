@@ -471,9 +471,27 @@ describe("AnalyticsPage PR1–PR4 integration", () => {
       expect(document.getElementById(panelId!)).toBeTruthy();
     }
 
-    expect(document.getElementById(performanceTab.getAttribute("aria-controls")!)).toHaveAttribute(
-      "hidden",
-    );
+    // Non-overview tabs expose an h2 so heading order does not skip to chart h3s (FP2-217).
+    const performancePanel = document.getElementById(performanceTab.getAttribute("aria-controls")!);
+    expect(performancePanel).toHaveAttribute("hidden");
+    expect(
+      within(performancePanel!).getByRole("heading", {
+        level: 2,
+        name: "Performance",
+        hidden: true,
+      }),
+    ).toBeInTheDocument();
+    for (const [tab, label] of [
+      [setupsTab, "Setups"],
+      [behaviourTab, "Behaviour"],
+      [validationTab, "Validation"],
+      [comparisonTab, "Comparison"],
+    ] as const) {
+      const panel = document.getElementById(tab.getAttribute("aria-controls")!);
+      expect(
+        within(panel!).getByRole("heading", { level: 2, name: label, hidden: true }),
+      ).toBeInTheDocument();
+    }
     expect(document.getElementById(setupsTab.getAttribute("aria-controls")!)).toHaveAttribute(
       "hidden",
     );

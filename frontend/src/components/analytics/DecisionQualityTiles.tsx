@@ -113,9 +113,9 @@ export function DecisionQualityTiles({
             <caption>Decision quality metrics</caption>
             <thead>
               <tr>
-                <th>Metric</th>
-                <th>Value</th>
-                <th>Detail</th>
+                <th scope="col">Metric</th>
+                <th scope="col">Value</th>
+                <th scope="col">Detail</th>
               </tr>
             </thead>
             <tbody>

@@ -112,10 +112,34 @@ export function PlanSummary({
           className="rounded-control border border-border-subtle bg-surface-0/40 px-4 py-3 text-sm"
         >
           <p className="font-medium text-text-primary">Planning from signal</p>
-          <p className="mt-1 text-text-secondary">
-            Source: {signalContext.source}
-            {signalContext.signalId ? ` · signal ${signalContext.signalId}` : ""}
-            {signalContext.alertId ? ` · alert ${signalContext.alertId}` : ""}
+          <p className="mt-1 min-w-0 text-text-secondary">
+            <span>Source: {signalContext.source}</span>
+            {signalContext.signalId ? (
+              <>
+                {" · "}
+                <span className="inline">signal </span>
+                <code
+                  className="inline-block max-w-full truncate align-bottom font-mono text-caption"
+                  title={signalContext.signalId}
+                  data-testid="plan-signal-id"
+                >
+                  {signalContext.signalId}
+                </code>
+              </>
+            ) : null}
+            {signalContext.alertId ? (
+              <>
+                {" · "}
+                <span className="inline">alert </span>
+                <code
+                  className="inline-block max-w-full truncate align-bottom font-mono text-caption"
+                  title={signalContext.alertId}
+                  data-testid="plan-alert-id"
+                >
+                  {signalContext.alertId}
+                </code>
+              </>
+            ) : null}
           </p>
           <p className="mt-1 text-caption text-text-muted">
             Context is carried by the URL query only. No persisted backend association is claimed.

@@ -120,6 +120,7 @@ export function SetupBucketTable({
             type="button"
             size="sm"
             variant="outline"
+            className="min-h-11"
             disabled={!canPrev}
             onClick={() => onPageChange(Math.max(0, bucketOffset - SETUP_BUCKET_PAGE_SIZE))}
             data-testid="setup-bucket-prev"
@@ -130,6 +131,7 @@ export function SetupBucketTable({
             type="button"
             size="sm"
             variant="outline"
+            className="min-h-11"
             disabled={!canNext}
             onClick={() => onPageChange(bucketOffset + SETUP_BUCKET_PAGE_SIZE)}
             data-testid="setup-bucket-next"
@@ -144,14 +146,14 @@ export function SetupBucketTable({
           <caption className="sr-only">{copy.bucketTableCaption}</caption>
           <thead>
             <tr className="border-b border-border-subtle text-text-muted">
-              <th className="px-2 py-2 font-medium">Label</th>
-              <th className="px-2 py-2 font-medium">Key</th>
-              <th className="px-2 py-2 font-medium">group_id</th>
-              <th className="px-2 py-2 font-medium">n</th>
-              <th className="px-2 py-2 font-medium">Win rate</th>
-              <th className="px-2 py-2 font-medium">Expectancy</th>
-              <th className="px-2 py-2 font-medium">Confidence</th>
-              <th className="px-2 py-2 font-medium">Links</th>
+              <th scope="col" className="px-2 py-2 font-medium">Label</th>
+              <th scope="col" className="px-2 py-2 font-medium">Key</th>
+              <th scope="col" className="px-2 py-2 font-medium">group_id</th>
+              <th scope="col" className="px-2 py-2 font-medium">n</th>
+              <th scope="col" className="px-2 py-2 font-medium">Win rate</th>
+              <th scope="col" className="px-2 py-2 font-medium">Expectancy</th>
+              <th scope="col" className="px-2 py-2 font-medium">Confidence</th>
+              <th scope="col" className="px-2 py-2 font-medium">Links</th>
             </tr>
           </thead>
           <tbody>

@@ -18,7 +18,6 @@ export {
   type LessonRelationshipLink,
 } from "@/components/lessons/lessonDisplay";
 export { LessonAcceptPanel, type AcceptPath } from "@/components/lessons/LessonAcceptPanel";
-export { LessonCandidateCard } from "@/components/lessons/LessonCandidateCard";
 export { LessonReviewCard, formatLessonConfidence } from "@/components/lessons/LessonReviewCard";
 export { LessonsAttentionQueue } from "@/components/lessons/LessonsAttentionQueue";
 export {

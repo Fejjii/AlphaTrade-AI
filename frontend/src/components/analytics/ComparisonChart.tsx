@@ -171,7 +171,7 @@ export function ComparisonChart({
             key={item.id}
             type="button"
             className={cn(
-              "rounded-control border px-2 py-1 text-caption",
+              "inline-flex min-h-11 items-center rounded-control border px-3 py-1 text-caption",
               metric === item.id
                 ? "border-accent bg-accent/10 text-text-primary"
                 : "border-border-subtle text-text-muted",
@@ -279,11 +279,11 @@ export function ComparisonChart({
         <caption>Human versus system comparison by metric</caption>
         <thead>
           <tr>
-            <th>Metric</th>
-            <th>Cohort</th>
-            <th>Value</th>
-            <th>Sample count</th>
-            <th>Confidence</th>
+            <th scope="col">Metric</th>
+            <th scope="col">Cohort</th>
+            <th scope="col">Value</th>
+            <th scope="col">Sample count</th>
+            <th scope="col">Confidence</th>
           </tr>
         </thead>
         <tbody>

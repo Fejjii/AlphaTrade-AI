@@ -202,10 +202,10 @@ export function SetupSuccessByDimension({
         </caption>
         <thead>
           <tr>
-            <th>Dimension value</th>
-            <th>Success rate</th>
-            <th>Sample size</th>
-            <th>Insufficient</th>
+            <th scope="col">Dimension value</th>
+            <th scope="col">Success rate</th>
+            <th scope="col">Sample size</th>
+            <th scope="col">Insufficient</th>
           </tr>
         </thead>
         <tbody>

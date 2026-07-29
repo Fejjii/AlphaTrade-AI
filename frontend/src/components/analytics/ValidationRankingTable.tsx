@@ -166,16 +166,17 @@ export function ValidationRankingTable({
             </caption>
             <thead>
               <tr className="border-b border-border-subtle text-caption text-text-muted">
-                <th className="px-2 py-2 font-medium">Rank</th>
+                <th scope="col" className="px-2 py-2 font-medium">Rank</th>
                 <th
+                  scope="col"
                   className="px-2 py-2 font-medium"
                   data-testid="validation-ranking-identity-header"
                 >
                   {identityColumnLabel}
                 </th>
-                <th className="px-2 py-2 font-medium">Quality score</th>
-                <th className="px-2 py-2 font-medium">Sample size</th>
-                <th className="px-2 py-2 font-medium">Sample gate</th>
+                <th scope="col" className="px-2 py-2 font-medium">Quality score</th>
+                <th scope="col" className="px-2 py-2 font-medium">Sample size</th>
+                <th scope="col" className="px-2 py-2 font-medium">Sample gate</th>
               </tr>
             </thead>
             <tbody>

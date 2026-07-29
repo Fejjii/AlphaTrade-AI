@@ -68,11 +68,11 @@ function SnapshotPanel({ snapshot }: { snapshot: MarketSnapshotResponse }) {
             <table className="min-w-full text-left text-xs">
               <thead className="bg-zinc-900 text-zinc-400">
                 <tr>
-                  <th className="px-3 py-2">Open</th>
-                  <th className="px-3 py-2">High</th>
-                  <th className="px-3 py-2">Low</th>
-                  <th className="px-3 py-2">Close</th>
-                  <th className="px-3 py-2">Volume</th>
+                  <th scope="col" className="px-3 py-2">Open</th>
+                  <th scope="col" className="px-3 py-2">High</th>
+                  <th scope="col" className="px-3 py-2">Low</th>
+                  <th scope="col" className="px-3 py-2">Close</th>
+                  <th scope="col" className="px-3 py-2">Volume</th>
                 </tr>
               </thead>
               <tbody>

@@ -98,8 +98,8 @@ export function RiskBehaviourCounters({
             <caption>Risk behaviour warning counts</caption>
             <thead>
               <tr>
-                <th>Warning type</th>
-                <th>Count</th>
+                <th scope="col">Warning type</th>
+                <th scope="col">Count</th>
               </tr>
             </thead>
             <tbody>

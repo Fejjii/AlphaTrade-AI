@@ -26,6 +26,15 @@ import { VerifiedPaperModeIndicator } from "@/components/ui/paper-mode-indicator
 import { TabPanel, Tabs, TabsRoot } from "@/components/ui/tabs";
 import { ErrorState, LoadingState, StaleState } from "@/components/states";
 
+/**
+ * Section heading for a tab panel, so tab content starts at `h2` instead of
+ * jumping from the page `h1` straight to chart `h3`s (FP2-217). The Overview
+ * panel's heading comes from `OverviewStats`.
+ */
+function TabHeading({ children }: { children: string }) {
+  return <h2 className="text-lg font-medium text-text-primary">{children}</h2>;
+}
+
 const TAB_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "performance", label: "Performance" },
@@ -169,6 +178,7 @@ export default function AnalyticsPage() {
         </TabPanel>
 
         <TabPanel id="performance">
+          <TabHeading>Performance</TabHeading>
           {state.tab === "performance" && sharedInitialLoad ? (
             <LoadingState label="Loading analytics…" />
           ) : null}
@@ -190,6 +200,7 @@ export default function AnalyticsPage() {
         </TabPanel>
 
         <TabPanel id="setups">
+          <TabHeading>Setups</TabHeading>
           {state.tab === "setups" && setupsInitialLoad ? (
             <LoadingState label="Loading analytics…" />
           ) : null}
@@ -214,12 +225,14 @@ export default function AnalyticsPage() {
         </TabPanel>
 
         <TabPanel id="behaviour">
+          <TabHeading>Behaviour</TabHeading>
           {state.tab === "behaviour" ? (
             <BehaviourCharts apiParams={apiParams} enabled />
           ) : null}
         </TabPanel>
 
         <TabPanel id="validation">
+          <TabHeading>Validation</TabHeading>
           {state.tab === "validation" ? (
             <ValidationCharts
               apiParams={apiParams}
@@ -230,6 +243,7 @@ export default function AnalyticsPage() {
         </TabPanel>
 
         <TabPanel id="comparison">
+          <TabHeading>Comparison</TabHeading>
           {state.tab === "comparison" ? (
             <ComparisonCharts apiParams={apiParams} enabled />
           ) : null}
