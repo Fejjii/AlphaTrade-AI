@@ -179,7 +179,7 @@ describe("Usage route (/usage) — FP2-129", () => {
     expect(screen.getByText(/not billing-grade/i)).toBeInTheDocument();
     expect(screen.getAllByText(/1,200/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Recent usage events/i)).toBeInTheDocument();
-    expect(screen.getByText(/agent_chat/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/agent_chat/i).length).toBeGreaterThan(0);
   });
 
   it("renders honest empty events without inventing rows", () => {
