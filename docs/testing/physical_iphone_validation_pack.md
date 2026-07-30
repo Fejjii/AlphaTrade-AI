@@ -8,7 +8,7 @@
 
 | Source | Role |
 |---|---|
-| PR #41 audit — `docs/product/at040_final_polish_and_readiness_audit.md` (§4 staging, §5 physical iPhone) | Why this pack exists; staging behind `main` until redeploy |
+| PR #41 audit — `docs/product/at040_final_polish_and_readiness_audit.md` (§4 staging, §5 physical iPhone) | Why this pack exists; historical staging lag notes; physical iPhone still required |
 | `docs/testing/at041_pr4_readiness_checklist.md` §B / §C | Automated vs pending physical separation |
 | Mobile nav (`MobileBottomNavigation`, `MobileMenuSheet`, `navigation-config`) | Bottom bar + Menu sheet destinations |
 | Paper close (`/positions`, `PositionCard`) | Explicit exit-price close flow (FP2-001) |
@@ -65,17 +65,22 @@ Expected fields (names may vary slightly; record exact JSON keys you see):
 | `environment` | `staging` | |
 | `execution_mode` | `paper` | |
 | `real_trading_enabled` | `false` | |
-| `git_sha` (or equivalent) | Matches redeployed `main` HEAD (or known redeploy SHA) | |
+| `git_sha` (or equivalent) | Matches the **latest approved `main` SHA at the time of this staging redeploy** (record that SHA; it is not a permanent fixed target) | |
 
 **Frontend** — Vercel may not expose a build-commit header. Record:
 
 | Check | Actual |
 |---|---|
 | Deploy time / Vercel deployment note (if known) | |
+| Intended `main` SHA for this redeploy (from deploy notes / `origin/main` at deploy time) | |
 | UI shows paper posture chips after login | yes / no |
 | `NEXT_PUBLIC` posture consistent with paper (StatusStrip / settings) | yes / no / unknown |
 
-**Gate:** If backend `git_sha` is still behind the intended `main` (historically `62d3856…` was 26 commits behind `d0f724a…`), **stop**. Do not invent a pass. Redeploy is a human/pipeline action outside this pack.
+**Target revision:** Validate whatever **latest approved `main` commit** was selected for the staging redeploy you are testing. Do **not** treat any older SHA (including `d0f724a…`) as a permanent forever-target.
+
+**Historical evidence only (PR #41 audit, not a live target):** a read-only staging health check once reported backend `git_sha=62d3856…`, which was then 26 commits behind the then-current `main` at `d0f724a…`. That mismatch justified halting staging validation at that time. After a new redeploy, compare against the **new** approved `main` SHA, not that historical pair.
+
+**Gate:** If backend `git_sha` is still behind the intended redeploy `main` SHA, **stop**. Do not invent a pass. Redeploy is a human/pipeline action outside this pack.
 
 ### 1.3 Confirm paper mode and real trading disabled
 
@@ -108,6 +113,7 @@ Prepare before the timer starts:
 | Safari version | |
 | Tester | Sofien |
 | Date (local) | |
+| Intended redeploy `main` SHA (at deploy time) | |
 | Staging backend `git_sha` | |
 | Frontend URL used | |
 
@@ -122,7 +128,7 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 | Surface | Destinations |
 |---|---|
 | Bottom bar | Dashboard `/` · Signals `/tradingview-signals` · Plan `/workspace` · Portfolio `/portfolio` · **Menu** (sheet) |
-| Menu sheet | Validate `/paper-validation` · Journal `/journal` · Analyze `/analytics` · Settings `/settings` |
+| Menu sheet | Validate `/paper-validation` · Journal `/journal` · Analytics `/analytics` · Settings `/settings` |
 
 ### Step A — Registration / login
 
@@ -182,7 +188,7 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 |---|---|---|---|
 | H1 | Tap **Menu** (`mobile-menu-button`) | Sheet opens (`More destinations`); backdrop dims | |
 | H2 | Tap outside / backdrop to dismiss | Sheet closes; focus returns sensibly | |
-| H3 | Re-open; navigate to Validate, Journal, Analyze, Settings | Each destination works; sheet closes on navigate | |
+| H3 | Re-open; navigate to Validate, Journal, Analytics, Settings | Each destination works; sheet closes on navigate | |
 
 ### Step I — Safe-area and landscape
 
@@ -286,7 +292,7 @@ Suggested templates (replace IDs and host):
 
 ### Step R — Analytics tabs, charts, and filters
 
-**Route:** Menu → **Analyze** → `/analytics`  
+**Route:** Menu → **Analytics** → `/analytics`  
 **Tabs:** `overview` · `performance` · `setups` · `behaviour` · `validation` · `comparison`
 
 | # | Action | Expected | Result |
@@ -354,6 +360,7 @@ Use one report per distinct defect.
 - **Visible error text:**
 - **Blocks paper evaluation?** yes / no
 - **Related FP2 ID:** (e.g. FP2-001, FP2-109) or unknown
+- **Intended redeploy `main` SHA:**
 - **Staging backend git_sha:**
 - **Frontend URL:**
 ```
@@ -411,14 +418,15 @@ After iPhone evidence is collected (this pack), complete PR #41 as follows. **Do
 1. **Send evidence to ChatGPT**  
    Package: filled §3 logs, §4 bug reports (if any), §5 summary table, screenshots/recordings index, device/iOS/Safari, staging `git_sha`, frontend URL, recommendation ready/blocked.
 
-2. **Resume the same PR #41 Cursor agent**  
+2. **Resume the same PR #41 Cursor agent when available**  
+   Stable references only (do not depend on a temporary agent-session URL):
    - PR: https://github.com/Fejjii/AlphaTrade-AI/pull/41  
    - Branch: `docs/at040-final-polish-readiness-audit`  
-   - Agent: https://cursor.com/agents/bc-58a63791-e3ca-46de-8810-46fb63c66ecf  
-   Instruct it to update **only** the audit document’s staging (§4) and physical iPhone (§5) sections from the supplied evidence — no production code, no deploy, no drive-by refactors.
+   Resume the **same** PR #41 Cursor agent session if it is still available; otherwise start a successor agent on that branch/PR with the same instructions. This pack must remain usable after any prior session expires.  
+   Instruct the agent to update **only** the audit document’s staging (§4) and physical iPhone (§5) sections from the supplied evidence — no production code, no deploy, no drive-by refactors.
 
 3. **Update staging / iPhone sections in the audit**  
-   Record honest outcomes: redeploy SHA confirmation, each checklist item pass/fail with evidence references. Never mark physical items passed from emulation.
+   Record honest outcomes: redeploy SHA confirmation (latest approved `main` at deploy time), each checklist item pass/fail with evidence references. Never mark physical items passed from browser emulation or viewport simulation.
 
 4. **Rerun exact-head CI**  
    On the updated PR #41 HEAD, confirm the full GitHub Actions workflow is green at that exact SHA (all jobs). Documentation-only changes should still get a clean exact-head run recorded in the PR body.
