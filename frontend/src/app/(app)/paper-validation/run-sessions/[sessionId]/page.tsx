@@ -35,6 +35,7 @@ import {
   type PaperValidationRunSessionStatus,
   type PaperValidationSessionObservationItem,
 } from "@/lib/api/types";
+import { formatDateTime } from "@/lib/format";
 
 const OBSERVATION_KINDS: PaperValidationObservationKind[] = [
   "approached_trigger",
@@ -302,9 +303,9 @@ export default function PaperValidationRunSessionDetailPage() {
             <p>Max duration: {session.max_duration_minutes ?? "—"} min</p>
             <p>Run plan: {session.run_plan_id}</p>
             <p>
-              Started: {session.started_at ? new Date(session.started_at).toLocaleString() : "—"}
+              Started: {formatDateTime(session.started_at)}
             </p>
-            <p>Ended: {session.ended_at ? new Date(session.ended_at).toLocaleString() : "—"}</p>
+            <p>Ended: {formatDateTime(session.ended_at)}</p>
           </div>
 
           {session.notes ? (
@@ -397,7 +398,7 @@ export default function PaperValidationRunSessionDetailPage() {
                         <Badge variant="info">{obs.observation_kind}</Badge>
                         {obs.observed_price != null ? <span>{obs.observed_price}</span> : null}
                         <span className="text-xs text-zinc-500">
-                          {obs.created_at ? new Date(obs.created_at).toLocaleString() : ""}
+                          {formatDateTime(obs.created_at)}
                         </span>
                       </div>
                       {obs.note ? <p className="mt-1 text-zinc-300">{obs.note}</p> : null}
@@ -438,7 +439,7 @@ export default function PaperValidationRunSessionDetailPage() {
                     <Badge variant="info">{obs.observation_kind}</Badge>
                     {obs.observed_price != null ? <span>{obs.observed_price}</span> : null}
                     <span className="text-xs text-zinc-500">
-                      {obs.created_at ? new Date(obs.created_at).toLocaleString() : ""}
+                      {formatDateTime(obs.created_at)}
                     </span>
                   </div>
                   {obs.note ? <p className="mt-1 text-zinc-300">{obs.note}</p> : null}

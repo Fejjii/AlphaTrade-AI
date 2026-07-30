@@ -10,6 +10,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type { SetupDimension } from "@/lib/api/types";
+import { formatPercent } from "@/lib/format";
 
 const DIMENSIONS: { value: SetupDimension; label: string }[] = [
   { value: "condition", label: "Condition" },
@@ -18,11 +19,6 @@ const DIMENSIONS: { value: SetupDimension; label: string }[] = [
   { value: "direction", label: "Direction" },
   { value: "confidence_bucket", label: "Confidence" },
 ];
-
-function percent(rate: number | null | undefined): string {
-  if (rate === null || rate === undefined) return "—";
-  return `${(rate * 100).toFixed(0)}%`;
-}
 
 export default function LearningAnalyticsPage() {
   const [dimension, setDimension] = useState<SetupDimension>("condition");
@@ -119,10 +115,10 @@ export default function LearningAnalyticsPage() {
                     </CardHeader>
                     <CardContent className="space-y-1 text-sm text-zinc-300">
                       <p>Sample size: {group.sample_size}</p>
-                      <p>Success: {percent(group.success_rate)}</p>
-                      <p>Failure: {percent(group.failure_rate)}</p>
-                      <p>Invalidation hit: {percent(group.invalidation_hit_rate)}</p>
-                      <p>Behaved as expected: {percent(group.behaved_as_expected_rate)}</p>
+                      <p>Success: {formatPercent(group.success_rate, 0)}</p>
+                      <p>Failure: {formatPercent(group.failure_rate, 0)}</p>
+                      <p>Invalidation hit: {formatPercent(group.invalidation_hit_rate, 0)}</p>
+                      <p>Behaved as expected: {formatPercent(group.behaved_as_expected_rate, 0)}</p>
                     </CardContent>
                   </Card>
                 ))}
@@ -186,7 +182,7 @@ export default function LearningAnalyticsPage() {
               <CardContent className="space-y-1 text-sm text-zinc-300">
                 {data.confidence.buckets.map((bucket) => (
                   <p key={bucket.bucket} data-testid={`learning-confidence-${bucket.bucket}`}>
-                    {bucket.bucket}: {percent(bucket.success_rate)} success (n={bucket.sample_size})
+                    {bucket.bucket}: {formatPercent(bucket.success_rate, 0)} success (n={bucket.sample_size})
                     {bucket.insufficient_data ? " · insufficient" : ""}
                   </p>
                 ))}

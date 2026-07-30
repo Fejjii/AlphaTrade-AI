@@ -13,6 +13,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { setupConditionLabel } from "@/lib/alert-display";
 import type { PaperValidationRunPlanStatus } from "@/lib/api/types";
+import { formatPrice } from "@/lib/format";
 
 const CHECKLIST_LABELS: Record<string, string> = {
   trend_checked: "Trend checked",
@@ -25,11 +26,6 @@ const CHECKLIST_LABELS: Record<string, string> = {
 };
 
 const START_PAPER_VALIDATION_RUN = "START_PAPER_VALIDATION_RUN";
-
-function formatLevel(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
 
 export default function PaperValidationRunPlanDetailPage() {
   const params = useParams<{ planId: string }>();
@@ -113,8 +109,8 @@ export default function PaperValidationRunPlanDetailPage() {
             <p>Validation window: {plan.validation_window ?? "—"}</p>
             <p>Observation timeframe: {plan.observation_timeframe ?? "—"}</p>
             <p>Max duration: {plan.max_duration_minutes ?? "—"} min</p>
-            <p>Trigger: {formatLevel(plan.trigger_level)}</p>
-            <p>Invalidation: {formatLevel(plan.invalidation_level)}</p>
+            <p>Trigger: {formatPrice(plan.trigger_level)}</p>
+            <p>Invalidation: {formatPrice(plan.invalidation_level)}</p>
             <p>Candidate: {plan.candidate_id}</p>
           </div>
 

@@ -731,6 +731,108 @@ describe("Portfolio & Risk command centre", () => {
     expect(screen.getByTestId("portfolio-account-mode")).toHaveTextContent(/not confirmed/i);
   });
 
+  it("omits redundant safety banner when verified paper posture is already shown (FP2-123)", () => {
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+    expect(screen.queryByTestId("paper-portfolio-safety-banner")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Not live trading/i)).not.toBeInTheDocument();
+  });
+
+  it("surfaces safety banner when portfolio payload reports real trading enabled (FP2-123)", () => {
+    asyncState = {
+      data: completeData({
+        portfolio: ok({
+          ...samplePortfolio,
+          safety: {
+            ...samplePortfolio.safety,
+            real_trading_enabled: true,
+            disclaimer: "Real trading unexpectedly enabled.",
+          },
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-portfolio-safety-banner")).toBeInTheDocument();
+    expect(screen.getByText(/Real trading enabled/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Not live trading/i)).not.toBeInTheDocument();
+  });
+
+  it("never suppresses safety banner for live execution_mode (FP2-123)", () => {
+    asyncState = {
+      data: completeData({
+        portfolio: ok({
+          ...samplePortfolio,
+          safety: {
+            ...samplePortfolio.safety,
+            execution_mode: "live",
+            paper_only: true,
+            real_trading_enabled: false,
+          },
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-portfolio-safety-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-portfolio-execution-mode")).toHaveTextContent(
+      "Live execution mode",
+    );
+    expect(screen.queryByText(/Not live trading/i)).not.toBeInTheDocument();
+  });
+
+  it("never suppresses a dynamic safety disclaimer (FP2-123)", () => {
+    const dynamic =
+      "Paper-only simulated portfolio. WARNING: exposure source degraded — do not treat as confirmed.";
+    asyncState = {
+      data: completeData({
+        portfolio: ok({
+          ...samplePortfolio,
+          safety: {
+            ...samplePortfolio.safety,
+            disclaimer: dynamic,
+          },
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-portfolio-safety-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-portfolio-disclaimer")).toHaveTextContent(dynamic);
+  });
+
+  it("keeps kill-switch BLOCK visible when verified paper banner is suppressed (FP2-123)", () => {
+    appContext.killSwitchStatus = {
+      organization_id: "org",
+      active: true,
+      reason: "Manual halt",
+      activated_by: "user",
+      activated_at: "2026-07-27T10:00:00.000Z",
+      deactivated_by: null,
+      deactivated_at: null,
+      version: 2,
+      scope: "org",
+      global_active: false,
+      execution_blocked: true,
+    };
+    appContext.killSwitchError = null;
+    appContext.loading = false;
+    render(<PaperPortfolioPage />);
+    expect(screen.queryByTestId("paper-portfolio-safety-banner")).not.toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-risk-block")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-risk-block")).toHaveTextContent(/Manual halt/);
+    expect(screen.getByTestId("risk-trading-state")).toHaveTextContent(/blocked/i);
+  });
+
   it("creates relationship links only from real identifiers and omits missing ones", () => {
     render(<PaperPortfolioPage />);
     expect(screen.getByTestId("open-position-strategy-link-pos-open-1")).toHaveAttribute(

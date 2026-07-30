@@ -14,6 +14,7 @@ import type {
   MarketWatcherScanResult,
   PaginatedMarketWatcherRecentScans,
 } from "@/lib/api/types";
+import { formatDateTime, formatPrice, UNAVAILABLE } from "@/lib/format";
 
 const CONFIRM_PHRASE = "RUN_READ_ONLY_SCAN";
 const CREATE_IN_APP_ALERTS_PHRASE = "CREATE_IN_APP_ALERTS_ONLY";
@@ -36,11 +37,15 @@ const SETUP_DETECTOR_LABELS: Record<(typeof SETUP_DETECTOR_CONDITIONS)[number], 
   breakout_retest: "Breakout retest",
 };
 
+/** Price levels; keep non-numeric strings local (shared formatPrice is numeric-only). */
 function formatLevel(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === "") return "—";
-  const numeric = typeof value === "number" ? value : Number(value);
-  if (Number.isFinite(numeric)) return numeric.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  return String(value);
+  if (value === null || value === undefined || value === "") return UNAVAILABLE;
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return value;
+    return formatPrice(numeric);
+  }
+  return formatPrice(value);
 }
 
 export default function WatcherPage() {
@@ -154,7 +159,7 @@ export default function WatcherPage() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-zinc-300">
             <p data-testid="watcher-persisted-scan-time">
-              {new Date(summary.last_scan_at).toLocaleString()} · status{" "}
+              {formatDateTime(summary.last_scan_at)} · status{" "}
               {summary.last_scan_status ?? "unknown"}
             </p>
             <p data-testid="watcher-persisted-scan-stats">
@@ -193,7 +198,7 @@ export default function WatcherPage() {
               {recentScans.items.map((scan) => (
                 <li key={scan.id} data-testid="watcher-recent-scan-item">
                   <span className="text-zinc-200">
-                    {new Date(scan.scanned_at).toLocaleString()} · {scan.status}
+                    {formatDateTime(scan.scanned_at)} · {scan.status}
                   </span>
                   {" · "}
                   {scan.dry_run ? "dry-run" : "in-app"} · candidates {scan.candidate_count} ·

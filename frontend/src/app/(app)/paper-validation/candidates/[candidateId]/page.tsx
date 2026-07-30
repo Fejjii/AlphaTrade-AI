@@ -13,6 +13,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { setupConditionLabel } from "@/lib/alert-display";
 import type { PaperValidationCandidateStatus } from "@/lib/api/types";
+import { formatPrice } from "@/lib/format";
 
 const CHECKLIST_LABELS: Record<string, string> = {
   trend_checked: "Trend checked",
@@ -35,11 +36,6 @@ const DEFAULT_PLAN = {
   planned_success_criteria: "Price moves toward first target area without invalidation.",
   planned_failure_criteria: "Invalidation level hit or thesis no longer valid.",
 };
-
-function formatLevel(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
 
 export default function PaperValidationCandidateDetailPage() {
   const params = useParams<{ candidateId: string }>();
@@ -146,9 +142,9 @@ export default function PaperValidationCandidateDetailPage() {
           <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-2">
             <p>Direction: {candidate.direction ?? "—"}</p>
             <p>Risk mode: {candidate.risk_mode}</p>
-            <p>Trigger: {formatLevel(candidate.trigger_level)}</p>
-            <p>Invalidation: {formatLevel(candidate.invalidation_level)}</p>
-            <p>Latest price: {formatLevel(candidate.latest_price)}</p>
+            <p>Trigger: {formatPrice(candidate.trigger_level)}</p>
+            <p>Invalidation: {formatPrice(candidate.invalidation_level)}</p>
+            <p>Latest price: {formatPrice(candidate.latest_price)}</p>
             <p>Draft: {candidate.draft_id}</p>
           </div>
 

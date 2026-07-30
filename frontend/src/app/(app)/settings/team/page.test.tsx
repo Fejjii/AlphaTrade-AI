@@ -25,7 +25,7 @@ describe("Settings team shim (FP2-129)", () => {
   it("re-exports invitations with honest empty state after success", async () => {
     listInvitationsMock.mockResolvedValue({ invitations: [] });
     render(<SettingsTeamPage />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Team invitations/i);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/^Team$/);
     expect(await screen.findByText(/No invitations yet/i)).toBeInTheDocument();
     expect(screen.queryByTestId("loading-state")).not.toBeInTheDocument();
   });

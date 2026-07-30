@@ -141,6 +141,16 @@ describe("AT-040 Phase B navigation config", () => {
     expect(settings.find((i) => i.href === "/settings/team")?.label).toBe("Team");
   });
 
+  it("keeps Analytics primary label aligned with the Analytics page (FP2-119 residual)", () => {
+    const analytics = PRIMARY_DESTINATIONS.find((d) => d.id === "analyze");
+    expect(analytics?.label).toBe("Analytics");
+    expect(analytics?.ariaLabel).toBe("Analytics");
+    expect(resolvePageIdentity("/analytics")).toMatchObject({
+      title: "Analytics",
+      subtitle: null,
+    });
+  });
+
   it("resolves exactly one secondary active href via longest match", () => {
     const signals = getSecondaryItems("signals");
     const validate = getSecondaryItems("validate");

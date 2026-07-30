@@ -12,6 +12,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { reviewStatusLabel, setupConditionLabel } from "@/lib/alert-display";
 import type { PaperValidationDraftItem, SetupAlertReviewItem, SetupAlertReviewStatus } from "@/lib/api/types";
+import { formatDateTime, formatPercent, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const CREATE_PAPER_VALIDATION_DRAFT = "CREATE_PAPER_VALIDATION_DRAFT";
@@ -22,16 +23,6 @@ const REVIEW_STATUSES: SetupAlertReviewStatus[] = [
   "ignored",
   "important",
 ];
-
-function formatLevel(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
-function formatConfidence(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return `${Math.round(value * 100)}%`;
-}
 
 type AlertCardProps = {
   alert: SetupAlertReviewItem;
@@ -96,14 +87,14 @@ function SetupAlertReviewCard({
             <Badge variant="muted">{alert.direction ?? "—"}</Badge>
           </div>
           <p className="text-xs text-zinc-500">
-            Created {new Date(alert.created_at).toLocaleString()}
+            Created {formatDateTime(alert.created_at)}
           </p>
         </div>
         <Badge
           variant={alert.review_status === "important" ? "warning" : "muted"}
           data-testid="setup-alert-confidence"
         >
-          {formatConfidence(alert.confidence)}
+          {formatPercent(alert.confidence, 0)}
         </Badge>
       </div>
 
@@ -113,14 +104,14 @@ function SetupAlertReviewCard({
 
       <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-3">
         <p data-testid="setup-alert-trigger">
-          Trigger: <span className="text-zinc-200">{formatLevel(alert.trigger_level)}</span>
+          Trigger: <span className="text-zinc-200">{formatPrice(alert.trigger_level)}</span>
         </p>
         <p data-testid="setup-alert-invalidation">
           Invalidation:{" "}
-          <span className="text-zinc-200">{formatLevel(alert.invalidation_level)}</span>
+          <span className="text-zinc-200">{formatPrice(alert.invalidation_level)}</span>
         </p>
         <p data-testid="setup-alert-latest-price">
-          Latest: <span className="text-zinc-200">{formatLevel(alert.latest_price)}</span>
+          Latest: <span className="text-zinc-200">{formatPrice(alert.latest_price)}</span>
         </p>
       </div>
 
