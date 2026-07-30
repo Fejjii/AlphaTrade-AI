@@ -6,16 +6,26 @@ AlphaTrade remains **paper-only**. Live trading stays disabled
 (`EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `PROVIDER_MODE=fallback` in
 staging, `EXCHANGE_MODE` non-live). Nothing in this protocol changes those
 invariants, deploys anything, or modifies production code. This document defines
-**how a human trader runs a disciplined two-week paper trial** using AlphaTrade's
+**how a human trader runs a disciplined two-week paper pilot** using AlphaTrade's
 existing strategy lifecycle, backtesting, paper validation, journal, and
 behavioural-analytics capabilities, and how the results are read afterward.
 
+**The two-week window is an operational and process-reliability pilot.** It
+validates that the system runs dependably and that the trader follows a
+disciplined process. It may collect **preliminary** setup evidence, but on its
+own it does **not** establish robust strategy profitability and does **not**
+authorize canonical Tier 1 promotion from a small sample. Robust setup
+evidence requires the extended sample framework in
+[§2](#2-evaluation-window-and-sample-framework), typically several two-week
+pilots strung together.
+
 All specific numbers in this document (durations, minimum sample sizes, risk
 percentages, thresholds) are **recommended starting defaults**, not permanent
-rules. Where AlphaTrade already exposes a configurable setting (e.g.
-`backtest_tier1_oos_min_trades`, `user_risk_settings.max_risk_per_trade_percent`),
-this protocol references the existing setting rather than hardcoding a
-competing number. See [Related repository documentation](#related-repository-documentation).
+rules, and are explicitly configurable. Where AlphaTrade already exposes a
+configurable setting (e.g. `backtest_tier1_oos_min_trades`,
+`user_risk_settings.max_risk_per_trade_percent`), this protocol references the
+existing setting rather than hardcoding a competing number. See
+[Related repository documentation](#related-repository-documentation).
 
 ---
 
@@ -27,10 +37,10 @@ profitability.
 | Purpose | What "evidence" looks like |
 |---|---|
 | **System dependability** | Scheduler/scan/tick ticks run when expected, data freshness holds, alerts fire, no unhandled errors — see [system availability metrics](#63-system-availability-and-workflow-reliability). |
-| **Trading-process discipline** | Rule compliance, stop respected, no revenge trades, no overtrading, journal completed every session — see [Behavioural-discipline criteria](#65-behavioural-discipline-criteria). |
-| **Setup-level evidence** | Enough paper trades per setup, by symbol/timeframe/regime, to say something statistically meaningful — see [§3](#3-setup-classification). |
+| **Trading-process discipline** | Rule compliance, stop respected, no revenge trades, no overtrading, journal completed every session — see [Behavioural-discipline criteria](#624-behavioural-discipline-criteria). |
+| **Preliminary setup-level evidence** | A first, honestly-labeled sample per setup, by symbol/timeframe/regime — feeds the canonical evidence framework in [§3](#3-setup-classification) but is not, by itself, sufficient to promote a setup. |
 | **Human vs. system comparison** | Where the trader deviated from AlphaTrade's pre-trade/paper-validation guidance, and whether that deviation helped or hurt — via `GET /journal/comparison` and `/human-vs-system/{id}` ([human_vs_system.md](../human_vs_system.md)). |
-| **Explicit non-goal** | **No profitability claim or guarantee is made or implied by this protocol, by AlphaTrade, or by any report it produces.** Paper fills are simulated, not exchange fills (see [paper_validation.md](../paper_validation.md) limitations). |
+| **Explicit non-goal** | **No profitability claim or guarantee is made or implied by this protocol, by AlphaTrade, or by any report it produces.** Paper fills are simulated, not exchange fills (see [paper_validation.md](../paper_validation.md) limitations). Two weeks is a process/dependability pilot first and, at most, a very early and low-confidence profitability signal. |
 
 This protocol is a **process document**. It does not add features, change risk
 defaults, or enable any new execution path. It only defines how existing
@@ -38,113 +48,175 @@ capabilities are used and read.
 
 ---
 
-## 2. Evaluation duration and sample targets
+## 2. Evaluation window and sample framework
 
-### 2.1 Duration
+### 2.1 The two-week window is a pilot, not a proof
 
 - **Two calendar weeks** of active operating days (proposed default: 10
-  trading days; extend for weekends/holidays as needed). This is a **trial
-  window**, not a fixed regulatory or contractual term — it may be extended
-  per [§2.4](#24-when-the-sample-is-insufficient).
+  trading days; extend for weekends/holidays as needed) is a **pilot window**
+  for exercising the daily operating loop, the system's dependability, and
+  the trader's process discipline end to end.
 - The window starts once a strategy is `paper_eligible` (see
   [strategy_library.md](../strategy_library.md#paper-eligibility-slice-38))
   and paper validation and/or manual paper trading has begun.
+- The pilot is explicitly **not** sized to be a statistically robust
+  profitability study. It is one data point toward the extended sample
+  targets in [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable),
+  usually the first of several consecutive pilots feeding the same setup's
+  evidence base.
 
-### 2.2 Minimum trade and observation targets (proposed defaults)
+### 2.2 Sample framework (proposed defaults, explicitly configurable)
 
-| Level | Minimum target over 2 weeks | Rationale |
+| Level | Target sample | What it is for |
 |---|---|---|
-| Overall (all setups combined) | ≥ 20 closed paper trades | Matches the existing `backtest_tier1_min_confirm_trades` default (20) already used for non-backtest confirmation evidence ([backtesting.md](../backtesting.md)). |
-| Per **important** setup (Tier 1 candidate) | ≥ 10 closed trades | Below AlphaTrade's own Tier 1/Tier 2 backtest thresholds (30/15) by design — two weeks of live paper flow is a *smaller, faster* sample than a backtest, so its bar for promotion must be at least as strict, not looser. |
-| Per symbol × timeframe × regime bucket | ≥ 5 observations before any bucket-specific claim | Below this, buckets are reported as `insufficient_data`, matching the `insufficient` confidence label already used in journal statistics (`journal_statistics_service`, <5 closed trades). |
-| Daily minimum | ≥ 1 journal entry per trading day, even on no-trade days ("no trade taken, here is why") | Keeps the discipline record continuous — see [§4](#4-daily-operating-loop). |
+| Two-week pilot, combined (all setups) | **≈ 20+ closed paper trades** | Process/dependability sample — enough activity to exercise the daily loop, journal discipline, and system reliability checks. Not a profitability sample. |
+| Serious setup evidence, per **important** setup | **≈ 30–50 closed trades** | The minimum sample this protocol considers meaningful for judging a single setup's win rate/expectancy with reasonable confidence — deliberately at or above AlphaTrade's own backtest `tier2_min_trades`/`tier1_oos_min_trades` defaults (30), not below them. |
+| Broader evaluation target, overall | **≈ 100–200 closed paper trades** | The scale at which cross-setup, cross-regime conclusions become reasonably reliable. |
+| Serious evidence window | **At least 4–6 weeks; preferably 8–12 weeks** when market/setup frequency permits | The time horizon over which the 30–50-per-setup and 100–200-overall targets are realistically expected to accumulate — almost never inside a single two-week pilot. |
+| Daily minimum (pilot process check) | ≥ 1 journal entry per trading day, even on no-trade days ("no trade taken, here is why") | Keeps the discipline record continuous — see [§4](#4-daily-operating-loop). |
+| Symbol × timeframe × regime buckets below useful sample | **Descriptive only** — report the raw counts and observed values, never a comparative or promotion-relevant claim | Below roughly 5 observations, a bucket is too thin to compare against another bucket or to support any decision; it exists in the report as raw data, not as evidence. |
 
-These are **evaluation-window minimums for drawing conclusions**, not trade
-quotas. Never manufacture trades to hit a number — see
+These are **targets for accumulating a meaningful sample across one or more
+pilots**, not trade quotas for any single two-week window. **Never
+manufacture trades to reach a target** — see
 [§8 defect-triage and anti-gaming note](#8-defect-triage-rules).
 
-### 2.3 Target observations per important setup
+### 2.3 Target observations per important setup within a single pilot
 
 "Important" means any setup the trader intends to size normally or scale in
 the near term (typically the existing `StrategyId` / `setup_id` values already
 tracked in [trading_analytics.md](../trading_analytics.md#setup-tracking), e.g.
 `htf_trend_pullback`, `liquidity_sweep_reversal`).
 
-Proposed target: **10–20 observations per important setup within the two-week
-window**, split as evenly as practical across the symbol/timeframe/regime
-buckets that setup actually trades. If a setup only fires 2–3 times in two
-weeks, it is **not evaluable yet** in this window — carry it into the next
-cycle (see [§2.4](#24-when-the-sample-is-insufficient)) rather than judging it.
+Within one two-week pilot, an important setup should accumulate **as many
+observations as market frequency honestly allows**, understood as a partial
+contribution toward the [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable)
+serious-evidence target of ~30–50 trades — not as a standalone proof point. A
+setup that fires only 2–3 times in two weeks is simply early in its evidence
+accumulation; it is not "insufficient" as a fault of the pilot, it is
+expected, and it carries forward into the next pilot (see
+[§2.4](#24-when-the-sample-is-insufficient)).
 
 ### 2.4 When the sample is insufficient
 
-A setup, symbol, or bucket is **insufficient** when it has fewer observations
-than the §2.2/2.3 minimums. When insufficient:
+A setup, symbol, or bucket is **insufficient** whenever it sits below the
+serious-evidence targets in [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable)
+— which, for most setups, includes the entirety of a single two-week pilot.
+When insufficient:
 
-1. Label every report and metric for that setup/bucket `insufficient_data`
-   (mirrors the existing `insufficient` / `needs_more_sample` /
-   `insufficient_data` states already returned by
-   `paper_validation.md` promotion recommendations and
-   `strategies/{id}/paper-eligibility`).
-2. **Do not promote.** Do not report a win rate, expectancy, or "this setup
-   works" conclusion from a sample below the minimum — report the raw count
-   and explicitly flag it as too small to be meaningful.
-3. Extend the collection window for that setup only (see
-   [§9](#9-final-decision-outcomes) — "extend sample collection"); do not
-   extend the whole trial just to prop up one thin setup.
+1. Label the report with the operational status **`insufficient sample`**
+   (see [§3.2](#32-operational-statuses-used-during-the-two-week-pilot)) —
+   this mirrors, and is consistent with, the existing `insufficient_data` /
+   `needs_more_sample` states already returned by
+   [paper_validation.md](../paper_validation.md) promotion recommendations
+   and `strategies/{id}/paper-eligibility`.
+2. **Do not claim, promote, or imply a canonical evidence tier.** Report the
+   raw count and observed values, explicitly flagged as too small to support
+   any conclusion — see [§3.3](#33-canonical-tier-1-promotion-requirements)
+   for why a single pilot's sample essentially never clears that bar alone.
+3. Carry the setup forward for continued sample collection (see
+   [§9](#9-final-decision-outcomes) — "extend sample collection"). Do not
+   extend or distort the whole pilot's reporting cadence just to manufacture
+   a bigger number for one thin setup.
 4. Never average across buckets to disguise a thin sample as an aggregate
-   pass — buckets are reported separately per [§3.4](#34-separate-evidence-by-symbol-timeframe-and-market-regime).
+   pass — buckets are reported separately per
+   [§3.6](#36-separate-evidence-by-symbol-timeframe-and-market-regime).
 
-**Rule of thumb: a promotion decision made on fewer than the §2.2 minimum
-trades is not a promotion decision — it is a guess, and must be labeled as
-one if reported at all.**
+**Rule of thumb: any tier claim made on a sample below the [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable)
+serious-evidence target is not a tier claim — it is a guess, and must be
+labeled as one if reported at all.**
 
 ---
 
 ## 3. Setup classification
 
-This protocol layers a **paper-evaluation tier** on top of (not instead of)
-the existing backtest evidence tiers in
-[backtesting.md §Setup evidence tiers](../backtesting.md) and the paper
-validation `recommendation` field in [paper_validation.md](../paper_validation.md).
-Backtest tiers judge historical replay evidence; the tiers below judge the
-**two-week live-paper trial** evidence layered on top.
+This protocol does **not** introduce a second, competing tier system. There
+is exactly **one canonical evidence framework**, already defined elsewhere in
+the repository:
 
-### 3.1 Tiers
+| Canonical source | What it classifies |
+|---|---|
+| [backtesting.md — Setup evidence tiers](../backtesting.md) | Historical backtest replay evidence: `tier1` / `tier2` / `tier3`, driven by `backtest_tier1_*` / `backtest_tier2_*` settings. |
+| [paper_validation.md — Promotion](../paper_validation.md) | Paper-validation runtime recommendation: `continue` / `improve` / `restrict` / `retire` / `insufficient_data` / `paper_validated`. |
+| `GET /journal/setup-evidence` (see [journal_intelligence_foundation.md](../journal_intelligence_foundation.md), [research_validation.md](../research_validation.md)) | Combined backtest + confirm-trade evidence tiers used for research-validation promotion. |
 
-| Tier | Meaning | Minimum evidence (proposed defaults) |
+This protocol's job is to **feed disciplined, honestly-labeled paper trades
+into that one framework** — never to define a parallel "two-week tier" that
+could be confused with, or contradict, the canonical tiers above.
+
+### 3.1 What this protocol reports instead of a competing tier
+
+During and at the end of a two-week pilot, reports use **operational
+statuses** that describe progress toward the canonical framework, not a tier
+of their own.
+
+### 3.2 Operational statuses used during the two-week pilot
+
+| Status | Meaning | Typical trigger |
 |---|---|---|
-| **Tier 1 — Trusted for continued normal paper sizing** | Setup has enough same-window paper trades with acceptable metrics and full rule compliance to keep trading it at planned size. | ≥ 10 closed paper trades in the window; win rate and expectancy computed per [§3.3](#33-minimum-evidence-requirements); rule compliance ≥ 90% (`followed`, using the existing worst-assessment classification from `journal_statistics_service`); max drawdown for the setup's paper equity slice within the configured risk settings ([risk_management.md](../risk_management.md)); backtest evidence (if any) not below `tier2`. |
-| **Tier 2 — Provisional / probe-only** | Setup shows early promise or has passed backtest tier1/tier2 but has not yet accumulated enough live-paper trades, or has minor rule-compliance gaps. | 5–9 closed paper trades, or ≥ 10 trades with rule compliance 75–89%, or expectancy positive but with wide confidence interval (small n). Trade at reduced/probe size only, per the trader's existing risk settings — this protocol does not introduce a new sizing mechanism. |
-| **Tier 3 — Under review / not yet evidenced** | New setup, thin sample (< 5 trades), rule compliance < 75%, negative expectancy, or any open P0 defect touching that setup (see [§8](#8-defect-triage-rules)). | Any trade count below Tier 2 thresholds, or any setup with an unresolved critical lesson blocker (`unresolved_lesson_observations` per [strategy_library.md](../strategy_library.md#paper-eligibility-slice-38)). |
+| **Insufficient sample** | Below the [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable) serious-evidence target for this setup/bucket. | Fewer than ~30 trades for the setup, or fewer than ~5 for a symbol/timeframe/regime bucket. |
+| **Preliminary** | Early trend visible (directionally positive or negative), but sample and/or regime coverage too thin for a canonical tier claim. | Roughly 10–29 trades with reasonably stable metrics and no P0 defects. |
+| **Continue testing** | Metrics acceptable so far, no defects, rule compliance holding — keep running at planned (paper) size to build sample. | Any status above with no red flags. |
+| **Revision required** | A specific, identifiable process or rule issue is visible in the data (e.g. stop not respected, entries firing outside the intended regime) that should be fixed before more sample is collected on the current version. | Rule-compliance or drawdown concerns traced to a correctable cause. |
 
-Tier assignment is **evaluation-window scoped** — a setup's tier can differ
-between the two-week paper-trial tier here and its backtest evidence tier in
-`GET /journal/setup-evidence` / `research_validation.md`. Both should be
-reported side by side, never merged into one number.
+These statuses are always reported **alongside**, and never **instead of**,
+the setup's canonical evidence tier when one is determinable (from
+`GET /journal/setup-evidence`, backtest tier, or paper-validation
+recommendation). If no canonical tier has yet been computed for the setup,
+the report says so explicitly (`canonical tier: not yet determinable`)
+rather than substituting an operational status as if it were one.
 
-### 3.2 Promotion and demotion rules
+### 3.3 Canonical Tier 1 promotion requirements
 
-- **Promotion (Tier 3 → 2, or 2 → 1)** requires meeting the *higher* tier's
-  minimum evidence in [§3.1](#31-tiers) **and** no open P0 defect for that
-  setup ([§8](#8-defect-triage-rules)) **and** an explicit human sign-off
-  recorded in the [setup evidence summary](#73-setup-evidence-summary-template)
-  — promotion is never automatic.
-- **Demotion (Tier 1 → 2, or → 3)** is immediate and does not wait for the
-  end of the two-week window when any of the following occurs:
-  - Rule compliance drops below the tier's minimum in a rolling assessment.
-  - A P0 defect is opened against that setup.
-  - Two consecutive losing trades exceed the setup's expected loss size
-    (stop not respected, or MAE far beyond planned invalidation).
-  - The setup is flagged `restricted` by existing paper-eligibility gates
-    ([strategy_library.md](../strategy_library.md#paper-eligibility-slice-38)).
-- Demotions are logged in the daily report ([§7.1](#71-daily-evaluation-report))
-  the day they occur — never silently.
-- **No setup may be promoted on the strength of a single strong trade or a
-  short win streak.** Promotion always references the minimum sample sizes in
-  [§2](#2-evaluation-duration-and-sample-targets) and [§3.1](#31-tiers).
+Tier 1 (per the canonical frameworks in [§3](#3-setup-classification)) is
+**never** awarded from a two-week pilot's ~10-trade sample alone. Promotion to
+canonical Tier 1 requires **all** of the following:
 
-### 3.3 Minimum evidence requirements
+- The configured minimum sample requirement is met — per
+  [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable),
+  proposed default ≈ 30–50 closed trades for the setup (consistent with, not
+  weaker than, `backtest_tier1_oos_min_trades` / `backtest_tier2_min_trades`
+  defaults of 30 in [backtesting.md](../backtesting.md)), ideally supported
+  by the broader ≈ 100–200-trade overall target and a ≥ 4–6-week (preferably
+  8–12-week) collection window.
+- **Positive expectancy after fees, funding, and slippage** — not gross PnL.
+- **Acceptable maximum drawdown**, measured against the trader's configured
+  risk settings ([risk_management.md](../risk_management.md)), not an
+  arbitrary or unconfigured number.
+- **Strong rule compliance** — proposed default ≥ 90% `followed`
+  classification (worst-assessment basis, `journal_trade_rule_checks`).
+- **Evidence across relevant market regimes**, not a single regime that
+  happened to be favorable during the sample window (see
+  [§3.6](#36-separate-evidence-by-symbol-timeframe-and-market-regime)).
+- **No unresolved safety or data-honesty (P0) defect** touching the setup
+  (see [§8](#8-defect-triage-rules)).
+- **Explicit human review and sign-off**, recorded in the
+  [setup evidence summary](#73-setup-evidence-summary) — promotion is never
+  automatic and never inferred silently from metrics crossing a threshold.
+
+A single two-week pilot is, by design, expected to produce at most a
+**preliminary** or **continue testing** status (§3.2) toward this bar — it is
+normally one contributing pilot among several, not the deciding evidence run.
+
+### 3.4 Demotion and restriction triggers
+
+Regardless of prior canonical tier, any of the following triggers an
+immediate demotion/restriction review — it does not wait for the end of the
+pilot window:
+
+- Rule compliance drops below the proposed 90% bar in a rolling assessment.
+- A P0 defect is opened against the setup ([§8](#8-defect-triage-rules)).
+- Two consecutive losing trades exceed the setup's expected loss size (stop
+  not respected, or MAE far beyond planned invalidation).
+- The setup is flagged `restricted` by existing paper-eligibility gates
+  ([strategy_library.md](../strategy_library.md#paper-eligibility-slice-38))
+  or receives a `restrict`/`retire` recommendation from paper validation.
+
+Demotions/restrictions are logged in the daily report
+([§7.1](#71-daily-evaluation-report)) the day they occur — never silently,
+and never deferred to the end-of-week summary.
+
+### 3.5 Minimum evidence requirements (metrics)
 
 Per setup, the evidence summary must report (using existing, already-computed
 fields where possible — no new metric definitions):
@@ -152,17 +224,17 @@ fields where possible — no new metric definitions):
 | Metric | Source |
 |---|---|
 | Win rate | `journal_statistics_service` win/loss/breakeven split, or `paper_validation` metrics |
-| Expectancy (after estimated fees/slippage) | `journal_trades.net_pnl` aggregate, or `paper_trades` fees/slippage fields |
+| Expectancy (after fees, funding, and slippage) | `journal_trades.net_pnl` aggregate, or `paper_trades` fees/slippage/funding fields |
 | Average win / average loss | Same PnL family as above |
 | MFE / MAE | `journal_trades` excursion fields (manual entry or AT-032 replay) — see [journal_intelligence_foundation.md §5](../journal_intelligence_foundation.md) |
-| Drawdown (setup-level slice) | Derived from the sequence of closed trades for that setup within the window; report alongside, not instead of, portfolio-level `max_drawdown_pct` ([paper_validation.md](../paper_validation.md)) |
+| Drawdown (setup-level slice) | Derived from the sequence of closed trades for that setup within the sample; report alongside, not instead of, portfolio-level `max_drawdown_pct` ([paper_validation.md](../paper_validation.md)) |
 | Rule compliance | `journal_trade_rule_checks` worst-assessment classification (`violated` > `partial` > `compliant` > `unassessed`) |
 
-Metric families with insufficient sample use `None`/`insufficient_data`
+Metric families with insufficient sample use `None`/`insufficient sample`
 labels rather than a silently computed number — matching existing
 `journal_statistics_service` semantics (never a silent zero).
 
-### 3.4 Separate evidence by symbol, timeframe, and market regime
+### 3.6 Separate evidence by symbol, timeframe, and market regime
 
 Do not report one blended number per setup. Break out at minimum:
 
@@ -171,9 +243,11 @@ Do not report one blended number per setup. Break out at minimum:
 - **Market regime** (`MarketRegime` values already recorded on journal trades,
   e.g. trending / ranging / high-volatility)
 
-A setup can be Tier 1 on one symbol/timeframe/regime combination and Tier 3
-on another within the same window — report both. Buckets below the §2.2
-minimum are `insufficient_data`, never merged upward into a healthier bucket.
+A setup can carry different operational statuses across symbol/timeframe/regime
+combinations within the same pilot — report all of them. Buckets below the
+useful-sample floor in [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable)
+are **descriptive only**, never merged upward into a healthier bucket and
+never used to support a canonical tier claim.
 
 ---
 
@@ -200,7 +274,7 @@ AlphaTrade surfaces rather than introducing new tooling.
      recommendations from pre-trade analysis (`POST /pretrade/analyze`,
      [pre_trade_analysis.md](../pre_trade_analysis.md)).
    - Note explicitly whether the trader agrees or disagrees with the
-     system's read — this feeds [§6.5](#65-behavioural-discipline-criteria)
+     system's read — this feeds [§6.2.4](#624-behavioural-discipline-criteria)
      human-vs-system comparison later.
 
 4. **Pre-trade plan**
@@ -287,11 +361,11 @@ rather than free text.
 | Metric | Definition | Existing source |
 |---|---|---|
 | Setup win rate | wins / (wins + losses), closed trades only | `journal_statistics_service` |
-| Expectancy after estimated fees/slippage | (win rate × avg win) − (loss rate × avg loss), net of `fees`/`slippage`/`funding` | Journal PnL fields |
+| Expectancy after fees, funding, and slippage | (win rate × avg win) − (loss rate × avg loss), net of `fees`/`slippage`/`funding` | Journal PnL fields |
 | Average win / average loss | Mean net PnL per winning/losing trade | Journal PnL fields |
 | Maximum drawdown | Equity-curve based, both portfolio-level and setup-level slice | `paper_validation.md` `max_drawdown_pct` pattern |
 | Rule compliance | % `followed` across recorded rule checks (worst-assessment per trade) | `journal_trade_rule_checks` |
-| Revenge-trade violations | Count of trades entered inside the mandatory cooldown window after a loss ([§4.8](#4-daily-operating-loop)), or that violate `overtrading_guard_enabled` | Journal timestamps + risk-behavior analytics |
+| Revenge-trade violations | Count of trades entered inside the mandatory cooldown window after a loss ([§4 step 8](#4-daily-operating-loop)), or that violate `overtrading_guard_enabled` | Journal timestamps + risk-behavior analytics |
 | Early-exit cost | Trades with `realized_vs_available_pct` well below 100% due to early exit, per existing runner-analyzer definition (capture < 50% of MFE flagged) | `human_vs_system_service` runner analyzer, `journal_statistics_service` early-exit rate |
 | Missed-profit analysis | `available_profit − net_pnl` where positive, using the existing conservative (capped) estimate | Runner analyzer, [human_vs_system.md](../human_vs_system.md) |
 | Human vs. system comparison | Entry timing %, plan-adherence score, actor scorecards (human vs. system) | `GET /journal/comparison` ([journal_intelligence_foundation.md §7](../journal_intelligence_foundation.md)) |
@@ -316,24 +390,36 @@ result in one category never substitutes for a weak result in another.
 
 #### 6.2.2 Strategy-evidence criteria
 
-- Sample size at or above the [§2](#2-evaluation-duration-and-sample-targets)
-  minimums for any setup being judged.
-- Tier assignment per [§3](#3-setup-classification) is internally consistent
-  (metrics support the claimed tier).
-- Evidence is broken out by symbol/timeframe/regime, not blended.
+- Sample size and operational status honestly reported per
+  [§2](#2-evaluation-window-and-sample-framework) and
+  [§3.2](#32-operational-statuses-used-during-the-two-week-pilot) — the
+  pilot's own operational status (insufficient sample / preliminary /
+  continue testing / revision required) is internally consistent with the
+  underlying metrics.
+- **No canonical Tier 1/2/3 claim is made from this pilot alone** unless the
+  full [§3.3](#33-canonical-tier-1-promotion-requirements) requirements are
+  independently met (they typically are not, within a single two-week
+  window).
+- Evidence is broken out by symbol/timeframe/regime, not blended
+  ([§3.6](#36-separate-evidence-by-symbol-timeframe-and-market-regime)).
 
 #### 6.2.3 Profitability evidence
 
 - Reported **as observed data only** (expectancy, win rate, drawdown) with
-  explicit confidence labeling by sample size.
+  explicit confidence labeling by sample size, using the operational statuses
+  in [§3.2](#32-operational-statuses-used-during-the-two-week-pilot).
 - **Never reported as a guarantee, projection, or claim of future
-  performance.** Two weeks of paper data is a discipline and dependability
-  signal first, and at most a weak profitability signal — label it as such
-  in every report.
+  performance, and never treated as sufficient on its own to establish
+  robust strategy profitability.** The two-week window is a process and
+  dependability pilot first; any profitability read from it is preliminary
+  and low-confidence by construction, and must be labeled as such in every
+  report — see [§2.1](#21-the-two-week-window-is-a-pilot-not-a-proof).
 
 #### 6.2.4 Behavioural-discipline criteria
 
-- Rule compliance ≥ proposed default 90% for any setup considered for Tier 1.
+- Rule compliance ≥ proposed default 90% for any setup being considered for
+  extended-evidence review toward canonical Tier 1
+  ([§3.3](#33-canonical-tier-1-promotion-requirements)).
 - Zero unresolved revenge-trade violations at window close (or all explicitly
   reviewed and journaled).
 - Journal completed same-day for every trading day (100% coverage is the
@@ -408,18 +494,21 @@ Lesson candidate created: <yes/no — link>
 ```markdown
 ## Setup Evidence Summary — <setup_id> — window <start>–<end>
 
-Sample size: <n trades> (minimum required: <per §2/§3>) — <sufficient|insufficient>
-Breakdown: symbol × timeframe × regime table (counts, win rate, expectancy per bucket)
-Win rate: <...> | Expectancy (net of fees/slippage): <...>
+Sample size this pilot: <n trades> | Cumulative sample across pilots: <n trades>
+  (serious-evidence target: ~30-50 per §2.2) — <insufficient sample|on track|met>
+Breakdown: symbol × timeframe × regime table (counts, win rate, expectancy per bucket;
+  buckets below useful sample are descriptive only, see §3.6)
+Win rate: <...> | Expectancy (net of fees/funding/slippage): <...>
 Avg win / avg loss: <...> | MFE/MAE (avg): <...>
 Setup-level max drawdown: <...>
 Rule compliance: <...>%
 Revenge-trade violations: <count>
 Early-exit cost / missed-profit total: <...>
-Backtest evidence tier (if any, from GET /journal/setup-evidence): <tier1|tier2|tier3|none>
-Two-week paper-trial tier (this protocol, §3): <Tier 1|2|3>
-Tier change this window: <none | promoted from X | demoted from X — reason>
-Recommendation: <continue|revise|demote|archive|extend sample — see §9>
+Canonical evidence tier (backtest / paper-validation / GET /journal/setup-evidence,
+  §3.1): <tier1|tier2|tier3|not yet determinable>
+Operational status this pilot (§3.2): <insufficient sample|preliminary|continue testing|revision required>
+Status change this window: <none | changed from X — reason>
+Recommendation: <continue testing|revise|extend sample collection|demote/restrict|archive — see §9>
 ```
 
 ### 7.4 End-of-week review
@@ -428,7 +517,7 @@ Recommendation: <continue|revise|demote|archive|extend sample — see §9>
 ## End-of-Week Review — Week <1|2> (<date range>)
 
 Trades taken: <n> | Journal completion rate: <%>
-Setups evaluated this week: <list with tier and sample size>
+Setups evaluated this week: <list with operational status and sample size, §3.2>
 Behavioural-discipline summary: rule compliance <%>, revenge-trade violations <n>,
   guard triggers <n>
 System reliability: scheduler/tick success rate <%>, stale-data incidents <n>,
@@ -436,7 +525,7 @@ System reliability: scheduler/tick success rate <%>, stale-data incidents <n>,
 Human vs. system: entry timing %, plan adherence score, actor scorecard summary
   (GET /journal/comparison)
 Carried-over issues into week 2 (if week 1): <list>
-Preliminary read (not a decision): <free text — explicitly non-binding>
+Preliminary read (not a decision, no profitability claim): <free text — explicitly non-binding>
 ```
 
 ### 7.5 Final two-week decision report
@@ -451,15 +540,17 @@ System availability / reliability summary: <...>
 P0 defects encountered: <n> (all resolved before continuing? y/n)
 
 ### Per-setup outcomes
-<table: setup | sample size | tier assigned | recommendation | rationale>
+<table: setup | sample size (pilot / cumulative) | operational status (§3.2) |
+  canonical evidence tier if determinable (§3.1) | recommendation | rationale>
 
 ### Product-readiness assessment
 <pass/fail against §6.2.1 criteria, with evidence>
 
 ### Strategy-evidence assessment
-<per-setup, referencing §3 tiers and sample sizes>
+<per-setup, referencing §2 sample targets and §3 operational statuses —
+  explicitly note that no canonical Tier 1 claim is made unless §3.3 is fully met>
 
-### Profitability evidence (explicitly non-binding, no guarantees)
+### Profitability evidence (explicitly preliminary, non-binding, no guarantees)
 <observed win rate / expectancy / drawdown per setup, with confidence labels>
 
 ### Behavioural-discipline assessment
@@ -469,12 +560,12 @@ P0 defects encountered: <n> (all resolved before continuing? y/n)
 <...>
 
 ### Final decision (select one or more per setup — see §9)
-- [ ] Continue paper testing
+- [ ] Continue testing
 - [ ] Revise setup
-- [ ] Demote setup
-- [ ] Archive setup
 - [ ] Extend sample collection
-- [ ] Prepare restricted real-money discussion (only if criteria in §9 are met)
+- [ ] Demote / restrict setup
+- [ ] Archive setup (only where evidence or rule failure clearly justifies it)
+- [ ] Prepare restricted real-money discussion (only if the extended criteria in §9 are met)
 
 ### Sign-off
 Reviewed by: <name/role> | Date: <...>
@@ -511,17 +602,20 @@ Reviewed by: <name/role> | Date: <...>
 
 ## 9. Final decision outcomes
 
-At the end of the two-week window, each setup receives exactly one primary
-outcome (a setup may carry secondary notes, e.g. "revise AND extend"):
+At the end of the two-week pilot, each setup normally receives one of the
+following outcomes (a setup may carry secondary notes, e.g. "revise AND
+extend"). **Archive is reserved for cases where the evidence or a rule
+failure clearly justifies it** — it is not a default outcome for a merely
+thin or inconclusive sample.
 
 | Outcome | When to choose it |
 |---|---|
-| **Continue paper testing** | Tier 1 or solid Tier 2 evidence, no P0 defects, discipline criteria met — keep running as-is for another cycle to build a larger sample before any further decision. |
-| **Revise setup** | Evidence shows a specific, correctable issue (e.g. stop placement too tight, entries firing in the wrong regime) — update the strategy card/structured rules ([strategy_library.md](../strategy_library.md)) and restart the setup's sample count at the new version. |
-| **Demote setup** | Tier 1 → 2 or 2 → 3 per [§3.2](#32-promotion-and-demotion-rules) triggers, without necessarily discontinuing it — keep at reduced size while gathering more evidence. |
-| **Archive setup** | Persistent negative expectancy, chronic rule-compliance failure, or a P0 defect tied to the setup's logic that cannot be resolved — mark the strategy `archived` ([strategy_library.md](../strategy_library.md#lifecycle)); stop trading it. |
-| **Extend sample collection** | Sample below [§2](#2-evaluation-duration-and-sample-targets) minimums for that specific setup/bucket — continue collecting without promoting or demoting; do not treat the thin sample as a verdict. |
-| **Prepare a restricted real-money discussion** | Only after **strong, multi-window evidence**: Tier 1 status sustained across at least two consecutive two-week windows, product-readiness criteria fully met with zero unresolved P0 defects, behavioural-discipline criteria met, and explicit human sign-off. This outcome **starts a discussion**, not a transition — it does not itself enable `ENABLE_REAL_TRADING` or any live execution path. Any move toward Mode B/C/D broker integration follows the existing phased safety roadmap in [AT010_real_money_safety_roadmap.md](../AT010_real_money_safety_roadmap.md) and requires a separate, explicitly authorized safety/risk/approval program (per workspace trading-safety rules) — this protocol cannot authorize that step on its own. |
+| **Continue testing** | Operational status `preliminary` or `continue testing` (§3.2), no P0 defects, discipline criteria met — keep running at planned (paper) size into the next pilot to build toward the [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable) serious-evidence target. This is the expected outcome for most setups after a single pilot. |
+| **Revise** | Evidence shows a specific, correctable issue (e.g. stop placement too tight, entries firing in the wrong regime) — update the strategy card/structured rules ([strategy_library.md](../strategy_library.md)) and restart the setup's sample count at the new version. |
+| **Extend sample collection** | Sample below [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable) targets for that specific setup/bucket (the normal case for a first pilot) — continue collecting without claiming a canonical tier; do not treat the thin sample as a verdict. |
+| **Demote / restrict** | Triggers in [§3.4](#34-demotion-and-restriction-triggers) fire, or the setup already held a canonical tier that the current evidence no longer supports — reduce size or pause new entries while gathering more evidence; this does not require archiving the setup. |
+| **Archive** | Persistent negative expectancy over a serious-evidence sample, chronic rule-compliance failure, or a P0 defect tied to the setup's logic that cannot be resolved — mark the strategy `archived` ([strategy_library.md](../strategy_library.md#lifecycle)); stop trading it. Not used for a setup that is simply early in sample collection. |
+| **Prepare a restricted real-money discussion** | Only after **strong, extended evidence**, all of the following: (a) ≈ 100–200 total paper trades across the strategy, (b) ≈ 30–50 closed trades for the specific important setup(s) in question, (c) evidence spanning multiple market regimes, (d) expectancy computed net of fees, slippage, and funding, (e) stable drawdown and sustained behavioural discipline over at least 4–6 weeks (preferably 8–12+), and (f) a **separate, explicit safety approval** distinct from this protocol's own sign-off. This outcome **starts a discussion**, not a transition — it does not itself enable `ENABLE_REAL_TRADING` or any live execution path. Any move toward Mode B/C/D broker integration follows the existing phased safety roadmap in [AT010_real_money_safety_roadmap.md](../AT010_real_money_safety_roadmap.md) and requires a separate, explicitly authorized safety/risk/approval program (per workspace trading-safety rules) — this protocol cannot authorize that step on its own, and a single two-week pilot can never by itself satisfy this outcome. |
 
 No outcome in this table changes `EXECUTION_MODE`, `ENABLE_REAL_TRADING`,
 `EXCHANGE_MODE`, or any deployment configuration. Those remain governed by
@@ -534,9 +628,9 @@ existing repository safety controls (`core/deployment_safety.py`,
 
 - [paper_validation.md](../paper_validation.md) — paper bot runtime, scan/tick, promotion recommendations
 - [strategy_library.md](../strategy_library.md) — strategy lifecycle, paper eligibility gates, lesson → version flow
-- [backtesting.md](../backtesting.md) — setup evidence tiers (tier1/tier2/tier3), walk-forward semantics
+- [backtesting.md](../backtesting.md) — canonical setup evidence tiers (tier1/tier2/tier3), walk-forward semantics
 - [research_validation.md](../research_validation.md) — advisory bridge from backtest evidence into the paper validation queue
-- [journal_intelligence_foundation.md](../journal_intelligence_foundation.md) — canonical journal trade schema, statistics, excursion replay, human-vs-system decision quality (AT-036)
+- [journal_intelligence_foundation.md](../journal_intelligence_foundation.md) — canonical journal trade schema, statistics, excursion replay, human-vs-system decision quality (AT-036), `GET /journal/setup-evidence`
 - [journal_learning.md](../journal_learning.md) and [lesson_workflow.md](../lesson_workflow.md) — discipline analysis and lesson review lifecycle
 - [human_vs_system.md](../human_vs_system.md) — per-trade and aggregate human-vs-system comparison
 - [trading_analytics.md](../trading_analytics.md) — setup tracking, discipline score, risk-behavior analytics
@@ -552,11 +646,12 @@ existing repository safety controls (`core/deployment_safety.py`,
 
 ## Assumptions and limitations of this protocol
 
-- All specific numbers (10 trading days, 20/10/5 minimum trade counts, 90%
-  rule-compliance bar, cooldown durations) are **recommended starting
-  defaults** for the first run of this protocol. They are intentionally
-  conservative and should be revisited after the first two-week cycle based
-  on observed data volume — do not treat them as fixed policy.
+- All specific numbers (10 trading days; ≈20+ combined pilot trades; ≈30–50
+  per-setup serious-evidence target; ≈100–200 overall broader target; 4–6
+  week, preferably 8–12 week, serious-evidence window; 90% rule-compliance
+  bar; cooldown durations) are **recommended starting defaults**, explicitly
+  configurable, not permanent hardcoded policy. They should be revisited
+  after each pilot cycle based on observed data volume and market frequency.
 - This protocol does not define new database fields, API endpoints, or
   configuration keys. Every metric and field referenced above already exists
   in the codebase as of this document's writing; where a metric is not
@@ -567,3 +662,9 @@ existing repository safety controls (`core/deployment_safety.py`,
   numbers in this protocol inherit that limitation from
   [paper_validation.md](../paper_validation.md) and
   [trading_analytics.md](../trading_analytics.md).
+- A single two-week pilot is a process/dependability exercise. Robust
+  strategy-profitability evidence and any canonical Tier 1 promotion require
+  the extended sample framework in
+  [§2.2](#22-sample-framework-proposed-defaults-explicitly-configurable) and
+  [§3.3](#33-canonical-tier-1-promotion-requirements), which normally spans
+  multiple consecutive pilots.
