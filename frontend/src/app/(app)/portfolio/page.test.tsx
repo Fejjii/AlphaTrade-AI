@@ -731,6 +731,36 @@ describe("Portfolio & Risk command centre", () => {
     expect(screen.getByTestId("portfolio-account-mode")).toHaveTextContent(/not confirmed/i);
   });
 
+  it("omits redundant safety banner when verified paper posture is already shown (FP2-123)", () => {
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
+      "aria-label",
+      "Paper mode active",
+    );
+    expect(screen.queryByTestId("paper-portfolio-safety-banner")).not.toBeInTheDocument();
+  });
+
+  it("surfaces safety banner when portfolio payload reports real trading enabled (FP2-123)", () => {
+    asyncState = {
+      data: completeData({
+        portfolio: ok({
+          ...samplePortfolio,
+          safety: {
+            ...samplePortfolio.safety,
+            real_trading_enabled: true,
+            disclaimer: "Real trading unexpectedly enabled.",
+          },
+        }),
+      }),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    render(<PaperPortfolioPage />);
+    expect(screen.getByTestId("paper-portfolio-safety-banner")).toBeInTheDocument();
+    expect(screen.getByText(/Real trading enabled/i)).toBeInTheDocument();
+  });
+
   it("creates relationship links only from real identifiers and omits missing ones", () => {
     render(<PaperPortfolioPage />);
     expect(screen.getByTestId("open-position-strategy-link-pos-open-1")).toHaveAttribute(

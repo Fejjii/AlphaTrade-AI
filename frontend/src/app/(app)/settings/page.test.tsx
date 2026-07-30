@@ -102,4 +102,13 @@ describe("SettingsPage", () => {
     expect(buildCard).toHaveTextContent("Execution mode (build config): paper");
     expect(buildCard).toHaveTextContent("Provider mode (build config): mock");
   });
+
+  it("uses Billing & Usage for the settings hub billing link (FP2-119)", () => {
+    render(<SettingsPage />);
+    expect(screen.getByRole("link", { name: /Billing & Usage/i })).toHaveAttribute(
+      "href",
+      "/settings/billing",
+    );
+    expect(screen.queryByRole("link", { name: /Billing & plans/i })).not.toBeInTheDocument();
+  });
 });

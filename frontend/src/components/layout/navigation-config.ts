@@ -103,10 +103,10 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   },
   {
     id: "analyze",
-    label: "Analyze",
+    label: "Analytics",
     href: "/analytics",
     icon: BarChart3,
-    ariaLabel: "Analyze",
+    ariaLabel: "Analytics",
   },
   {
     id: "portfolio",

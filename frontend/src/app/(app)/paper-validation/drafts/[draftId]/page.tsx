@@ -17,6 +17,7 @@ import type {
   PaperValidationDraftItem,
   PaperValidationDraftPrepStatus,
 } from "@/lib/api/types";
+import { formatDateTime, formatPrice } from "@/lib/format";
 
 const PREP_STATUSES: PaperValidationDraftPrepStatus[] = [
   "draft",
@@ -46,11 +47,6 @@ const EMPTY_CHECKLIST: PaperValidationDraftChecklist = {
 };
 
 const QUEUE_PAPER_VALIDATION_CANDIDATE = "QUEUE_PAPER_VALIDATION_CANDIDATE";
-
-function formatLevel(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
 
 function formatChecklistLabel(key: string): string {
   return key.replaceAll("_", " ");
@@ -174,13 +170,13 @@ export default function PaperValidationDraftDetailPage() {
           <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-2">
             <p>Direction: {draft.direction ?? "—"}</p>
             <p>Risk mode: {draft.risk_mode}</p>
-            <p>Trigger: {formatLevel(draft.trigger_level)}</p>
-            <p>Invalidation: {formatLevel(draft.invalidation_level)}</p>
-            <p>Latest price: {formatLevel(draft.latest_price)}</p>
+            <p>Trigger: {formatPrice(draft.trigger_level)}</p>
+            <p>Invalidation: {formatPrice(draft.invalidation_level)}</p>
+            <p>Latest price: {formatPrice(draft.latest_price)}</p>
             <p>Source alert: {draft.source_alert_id}</p>
           </div>
           <p className="text-xs text-zinc-500">
-            Created {new Date(draft.created_at).toLocaleString()}
+            Created {formatDateTime(draft.created_at)}
           </p>
         </CardContent>
       </Card>

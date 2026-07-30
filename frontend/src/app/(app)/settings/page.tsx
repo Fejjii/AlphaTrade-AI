@@ -43,7 +43,7 @@ export default function SettingsPage() {
           </span>
           <span>
             <Link href="/settings/billing" className="text-emerald-400 hover:underline">
-              Billing &amp; plans
+              Billing &amp; Usage
             </Link>
           </span>
         </CardContent>

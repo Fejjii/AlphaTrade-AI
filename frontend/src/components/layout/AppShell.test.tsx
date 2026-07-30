@@ -102,7 +102,7 @@ describe("AT-040 Phase B AppShell", () => {
     const sheet = screen.getByTestId("mobile-menu-sheet");
     expect(within(sheet).getByRole("link", { name: "Validate" })).toBeInTheDocument();
     expect(within(sheet).getByRole("link", { name: "Journal" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("link", { name: "Analyze" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("link", { name: "Analytics" })).toBeInTheDocument();
     expect(within(sheet).getByRole("link", { name: "Settings" })).toBeInTheDocument();
   });
 

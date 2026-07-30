@@ -2,11 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { OutcomeDistributionItem, RateMetrics } from "@/lib/api/types";
-
-function percent(rate: number | null | undefined): string {
-  if (rate === null || rate === undefined) return "—";
-  return `${(rate * 100).toFixed(0)}%`;
-}
+import { formatPercent } from "@/lib/format";
 
 const RATE_LABELS: { key: keyof RateMetrics; label: string }[] = [
   { key: "success_rate", label: "Success" },
@@ -41,7 +37,7 @@ export function OutcomeRatesCard({
         <div className="grid gap-2 md:grid-cols-2">
           {RATE_LABELS.map(({ key, label }) => (
             <p key={key} data-testid={`learning-rate-${key}`}>
-              {label}: <span className="text-zinc-100">{percent(rates[key])}</span>
+              {label}: <span className="text-zinc-100">{formatPercent(rates[key], 0)}</span>
             </p>
           ))}
         </div>
@@ -50,7 +46,7 @@ export function OutcomeRatesCard({
           <ul className="grid gap-1 md:grid-cols-2">
             {distribution.map((item) => (
               <li key={item.outcome} data-testid={`learning-outcome-${item.outcome}`}>
-                {item.outcome}: {item.count} ({percent(item.rate)})
+                {item.outcome}: {item.count} ({formatPercent(item.rate, 0)})
               </li>
             ))}
           </ul>
