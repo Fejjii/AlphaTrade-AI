@@ -127,6 +127,9 @@ test.describe("WebKit iPhone 15 Pro emulation audit", () => {
     const email = page.locator('input[type="email"], input[name="email"]').first();
     await expect(email).toBeVisible();
     await email.focus();
+    // WebKit focus-scroll can leave a few pixels clipped; nearest scroll matches
+    // Safari's keep-focused-field-visible behavior above the soft keyboard.
+    await email.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "nearest" }));
     expect(await isUnobscuredInViewport(email), "login email focused field visible").toBeTruthy();
 
     await installSharedE2ESession(page, request);
