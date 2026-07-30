@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test --project=chromium",
+    "test:e2e:webkit": "playwright test --project=webkit --project=iphone-15-pro --project=iphone-15-pro-landscape",
     "capture:screenshots": "playwright test --project=screenshots"
   },
   "dependencies": {

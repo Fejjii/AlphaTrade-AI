@@ -49,7 +49,7 @@ function VerifyEmailContent() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-start gap-6 px-4 py-10 [@media(min-height:600px)]:justify-center">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-50">Email verification</h1>
         <p className="text-sm text-zinc-400">

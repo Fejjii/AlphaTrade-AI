@@ -15,7 +15,11 @@ import {
 } from "@/components/layout/navigation-config";
 import { cn } from "@/lib/utils";
 
-export function MobileBottomNavigation() {
+type MobileBottomNavigationProps = {
+  onOpenCommandMenu?: () => void;
+};
+
+export function MobileBottomNavigation({ onOpenCommandMenu }: MobileBottomNavigationProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuPanelId = useId();
@@ -82,7 +86,11 @@ export function MobileBottomNavigation() {
       </nav>
 
       <div id={menuPanelId}>
-        <MobileMenuSheet open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <MobileMenuSheet
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onOpenCommandMenu={onOpenCommandMenu}
+        />
       </div>
     </>
   );

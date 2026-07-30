@@ -1,5 +1,6 @@
 "use client";
 
+import { Command } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useRef } from "react";
@@ -15,9 +16,10 @@ import { cn } from "@/lib/utils";
 type MobileMenuSheetProps = {
   open: boolean;
   onClose: () => void;
+  onOpenCommandMenu?: () => void;
 };
 
-export function MobileMenuSheet({ open, onClose }: MobileMenuSheetProps) {
+export function MobileMenuSheet({ open, onClose, onOpenCommandMenu }: MobileMenuSheetProps) {
   const pathname = usePathname();
   const panelRef = useRef<HTMLDivElement>(null);
   const handleEscape = useCallback(() => onClose(), [onClose]);
@@ -50,6 +52,25 @@ export function MobileMenuSheet({ open, onClose }: MobileMenuSheetProps) {
         )}
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-pill bg-border-subtle" aria-hidden="true" />
+        {onOpenCommandMenu ? (
+          <button
+            type="button"
+            data-testid="mobile-menu-command"
+            aria-label="Open command menu"
+            onClick={() => {
+              onClose();
+              onOpenCommandMenu();
+            }}
+            className={cn(
+              "mb-3 flex min-h-14 w-full items-center gap-3 rounded-control px-4 py-3 text-base font-medium",
+              "text-text-secondary hover:bg-surface-1",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+            )}
+          >
+            <Command className="h-5 w-5 shrink-0" aria-hidden="true" />
+            <span>Search / Command menu</span>
+          </button>
+        ) : null}
         <p className="mb-3 text-caption font-semibold uppercase tracking-wider text-text-muted">
           More
         </p>
