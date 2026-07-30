@@ -48,7 +48,11 @@ export function PositionCard({
   useEffect(() => {
     if (step === "idle") return;
     // Keep the close flow above the fixed mobile bottom nav / home indicator.
-    closePanelRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // jsdom does not implement scrollIntoView — guard before calling (CI/unit).
+    const node = closePanelRef.current;
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
   }, [step]);
 
   function startClose() {
