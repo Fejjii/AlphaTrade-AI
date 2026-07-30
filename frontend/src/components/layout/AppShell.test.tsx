@@ -106,6 +106,18 @@ describe("AT-040 Phase B AppShell", () => {
     expect(within(sheet).getByRole("link", { name: "Settings" })).toBeInTheDocument();
   });
 
+  it("opens the command menu from the mobile Menu sheet touch control", () => {
+    render(
+      <AppShell>
+        <div>Page</div>
+      </AppShell>,
+    );
+    fireEvent.click(screen.getByTestId("mobile-menu-button"));
+    fireEvent.click(screen.getByTestId("mobile-menu-command"));
+    expect(screen.queryByTestId("mobile-menu-sheet")).not.toBeInTheDocument();
+    expect(screen.getByTestId("command-menu")).toBeInTheDocument();
+  });
+
   it("closes the Menu sheet on Escape and returns focus to the Menu button", () => {
     render(
       <AppShell>

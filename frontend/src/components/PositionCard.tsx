@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,17 @@ export function PositionCard({
   // Synchronous guard: state updates are async, so a rapid double-click could
   // otherwise submit the close twice before React re-renders the disabled button.
   const closingRef = useRef(false);
+  const closePanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (step === "idle") return;
+    // Keep the close flow above the fixed mobile bottom nav / home indicator.
+    // jsdom does not implement scrollIntoView — guard before calling (CI/unit).
+    const node = closePanelRef.current;
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [step]);
 
   function startClose() {
     setSubmitError(null);
@@ -131,7 +142,8 @@ export function PositionCard({
             </Button>
           ) : (
             <div
-              className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3"
+              ref={closePanelRef}
+              className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 scroll-mt-4 scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]"
               data-testid="close-paper-panel"
             >
               <p className="text-xs uppercase tracking-wide text-zinc-500">Close paper position</p>

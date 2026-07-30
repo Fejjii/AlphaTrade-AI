@@ -31,8 +31,27 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testIgnore: "**/capture-screenshots.spec.ts",
+      testIgnore: ["**/capture-screenshots.spec.ts", "**/webkit-iphone-audit.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "webkit",
+      testIgnore: [
+        "**/capture-screenshots.spec.ts",
+        "**/webkit-iphone-audit.spec.ts",
+        "**/*staging*.spec.ts",
+      ],
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
+      name: "iphone-15-pro",
+      testMatch: "**/webkit-iphone-audit.spec.ts",
+      use: { ...devices["iPhone 15 Pro"] },
+    },
+    {
+      name: "iphone-15-pro-landscape",
+      testMatch: "**/webkit-iphone-audit.spec.ts",
+      use: { ...devices["iPhone 15 Pro landscape"] },
     },
     {
       name: "screenshots",

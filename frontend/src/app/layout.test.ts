@@ -14,4 +14,8 @@ describe("root viewport metadata", () => {
     expect(viewport.maximumScale).toBeUndefined();
     expect(viewport.userScalable).toBeUndefined();
   });
+
+  it("enables iOS safe-area insets via viewport-fit=cover", () => {
+    expect(viewport.viewportFit).toBe("cover");
+  });
 });
