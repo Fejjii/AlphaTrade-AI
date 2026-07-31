@@ -156,10 +156,10 @@ counts are identical).
 | `scripts/readiness-browser-validation.sh` | readiness-validation, deep-link-contracts, paper-close, analytics-hub specs | **11 tests, 11 passed**, 0 failed |
 | docker-build (CI job 6) | not runnable on this VM (no Docker daemon available) | **Not executed locally** — confirmed via GitHub Actions at the exact HEAD SHA instead (see below); no Dockerfile or dependency changes were made in this revision |
 
-**All six CI jobs are confirmed green at the exact HEAD SHA of this revision** — five
-executed locally (above) plus a GitHub Actions run triggered by pushing this exact commit,
-covering all six jobs including docker-build. Run link and result recorded in the PR body
-and at the top of this document once available.
+**All six CI jobs are confirmed green at the exact HEAD SHA of this revision** (`ecab4bc`) —
+five executed locally (above) plus GitHub Actions run
+[30622377110](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30622377110) (all 6 jobs
+SUCCESS, including docker-build and e2e-smoke).
 
 ### Rendered-build manual verification (this session)
 
