@@ -156,13 +156,10 @@ counts are identical).
 | `scripts/readiness-browser-validation.sh` | readiness-validation, deep-link-contracts, paper-close, analytics-hub specs | **11 tests, 11 passed**, 0 failed |
 | docker-build (CI job 6) | not runnable on this VM (no Docker daemon available) | **Not executed locally** — confirmed via GitHub Actions at the exact HEAD SHA instead (see below); no Dockerfile or dependency changes were made in this revision |
 
-**All six CI jobs are confirmed green at the exact HEAD SHA of this revision** (`7f3ef00`) —
+**All six CI jobs are confirmed green at the exact HEAD SHA of this revision** (`a7da790`) —
 GitHub Actions run
-[30625322175](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30625322175) (all 6 jobs
-SUCCESS at `7f3ef002d2fd236f66bec844a6267f847c934ee5`). Prior runs on `1e615d5`
-([30623844788](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30623844788)) and
-`ecab4bc` ([30622377110](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30622377110))
-also passed 6/6.
+[30630579831](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30630579831) (all 6 jobs
+SUCCESS at `a7da790ed4283fb5247119c1ef2c89e64f821274`).
 
 ### Rendered-build manual verification (this session)
 
