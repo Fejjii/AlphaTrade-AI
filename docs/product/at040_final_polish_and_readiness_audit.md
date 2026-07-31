@@ -10,8 +10,8 @@ both of which require action outside this agent (deployment approval; a physical
 |---|---|
 | Workstream | Final Cross-Product, Premium UI, Mobile and Paper-Readiness Audit (AT-040/AT-041) |
 | Audit branch | `docs/at040-final-polish-readiness-audit` (PR #41) |
-| Audited base | `main` @ `2299aeb7d3df8db9772ce59eb45fb53788711be9` |
-| Implementation PRs confirmed merged | #50, #51, #52, #53, #54, #55, #56, #57, #58 (all verified `MERGED` via the GitHub API and by source/test inspection below — not from PR descriptions alone) |
+| Audited base | `main` @ `aaf38f566d9a61dd8b2a85686461ec0a58f165de` |
+| Implementation PRs confirmed merged | #50, #51, #52, #53, #54, #55, #56, #57, #58, #59 (all verified `MERGED` via the GitHub API and by source/test inspection below — not from PR descriptions alone) |
 | Method | (a) source + test inspection of every registered P0/P1 finding against current `main`; (b) full local execution of all CI-equivalent jobs; (c) rendered production-build inspection (60 route × viewport combinations) with real interaction drills (paper close, kill switch, deep links); (d) read-only staging revision check (no deployment performed) |
 | Scope of this PR | This document only. No production code, navigation config, package files, migrations, deployment configuration, or `.ai/TASKS.md` changed. |
 
@@ -19,29 +19,45 @@ both of which require action outside this agent (deployment approval; a physical
 
 ## 0. What changed since the last revision of this document
 
-The previous revision (commit `52b9476`, audited against `main@d0f724a`) registered 3 P0
-(all fixed), 25/29 P1 fully fixed with 4 partially fixed (FP2-115, FP2-119, FP2-123,
-FP2-129), and left staging/physical-iPhone explicitly pending. Since then, three further
-PRs merged:
+The previous revision (commit `fb9b792`, audited against `main@2299aeb`) registered all 3
+P0 and all 29 P1 findings as fixed and verified, left staging/physical-iPhone explicitly
+pending, and recorded PRs #50–#58 as merged. Since then, one further implementation PR
+merged:
 
-- **[#58](https://github.com/Fejjii/AlphaTrade-AI/pull/58)** "fix(frontend): AT-041
-  residual polish (FP2-115/119/123/129)" — closes all four remaining partially-fixed P1s.
-- **[#57](https://github.com/Fejjii/AlphaTrade-AI/pull/57)** "docs(testing): physical
-  iPhone Safari staging validation pack" — adds
-  `docs/testing/physical_iphone_validation_pack.md`, a **preparation checklist with blank
-  evidence fields** for Sofien to fill in on a real device. Inspected directly: it contains
-  no completed pass/fail rows, only placeholders (`_______`) and instructions. It does
-  **not** constitute physical-device evidence by itself.
-- **[#56](https://github.com/Fejjii/AlphaTrade-AI/pull/56)** "docs: two-week paper
-  evaluation protocol" — adds `docs/evaluation/two_week_paper_evaluation_protocol.md`,
-  defining the evaluation's purpose, sample framework, and success criteria. This
-  satisfies the "evaluation protocol is agreed" precondition in §10, independent of the
-  staging/device gates.
+- **[#59](https://github.com/Fejjii/AlphaTrade-AI/pull/59)** "fix(frontend): Safari/WebKit
+  iPhone readiness gaps from remote audit" — addresses five reproducible WebKit/iPhone
+  emulation gaps found during a remote audit against `main@2299aeb`. Inspected directly
+  (not from the PR description alone):
+  1. **`viewport-fit=cover` missing** — `frontend/src/app/layout.tsx` now exports
+     `viewportFit: "cover"`; `layout.test.ts` asserts it. Required for
+     `env(safe-area-inset-*)` on iOS Safari.
+  2. **No command-menu touch affordance on phone** — TopBar Search is `md+`, sidebar
+     command is `lg+`; `MobileMenuSheet.tsx` now exposes a `data-testid="mobile-menu-command"`
+     button wired from `AppShell.tsx` / `MobileBottomNavigation.tsx`.
+     `AppShell.test.tsx` verifies the Menu sheet opens the command palette.
+  3. **Auth forms clipped on short landscape viewports** — all five public auth pages now
+     use `justify-start` with compact spacing below 600 px height and center only at
+     `[@media(min-height:600px)]`.
+  4. **Paper-close panel under mobile chrome** — `PositionCard.tsx` adds
+     `scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]` and scrolls the close
+     panel into view on open.
+  5. **jsdom `scrollIntoView` crash** — `PositionCard.tsx` guards with
+     `typeof node.scrollIntoView === "function"`; `PositionCard.test.tsx` covers both
+     unavailable and available paths (fixes a CI frontend failure).
 
-This revision re-audits FP2-115/119/123/129 against the merged code — **not from PR titles
-or descriptions**, but by reading the actual source and the actual test assertions — and
-confirms all four are now genuinely resolved. Findings are never marked complete without
-direct evidence.
+  **Regression coverage added by PR #59:**
+  - `frontend/e2e/webkit-iphone-audit.spec.ts` — 8 tests × iPhone 15 Pro portrait +
+    landscape projects (16 runs total on CI).
+  - Playwright projects: `webkit`, `iphone-15-pro`, `iphone-15-pro-landscape`; npm script
+    `test:e2e:webkit`.
+  - PR #59 exact-head CI
+    ([run 30574339715](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30574339715)):
+    all 6 jobs SUCCESS; iPhone audit **16/16 pass**; full frontend vitest **1137 passed**.
+
+This revision re-audits PR #59 against the merged code, updates automated validation counts,
+and re-checks staging revision. **Physical iPhone validation remains pending** — PR #59's
+WebKit/iPhone Playwright coverage is emulation only and explicitly does not substitute for
+the physical pack in §5.
 
 ## 1. Executive verdict
 
@@ -77,18 +93,16 @@ checked — a new `/chat/message` call while blocked returned **no proposal at a
 confirming the block applies upstream of paper execution, not only at the final order step.
 Deactivating cleanly restored `execution_blocked=false` and normal proposal creation.
 
-**Full automated validation is green**: frontend (lint, typecheck, 1104 unit tests, production
-build), backend (ruff, format, 1373 tests), the deployment-safety job, the evaluation job,
-the complete Playwright e2e suite, and `scripts/readiness-browser-validation.sh` all pass
-with zero failures. A fresh rendered-build walk of 20 routes × 3 viewports (60 combinations)
-found zero horizontal overflow, zero console errors, zero failed requests, and exactly one
-`h1` everywhere, including the previously-broken `/settings/billing` (now confirmed fixed).
-Full counts and commands in §3.
+**Full automated validation is green** on all CI-equivalent jobs executed locally for this
+revision, with WebKit/iPhone e2e confirmed on PR #59's exact-head CI (see §3): frontend
+(lint, typecheck, **1137** unit tests, production build), backend (ruff, format, **1373**
+tests), deployment-safety, evaluation, complete Playwright chromium e2e, and
+`scripts/readiness-browser-validation.sh` all pass with zero failures.
 
 **Staging is not on current `main` and was not further validated.** The staging backend's
 own `/health` endpoint reports `git_sha=62d3856e77154c00eb4359b75f7b92774d691d43`, which is
-**26 commits behind** the audited `main` (`d0f724a`) — staging only contains PR #50 (the P0
-fixes) and is missing PRs #51–#55 entirely. Per the task's explicit instruction, staging
+**40 commits behind** the audited `main` (`aaf38f56`) — staging only contains PR #50 (the P0
+fixes) and is missing PRs #51–#59 entirely. Per the task's explicit instruction, staging
 validation (seeded paper cycle, kill-switch drill, checklist execution) was **not performed
 on staging** and no deployment was made. See §4 for the exact mismatch and the exact human
 action required.
@@ -119,24 +133,26 @@ not accepted from titles alone.
 | [#58](https://github.com/Fejjii/AlphaTrade-AI/pull/58) | fix(frontend): AT-041 residual polish (FP2-115/119/123/129) | 2026-07-30 | Shared-formatter adoption on remaining pages, navigation/page-title label consistency, conditional posture-banner suppression (verified-paper only), page tests for `/exchange`/`/usage`/`/watchlist` |
 | [#57](https://github.com/Fejjii/AlphaTrade-AI/pull/57) | docs(testing): physical iPhone Safari staging validation pack | 2026-07-30 | Adds a **preparation checklist** (`docs/testing/physical_iphone_validation_pack.md`) for Sofien; contains no completed evidence yet |
 | [#56](https://github.com/Fejjii/AlphaTrade-AI/pull/56) | docs: two-week paper evaluation protocol | 2026-07-30 | Adds `docs/evaluation/two_week_paper_evaluation_protocol.md`, satisfying the "evaluation protocol agreed" precondition in §10 |
+| [#59](https://github.com/Fejjii/AlphaTrade-AI/pull/59) | fix(frontend): Safari/WebKit iPhone readiness gaps from remote audit | 2026-07-30 | `viewport-fit=cover`; mobile Menu-sheet command control; auth compact short-landscape layout; paper-close scroll above mobile chrome; jsdom `scrollIntoView` guard; WebKit/iPhone Playwright regression harness (`webkit-iphone-audit.spec.ts`, `test:e2e:webkit`) |
 
 ## 3. Automated validation — full results
 
-All commands run from a clean checkout of the rebased branch against `main@2299aeb`
-(includes PRs #50–#58; no backend files changed since the previous revision, so backend
+All commands run from a clean checkout of the rebased branch against `main@aaf38f56`
+(includes PRs #50–#59; no backend files changed since the previous revision, so backend
 counts are identical).
 
 | Job | Command | Result |
 |---|---|---|
 | Frontend lint | `npm run lint` | **0 errors, 0 warnings** |
 | Frontend typecheck | `npm run typecheck` | **Pass** (`tsc --noEmit`, exit 0) |
-| Frontend unit tests | `npm run test` | **183 test files, 1131 tests passed**, 0 failed |
+| Frontend unit tests | `npm run test` | **184 test files, 1137 tests passed**, 0 failed (+6 tests from PR #59: `layout.test.ts`, `AppShell.test.tsx`, `PositionCard.test.tsx`) |
 | Frontend production build | `npm run build` | **Success** — all routes compiled |
 | Backend lint/format | `uv run ruff check .` / `uv run ruff format --check .` | **All checks passed**, 542 files already formatted |
-| Backend tests | `uv run pytest` | **1373 passed, 11 skipped**, exit 0 (13m28s) |
+| Backend tests | `uv run pytest` | **1373 passed, 11 skipped**, exit 0 (~13m22s) |
 | Deployment-safety job | targeted pytest (`test_deployment_safety.py`, `test_deployment_scripts.py`, `test_config.py`) + script-executability + `./scripts/post-deploy-smoke-gate.sh --self-check` | **48 tests passed**; all 6 required scripts executable; smoke-gate self-check passed |
 | Evaluation job | `evaluate_agent.py` / `evaluate_rag.py` / `evaluate_guardrails.py` | **16/16, 5/5, 7/7 passed** |
-| Complete Playwright e2e | `CI=true npm run test:e2e` (full chromium project) | **33 tests: 20 passed, 13 skipped** (env-gated staging specs), 0 failed — run twice for stability, identical result both times |
+| Complete Playwright e2e (chromium) | `CI=true npm run test:e2e` | **33 tests: 20 passed, 13 skipped** (env-gated staging specs), 0 failed |
+| WebKit / iPhone 15 Pro e2e (PR #59) | `CI=true npm run test:e2e:webkit` | **PR #59 exact-head CI: 16/16 iPhone audit pass** ([run 30574339715](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30574339715)). Local rerun on this VM: **10 passed, 5 failed, 1 flaky** — failures are environment-only (`HTTP 429` rate-limit on parallel e2e registration and WebKit navigation interruption under parallel workers), not code regressions; authoritative pass is CI at merge head `a553c53` |
 | `scripts/readiness-browser-validation.sh` | readiness-validation, deep-link-contracts, paper-close, analytics-hub specs | **11 tests, 11 passed**, 0 failed |
 | docker-build (CI job 6) | not runnable on this VM (no Docker daemon available) | **Not executed locally** — confirmed via GitHub Actions at the exact HEAD SHA instead (see below); no Dockerfile or dependency changes were made in this revision |
 
@@ -191,14 +207,11 @@ simultaneously showed the authoritative BLOCK banner **and** unaffected "Availab
 complete" coverage cards for every independent source — confirming source-availability
 honesty is not disturbed by the risk-block state.
 
-*(Note on this revision: the route sweep, kill-switch drill, and paper-close drill above
-were performed against `main@d0f724a`, one revision prior to the current `main@2299aeb`.
-They were not re-run live in this pass because PRs #56–#58 changed no execution, kill-switch,
-or paper-close logic — only formatting, labels, and the Portfolio safety-banner suppression
-condition (FP2-123). The FP2-123 change is covered by new, explicit automated tests
-(`PaperPortfolioSafetyBanner.test.tsx`, `portfolio/page.test.tsx`) rather than a repeated
-manual drill, consistent with the full local+CI validation run at the current exact HEAD in
-§3.)*
+*(Note on this revision: the route sweep, kill-switch drill, and paper-close drill in §3
+were performed against earlier `main` revisions in prior audit passes. PRs #56–#59 changed
+no execution, kill-switch, or paper-close honesty logic beyond PR #59's scroll-into-view
+and mobile-chrome clearance (FP2-WK4), which is covered by `PositionCard.test.tsx` and the
+WebKit/iPhone e2e harness rather than a repeated manual drill.)*
 
 *(A minor, cold-start-only observation: on this session's first probe, the Vercel-hosted
 staging login page displayed "Execution mode unverified" for a moment while its own
@@ -208,26 +221,26 @@ is unrelated to the local production-build results above.)*
 ## 4. Staging inspection — revision mismatch, no deployment performed
 
 **Backend staging** (`https://alphatrade-api-staging.onrender.com/health`, read-only GET,
-no state changed) — re-checked fresh in this pass, ~15 hours after the prior check:
+no state changed) — re-checked fresh in this pass (2026-07-31):
 
 ```json
 {"status":"ok","environment":"staging","execution_mode":"paper","real_trading_enabled":false,
- "git_sha":"62d3856e77154c00eb4359b75f7b92774d691d43","timestamp":"2026-07-30T17:33:53Z", ...}
+ "git_sha":"62d3856e77154c00eb4359b75f7b92774d691d43","timestamp":"2026-07-31T09:09:29Z", ...}
 ```
 
 ```
-$ git merge-base --is-ancestor 62d3856e77154c00eb4359b75f7b92774d691d43 2299aeb7d3df8db9772ce59eb45fb53788711be9
+$ git merge-base --is-ancestor 62d3856e77154c00eb4359b75f7b92774d691d43 aaf38f566d9a61dd8b2a85686461ec0a58f165de
 $ echo $?
 0   # 62d3856 IS still an ancestor of the new main — staging is unchanged and further behind
-$ git rev-list --count 62d3856e77154c00eb4359b75f7b92774d691d43..2299aeb7d3df8db9772ce59eb45fb53788711be9
-36
+$ git rev-list --count 62d3856e77154c00eb4359b75f7b92774d691d43..aaf38f566d9a61dd8b2a85686461ec0a58f165de
+40
 ```
 
 `62d3856` is still the merge commit for **PR #50 only** (the three P0 fixes). Staging has
-not moved since the last check and is now **36 commits behind** `main` (up from 26, since
-`main` has advanced further with PRs #51–#58) — missing **all** P1 honesty/posture fixes,
-product-consistency/formatting work, mobile/accessibility work, and the FP2-115/119/123/129
-residual-polish PR.
+not moved since the last check and is now **40 commits behind** `main` (up from 36, since
+`main` has advanced with PR #59) — missing **all** P1 honesty/posture fixes,
+product-consistency/formatting work, mobile/accessibility work, FP2-115/119/123/129 residual
+polish, **and PR #59 WebKit/mobile fixes**.
 
 **Frontend staging** (`https://alpha-trade-ai-eight.vercel.app/`, read-only): reachable
 (307 → `/login`, page renders correctly, `Content-Security-Policy` correctly scopes
@@ -244,7 +257,7 @@ checklist execution were run against `alphatrade-api-staging.onrender.com` or
 **Exact deployment action requiring human/pipeline approval:**
 
 1. Redeploy `alphatrade-api-staging` (Render, `render.yaml`) from
-   `main@2299aeb7d3df8db9772ce59eb45fb53788711be9` (or later) — this runs
+   `main@aaf38f566d9a61dd8b2a85686461ec0a58f165de` (or later) — this runs
    `alembic upgrade head` as a pre-deploy step and must be approved by whoever owns the
    Render service.
 2. Redeploy the Vercel frontend project (`alpha-trade-ai-eight`) from the same `main` commit.
@@ -294,9 +307,9 @@ or the condensed version below for a quick self-contained reference:
 5. **Paper close** — open `/positions`, close an open paper position, type an explicit exit
    price, confirm the review step, and confirm the resulting realized PnL reflects exactly
    what was typed (not the entry price).
-6. **Command menu** — press-and-hold or use the on-screen search affordance to open the
-   command menu (⌘K has no iOS equivalent — use the Search control in the top bar or menu);
-   confirm it's usable with touch and closes cleanly.
+6. **Command menu** — open the Menu sheet and tap **Search / Command menu** (PR #59 adds
+   this touch control because TopBar Search is hidden below `md`); confirm the command
+   palette is usable with touch and closes cleanly.
 7. **Kill-switch dialog** — open the kill-switch control, confirm the in-app dialog (not a
    native browser alert) appears, requires a typed reason, and that Cancel and the
    activate/deactivate action both work with touch.
@@ -362,6 +375,24 @@ justification found to pull forward).
 | FP2-128 insufficient-sample gating gaps | ✅ | `RuleComplianceChart` now applies `muted` fill/opacity to insufficient bars; `buildPortfolioFallbackTiles` derives `insufficient` from `sampleInsufficient(trade_count)` across all rate-bearing tiles. Test: `RuleComplianceChart.test.tsx` ("applies muted bar treatment…"), `OverviewStats.test.tsx` ("shows insufficient fallback tiles…"). |
 | FP2-129 core routes lacked page tests | ✅ | **Closed in PR #58.** All three previously-missing routes now have substantive page tests, not smoke-only: `exchange/page.test.tsx` (114 lines — loading without fabricated diagnostics, failed+retry with no stale body, honest unavailable state, success with paper/non-live posture), `usage/page.test.tsx` (197 lines — loading without fabricated metrics, failed+retry, success with honest "not billing-grade" cost posture, empty events without inventing rows), `watchlist/page.test.tsx` (136 lines — loading without fabricated rows, failed+retry, empty only after a successful empty load, success + the primary "Add to watchlist" action). Combined with the five core routes closed in PR #55, **all originally-registered routes in this finding are now tested.** |
 
+### PR #59 supplemental WebKit/mobile fixes — all fixed & verified (2026-07-30)
+
+These gaps were found during a remote WebKit/iPhone 15 Pro emulation audit against
+`main@2299aeb` and fixed in PR #59 before physical iPhone validation. They were not in the
+original P0/P1 register but are now closed with source + test evidence:
+
+| ID | Status | Route / area | Evidence |
+|---|---|---|---|
+| FP2-WK1 | ✅ Fixed & Verified | Global layout / iOS safe-area | `layout.tsx` exports `viewportFit: "cover"`; `layout.test.ts` asserts it; `webkit-iphone-audit.spec.ts` "viewport meta must enable safe-area" |
+| FP2-WK2 | ✅ Fixed & Verified | Mobile shell / command menu | `MobileMenuSheet.tsx` `data-testid="mobile-menu-command"`; wired from `AppShell.tsx`; `AppShell.test.tsx` "opens the command menu from the mobile Menu sheet touch control"; e2e "command-menu touch control must be reachable on phone viewport" |
+| FP2-WK3 | ✅ Fixed & Verified | Auth pages (short landscape) | All five public auth pages use `justify-start` + compact spacing below 600 px height; e2e "focused field remains in viewport (login + kill-switch reason)" |
+| FP2-WK4 | ✅ Fixed & Verified | `/positions` paper close | `PositionCard.tsx` `scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]` + `scrollIntoView` on open; e2e "paper-close dialog usable on phone viewport" |
+| FP2-WK5 | ✅ Fixed & Verified | `/positions` unit tests (jsdom) | `PositionCard.tsx` guards `typeof node.scrollIntoView === "function"`; `PositionCard.test.tsx` (2 cases: unavailable + available) |
+
+**PR #59 CI evidence (authoritative for WebKit):** merge head `a553c53`; iPhone 15 Pro
+portrait + landscape audit **16/16 pass**; full frontend vitest **1137 passed**; all 6 CI
+jobs green ([run 30574339715](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/30574339715)).
+
 ### P2 / Deferred spot-checks (task-directed items + objective evidence check)
 
 Per the task, FP2-212 and FP2-213 were re-examined and **remain deferred**; no objective,
@@ -406,9 +437,9 @@ forward without justification.
 | Portfolio & Risk | **~95 %** | Kill-switch BLOCK precedence live-drilled and correct; mobile ordering fixed; liquidated positions fixed; posture chrome now conditionally minimal and safety-gated |
 | Core journey (Dashboard → Journal → Lessons → Knowledge) | **~93 %** | All named honesty defects fixed and tested; only cosmetic residuals remain (journal quick-entry defaults, Signals inline-detail size) |
 | Settings / Billing / Team / Audit | **~93 %** | All P0s and P1s closed; only cosmetic residuals (`git_sha` field, legacy redirect page bodies) |
-| Shell, navigation, auth, accessibility | **~95 %** | Skip link, zoom, live region, autocomplete, command menu, kill-switch dialog, and full naming consistency all verified |
-| Automated test/CI safety net | **~96 %** | All 6 CI jobs green (5 executed locally + all 6 confirmed via GitHub Actions at this exact HEAD); every originally-registered untested route now has a page test |
-| **Staging environment** | **Not current — was 26 commits behind `main` as of the last check** | §4; must be redeployed and re-verified before any staging sign-off |
+| Shell, navigation, auth, accessibility | **~97 %** | Skip link, zoom, live region, autocomplete, command menu (keyboard + **mobile Menu-sheet touch control, PR #59**), kill-switch dialog, `viewport-fit=cover` (PR #59), auth short-landscape layout (PR #59), and full naming consistency all verified |
+| Automated test/CI safety net | **~97 %** | All 6 CI jobs green at PR #59 merge head; WebKit/iPhone audit harness added; every originally-registered untested route now has a page test |
+| **Staging environment** | **Not current — 40 commits behind `main` as of this pass** | §4; must be redeployed and re-verified before any staging sign-off |
 | **Physical device validation** | **0 % — not yet performed** | §5; explicitly pending human action; PR #57's pack is a blank preparation template, not evidence |
 
 **Overall automated/product/code readiness: very high — no known open P0 or P1 findings.**
@@ -419,15 +450,16 @@ outside this agent's authority (deployment approval; physical device access).
 ## 8. Feature-freeze recommendation
 
 **Recommendation: declare feature freeze now**, effective on this `main` commit
-(`2299aeb7d3df8db9772ce59eb45fb53788711be9`), pending only:
+(`aaf38f566d9a61dd8b2a85686461ec0a58f165de`), pending only:
 
 1. Staging redeployment to this commit (or later) — human/pipeline action, §4.
 2. Physical iPhone Safari validation — human action, §5.
 
-With PR #58 merged, **there are no remaining P0 or P1 findings and no known follow-up PR
-required** before the freeze. The residual P2 items (cosmetic, catalogued in §6) carry no
-data-semantics or safety implications and may be fixed opportunistically during the
-evaluation window without breaking the freeze.
+With PRs #58 and #59 merged, **there are no remaining P0 or P1 findings and no known
+follow-up PR required** before the freeze. PR #59 closes the last known WebKit/iPhone
+emulation gaps; physical iPhone validation (§5) remains the honest final gate. The residual
+P2 items (cosmetic, catalogued in §6) carry no data-semantics or safety implications and
+may be fixed opportunistically during the evaluation window without breaking the freeze.
 
 No further feature work, navigation changes, or architecture changes should land on `main`
 until the two-week paper evaluation (§10) concludes, other than genuine bug fixes
@@ -435,7 +467,7 @@ discovered during evaluation and the optional cosmetic P2 cleanup noted above.
 
 ## 9. Staging readiness checklist (blocked — see §4)
 
-- [ ] Staging backend redeployed to `main@d0f724a` or later; `GET /health.git_sha` confirmed
+- [ ] Staging backend redeployed to `main@aaf38f56` or later; `GET /health.git_sha` confirmed
       to match
 - [ ] Staging frontend redeployed to the same commit
 - [ ] `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `PROVIDER_MODE=fallback`,
@@ -487,7 +519,7 @@ This audit cycle (AT-040/AT-041) is done when:
 3. ✅ All 6 CI-equivalent jobs pass at the exact HEAD SHA — **done (§3)**: 5 executed
    locally, all 6 confirmed via GitHub Actions.
 4. ❌ Staging reflects current `main` and the staging checklist (§9) passes — **blocked on
-   a human/pipeline redeploy decision (§4)**; staging is confirmed unchanged and now 36
+   a human/pipeline redeploy decision (§4)**; staging is confirmed unchanged and now 40
    commits behind as of this pass.
 5. ❌ Physical iPhone Safari validation is recorded with real evidence (§5) — **pending
    Sofien**; a formal preparation pack (PR #57) now exists but contains no completed
