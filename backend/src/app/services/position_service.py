@@ -118,6 +118,7 @@ class PositionService:
                 "action": "close_paper",
                 "exit_price": str(exit_price),
                 "requested_exit_price": str(data.exit_price),
+                "exit_price_source": "user_submitted",
                 "reason": data.reason,
                 "realized_pnl": str(pnl),
                 "daily_realized_pnl": str(snapshot.realized_pnl),
@@ -154,22 +155,30 @@ class PositionService:
                 error_type=type(exc).__name__,
             )
 
-    def _resolve_close_exit_price(self, symbol: str, *, requested: Decimal) -> Decimal:
-        """Bind realized PnL to server market data when live data is expected.
+    def _resolve_close_exit_price(self, symbol: str, *, requested: Decimal | None) -> Decimal:
+        """Resolve the exit price for a paper close (paper-close honesty).
 
-        Mock / intentional-fallback-less local modes keep the requested paper exit
-        price so deterministic tests and paper drills remain usable. When
-        ``provider_mode`` / market provider expect live data, the ticker last price
-        is authoritative and stale/degraded quotes refuse the close.
+        An explicit user-submitted paper close price is authoritative: the exact
+        submitted decimal drives persistence, realized PnL, and the audit event.
+        Market ticker data must never silently replace it (P0 defect: staging
+        recorded the ticker price instead of the submitted ``91234.56``).
+
+        System-generated closes without an explicit price (``requested is None``,
+        e.g. future automated liquidation) bind to fresh server market data and
+        fail closed when it is missing, stale, or degraded — a price is never
+        fabricated.
         """
-        if self._market_data is None or self._app_settings is None:
-            return requested
+        if requested is not None:
+            return _validated_explicit_exit_price(requested)
+        return self._market_exit_price(symbol)
 
-        provider_mode = (self._app_settings.provider_mode or "").lower()
-        market_provider = (self._app_settings.market_data_provider or "").lower()
-        if provider_mode == "mock" or market_provider == "mock":
-            return requested
-
+    def _market_exit_price(self, symbol: str) -> Decimal:
+        """Fresh server ticker price for closes with no explicit price; fail closed."""
+        if self._market_data is None:
+            raise TradingPolicyError(
+                "No explicit exit price and no market data service; paper close refused.",
+                details={"reason": "market_data_unavailable", "symbol": symbol},
+            )
         try:
             ticker = self._market_data.get_ticker(symbol)
         except Exception as exc:
@@ -210,6 +219,20 @@ class PositionService:
                 metadata=metadata,
             )
         )
+
+
+def _validated_explicit_exit_price(value: Decimal) -> Decimal:
+    """Fail closed on malformed explicit close prices (defense in depth).
+
+    The request schema already enforces a positive decimal, but the service can
+    be called directly; NaN/Infinity or non-positive values must never reach
+    PnL math or the audit trail.
+    """
+    if not isinstance(value, Decimal) or not value.is_finite() or value <= 0:
+        raise ValidationAppError(
+            "Explicit paper close exit price must be a positive finite decimal."
+        )
+    return value
 
 
 def _estimate_pnl(row: PositionModel, exit_price: Decimal) -> Decimal:
