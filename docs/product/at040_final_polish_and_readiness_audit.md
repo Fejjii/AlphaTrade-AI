@@ -278,3 +278,21 @@ Start the two-week paper evaluation under
 | 7 | Live trading remains disabled | ✅ |
 
 **Final audit verdict: READY FOR CONTROLLED PAPER EVALUATION — NOT READY FOR LIVE CAPITAL.**
+
+---
+
+## 14. Automated validation evidence (final closeout session)
+
+| Job | Result |
+|---|---|
+| Diff vs `origin/main` | **docs-only** (`docs/product/at040_final_polish_and_readiness_audit.md`) |
+| Frontend lint / typecheck / build | Pass |
+| Frontend unit tests | **184 files, 1137 passed** |
+| Backend pytest | **1394 passed, 11 skipped** |
+| Targeted safety (exit-price honesty + deployment_safety + config) | **60 passed** |
+| Deployment-safety scripts + smoke-gate self-check | Pass |
+| Evaluation | **16/16, 5/5, 7/7** |
+| Chromium e2e | **20 passed, 13 skipped** |
+| `scripts/readiness-browser-validation.sh` | **11 passed** |
+| Main@cc29ffe GitHub CI baseline | [31111480359](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/31111480359) — **6/6 SUCCESS** |
+| Exact-head GitHub Actions on this PR tip | Did not auto-trigger after branch history rewrite; application code is identical to green `main@cc29ffe` (docs-only delta) |
