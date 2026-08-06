@@ -347,9 +347,16 @@ describe("StrategyDetailPage paper-source honesty", () => {
       { timeout: 5000 },
     );
 
-    expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
-      "data-source-status",
-      "failed",
+    // The mock call count increments before the rejection flushes to state,
+    // so the failed status must also be awaited (flaked on slow CI runners).
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("strategy-paper-source-eligibility")).toHaveAttribute(
+          "data-source-status",
+          "failed",
+        );
+      },
+      { timeout: 5000 },
     );
     expect(screen.getByTestId("strategy-paper-source-summary")).toHaveAttribute(
       "data-source-status",

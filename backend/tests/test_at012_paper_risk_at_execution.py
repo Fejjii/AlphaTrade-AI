@@ -487,10 +487,14 @@ def test_paper_defaults_unchanged_in_settings(
     assert settings.exchange_mode.value == "paper_internal"
 
 
-def test_paper_close_uses_server_ticker_when_live_expected(
+def test_paper_close_honors_explicit_exit_price_when_live_expected(
     at012_db: tuple[sessionmaker[Session], Settings],
 ) -> None:
-    """Client exit_price must not control realized PnL when live market data is expected."""
+    """Explicit paper exit_price is authoritative; ticker must not replace it (P0 honesty).
+
+    Daily risk accounting still derives from the recorded close, so the
+    submitted price flows through realized PnL and DailyRiskState.
+    """
     from app.schemas.common import PositionStatus
     from app.schemas.position import ClosePaperPositionRequest
     from app.services.position_service import PositionService
@@ -517,7 +521,7 @@ def test_paper_close_uses_server_ticker_when_live_expected(
             )
         )
         assert position is not None
-        # Client claims a winning exit; server ticker forces a losing mark.
+        # Explicit paper close at 90000: (90000 - 60000) * 0.005 = +150.
         closed = PositionService(
             session,
             AuditService(session),
@@ -525,15 +529,15 @@ def test_paper_close_uses_server_ticker_when_live_expected(
             market_data_service=mock_md,
         ).close_paper(
             position.id,
-            ClosePaperPositionRequest(exit_price=Decimal("90000"), reason="claim-win"),
+            ClosePaperPositionRequest(exit_price=Decimal("90000"), reason="explicit-close"),
         )
         session.commit()
-        assert closed.realized_pnl == Decimal("-150")
+        assert closed.realized_pnl == Decimal("150")
         daily = session.scalar(
             select(DailyRiskState).where(DailyRiskState.organization_id == ORG_ID)
         )
         assert daily is not None
-        assert daily.realized_pnl == Decimal("-150")
+        assert daily.realized_pnl == Decimal("150")
 
 
 def test_sequential_orders_cannot_bypass_exposure_with_stale_state(
