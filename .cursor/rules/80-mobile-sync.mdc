@@ -7,11 +7,11 @@ alwaysApply: true
 
 Authoritative standard: `.ai/MASTER_WORKFLOW.md` (§4, §12, §16).
 
-- After regenerating `HANDOFF.md` / `CHANGELOG_SESSION.md`, run the sync script:
-  `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
-- The sync copies ONLY those two files to the iCloud destination. It must never copy the
-  repository, `.git`, dependencies, virtualenvs, caches, datasets, model artifacts, logs,
-  secrets, or build output, and must not delete unrelated iCloud content.
+- After regenerating `HANDOFF.md` / `CHANGELOG_SESSION.md`, run the local sync script when
+  this Mac worktree is available: `~/.local/bin/sync-alphatrade-ai-handoff.sh`.
+- The local sync copies ONLY those two files to the AI-Projects iCloud destination. It must
+  never copy the repository, `.git`, dependencies, virtualenvs, caches, datasets, model
+  artifacts, logs, secrets, or build output, and must not delete unrelated iCloud content.
 - The script must: use absolute quoted paths and strict shell mode; compare content and skip
   identical files without rewriting mtimes; copy atomically (temp + rename); preserve source
   mtime; set readable permissions; verify the destination with ordinary SHA256 **and**
@@ -19,5 +19,10 @@ Authoritative standard: `.ai/MASTER_WORKFLOW.md` (§4, §12, §16).
 - Verify after every sync: source SHA256, destination SHA256, `cmp`/`diff` success, expected
   destination paths, and a zero exit status. Treat verification failure as a blocker.
 - Sync **immediately** on any blocker, review, or failure — do not wait for task completion.
-- The LaunchAgent uses `WatchPaths` for the two files, `RunAtLoad`, and a low-frequency fallback
-  interval. Preserve the existing script/LaunchAgent when they already meet this standard.
+- The local LaunchAgent uses `WatchPaths` for the two files, `RunAtLoad`, and a low-frequency
+  fallback interval. Preserve the existing script/LaunchAgent when they already meet this
+  standard.
+- **Cloud path:** also publish the handoff to GitHub per `.cursor/rules/70-handoff.mdc` so
+  `com.alphatrade.handoff-sync` can update
+  `~/Library/Mobile Documents/com~apple~CloudDocs/AlphaTrade AI/HANDOFF.md` for iPhone.
+  That agent selects by newest `Generated At UTC` and must not be weakened.

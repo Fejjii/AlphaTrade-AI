@@ -85,24 +85,45 @@ If the active repository is under Desktop, Documents, Downloads, or iCloud Drive
 ~/Developer/AlphaTrade-AI/CHANGELOG_SESSION.md
 ```
 
-### Canonical iCloud destination
+### Canonical iCloud destination (local worktree mirror)
 
 ```text
 ~/Library/Mobile Documents/com~apple~CloudDocs/AI-Projects/AlphaTrade AI/HANDOFF.md
 ~/Library/Mobile Documents/com~apple~CloudDocs/AI-Projects/AlphaTrade AI/CHANGELOG_SESSION.md
 ```
 
-### Sync script
+### Sync script (local worktree → iCloud)
 
 ```text
 ~/.local/bin/sync-alphatrade-ai-handoff.sh
 ```
 
-### LaunchAgent
+### LaunchAgent (local worktree → iCloud)
 
 ```text
 ~/Library/LaunchAgents/com.sofien.alphatrade-ai-handoff-sync.plist
 ```
+
+### Cloud / GitHub → iPhone path (Mac LaunchAgent)
+
+Cursor Cloud agents (and local agents without the Mac worktree) must push
+`HANDOFF.md` to GitHub so the Mac LaunchAgent can publish it to iCloud:
+
+```text
+GitHub remote HANDOFF.md
+  → com.alphatrade.handoff-sync
+  → ~/Library/Mobile Documents/com~apple~CloudDocs/AlphaTrade AI/HANDOFF.md
+  → iPhone
+```
+
+- Script: `~/Library/Application Support/AlphaTradeAI/handoff-sync.sh`
+- LaunchAgent: `~/Library/LaunchAgents/com.alphatrade.handoff-sync.plist`
+  (`RunAtLoad`, ~120s interval, automatic `git fetch --all --prune`)
+- Selection: newest valid METADATA `Generated At UTC` across remote branches
+  that contain `HANDOFF.md` (not branch name, mtime, or commit-time primary)
+- Provenance: `HANDOFF_SOURCE.json` beside the iCloud handoff
+- Prefer dedicated `cursor/*handoff*` branches; do **not** open a PR for
+  handoff-only branches
 
 ---
 
@@ -477,6 +498,15 @@ Regenerate and synchronize `HANDOFF.md` and update `CHANGELOG_SESSION.md` at:
 8. Before a destructive action
 9. After a destructive action
 10. Final task completion
+11. End of every Cursor agent run (success, failure, blocked, early stop, or
+    human-action required) — Cloud or local
+
+Every regenerated handoff must include: current task, result, blocker/error if
+any, evidence, what was completed, what was not completed, repository safety
+state, exact human action required, exact recommended next Cursor prompt, and
+`Generated At UTC`.
+
+### Local Mac worktree sync
 
 Run:
 
@@ -491,6 +521,14 @@ Then verify:
 - `cmp` or `diff` success;
 - expected destination paths;
 - nonzero failure if verification fails.
+
+### GitHub publish for cloud → iPhone sync
+
+Push the regenerated handoff to GitHub (dedicated `cursor/*handoff*` branch
+when a product PR must stay clean; force-add only the ignored handoff files;
+do not open a PR for handoff-only branches). The Mac LaunchAgent
+`com.alphatrade.handoff-sync` discovers the newest `Generated At UTC` and
+copies it to iCloud automatically.
 
 Never wait for the task to end before synchronizing a blocker.
 

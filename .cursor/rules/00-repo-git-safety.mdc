@@ -15,6 +15,9 @@ alwaysApply: true
 - `.ai/` and `.cursor/rules/` are version-controlled governance (safe to track), except the
   ignored `.ai/local/` and `.ai/private/` subtrees (machine-local / sensitive material).
 - Treat `HANDOFF.md`, `CHANGELOG_SESSION.md`, `*.local.md`, `.ai/local/`, and `.ai/private/`
-  as gitignored; never stage them.
+  as gitignored for ordinary product commits; never stage them into product PRs.
+  Exception (see `.cursor/rules/70-handoff.mdc`): on a dedicated `cursor/*handoff*` branch,
+  force-add and push only `HANDOFF.md` + `CHANGELOG_SESSION.md` so the Mac cloud handoff
+  sync can discover them — and do not open a PR for that handoff-only branch.
 - Do not commit, push, or deploy unless the current task explicitly authorizes it; otherwise
   stop at `REVIEW_REQUIRED` and request authorization after presenting the diff + validation.
