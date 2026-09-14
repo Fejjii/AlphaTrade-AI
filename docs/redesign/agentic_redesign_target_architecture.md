@@ -458,8 +458,15 @@ separate strategy library would duplicate identity, versioning, testing and prom
 
 ## 8. Model-routing architecture
 
-Add `ModelRouter` above the current `LLMProvider`. Routing is by a typed task, impact and data
-classification, never free-form caller model names.
+**CURRENT:** one global `LLM_MODEL` serves the graph. Active narrative prompts live in
+`backend/prompts/trading_analysis_narrative.txt`, `risk_explanation.txt`, and
+`journal_review_coach.txt`; `backend/src/app/agents/prompts/system.md` is an unused placeholder.
+The `usage_tracking` node in `backend/src/app/agents/nodes.py` makes a completion solely to
+collect estimated usage, so a narratively enhanced request can incur two model calls without
+two reasoning tasks.
+
+**TARGET:** add `ModelRouter` above the current `LLMProvider`. Routing uses a typed task, impact,
+and data classification; callers never supply free-form model names.
 
 | Tier | Work | Policy |
 |---|---|---|
@@ -483,7 +490,9 @@ service, narrative guardrail and prompt files. Add:
 - separate configuration per Tier A/B;
 - circuit/budget policy and task telemetry;
 - schema-specific validators;
-- versioned prompts for intent, synthesis, pattern drafting and review.
+- versioned prompts for intent, synthesis, pattern drafting and review;
+- provider-result accounting or deterministic token estimation instead of a metering-only
+  model completion.
 
 Tier A candidate synthesis consumes an already-determined fusion assessment and can recommend
 “ask user” or “insufficient context”; it cannot promote `PARTIAL_MATCH`, alter thresholds, or
@@ -692,8 +701,14 @@ the approval-bound `ExecutionService` path may reach the BloFin demo provider.
 
 ## 12. Automatic journal architecture
 
-Create no second journal. Use `JournalTrade` as the lifecycle projection and existing linked
-IDs. Lifecycle events update it idempotently:
+**CURRENT:** `JournalTrade` is the canonical trade-intelligence record used by import,
+statistics/comparison, excursions and auto-journal hooks, while legacy `TradeJournal` still
+owns the main journal-entry UI, per-trade human-versus-system resolution and journal-to-RAG
+sync. Both auto-journal hooks are implemented but disabled by default. This is a migration
+split, not two target sources of truth.
+
+**TARGET:** create no second journal. Use `JournalTrade` as the lifecycle projection and
+existing linked IDs. Lifecycle events update it idempotently:
 
 | Event | Journal projection |
 |---|---|
@@ -714,6 +729,12 @@ silently swallowing all auto-journal errors.
 
 The user can edit reflective notes, but reconciled prices/fills/PnL retain provenance and
 cannot be silently overwritten. Corrections are append-only with actor/reason.
+
+Move the journal hub, canonical trade detail/attachments, `HumanVsSystemService`, discipline
+analysis and RAG sync onto `JournalTrade` through compatibility adapters and the existing
+backfill path. Keep legacy entry reads during migration; deprecate them only after linkage,
+count and behavior-parity tests pass. Accepted lessons—not raw unresolved observations—remain
+the strategy-learning input.
 
 ## 13. Learning and versioning architecture
 
@@ -745,6 +766,11 @@ Gates:
 8. Promotion recommendation is advisory.
 9. User explicitly approves the exact version diff.
 10. New strategy version activates only through existing promotion/enablement policy.
+
+**CURRENT caveat:** `StructuredRulesService` patching and one accepted-lesson attach path can
+modify the latest strategy version in place. Before the target learning loop is enabled, every
+semantic card/rule change must instead create a new immutable draft version with actor, source
+lesson, diff and approval lineage.
 
 No model writes executable rule code, changes thresholds, or promotes itself. Rollback means
 selecting a previous immutable approved version, not rewriting history.
@@ -999,7 +1025,8 @@ The sequence below is dependency-ordered, not a schedule:
 2. Introduce `IntentDecision`/operation class and split graph branches.
 3. Prove analysis/setup questions cannot create proposal, approval, order or config writes.
 4. Define normalized evidence and adapters for existing OHLCV, detector and TradingView data.
-5. Extend strategy version schema with Pattern definition and deterministic validation.
+5. Extend strategy version schema with Pattern definition and deterministic validation; remove
+   in-place semantic rule mutation before any learning write can use it.
 6. Add Pattern evaluator and fusion assessment/transition persistence.
 7. Choose and contract-test read-only CVD trade data; implement sequence-gap handling.
 8. Implement order-flow features from the chosen read-only source; do not call order blocks

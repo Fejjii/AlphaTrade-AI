@@ -251,6 +251,9 @@ Defects relevant to redesign:
    `SKIP` intents. Existing approval mutations mostly live in HTTP APIs.
 7. Several strategy-workflow intents can mutate through tools, but mutation policy is
    distributed rather than enforced by one operation-policy gate.
+8. `risk_settings_tool` and `notification_preferences_tool` are registered in
+   `backend/src/app/tools/registry.py`, but no agent node dispatches them. Documentation or a
+   registry entry alone is therefore not evidence of conversational configuration support.
 
 The existing taxonomy is much broader than the target table below:
 `backend/src/app/schemas/agent.py` defines strategy, backtest, lesson, paper-validation,
@@ -293,11 +296,18 @@ Observed generation calls:
 - `backend/src/app/services/narrative_service.py`: structured JSON narrative for trading
   analysis, risk explanation, or journal review; sanitized context; validated output; safe
   deterministic fallback.
-- `backend/src/app/agents/nodes.py` usage-tracking path: a small completion associated with the
-  request. Core intent classification, strategy execution, proposal calculations, risk and
-  output checks are deterministic.
+- `backend/src/app/agents/nodes.py` usage-tracking path: calls `llm.complete()` on each
+  successful graph completion to obtain usage metadata. It performs no decision reasoning and
+  can add a second model call and avoidable cost/latency when narrative enhancement also runs.
+  Its recorded cost is explicitly a static placeholder estimate.
 - `backend/src/app/services/structure_from_text_service.py` is currently keyword-assisted,
   despite an older “LLM-assisted” schema description; it does not call an LLM.
+
+Active narrative prompts are `backend/prompts/trading_analysis_narrative.txt`,
+`backend/prompts/risk_explanation.txt`, and `backend/prompts/journal_review_coach.txt`.
+`backend/src/app/agents/prompts/system.md` is a placeholder and is not loaded by the graph.
+Core intent classification, strategy execution, proposal calculations, risk and output checks
+remain deterministic.
 
 Cost handling exists in `services/usage_cost.py` and `cost_estimator.py`. Provider-reported
 cost can be stored; otherwise deterministic placeholder rates are explicitly non-billing-grade.
@@ -501,6 +511,13 @@ The canonical journal model is a strong reuse anchor. `JournalTrade` and related
 execution, PnL, fees/funding/slippage, links to position/paper trade/proposal/order/backtest/run,
 strategy/version, evidence, rule checks, observations, and deterministic excursions.
 
+The current implementation is nevertheless a dual journal stack:
+
+| Store | Current authoritative uses | Important gap |
+|---|---|---|
+| Canonical `JournalTrade` / `journal_trades` | Trade CRUD/import/backfill, statistics and cohort comparison, MFE/MAE replay, position/paper-trade auto-journal hooks | Main journal hub has no canonical trade browser/detail/editor; canonical trades are not synced to RAG |
+| Legacy `TradeJournal` / `journals` | Main `/journal` entry UI, per-trade discipline/human-versus-system resolution, `JournalRagSyncService` | Does not carry the canonical trade/evidence/excursion model and must not remain the learning source of truth |
+
 Implemented:
 
 - canonical journal CRUD/import/backfill and legacy journal entries;
@@ -518,6 +535,10 @@ Implemented:
 Partial/missing:
 
 - both auto-journal flags default off and are absent from `render.yaml`;
+- `HumanVsSystemService` resolves legacy journal/proposal IDs, not canonical `JournalTrade`
+  IDs; the main journal UI and journal-to-RAG path also remain legacy-first;
+- no canonical `JournalTrade` detail/edit/attachment workflow is exposed by the frontend API
+  client, despite the backend trade and attachment APIs;
 - one durable lifecycle record does not yet start at detection and carry the same lineage
   through candidate, approval, demo order, reconciliation, close and journal;
 - internal position close can auto-journal, but BloFin fill/fee/funding/PnL reconciliation is
@@ -525,6 +546,9 @@ Partial/missing:
 - MFE/MAE replay is post-trade and depends on stored candle completeness;
 - lesson review exists, but no orchestrated historical validation -> paper validation ->
   promotion workflow enforces all target gates as one state machine;
+- current structured-rule patching and one accepted-lesson attachment path can modify the latest
+  strategy version in place. Controlled learning requires every semantic rule change to create
+  a new reviewable version;
 - no automatic self-modification exists, which is correct and must remain so.
 
 ## 14. Deployment and feature-flag audit
@@ -666,6 +690,10 @@ review.
 - Automatic Telegram service is a preview despite naming that can suggest delivery.
 - Demo execution mirror treats venue failure as best-effort after internal fill.
 - Model cost rates are placeholders and do not cover routed tiers.
+- A usage-metering node invokes the LLM without adding reasoning value and can duplicate the
+  narrative call.
+- Legacy and canonical journal stores split the UI, RAG, human-versus-system analysis and
+  statistics; strategy rule mutation is not uniformly version-immutable.
 - Historical documentation can lag behavior; target work must keep operational claims tied to
   configuration and runtime health.
 
