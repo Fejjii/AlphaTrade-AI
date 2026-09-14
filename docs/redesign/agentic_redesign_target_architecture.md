@@ -1,7 +1,7 @@
 # AlphaTrade Agentic Redesign — Target Architecture
 
-**Design basis:** `main@c0bd1d4d9c49948c44e7e23dc2a2572ea68a4a20`  
-**Status:** proposed architecture; no product implementation or capability enablement  
+**Design basis:** `main@c0bd1d4d9c49948c44e7e23dc2a2572ea68a4a20`
+**Status:** proposed architecture; no product implementation or capability enablement
 **Non-negotiable boundary:** paper/internal simulation and BloFin demo only. No production
 exchange host, real-money order, withdrawal, transfer, or live-trading enablement is part of
 this architecture.
@@ -127,7 +127,7 @@ or decision -> approval -> Tier C risk -> demo execution -> journal/learning. Th
 runs scan scheduling or changes fusion state.
 
 **CURRENT:** `backend/src/app/workers/scanner.py` writes fixed-timeframe setup detections and
-does not use subscriptions or fusion; `render.yaml` has `WORKER_ENABLED=false`.  
+does not use subscriptions or fusion; `render.yaml` has `WORKER_ENABLED=false`.
 **TARGET:** use the existing dedicated process entrypoint
 `backend/src/app/workers/entrypoint.py` as the only staging/production watcher driver.
 `backend/src/app/main.py` may retain in-process mode for local development, but it must not be

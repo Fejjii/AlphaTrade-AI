@@ -1,7 +1,7 @@
 # AlphaTrade Agentic Redesign — Phase 0 Current-State Audit
 
-**Audit base:** `main@c0bd1d4d9c49948c44e7e23dc2a2572ea68a4a20`  
-**Audit scope:** repository evidence only; architecture/documentation only  
+**Audit base:** `main@c0bd1d4d9c49948c44e7e23dc2a2572ea68a4a20`
+**Audit scope:** repository evidence only; architecture/documentation only
 **Safety boundary:** paper/internal simulation or BloFin demo only; real-money execution remains
 disabled
 
