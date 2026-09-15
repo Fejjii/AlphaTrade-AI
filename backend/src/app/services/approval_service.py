@@ -45,8 +45,8 @@ from app.schemas.trade_plan import (
     PlanOperation,
     TradePlanRevisionSemantic,
 )
-from app.services.audit_service import AuditService
 from app.services.approval_authorization_hash import verify_authorization_issuance_hash
+from app.services.audit_service import AuditService
 from app.services.canonical_serialization import canonical_sha256
 
 _DEFAULT_AUTHORIZATION_TTL = timedelta(minutes=15)

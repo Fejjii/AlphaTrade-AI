@@ -75,8 +75,8 @@ from app.schemas.trade_plan import (
     TradePlanRevisionCreate,
     TradePlanRevisionSemantic,
 )
-from app.services.approval_service import ApprovalService
 from app.services.approval_authorization_hash import verify_authorization_issuance_hash
+from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.canonical_execution_payload import CanonicalExecutionPayloadSerializerV1
 from app.services.canonical_serialization import canonical_json_bytes, canonical_sha256

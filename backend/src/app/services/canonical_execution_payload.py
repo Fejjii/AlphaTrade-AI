@@ -23,12 +23,12 @@ from app.schemas.trade_plan import (
     TradePlanRevision,
     TradePlanRevisionSemantic,
 )
+from app.services.approval_authorization_hash import verify_authorization_issuance_hash
 from app.services.canonical_serialization import (
     CanonicalSerializationError,
     canonical_json_bytes,
     canonical_sha256,
 )
-from app.services.approval_authorization_hash import verify_authorization_issuance_hash
 
 
 class CanonicalExecutionPayloadSerializerV1:
