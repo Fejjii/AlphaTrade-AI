@@ -178,7 +178,7 @@ sequenceDiagram
     U->>A: explicit EXECUTE_PAPER_PLAN for that revision
     A->>S: typed command + exact authorization
     S->>R: validate authorization + recheck current facts
-    R-->>S: BLOCK stops; ALLOW continues (warnings mapped by policy first)
+    R-->>S: BLOCK commits terminal receipt; ALLOW continues
     S->>S: claim command/authorization/reservation/receipt/effect; commit
     S->>S: lease effect; recheck safety epoch
     S->>S: atomically authorize dispatch against current safety epoch
@@ -233,7 +233,8 @@ flowchart TD
     SKP --> RESP
     EXEG --> ES["ExecutionService command boundary"]
     ES --> RISK["Risk / kill switch / freshness / eligibility"]
-    RISK -->|BLOCK| RESP
+    RISK -->|BLOCK| BREC["Commit terminal blocked receipt"]
+    BREC --> RESP
     RISK -->|ALLOW| CONS["Atomically claim command, authorization,<br/>reservation, receipt and durable effect"]
     CONS --> DSP["Lease effect + dispatch safety barriers"]
     DSP --> SUBMIT["Demo POST or truthful pre-dispatch block/reconciliation"]
@@ -521,6 +522,11 @@ Candidate
   idempotency_key; content_hash; correlation_id
 ```
 
+In these target contracts, `setup_definition_id` is the tenant-owned
+`CompiledSetupDefinition` for the exact strategy version. A legacy global
+`GlobalSetupTemplate` ID is a compatibility reference only and cannot occupy this executable
+field.
+
 `SetupAssessment` answers only “is this setup present?” from market observations and the exact
 immutable pattern policy. `ActionEligibility` answers “may this user/account act now?” from
 risk, kill switch, daily PnL, cooldown, existing exposure, portfolio conflicts, candidate TTL,
@@ -770,12 +776,8 @@ TradePlanRevision
   strategy_version_id: UUID
   setup_definition_id: exact CompiledSetupDefinition artifact
   evidence_ids: non-empty ordered list[UUID]
-  evidence_venue: VenueId
-  evidence_market: typed market identity
-  execution_venue: VenueId
-  execution_market: typed market identity
-  evidence_market_identity: typed venue/market/instrument/provider-symbol identity
-  execution_instrument_identity: typed venue/market/instrument/provider-symbol/rules identity
+  evidence_venue; evidence_market; evidence_instrument: typed identity
+  execution_venue; execution_market; execution_instrument: typed identity
   instrument_mapping_version: immutable version
   timeframe: Timeframe
   expected_account_mode: NET
@@ -1068,6 +1070,7 @@ stateDiagram-v2
     FILLED --> POSITION_OPEN
     POSITION_OPEN --> CLOSE_PENDING: unique authorized reduce-only close claim
     CLOSE_PENDING --> BLOCKED_BEFORE_DISPATCH: stale position/order/safety state; no POST
+    BLOCKED_BEFORE_DISPATCH --> POSITION_OPEN: close effect only; proven unsent residual remains
     CLOSE_PENDING --> RECONCILIATION_REQUIRED: ambiguous close or concurrent fill
     CLOSE_PENDING --> CLOSED: authoritative reconciled zero position
     RECONCILIATION_REQUIRED --> ACKNOWLEDGED: venue query resolves
@@ -1180,7 +1183,10 @@ Lifecycle events then update it idempotently:
 | Analytics | Rule checks, plan adherence, runner/stop discipline |
 | Lesson detection | Reviewable `LessonCandidate`, never a strategy mutation |
 
-Use one idempotency key such as `(correlation_id, projection_event_type, source_event_id)`.
+Projection uniqueness is
+`(source_system, account_or_aggregate, event_type, source_event_id, source_event_version,
+supersession)`. Every projector transaction resolves the database-unique
+`(organization_id, execution_lifecycle_id)` `JournalTrade` before appending one fact.
 Critical execution/close commits enqueue journal projection through the outbox; journal failure
 does not roll back a confirmed venue action but is visible and retryable. This is stricter than
 silently swallowing all auto-journal errors.
@@ -1490,7 +1496,8 @@ aggressor/finality semantics pass in the intended runtime region. The existing
 Deterministic fixture hypothesis:
 
 1. Load at least 100 final perpetual 15m bars and 30 final perpetual 4h bars.
-2. Compute Wilder ATR(14), matching existing indicator semantics.
+2. Compute `WilderAtrFeatureV1(period=14)` from final candles using the §26 Decimal, warm-up,
+   missing-data and version-identity contract.
 3. Let `S` be the most recent confirmed 15m swing high using strict left=2/right=2 fractal
    semantics.
 4. Select nearest active versioned 4h resistance `R`, tie-break by stable level ID, and require
@@ -1778,7 +1785,7 @@ provenance:
   ordered evidence_ids
   evidence_venue; evidence_market; evidence_instrument
   execution_venue; execution_market; execution_instrument
-  instrument_mapping_version
+  timeframe; instrument_mapping_version
 order:
   side; quantity; quantity_unit; order_type; time_in_force
   limit_price + price_unit OR explicit null + MARKET marker
@@ -1819,7 +1826,7 @@ ApprovalAuthorization
   verified_account_mode
   permission_attestation_id; permission_attestation_version
   expires_at; state: AVAILABLE | CONSUMED | EXPIRED | REVOKED
-  channel; actor; created_at; consumed_at?
+  channel; actor; created_at; consumed_at?; consumed_by_execution_command_id?
   authorization_content_hash
 ```
 
@@ -1903,9 +1910,9 @@ listed semantic field changes the hash.
 - `ClosePositionCommand` binds organization/principal/account/exchange account, reconciled
   position ID and projection version, execution venue and instrument, current reconciled side
   and exact open quantity/unit, `reduce_only=true`, NET position mode, working-order set/hash,
-  basis/freshness version, second confirmation authorization and close-policy version. Channel,
-  callback and opaque idempotency keys are transport metadata and do not alter this semantic
-  close identity.
+  basis/freshness version, second confirmation authorization when required by close policy and
+  close-policy version. Channel, callback and opaque idempotency keys are transport metadata
+  and do not alter this semantic close identity.
 
 Each command has a distinct canonical hash namespace:
 `alphatrade/submit-entry/v1`, `alphatrade/cancel-order/v1` or
@@ -2057,8 +2064,9 @@ filled quantity plus cancelled remainder is `PARTIALLY_FILLED_CANCELLED` with an
 
 ### Stable receipt and append-only state
 
-`ExecutionReceipt(receipt_id, command_id, authorization_id, organization/account bindings,
-created_at)` never changes identity. `ExecutionTransition` is append-only with transition ID,
+`ExecutionReceipt(receipt_id, command_id, operation, authorization_id?,
+organization/account bindings, created_at)` never changes identity. `ExecutionTransition` is
+append-only with transition ID,
 receipt ID, prior/new state, authoritative source fact, source identity, quantities/units,
 occurred/observed/recorded times, actor/policy and content hash.
 `ExecutionProjection(receipt_id, version, state, filled_quantity, remaining_quantity,
@@ -2387,7 +2395,7 @@ side; exact reconciled open quantity + unit
 reduce_only = true
 working_order_set + canonical working_order_hash
 basis_snapshot/freshness version
-second_confirmation_authorization_id
+second_confirmation_authorization_id?
 close_policy_version
 ```
 
@@ -2405,7 +2413,7 @@ snapshots, then one short serialized database transaction:
 1. verifies that the persisted position and every working-order reconciliation snapshot meet
    the required bounded-finality policy;
 2. verifies account, instrument, NET mode, side, exact open quantity, projection version,
-   working-order set/hash, basis/freshness and second authorization;
+   working-order set/hash, basis/freshness and any close-policy-required second authorization;
 3. compare-and-sets `POSITION_OPEN(expected_version) -> CLOSE_PENDING`;
 4. inserts the unique `CloseClaim`, stable receipt and exactly one close effect, and includes
    that pending effect in the next working-order projection/hash;
