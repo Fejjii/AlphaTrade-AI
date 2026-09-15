@@ -1,0 +1,513 @@
+"""Dispatch-time safety barriers for VenueSubmitEffect.
+
+Barrier 1 is the claim transaction (safety epoch lock).
+Barrier 2: lease claim revalidates the epoch.
+Barrier 3: LEASED -> DISPATCH_AUTHORIZED immediately before any send.
+Barrier 4: ambiguous send enters RECONCILIATION_REQUIRED.
+
+No database transaction is held across provider I/O. Production/demo POST is
+refused; tests may call :meth:`attempt_fake_send` only.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from sqlalchemy.orm import Session
+
+from app.core.errors import ConflictError, NotFoundError, TradingPolicyError
+from app.db.models import AccountSafetyEpoch, ExecutionCommand, VenueSubmitEffect
+from app.providers.execution.fake_venue import FakeVenueSubmitProvider
+from app.repositories.execution_protocol import (
+    ExecutionCommandRepository,
+    ExecutionProjectionRepository,
+    ExecutionReceiptRepository,
+    RiskReservationRepository,
+    VenueSubmitEffectRepository,
+)
+from app.schemas.execution_protocol import (
+    ExecutionReceiptState,
+    ExecutionReconciliationStatus,
+    RiskReservationReleaseReason,
+    RiskReservationReleaseState,
+    VenueSendDisposition,
+    VenueSubmitEffectState,
+)
+from app.services.execution_integrity import ensure_db_transaction
+from app.services.execution_transitions import append_transition, apply_projection_transition
+from app.services.safety_epoch import SafetyEpochService
+
+_LEASE_SECONDS = 30
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+class VenueSubmitDispatcher:
+    def __init__(
+        self,
+        session: Session,
+        safety_epochs: SafetyEpochService,
+        *,
+        clock: Callable[[], datetime] = _now,
+    ) -> None:
+        self._session = session
+        self._epochs = safety_epochs
+        self._clock = clock
+        self._effects = VenueSubmitEffectRepository(session)
+        self._commands = ExecutionCommandRepository(session)
+        self._receipts = ExecutionReceiptRepository(session)
+        self._projections = ExecutionProjectionRepository(session)
+        self._reservations = RiskReservationRepository(session)
+
+    def lease_effect(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        lease_seconds: int = _LEASE_SECONDS,
+    ) -> VenueSubmitEffect:
+        now = _aware(self._clock())
+        ensure_db_transaction(self._session)
+        command = self._require_command(command_id)
+        epoch = self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        effect = self._require_effect_locked(command_id)
+        if self._epoch_blocks(epoch_value=int(effect.safety_epoch), current=epoch):
+            self._block_before_dispatch(command=command, effect=effect, now=now)
+            return effect
+        if effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED:
+            return effect
+        if effect.state is VenueSubmitEffectState.PROVEN_UNSENT:
+            return effect
+        if (
+            effect.state is VenueSubmitEffectState.LEASED
+            and effect.lease_owner == owner
+            and effect.lease_expires_at is not None
+            and _aware(effect.lease_expires_at) > now
+        ):
+            return effect
+        if (
+            effect.state is VenueSubmitEffectState.LEASED
+            and effect.lease_owner not in {None, owner}
+            and effect.lease_expires_at is not None
+            and _aware(effect.lease_expires_at) > now
+        ):
+            raise ConflictError(
+                "Venue submit effect lease is held by another worker.",
+                details={"reason": "lease_held", "lease_owner": effect.lease_owner},
+            )
+        if effect.state not in {VenueSubmitEffectState.CREATED, VenueSubmitEffectState.LEASED}:
+            raise ConflictError(
+                "Effect is not eligible for lease.",
+                details={"reason": "effect_not_leaseable", "state": effect.state.value},
+            )
+        effect.state = VenueSubmitEffectState.LEASED
+        effect.lease_owner = owner
+        effect.lease_expires_at = now + timedelta(seconds=lease_seconds)
+        effect.fencing_token = int(effect.fencing_token) + 1
+        effect.updated_at = now
+        self._session.flush()
+        return effect
+
+    def authorize_dispatch(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+    ) -> VenueSubmitEffect:
+        now = _aware(self._clock())
+        ensure_db_transaction(self._session)
+        command = self._require_command(command_id)
+        epoch = self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        effect = self._require_effect_locked(command_id)
+        if effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED:
+            if int(effect.dispatch_fencing_token or -1) != fencing_token:
+                raise ConflictError(
+                    "Dispatch already authorized with a different fence.",
+                    details={"reason": "dispatch_fence_mismatch"},
+                )
+            return effect
+        if self._epoch_blocks(epoch_value=int(effect.safety_epoch), current=epoch):
+            self._block_before_dispatch(command=command, effect=effect, now=now)
+            return effect
+        if (
+            effect.state is not VenueSubmitEffectState.LEASED
+            or effect.lease_owner != owner
+            or int(effect.fencing_token) != fencing_token
+        ):
+            raise ConflictError(
+                "Lease fence does not match; stale worker cannot dispatch.",
+                details={"reason": "lease_fence_mismatch"},
+            )
+        if effect.lease_expires_at is not None and _aware(effect.lease_expires_at) <= now:
+            raise ConflictError(
+                "Venue submit effect lease has expired.",
+                details={"reason": "lease_expired"},
+            )
+        effect.state = VenueSubmitEffectState.DISPATCH_AUTHORIZED
+        effect.dispatch_authorized_at = now
+        effect.dispatch_safety_epoch = int(epoch.epoch)
+        effect.dispatch_fencing_token = fencing_token
+        effect.attempt = int(effect.attempt) + 1
+        effect.dispatch_attempt = effect.attempt
+        effect.updated_at = now
+        self._session.flush()
+        return effect
+
+    def attempt_fake_send(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+        provider: FakeVenueSubmitProvider,
+    ) -> VenueSubmitEffect:
+        """Send only through the in-process fake. Never a BloFin or network client."""
+
+        if not isinstance(provider, FakeVenueSubmitProvider):
+            raise TradingPolicyError(
+                "Phase 1 venue POST is disabled for production and demo providers.",
+                details={"reason": "external_venue_submit_disabled"},
+            )
+        effect = self._require_effect(command_id)
+        if effect.state is not VenueSubmitEffectState.DISPATCH_AUTHORIZED:
+            raise ConflictError(
+                "Send is forbidden until DISPATCH_AUTHORIZED commits.",
+                details={
+                    "reason": "send_before_dispatch_authorization",
+                    "state": effect.state.value,
+                },
+            )
+        if effect.lease_owner != owner or int(effect.dispatch_fencing_token or -1) != fencing_token:
+            raise ConflictError(
+                "Stale worker cannot send after losing the lease fence.",
+                details={"reason": "send_fence_mismatch"},
+            )
+        client_order_id = effect.client_order_id
+        try:
+            result = provider.submit(client_order_id=client_order_id)
+        except Exception:
+            ensure_db_transaction(self._session)
+            self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
+            raise
+        ensure_db_transaction(self._session)
+        if result is None:
+            return self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
+        if result.status == "accepted":
+            return self._mark_acknowledged(command_id=command_id, now=_aware(self._clock()))
+        return self._mark_rejected(command_id=command_id, now=_aware(self._clock()))
+
+    def recover_after_crash(self, *, command_id: uuid.UUID, owner: str) -> VenueSubmitEffect:
+        ensure_db_transaction(self._session)
+        effect = self._require_effect(command_id)
+        if effect.state is VenueSubmitEffectState.CREATED:
+            return self.lease_effect(command_id=command_id, owner=owner)
+        if effect.state is VenueSubmitEffectState.LEASED:
+            return self.authorize_dispatch(
+                command_id=command_id,
+                owner=owner,
+                fencing_token=int(effect.fencing_token),
+            )
+        if effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED:
+            return self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
+        return effect
+
+    def apply_unique_fill(
+        self,
+        *,
+        command_id: uuid.UUID,
+        fill_quantity: Decimal,
+        fill_price: Decimal,
+        source_identity: str,
+    ) -> None:
+        now = _aware(self._clock())
+        ensure_db_transaction(self._session)
+        command = self._require_command(command_id)
+        self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        receipt = self._receipts.get_by_command(command_id)
+        projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
+        reservation = self._reservations.get_by_command(command_id)
+        if receipt is None or projection is None or reservation is None:
+            raise NotFoundError("Fill target identities were not found.")
+        new_filled = projection.filled_quantity + fill_quantity
+        new_remaining = projection.remaining_quantity - fill_quantity
+        if new_remaining < 0:
+            new_remaining = Decimal("0")
+        fill_notional = fill_quantity * fill_price
+        convert = min(fill_notional, reservation.remaining_reserved_notional)
+        reservation.remaining_reserved_notional -= convert
+        reservation.release_reason = RiskReservationReleaseReason.FILL_CONVERSION
+        reservation.release_state = (
+            RiskReservationReleaseState.RELEASED
+            if reservation.remaining_reserved_notional == 0
+            else RiskReservationReleaseState.PARTIALLY_RELEASED
+        )
+        accounting = self._epochs.lock_risk_accounting(
+            organization_id=command.organization_id,
+            account_id=command.account_id,
+            user_id=command.user_id,
+            exposure_unit=reservation.exposure_unit,
+        )
+        accounting.reserved_notional -= convert
+        accounting.actual_notional += convert
+        if accounting.reserved_notional < 0:
+            accounting.reserved_notional = Decimal("0")
+        new_state = (
+            ExecutionReceiptState.ACKNOWLEDGED
+            if new_remaining == 0
+            else ExecutionReceiptState.PARTIALLY_FILLED
+        )
+        transition = append_transition(
+            self._session,
+            receipt=receipt,
+            prior_state=projection.state,
+            new_state=new_state,
+            source_fact="unique_fill",
+            source_identity=source_identity,
+            occurred_at=now,
+            observed_at=now,
+            recorded_at=now,
+            actor="execution_service",
+            quantity=fill_quantity,
+            quantity_unit=projection.quantity_unit,
+        )
+        apply_projection_transition(
+            self._session,
+            projection=projection,
+            transition=transition,
+            filled_quantity=new_filled,
+            remaining_quantity=new_remaining,
+            weighted_price=fill_price,
+            updated_at=now,
+        )
+
+    def _block_before_dispatch(
+        self,
+        *,
+        command: ExecutionCommand,
+        effect: VenueSubmitEffect,
+        now: datetime,
+    ) -> None:
+        if effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED:
+            raise ConflictError(
+                "Cannot pretend a dispatch-authorized send disappeared.",
+                details={"reason": "already_dispatch_authorized"},
+            )
+        receipt = self._receipts.get_by_command(command.id)
+        projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
+        if receipt is None or projection is None:
+            raise NotFoundError("Receipt missing during blocked-before-dispatch.")
+        if projection.state is ExecutionReceiptState.BLOCKED_BEFORE_DISPATCH:
+            return
+        transition = append_transition(
+            self._session,
+            receipt=receipt,
+            prior_state=projection.state,
+            new_state=ExecutionReceiptState.BLOCKED_BEFORE_DISPATCH,
+            source_fact="safety_epoch_block_before_dispatch",
+            source_identity=f"epoch:{int(effect.safety_epoch)}",
+            occurred_at=now,
+            observed_at=now,
+            recorded_at=now,
+            actor="safety_epoch",
+        )
+        apply_projection_transition(
+            self._session,
+            projection=projection,
+            transition=transition,
+            reconciliation_status=ExecutionReconciliationStatus.RESOLVED,
+            updated_at=now,
+        )
+        effect.state = VenueSubmitEffectState.PROVEN_UNSENT
+        effect.uncertainty = False
+        effect.reconciliation_disposition = VenueSendDisposition.PROVEN_UNSENT.value
+        effect.lease_owner = None
+        effect.lease_expires_at = None
+        effect.updated_at = now
+        self._release_unused_reservation(
+            command_id=command.id,
+            reason=RiskReservationReleaseReason.UNUSED_REMAINDER_AFTER_PROVEN_UNSENT,
+            now=now,
+        )
+        self._session.flush()
+
+    def _mark_ambiguous(self, *, command_id: uuid.UUID, now: datetime) -> VenueSubmitEffect:
+        command = self._require_command(command_id)
+        effect = self._require_effect(command_id)
+        receipt = self._receipts.get_by_command(command_id)
+        projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
+        if receipt is None or projection is None:
+            raise NotFoundError("Receipt missing during ambiguous send.")
+        epoch = self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        transition = append_transition(
+            self._session,
+            receipt=receipt,
+            prior_state=projection.state,
+            new_state=ExecutionReceiptState.RECONCILIATION_REQUIRED,
+            source_fact="ambiguous_send",
+            source_identity=f"epoch:{int(epoch.epoch)}",
+            occurred_at=now,
+            observed_at=now,
+            recorded_at=now,
+            actor="execution_service",
+        )
+        apply_projection_transition(
+            self._session,
+            projection=projection,
+            transition=transition,
+            reconciliation_status=ExecutionReconciliationStatus.REQUIRED,
+            updated_at=now,
+        )
+        effect.state = VenueSubmitEffectState.SEND_AMBIGUOUS
+        effect.uncertainty = True
+        effect.reconciliation_disposition = VenueSendDisposition.AMBIGUOUS.value
+        effect.updated_at = now
+        self._session.flush()
+        return effect
+
+    def _mark_acknowledged(self, *, command_id: uuid.UUID, now: datetime) -> VenueSubmitEffect:
+        effect = self._require_effect(command_id)
+        receipt = self._receipts.get_by_command(command_id)
+        projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
+        if receipt is None or projection is None:
+            raise NotFoundError("Receipt missing during acknowledgement.")
+        transition = append_transition(
+            self._session,
+            receipt=receipt,
+            prior_state=projection.state,
+            new_state=ExecutionReceiptState.ACKNOWLEDGED,
+            source_fact="fake_venue_accepted",
+            source_identity=effect.client_order_id,
+            occurred_at=now,
+            observed_at=now,
+            recorded_at=now,
+            actor="fake_venue",
+        )
+        apply_projection_transition(
+            self._session,
+            projection=projection,
+            transition=transition,
+            updated_at=now,
+        )
+        effect.state = VenueSubmitEffectState.SEND_ATTEMPTED
+        effect.uncertainty = False
+        effect.reconciliation_disposition = VenueSendDisposition.ACCEPTED.value
+        effect.updated_at = now
+        self._session.flush()
+        return effect
+
+    def _mark_rejected(self, *, command_id: uuid.UUID, now: datetime) -> VenueSubmitEffect:
+        effect = self._require_effect(command_id)
+        receipt = self._receipts.get_by_command(command_id)
+        projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
+        if receipt is None or projection is None:
+            raise NotFoundError("Receipt missing during rejection.")
+        transition = append_transition(
+            self._session,
+            receipt=receipt,
+            prior_state=projection.state,
+            new_state=ExecutionReceiptState.REJECTED,
+            source_fact="fake_venue_rejected",
+            source_identity=effect.client_order_id,
+            occurred_at=now,
+            observed_at=now,
+            recorded_at=now,
+            actor="fake_venue",
+        )
+        apply_projection_transition(
+            self._session,
+            projection=projection,
+            transition=transition,
+            remaining_quantity=Decimal("0"),
+            updated_at=now,
+        )
+        effect.state = VenueSubmitEffectState.SEND_ATTEMPTED
+        effect.uncertainty = False
+        effect.reconciliation_disposition = VenueSendDisposition.REJECTED.value
+        effect.updated_at = now
+        self._release_unused_reservation(
+            command_id=command_id,
+            reason=RiskReservationReleaseReason.UNUSED_REMAINDER_AFTER_REJECTION,
+            now=now,
+        )
+        self._session.flush()
+        return effect
+
+    def _release_unused_reservation(
+        self,
+        *,
+        command_id: uuid.UUID,
+        reason: RiskReservationReleaseReason,
+        now: datetime,
+    ) -> None:
+        command = self._require_command(command_id)
+        self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        reservation = self._reservations.get_by_command(command_id)
+        if reservation is None:
+            return
+        unused = reservation.remaining_reserved_notional
+        if unused <= 0:
+            return
+        accounting = self._epochs.lock_risk_accounting(
+            organization_id=command.organization_id,
+            account_id=command.account_id,
+            user_id=command.user_id,
+            exposure_unit=reservation.exposure_unit,
+        )
+        accounting.reserved_notional -= unused
+        if accounting.reserved_notional < 0:
+            accounting.reserved_notional = Decimal("0")
+        accounting.reserved_daily_loss -= reservation.daily_loss_allocation
+        if accounting.reserved_daily_loss < 0:
+            accounting.reserved_daily_loss = Decimal("0")
+        accounting.reserved_trade_slots -= reservation.daily_trade_allocation
+        if accounting.reserved_trade_slots < 0:
+            accounting.reserved_trade_slots = 0
+        reserved = dict(accounting.symbol_reserved or {})
+        current = Decimal(str(reserved.get(reservation.instrument, "0")))
+        reserved[reservation.instrument] = str(max(Decimal("0"), current - unused))
+        accounting.symbol_reserved = reserved
+        reservation.remaining_reserved_notional = Decimal("0")
+        reservation.release_state = RiskReservationReleaseState.RELEASED
+        reservation.release_reason = reason
+        reservation.updated_at = now
+
+    def _epoch_blocks(self, *, epoch_value: int, current: AccountSafetyEpoch) -> bool:
+        return bool(current.blocking) or int(current.epoch) != epoch_value
+
+    def _require_command(self, command_id: uuid.UUID) -> ExecutionCommand:
+        command = self._commands.get(command_id)
+        if command is None:
+            raise NotFoundError("Execution command not found")
+        return command
+
+    def _require_effect(self, command_id: uuid.UUID) -> VenueSubmitEffect:
+        effect = self._effects.get_by_command(command_id)
+        if effect is None:
+            raise NotFoundError("Venue submit effect not found")
+        return effect
+
+    def _require_effect_locked(self, command_id: uuid.UUID) -> VenueSubmitEffect:
+        effect = self._effects.get_by_command_for_update(command_id)
+        if effect is None:
+            raise NotFoundError("Venue submit effect not found")
+        return effect

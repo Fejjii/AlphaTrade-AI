@@ -9,6 +9,7 @@ order, and there is no code path that can place a real-money order.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -21,7 +22,14 @@ from app.core.config import Settings
 from app.core.errors import IdempotencyConvergenceError, NotFoundError, TradingPolicyError
 from app.core.operation_policy import PersistenceKind, assert_write_allowed
 from app.core.paper_safety import assert_execution_capable_composition_root
-from app.db.models import ExchangeFill, ExchangeOrder, Order, Position, TradeProposal
+from app.db.models import (
+    ExchangeFill,
+    ExchangeOrder,
+    Order,
+    Position,
+    TradeProposal,
+    VenueSubmitEffect,
+)
 from app.providers.exchange.base import (
     ExchangeExecutionProvider,
     ExchangeOrderRequest,
@@ -35,6 +43,7 @@ from app.providers.exchange.venue_diagnostics import (
     endpoint_label,
     log_fields_for_mirror_failure,
 )
+from app.providers.execution.fake_venue import FakeVenueSubmitProvider
 from app.repositories.approvals import ApprovalRepository
 from app.repositories.exchange_orders import ExchangeFillRepository, ExchangeOrderRepository
 from app.repositories.orders import OrderRepository
@@ -52,7 +61,9 @@ from app.schemas.common import (
     TradeDirection,
 )
 from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOrderRequest
+from app.schemas.execution_protocol import ExecutePaperPlanRequest, ExecutePaperPlanResult
 from app.services.audit_service import AuditService
+from app.services.execution_claim import ExecutionClaimHooks
 from app.services.market_data_service import MarketDataService
 from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
 from app.services.paper_order_idempotency import (
@@ -63,6 +74,7 @@ from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
+from app.services.venue_submit_dispatcher import VenueSubmitDispatcher
 
 logger = structlog.get_logger(__name__)
 
@@ -563,6 +575,89 @@ class ExecutionService:
         )
         self._session.add(position)
         self._session.flush()
+
+    def execute_paper_plan(
+        self,
+        request: ExecutePaperPlanRequest,
+        *,
+        hooks: ExecutionClaimHooks | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> ExecutePaperPlanResult:
+        """Claim-time EXECUTE_PAPER_PLAN entry. Does not call any venue network."""
+
+        from app.services.execution_claim import PaperPlanClaimService
+        from app.services.safety_epoch import SafetyEpochService
+
+        safety = SafetyEpochService(self._session, self._settings, self._risk_settings)
+        return PaperPlanClaimService(
+            self._session,
+            self._settings,
+            safety,
+            clock=clock or (lambda: datetime.now(UTC)),
+            hooks=hooks,
+        ).claim(request)
+
+    def lease_paper_plan_effect(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        lease_seconds: int = 30,
+    ) -> VenueSubmitEffect:
+        return self._dispatcher().lease_effect(
+            command_id=command_id, owner=owner, lease_seconds=lease_seconds
+        )
+
+    def authorize_paper_plan_dispatch(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+    ) -> VenueSubmitEffect:
+        return self._dispatcher().authorize_dispatch(
+            command_id=command_id, owner=owner, fencing_token=fencing_token
+        )
+
+    def attempt_fake_paper_plan_send(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+        provider: FakeVenueSubmitProvider,
+    ) -> VenueSubmitEffect:
+        return self._dispatcher().attempt_fake_send(
+            command_id=command_id,
+            owner=owner,
+            fencing_token=fencing_token,
+            provider=provider,
+        )
+
+    def recover_paper_plan_effect(self, *, command_id: uuid.UUID, owner: str) -> VenueSubmitEffect:
+        return self._dispatcher().recover_after_crash(command_id=command_id, owner=owner)
+
+    def apply_paper_plan_fill(
+        self,
+        *,
+        command_id: uuid.UUID,
+        fill_quantity: Decimal,
+        fill_price: Decimal,
+        source_identity: str,
+    ) -> None:
+        self._dispatcher().apply_unique_fill(
+            command_id=command_id,
+            fill_quantity=fill_quantity,
+            fill_price=fill_price,
+            source_identity=source_identity,
+        )
+
+    def _dispatcher(self) -> VenueSubmitDispatcher:
+        from app.services.safety_epoch import SafetyEpochService
+        from app.services.venue_submit_dispatcher import VenueSubmitDispatcher
+
+        safety = SafetyEpochService(self._session, self._settings, self._risk_settings)
+        return VenueSubmitDispatcher(self._session, safety)
 
     def _audit_reject(
         self,

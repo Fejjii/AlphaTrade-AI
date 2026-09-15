@@ -169,9 +169,47 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
         result = cast(CursorResult[Any], self._session.execute(stmt))
         return int(result.rowcount or 0)
 
+    def get_for_update(self, authorization_id: uuid.UUID) -> ApprovalAuthorization | None:
+        stmt = (
+            select(ApprovalAuthorization)
+            .where(ApprovalAuthorization.id == authorization_id)
+            .with_for_update()
+        )
+        return self._session.scalar(stmt)
+
+    def compare_and_set_available_to_consumed(
+        self,
+        *,
+        authorization_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        account_id: uuid.UUID,
+        execution_command_id: uuid.UUID,
+        consumed_at: datetime,
+    ) -> bool:
+        stmt = (
+            update(ApprovalAuthorization)
+            .where(
+                ApprovalAuthorization.id == authorization_id,
+                ApprovalAuthorization.organization_id == organization_id,
+                ApprovalAuthorization.user_id == user_id,
+                ApprovalAuthorization.account_id == account_id,
+                ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
+            )
+            .values(
+                state=AuthorizationState.CONSUMED,
+                consumed_at=consumed_at,
+                consumed_by_execution_command_id=execution_command_id,
+                updated_at=consumed_at,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        result = cast(CursorResult[Any], self._session.execute(stmt))
+        return bool(result.rowcount)
+
 
 class ApprovalAuthorizationConsumptionPort(Protocol):
-    """Future slice-7 transaction boundary; no consumption implementation exists here."""
+    """Claim-transaction consumption boundary implemented by the authorization repository."""
 
     def compare_and_set_available_to_consumed(
         self,
