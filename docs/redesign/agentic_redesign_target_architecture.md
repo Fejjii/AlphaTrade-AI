@@ -156,7 +156,7 @@ sequenceDiagram
     F->>F: freshness, quality, alignment, invalidation
     F->>A: confirmed candidate + transition reasons
     A->>T: durable alert outbox
-    T->>U: candidate + APPROVE/REJECT/SKIP/EXPLAIN
+    T->>U: candidate + STATUS/EXPLAIN/REJECT/SKIP
     U->>T: authenticated idempotent action
     T->>A: action receipt
     A->>A: explicit PLAN_TRADE preview
@@ -299,7 +299,7 @@ enforce them.
 | `JOURNAL` | JOURNAL | Read by default; explicit confirmed write |
 | `EXPLAIN` | READ_ONLY | Explanation of existing facts/decisions |
 | `CONFIGURE` | CONFIGURATION | Read current config or preview confirmed change |
-| `APPROVE` | APPROVAL | Approve exact proposal/plan/action token only |
+| `APPROVE` | APPROVAL | Create authorization for one exact immutable `TradePlanRevision` and content hash only |
 | `REJECT` | APPROVAL | Reject exact object; never execute |
 | `SKIP` | APPROVAL | Record dismissal/skip; never execute |
 | `EXECUTE_PAPER_PLAN` | EXECUTION | Consume one valid authorization and ask `ExecutionService` to execute that exact revision |
@@ -330,7 +330,8 @@ Examples:
 - “Approve plan 123 revision 4” -> `APPROVE/APPROVAL`; create authorization only.
 - “Execute approved paper plan 123 revision 4” ->
   `EXECUTE_PAPER_PLAN/EXECUTION`; consume authorization and call `ExecutionService`.
-- Telegram callback `approve:<nonce>` -> validated `APPROVE`, bound to object/version/user.
+- Telegram callback `approve:<nonce>` -> validated `APPROVE`, bound to exact plan revision,
+  content hash, organization and user.
 - “Close it” without one unambiguous position -> clarification, no mutation.
 
 ## 5. Market observation and assessment architecture
