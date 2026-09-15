@@ -798,8 +798,11 @@ ExecutionCommand
 ```
 
 The canonical command hash is calculated from every identity and payload field above using a
-versioned canonical serializer. Database uniqueness and lookup are tenant/principal scoped, not
-global by key. Replay behavior is exact:
+versioned canonical serializer. A unique idempotency record binds the opaque key to
+organization, principal/account and command hash. A key-only lookup can expose only that
+binding decision; it cannot return an order. The service first locks the record and validates
+organization, principal and hash, then resolves the receipt/order through tenant-scoped
+queries. Replay behavior is exact:
 
 - same organization + same principal/account + same idempotency key + same canonical payload
   returns the original `ExecutionReceipt`;
@@ -1458,7 +1461,7 @@ whenever market or execution identity applies.
 | `MarketObservation` | Global observation ID plus source-specific venue/market/instrument event identity | Immutable event/receive/recorded timestamps, finality, adapter version and content hash; supersession appends | Source key dedupe; `FORMING` never becomes executable by mutation—`FINAL` is a new/final source observation |
 | `SetupAssessment` | Organization-owned assessment for exact strategy version/setup definition and observation window | Immutable assessed/valid-until timestamps, correlation ID, observation IDs and content hash | Policy/window key dedupe; `NO_SETUP -> WATCH -> PARTIAL_MATCH -> CONFIRMED_SETUP` or market-only `INVALIDATED/EXPIRED` |
 | `ActionEligibility` | Organization + user + account + candidate/resource revision | Immutable checked/valid-until times, risk/venue-state references, correlation and content hash | Unique check context/hash; `ELIGIBLE | BLOCKED | EXPIRED`; recheck appends and never changes setup truth |
-| `Candidate` | Organization-owned candidate ID; exact strategy/setup, evidence venue, instrument, timeframe and evidence-window hash | Immutable created/valid-until times, correlation and content hash; transitions append | Database unique canonical candidate key; optimistic version; `ACTIVE -> APPROVED/REJECTED/SKIPPED/EXPIRED/INVALIDATED` |
+| `Candidate` | Organization-owned candidate ID; exact strategy/setup, evidence venue, instrument, timeframe and evidence-window hash | Immutable created/valid-until times, correlation and content hash; transitions append | Database unique canonical candidate key; optimistic version; `ACTIVE -> PLAN_CREATED/REJECTED/SKIPPED/EXPIRED/INVALIDATED` |
 | `TradePlanRevision` | Stable plan ID + immutable revision ID; organization, user, candidate and exact strategy/setup identity | Immutable created/valid-until, evidence/calculation provenance, evidence and execution venues, correlation and content hash | New executable change creates revision; `DRAFT -> APPROVAL_ELIGIBLE -> SUPERSEDED/EXPIRED`; no placeholder-shaped revision |
 | `ApprovalAuthorization` | Authorization ID owned by organization/user and bound to exact plan revision/hash, channel and actor | Immutable created/expiry plus content hash; consumption timestamps append | One-time compare-and-set `AVAILABLE -> CONSUMING -> CONSUMED`; may become `EXPIRED/REVOKED`; replay/wrong version fails |
 | `ExecutionCommand` | Command ID and tenant/principal-scoped idempotency key; account, operation, exact revision, venue/instrument/payload | Immutable created time, correlation ID, plan hash and canonical command hash | Identical principal+payload returns original receipt; key/principal/payload mismatch rejects; `RECEIVED -> CLAIMED -> COMPLETED/REJECTED/RECONCILIATION_REQUIRED` |
