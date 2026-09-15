@@ -8,11 +8,13 @@ disabled
 ## 1. Executive assessment
 
 AlphaTrade is not an empty scaffold and should not be rewritten. It already has a broad,
-well-tested paper-trading platform: typed FastAPI APIs, tenant-scoped persistence, a LangGraph
-agent, public Binance market data with provenance, deterministic analysis and risk, strategy
-cards and versions, paper-validation workflows, alerts, approval records, internal paper
-execution, a guarded BloFin demo adapter, canonical journal trades, analytics, RAG, a worker,
-and a large Next.js UI.
+well-tested paper-trading platform: typed FastAPI APIs, many tenant-scoped domain repositories,
+a LangGraph agent, public Binance market data with provenance, deterministic analysis and risk,
+strategy cards and versions, paper-validation workflows, alerts, approval records, internal
+paper execution, a guarded BloFin demo adapter, canonical journal trades, analytics, RAG, a
+worker, and a large Next.js UI. Persistence is not uniformly tenant-safe: current paper-order
+replay is globally keyed and can resolve before tenant validation, as detailed in sections 17,
+18 and 21.
 
 The present system is nevertheless page- and workflow-oriented rather than agent-first. Its
 capabilities are split across 59 Next.js page routes and 42 FastAPI route modules. The

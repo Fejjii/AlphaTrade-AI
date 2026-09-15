@@ -159,13 +159,16 @@ sequenceDiagram
     T->>U: candidate + STATUS/EXPLAIN/REJECT/SKIP
     U->>T: authenticated idempotent action
     T->>A: action receipt
+    A-->>U: authoritative action result; no implicit planning
+    U->>A: new explicit PLAN_TRADE request
     A->>A: explicit PLAN_TRADE preview
     U->>A: APPROVE exact immutable plan revision
     A-->>U: approval authorization recorded; no order submitted
     U->>A: explicit EXECUTE_PAPER_PLAN for that revision
-    A->>R: atomically consume authorization + recheck current facts
-    R-->>A: ALLOW/WARN/BLOCK (final)
-    A->>X: ExecutionService submits demo-only order if ALLOW
+    A->>R: validate authorization + recheck current facts
+    R-->>A: BLOCK/WARN stops; ALLOW continues
+    A->>A: atomically consume authorization only after ALLOW
+    A->>X: ExecutionService submits demo-only order
     X-->>A: acknowledgement/fills
     A->>X: reconcile orders/positions/PnL
     A->>J: lifecycle events and closed trade
@@ -358,6 +361,7 @@ MarketObservation
   timeframe_or_window: typed interval/window
   event_time: datetime
   receive_time: datetime
+  source_clock: provider event-clock identity and precision
   interval_start: datetime?
   interval_end: datetime?
   source: source family
@@ -366,6 +370,8 @@ MarketObservation
   sequence_or_cursor: typed sequence/cursor reference?
   freshness: FRESH | AGING | STALE | GAP | UNKNOWN
   finality: FINAL | FORMING | CORRECTED | UNKNOWN
+  finality_policy_version: immutable policy version
+  post_close_grace_seconds: non-negative integer?
   fallback_used: bool
   is_live: bool
   supersedes_observation_id: UUID?
@@ -488,7 +494,8 @@ account state, current data quality and execution venue state. Account state can
 alert or block an action but can never rewrite objective setup truth.
 
 The candidate database key is
-`(organization_id, strategy_version_id, instrument_id, timeframe, evidence_window_hash)`.
+`(organization_id, strategy_version_id, evidence_venue, instrument_id, timeframe,
+evidence_window_hash)`.
 Creation uses transactional insert/upsert; transitions use optimistic versions and idempotency
 keys. Alert-delivery deduplication remains a separate concern. Existing
 `PaperSignalOrchestrationDecision`, watcher, TradingView and
@@ -509,10 +516,14 @@ stateDiagram-v2
     NO_SETUP --> WATCH: preconditions true
     WATCH --> PARTIAL_MATCH: ordered pattern steps begin
     PARTIAL_MATCH --> CONFIRMED_SETUP: all required fresh market evidence + trigger
-    WATCH --> INVALIDATED: precondition fails or evidence expires
+    WATCH --> INVALIDATED: market precondition fails
     PARTIAL_MATCH --> INVALIDATED: invalidation/disqualifier/conflict/gap
-    CONFIRMED_SETUP --> INVALIDATED: market invalidation, source failure, expiry or policy replacement
+    CONFIRMED_SETUP --> INVALIDATED: market invalidation, source failure or policy replacement
+    WATCH --> EXPIRED: assessment TTL elapsed
+    PARTIAL_MATCH --> EXPIRED: assessment TTL elapsed
+    CONFIRMED_SETUP --> EXPIRED: setup/candidate TTL elapsed
     INVALIDATED --> NO_SETUP: cooldown/expiry complete and new evidence window
+    EXPIRED --> NO_SETUP: distinct source window begins
 ```
 
 Exact transition rules:
@@ -522,8 +533,10 @@ Exact transition rules:
 | `NO_SETUP -> WATCH` | Pattern universe matches symbol/timeframe/regime and all hard preconditions pass |
 | `WATCH -> PARTIAL_MATCH` | At least one required sequence step has passed in order; no disqualifier; evidence remains fresh |
 | `PARTIAL_MATCH -> CONFIRMED_SETUP` | Every mandatory sequence step and trigger passed; required price, volume, CVD and trade-flow evidence are final where required, fresh, non-fallback, sequence-complete, market-correct and directionally aligned; weighted score >= setup threshold |
-| `* -> INVALIDATED` | Pattern invalidation crossed, explicit market disqualifier, required source stale/gapped/fallback, wrong venue/market, directional market-evidence conflict, setup TTL elapsed or exact strategy/setup policy is replaced |
+| `* -> INVALIDATED` | Pattern invalidation crossed, explicit market disqualifier, required source stale/gapped/fallback, wrong venue/market, directional market-evidence conflict or exact strategy/setup policy is replaced |
+| `WATCH/PARTIAL_MATCH/CONFIRMED_SETUP -> EXPIRED` | The immutable assessment/setup/candidate validity interval elapses without a qualifying new observation |
 | `INVALIDATED -> NO_SETUP` | Previous evidence window expires/cooldown ends and a distinct source window/content hash begins |
+| `EXPIRED -> NO_SETUP` | A distinct source window/content hash begins and all current preconditions are reevaluated |
 
 Each assessment records: policy/version, evidence IDs, per-rule pass/fail, weights, threshold,
 state, previous state, reason codes, human-readable deterministic explanation, and expiry.
@@ -852,8 +865,10 @@ exhaustion agree” becomes:
    stale-holder writes and records an unhealthy heartbeat; process-local fallback is forbidden.
 2. Create the scan-attempt lineage record before work. Load active subscription versions and
    batch shared public fetches by exact venue/market/instrument/timeframe.
-3. Fetch final closed-candle OHLCV and perpetual trades with sequence tracking. Optional order
-   book evidence is usable only after snapshot/stream sequence integrity is proven.
+3. Fetch closed-candle OHLCV and perpetual trades with sequence tracking. A candle is `FINAL`
+   only after provider finality and its versioned post-close grace interval; persist the
+   applied finality policy/grace with the observation. Optional order book evidence is usable
+   only after snapshot/stream sequence integrity is proven.
 4. Reject fallback/non-live/stale data, forming or unknown-finality candles, insufficient
    history, wrong venue/market/instrument, trade gaps and incomplete CVD warm-up.
 5. Persist immutable global observations, then evaluate each tenant's exact strategy/setup and
@@ -906,6 +921,8 @@ services and APIs; it is not a second mutation stack.
 Security and idempotency:
 
 - HTTPS webhook with Telegram secret-token header;
+- enforce bounded request-body size, per-source/enrollment-aware rate limits and an explicit
+  allowlist of accepted Telegram update types before parsing actions;
 - authenticated enrollment challenge begins in AlphaTrade web, expires, and is completed by the
   same Telegram user in a private chat with the configured bot;
 - verified enrollment binds organization, AlphaTrade user, Telegram user, Telegram private
@@ -1377,7 +1394,7 @@ Deterministic fixture hypothesis:
     forming candle; latest trade event at evaluation is no more than 10 seconds old.
 11. Emit one assessment/candidate key for
     `(organization, strategy_version, evidence_venue, perpetual instrument, 15m, T_interval)`.
-12. Invalidation is `T.high + max(0.10 * ATR15m(14), 2 * execution_venue_tick_size)` and setup
+12. Invalidation is `T.high + max(0.10 * ATR15m(14), 2 * evidence_venue_tick_size)` and setup
     expiry is two additional final 15m bars.
 13. Market invalidation or source degradation changes setup truth; kill switch, risk,
     portfolio conflict and cross-venue basis change only action eligibility.
