@@ -86,9 +86,11 @@ flowchart TB
     CONV --> IP --> TS
     TS --> CAND
     TS --> PLAN --> APP
-    TS -->|"explicit EXECUTE_PAPER_PLAN"| RISK
-    APP -. "exact consumable authorization" .-> RISK
-    RISK --> EXEC --> REC --> JOUR
+    TS -->|"explicit EXECUTE_PAPER_PLAN"| EXEC
+    APP -. "exact consumable authorization" .-> EXEC
+    EXEC -->|"invoke final deterministic gates"| RISK
+    RISK -. "ALLOW/BLOCK result" .-> EXEC
+    EXEC --> REC --> JOUR
     CAND --> MR
     CONV --> MR
     JOUR --> MR
@@ -111,7 +113,7 @@ flowchart TB
 | Pattern definitions | Existing `UserStrategy`/`UserStrategyVersion`, `StructuredRules` and `SetupDefinition` | One identity chain; immutable authored version plus one compiled detector artifact |
 | Candidate lifecycle | Adapt `paper_signal_orchestration_service.py`, `repositories/paper_validation_candidate.py`, watcher and TradingView records | Merge via adapters, preserve old APIs during migration |
 | Planning | Existing `pretrade_analysis_service.py`, `position_sizing_service.py`, `loss_acceptance_service.py` and `proposal_service.py` | Extend the existing planning stack; do not create a parallel builder |
-| Approval/risk/execution | Existing approval, risk, kill switch and `ExecutionService` | Reuse; approval creates an authorization only, explicit execution consumes it, and `ExecutionService` is sole authority |
+| Approval/risk/execution | Existing approval, risk, kill switch and `ExecutionService` | Reuse; approval creates an authorization only; `ExecutionService` receives the explicit execution command, runs final gates and consumes authorization after `ALLOW` |
 | Telegram delivery | Existing `PaperAlertService`, `PaperValidationAlert`, delivery services and provider | Reuse outbound routing/delivery; actual automatic sender is missing; add inbound adapter/action gateway |
 | Journaling/analytics/learning | Existing canonical journal, analytics, lesson and strategy-version services | Reuse and orchestrate |
 | Model routing | Wrapper over existing `LLMProvider` | New router, reuse provider implementation |
@@ -239,8 +241,9 @@ Graph rules:
   `ANALYSIS ONLY / CANNOT CREATE EXECUTABLE PLAN` and creates no executable-shaped resource.
 - `APPROVE` applies only to one exact plan revision and content hash. It records an
   `ApprovalAuthorization`; it does not submit an order.
-- `EXECUTE_PAPER_PLAN` is the sole explicit execution intent. It atomically consumes the
-  authorization, rechecks action eligibility and delegates to `ExecutionService`.
+- `EXECUTE_PAPER_PLAN` is the sole explicit execution intent. It routes the typed command to
+  `ExecutionService`; that service rechecks action eligibility and atomically consumes the
+  authorization only after `ALLOW`.
 - `EXECUTION` is never inferred from analysis, “looks good”, emoji, approval, or a generic
   button label.
 - Tool registration metadata is advisory; the operation-policy gate and domain service both
