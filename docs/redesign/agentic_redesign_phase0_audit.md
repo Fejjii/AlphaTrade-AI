@@ -495,7 +495,7 @@ an optional mirror but insufficient for a target loop claiming reconciled demo e
 target must expose `SUBMITTING`, `ACKNOWLEDGED`, `PARTIALLY_FILLED`, `FILLED`,
 `CANCEL_PENDING`, `CANCEL_RECONCILIATION_REQUIRED`, `CANCELLED`,
 `PARTIALLY_FILLED_CANCELLED`, `POSITION_OPEN`, `CLOSE_PENDING`,
-`RECONCILIATION_REQUIRED`, `ABSENCE_PENDING`, `ABSENCE_PROVEN`,
+`BLOCKED_BEFORE_DISPATCH`, `RECONCILIATION_REQUIRED`, `ABSENCE_PENDING`, `ABSENCE_PROVEN`,
 `RESUBMIT_AUTHORIZED`, `OPERATOR_HOLD`, `CLOSED` and applicable blocked/rejected/expired
 states explicitly. No transmission event may fabricate a fill or terminal state.
 
