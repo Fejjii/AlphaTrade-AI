@@ -147,6 +147,7 @@ sequenceDiagram
     participant A as Agent/Candidate
     participant T as Telegram
     participant U as User
+    participant S as ExecutionService
     participant R as Risk Gate
     participant X as BloFin Demo
     participant J as Journal/Analytics
@@ -165,13 +166,14 @@ sequenceDiagram
     U->>A: APPROVE exact immutable plan revision
     A-->>U: approval authorization recorded; no order submitted
     U->>A: explicit EXECUTE_PAPER_PLAN for that revision
-    A->>R: validate authorization + recheck current facts
-    R-->>A: BLOCK/WARN stops; ALLOW continues
-    A->>A: atomically consume authorization only after ALLOW
-    A->>X: ExecutionService submits demo-only order
-    X-->>A: acknowledgement/fills
-    A->>X: reconcile orders/positions/PnL
-    A->>J: lifecycle events and closed trade
+    A->>S: typed command + exact authorization
+    S->>R: validate authorization + recheck current facts
+    R-->>S: BLOCK/WARN stops; ALLOW continues
+    S->>S: atomically consume authorization only after ALLOW
+    S->>X: submit demo-only order
+    X-->>S: acknowledgement/fills
+    S->>X: reconcile orders/positions/PnL
+    S->>J: lifecycle events and closed trade
     J->>J: excursions, statistics, lesson candidate
     J-->>U: review; no automatic rule promotion
 ```
@@ -494,8 +496,11 @@ account state, current data quality and execution venue state. Account state can
 alert or block an action but can never rewrite objective setup truth.
 
 The candidate database key is
-`(organization_id, strategy_version_id, evidence_venue, instrument_id, timeframe,
-evidence_window_hash)`.
+`(organization_id, strategy_version_id, instrument_id, timeframe, evidence_window_hash)`.
+`evidence_window_hash` canonically represents the semantic setup window across all contributing
+sources, so equivalent watcher, TradingView or detector evidence converges on one candidate
+rather than creating one candidate per source or venue. Evidence venue identities remain on
+the candidate and referenced observations for lineage.
 Creation uses transactional insert/upsert; transitions use optimistic versions and idempotency
 keys. Alert-delivery deduplication remains a separate concern. Existing
 `PaperSignalOrchestrationDecision`, watcher, TradingView and
@@ -1393,7 +1398,8 @@ Deterministic fixture hypothesis:
 10. Require no gap/reconnect discontinuity, fallback, wrong market, incomplete warm-up or
     forming candle; latest trade event at evaluation is no more than 10 seconds old.
 11. Emit one assessment/candidate key for
-    `(organization, strategy_version, evidence_venue, perpetual instrument, 15m, T_interval)`.
+    `(organization, strategy_version, perpetual instrument, 15m,
+    canonical_evidence_window_hash)`.
 12. Invalidation is `T.high + max(0.10 * ATR15m(14), 2 * evidence_venue_tick_size)` and setup
     expiry is two additional final 15m bars.
 13. Market invalidation or source degradation changes setup truth; kill switch, risk,
