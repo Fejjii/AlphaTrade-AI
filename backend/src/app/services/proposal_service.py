@@ -11,9 +11,11 @@ from app.core.errors import NotFoundError, ValidationAppError
 from app.db.models import (
     PaperValidationCandidate,
     SetupDefinition,
-    TradePlanRevision as TradePlanRevisionModel,
     UserStrategy,
     UserStrategyVersion,
+)
+from app.db.models import (
+    TradePlanRevision as TradePlanRevisionModel,
 )
 from app.db.models import TradeProposal as TradeProposalModel
 from app.repositories.approvals import ApprovalAuthorizationRepository
@@ -42,10 +44,12 @@ from app.schemas.proposal import (
 from app.schemas.trade_plan import (
     AccountMode,
     EntrySide,
-    ExecutionMode as PlanExecutionMode,
     TradePlanRevision,
     TradePlanRevisionCreate,
     TradePlanRevisionSemantic,
+)
+from app.schemas.trade_plan import (
+    ExecutionMode as PlanExecutionMode,
 )
 from app.services.audit_service import AuditService
 from app.services.canonical_serialization import canonical_sha256
@@ -346,7 +350,9 @@ class ProposalService:
                 or exchange_account.status is not ExchangeAccountStatus.ACTIVE
                 or exchange_account.has_withdrawal_permission
             ):
-                raise ValidationAppError("Exchange account is unavailable or has unsafe permissions.")
+                raise ValidationAppError(
+                    "Exchange account is unavailable or has unsafe permissions."
+                )
 
         strategy_version = self._session.get(UserStrategyVersion, data.strategy_version_id)
         if strategy_version is None:
@@ -373,9 +379,7 @@ class ProposalService:
             raise ValidationAppError("Candidate strategy version does not match the plan.")
         if proposal.timeframe != data.timeframe:
             raise ValidationAppError("Plan timeframe does not match the proposal.")
-        expected_side = (
-            EntrySide.BUY if str(proposal.direction.value) == "long" else EntrySide.SELL
-        )
+        expected_side = EntrySide.BUY if str(proposal.direction.value) == "long" else EntrySide.SELL
         if data.side is not expected_side:
             raise ValidationAppError("Plan side does not match the proposal direction.")
 

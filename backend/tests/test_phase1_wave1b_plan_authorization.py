@@ -20,24 +20,33 @@ from app.core.errors import NotFoundError, ValidationAppError
 from app.db.base import Base
 from app.db.models import (
     ApprovalAuthorization as ApprovalAuthorizationModel,
-    ExecutionAccount,
+)
+from app.db.models import (
     ExchangeAccount,
+    ExecutionAccount,
     Order,
     Organization,
     PaperValidationAlert,
     PaperValidationCandidate,
     PaperValidationDraft,
     SetupDefinition,
-    TradePlanRevision as TradePlanRevisionModel,
     User,
     UserStrategy,
     UserStrategyVersion,
+)
+from app.db.models import (
+    TradePlanRevision as TradePlanRevisionModel,
 )
 from app.schemas.approval import (
     ApprovalAuthorization,
     ApprovalAuthorizationAssertion,
     ApprovalAuthorizationContent,
     ApprovalDecisionRequest,
+)
+from app.schemas.canonical_execution import (
+    CanonicalAccountBindingV1,
+    CanonicalExecutionPayloadV1,
+    CanonicalExecutionPrincipalV1,
 )
 from app.schemas.common import (
     ApprovalAction,
@@ -46,11 +55,6 @@ from app.schemas.common import (
     RiskSeverity,
     SetupCategory,
     StrategyId,
-)
-from app.schemas.canonical_execution import (
-    CanonicalAccountBindingV1,
-    CanonicalExecutionPayloadV1,
-    CanonicalExecutionPrincipalV1,
 )
 from app.schemas.proposal import ExitCriteria, TakeProfitLevel, TradeProposalCreate
 from app.schemas.trade_plan import (
@@ -95,7 +99,6 @@ def session() -> Iterator[Session]:
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as db:
         yield db
-    Base.metadata.drop_all(engine)
     engine.dispose()
 
 
@@ -433,9 +436,7 @@ def test_trade_plan_hash_binds_every_mutated_execution_semantic(session: Session
     base = _semantic(_plan_request(ids), ids)
     mutations = [
         base.model_copy(update={"side": EntrySide.SELL}),
-        base.model_copy(
-            update={"quantity": SemanticAmount(value=Decimal("3"), unit="CONTRACTS")}
-        ),
+        base.model_copy(update={"quantity": SemanticAmount(value=Decimal("3"), unit="CONTRACTS")}),
         base.model_copy(update={"time_in_force": TimeInForce.FOK}),
         base.model_copy(update={"execution_instrument": "ETH-USDT"}),
         base.model_copy(update={"instrument_mapping_version": "mapping-v2"}),
@@ -522,7 +523,11 @@ def test_approve_issues_only_one_authorization_and_has_no_order_side_effect(
 ) -> None:
     ids = _seed_support(session)
     plan = _persist_plan(session, ids)
-    service = ApprovalService(session, AuditService(session), clock=lambda: NOW + timedelta(minutes=1))
+    service = ApprovalService(
+        session,
+        AuditService(session),
+        clock=lambda: NOW + timedelta(minutes=1),
+    )
     approval = service.create_for_plan_revision(
         revision_id=plan.revision_id,
         organization_id=plan.organization_id,
@@ -551,7 +556,11 @@ def test_approve_issues_only_one_authorization_and_has_no_order_side_effect(
 def test_wrong_principal_or_organization_cannot_authorize(session: Session) -> None:
     ids = _seed_support(session)
     plan = _persist_plan(session, ids)
-    service = ApprovalService(session, AuditService(session), clock=lambda: NOW + timedelta(minutes=1))
+    service = ApprovalService(
+        session,
+        AuditService(session),
+        clock=lambda: NOW + timedelta(minutes=1),
+    )
     approval = service.create_for_plan_revision(
         revision_id=plan.revision_id,
         organization_id=plan.organization_id,
@@ -601,7 +610,11 @@ def test_wrong_plan_or_account_assertion_is_rejected(
 ) -> None:
     ids = _seed_support(session)
     plan = _persist_plan(session, ids)
-    service = ApprovalService(session, AuditService(session), clock=lambda: NOW + timedelta(minutes=1))
+    service = ApprovalService(
+        session,
+        AuditService(session),
+        clock=lambda: NOW + timedelta(minutes=1),
+    )
     approval = service.create_for_plan_revision(
         revision_id=plan.revision_id,
         organization_id=plan.organization_id,
@@ -633,7 +646,11 @@ def test_wrong_plan_or_account_assertion_is_rejected(
 def test_reject_and_skip_never_authorize(session: Session) -> None:
     ids = _seed_support(session)
     plan = _persist_plan(session, ids)
-    service = ApprovalService(session, AuditService(session), clock=lambda: NOW + timedelta(minutes=1))
+    service = ApprovalService(
+        session,
+        AuditService(session),
+        clock=lambda: NOW + timedelta(minutes=1),
+    )
     approval = service.create_for_plan_revision(
         revision_id=plan.revision_id,
         organization_id=plan.organization_id,
@@ -767,10 +784,17 @@ def _bind_authorization(
             "permission_attestation_version": plan.permission_attestation_version,
         }
     )
-    content = ApprovalAuthorizationContent.model_validate(
-        {name: getattr(changed, name) for name in ApprovalAuthorizationContent.model_fields}
-    )
+    content_values = {
+        name: getattr(changed, name) for name in ApprovalAuthorizationContent.model_fields
+    }
+    content_values["created_at"] = _aware(content_values["created_at"])
+    content_values["expires_at"] = _aware(content_values["expires_at"])
+    content = ApprovalAuthorizationContent.model_validate(content_values)
     return changed.model_copy(update={"authorization_content_hash": canonical_sha256(content)})
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def test_canonical_payload_ignores_transport_metadata_and_round_trips(session: Session) -> None:
@@ -793,10 +817,7 @@ def test_canonical_payload_ignores_transport_metadata_and_round_trips(session: S
     assert idempotency_key not in first.canonical_bytes.decode()
     assert first.canonical_bytes == second.canonical_bytes
     assert first.sha256 == second.sha256
-    assert (
-        CanonicalExecutionPayloadSerializerV1.deserialize(first.canonical_bytes)
-        == first.payload
-    )
+    assert CanonicalExecutionPayloadSerializerV1.deserialize(first.canonical_bytes) == first.payload
 
 
 @pytest.mark.parametrize(
@@ -851,8 +872,7 @@ def test_canonical_payload_hash_changes_for_execution_semantics(
     assert changed.sha256 != baseline.sha256
 
 
-def test_canonical_payload_v1_golden_fixture_has_no_json_numbers_for_decimals(
-) -> None:
+def test_canonical_payload_v1_golden_fixture_has_no_json_numbers_for_decimals() -> None:
     payload = CanonicalExecutionPayloadV1(
         organization_id=uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001"),
         principal=CanonicalExecutionPrincipalV1(
@@ -885,8 +905,11 @@ def test_canonical_payload_v1_golden_fixture_has_no_json_numbers_for_decimals(
     )
     serialization = CanonicalExecutionPayloadSerializerV1.serialize(payload)
     fixture = (
-        Path(__file__).parent / "fixtures" / "canonical_execution_payload_v1.json"
-    ).read_text(encoding="utf-8").strip().encode("utf-8")
+        (Path(__file__).parent / "fixtures" / "canonical_execution_payload_v1.json")
+        .read_text(encoding="utf-8")
+        .strip()
+        .encode("utf-8")
+    )
     assert serialization.canonical_bytes == fixture
     decoded = json.loads(serialization.canonical_bytes)
     assert decoded["serializer_version"] == "CanonicalExecutionPayloadV1"

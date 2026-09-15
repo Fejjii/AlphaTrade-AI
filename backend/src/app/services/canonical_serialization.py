@@ -60,8 +60,7 @@ def _canonicalize(value: Any) -> Any:
         if not all(isinstance(key, str) for key in value):
             raise CanonicalSerializationError("Canonical JSON object keys must be strings.")
         return {
-            unicodedata.normalize("NFC", key): _canonicalize(item)
-            for key, item in value.items()
+            unicodedata.normalize("NFC", key): _canonicalize(item) for key, item in value.items()
         }
     raise CanonicalSerializationError(
         f"Unsupported canonical value type: {type(value).__qualname__}."

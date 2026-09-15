@@ -129,7 +129,9 @@ class ApprovalService:
             user_id=user_id,
         )
         if proposal is None or proposal.latest_plan_revision_id != revision.id:
-            raise ValidationAppError("Only the current plan revision can be submitted for approval.")
+            raise ValidationAppError(
+                "Only the current plan revision can be submitted for approval."
+            )
         existing = self._repo.get_by_revision(revision.id)
         if existing is not None:
             return self._to_schema(existing)
@@ -142,7 +144,9 @@ class ApprovalService:
             else min(now + _DEFAULT_AUTHORIZATION_TTL, valid_until)
         )
         if expires_at <= now or expires_at > valid_until:
-            raise ValidationAppError("Authorization expiry must be future and within plan validity.")
+            raise ValidationAppError(
+                "Authorization expiry must be future and within plan validity."
+            )
 
         row = ApprovalModel(
             proposal_id=revision.plan_id,
@@ -572,9 +576,7 @@ class ApprovalService:
             audit_event_id=row.audit_event_id,
             authorization_expires_at=row.authorization_expires_at,
             authorization=(
-                self._authorization_to_schema(authorization)
-                if authorization is not None
-                else None
+                self._authorization_to_schema(authorization) if authorization is not None else None
             ),
             created_at=row.created_at,
             decided_at=row.decided_at,

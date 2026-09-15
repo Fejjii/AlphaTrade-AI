@@ -159,8 +159,7 @@ class CanonicalExecutionPayloadSerializerV1:
             raise ValidationAppError("Authorization does not match the immutable trade plan.")
 
         issuance_values = {
-            name: getattr(authorization, name)
-            for name in ApprovalAuthorizationContent.model_fields
+            name: getattr(authorization, name) for name in ApprovalAuthorizationContent.model_fields
         }
         issuance_values["created_at"] = cls._aware(authorization.created_at)
         issuance_values["expires_at"] = cls._aware(authorization.expires_at)

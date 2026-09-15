@@ -103,8 +103,10 @@ from app.schemas.trade_plan import (
     AccountMode,
     AuthorizationChannel,
     AuthorizationState,
-    ExecutionMode as PlanExecutionMode,
     PlanOperation,
+)
+from app.schemas.trade_plan import (
+    ExecutionMode as PlanExecutionMode,
 )
 
 _MONEY = Numeric(20, 8)
@@ -1344,9 +1346,7 @@ class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     candidate_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("paper_validation_candidates.id"), nullable=False
     )
-    expected_account_mode: Mapped[AccountMode] = mapped_column(
-        _enum(AccountMode), nullable=False
-    )
+    expected_account_mode: Mapped[AccountMode] = mapped_column(_enum(AccountMode), nullable=False)
     permission_attestation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     permission_attestation_version: Mapped[str] = mapped_column(String(64), nullable=False)
     execution_venue: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -1372,9 +1372,7 @@ def _prevent_trade_plan_revision_mutation(
 class ApprovalRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "approvals"
 
-    proposal_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("trade_proposals.id"), nullable=False
-    )
+    proposal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("trade_proposals.id"), nullable=False)
     plan_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("trade_plan_revisions.id"), unique=True, nullable=True
     )
@@ -1472,9 +1470,7 @@ class ApprovalAuthorization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     plan_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     execution_venue: Mapped[str] = mapped_column(String(40), nullable=False)
     execution_instrument: Mapped[str] = mapped_column(String(120), nullable=False)
-    verified_account_mode: Mapped[AccountMode] = mapped_column(
-        _enum(AccountMode), nullable=False
-    )
+    verified_account_mode: Mapped[AccountMode] = mapped_column(_enum(AccountMode), nullable=False)
     permission_attestation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     permission_attestation_version: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1488,9 +1484,7 @@ class ApprovalAuthorization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consumed_by_execution_command_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    authorization_content_hash: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False
-    )
+    authorization_content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
 
 
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -128,6 +128,7 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
                 ApprovalAuthorization.expires_at <= at,
             )
             .values(state=AuthorizationState.EXPIRED, updated_at=at)
+            .execution_options(synchronize_session=False)
         )
         return bool(self._session.execute(stmt).rowcount)
 
@@ -139,6 +140,7 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
                 ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
             )
             .values(state=AuthorizationState.REVOKED, updated_at=at)
+            .execution_options(synchronize_session=False)
         )
         return bool(self._session.execute(stmt).rowcount)
 
@@ -159,6 +161,7 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
                 ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
             )
             .values(state=AuthorizationState.REVOKED, updated_at=at)
+            .execution_options(synchronize_session=False)
         )
         return int(self._session.execute(stmt).rowcount or 0)
 
