@@ -5,7 +5,8 @@
 **Final review basis:** architecture consistency PR #66 at `4c4a66b`; safety/data/execution
 PR #67 at `a13c60c`
 **Final re-review basis:** PR #69 at `25d4f8d9ae3dd00261a7eaafed9904a67c9b7a5f`;
-PR #68 at `e050d743837c75694044a1fd6808315b7aca605f`
+PR #68 at `e050d743837c75694044a1fd6808315b7aca605f`; close-protocol safety gate
+PR #72 at `c743f886b6219896cafa1a892931ce06d7744fac`
 **Status:** final corrected proposed architecture; no product implementation or capability
 enablement
 **Non-negotiable boundary:** paper/internal simulation and BloFin demo only. No production
@@ -1043,16 +1044,17 @@ exactly-once external delivery.
 | 8. `CLOSE` | Create a position-bound reduce-only preview; requires a second short-lived confirmation nonce |
 
 `CLOSE` is unavailable until the preview is bound to the exact reconciled position/account,
-projection version, side, quantity, working-order hash, execution venue/instrument,
-basis/freshness version and close-policy version. On second confirmation the gateway delegates
-to the same channel-neutral close service used by web and agent callers. That service
-serializes by account/instrument, reconciles position and working orders, and atomically claims
-the exact position projection/version as `CLOSE_PENDING` before network I/O. A competing
-channel resolves the existing close claim/receipt rather than creating another semantic close.
-It never silently interprets position side. Every response reports whether state changed and
-includes the authoritative current state. Telegram execution of a newly approved plan is not
-part of this rollout; a future explicit `EXECUTE_PAPER_PLAN` remote action requires separate
-review.
+projection version, side, quantity, execution venue/instrument, basis/freshness version,
+close-policy version and the §23 `ClosePreClaimWorkingOrderSnapshotV1` version, venue-order
+entries and hash. On second confirmation the gateway delegates to the same channel-neutral
+close service used by web and agent callers. That service serializes by account/instrument,
+reconciles position and venue working orders, computes the snapshot before it creates any
+claim/effect, and atomically claims the exact position projection/version as `CLOSE_PENDING`
+before network I/O. A competing channel resolves the existing close claim/receipt rather than
+creating another semantic close. It never silently interprets position side. Every response
+reports whether state changed and includes the authoritative current state. Telegram execution
+of a newly approved plan is not part of this rollout; a future explicit
+`EXECUTE_PAPER_PLAN` remote action requires separate review.
 
 ## 11. BloFin demo execution architecture
 
@@ -1065,6 +1067,9 @@ best-effort mirrors to BloFin demo. `backend/src/app/db/models.py` and
 `backend/src/app/repositories/exchange_orders.py` already persist exchange orders/fills, while
 `backend/src/app/services/blofin_sync_service.py` persists read-only account/position
 snapshots. These are the reconciliation foundation, not proof of reconciled execution.
+
+This is the one authoritative execution and close state machine. Later schemas, diagrams,
+tables and prose refine its guards but may not define another close transition path.
 
 ```mermaid
 stateDiagram-v2
@@ -1089,10 +1094,9 @@ stateDiagram-v2
     PARTIALLY_FILLED_CANCELLED --> POSITION_OPEN: filled exposure remains
     FILLED --> POSITION_OPEN
     POSITION_OPEN --> CLOSE_PENDING: unique authorized reduce-only close claim
-    CLOSE_PENDING --> BLOCKED_BEFORE_DISPATCH: stale position/order/safety state; no POST
-    BLOCKED_BEFORE_DISPATCH --> POSITION_OPEN: close effect only; proven unsent residual remains
-    CLOSE_PENDING --> RECONCILIATION_REQUIRED: ambiguous close or concurrent fill
-    CLOSE_PENDING --> CLOSED: authoritative reconciled zero position
+    CLOSE_PENDING --> BLOCKED_BEFORE_DISPATCH: blocking safety epoch wins before dispatch authorization; no possible send
+    BLOCKED_BEFORE_DISPATCH --> POSITION_OPEN: reconciliation proves no close sent and original exposure remains
+    CLOSE_PENDING --> RECONCILIATION_REQUIRED: position/order snapshot changed before POST or request may have been sent
     RECONCILIATION_REQUIRED --> ACKNOWLEDGED: venue query resolves
     RECONCILIATION_REQUIRED --> PARTIALLY_FILLED: partial fills resolve
     RECONCILIATION_REQUIRED --> FILLED: fills/position resolve
@@ -1100,6 +1104,7 @@ stateDiagram-v2
     ABSENCE_PENDING --> ABSENCE_PROVEN: bounded repeated absence proof
     ABSENCE_PROVEN --> RESUBMIT_AUTHORIZED: versioned recovery decision
     RESUBMIT_AUTHORIZED --> SUBMITTING: same command/effect/client ID
+    RECONCILIATION_REQUIRED --> POSITION_OPEN: authoritative remaining exposure is nonzero
     RECONCILIATION_REQUIRED --> OPERATOR_HOLD: unresolved conflict
     RECONCILIATION_REQUIRED --> CLOSED: authoritative reconciled zero position
 ```
@@ -1121,6 +1126,23 @@ Rules:
   POST, and an append-only reason transition. The consumed authorization, stable receipt,
   semantic command and effect identity remain truthful; no replacement authorization or
   semantic execution identity is created;
+- for a close, `BLOCKED_BEFORE_DISPATCH` is exclusively the safety-policy branch in which a
+  blocking epoch wins before `DISPATCH_AUTHORIZED` and durable dispatch evidence proves that no
+  venue send was possible. Authoritative reconciliation must also confirm that the original
+  exposure remains before `BLOCKED_BEFORE_DISPATCH -> POSITION_OPEN`. A position,
+  `ClosePreClaimWorkingOrderSnapshotV1` or other market-state change never uses that branch;
+- a pre-POST position-version or pre-claim working-order hash mismatch, including TP/SL fill,
+  late fill, cancellation or a new competing venue order, transitions
+  `CLOSE_PENDING -> RECONCILIATION_REQUIRED` without POST. A request that may have been sent
+  also transitions to `RECONCILIATION_REQUIRED`, never directly to
+  `BLOCKED_BEFORE_DISPATCH`;
+- close reconciliation has exactly three position outcomes: nonzero authoritative exposure
+  gives `RECONCILIATION_REQUIRED -> POSITION_OPEN`, authoritative zero exposure gives
+  `RECONCILIATION_REQUIRED -> CLOSED`, and unresolved or ambiguous truth gives
+  `RECONCILIATION_REQUIRED -> OPERATOR_HOLD`. Partial/concurrent fills determine the
+  authoritative remaining exposure; no transition fabricates closure or reverses exposure.
+  Any residual close is a new properly authorized action under a new position projection;
+  V1 defines no reuse of the original authorization for a residual operation;
 - immediately after an ambiguous or possibly sent request, reconciliation rechecks the safety
   epoch. A newly active kill switch cannot erase a possible venue action: the reservation and
   account/instrument quarantine remain until authoritative reconciliation, after which only
@@ -1144,14 +1166,16 @@ Rules:
 - first-slice position policy is **NET MODE ONLY**. Startup and pre-approval checks require
   verified `net_mode`; hedge/long-short/unknown mode is rejected and never reinterpreted;
 - close is reduce-only and bound to exact current reconciled account, instrument, net position
-  side, size, position projection version, working-order hash and unique channel-neutral close
-  claim. Web, agent and Telegram use that same claim and receipt;
+  side, size, position projection version, the §23
+  `ClosePreClaimWorkingOrderSnapshotV1` version/entries/hash and one unique channel-neutral
+  close claim. Web, agent and Telegram use that same claim and receipt;
 - immediately before a close POST, revalidate the reconciled remaining position projection and
-  working-order state. Changed state suppresses stale-quantity POST unless a bound
-  venue-supported exact reduce-only primitive is proven by contract never to reverse exposure.
-  A fill in the send window remains authoritative; reduce-only must prevent a side flip,
-  reconciliation determines the final residual, and any additional exact recovery is a new
-  authorized recovery action;
+  recompute the same venue-only pre-claim snapshot semantics. A changed position or snapshot
+  suppresses POST and enters `RECONCILIATION_REQUIRED`; the close-policy version cannot waive
+  this V1 stale-state rule. The current local close command/claim/effect is excluded and
+  therefore cannot self-invalidate an ordinary no-race close. A fill in the send window remains
+  authoritative; reduce-only must prevent a side flip, reconciliation determines the final
+  residual, and any additional exact recovery is a new authorized recovery action;
 - an entry POST is entry-only under §23. Stops, targets, runner and slippage policy remain
   plan/risk/management facts until a separate authorized action; no attached TP/SL/OCO is
   silently created;
@@ -1642,7 +1666,8 @@ whenever market or execution identity applies.
 | `ExecutionTransition` | Receipt-scoped append-only event ID and source fact identity | Immutable prior/new state, authoritative fact, occurred/recorded time and content hash | Event/source uniqueness; history never updates |
 | `ExecutionProjection` | Receipt ID plus monotonically increasing projection version | Rebuildable latest state, quantities, fees and reconciliation status | Optimistic version; uses the §11/§24 state model, including submit uncertainty, cancellation reconciliation, partial-filled cancellation, open/close and operator hold; derived only from authorized transitions |
 | `ReconciliationState` | Organization/account/order/position scoped state ID with venue/instrument | Immutable check snapshots, observed/received/checked times, correlation and content hash | Source/check key dedupe; `PENDING -> CONSISTENT` or `REQUIRED -> CONSISTENT/FAILED`; unresolved state blocks final truth |
-| `CloseClaim` | Channel-neutral organization/account/position/projection-version identity; binds venue/instrument and canonical close hash | Immutable claim/receipt/effect relationship; projection change appends | Database-unique exact position projection/version; competing web/agent/Telegram requests resolve the same result; `POSITION_OPEN(version) -> CLOSE_PENDING` is atomic |
+| `ClosePreClaimWorkingOrderSnapshotV1` | Organization/account/exchange-account/venue/instrument/NET-mode scope | Immutable pre-claim canonical venue-order entries and hash; observation/transport metadata excluded | Computed before claim/effect; local close command/claim/receipt/effect excluded; identical venue semantics hash identically |
+| `CloseClaim` | Channel-neutral organization/account/position/projection-version identity; binds venue/instrument, pre-claim snapshot version/hash and canonical close hash | Immutable claim/receipt/effect relationship; projection change appends | Database-unique exact position projection/version; competing web/agent/Telegram requests resolve the same result; `POSITION_OPEN(version) -> CLOSE_PENDING` is atomic |
 | `JournalProjectionEvent` | Organization-owned event ID; source system/account/aggregate/event ID+version and canonical `JournalTrade`/execution-lifecycle correlation | Immutable occurred/recorded times, typed payload, source content hash and event content hash | `PENDING -> CLAIMED -> RETRY_SCHEDULED/APPLIED/DEAD_LETTER`; candidate/reject/skip create no trade; one execution lifecycle maps to one `JournalTrade` |
 
 Authorization transitions do not imply execution transitions. Setup transitions do not imply
@@ -1942,10 +1967,81 @@ listed semantic field changes the hash.
   authorization policy.
 - `ClosePositionCommand` binds organization/principal/account/exchange account, reconciled
   position ID and projection version, execution venue and instrument, current reconciled side
-  and exact open quantity/unit, `reduce_only=true`, NET position mode, working-order set/hash,
-  basis/freshness version, second confirmation authorization when required by close policy and
-  close-policy version. Channel, callback and opaque idempotency keys are transport metadata
-  and do not alter this semantic close identity.
+  and exact open quantity/unit, `reduce_only=true`, NET position mode, the complete
+  `ClosePreClaimWorkingOrderSnapshotV1` version/entries/hash, basis/freshness version, second
+  confirmation authorization when required by close policy and close-policy version. Channel,
+  callback and opaque idempotency keys are transport metadata and do not alter this semantic
+  close identity.
+
+### Canonical pre-claim working-order snapshot
+
+`ClosePreClaimWorkingOrderSnapshotV1` is the only working-order comparison contract for a
+close. The close service computes it from authoritative venue reads **before** creating the
+`ClosePositionCommand`, `CloseClaim`, receipt or close effect. Its hash input is exactly:
+
+```text
+snapshot_version = "ClosePreClaimWorkingOrderSnapshotV1"
+organization_id
+account_id
+exchange_account_id = exact ID or explicit null
+execution_venue
+execution_instrument
+position_mode = "NET"
+venue_orders[]:
+  venue_order_id
+  client_order_id = exact value or explicit null
+  order_version_kind = "VENUE_VERSION" | "CANONICAL_DETAIL_HASH"
+  order_version
+  status
+  side
+  reduce_only
+  remaining_quantity = {value, scale, unit}
+  order_type
+  time_in_force = exact value or explicit null
+  limit_price = {value, scale, unit} or explicit null
+  trigger_price = {value, scale, unit} or explicit null
+  trigger_direction = exact value or explicit null
+```
+
+The included set is all and only authoritative venue-reported non-terminal orders on that exact
+exchange account, venue and execution instrument with positive remaining quantity whose fill
+or trigger can alter the NET position. It includes entries, TP, SL, other conditional/trigger
+orders, partially filled residuals and cancel-pending orders, regardless of which AlphaTrade
+channel created them. V1 included statuses are exactly
+`NEW | OPEN | PARTIALLY_FILLED | TRIGGER_PENDING | CANCEL_PENDING`. Normalized terminal
+`FILLED | CANCELLED | REJECTED | EXPIRED` orders and orders outside the exact scope are
+excluded; their authoritative fills or cancellations must already be reflected in the
+position/order projections. Any other or unknown status, missing identity, missing required
+field or non-final venue page makes the snapshot unavailable and forces reconciliation rather
+than producing a permissive hash.
+
+`venue_order_id` is mandatory and unique within the snapshot. If the venue exposes a monotonic
+order version, `order_version_kind` is `VENUE_VERSION` and `order_version` is its exact
+normalized value. Otherwise it is `CANONICAL_DETAIL_HASH`, and `order_version` is SHA-256 over
+the canonical encoding of that order's listed fields other than `order_version_kind` and
+`order_version`. `venue_orders` is sorted by the canonical encoded tuple
+`(venue_order_id, client_order_id)` and duplicate tuple or venue-order identities reject the
+snapshot.
+
+The `working_order_hash` is SHA-256 over the UTF-8 bytes
+`"alphatrade/close-pre-claim-working-orders/v1\n"` followed by canonical JSON of exactly the
+fields above, excluding the hash field itself. Canonical JSON and Decimal encoding use the
+rules already defined for `CanonicalExecutionPayloadV1`.
+
+The hash excludes every local-only plan, authorization, command, `CloseClaim`,
+`ExecutionReceipt`, `VenueSubmitEffect`, pending close effect and broader local working-order
+projection row—including the close command/effect currently being dispatched. It also excludes
+channel, callback/action receipt, opaque idempotency key, request/correlation/trace IDs, HTTP
+metadata, retry/lease data, cursors and observed/received/created timestamps. No
+venue-observed order may be excluded merely because AlphaTrade created it. If the current close
+is or may be venue-observed, the request is possibly sent and must enter
+`RECONCILIATION_REQUIRED`; this snapshot is never used to authorize a blind second POST.
+
+Immediately before the first POST, the dispatcher recomputes the exact same V1 included set,
+fields, ordering, encoding and hash from a fresh authoritative venue read. Inserting the local
+claim/effect cannot change that value. A changed TP, SL, fill, cancellation, remaining
+quantity, status/version or new competing venue order does change the snapshot or position
+projection and suppresses POST.
 
 Each command has a distinct canonical hash namespace:
 `alphatrade/submit-entry/v1`, `alphatrade/cancel-order/v1` or
@@ -2427,7 +2523,9 @@ execution_venue; execution_instrument
 position_mode = NET
 side; exact reconciled open quantity + unit
 reduce_only = true
-working_order_set + canonical working_order_hash
+close_pre_claim_working_order_snapshot_version = "ClosePreClaimWorkingOrderSnapshotV1"
+venue_working_orders[] = exact canonical §23 entries
+pre_claim_working_order_hash = canonical §23 working_order_hash
 basis_snapshot/freshness version
 second_confirmation_authorization_id?
 close_policy_version
@@ -2442,43 +2540,68 @@ hash conflicts and returns the current projection/claim without creating another
 
 Before any close POST, one account/instrument lease/fence serializes the protocol. The service
 performs venue reads without an open database transaction, persists their exact cursors and
-snapshots, then one short serialized database transaction:
+snapshots, computes the §23 `ClosePreClaimWorkingOrderSnapshotV1`, and only then enters one
+short serialized database transaction:
 
-1. verifies that the persisted position and every working-order reconciliation snapshot meet
+1. verifies that the persisted position and the pre-claim venue working-order snapshot meet
    the required bounded-finality policy;
 2. verifies account, instrument, NET mode, side, exact open quantity, projection version,
-   working-order set/hash, basis/freshness and any close-policy-required second authorization;
+   snapshot version/entries/hash, basis/freshness and any close-policy-required second
+   authorization;
 3. compare-and-sets `POSITION_OPEN(expected_version) -> CLOSE_PENDING`;
-4. inserts the unique `CloseClaim`, stable receipt and exactly one close effect, and includes
-   that pending effect in the next working-order projection/hash;
+4. inserts the unique `CloseClaim`, stable receipt and exactly one local close effect; a broader
+   local working-order projection may include that effect, but the immutable venue-only
+   pre-claim snapshot and hash do not;
 5. commits.
 
 No channel-specific idempotency row can bypass this claim. A stale version, unresolved cancel,
 uncertain position or changed working-order set creates no new close effect. A replay returns
 the stable receipt, latest projection and watermark.
 
-Immediately before POST, the dispatcher applies the safety barriers above and refreshes the
-authoritative remaining NET position and working-order state. It compares both projection
-version and working-order hash with the close claim. If either changed, it does not submit the
-stale quantity. The only exception is a venue capability, explicitly bound into
-`close_policy_version`, whose exact reduce-only primitive atomically caps execution at the
-current same-side net quantity and is contract-tested never to reverse exposure; otherwise the
-effect enters `RECONCILIATION_REQUIRED` without POST.
+Immediately before POST, the dispatcher applies the safety barriers above, refreshes the
+authoritative remaining NET position, and recomputes the exact §23 V1 venue-only snapshot. It
+compares the position projection version, snapshot version, canonical entries and
+`working_order_hash` with the immutable close claim. The current local close
+command/claim/receipt/effect is excluded on both sides. With no venue race, the hash therefore
+remains equal and normal close dispatch proceeds. If the position or snapshot differs, the
+dispatcher does not POST and transitions `CLOSE_PENDING -> RECONCILIATION_REQUIRED`; V1 has no
+stale-state exception.
+
+A blocking safety epoch that wins before `DISPATCH_AUTHORIZED` follows the distinct
+`CLOSE_PENDING -> BLOCKED_BEFORE_DISPATCH -> POSITION_OPEN` path only after authoritative
+evidence proves that no close could have been sent and the original exposure remains. Any
+position/order change before POST follows `RECONCILIATION_REQUIRED`, even though no POST
+occurred. Once bytes may have been sent, the close can never transition directly to
+`BLOCKED_BEFORE_DISPATCH`; it remains `RECONCILIATION_REQUIRED` until venue truth is proven.
 
 If a TP, SL, late entry fill or cancel result arrives after dispatch authorization or while the
 POST is in flight, venue ingestion/reconciliation remains authoritative. `reduce_only=true`
 must prevent side flip and over-close from becoming reverse exposure. Unique fills update the
 position and projection immediately; reconciliation computes the final residual quantity.
-Zero authoritative quantity produces `CLOSED`; a residual returns to truthful `POSITION_OPEN`
-or remains `RECONCILIATION_REQUIRED` as evidence dictates. Any additional exact reduce-only
-recovery is a new explicitly authorized recovery action with a new projection version; it does
-not mutate or resubmit the original close identity.
+Authoritative nonzero exposure transitions `RECONCILIATION_REQUIRED -> POSITION_OPEN`;
+authoritative zero exposure transitions `RECONCILIATION_REQUIRED -> CLOSED`; unresolved or
+ambiguous truth transitions `RECONCILIATION_REQUIRED -> OPERATOR_HOLD`. Partial and concurrent
+fills select an outcome only from reconciled remaining exposure. No state fabricates closure
+or reverses exposure. Any additional exact reduce-only residual close is a new properly
+authorized action with a new projection version; V1 does not mutate, resubmit or reuse the
+authorization of the original close identity.
 
-Deterministic PostgreSQL/provider tests cover TP fill before close claim, TP fill after claim
-but before POST, fill while POST is in flight, duplicate close from two channels, partial
-position close, close after late entry fill and close while cancel is pending. Every case
-asserts one close claim/receipt/effect for a projection version, no exposure increase or side
-flip, unique fill accounting and truthful final residual state.
+Deterministic PostgreSQL/provider tests cover:
+
+- an ordinary no-race close whose local claim/effect does not alter the recomputed hash and does
+  not self-invalidate;
+- TP fill, SL fill, working-order cancellation, remaining-quantity/status/version change and a
+  new competing venue working order after claim but before POST; each changes the snapshot
+  and/or position projection and enters reconciliation without POST;
+- fill while POST is in flight, partial position close, close after late entry fill and close
+  while cancel is pending;
+- duplicate web, Telegram and agent close requests converging on one
+  claim/receipt/effect for the position projection; and
+- byte-identical hashes for the same semantic snapshot despite different transport, request,
+  callback, trace, cursor and timestamp metadata.
+
+Every case asserts no exposure increase or side flip, unique fill accounting, the authoritative
+state-machine transition and truthful final residual state.
 
 ### Telegram domain idempotency
 
@@ -2643,6 +2766,11 @@ This documentation revision is complete only if:
 - entry/cancel/close have separate semantic hash namespaces;
 - Telegram action execution is domain-idempotency-bound;
 - web, agent and Telegram close through one database-unique position-projection close claim;
+- close uses the canonical pre-claim venue working-order snapshot; its own local effect cannot
+  change the pre-POST hash, while a real competing venue-order change does;
+- the one authoritative close state machine distinguishes proven-unsent safety block from
+  changed-state or possibly-sent reconciliation and explicitly resolves reconciliation to
+  `POSITION_OPEN`, `CLOSED` or `OPERATOR_HOLD`;
 - close/fill races revalidate immediately before POST, never reverse exposure and reconcile the
   final residual before any new authorized recovery;
 - candidate/reject/skip create audit/lifecycle events only; `JournalTrade` begins only at the
@@ -2748,10 +2876,18 @@ closure, not a claim of runtime implementation.
 | PR #69 | REREVIEW-LOW-01 | LOW | Accepted | Agent graph includes deterministic PlanService terminal before synthesis | §3 | Synthesis cannot create or alter a plan revision |
 | PR #69 | REREVIEW-LOW-02 | LOW | Accepted | Missing approval action clarifies/rejects and cannot issue authorization | §4 | Null-action approval fixtures create zero authorizations |
 
+### PR #72 — final Phase 1 execution-safety gate
+
+| Review | Finding ID | Severity | Accepted/rejected | Canonical correction | Target contract | Required deterministic test |
+|---|---|---|---|---|---|---|
+| PR #72 | HIGH-01 | HIGH | Accepted | `ClosePreClaimWorkingOrderSnapshotV1` is computed before claim/effect, hashes only canonical materially position-altering venue orders, excludes the current local close effect and is recomputed with identical semantics before POST | §§10–11, 18, 23, 27 | No-race/own-effect equality; TP/SL/fill/cancel/new-order invalidation; cross-channel convergence; transport-metadata hash invariance |
+| PR #72 | HIGH-02 | HIGH | Accepted | One authoritative close state machine separates proven-unsent safety block from changed-state/possibly-sent reconciliation and resolves authoritative residual to `POSITION_OPEN`, `CLOSED` or `OPERATOR_HOLD` | §§11, 24, 27 | Kill-switch-before-send; changed-before-POST; possibly-sent; partial/concurrent fill; zero/nonzero/ambiguous venue truth |
+
 ### Closure totals
 
 - PR #66: **1/1 BLOCKER, 12/12 HIGH, 9/9 MEDIUM and 1/1 LOW resolved**.
 - PR #67: **6/6 BLOCKER, 20/20 HIGH and 7/7 MEDIUM resolved**.
 - PR #68 residuals: **2/2 HIGH resolved**.
 - PR #69 residuals: **1/1 HIGH, 4/4 MEDIUM and 2/2 LOW resolved**.
+- PR #72 close-protocol gate: **2/2 HIGH resolved**.
 - Unresolved blockers: **0**. Unresolved HIGH findings: **0**.

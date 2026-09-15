@@ -7,7 +7,8 @@
 disabled
 **Final review inputs:** PR #66 at `4c4a66b`; PR #67 at `a13c60c`; PR #69 at
 `25d4f8d9ae3dd00261a7eaafed9904a67c9b7a5f`; PR #68 at
-`e050d743837c75694044a1fd6808315b7aca605f`
+`e050d743837c75694044a1fd6808315b7aca605f`; PR #72 at
+`c743f886b6219896cafa1a892931ce06d7744fac`
 **Canonical correction status:** all final and re-review HIGH findings are represented and
 resolved in the target contract; no runtime implementation is claimed
 
@@ -807,12 +808,13 @@ refer to the dependency-corrected migration in the target architecture.
 
 ## 22. Final-review current-state corrections
 
-The independent PR #66 and PR #67 reviews and the PR #68/#69 exact-head re-reviews were read in
-full. They found that the previous target architecture was not implementation-ready even
-though the checked-in runtime remained disabled and paper-oriented. The final re-reviews
-confirmed the controlling layer but found copyable earlier-schema contradictions, a
-claim-to-dispatch kill-switch gap and a cross-channel close/fill race. These are target-contract
-defects, not evidence that a live order was placed.
+The independent PR #66 and PR #67 reviews, the PR #68/#69 exact-head re-reviews and the PR #72
+close-protocol gate were read in full. They found that the previous target architecture was not
+implementation-ready even though the checked-in runtime remained disabled and paper-oriented.
+The final gates found copyable earlier-schema contradictions, a claim-to-dispatch kill-switch
+gap, a cross-channel close/fill race, a self-invalidating working-order-hash ambiguity and
+contradictory close terminal/residual transitions. These are target-contract defects, not
+evidence that a live order was placed.
 
 ### Execution and approval
 
@@ -839,9 +841,22 @@ reservation/quarantine after possibly sent requests.
 
 Every web, agent and Telegram close now delegates to one channel-neutral service and
 database-unique claim for the exact position projection/version. The service reconciles the
-position and working orders, atomically transitions to `CLOSE_PENDING`, revalidates immediately
-before POST and treats concurrent venue fills as authoritative. Reduce-only execution may not
-reverse exposure; any residual recovery is a new authorized action.
+position and venue working orders, computes
+`ClosePreClaimWorkingOrderSnapshotV1` before creating the claim/effect, and atomically
+transitions to `CLOSE_PENDING`. The command binds the canonical venue-order entries/hash; its
+own local close effect is excluded when the same semantics are recomputed immediately before
+POST, so an ordinary no-race close cannot invalidate itself. TP/SL fills, cancellation,
+remaining-order changes and new competing venue orders do change the snapshot and enter
+reconciliation without POST.
+
+The §11 state diagram is the one authoritative close state machine. A safety-policy block
+before any possible venue send may use
+`CLOSE_PENDING -> BLOCKED_BEFORE_DISPATCH -> POSITION_OPEN` only after authoritative proof
+that no close was sent and the original exposure remains. Position or venue-order change, and
+every possibly-sent request, uses `CLOSE_PENDING -> RECONCILIATION_REQUIRED`. Reconciled
+nonzero exposure returns to `POSITION_OPEN`, reconciled zero exposure becomes `CLOSED`, and
+unresolved truth becomes `OPERATOR_HOLD`. Reduce-only execution may not reverse exposure; any
+residual close is a new authorized action.
 
 ### Current configuration is not the final permanent invariant
 
@@ -899,6 +914,7 @@ tables and diagrams now state the same contract. The exhaustive
 - PR #67: 6 BLOCKER, 20 HIGH and 7 MEDIUM findings.
 - PR #68 re-review residuals: HIGH-14 and HIGH-16;
 - PR #69 re-review residuals: 1 HIGH, 4 MEDIUM and 2 LOW findings.
+- PR #72 close-protocol gate: HIGH-01 and HIGH-02.
 
 Overlapping findings are resolved through shared contracts rather than duplicate mechanisms:
 
@@ -910,15 +926,15 @@ Overlapping findings are resolved through shared contracts rather than duplicate
 | Dispatch safety | Claim, effect-lease, immediate pre-POST and ambiguous-send epoch barriers with an exact linearization point |
 | One plan/one execution | Unique approval issuance and unique revision/account entry claim |
 | Execution truth | Stable receipt, append-only transitions, versioned projection and immediate partial-fill exposure |
-| Position close | Channel-neutral unique close claim, atomic `CLOSE_PENDING`, pre-POST revalidation and no-side-flip residual reconciliation |
+| Position close | Canonical pre-claim venue-order snapshot excludes the current local close effect; one close state machine separates proven-unsent safety block from changed/possibly-sent reconciliation and resolves nonzero/zero/ambiguous exposure to `POSITION_OPEN`/`CLOSED`/`OPERATOR_HOLD` |
 | Evidence truth | Public observations versus tenant assertions, typed payloads, consumer-time freshness and deterministic replay |
 | Strategy occurrence identity | Explicit legacy setup migration, immutable AST/lifecycle, canonical evidence window and candidate key |
 | Remote/account safety | Bot/action/domain idempotency, account-scoped demo credentials and immediate NET-mode probe |
 | Journal truth | Candidate/reject/skip audit only; unique execution-lifecycle aggregate, projector-owned venue facts and append-only corrections |
 | First-slice AST and labels | Typed Decimal Wilder ATR feature; distinct CVD-divergence and aggressive-sell-imbalance names |
 
-No blocker or HIGH finding is deferred. The PR #69 medium/low residuals are also accepted with
-an explicit target contract and deterministic test.
+No blocker or HIGH finding is deferred. PR #72 HIGH-01/HIGH-02 and the PR #69 medium/low
+residuals are accepted with explicit target contracts and deterministic tests.
 
 ## 24. Phase 0 scope and safety verification
 
