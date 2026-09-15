@@ -16,13 +16,15 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, NotFoundError, TradingPolicyError
-from app.db.models import AccountSafetyEpoch, ExecutionCommand, VenueSubmitEffect
+from app.db.models import AccountSafetyEpoch, ExecutionCommand, ExecutionFillFact, VenueSubmitEffect
 from app.providers.execution.fake_venue import FakeVenueSubmitProvider
 from app.repositories.execution_protocol import (
     ExecutionCommandRepository,
+    ExecutionFillFactRepository,
     ExecutionProjectionRepository,
     ExecutionReceiptRepository,
     RiskReservationRepository,
@@ -33,10 +35,22 @@ from app.schemas.execution_protocol import (
     ExecutionReconciliationStatus,
     RiskReservationReleaseReason,
     RiskReservationReleaseState,
+    UniqueFillResult,
     VenueSendDisposition,
     VenueSubmitEffectState,
 )
-from app.services.execution_integrity import ensure_db_transaction
+from app.services.execution_dispatch_boundary import (
+    commit_barrier3,
+    load_committed_dispatch_authorization,
+    require_committed_dispatch_authorization,
+    require_idle_session_for_provider_io,
+)
+from app.services.execution_fills import (
+    convert_reservation_for_fill,
+    cumulative_weighted_price,
+    fill_content_hash,
+)
+from app.services.execution_integrity import ensure_db_transaction, is_fill_fact_unique_violation
 from app.services.execution_transitions import append_transition, apply_projection_transition
 from app.services.safety_epoch import SafetyEpochService
 
@@ -67,6 +81,7 @@ class VenueSubmitDispatcher:
         self._receipts = ExecutionReceiptRepository(session)
         self._projections = ExecutionProjectionRepository(session)
         self._reservations = RiskReservationRepository(session)
+        self._fills = ExecutionFillFactRepository(session)
 
     def lease_effect(
         self,
@@ -139,9 +154,11 @@ class VenueSubmitDispatcher:
                     "Dispatch already authorized with a different fence.",
                     details={"reason": "dispatch_fence_mismatch"},
                 )
+            commit_barrier3(self._session)
             return effect
         if self._epoch_blocks(epoch_value=int(effect.safety_epoch), current=epoch):
             self._block_before_dispatch(command=command, effect=effect, now=now)
+            commit_barrier3(self._session)
             return effect
         if (
             effect.state is not VenueSubmitEffectState.LEASED
@@ -164,7 +181,7 @@ class VenueSubmitDispatcher:
         effect.attempt = int(effect.attempt) + 1
         effect.dispatch_attempt = effect.attempt
         effect.updated_at = now
-        self._session.flush()
+        commit_barrier3(self._session)
         return effect
 
     def attempt_fake_send(
@@ -175,34 +192,33 @@ class VenueSubmitDispatcher:
         fencing_token: int,
         provider: FakeVenueSubmitProvider,
     ) -> VenueSubmitEffect:
-        """Send only through the in-process fake. Never a BloFin or network client."""
+        """Send only through the in-process fake. Never a BloFin or network client.
+
+        Barrier 3 must already be committed. This method refuses pending writes and
+        closes leftover read transactions before invoking the provider.
+        """
 
         if not isinstance(provider, FakeVenueSubmitProvider):
             raise TradingPolicyError(
                 "Phase 1 venue POST is disabled for production and demo providers.",
                 details={"reason": "external_venue_submit_disabled"},
             )
-        effect = self._require_effect(command_id)
-        if effect.state is not VenueSubmitEffectState.DISPATCH_AUTHORIZED:
-            raise ConflictError(
-                "Send is forbidden until DISPATCH_AUTHORIZED commits.",
-                details={
-                    "reason": "send_before_dispatch_authorization",
-                    "state": effect.state.value,
-                },
-            )
-        if effect.lease_owner != owner or int(effect.dispatch_fencing_token or -1) != fencing_token:
-            raise ConflictError(
-                "Stale worker cannot send after losing the lease fence.",
-                details={"reason": "send_fence_mismatch"},
-            )
-        client_order_id = effect.client_order_id
+        require_idle_session_for_provider_io(self._session)
+        snapshot = require_committed_dispatch_authorization(
+            load_committed_dispatch_authorization(self._session, command_id),
+            owner=owner,
+            fencing_token=fencing_token,
+        )
+        require_idle_session_for_provider_io(self._session)
+        client_order_id = snapshot.client_order_id
         try:
             result = provider.submit(client_order_id=client_order_id)
         except Exception:
             ensure_db_transaction(self._session)
             self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
             raise
+        if provider.crash_before_local_ack:
+            raise RuntimeError("crash_after_provider_before_ack")
         ensure_db_transaction(self._session)
         if result is None:
             return self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
@@ -232,8 +248,16 @@ class VenueSubmitDispatcher:
         fill_quantity: Decimal,
         fill_price: Decimal,
         source_identity: str,
-    ) -> None:
+        venue_source: str = "phase1-fake-venue",
+        occurred_at: datetime | None = None,
+    ) -> UniqueFillResult:
         now = _aware(self._clock())
+        fill_time = _aware(occurred_at) if occurred_at is not None else now
+        if fill_quantity <= 0 or fill_price <= 0:
+            raise ConflictError(
+                "Fill quantity and price must be positive.",
+                details={"reason": "invalid_fill_amounts"},
+            )
         ensure_db_transaction(self._session)
         command = self._require_command(command_id)
         self._epochs.lock_epoch(
@@ -241,32 +265,85 @@ class VenueSubmitDispatcher:
         )
         receipt = self._receipts.get_by_command(command_id)
         projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
-        reservation = self._reservations.get_by_command(command_id)
+        reservation = self._reservations.get_by_command_for_update(command_id)
         if receipt is None or projection is None or reservation is None:
             raise NotFoundError("Fill target identities were not found.")
-        new_filled = projection.filled_quantity + fill_quantity
-        new_remaining = projection.remaining_quantity - fill_quantity
-        if new_remaining < 0:
-            new_remaining = Decimal("0")
-        fill_notional = fill_quantity * fill_price
-        convert = min(fill_notional, reservation.remaining_reserved_notional)
-        reservation.remaining_reserved_notional -= convert
-        reservation.release_reason = RiskReservationReleaseReason.FILL_CONVERSION
-        reservation.release_state = (
-            RiskReservationReleaseState.RELEASED
-            if reservation.remaining_reserved_notional == 0
-            else RiskReservationReleaseState.PARTIALLY_RELEASED
+        digest = fill_content_hash(
+            receipt_id=str(receipt.id),
+            command_id=str(command.id),
+            venue_source=venue_source,
+            source_fill_identity=source_identity,
+            quantity=fill_quantity,
+            price=fill_price,
+            unit=projection.quantity_unit,
+            occurred_at=fill_time,
         )
+        fact = ExecutionFillFact(
+            organization_id=command.organization_id,
+            command_id=command.id,
+            receipt_id=receipt.id,
+            venue_source=venue_source,
+            source_fill_identity=source_identity,
+            quantity=fill_quantity,
+            price=fill_price,
+            unit=projection.quantity_unit,
+            occurred_at=fill_time,
+            content_hash=digest,
+        )
+        try:
+            with self._session.begin_nested():
+                self._fills.add(fact)
+                self._session.flush()
+        except IntegrityError as exc:
+            if not is_fill_fact_unique_violation(exc):
+                raise
+            existing = self._fills.get_by_source(
+                receipt_id=receipt.id, source_fill_identity=source_identity
+            )
+            if existing is None:
+                raise
+            if existing.content_hash != digest:
+                raise ConflictError(
+                    "Source fill identity already exists with conflicting content.",
+                    details={
+                        "reason": "conflicting_fill_identity",
+                        "source_fill_identity": source_identity,
+                    },
+                ) from exc
+            return UniqueFillResult(
+                replayed=True,
+                fill_id=existing.id,
+                receipt_id=receipt.id,
+                source_fill_identity=source_identity,
+                content_hash=existing.content_hash,
+                filled_quantity=projection.filled_quantity,
+                remaining_quantity=projection.remaining_quantity,
+                weighted_price=projection.weighted_price,
+            )
+
         accounting = self._epochs.lock_risk_accounting(
             organization_id=command.organization_id,
             account_id=command.account_id,
             user_id=command.user_id,
             exposure_unit=reservation.exposure_unit,
         )
-        accounting.reserved_notional -= convert
-        accounting.actual_notional += convert
-        if accounting.reserved_notional < 0:
-            accounting.reserved_notional = Decimal("0")
+        convert_reservation_for_fill(
+            reservation=reservation,
+            accounting=accounting,
+            fill_quantity=fill_quantity,
+            fill_price=fill_price,
+            now=now,
+        )
+        new_filled = projection.filled_quantity + fill_quantity
+        new_remaining = projection.remaining_quantity - fill_quantity
+        if new_remaining < 0:
+            new_remaining = Decimal("0")
+        weighted = cumulative_weighted_price(
+            previous_filled=projection.filled_quantity,
+            previous_weighted=projection.weighted_price,
+            fill_quantity=fill_quantity,
+            fill_price=fill_price,
+        )
         new_state = (
             ExecutionReceiptState.ACKNOWLEDGED
             if new_remaining == 0
@@ -279,12 +356,13 @@ class VenueSubmitDispatcher:
             new_state=new_state,
             source_fact="unique_fill",
             source_identity=source_identity,
-            occurred_at=now,
+            occurred_at=fill_time,
             observed_at=now,
             recorded_at=now,
             actor="execution_service",
             quantity=fill_quantity,
             quantity_unit=projection.quantity_unit,
+            unit_price=fill_price,
         )
         apply_projection_transition(
             self._session,
@@ -292,8 +370,18 @@ class VenueSubmitDispatcher:
             transition=transition,
             filled_quantity=new_filled,
             remaining_quantity=new_remaining,
-            weighted_price=fill_price,
+            weighted_price=weighted,
             updated_at=now,
+        )
+        return UniqueFillResult(
+            replayed=False,
+            fill_id=fact.id,
+            receipt_id=receipt.id,
+            source_fill_identity=source_identity,
+            content_hash=digest,
+            filled_quantity=new_filled,
+            remaining_quantity=new_remaining,
+            weighted_price=weighted,
         )
 
     def _block_before_dispatch(

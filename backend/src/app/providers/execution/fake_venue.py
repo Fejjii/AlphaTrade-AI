@@ -5,6 +5,7 @@ No network I/O. Production and demo adapters are never constructed here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import Lock
@@ -32,8 +33,12 @@ class FakeVenueSubmitProvider:
     _lock: Lock = field(default_factory=Lock)
     submitted: list[str] = field(default_factory=list)
     orders: dict[str, FakeVenueOrder] = field(default_factory=dict)
+    on_submit: Callable[[], None] | None = None
+    crash_before_local_ack: bool = False
 
     def submit(self, *, client_order_id: str) -> FakeVenueOrder | None:
+        if self.on_submit is not None:
+            self.on_submit()
         with self._lock:
             if self.behavior is FakeVenueBehavior.RAISE:
                 raise RuntimeError("fake_venue_send_interrupted")

@@ -42,6 +42,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.historical_immutability import install_historical_immutability as _install_history
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,
@@ -1753,13 +1754,14 @@ class ExecutionReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
 
 
+@event.listens_for(ExecutionReceipt, "before_update")
 @event.listens_for(ExecutionReceipt, "before_delete")
-def _prevent_execution_receipt_delete(
+def _prevent_execution_receipt_mutation(
     _mapper: object,
     _connection: object,
     _target: ExecutionReceipt,
 ) -> None:
-    raise ValueError("ExecutionReceipt identity rows cannot be deleted.")
+    raise ValueError("ExecutionReceipt identity rows are immutable.")
 
 
 class ExecutionTransition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1795,6 +1797,7 @@ class ExecutionTransition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_identity: Mapped[str] = mapped_column(String(128), nullable=False)
     quantity: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     quantity_unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    unit_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1860,6 +1863,10 @@ class RiskReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "remaining_reserved_notional >= 0",
             name="ck_risk_reservation_remaining",
         ),
+        CheckConstraint(
+            "converted_trade_slots >= 0",
+            name="ck_risk_reservation_converted_slots",
+        ),
         ForeignKeyConstraint(
             ["command_id"],
             ["execution_commands.id"],
@@ -1895,6 +1902,7 @@ class RiskReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     total_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     symbol_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     remaining_reserved_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    converted_trade_slots: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     exposure_unit: Mapped[str] = mapped_column(String(32), nullable=False)
     safety_epoch: Mapped[int] = mapped_column(BigInteger, nullable=False)
     release_state: Mapped[RiskReservationReleaseState] = mapped_column(
@@ -1952,6 +1960,59 @@ class VenueSubmitEffect(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     safety_epoch: Mapped[int] = mapped_column(BigInteger, nullable=False)
     uncertainty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reconciliation_disposition: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+class ExecutionFillFact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable unique venue fill fact. Duplicate identity replays by content hash."""
+
+    __tablename__ = "execution_fill_facts"
+    __table_args__ = (
+        UniqueConstraint(
+            "receipt_id",
+            "source_fill_identity",
+            name="uq_execution_fill_fact_source",
+        ),
+        CheckConstraint("quantity > 0", name="ck_execution_fill_fact_quantity"),
+        CheckConstraint("price > 0", name="ck_execution_fill_fact_price"),
+        CheckConstraint(
+            "length(content_hash) = 64",
+            name="ck_execution_fill_fact_hash_length",
+        ),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_execution_fill_fact_receipt",
+        ),
+        ForeignKeyConstraint(
+            ["command_id"],
+            ["execution_commands.id"],
+            name="fk_execution_fill_fact_command",
+        ),
+        Index("ix_execution_fill_facts_receipt", "receipt_id"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    command_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    venue_source: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_fill_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+@event.listens_for(ExecutionFillFact, "before_update")
+@event.listens_for(ExecutionFillFact, "before_delete")
+def _prevent_execution_fill_fact_mutation(
+    _mapper: object,
+    _connection: object,
+    _target: ExecutionFillFact,
+) -> None:
+    raise ValueError("ExecutionFillFact rows are immutable.")
 
 
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -2991,3 +3052,6 @@ class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     position_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     balance_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+_ = _install_history

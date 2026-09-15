@@ -21,6 +21,7 @@ from app.schemas.execution_protocol import (
     ExecutionReconciliationStatus,
 )
 from app.services.canonical_serialization import canonical_sha256
+from app.services.execution_fills import cumulative_weighted_price
 
 
 def append_transition(
@@ -37,6 +38,7 @@ def append_transition(
     actor: str,
     quantity: Decimal | None = None,
     quantity_unit: str | None = None,
+    unit_price: Decimal | None = None,
     policy_version: str = EXECUTION_POLICY_PROTOCOL_VERSION,
 ) -> ExecutionTransition:
     transitions = ExecutionTransitionRepository(session)
@@ -50,6 +52,7 @@ def append_transition(
         "source_identity": source_identity,
         "quantity": str(quantity) if quantity is not None else None,
         "quantity_unit": quantity_unit,
+        "unit_price": str(unit_price) if unit_price is not None else None,
         "occurred_at": occurred_at.isoformat(),
         "observed_at": observed_at.isoformat(),
         "actor": actor,
@@ -64,6 +67,7 @@ def append_transition(
         source_identity=source_identity,
         quantity=quantity,
         quantity_unit=quantity_unit,
+        unit_price=unit_price,
         occurred_at=occurred_at,
         observed_at=observed_at,
         recorded_at=recorded_at,
@@ -140,10 +144,18 @@ def rebuild_projection_from_transitions(
     remaining = initial_remaining
     state: ExecutionReceiptState | None = None
     watermark = 0
+    weighted: Decimal | None = None
     for item in sorted(transitions, key=lambda row: row.sequence):
         state = item.new_state
         watermark = item.sequence
         if item.quantity is not None and item.source_fact == "unique_fill":
+            if item.unit_price is not None:
+                weighted = cumulative_weighted_price(
+                    previous_filled=filled,
+                    previous_weighted=weighted,
+                    fill_quantity=item.quantity,
+                    fill_price=item.unit_price,
+                )
             filled += item.quantity
             remaining = remaining - item.quantity
             if remaining < 0:
@@ -167,6 +179,7 @@ def rebuild_projection_from_transitions(
         "filled_quantity": filled,
         "remaining_quantity": remaining,
         "quantity_unit": quantity_unit,
+        "weighted_price": weighted,
         "event_watermark": watermark,
         "reconciliation_status": recon,
     }

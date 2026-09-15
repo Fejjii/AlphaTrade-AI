@@ -9,6 +9,7 @@ IDEMPOTENCY_CONSTRAINT = "uq_execution_idempotency_binding"
 PLAN_CLAIM_CONSTRAINT = "uq_plan_entry_execution_claim"
 SAFETY_EPOCH_CONSTRAINT = "uq_account_safety_epoch"
 RISK_ACCOUNTING_CONSTRAINT = "uq_account_risk_accounting_state"
+FILL_FACT_CONSTRAINT = "uq_execution_fill_fact_source"
 CLIENT_ORDER_CONSTRAINT = "uq_venue_submit_effect_client_order_id"
 
 
@@ -65,6 +66,17 @@ def is_risk_accounting_unique_violation(exc: IntegrityError) -> bool:
         return True
     message = str(getattr(exc, "orig", exc)).lower()
     return "account_risk_accounting_states" in message and "unique" in message
+
+
+def is_fill_fact_unique_violation(exc: IntegrityError) -> bool:
+    if is_named_unique_violation(exc, FILL_FACT_CONSTRAINT):
+        return True
+    message = str(getattr(exc, "orig", exc)).lower()
+    return (
+        "execution_fill_facts" in message
+        and "source_fill_identity" in message
+        and "unique" in message
+    )
 
 
 def ensure_db_transaction(session: Session) -> None:

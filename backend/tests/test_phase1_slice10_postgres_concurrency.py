@@ -9,16 +9,21 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.core.errors import ConflictError, NotFoundError, TradingPolicyError
 from app.db.base import Base
+from app.db.historical_immutability import is_historical_immutability_error
 from app.db.models import (
     AccountRiskAccountingState,
     ApprovalAuthorization,
     ExecutionCommand,
+    ExecutionFillFact,
     ExecutionProjection,
+    ExecutionReceipt,
+    ExecutionTransition,
     PlanEntryExecutionClaim,
     RiskReservation,
     VenueSubmitEffect,
@@ -607,3 +612,461 @@ def test_postgres_replay_and_principal_conflict() -> None:
                 ),
                 clock=lambda: EXECUTE_AT,
             )
+
+
+@requires_postgres
+def test_postgres_uncommitted_barrier3_cannot_send() -> None:
+    factory, url = _factory()
+    with factory() as session:
+        ids, plan, authorization = prepared_authorized_plan(session)
+        session.commit()
+        service = execution_service(session, database_url=url)
+        claimed = service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-b3-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        session.commit()
+        leased = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="w1")
+        session.commit()
+        token = int(leased.fencing_token)
+        effect = session.scalar(
+            select(VenueSubmitEffect).where(VenueSubmitEffect.command_id == claimed.command_id)
+        )
+        assert effect is not None
+        effect.state = VenueSubmitEffectState.DISPATCH_AUTHORIZED
+        effect.dispatch_fencing_token = token
+        effect.lease_owner = "w1"
+        session.flush()
+        provider = FakeVenueSubmitProvider()
+        with pytest.raises(ConflictError) as dirty_exc:
+            service.attempt_fake_paper_plan_send(
+                command_id=claimed.command_id,
+                owner="w1",
+                fencing_token=token,
+                provider=provider,
+            )
+        assert dirty_exc.value.details["reason"] in {
+            "send_blocked_open_database_transaction",
+            "send_before_dispatch_authorization",
+        }
+        assert provider.submit_count == 0
+        with factory() as other:
+            other_service = execution_service(other, database_url=url)
+            with pytest.raises(ConflictError) as committed_exc:
+                other_service.attempt_fake_paper_plan_send(
+                    command_id=claimed.command_id,
+                    owner="w1",
+                    fencing_token=token,
+                    provider=provider,
+                )
+            assert committed_exc.value.details["reason"] == "send_before_dispatch_authorization"
+            assert provider.submit_count == 0
+        session.rollback()
+
+
+@requires_postgres
+def test_postgres_barrier3_commit_then_worker_crash_no_second_order() -> None:
+    factory, url = _factory()
+    with factory() as session:
+        ids, plan, authorization = prepared_authorized_plan(session)
+        session.commit()
+        service = execution_service(session, database_url=url)
+        claimed = service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-b3c-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        session.commit()
+        leased = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="w1")
+        session.commit()
+        authorized = service.authorize_paper_plan_dispatch(
+            command_id=claimed.command_id,
+            owner="w1",
+            fencing_token=int(leased.fencing_token),
+        )
+        assert authorized.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED
+        command_id = claimed.command_id
+        effect_id = authorized.id
+        client_order_id = authorized.client_order_id
+        provider = FakeVenueSubmitProvider(
+            behavior=FakeVenueBehavior.ACCEPT, crash_before_local_ack=True
+        )
+        with pytest.raises(RuntimeError, match="crash_after_provider_before_ack"):
+            service.attempt_fake_paper_plan_send(
+                command_id=command_id,
+                owner="w1",
+                fencing_token=int(leased.fencing_token),
+                provider=provider,
+            )
+        assert provider.submit_count == 1
+        persisted = session.scalar(
+            select(VenueSubmitEffect).where(VenueSubmitEffect.id == effect_id)
+        )
+        assert persisted is not None
+        assert persisted.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED
+        recovered = service.recover_paper_plan_effect(command_id=command_id, owner="w1")
+        session.commit()
+        assert recovered.uncertainty is True
+        assert recovered.id == effect_id
+        assert recovered.client_order_id == client_order_id
+        provider.crash_before_local_ack = False
+        with pytest.raises(ConflictError):
+            service.attempt_fake_paper_plan_send(
+                command_id=command_id,
+                owner="w1",
+                fencing_token=int(leased.fencing_token),
+                provider=provider,
+            )
+        assert provider.submit_count == 1
+        assert len(provider.orders) == 1
+
+
+@requires_postgres
+def test_postgres_fill_idempotency_and_weighted_average() -> None:
+    factory, url = _factory()
+    with factory() as session:
+        ids, plan, authorization = prepared_authorized_plan(session)
+        session.commit()
+        service = execution_service(session, database_url=url)
+        claimed = service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-fill-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        session.commit()
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="venue-fill-1",
+            occurred_at=EXECUTE_AT,
+        )
+        session.commit()
+        second = service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("110"),
+            source_identity="venue-fill-2",
+            occurred_at=EXECUTE_AT,
+        )
+        session.commit()
+        assert second.weighted_price == Decimal("105")
+        projection = session.scalar(
+            select(ExecutionProjection).where(
+                ExecutionProjection.receipt_id == claimed.receipt.receipt_id
+            )
+        )
+        assert projection is not None
+        version_before = int(projection.version)
+        replay = service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="venue-fill-1",
+            occurred_at=EXECUTE_AT,
+        )
+        session.commit()
+        assert replay.replayed is True
+        session.refresh(projection)
+        assert int(projection.version) == version_before
+        assert projection.weighted_price == Decimal("105")
+        with pytest.raises(ConflictError) as exc:
+            service.apply_paper_plan_fill(
+                command_id=claimed.command_id,
+                fill_quantity=Decimal("1"),
+                fill_price=Decimal("50"),
+                source_identity="venue-fill-1",
+                occurred_at=EXECUTE_AT,
+            )
+        assert exc.value.details["reason"] == "conflicting_fill_identity"
+        reservation = session.scalar(
+            select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
+        )
+        accounting = session.scalar(
+            select(AccountRiskAccountingState).where(
+                AccountRiskAccountingState.account_id == claimed.receipt.account_id
+            )
+        )
+        assert reservation is not None
+        assert accounting is not None
+        assert reservation.release_state is RiskReservationReleaseState.PARTIALLY_RELEASED
+        assert accounting.actual_notional > 0
+        assert (
+            Decimal(str((accounting.symbol_actual or {}).get(reservation.instrument, "0")))
+            == accounting.actual_notional
+        )
+
+
+@requires_postgres
+def test_postgres_simultaneous_unique_fills_no_oversubscription() -> None:
+    factory, url = _factory()
+    with factory() as setup:
+        ids, plan, authorization = prepared_authorized_plan(setup)
+        setup.commit()
+        service = execution_service(setup, database_url=url)
+        claimed = service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-conc-fill-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        setup.commit()
+        command_id = claimed.command_id
+        account_id = claimed.receipt.account_id
+        receipt_id = claimed.receipt.receipt_id
+
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def worker(identity: str, price: str) -> None:
+        with factory() as session:
+            try:
+                barrier.wait(timeout=20)
+                execution_service(session, database_url=url).apply_paper_plan_fill(
+                    command_id=command_id,
+                    fill_quantity=Decimal("1"),
+                    fill_price=Decimal(price),
+                    source_identity=identity,
+                    occurred_at=EXECUTE_AT,
+                )
+                session.commit()
+            except BaseException as exc:
+                session.rollback()
+                errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=("fill-left", "100")),
+        threading.Thread(target=worker, args=("fill-right", "110")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert errors == []
+    with factory() as session:
+        facts = list(
+            session.scalars(
+                select(ExecutionFillFact).where(ExecutionFillFact.receipt_id == receipt_id)
+            )
+        )
+        assert len(facts) == 2
+        projection = session.scalar(
+            select(ExecutionProjection).where(ExecutionProjection.receipt_id == receipt_id)
+        )
+        assert projection is not None
+        assert projection.filled_quantity == Decimal("2")
+        assert projection.weighted_price == Decimal("105")
+        reservation = session.scalar(
+            select(RiskReservation).where(RiskReservation.command_id == command_id)
+        )
+        accounting = session.scalar(
+            select(AccountRiskAccountingState).where(
+                AccountRiskAccountingState.account_id == account_id
+            )
+        )
+        assert reservation is not None
+        assert accounting is not None
+        assert (
+            accounting.reserved_notional + accounting.actual_notional >= accounting.actual_notional
+        )
+        assert accounting.actual_notional > 0
+        assert reservation.remaining_reserved_notional >= 0
+
+
+@requires_postgres
+def test_postgres_duplicate_identical_fill_race_replays() -> None:
+    factory, url = _factory()
+    with factory() as setup:
+        ids, plan, authorization = prepared_authorized_plan(setup)
+        setup.commit()
+        claimed = execution_service(setup, database_url=url).execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-dup-fill-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        setup.commit()
+        command_id = claimed.command_id
+        receipt_id = claimed.receipt.receipt_id
+
+    barrier = threading.Barrier(2)
+    results: list[bool] = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        with factory() as session:
+            try:
+                barrier.wait(timeout=20)
+                result = execution_service(session, database_url=url).apply_paper_plan_fill(
+                    command_id=command_id,
+                    fill_quantity=Decimal("1"),
+                    fill_price=Decimal("100"),
+                    source_identity="same-fill",
+                    occurred_at=EXECUTE_AT,
+                )
+                session.commit()
+                with lock:
+                    results.append(result.replayed)
+            except BaseException as exc:
+                session.rollback()
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert errors == []
+    assert sorted(results) == [False, True]
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 1
+        projection = session.scalar(
+            select(ExecutionProjection).where(ExecutionProjection.receipt_id == receipt_id)
+        )
+        assert projection is not None
+        assert projection.filled_quantity == Decimal("1")
+
+
+@requires_postgres
+def test_postgres_crash_after_fill_and_reconciliation_foundation() -> None:
+    factory, url = _factory()
+    with factory() as session:
+        ids, plan, authorization = prepared_authorized_plan(session)
+        session.commit()
+        service = execution_service(session, database_url=url)
+        claimed = service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-crash-fill-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        session.commit()
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="crash-fill",
+            occurred_at=EXECUTE_AT,
+        )
+        session.rollback()
+        assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 0
+        applied = service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="crash-fill",
+            occurred_at=EXECUTE_AT,
+        )
+        session.commit()
+        assert applied.replayed is False
+        projection = session.scalar(
+            select(ExecutionProjection).where(
+                ExecutionProjection.receipt_id == claimed.receipt.receipt_id
+            )
+        )
+        assert projection is not None
+        watermark = int(projection.event_watermark)
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="crash-fill",
+            occurred_at=EXECUTE_AT,
+        )
+        session.rollback()
+        session.refresh(projection)
+        assert int(projection.event_watermark) == watermark
+
+        leased = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="w1")
+        session.commit()
+        service.authorize_paper_plan_dispatch(
+            command_id=claimed.command_id,
+            owner="w1",
+            fencing_token=int(leased.fencing_token),
+        )
+        provider = FakeVenueSubmitProvider(behavior=FakeVenueBehavior.AMBIGUOUS)
+        sent = service.attempt_fake_paper_plan_send(
+            command_id=claimed.command_id,
+            owner="w1",
+            fencing_token=int(leased.fencing_token),
+            provider=provider,
+        )
+        session.rollback()
+        effect = session.scalar(
+            select(VenueSubmitEffect).where(VenueSubmitEffect.command_id == claimed.command_id)
+        )
+        assert effect is not None
+        assert effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED
+        recovered = service.recover_paper_plan_effect(command_id=claimed.command_id, owner="w1")
+        session.commit()
+        assert recovered.uncertainty is True
+        reservation = session.scalar(
+            select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
+        )
+        assert reservation is not None
+        assert reservation.release_state is not RiskReservationReleaseState.RELEASED
+        del sent
+
+
+@requires_postgres
+def test_postgres_historical_rows_reject_direct_sql_mutation() -> None:
+    factory, url = _factory()
+    with factory() as session:
+        ids, plan, authorization = prepared_authorized_plan(session)
+        session.commit()
+        service = execution_service(session, database_url=url)
+        claimed = service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key=f"pg-imm-{uuid.uuid4()}"),
+            clock=lambda: EXECUTE_AT,
+        )
+        session.commit()
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="imm-fill",
+            occurred_at=EXECUTE_AT,
+        )
+        session.commit()
+        receipt_id = claimed.receipt.receipt_id
+        command_id = claimed.command_id
+        transition_id = session.scalar(select(ExecutionTransition.id).limit(1))
+        fill_id = session.scalar(select(ExecutionFillFact.id).limit(1))
+        assert transition_id is not None
+        assert fill_id is not None
+
+        mutations = [
+            (
+                "UPDATE execution_commands SET blocked_reason_code = 'mutated' WHERE id = :id",
+                {"id": command_id},
+            ),
+            (
+                "DELETE FROM execution_commands WHERE id = :id",
+                {"id": command_id},
+            ),
+            (
+                "UPDATE execution_receipts SET user_id = :uid WHERE id = :id",
+                {"id": receipt_id, "uid": uuid.uuid4()},
+            ),
+            (
+                "DELETE FROM execution_receipts WHERE id = :id",
+                {"id": receipt_id},
+            ),
+            (
+                "UPDATE execution_transitions SET actor = 'mutated' WHERE id = :id",
+                {"id": transition_id},
+            ),
+            (
+                "DELETE FROM execution_transitions WHERE id = :id",
+                {"id": transition_id},
+            ),
+            (
+                "UPDATE execution_fill_facts SET price = 1 WHERE id = :id",
+                {"id": fill_id},
+            ),
+            (
+                "DELETE FROM execution_fill_facts WHERE id = :id",
+                {"id": fill_id},
+            ),
+        ]
+        for sql, params in mutations:
+            with pytest.raises(DBAPIError) as exc:
+                session.execute(text(sql), params)
+                session.commit()
+            assert is_historical_immutability_error(exc.value)
+            session.rollback()
+        assert session.get(ExecutionReceipt, receipt_id) is not None
+        assert session.get(ExecutionCommand, command_id) is not None

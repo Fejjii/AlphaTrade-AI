@@ -12,6 +12,7 @@ from app.db.models import (
     AccountRiskAccountingState,
     AccountSafetyEpoch,
     ExecutionCommand,
+    ExecutionFillFact,
     ExecutionIdempotencyBinding,
     ExecutionProjection,
     ExecutionReceipt,
@@ -179,6 +180,35 @@ class RiskReservationRepository(SQLAlchemyRepository[RiskReservation]):
     def get_by_command(self, command_id: uuid.UUID) -> RiskReservation | None:
         stmt = select(RiskReservation).where(RiskReservation.command_id == command_id)
         return self._session.scalar(stmt)
+
+    def get_by_command_for_update(self, command_id: uuid.UUID) -> RiskReservation | None:
+        stmt = (
+            select(RiskReservation)
+            .where(RiskReservation.command_id == command_id)
+            .with_for_update()
+        )
+        return self._session.scalar(stmt)
+
+
+class ExecutionFillFactRepository(SQLAlchemyRepository[ExecutionFillFact]):
+    model = ExecutionFillFact
+
+    def get_by_source(
+        self, *, receipt_id: uuid.UUID, source_fill_identity: str
+    ) -> ExecutionFillFact | None:
+        stmt = select(ExecutionFillFact).where(
+            ExecutionFillFact.receipt_id == receipt_id,
+            ExecutionFillFact.source_fill_identity == source_fill_identity,
+        )
+        return self._session.scalar(stmt)
+
+    def list_for_receipt(self, receipt_id: uuid.UUID) -> list[ExecutionFillFact]:
+        stmt = (
+            select(ExecutionFillFact)
+            .where(ExecutionFillFact.receipt_id == receipt_id)
+            .order_by(ExecutionFillFact.occurred_at.asc(), ExecutionFillFact.id.asc())
+        )
+        return list(self._session.scalars(stmt).all())
 
 
 class VenueSubmitEffectRepository(SQLAlchemyRepository[VenueSubmitEffect]):

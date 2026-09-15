@@ -166,6 +166,37 @@ class RiskReservationView(BaseModel):
     exposure_unit: str
 
 
+class CommittedDispatchAuthorization(BaseModel):
+    """Durable Barrier 3 snapshot loaded from committed storage only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    command_id: UUID
+    effect_id: UUID
+    client_order_id: str
+    state: VenueSubmitEffectState
+    lease_owner: str | None
+    fencing_token: int
+    dispatch_fencing_token: int | None
+    dispatch_safety_epoch: int | None
+    attempt: int
+
+
+class UniqueFillResult(BaseModel):
+    """Result of applying one authoritative fill fact."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    replayed: bool
+    fill_id: UUID
+    receipt_id: UUID
+    source_fill_identity: str
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    filled_quantity: NonNegativeCanonicalDecimal
+    remaining_quantity: NonNegativeCanonicalDecimal
+    weighted_price: CanonicalDecimal | None
+
+
 class ExecutePaperPlanResult(BaseModel):
     """Stable claim result. Replay returns the same identities."""
 

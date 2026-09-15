@@ -15,8 +15,10 @@ from app.db.models import (
     AccountRiskAccountingState,
     ApprovalAuthorization,
     ExecutionCommand,
+    ExecutionFillFact,
     ExecutionIdempotencyBinding,
     ExecutionProjection,
+    ExecutionReceipt,
     ExecutionTransition,
     PlanEntryExecutionClaim,
     RiskReservation,
@@ -504,8 +506,7 @@ def test_unique_fill_converts_reservation_and_appends_transition(session: Sessio
     assert projection is not None
     assert projection.state is ExecutionReceiptState.PARTIALLY_FILLED
     assert projection.filled_quantity == Decimal("1")
-    from app.db.models import ExecutionReceipt
-
+    assert projection.weighted_price == Decimal("100.10")
     receipt = session.get(ExecutionReceipt, claimed.receipt.receipt_id)
     assert receipt is not None
     transitions = list(
@@ -523,12 +524,25 @@ def test_unique_fill_converts_reservation_and_appends_transition(session: Sessio
     )
     assert rebuilt["state"] is ExecutionReceiptState.PARTIALLY_FILLED
     assert rebuilt["filled_quantity"] == Decimal("1")
+    assert rebuilt["weighted_price"] == Decimal("100.10")
     reservation = session.scalar(
         select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
     )
     assert reservation is not None
     assert reservation.release_state is RiskReservationReleaseState.PARTIALLY_RELEASED
     assert reservation.remaining_reserved_notional < reservation.pending_order_exposure
+    accounting = session.scalar(
+        select(AccountRiskAccountingState).where(
+            AccountRiskAccountingState.account_id == claimed.receipt.account_id
+        )
+    )
+    assert accounting is not None
+    assert accounting.actual_notional > 0
+    assert Decimal(str((accounting.symbol_actual or {}).get(reservation.instrument, "0"))) > 0
+    facts = list(
+        session.scalars(select(ExecutionFillFact).where(ExecutionFillFact.receipt_id == receipt.id))
+    )
+    assert len(facts) == 1
 
 
 def test_readonly_cannot_claim(session: Session) -> None:
@@ -575,3 +589,244 @@ def test_stale_worker_cannot_dispatch_after_lease_loss(session: Session) -> None
     )
     assert authorized.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED
     assert int(second.fencing_token) > first_token
+
+
+def test_uncommitted_barrier3_cannot_invoke_provider(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="uncommitted-b3"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    leased = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="worker-1")
+    session.commit()
+    effect = session.scalar(
+        select(VenueSubmitEffect).where(VenueSubmitEffect.command_id == claimed.command_id)
+    )
+    assert effect is not None
+    effect.state = VenueSubmitEffectState.DISPATCH_AUTHORIZED
+    effect.dispatch_fencing_token = int(leased.fencing_token)
+    effect.lease_owner = "worker-1"
+    session.flush()
+    provider = FakeVenueSubmitProvider()
+    with pytest.raises(ConflictError) as exc:
+        service.attempt_fake_paper_plan_send(
+            command_id=claimed.command_id,
+            owner="worker-1",
+            fencing_token=int(leased.fencing_token),
+            provider=provider,
+        )
+    assert exc.value.details["reason"] in {
+        "send_blocked_open_database_transaction",
+        "send_before_dispatch_authorization",
+    }
+    assert provider.submit_count == 0
+
+
+def test_provider_send_has_no_active_database_transaction(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="idle-send"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    leased = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="worker-1")
+    session.commit()
+    authorized = service.authorize_paper_plan_dispatch(
+        command_id=claimed.command_id,
+        owner="worker-1",
+        fencing_token=int(leased.fencing_token),
+    )
+    assert authorized.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED
+    command_id = claimed.command_id
+    receipt_id = claimed.receipt.receipt_id
+    effect_id = authorized.id
+    client_order_id = authorized.client_order_id
+    seen: dict[str, bool | None] = {"in_txn": None}
+
+    def _capture() -> None:
+        seen["in_txn"] = session.in_transaction()
+
+    provider = FakeVenueSubmitProvider(behavior=FakeVenueBehavior.ACCEPT, on_submit=_capture)
+    sent = service.attempt_fake_paper_plan_send(
+        command_id=claimed.command_id,
+        owner="worker-1",
+        fencing_token=int(leased.fencing_token),
+        provider=provider,
+    )
+    session.commit()
+    assert seen["in_txn"] is False
+    assert sent.command_id == command_id
+    assert sent.id == effect_id
+    assert sent.client_order_id == client_order_id
+    receipt = session.get(ExecutionReceipt, receipt_id)
+    assert receipt is not None
+    assert receipt.id == receipt_id
+    assert receipt.command_id == command_id
+
+
+def test_stale_fencing_token_cannot_submit(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="stale-send"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    first = service.lease_paper_plan_effect(
+        command_id=claimed.command_id, owner="worker-old", lease_seconds=0
+    )
+    first_token = int(first.fencing_token)
+    session.commit()
+    second = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="worker-new")
+    session.commit()
+    service.authorize_paper_plan_dispatch(
+        command_id=claimed.command_id,
+        owner="worker-new",
+        fencing_token=int(second.fencing_token),
+    )
+    provider = FakeVenueSubmitProvider()
+    with pytest.raises(ConflictError) as exc:
+        service.attempt_fake_paper_plan_send(
+            command_id=claimed.command_id,
+            owner="worker-old",
+            fencing_token=first_token,
+            provider=provider,
+        )
+    assert exc.value.details["reason"] == "send_fence_mismatch"
+    assert provider.submit_count == 0
+
+
+def test_kill_before_barrier3_produces_zero_sends(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="kill-zero-send"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    leased = service.lease_paper_plan_effect(command_id=claimed.command_id, owner="worker-1")
+    session.commit()
+    KillSwitchService(session, AuditService(session), service._settings).activate(
+        organization_id=ids["organization"].id,
+        actor_user_id=ids["user"].id,
+        payload=KillSwitchMutationRequest(confirm=True, reason="block barrier 3"),
+    )
+    session.commit()
+    blocked = service.authorize_paper_plan_dispatch(
+        command_id=claimed.command_id,
+        owner="worker-1",
+        fencing_token=int(leased.fencing_token),
+    )
+    assert blocked.state is VenueSubmitEffectState.PROVEN_UNSENT
+    provider = FakeVenueSubmitProvider()
+    with pytest.raises(ConflictError):
+        service.attempt_fake_paper_plan_send(
+            command_id=claimed.command_id,
+            owner="worker-1",
+            fencing_token=int(leased.fencing_token),
+            provider=provider,
+        )
+    assert provider.submit_count == 0
+
+
+def test_multiple_fills_weighted_price_and_replay(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="multi-fill"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    occurred = EXECUTE_AT
+    first = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="fill-a",
+        occurred_at=occurred,
+    )
+    session.commit()
+    second = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("110"),
+        source_identity="fill-b",
+        occurred_at=occurred,
+    )
+    session.commit()
+    assert first.replayed is False
+    assert second.replayed is False
+    assert second.weighted_price == Decimal("105")
+    projection = session.scalar(
+        select(ExecutionProjection).where(
+            ExecutionProjection.receipt_id == claimed.receipt.receipt_id
+        )
+    )
+    assert projection is not None
+    version_before = int(projection.version)
+    filled_before = projection.filled_quantity
+    remaining_before = projection.remaining_quantity
+    weighted_before = projection.weighted_price
+    reservation = session.scalar(
+        select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
+    )
+    assert reservation is not None
+    remaining_reserved_before = reservation.remaining_reserved_notional
+    accounting = session.scalar(
+        select(AccountRiskAccountingState).where(
+            AccountRiskAccountingState.account_id == claimed.receipt.account_id
+        )
+    )
+    assert accounting is not None
+    actual_before = accounting.actual_notional
+    reserved_before = accounting.reserved_notional
+    replay = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="fill-a",
+        occurred_at=occurred,
+    )
+    session.commit()
+    assert replay.replayed is True
+    session.refresh(projection)
+    session.refresh(reservation)
+    session.refresh(accounting)
+    assert int(projection.version) == version_before
+    assert projection.filled_quantity == filled_before
+    assert projection.remaining_quantity == remaining_before
+    assert projection.weighted_price == weighted_before
+    assert reservation.remaining_reserved_notional == remaining_reserved_before
+    assert accounting.actual_notional == actual_before
+    assert accounting.reserved_notional == reserved_before
+    assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 2
+
+
+def test_conflicting_fill_identity_fails_closed(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="conflict-fill"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="fill-same",
+        occurred_at=EXECUTE_AT,
+    )
+    session.commit()
+    with pytest.raises(ConflictError) as exc:
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("999"),
+            source_identity="fill-same",
+            occurred_at=EXECUTE_AT,
+        )
+    assert exc.value.details["reason"] == "conflicting_fill_identity"

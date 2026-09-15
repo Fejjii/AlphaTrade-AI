@@ -61,7 +61,11 @@ from app.schemas.common import (
     TradeDirection,
 )
 from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOrderRequest
-from app.schemas.execution_protocol import ExecutePaperPlanRequest, ExecutePaperPlanResult
+from app.schemas.execution_protocol import (
+    ExecutePaperPlanRequest,
+    ExecutePaperPlanResult,
+    UniqueFillResult,
+)
 from app.services.audit_service import AuditService
 from app.services.execution_claim import ExecutionClaimHooks
 from app.services.market_data_service import MarketDataService
@@ -644,12 +648,16 @@ class ExecutionService:
         fill_quantity: Decimal,
         fill_price: Decimal,
         source_identity: str,
-    ) -> None:
-        self._dispatcher().apply_unique_fill(
+        venue_source: str = "phase1-fake-venue",
+        occurred_at: datetime | None = None,
+    ) -> UniqueFillResult:
+        return self._dispatcher().apply_unique_fill(
             command_id=command_id,
             fill_quantity=fill_quantity,
             fill_price=fill_price,
             source_identity=source_identity,
+            venue_source=venue_source,
+            occurred_at=occurred_at,
         )
 
     def _dispatcher(self) -> VenueSubmitDispatcher:

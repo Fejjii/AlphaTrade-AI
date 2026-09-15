@@ -89,6 +89,7 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "ExecutionProjection": PersistenceKind.EXECUTION,
     "RiskReservation": PersistenceKind.EXECUTION,
     "VenueSubmitEffect": PersistenceKind.EXECUTION,
+    "ExecutionFillFact": PersistenceKind.EXECUTION,
 }
 
 
