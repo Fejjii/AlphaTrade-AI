@@ -580,20 +580,23 @@ authorized.
 
 CI is **not** an architecture-correctness input. It is recorded separately.
 
-At review time, GitHub Actions run `34956824132` for exact head
-`549e42a42fb16765ec0947ef3ba08550459dd1f5` was **in progress**.
+GitHub Actions run `34956824132` for exact head
+`549e42a42fb16765ec0947ef3ba08550459dd1f5` completed **success**:
 
-| Check | Status at review time |
+| Check | Status |
 |---|---|
 | deployment-safety | success |
 | frontend | success |
 | docker-build | success |
-| backend | in_progress (not completed) |
+| backend | success |
+| evaluation | success |
+| e2e-smoke | success |
+| workflow `CI` | success |
 | Vercel commit status | success |
-| evaluation / e2e-smoke | UNKNOWN (not observed as completed check-runs on this commit) |
 
-Passing documentation CI would not implement the target contracts. Incomplete CI does not
-reopen a closed architecture finding.
+Passing documentation CI does not implement the target contracts and does not reopen or
+close architecture findings. This re-review PR is a later commit and has its own CI, which
+is also not an architecture-correctness input.
 
 ---
 
