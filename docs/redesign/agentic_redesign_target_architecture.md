@@ -1681,7 +1681,11 @@ covers this complete field set:
 identity:
   schema_version; plan_id; revision_id; organization_id; user_id
   account_id; exchange_account_id?
+  operation = SUBMIT_ENTRY
   strategy_version_id; setup_definition_id; candidate_id
+account safety:
+  expected_account_mode = NET
+  permission_attestation_id; permission_attestation_version
 provenance:
   ordered evidence_ids
   evidence_venue; evidence_market; evidence_instrument
@@ -1691,7 +1695,8 @@ order:
   side; quantity; quantity_unit; order_type; time_in_force
   limit_price + price_unit OR explicit null + MARKET marker
   entry_zone; entry_zone_derivation
-  slippage_policy; reduce_only; position/account binding when applicable
+  slippage_policy; reduce_only; margin_mode; position_mode
+  position/account binding when applicable
 instrument rules:
   contract_multiplier; linear_or_inverse; base/quote/settlement currencies
   tick_size; lot_size; minimum_quantity; minimum_notional
@@ -1727,6 +1732,7 @@ ApprovalAuthorization
   permission_attestation_id; permission_attestation_version
   expires_at; state: AVAILABLE | CONSUMED | EXPIRED | REVOKED
   channel; actor; created_at; consumed_at?
+  authorization_content_hash
 ```
 
 Issuance is idempotent and database-unique for
@@ -1740,6 +1746,11 @@ hash, and derives the venue payload only from the revision. A caller/channel may
 transport IDs and redundant assertions for early error reporting, but cannot introduce an
 executable field. Any redundant mismatch is rejected before authorization consumption, risk
 reservation, execution-domain database mutation, durable venue effect or venue call.
+
+The authoritative plan path is
+`PLAN_TRADE -> deterministic PlanService -> EXECUTABLE_REVISION_PERSISTED |
+ANALYSIS_ONLY_CANNOT_CREATE_EXECUTABLE_PLAN -> frozen result -> optional synthesis`.
+Synthesis cannot persist, complete or alter the revision.
 
 First slice uniqueness enforces:
 
