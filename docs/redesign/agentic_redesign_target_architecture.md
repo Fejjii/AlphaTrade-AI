@@ -343,7 +343,7 @@ enforce them. `operation_class=APPROVAL` with a missing or non-`APPROVE`/`REJECT
 | `SKIP` | APPROVAL | Record dismissal/skip; never mint authorization or execute |
 | `EXECUTE_PAPER_PLAN` | EXECUTION | Consume one valid authorization and ask `ExecutionService` to execute that exact revision |
 | `CANCEL_ORDER` | EXECUTION | Submit exact-order cancellation under the §27 cancel policy; never infer an order |
-| `CLOSE_POSITION` | EXECUTION | Submit the exact §23 position-bound reduce-only close command through the unique close claim |
+| `CLOSE_POSITION` | EXECUTION | Submit the exact §23 position-bound reduce-only close command through the snapshot-bound unique close claim and §11 state machine |
 
 Sub-intents can remain for strategy/backtest/lesson workflows, but every sub-intent declares one
 operation class. If deterministic rules and Tier B disagree, choose the more restrictive class
@@ -1227,7 +1227,7 @@ Lifecycle events then update it idempotently:
 | Approved plan with execution claim identity | Begin/link one planned execution lifecycle; thesis, trigger, entry zone, stop, targets, runner, planned risk |
 | Demo order submitted/fills | Order link, actual entry, size, leverage, fees/slippage |
 | Position monitoring | Append position/risk/management observations, not mutable prose |
-| Close/reconciliation | Exit, reason, realized PnL, funding/fees, final status |
+| Close/reconciliation | Append close/reconciliation facts; project final exit/PnL/status only from authoritative `POSITION_OPEN` or `CLOSED`, never from unresolved `RECONCILIATION_REQUIRED`/`OPERATOR_HOLD` |
 | Historical replay | MFE/MAE, available profit, completeness/freshness |
 | Analytics | Rule checks, plan adherence, runner/stop discipline |
 | Lesson detection | Reviewable `LessonCandidate`, never a strategy mutation |
@@ -1433,8 +1433,9 @@ NET-mode reconciliation, command and partial-fill/cancel tests pass. Flags remai
 
 Bind demo accounts/permissions to tenant principals and extend `ExecutionService` with
 no-blind-retry submission, client-order lookup, venue/fill uniqueness, partial-fill/cancel,
-NET-mode-only reduce-only close, a channel-neutral unique close claim, close/fill race handling,
-and order/position/fee/funding/PnL reconciliation. Flags remain off.
+NET-mode-only reduce-only close, the §23 pre-claim venue-order snapshot, a channel-neutral
+unique close claim, the one §11 close state machine, close/fill race handling and
+order/position/fee/funding/PnL reconciliation. Flags remain off.
 
 ### Phase 10 — automatic journal projection
 
@@ -1472,9 +1473,11 @@ tests, and reserve deletion for a separately approved task with usage evidence.
 - kill switch/daily loss/overtrading/cooldown remain final;
 - dispatch barriers for kill switch before/during claim, after claim before effect lease, after
   lease before POST, during/after uncertain send, after acknowledgement and after partial fill;
-- close races for TP fill before claim, after claim before POST and while POST is in flight,
-  duplicate closes from two channels, partial close, close after late entry fill and close while
-  cancel is pending.
+- `ClosePreClaimWorkingOrderSnapshotV1` no-race/own-effect equality, canonical metadata
+  invariance and TP/SL/fill/cancel/new-competing-order invalidation;
+- close races for TP/SL fill before claim, after claim before POST and while POST is in flight,
+  duplicate web/Telegram/agent closes, partial close, close after late entry fill and close
+  while cancel is pending; assert the §11 safety-block/reconciliation/residual transitions.
 
 ### Integration tests
 
@@ -1486,10 +1489,11 @@ tests, and reserve deletion for a separately approved task with usage evidence.
   execution consumes authorization once;
 - tenant/principal/payload idempotency replay and cross-principal/key-conflict rejection;
 - demo timeout -> reconciliation query, never blind resubmit;
-- account/instrument-serialized channel-neutral close claim and atomic
-  `POSITION_OPEN(version) -> CLOSE_PENDING`;
+- account/instrument-serialized, pre-claim-snapshot-bound channel-neutral close claim and atomic
+  `POSITION_OPEN(version) -> CLOSE_PENDING`; local close effect leaves the venue hash unchanged;
 - partial fill/cancel/reduce-only close and NET/hedge/unknown position-mode handling, including
-  TP/SL/late-fill races and residual-position reconciliation;
+  TP/SL/late-fill races and `RECONCILIATION_REQUIRED -> POSITION_OPEN | CLOSED |
+  OPERATOR_HOLD` residual-position reconciliation;
 - stale/fallback/forming/wrong-market/gapped data blocks setup confirmation, plan and execution;
 - journal projection retries and exactly one canonical trade;
 - lesson cannot activate a strategy without every gate and explicit approval.
@@ -1611,7 +1615,7 @@ proceeding; no fallback/spot substitution is allowed.
 | Risk gate | Existing risk, daily accounting, kill switch, sizing | Bind fused/plan freshness and demo state |
 | BloFin demo execution | Client/account/execution/factory, internal idempotency | Authoritative demo state coordinator |
 | Reconciliation | Read-only BloFin snapshots/get order | Order/fill/position/PnL reconciliation |
-| Exit | BloFin demo reduce-only capability | `ClosePositionCommand` through the approved reconciled unique close claim |
+| Exit | BloFin demo reduce-only capability | Snapshot-bound `ClosePositionCommand` through the confirmed channel-neutral unique close claim and §11 state machine |
 | Journal | Canonical journal, links, auto hooks, excursions | Durable lifecycle projector enabled for slice |
 | Analytics/learning | Existing stats, analyzers, lessons, versions, validation | Correlation lineage and enforced promotion workflow |
 
@@ -1622,7 +1626,8 @@ One recorded drill must show:
 `BTCUSDT perpetual 15m/4h observation IDs -> setup transition reasons -> candidate ID ->
 Telegram delivery ID -> authenticated callback receipt -> immutable plan revision ->
 ApprovalAuthorization -> explicit EXECUTE_PAPER_PLAN -> fresh ActionEligibility/risk result ->
-BloFin demo client/order IDs -> fills -> reconciled net position -> reduce-only close ->
+BloFin demo client/order IDs -> fills -> reconciled net position -> snapshot-bound reduce-only
+close -> RECONCILIATION_REQUIRED -> authoritative POSITION_OPEN/CLOSED or OPERATOR_HOLD ->
 reconciled fees/funding/PnL -> one JournalTrade -> analytics -> pending lesson (if any)`.
 
 Replay the evidence, alert delivery, callback, order request, reconciliation and journal events.
@@ -1664,7 +1669,7 @@ whenever market or execution identity applies.
 | `ExecutionCommand` | Transport command ID and tenant/account/operation-scoped idempotency key; immutable semantic payload is one discriminated entry/cancel/close command | Immutable transport metadata is excluded from the canonical payload hash; exact account/resource/version/venue/instrument policy is bound | Same scoped key + semantic hash returns original receipt; any binding mismatch conflicts; durable state lives in receipt transitions/projection rather than a second command state machine |
 | `ExecutionReceipt` | Stable receipt ID owned by organization/user/account and linked one-to-one with command | Immutable identity/command relationship | Replay returns stable identity plus latest `ExecutionProjection` and event watermark |
 | `ExecutionTransition` | Receipt-scoped append-only event ID and source fact identity | Immutable prior/new state, authoritative fact, occurred/recorded time and content hash | Event/source uniqueness; history never updates |
-| `ExecutionProjection` | Receipt ID plus monotonically increasing projection version | Rebuildable latest state, quantities, fees and reconciliation status | Optimistic version; uses the §11/§24 state model, including submit uncertainty, cancellation reconciliation, partial-filled cancellation, open/close and operator hold; derived only from authorized transitions |
+| `ExecutionProjection` | Receipt ID plus monotonically increasing projection version | Rebuildable latest state, quantities, fees and reconciliation status | Optimistic version; uses the one §11/§24 state model, including proven-unsent block, changed/possibly-sent reconciliation, `POSITION_OPEN`/`CLOSED`/`OPERATOR_HOLD`, cancellation reconciliation and partial-filled cancellation; derived only from authorized transitions |
 | `ReconciliationState` | Organization/account/order/position scoped state ID with venue/instrument | Immutable check snapshots, observed/received/checked times, correlation and content hash | Source/check key dedupe; `PENDING -> CONSISTENT` or `REQUIRED -> CONSISTENT/FAILED`; unresolved state blocks final truth |
 | `ClosePreClaimWorkingOrderSnapshotV1` | Organization/account/exchange-account/venue/instrument/NET-mode scope | Immutable pre-claim canonical venue-order entries and hash; observation/transport metadata excluded | Computed before claim/effect; local close command/claim/receipt/effect excluded; identical venue semantics hash identically |
 | `CloseClaim` | Channel-neutral organization/account/position/projection-version identity; binds venue/instrument, pre-claim snapshot version/hash and canonical close hash | Immutable claim/receipt/effect relationship; projection change appends | Database-unique exact position projection/version; competing web/agent/Telegram requests resolve the same result; `POSITION_OPEN(version) -> CLOSE_PENDING` is atomic |
@@ -1741,7 +1746,8 @@ The 18 mandatory corrections from PR #65 are all accepted architecturally:
     durable receipts and at-least-once/idempotent semantics.
 14. **BloFin DEMO lifecycle completed architecturally:** §11 binds tenant accounts and
     permissions, prohibits blind retry, supports client-ID lookup, partial fills/cancel and
-    reconciliation, and defines venue/fill uniqueness.
+    reconciliation, defines venue/fill uniqueness, and binds close to the §23 pre-claim
+    venue-order snapshot and one §11 state machine.
 15. **Position mode decided:** §11 selects NET MODE ONLY for the first slice and rejects hedge
     or unknown mode without reinterpretation.
 16. **Canonical journal moved earlier:** §12 and migration Phase 4 require canonical consumers
@@ -1754,10 +1760,10 @@ The 18 mandatory corrections from PR #65 are all accepted architecturally:
 ## 21. Final normative safety and operation contract
 
 Sections 21–30 state the same canonical contracts as the earlier overview schemas, diagrams and
-lifecycle tables, with implementation-level detail produced from PRs #66–#69. The earlier
-sections have been aligned rather than left as superseded alternatives. Any future edit must
-update every repeated representation in the same change; implementation must never select a
-less restrictive interpretation.
+lifecycle tables, with implementation-level detail produced from PRs #66–#69 and the PR #72
+close-protocol gate. The earlier sections have been aligned rather than left as superseded
+alternatives. Any future edit must update every repeated representation in the same change;
+implementation must never select a less restrictive interpretation.
 
 ### Permanent paper mode
 
@@ -2055,7 +2061,8 @@ NET/margin-mode fields supported by the venue, and deterministic client order ID
 targets, runner and slippage policy remain hashed plan/risk/management facts and are not
 silently attached to the entry POST. V1 automatic attached TP/SL/OCO creation is unsupported.
 Existing independently authorized working exits remain visible to reconciliation and close
-serialization. `execution_policy_version` binds this entry-only policy; adding attached exits
+serialization when they are venue-visible and meet the §23 materially position-altering
+inclusion rule. `execution_policy_version` binds this entry-only policy; adding attached exits
 requires a new policy/revision and deterministic byte-for-byte provider-payload fixtures.
 
 ## 24. First-writer, risk reservation and execution state protocol
@@ -2143,6 +2150,14 @@ truth; no second authorization or semantic execution identity is created. Reserv
 is based only on authoritative exposure: a proven-unsent effect with no fill/order exposure
 releases its unused reservation, while any uncertainty, acknowledged order or fill preserves
 the applicable reservation/quarantine until reconciliation.
+
+For a close effect, this `BLOCKED_BEFORE_DISPATCH` transition is valid only for that
+proven-unsent safety-epoch outcome and returns to `POSITION_OPEN` only after authoritative
+reconciliation confirms the original exposure. A position-version or
+`ClosePreClaimWorkingOrderSnapshotV1` mismatch instead enters `RECONCILIATION_REQUIRED`
+without POST. Once a close POST may have been sent, it also remains
+`RECONCILIATION_REQUIRED` until §11's authoritative `POSITION_OPEN`, `CLOSED` or
+`OPERATOR_HOLD` outcome; it never uses the blocked-before-dispatch path.
 
 After `DISPATCH_AUTHORIZED` commits, the worker performs no unrelated work, sleep, model call or
 await before the POST. A kill-switch activation that linearizes later cannot pretend the
@@ -2844,7 +2859,7 @@ closure, not a claim of runtime implementation.
 | PR #67 | HIGH-13 | HIGH | Scan lineage | Accepted | Durable scan/source/subscription attempts link every output and recovery | §28 | Watcher | Crash after each persistence boundary; honest lineage and no duplicates |
 | PR #67 | HIGH-14 | HIGH | Operation risk policy | Accepted | Entry blocked; claim/effect-lease/pre-POST/post-ambiguity epoch barriers; exact cancel/reduce recovery uses no-increase matrix | §§21, 24, 27 | Phase 1/demo reconciliation | Deterministic barriers before/during claim through acknowledgement and partial fill |
 | PR #67 | HIGH-15 | HIGH | Telegram identities | Accepted | Bot-scoped installation/enrollment/binding/update/callback/action contracts and rotation | §27 | Telegram | Replay/concurrent enrollment, wrong user/chat, expiry, revoke and bot rotation |
-| PR #67 | HIGH-16 | HIGH | Durable close | Accepted | Channel-neutral position-version claim, atomic `CLOSE_PENDING`, pre-POST revalidation and residual reconciliation | §§23, 27 | Demo reconciliation then Telegram CLOSE | TP/late-fill/cancel races plus duplicate web/agent/Telegram closes |
+| PR #67 | HIGH-16 | HIGH | Durable close | Accepted | Channel-neutral position-version claim binds the pre-claim venue-order snapshot, atomically enters `CLOSE_PENDING`, excludes its local effect pre-POST and follows the one close state machine | §§11, 23, 27 | Demo reconciliation then Telegram CLOSE | No-race/own-effect equality, TP/SL/late-fill/cancel/new-order invalidation and duplicate web/agent/Telegram closes |
 | PR #67 | HIGH-17 | HIGH | Account credential/mode | Accepted | Exact account secret resolution, no global fallback, immediate NET probe per effect | §27 | Demo reconciliation | Provider cache cross-wire, rotation, UID/mode changes reject before POST |
 | PR #67 | HIGH-18 | HIGH | Execution state identity | Accepted | Stable receipt, append-only transitions, monotonic projection/watermark | §24 | Phase 1.9 | Replay across ack/fill/cancel/close/correction preserves history |
 | PR #67 | HIGH-19 | HIGH | Journal truth ownership | Accepted | Reflective fields separate; venue facts projector-owned; append-only corrections/tombstones | §27 | Journal compatibility | Post-fill edit/delete cannot alter facts; correction preserves provenance |
@@ -2862,7 +2877,7 @@ closure, not a claim of runtime implementation.
 | Review | Finding ID | Severity | Accepted/rejected | Canonical correction | Target contract | Required deterministic test |
 |---|---|---|---|---|---|---|
 | PR #68 | HIGH-14 | HIGH | Accepted | Safety epoch is checked at claim, effect lease, atomic immediate pre-POST dispatch authorization and ambiguous-send reconciliation; the pre-POST commit is the linearization point | §§11, 24 | Kill switch before/during claim, after claim before lease, after lease before POST, during/after uncertain send, after acknowledgement and partial fill |
-| PR #68 | HIGH-16 | HIGH | Accepted | One channel-neutral unique close claim and `CLOSE_PENDING` CAS; pre-POST position/order revalidation and reduce-only residual reconciliation | §§10–11, 23, 27 | TP before claim, after claim before POST, in-flight fill, two-channel duplicate, partial close, late entry fill and cancel-pending close |
+| PR #68 | HIGH-16 | HIGH | Accepted | One channel-neutral unique close claim binds `ClosePreClaimWorkingOrderSnapshotV1`; pre-POST comparison excludes its local effect and changed/possibly-sent state follows the one reconciliation machine | §§10–11, 23, 27 | No-race/own-effect equality, TP/SL before/after claim, cancellation/new order, in-flight fill, cross-channel duplicate and authoritative residual outcomes |
 
 ### PR #69 — final architecture re-review residuals
 
