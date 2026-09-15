@@ -10,11 +10,14 @@ from app.core.auth import TenantDep
 from app.core.dependencies import ApprovalServiceDep, SessionDep, WorkflowServiceDep
 from app.schemas.approval import (
     ApprovalActionRequest,
+    ApprovalAuthorization,
     ApprovalDecisionRequest,
     ApprovalRequest,
     PaginatedApprovalRequests,
+    PlanApprovalRequestCreate,
 )
 from app.schemas.common import ApprovalAction, ApprovalStatus
+from app.schemas.trade_plan import AuthorizationChannel
 from app.schemas.workflow import ApprovalWorkflowView
 from app.security.rbac import TraderDep
 from app.security.tenant import ensure_same_organization
@@ -40,15 +43,40 @@ async def list_approvals(
     return PaginatedApprovalRequests(items=items, total=total, limit=limit, offset=offset)
 
 
+@router.post(
+    "/plan-revisions/{revision_id}",
+    response_model=ApprovalRequest,
+    summary="Create an approval request for one immutable plan revision",
+)
+async def create_plan_revision_approval(
+    revision_id: uuid.UUID,
+    body: PlanApprovalRequestCreate,
+    tenant: TraderDep,
+    approval_service: ApprovalServiceDep,
+    session: SessionDep,
+) -> ApprovalRequest:
+    result = approval_service.create_for_plan_revision(
+        revision_id=revision_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        authorization_expires_at=body.authorization_expires_at,
+        approval_reason=body.reason,
+    )
+    session.commit()
+    return result
+
+
 @router.get("/{approval_id}", response_model=ApprovalRequest, summary="Get approval")
 async def get_approval(
     approval_id: uuid.UUID,
     tenant: TenantDep,
     approval_service: ApprovalServiceDep,
 ) -> ApprovalRequest:
-    approval = approval_service.get(approval_id)
-    ensure_same_organization(approval.organization_id, tenant)
-    return approval
+    return approval_service.get_scoped(
+        approval_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
 
 
 @router.get(
@@ -78,7 +106,14 @@ async def approve(
     ensure_same_organization(approval.organization_id, tenant)
     result = approval_service.decide(
         approval_id,
-        ApprovalDecisionRequest(action=ApprovalAction.APPROVE, reason=body.reason),
+        ApprovalDecisionRequest(
+            action=ApprovalAction.APPROVE,
+            reason=body.reason,
+            authorization_assertion=body.authorization_assertion,
+        ),
+        principal_organization_id=tenant.organization_id,
+        principal_user_id=tenant.user_id,
+        channel=AuthorizationChannel.API,
     )
     session.commit()
     return result
@@ -97,6 +132,8 @@ async def reject(
     result = approval_service.decide(
         approval_id,
         ApprovalDecisionRequest(action=ApprovalAction.REJECT, reason=body.reason),
+        principal_organization_id=tenant.organization_id,
+        principal_user_id=tenant.user_id,
     )
     session.commit()
     return result
@@ -119,6 +156,8 @@ async def modify(
             reason=body.reason,
             modified_fields=body.modified_fields,
         ),
+        principal_organization_id=tenant.organization_id,
+        principal_user_id=tenant.user_id,
     )
     session.commit()
     return result
@@ -140,6 +179,8 @@ async def needs_more_analysis(
             action=ApprovalAction.NEEDS_MORE_ANALYSIS,
             reason=body.reason,
         ),
+        principal_organization_id=tenant.organization_id,
+        principal_user_id=tenant.user_id,
     )
     session.commit()
     return result
@@ -155,6 +196,49 @@ async def decide_approval(
 ) -> ApprovalRequest:
     approval = approval_service.get(approval_id)
     ensure_same_organization(approval.organization_id, tenant)
-    result = approval_service.decide(approval_id, body)
+    result = approval_service.decide(
+        approval_id,
+        body,
+        principal_organization_id=tenant.organization_id,
+        principal_user_id=tenant.user_id,
+        channel=AuthorizationChannel.API,
+    )
+    session.commit()
+    return result
+
+
+@router.get(
+    "/authorizations/{authorization_id}",
+    response_model=ApprovalAuthorization,
+    summary="Get an account-bound approval authorization",
+)
+async def get_authorization(
+    authorization_id: uuid.UUID,
+    tenant: TenantDep,
+    approval_service: ApprovalServiceDep,
+) -> ApprovalAuthorization:
+    return approval_service.get_authorization(
+        authorization_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.post(
+    "/authorizations/{authorization_id}/revoke",
+    response_model=ApprovalAuthorization,
+    summary="Revoke an available approval authorization",
+)
+async def revoke_authorization(
+    authorization_id: uuid.UUID,
+    tenant: TraderDep,
+    approval_service: ApprovalServiceDep,
+    session: SessionDep,
+) -> ApprovalAuthorization:
+    result = approval_service.revoke_authorization(
+        authorization_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
     session.commit()
     return result

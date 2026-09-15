@@ -7,14 +7,28 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationAppError
+from app.db.models import (
+    PaperValidationCandidate,
+    SetupDefinition,
+    TradePlanRevision as TradePlanRevisionModel,
+    UserStrategy,
+    UserStrategyVersion,
+)
 from app.db.models import TradeProposal as TradeProposalModel
+from app.repositories.approvals import ApprovalAuthorizationRepository
 from app.repositories.proposals import ProposalRepository
+from app.repositories.trade_plans import (
+    ExchangeAccountBindingRepository,
+    ExecutionAccountRepository,
+    TradePlanRevisionRepository,
+)
 from app.schemas.agent import AgentState, Intent
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
     AuditEventType,
+    ExchangeAccountStatus,
     LossAcceptanceStatus,
     ProposalStatus,
     SafetyVerdict,
@@ -25,14 +39,29 @@ from app.schemas.proposal import (
     TradeProposal,
     TradeProposalCreate,
 )
+from app.schemas.trade_plan import (
+    AccountMode,
+    EntrySide,
+    ExecutionMode as PlanExecutionMode,
+    TradePlanRevision,
+    TradePlanRevisionCreate,
+    TradePlanRevisionSemantic,
+)
 from app.services.audit_service import AuditService
+from app.services.canonical_serialization import canonical_sha256
 from app.services.loss_acceptance_service import LossAcceptanceService
 from app.services.mappers.proposal_mapper import exit_to_columns, proposal_to_schema
+from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 
 
 class ProposalService:
     def __init__(self, session: Session, audit_service: AuditService) -> None:
+        self._session = session
         self._repo = ProposalRepository(session)
+        self._accounts = ExecutionAccountRepository(session)
+        self._exchange_accounts = ExchangeAccountBindingRepository(session)
+        self._revisions = TradePlanRevisionRepository(session)
+        self._authorizations = ApprovalAuthorizationRepository(session)
         self._audit = audit_service
 
     def create(self, data: TradeProposalCreate) -> TradeProposal:
@@ -166,6 +195,189 @@ class ProposalService:
         row.updated_at = datetime.now(UTC)
         self._repo.add(row)
         return proposal_to_schema(row)
+
+    def create_revision(
+        self,
+        proposal_id: uuid.UUID,
+        data: TradePlanRevisionCreate,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> TradePlanRevision:
+        """Persist one complete executable revision under the existing proposal plan root."""
+        proposal = self._repo.get_scoped(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if proposal is None:
+            raise NotFoundError("Trade proposal not found")
+        self._validate_revision_references(
+            proposal,
+            data,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+
+        semantic = TradePlanRevisionSemantic(
+            plan_id=proposal.id,
+            revision_id=uuid.uuid4(),
+            organization_id=organization_id,
+            user_id=user_id,
+            **data.semantic_terms(),
+        )
+        row = TradePlanRevisionModel(
+            id=semantic.revision_id,
+            plan_id=semantic.plan_id,
+            organization_id=semantic.organization_id,
+            user_id=semantic.user_id,
+            account_id=semantic.account_id,
+            exchange_account_id=semantic.exchange_account_id,
+            schema_version=semantic.schema_version,
+            operation=semantic.operation,
+            strategy_version_id=semantic.strategy_version_id,
+            setup_definition_id=semantic.setup_definition_id,
+            candidate_id=semantic.candidate_id,
+            expected_account_mode=semantic.expected_account_mode,
+            permission_attestation_id=semantic.permission_attestation_id,
+            permission_attestation_version=semantic.permission_attestation_version,
+            execution_venue=semantic.execution_venue,
+            execution_instrument=semantic.execution_instrument,
+            execution_policy_version=semantic.execution_policy_version,
+            valid_from=semantic.valid_from,
+            valid_until=semantic.valid_until,
+            semantic_payload=semantic.model_dump(mode="json"),
+            content_hash=canonical_sha256(semantic),
+            presentation_metadata=data.presentation_metadata,
+        )
+        self._revisions.add(row)
+        proposal.latest_plan_revision_id = row.id
+        self._repo.add(proposal)
+        self._authorizations.revoke_for_superseded_plan(
+            organization_id=organization_id,
+            plan_id=proposal.id,
+            current_revision_id=row.id,
+            at=datetime.now(UTC),
+        )
+        self._record_audit(
+            AuditEventType.TRADE_PROPOSAL_CREATED,
+            organization_id=organization_id,
+            user_id=user_id,
+            resource_id=str(row.id),
+            metadata={
+                "action": "executable_revision_created",
+                "plan_id": str(proposal.id),
+                "account_id": str(row.account_id),
+                "content_hash": row.content_hash,
+            },
+        )
+        return trade_plan_revision_to_schema(row)
+
+    def get_revision(
+        self,
+        proposal_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> TradePlanRevision:
+        row = self._revisions.get_scoped(
+            revision_id,
+            plan_id=proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if row is None:
+            raise NotFoundError("Trade plan revision not found")
+        return trade_plan_revision_to_schema(row)
+
+    def list_revisions(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> list[TradePlanRevision]:
+        proposal = self._repo.get_scoped(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if proposal is None:
+            raise NotFoundError("Trade proposal not found")
+        return [
+            trade_plan_revision_to_schema(row)
+            for row in self._revisions.list_for_plan_scoped(
+                proposal_id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        ]
+
+    def _validate_revision_references(
+        self,
+        proposal: TradeProposalModel,
+        data: TradePlanRevisionCreate,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        account = self._accounts.get_scoped(
+            data.account_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if (
+            account is None
+            or not account.enabled
+            or account.execution_mode is not PlanExecutionMode.PAPER
+            or account.account_mode is not AccountMode.NET
+        ):
+            raise ValidationAppError("Execution account is unavailable or has unsafe posture.")
+
+        if data.exchange_account_id is not None:
+            exchange_account = self._exchange_accounts.get_scoped(
+                data.exchange_account_id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+            if (
+                exchange_account is None
+                or exchange_account.status is not ExchangeAccountStatus.ACTIVE
+                or exchange_account.has_withdrawal_permission
+            ):
+                raise ValidationAppError("Exchange account is unavailable or has unsafe permissions.")
+
+        strategy_version = self._session.get(UserStrategyVersion, data.strategy_version_id)
+        if strategy_version is None:
+            raise ValidationAppError("Strategy version is unavailable.")
+        strategy = self._session.get(UserStrategy, strategy_version.strategy_id)
+        if (
+            strategy is None
+            or strategy.organization_id != organization_id
+            or strategy.user_id != user_id
+        ):
+            raise ValidationAppError("Strategy version is outside the tenant/account scope.")
+        if proposal.user_strategy_id is not None and proposal.user_strategy_id != strategy.id:
+            raise ValidationAppError("Strategy version does not belong to the proposal strategy.")
+
+        setup = self._session.get(SetupDefinition, data.setup_definition_id)
+        if setup is None or setup.strategy_id != proposal.strategy_id:
+            raise ValidationAppError("Setup definition is unavailable.")
+        candidate = self._session.get(PaperValidationCandidate, data.candidate_id)
+        if candidate is None or candidate.organization_id != organization_id:
+            raise ValidationAppError("Candidate is outside the tenant scope.")
+        if candidate.created_by is not None and candidate.created_by != user_id:
+            raise ValidationAppError("Candidate is outside the principal scope.")
+        if candidate.strategy_version_id != data.strategy_version_id:
+            raise ValidationAppError("Candidate strategy version does not match the plan.")
+        if proposal.timeframe != data.timeframe:
+            raise ValidationAppError("Plan timeframe does not match the proposal.")
+        expected_side = (
+            EntrySide.BUY if str(proposal.direction.value) == "long" else EntrySide.SELL
+        )
+        if data.side is not expected_side:
+            raise ValidationAppError("Plan side does not match the proposal direction.")
 
     def _record_audit(self, event_type: AuditEventType, **fields: object) -> None:
         self._audit.record(

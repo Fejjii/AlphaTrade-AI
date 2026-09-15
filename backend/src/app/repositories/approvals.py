@@ -3,19 +3,45 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from typing import Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
-from app.db.models import ApprovalRequest
+from app.db.models import ApprovalAuthorization, ApprovalRequest
 from app.repositories.base import SQLAlchemyRepository
 from app.schemas.common import ApprovalStatus
+from app.schemas.trade_plan import AuthorizationState, PlanOperation
 
 
 class ApprovalRepository(SQLAlchemyRepository[ApprovalRequest]):
     model = ApprovalRequest
 
     def get_by_proposal(self, proposal_id: uuid.UUID) -> ApprovalRequest | None:
-        stmt = select(ApprovalRequest).where(ApprovalRequest.proposal_id == proposal_id)
+        stmt = (
+            select(ApprovalRequest)
+            .where(ApprovalRequest.proposal_id == proposal_id)
+            .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+            .limit(1)
+        )
+        return self._session.scalar(stmt)
+
+    def get_by_revision(self, revision_id: uuid.UUID) -> ApprovalRequest | None:
+        stmt = select(ApprovalRequest).where(ApprovalRequest.plan_revision_id == revision_id)
+        return self._session.scalar(stmt)
+
+    def get_scoped(
+        self,
+        approval_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> ApprovalRequest | None:
+        stmt = select(ApprovalRequest).where(
+            ApprovalRequest.id == approval_id,
+            ApprovalRequest.organization_id == organization_id,
+            ApprovalRequest.user_id == user_id,
+        )
         return self._session.scalar(stmt)
 
     def list_approvals(
@@ -42,3 +68,122 @@ class ApprovalRepository(SQLAlchemyRepository[ApprovalRequest]):
             list_stmt = list_stmt.where(*filters)
         total = int(self._session.scalar(count_stmt) or 0)
         return list(self._session.scalars(list_stmt.limit(limit).offset(offset)).all()), total
+
+
+class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization]):
+    model = ApprovalAuthorization
+
+    def get_for_approval(self, approval_request_id: uuid.UUID) -> ApprovalAuthorization | None:
+        stmt = select(ApprovalAuthorization).where(
+            ApprovalAuthorization.approval_request_id == approval_request_id
+        )
+        return self._session.scalar(stmt)
+
+    def get_by_binding(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        account_id: uuid.UUID,
+        exchange_account_id: uuid.UUID | None,
+        revision_id: uuid.UUID,
+        plan_content_hash: str,
+        operation: PlanOperation,
+    ) -> ApprovalAuthorization | None:
+        stmt = select(ApprovalAuthorization).where(
+            ApprovalAuthorization.organization_id == organization_id,
+            ApprovalAuthorization.account_id == account_id,
+            ApprovalAuthorization.exchange_account_scope_key
+            == _exchange_account_scope_key(exchange_account_id),
+            ApprovalAuthorization.revision_id == revision_id,
+            ApprovalAuthorization.plan_content_hash == plan_content_hash,
+            ApprovalAuthorization.operation == operation,
+        )
+        return self._session.scalar(stmt)
+
+    def get_available_scoped(
+        self,
+        authorization_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        account_id: uuid.UUID,
+        at: datetime,
+    ) -> ApprovalAuthorization | None:
+        stmt = select(ApprovalAuthorization).where(
+            ApprovalAuthorization.id == authorization_id,
+            ApprovalAuthorization.organization_id == organization_id,
+            ApprovalAuthorization.user_id == user_id,
+            ApprovalAuthorization.account_id == account_id,
+            ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
+            ApprovalAuthorization.expires_at > at,
+        )
+        return self._session.scalar(stmt)
+
+    def expire_due(self, authorization_id: uuid.UUID, *, at: datetime) -> bool:
+        stmt = (
+            update(ApprovalAuthorization)
+            .where(
+                ApprovalAuthorization.id == authorization_id,
+                ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
+                ApprovalAuthorization.expires_at <= at,
+            )
+            .values(state=AuthorizationState.EXPIRED, updated_at=at)
+        )
+        return bool(self._session.execute(stmt).rowcount)
+
+    def revoke_available(self, authorization_id: uuid.UUID, *, at: datetime) -> bool:
+        stmt = (
+            update(ApprovalAuthorization)
+            .where(
+                ApprovalAuthorization.id == authorization_id,
+                ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
+            )
+            .values(state=AuthorizationState.REVOKED, updated_at=at)
+        )
+        return bool(self._session.execute(stmt).rowcount)
+
+    def revoke_for_superseded_plan(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        current_revision_id: uuid.UUID,
+        at: datetime,
+    ) -> int:
+        stmt = (
+            update(ApprovalAuthorization)
+            .where(
+                ApprovalAuthorization.organization_id == organization_id,
+                ApprovalAuthorization.plan_id == plan_id,
+                ApprovalAuthorization.revision_id != current_revision_id,
+                ApprovalAuthorization.state == AuthorizationState.AVAILABLE,
+            )
+            .values(state=AuthorizationState.REVOKED, updated_at=at)
+        )
+        return int(self._session.execute(stmt).rowcount or 0)
+
+
+class ApprovalAuthorizationConsumptionPort(Protocol):
+    """Future slice-7 transaction boundary; no consumption implementation exists here."""
+
+    def compare_and_set_available_to_consumed(
+        self,
+        *,
+        authorization_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        account_id: uuid.UUID,
+        execution_command_id: uuid.UUID,
+        consumed_at: datetime,
+    ) -> bool:
+        """Atomically transition AVAILABLE to CONSUMED in the execution transaction."""
+        ...
+
+
+def exchange_account_scope_key(exchange_account_id: uuid.UUID | None) -> str:
+    """Normalize nullable exchange-account identity for deterministic uniqueness."""
+    return _exchange_account_scope_key(exchange_account_id)
+
+
+def _exchange_account_scope_key(exchange_account_id: uuid.UUID | None) -> str:
+    return str(exchange_account_id) if exchange_account_id is not None else "NONE"
