@@ -214,11 +214,11 @@ flowchart TD
     CONF -->|yes| MUT["Execute idempotent service command"]
     APPA --> AUTHZ["Persist one-time ApprovalAuthorization"]
     AUTHZ --> RESP
-    EXEG --> RISK["Risk / kill switch / freshness / eligibility"]
+    EXEG --> ES["ExecutionService command boundary"]
+    ES --> RISK["Risk / kill switch / freshness / eligibility"]
     RISK -->|BLOCK| RESP
-    RISK -->|ALLOW| CONS["Atomically consume authorization"]
-    CONS --> ES["ExecutionService only"]
-    ES --> RESP
+    RISK -->|ALLOW| CONS["ExecutionService atomically consumes authorization"]
+    CONS --> RESP
     READ --> SYN["Optional model synthesis"]
     PLAN --> SYN
     JOP --> SYN
