@@ -198,9 +198,7 @@ def test_risk_block_creates_audit_event(db_session: Session) -> None:
         tool_registry=build_tools(settings),
     )
     ctx = _invoke_ctx(db_session, "obs-req-2")
-    AgentService(runtime=runtime).run(
-        "Plan trade BTC long [test_no_stop]", ctx, symbol="BTCUSDT"
-    )
+    AgentService(runtime=runtime).run("Plan trade BTC long [test_no_stop]", ctx, symbol="BTCUSDT")
     rows = list(db_session.scalars(select(AuditLog)).all())
     assert any(r.action is AuditEventType.RISK_BLOCK for r in rows)
 
