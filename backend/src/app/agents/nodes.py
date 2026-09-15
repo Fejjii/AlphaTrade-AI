@@ -13,15 +13,16 @@ from decimal import Decimal
 
 import structlog
 
+from app.agents.intent_classifier import classify_intent_decision, classify_message_class
 from app.agents.response_builder import build_trading_analysis, format_reply_from_analysis
 from app.agents.runtime import AgentRuntime
 from app.agents.state_utils import dump_partial, parse_state, patch_state
-from app.agents.strategy_intent import classify_strategy_workflow
+from app.core.operation_policy import set_operation_decision
 from app.guardrails.apply import build_guardrail_updates, merge_safety_verdict
 from app.guardrails.testing import FORCE_INVALID_OUTPUT
 from app.guardrails.types import GuardrailInput
 from app.providers.llm import LLMCompletionRequest, LLMMessage
-from app.schemas.agent import AgentState, Intent, MessageClass
+from app.schemas.agent import AgentState, Intent, OperationClass
 from app.schemas.common import (
     CostSource,
     DocumentSourceType,
@@ -136,41 +137,29 @@ def trading_policy_check(state: dict, runtime: AgentRuntime) -> dict:
 
 def message_classification(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
-    lowered = agent.message.lower()
-    if "approve" in lowered or "reject" in lowered:
-        msg_class = MessageClass.APPROVAL_RESPONSE
-    elif any(w in lowered for w in ("journal", "mistake", "lesson")):
-        msg_class = MessageClass.JOURNAL_ENTRY
-    elif any(w in lowered for w in ("analyze", "setup", "plan", "trade", "btc", "eth")):
-        msg_class = MessageClass.ANALYSIS_REQUEST
-    elif lowered.endswith("?"):
-        msg_class = MessageClass.QUESTION
-    else:
-        msg_class = MessageClass.UNKNOWN
+    msg_class = classify_message_class(agent.message)
     return patch_state(state, {"message_class": msg_class})
 
 
 def intent_classification(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
-    lowered = agent.message.lower()
-    workflow_intent = classify_strategy_workflow(agent.message)
-    if "[test_execute]" in lowered or ("execute" in lowered and "paper" in lowered):
-        intent = Intent.EXECUTE
-    elif workflow_intent is not None:
-        intent = workflow_intent
-    elif any(w in lowered for w in ("analyze", "plan", "setup", "pullback", "entry")):
-        intent = Intent.PLAN_TRADE
-    elif "watch" in lowered or "monitor" in lowered:
-        intent = Intent.MONITOR
-    elif "review" in lowered or "journal" in lowered:
-        intent = Intent.REVIEW
-    elif "rule" in lowered and "update" in lowered:
-        intent = Intent.UPDATE_RULE
-    elif agent.message_class is MessageClass.QUESTION:
-        intent = Intent.EXPLAIN
-    else:
-        intent = Intent.UNKNOWN
-    return patch_state(state, {"intent": intent})
+    decision = classify_intent_decision(
+        agent.message,
+        organization_id=agent.organization_id,
+        user_id=agent.user_id,
+    )
+    set_operation_decision(decision)
+    updates: dict = {
+        "intent": decision.intent,
+        "intent_decision": dump_partial(decision),
+        "requires_clarification": decision.requires_clarification,
+    }
+    if decision.requires_clarification and not agent.final_answer:
+        updates["final_answer"] = (
+            "I need a more specific instruction before any plan, approval, or execution. "
+            + ("; ".join(decision.ambiguity_reasons) if decision.ambiguity_reasons else "")
+        )
+    return patch_state(state, updates)
 
 
 _SOURCE_OF_TRUTH = "SOURCE OF TRUTH (deterministic):"
@@ -1331,7 +1320,10 @@ def strategy_module_execution(state: dict, runtime: AgentRuntime) -> dict:
 
 def trade_proposal_generation(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
-    if agent.intent not in {Intent.PLAN_TRADE, Intent.EXECUTE}:
+    decision = agent.intent_decision
+    if decision is not None and decision.operation_class is not OperationClass.PLAN:
+        return patch_state(state, {})
+    if agent.intent is not Intent.PLAN_TRADE:
         return patch_state(state, {})
     if agent.user_id is None or agent.organization_id is None:
         return patch_state(state, {})
@@ -1454,9 +1446,22 @@ def approval_decision(state: dict, runtime: AgentRuntime) -> dict:
 
     needs_approval = False
     reason = None
-    if agent.intent is Intent.EXECUTE:
+    if agent.intent is Intent.EXECUTE_PAPER_PLAN:
         needs_approval = True
-        reason = "Execution intent requires explicit human approval."
+        reason = "Paper execution requires an explicit consumable authorization."
+    if agent.intent in {Intent.APPROVE, Intent.REJECT, Intent.SKIP}:
+        # Approval transitions never execute and never infer execution.
+        return patch_state(
+            state,
+            {
+                "approval_required": agent.intent is Intent.APPROVE,
+                "approval_reason": (
+                    "Approve creates authorization only; it does not execute."
+                    if agent.intent is Intent.APPROVE
+                    else "Reject/skip cannot authorize or execute."
+                ),
+            },
+        )
     if agent.trade_proposal is not None:
         if agent.confidence is not None and agent.confidence < 0.55:
             needs_approval = True
@@ -1498,37 +1503,13 @@ def tool_execution_if_allowed(state: dict, runtime: AgentRuntime) -> dict:
     if agent.risk_result and agent.risk_result.action is RiskAction.BLOCK:
         return patch_state(state, {})
 
-    if agent.intent is not Intent.EXECUTE:
+    if agent.intent is not Intent.EXECUTE_PAPER_PLAN:
         return patch_state(state, {})
 
-    if agent.approval_required:
-        paper_audit = runtime.observability.emit_paper_execution_attempted(
-            agent,
-            success=False,
-            error="Approval required before paper execution.",
-        )
-        return patch_state(
-            state,
-            {
-                "tool_outputs": [
-                    *agent.tool_outputs,
-                    dump_partial(
-                        ToolOutput(
-                            tool_name="paper_execution",
-                            success=False,
-                            error="Approval required before paper execution.",
-                        )
-                    ),
-                ],
-                "audit_events": [*agent.audit_events, paper_audit],
-            },
-        )
-
-    # Paper-only path via tool registry (never real exchange).
     paper_args = {
         "mode": "paper",
         "symbol": agent.symbol or "BTCUSDT",
-        "note": "Scaffold paper execution stub",
+        "note": "Phase 1 fail-closed agent execution tool",
     }
     output = runtime.tool_registry.execute("paper_execution", paper_args)
     paper_audit = runtime.observability.emit_paper_execution_attempted(
@@ -1546,9 +1527,14 @@ def tool_execution_if_allowed(state: dict, runtime: AgentRuntime) -> dict:
 
 
 def memory_update(state: dict, runtime: AgentRuntime) -> dict:
-    """In-memory conversation note only (no DB writes in Slice 9)."""
+    """NON_DOMAIN_MEMORY only: in-process citation note, no domain persistence."""
     agent = parse_state(state)
     summary = f"intent={agent.intent.value}; class={agent.message_class.value}"
+    if agent.intent_decision is not None:
+        summary = (
+            f"intent={agent.intent_decision.intent.value}; "
+            f"op={agent.intent_decision.operation_class.value}"
+        )
     citation = dump_partial(
         Citation(
             chunk_id=uuid.uuid4(),

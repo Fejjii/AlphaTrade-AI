@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -105,16 +106,6 @@ def telegram_token_only_client() -> Iterator[tuple[TestClient, sessionmaker[Sess
     yield from _build_client(Settings(**settings))
 
 
-@pytest.fixture
-def real_trading_client() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
-    settings = {
-        **_BASE,
-        "execution_mode": "trade",
-        "enable_real_trading": True,
-    }
-    yield from _build_client(Settings(**settings))
-
-
 def _register_owner(
     client: TestClient,
     email: str = "owner@example.com",
@@ -195,16 +186,15 @@ def test_test_telegram_missing_confirmation_blocked(
     assert body["error_code"] == "confirmation_required"
 
 
-def test_test_telegram_real_trading_blocked(
-    real_trading_client: tuple[TestClient, sessionmaker[Session]],
-) -> None:
-    test_client, _ = real_trading_client
-    headers, _, _ = _register_owner(test_client, email="real-trading@example.com")
-    response = _post_test(test_client, headers)
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] == "blocked"
-    assert body["error_code"] == "real_trading_enabled"
+def test_test_telegram_real_trading_blocked() -> None:
+    with pytest.raises(ValidationError, match="permanently rejected"):
+        Settings(
+            **{
+                **_BASE,
+                "execution_mode": "trade",
+                "enable_real_trading": True,
+            }
+        )
 
 
 def test_test_telegram_missing_token_skipped(
@@ -346,8 +336,8 @@ def test_routing_summary_records_last_test(
 def test_manual_test_available_helper() -> None:
     settings = Settings(**_BASE)
     assert manual_test_available(settings, paper_only=True) is True
-    unsafe = Settings(**{**_BASE, "execution_mode": "trade", "enable_real_trading": True})
-    assert manual_test_available(unsafe, paper_only=True) is False
+    with pytest.raises(ValidationError, match="permanently rejected"):
+        Settings(**{**_BASE, "execution_mode": "trade", "enable_real_trading": True})
 
 
 def test_paper_only_false_blocked(

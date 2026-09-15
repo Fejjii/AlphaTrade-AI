@@ -503,42 +503,24 @@ def test_no_execution_service_called(slice74_db: sessionmaker[Session]) -> None:
 
 
 def test_real_trading_enabled_blocks_scan(slice74_db: sessionmaker[Session]) -> None:
-    client = _client(
-        slice74_db,
-        settings_overrides={
-            "execution_mode": ExecutionMode.TRADE.value,
-            "enable_real_trading": True,
-        },
-    )
-    resp = client.post(
-        "/market-watcher/scan",
-        json={
-            "confirm": SCAN_CONFIRM_PHRASE,
-            "symbols": ["BTCUSDT"],
-            "timeframes": ["15m"],
-            "dry_run": True,
-        },
-    )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "blocked"
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="ENABLE_REAL_TRADING=true"):
+        _client(
+            slice74_db,
+            settings_overrides={
+                "execution_mode": ExecutionMode.TRADE.value,
+                "enable_real_trading": True,
+            },
+        )
 
 
 def test_non_paper_execution_blocks_scan(slice74_db: sessionmaker[Session]) -> None:
-    client = _client(
-        slice74_db,
-        settings_overrides={"execution_mode": ExecutionMode.READ_ONLY.value},
-    )
-    resp = client.post(
-        "/market-watcher/scan",
-        json={
-            "confirm": SCAN_CONFIRM_PHRASE,
-            "symbols": ["BTCUSDT"],
-            "timeframes": ["15m"],
-            "dry_run": True,
-        },
-    )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "blocked"
+    with pytest.raises(ValueError, match="execution-capable process"):
+        _client(
+            slice74_db,
+            settings_overrides={"execution_mode": ExecutionMode.READ_ONLY.value},
+        )
 
 
 def test_detect_candidates_includes_setup_detectors_when_fired() -> None:

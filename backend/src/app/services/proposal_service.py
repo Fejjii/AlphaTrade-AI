@@ -8,9 +8,10 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
+from app.core.operation_policy import PersistenceKind, assert_write_allowed
 from app.db.models import TradeProposal as TradeProposalModel
 from app.repositories.proposals import ProposalRepository
-from app.schemas.agent import AgentState, Intent
+from app.schemas.agent import AgentState, Intent, OperationClass
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
@@ -74,11 +75,15 @@ class ProposalService:
         return proposal_to_schema(row)
 
     def create_from_agent(self, agent: AgentState) -> TradeProposal | None:
-        """Persist in-memory agent proposal when trading-related."""
+        """Persist in-memory agent proposal when planning, never for READ_ONLY/analysis."""
         if agent.trade_proposal is None:
             return None
-        if agent.intent not in {Intent.PLAN_TRADE, Intent.EXECUTE}:
+        decision = agent.intent_decision
+        if decision is not None and decision.operation_class is not OperationClass.PLAN:
             return None
+        if agent.intent is not Intent.PLAN_TRADE:
+            return None
+        assert_write_allowed(PersistenceKind.PROPOSAL, decision)
         if agent.safety_verdict is SafetyVerdict.BLOCK:
             return None
         proposal = agent.trade_proposal

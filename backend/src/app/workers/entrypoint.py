@@ -39,6 +39,9 @@ def _build_cycle_notifier(settings: Settings):
 
 def build_driver(settings: Settings) -> WorkerLoopDriver:
     """Wire the worker service + loop driver from settings."""
+    from app.core.paper_safety import assert_execution_capable_composition_root
+
+    assert_execution_capable_composition_root(settings)
     service = WorkerService(
         get_session_factory(),
         build_worker_lock(settings),

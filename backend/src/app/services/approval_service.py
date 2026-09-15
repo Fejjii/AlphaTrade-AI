@@ -41,6 +41,27 @@ class ApprovalService:
         confidence: float,
         approval_reason: str | None = None,
     ) -> ApprovalRequest:
+        from app.core.errors import PersistencePolicyError, TradingPolicyError
+        from app.core.operation_policy import (
+            PersistenceKind,
+            assert_write_allowed,
+            get_operation_decision,
+        )
+        from app.schemas.agent import OperationClass, RequestedAction
+
+        decision = get_operation_decision()
+        if decision is not None:
+            if decision.requested_action in {RequestedAction.REJECT, RequestedAction.SKIP}:
+                raise TradingPolicyError(
+                    "REJECT/SKIP cannot create or issue an authorization.",
+                    details={"requested_action": decision.requested_action.value},
+                )
+            if decision.operation_class is OperationClass.READ_ONLY:
+                raise PersistencePolicyError(
+                    "READ_ONLY forbids approval persistence.",
+                    details={"kind": PersistenceKind.APPROVAL.value},
+                )
+            assert_write_allowed(PersistenceKind.APPROVAL, decision)
         existing = self._repo.get_by_proposal(proposal_id)
         if existing is not None:
             return _to_schema(existing)

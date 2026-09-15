@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -28,7 +29,6 @@ from app.schemas.common import (
 )
 from app.security.rate_limit import reset_rate_limiter
 from app.services.paper_alert_service import PaperAlertService
-from app.services.telegram_automatic_delivery_service import TelegramAutomaticDeliveryService
 
 _BASE = {
     "environment": "local",
@@ -110,18 +110,6 @@ def auto_ready_client() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
         "telegram_chat_id": "999888777",
         "alert_delivery_enabled": True,
         "telegram_alerts_enabled": True,
-    }
-    yield from _build_client(Settings(**settings))
-
-
-@pytest.fixture
-def real_trading_client() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
-    settings = {
-        **_BASE,
-        "execution_mode": "trade",
-        "enable_real_trading": True,
-        "telegram_bot_token": "bot123456789:TESTTOKEN_secret_value",
-        "telegram_chat_id": "999888777",
     }
     yield from _build_client(Settings(**settings))
 
@@ -320,32 +308,17 @@ def test_missing_telegram_config_blocker(
     assert any("bot token" in b.lower() for b in blockers)
 
 
-def test_real_trading_enabled_blocker(
-    real_trading_client: tuple[TestClient, sessionmaker[Session]],
-) -> None:
-    test_client, factory = real_trading_client
-    _, org_id, user_id = _register_owner(test_client, email="blocker-real@example.com")
-    _create_alert(factory, org_id=org_id, user_id=user_id)
-    settings = Settings(
-        **{
-            **_BASE,
-            "execution_mode": "trade",
-            "enable_real_trading": True,
-            "telegram_bot_token": "bot123456789:TESTTOKEN_secret_value",
-            "telegram_chat_id": "999888777",
-        }
-    )
-    with factory() as session:
-        readiness = TelegramAutomaticDeliveryService(session, settings).readiness(
-            organization_id=org_id,
-            user_id=user_id,
-            paper_only=True,
-            telegram_configured=True,
-            telegram_chat_configured=True,
-            external_delivery_enabled=True,
+def test_real_trading_enabled_blocker() -> None:
+    with pytest.raises(ValidationError, match="permanently rejected"):
+        Settings(
+            **{
+                **_BASE,
+                "execution_mode": "trade",
+                "enable_real_trading": True,
+                "telegram_bot_token": "bot123456789:TESTTOKEN_secret_value",
+                "telegram_chat_id": "999888777",
+            }
         )
-    assert readiness.automatic_telegram_delivery_ready is False
-    assert any("Real trading" in b for b in readiness.automatic_delivery_blockers)
 
 
 def test_preview_no_secrets_in_response(

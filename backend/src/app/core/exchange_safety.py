@@ -76,6 +76,14 @@ def validate_exchange_mode_settings(settings: Settings) -> None:
             "execution is not implemented and must never be enabled."
         )
 
+    # Latent live switch: production hosts are unreachable in every mode.
+    for attr in ("blofin_demo_rest_base_url", "blofin_demo_ws_url"):
+        url = getattr(settings, attr).strip()
+        if url and _host_of(url) in BLOFIN_PRODUCTION_HOSTS:
+            raise ValueError(
+                f"exchange safety check failed: {attr} must not point at a BloFin production host"
+            )
+
     if mode is not ExchangeMode.PAPER_EXCHANGE_DEMO:
         return
 
