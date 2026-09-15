@@ -13,6 +13,7 @@ from app.core.errors import NotFoundError, ValidationAppError
 from app.db.models import ApprovalAuthorization as ApprovalAuthorizationModel
 from app.db.models import ApprovalRequest as ApprovalModel
 from app.db.models import TradePlanRevision as TradePlanRevisionModel
+from app.db.models import TradeProposal as TradeProposalModel
 from app.repositories.approvals import (
     ApprovalAuthorizationRepository,
     ApprovalRepository,
@@ -292,6 +293,7 @@ class ApprovalService:
                 "action": decision.action.value,
                 "proposal_id": str(row.proposal_id),
                 "revision_id": str(row.plan_revision_id) if row.plan_revision_id else None,
+                "modified_fields": decision.modified_fields or {},
                 "authorization_issued": decision.action is ApprovalAction.APPROVE
                 and row.plan_revision_id is not None,
             },
@@ -355,6 +357,7 @@ class ApprovalService:
         existing = self._authorizations.get_for_approval(approval.id)
         if existing is not None:
             self._validate_existing_authorization(existing, revision)
+            self._mark_plan_approval_approved(approval, proposal)
             return self._authorization_to_schema(existing)
         existing = self._authorizations.get_by_binding(
             organization_id=organization_id,
@@ -366,12 +369,14 @@ class ApprovalService:
         )
         if existing is not None:
             self._validate_existing_authorization(existing, revision)
+            self._mark_plan_approval_approved(approval, proposal)
             return self._authorization_to_schema(existing)
 
         now = self._aware(self._clock())
         expires_at = self._aware(approval.authorization_expires_at)
         if expires_at <= now or self._aware(revision.valid_until) <= now:
             raise ValidationAppError("Approval authorization has expired.")
+        self._mark_plan_approval_approved(approval, proposal)
         authorization_id = uuid.uuid4()
         content = ApprovalAuthorizationContent(
             authorization_id=authorization_id,
@@ -502,6 +507,20 @@ class ApprovalService:
             raise ValidationAppError("Approval organization does not match the principal.")
         if row.user_id != user_id:
             raise ValidationAppError("Approval user does not match the principal.")
+
+    def _mark_plan_approval_approved(
+        self,
+        approval: ApprovalModel,
+        proposal: TradeProposalModel,
+    ) -> None:
+        if approval.status is ApprovalStatus.APPROVED:
+            return
+        approval.status = ApprovalStatus.APPROVED
+        approval.proposed_action = ApprovalAction.APPROVE
+        approval.decided_at = self._aware(self._clock())
+        self._repo.add(approval)
+        proposal.status = ProposalStatus.APPROVED
+        self._proposals.add(proposal)
 
     @staticmethod
     def _validate_assertion(

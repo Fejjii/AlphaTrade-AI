@@ -252,7 +252,7 @@ class ProposalService:
             valid_until=semantic.valid_until,
             semantic_payload=semantic.model_dump(mode="json"),
             content_hash=canonical_sha256(semantic),
-            presentation_metadata=data.presentation_metadata,
+            presentation_metadata=data.presentation_metadata.model_dump(mode="json"),
         )
         self._revisions.add(row)
         proposal.latest_plan_revision_id = row.id

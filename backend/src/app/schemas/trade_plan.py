@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -119,6 +119,14 @@ class AuthorizationDecision(StrEnum):
     APPROVE = "APPROVE"
     REJECT = "REJECT"
     SKIP = "SKIP"
+
+
+class PlanPresentationMetadata(CanonicalModel):
+    """Non-semantic display data accepted at the plan boundary."""
+
+    display_title: str | None = Field(default=None, min_length=1, max_length=200)
+    channel: AuthorizationChannel | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class SemanticAmount(CanonicalModel):
@@ -325,9 +333,11 @@ class TradePlanExecutionTerms(CanonicalModel):
 class TradePlanRevisionCreate(TradePlanExecutionTerms):
     """Complete request for a new immutable revision under an existing proposal."""
 
-    presentation_metadata: dict[str, Any] = Field(default_factory=dict)
+    presentation_metadata: PlanPresentationMetadata = Field(
+        default_factory=PlanPresentationMetadata
+    )
 
-    def semantic_terms(self) -> dict[str, Any]:
+    def semantic_terms(self) -> dict[str, object]:
         """Return only hash-bound trading semantics."""
         return self.model_dump(mode="python", exclude={"presentation_metadata"})
 
@@ -344,4 +354,6 @@ class TradePlanRevision(TradePlanRevisionSemantic):
 
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     created_at: datetime
-    presentation_metadata: dict[str, Any] = Field(default_factory=dict)
+    presentation_metadata: PlanPresentationMetadata = Field(
+        default_factory=PlanPresentationMetadata
+    )

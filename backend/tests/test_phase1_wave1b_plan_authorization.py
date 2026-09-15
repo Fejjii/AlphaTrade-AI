@@ -66,6 +66,7 @@ from app.schemas.trade_plan import (
     EntrySide,
     ExecutionMode,
     MarginMode,
+    PlanPresentationMetadata,
     SemanticAmount,
     TimeInForce,
     TradePlanRevision,
@@ -374,7 +375,7 @@ def _plan_request(ids: dict[str, Any], **updates: Any) -> TradePlanRevisionCreat
             }
         ],
         "execution_policy_version": "paper-entry-policy-v1",
-        "presentation_metadata": {"channel": "web", "card_title": "BTC setup"},
+        "presentation_metadata": {"channel": "WEB", "display_title": "BTC setup"},
     }
     payload.update(updates)
     return TradePlanRevisionCreate.model_validate(payload)
@@ -450,11 +451,14 @@ def test_presentation_metadata_is_excluded_and_decimal_encoding_is_canonical(
     session: Session,
 ) -> None:
     ids = _seed_support(session)
-    first = _plan_request(ids, presentation_metadata={"request_id": "one"})
+    first = _plan_request(
+        ids,
+        presentation_metadata={"channel": "WEB", "display_title": "First title"},
+    )
     second = _plan_request(
         ids,
         quantity={"value": "2.0", "unit": "CONTRACTS"},
-        presentation_metadata={"request_id": "two", "ui": "telegram"},
+        presentation_metadata={"channel": "TELEGRAM", "display_title": "Second title"},
     )
     first_semantic = _semantic(first, ids)
     second_semantic = _semantic(second, ids)
@@ -809,7 +813,14 @@ def test_canonical_payload_ignores_transport_metadata_and_round_trips(session: S
     request_id = "request-a"
     idempotency_key = "opaque-idempotency-a"
     second = CanonicalExecutionPayloadSerializerV1.derive_from_plan(
-        plan.model_copy(update={"presentation_metadata": {"request_id": request_id}}),
+        plan.model_copy(
+            update={
+                "presentation_metadata": PlanPresentationMetadata(
+                    channel=AuthorizationChannel.TELEGRAM,
+                    display_title=request_id,
+                )
+            }
+        ),
         authorization,
         at=NOW + timedelta(minutes=2),
     )
