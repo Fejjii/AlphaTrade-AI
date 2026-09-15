@@ -91,7 +91,8 @@ flowchart TB
     EXEC -->|"invoke final deterministic gates"| RISK
     RISK -->|BLOCK| STOP["No submit; return blocked receipt"]
     RISK -->|ALLOW| SUBMIT["ExecutionService consume authorization + submit"]
-    SUBMIT --> REC --> JOUR
+    SUBMIT --> RECEIPT["Authoritative ExecutionReceipt"]
+    RECEIPT --> REC --> JOUR
     CAND --> MR
     CONV --> MR
     JOUR --> MR
