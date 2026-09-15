@@ -15,7 +15,7 @@ from app.schemas.proposal import (
     TradeProposal,
     TradeProposalCreate,
 )
-from app.schemas.trade_plan import TradePlanRevision, TradePlanRevisionCreate
+from app.schemas.trade_plan import TradePlanRevision
 from app.schemas.workflow import ProposalWorkflowView
 from app.security.rbac import TraderDep
 from app.security.tenant import ensure_same_organization
@@ -114,28 +114,6 @@ async def update_loss_acceptance(
     proposal = proposal_service.get(proposal_id)
     ensure_same_organization(proposal.organization_id, tenant)
     result = proposal_service.update_loss_acceptance(proposal_id, body)
-    session.commit()
-    return result
-
-
-@router.post(
-    "/{proposal_id}/revisions",
-    response_model=TradePlanRevision,
-    summary="Create a complete immutable executable plan revision",
-)
-async def create_trade_plan_revision(
-    proposal_id: uuid.UUID,
-    body: TradePlanRevisionCreate,
-    tenant: TraderDep,
-    proposal_service: ProposalServiceDep,
-    session: SessionDep,
-) -> TradePlanRevision:
-    result = proposal_service.create_revision(
-        proposal_id,
-        body,
-        organization_id=tenant.organization_id,
-        user_id=tenant.user_id,
-    )
     session.commit()
     return result
 

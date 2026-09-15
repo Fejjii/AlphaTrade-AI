@@ -100,6 +100,7 @@ def upgrade() -> None:
         sa.Column("valid_from", sa.DateTime(timezone=True), nullable=False),
         sa.Column("valid_until", sa.DateTime(timezone=True), nullable=False),
         sa.Column("semantic_payload", sa.JSON(), nullable=False),
+        sa.Column("correlation_id", sa.Uuid(), nullable=False),
         sa.Column("content_hash", sa.String(length=64), nullable=False),
         sa.Column("presentation_metadata", sa.JSON(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -268,6 +269,7 @@ def upgrade() -> None:
         ),
         sa.Column("actor_type", sa.String(length=32), nullable=False),
         sa.Column("actor_id", sa.Uuid(), nullable=False),
+        sa.Column("correlation_id", sa.Uuid(), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("consumed_by_execution_command_id", sa.Uuid(), nullable=True),
         sa.Column("authorization_content_hash", sa.String(length=64), nullable=False),
@@ -437,9 +439,7 @@ def _create_immutability_triggers() -> None:
 def _drop_immutability_triggers() -> None:
     dialect = op.get_bind().dialect.name
     if dialect == "postgresql":
-        op.execute(
-            "DROP TRIGGER IF EXISTS trade_plan_revision_no_mutation ON trade_plan_revisions"
-        )
+        op.execute("DROP TRIGGER IF EXISTS trade_plan_revision_no_mutation ON trade_plan_revisions")
         op.execute("DROP FUNCTION IF EXISTS reject_trade_plan_revision_mutation()")
     elif dialect == "sqlite":
         op.execute("DROP TRIGGER IF EXISTS trade_plan_revision_no_update")

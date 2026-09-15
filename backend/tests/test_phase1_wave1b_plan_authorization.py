@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -37,10 +38,11 @@ from app.db.models import (
 from app.db.models import (
     TradePlanRevision as TradePlanRevisionModel,
 )
+from app.db.models import TradeProposal as TradeProposalModel
 from app.schemas.approval import (
     ApprovalAuthorization,
     ApprovalAuthorizationAssertion,
-    ApprovalAuthorizationContent,
+    ApprovalAuthorizationIssuance,
     ApprovalDecisionRequest,
 )
 from app.schemas.canonical_execution import (
@@ -74,12 +76,15 @@ from app.schemas.trade_plan import (
     TradePlanRevisionSemantic,
 )
 from app.services.approval_service import ApprovalService
+from app.services.approval_authorization_hash import verify_authorization_issuance_hash
 from app.services.audit_service import AuditService
 from app.services.canonical_execution_payload import CanonicalExecutionPayloadSerializerV1
 from app.services.canonical_serialization import canonical_json_bytes, canonical_sha256
+from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 from app.services.proposal_service import ProposalService
 
 NOW = datetime(2026, 9, 15, 14, 0, tzinfo=UTC)
+CORRELATION_ID = uuid.UUID("09000000-0000-0000-0000-000000000001")
 
 
 @pytest.fixture
@@ -254,6 +259,7 @@ def _seed_support(session: Session) -> dict[str, Any]:
         "exchange_account": exchange_account,
         "other_exchange_account": other_exchange_account,
         "proposal_id": proposal.id,
+        "correlation_id": CORRELATION_ID,
     }
 
 
@@ -401,12 +407,40 @@ def _persist_plan(
     ids: dict[str, Any],
     request: TradePlanRevisionCreate | None = None,
 ) -> TradePlanRevision:
-    return ProposalService(session, AuditService(session)).create_revision(
-        ids["proposal_id"],
-        request or _plan_request(ids),
-        organization_id=ids["organization"].id,
-        user_id=ids["user"].id,
+    """Persist a trusted test fixture without representing a production authority."""
+    data = request or _plan_request(ids)
+    semantic = _semantic(data, ids, revision_id=uuid.uuid4())
+    row = TradePlanRevisionModel(
+        id=semantic.revision_id,
+        plan_id=semantic.plan_id,
+        organization_id=semantic.organization_id,
+        user_id=semantic.user_id,
+        account_id=semantic.account_id,
+        exchange_account_id=semantic.exchange_account_id,
+        schema_version=semantic.schema_version,
+        operation=semantic.operation,
+        strategy_version_id=semantic.strategy_version_id,
+        setup_definition_id=semantic.setup_definition_id,
+        candidate_id=semantic.candidate_id,
+        expected_account_mode=semantic.expected_account_mode,
+        permission_attestation_id=semantic.permission_attestation_id,
+        permission_attestation_version=semantic.permission_attestation_version,
+        execution_venue=semantic.execution_venue,
+        execution_instrument=semantic.execution_instrument,
+        execution_policy_version=semantic.execution_policy_version,
+        valid_from=semantic.valid_from,
+        valid_until=semantic.valid_until,
+        semantic_payload=semantic.model_dump(mode="json"),
+        correlation_id=ids["correlation_id"],
+        content_hash=canonical_sha256(semantic),
+        presentation_metadata=data.presentation_metadata.model_dump(mode="json"),
     )
+    proposal = session.get(TradeProposalModel, ids["proposal_id"])
+    assert proposal is not None
+    session.add(row)
+    proposal.latest_plan_revision_id = row.id
+    session.flush()
+    return trade_plan_revision_to_schema(row)
 
 
 def _approve_plan(
@@ -497,15 +531,37 @@ def test_incomplete_or_binary_float_plan_input_cannot_be_executable(session: Ses
         _plan_request(ids, order_type="MARKET", market_marker=False, limit_price=None)
 
 
+def test_executable_plan_construction_fails_closed_without_authoritative_inputs(
+    session: Session,
+) -> None:
+    ids = _seed_support(session)
+    caller_supplied = _plan_request(
+        ids,
+        permission_attestation_id=uuid.UUID("ffffffff-0000-0000-0000-000000000001"),
+        permission_attestation_version="caller-invented",
+    )
+    with pytest.raises(
+        ValidationAppError,
+        match="ANALYSIS_ONLY_CANNOT_CREATE_EXECUTABLE_PLAN",
+    ):
+        ProposalService(session, AuditService(session)).create_revision(
+            ids["proposal_id"],
+            caller_supplied,
+            organization_id=ids["organization"].id,
+            user_id=ids["user"].id,
+        )
+    assert session.query(TradePlanRevisionModel).count() == 0
+
+
 def test_plan_revision_is_tenant_account_scoped_and_immutable(session: Session) -> None:
     ids = _seed_support(session)
-    with pytest.raises(ValidationAppError, match="Execution account"):
+    with pytest.raises(IntegrityError), session.begin_nested():
         _persist_plan(
             session,
             ids,
             _plan_request(ids, account_id=ids["wrong_user_account"].id),
         )
-    with pytest.raises(ValidationAppError, match="Exchange account"):
+    with pytest.raises(IntegrityError), session.begin_nested():
         _persist_plan(
             session,
             ids,
@@ -553,6 +609,8 @@ def test_approve_issues_only_one_authorization_and_has_no_order_side_effect(
     assert first.authorization is not None
     assert second.authorization is not None
     assert first.authorization.authorization_id == second.authorization.authorization_id
+    assert first.authorization.correlation_id == plan.correlation_id
+    assert verify_authorization_issuance_hash(first.authorization)
     assert session.query(ApprovalAuthorizationModel).count() == 1
     assert session.query(Order).count() == before_orders == 0
 
@@ -688,6 +746,8 @@ def test_expired_and_revoked_authorizations_are_unavailable(session: Session) ->
         user_id=plan.user_id,
     )
     assert revoked.state is AuthorizationState.REVOKED
+    assert revoked.authorization_content_hash == authorization.authorization_content_hash
+    assert verify_authorization_issuance_hash(revoked)
     assert not issuing_service.is_authorization_available(
         authorization.authorization_id,
         organization_id=plan.organization_id,
@@ -712,12 +772,29 @@ def test_expired_and_revoked_authorizations_are_unavailable(session: Session) ->
         user_id=second_plan.user_id,
     )
     assert expired.state is AuthorizationState.EXPIRED
+    assert expired.authorization_content_hash == expiring_authorization.authorization_content_hash
+    assert verify_authorization_issuance_hash(expired)
     assert not expired_service.is_authorization_available(
         expiring_authorization.authorization_id,
         organization_id=second_plan.organization_id,
         user_id=second_plan.user_id,
         account_id=second_plan.account_id,
     )
+
+
+def test_future_consumed_state_does_not_change_issuance_hash(session: Session) -> None:
+    ids = _seed_support(session)
+    plan = _persist_plan(session, ids)
+    _, authorization = _approve_plan(session, ids, plan)
+    consumed = authorization.model_copy(
+        update={
+            "state": AuthorizationState.CONSUMED,
+            "consumed_at": NOW + timedelta(minutes=2),
+            "consumed_by_execution_command_id": uuid.uuid4(),
+        }
+    )
+    assert consumed.authorization_content_hash == authorization.authorization_content_hash
+    assert verify_authorization_issuance_hash(consumed)
 
 
 def test_two_accounts_for_same_user_cannot_share_authorization(session: Session) -> None:
@@ -786,14 +863,15 @@ def _bind_authorization(
             "verified_account_mode": plan.expected_account_mode,
             "permission_attestation_id": plan.permission_attestation_id,
             "permission_attestation_version": plan.permission_attestation_version,
+            "correlation_id": plan.correlation_id,
         }
     )
     content_values = {
-        name: getattr(changed, name) for name in ApprovalAuthorizationContent.model_fields
+        name: getattr(changed, name) for name in ApprovalAuthorizationIssuance.model_fields
     }
     content_values["created_at"] = _aware(content_values["created_at"])
     content_values["expires_at"] = _aware(content_values["expires_at"])
-    content = ApprovalAuthorizationContent.model_validate(content_values)
+    content = ApprovalAuthorizationIssuance.model_validate(content_values)
     return changed.model_copy(update={"authorization_content_hash": canonical_sha256(content)})
 
 
@@ -829,6 +907,34 @@ def test_canonical_payload_ignores_transport_metadata_and_round_trips(session: S
     assert first.canonical_bytes == second.canonical_bytes
     assert first.sha256 == second.sha256
     assert CanonicalExecutionPayloadSerializerV1.deserialize(first.canonical_bytes) == first.payload
+
+
+def test_correlation_lineage_is_bound_to_issuance_but_excluded_from_execution_identity(
+    session: Session,
+) -> None:
+    ids = _seed_support(session)
+    plan = _persist_plan(session, ids)
+    _, authorization = _approve_plan(session, ids, plan)
+    baseline = CanonicalExecutionPayloadSerializerV1.derive_from_plan(
+        plan,
+        authorization,
+        at=NOW + timedelta(minutes=2),
+    )
+
+    changed_plan = plan.model_copy(update={"correlation_id": uuid.uuid4()})
+    changed_authorization = _bind_authorization(authorization, changed_plan)
+    changed = CanonicalExecutionPayloadSerializerV1.derive_from_plan(
+        changed_plan,
+        changed_authorization,
+        at=NOW + timedelta(minutes=2),
+    )
+
+    assert changed_plan.content_hash == plan.content_hash
+    assert changed.canonical_bytes == baseline.canonical_bytes
+    assert changed.sha256 == baseline.sha256
+    assert (
+        changed_authorization.authorization_content_hash != authorization.authorization_content_hash
+    )
 
 
 @pytest.mark.parametrize(

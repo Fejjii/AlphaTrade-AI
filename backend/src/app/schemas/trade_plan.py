@@ -331,7 +331,7 @@ class TradePlanExecutionTerms(CanonicalModel):
 
 
 class TradePlanRevisionCreate(TradePlanExecutionTerms):
-    """Complete request for a new immutable revision under an existing proposal."""
+    """Untrusted candidate terms that cannot directly create an executable revision."""
 
     presentation_metadata: PlanPresentationMetadata = Field(
         default_factory=PlanPresentationMetadata
@@ -352,6 +352,7 @@ class TradePlanRevisionSemantic(TradePlanExecutionTerms):
 class TradePlanRevision(TradePlanRevisionSemantic):
     """Persisted immutable executable revision."""
 
+    correlation_id: UUID
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     created_at: datetime
     presentation_metadata: PlanPresentationMetadata = Field(

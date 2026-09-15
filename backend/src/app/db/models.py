@@ -1355,6 +1355,7 @@ class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     semantic_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    correlation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     presentation_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
@@ -1482,6 +1483,7 @@ class ApprovalAuthorization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
     actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    correlation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consumed_by_execution_command_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     authorization_content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

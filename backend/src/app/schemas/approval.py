@@ -42,8 +42,8 @@ class ApprovalAuthorizationAssertion(StrictModel):
     plan_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class ApprovalAuthorizationContent(CanonicalModel):
-    """Immutable issuance content; lifecycle updates never rewrite this hash preimage."""
+class ApprovalAuthorizationIssuance(CanonicalModel):
+    """Immutable issuance preimage; lifecycle fields are intentionally excluded."""
 
     authorization_id: UUID
     approval_request_id: UUID
@@ -62,16 +62,17 @@ class ApprovalAuthorizationContent(CanonicalModel):
     permission_attestation_id: UUID
     permission_attestation_version: str
     expires_at: datetime
-    state: AuthorizationState
     channel: AuthorizationChannel
     actor_type: str
     actor_id: UUID
+    correlation_id: UUID
     created_at: datetime
 
 
-class ApprovalAuthorization(ApprovalAuthorizationContent):
+class ApprovalAuthorization(ApprovalAuthorizationIssuance):
     """One exact paper authorization issued for an immutable plan revision."""
 
+    state: AuthorizationState
     consumed_at: datetime | None
     consumed_by_execution_command_id: UUID | None
     authorization_content_hash: str

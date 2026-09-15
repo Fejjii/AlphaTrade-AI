@@ -24,7 +24,7 @@ from app.repositories.trade_plans import TradePlanRevisionRepository
 from app.schemas.approval import (
     ApprovalAuthorization,
     ApprovalAuthorizationAssertion,
-    ApprovalAuthorizationContent,
+    ApprovalAuthorizationIssuance,
     ApprovalDecisionRequest,
     ApprovalRequest,
 )
@@ -46,6 +46,7 @@ from app.schemas.trade_plan import (
     TradePlanRevisionSemantic,
 )
 from app.services.audit_service import AuditService
+from app.services.approval_authorization_hash import verify_authorization_issuance_hash
 from app.services.canonical_serialization import canonical_sha256
 
 _DEFAULT_AUTHORIZATION_TTL = timedelta(minutes=15)
@@ -171,6 +172,7 @@ class ApprovalService:
                 "proposal_id": str(revision.plan_id),
                 "revision_id": str(revision.id),
                 "plan_content_hash": revision.content_hash,
+                "correlation_id": str(revision.correlation_id),
             },
         )
         return self._to_schema(row)
@@ -378,7 +380,7 @@ class ApprovalService:
             raise ValidationAppError("Approval authorization has expired.")
         self._mark_plan_approval_approved(approval, proposal)
         authorization_id = uuid.uuid4()
-        content = ApprovalAuthorizationContent(
+        issuance = ApprovalAuthorizationIssuance(
             authorization_id=authorization_id,
             approval_request_id=approval.id,
             organization_id=organization_id,
@@ -396,10 +398,10 @@ class ApprovalService:
             permission_attestation_id=revision.permission_attestation_id,
             permission_attestation_version=revision.permission_attestation_version,
             expires_at=expires_at,
-            state=AuthorizationState.AVAILABLE,
             channel=channel,
             actor_type="USER",
             actor_id=user_id,
+            correlation_id=revision.correlation_id,
             created_at=now,
         )
         row = ApprovalAuthorizationModel(
@@ -410,8 +412,8 @@ class ApprovalService:
             account_id=revision.account_id,
             exchange_account_id=revision.exchange_account_id,
             exchange_account_scope_key=exchange_account_scope_key(revision.exchange_account_id),
-            operation=content.operation,
-            execution_mode=content.execution_mode,
+            operation=issuance.operation,
+            execution_mode=issuance.execution_mode,
             plan_id=revision.plan_id,
             revision_id=revision.id,
             plan_content_hash=revision.content_hash,
@@ -423,9 +425,10 @@ class ApprovalService:
             expires_at=expires_at,
             state=AuthorizationState.AVAILABLE,
             channel=channel,
-            actor_type=content.actor_type,
+            actor_type=issuance.actor_type,
             actor_id=user_id,
-            authorization_content_hash=canonical_sha256(content),
+            correlation_id=revision.correlation_id,
+            authorization_content_hash=canonical_sha256(issuance),
             created_at=now,
             updated_at=now,
         )
@@ -564,6 +567,7 @@ class ApprovalService:
             revision.id,
             revision.content_hash,
             revision.operation,
+            revision.correlation_id,
         )
         actual = (
             authorization.organization_id,
@@ -574,9 +578,14 @@ class ApprovalService:
             authorization.revision_id,
             authorization.plan_content_hash,
             authorization.operation,
+            authorization.correlation_id,
         )
         if actual != expected:
             raise ValidationAppError("Existing authorization binding is inconsistent.")
+        if not verify_authorization_issuance_hash(
+            ApprovalService._authorization_to_schema(authorization)
+        ):
+            raise ValidationAppError("Existing authorization issuance hash is invalid.")
 
     def _to_schema(self, row: ApprovalModel) -> ApprovalRequest:
         authorization = self._authorizations.get_for_approval(row.id)
@@ -625,6 +634,7 @@ class ApprovalService:
             channel=row.channel,
             actor_type=row.actor_type,
             actor_id=row.actor_id,
+            correlation_id=row.correlation_id,
             created_at=row.created_at,
             consumed_at=row.consumed_at,
             consumed_by_execution_command_id=row.consumed_by_execution_command_id,

@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.core.errors import ValidationAppError
-from app.schemas.approval import ApprovalAuthorization, ApprovalAuthorizationContent
+from app.schemas.approval import ApprovalAuthorization
 from app.schemas.canonical_execution import (
     CanonicalAccountBindingV1,
     CanonicalExecutionPayloadV1,
@@ -28,6 +28,7 @@ from app.services.canonical_serialization import (
     canonical_json_bytes,
     canonical_sha256,
 )
+from app.services.approval_authorization_hash import verify_authorization_issuance_hash
 
 
 class CanonicalExecutionPayloadSerializerV1:
@@ -139,6 +140,7 @@ class CanonicalExecutionPayloadSerializerV1:
             plan.expected_account_mode,
             plan.permission_attestation_id,
             plan.permission_attestation_version,
+            plan.correlation_id,
         )
         actual_binding = (
             authorization.organization_id,
@@ -154,20 +156,12 @@ class CanonicalExecutionPayloadSerializerV1:
             authorization.verified_account_mode,
             authorization.permission_attestation_id,
             authorization.permission_attestation_version,
+            authorization.correlation_id,
         )
         if actual_binding != expected_binding:
             raise ValidationAppError("Authorization does not match the immutable trade plan.")
 
-        issuance_values = {
-            name: getattr(authorization, name) for name in ApprovalAuthorizationContent.model_fields
-        }
-        issuance_values["created_at"] = cls._aware(authorization.created_at)
-        issuance_values["expires_at"] = cls._aware(authorization.expires_at)
-        issuance = ApprovalAuthorizationContent.model_validate(issuance_values)
-        if not hmac.compare_digest(
-            canonical_sha256(issuance),
-            authorization.authorization_content_hash,
-        ):
+        if not verify_authorization_issuance_hash(authorization):
             raise ValidationAppError("Approval authorization content hash verification failed.")
 
     @staticmethod
