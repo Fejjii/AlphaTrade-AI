@@ -15,7 +15,7 @@
 deployment, worker/watcher activation, Telegram action, exchange API call, BloFin demo
 execution, live trading, or review-PR merge was performed or authorized.
 
-**Final verdict:** **APPROVED FOR PHASE 1 IMPLEMENTATION**
+**Final verdict:** **APPROVED WITH REQUIRED PRE-IMPLEMENTATION CORRECTIONS**
 
 ## 1. Review method and decision
 
@@ -33,10 +33,10 @@ automation and external execution disabled.
 | PR #67 severity | Resolved | Partial | Unresolved |
 |---|---:|---:|---:|
 | BLOCKER | 6 / 6 | 0 | 0 |
-| HIGH | 20 / 20 | 0 | 0 |
+| HIGH | 18 / 20 | 2 | 0 |
 | MEDIUM | 7 / 7 | 0 | 0 |
 
-No new blocker or high-severity architecture gap was found.
+No new blocker or high-severity finding was found. PR #67 HIGH-14 and HIGH-16 remain partial.
 
 ## 2. Previous blocker re-review
 
@@ -49,8 +49,8 @@ No new blocker or high-severity architecture gap was found.
 | BLOCKER-05 — one execution per plan revision/account | RESOLVED | Available approval issuance is database-unique for the complete account/revision/hash/operation identity (`:1739-1743`). A separate database uniqueness rule permits at most one entry claim for a plan revision/account, including different keys/channels (`:1757-1765`), and the claim is enforced in the first-writer transaction (`:1841-1848`). |
 | BLOCKER-06 — globally permanent paper mode | RESOLVED | Phase 1 replaces, rather than freezes, unsafe legacy semantics. Settings, service, provider, API, worker, task runner and test roots require exact `PAPER`, false real-trading, non-live exchange mode and a rejected `trade_live` tombstone (`:1610-1634`). `READ_ONLY` cannot execute, production hosts/latent live switches are rejected, and models, Telegram, APIs and environment combinations cannot alter the invariant. |
 
-Because all six blockers are resolved and none is partial or unresolved, the blocker gate does
-not prevent Phase 1.
+Because all six blockers are resolved and none is partial or unresolved, the blocker gate
+passes. The two residual HIGH findings below still require correction before Phase 1 coding.
 
 ## 3. Complete approved order
 
@@ -110,9 +110,9 @@ The evidence column cites the corrected target, excluding §31's claimed resolut
 | HIGH-11 — trade/CVD identity and arithmetic | RESOLVED | Natural identity excludes adapter version; units, formulas, event ordering, half-open windows, event-set hash and revision selection are explicit (`:1963-1975`) | Adapter revisions, linear/inverse vectors, boundaries, duplicates and corrections count each natural trade once |
 | HIGH-12 — TradingView ownership | RESOLVED | Public observations and tenant assertions have disjoint privacy, indexes, hash namespaces, caches and dedupe (`:1938-1949`) | Similar alert IDs/payloads for two tenants never cross ownership or dedupe |
 | HIGH-13 — scan lineage/recovery | RESOLVED | Scan, source and subscription attempts are durable, fenced and linked to every output (`:2229-2235`) | Crash after each persistence boundary leaves honest recoverable lineage and no duplicate candidate/delivery |
-| HIGH-14 — operation-specific risk | RESOLVED | Execution has only `ALLOW/BLOCK`; warnings cannot implicitly allow (`:1669-1672`). Entry/increase blocks, while authenticated exact cancel/reduce-only actions follow no-increase rules (`:1873-1876`, `:2175-2182`) | Kill switch/daily loss before/after submit, partial fill, cancel and close yields no exposure increase and exact operation outcomes |
+| HIGH-14 — operation-specific risk | PARTIAL | Execution has only `ALLOW/BLOCK`; warnings cannot implicitly allow (`:1669-1672`). Entry/increase blocks, while authenticated exact cancel/reduce-only actions follow no-increase rules (`:1873-1876`, `:2175-2182`). However, the safety epoch is checked in the command-claim transaction (`:1848-1859`) and only account/credential/NET mode are explicitly rechecked immediately before POST (`:2131-2137`); kill-switch activation after claim but before dispatch is undefined. | Add dispatch-time safety-epoch barriers immediately after command commit, at effect lease, before POST and after send; activation before dispatch authorization must suppress POST |
 | HIGH-15 — Telegram durable identities | RESOLVED | Webhook boundary is constrained at `:946-976`; bot installation, hashed enrollment, binding, bot-scoped receipts, nonce and durable action execution are specified at `:2184-2198` | Concurrent/replayed enrollment, wrong user/chat/bot, expiry, revoke, endpoint mismatch and bot rotation fail safely |
-| HIGH-16 — durable serialized close | RESOLVED | Close binds account, position/version, exact side/quantity, NET/reduce-only, working-order hash, second confirmation and policies (`:1816-1819`); nonce/command/receipt/effect creation is atomic under account/instrument serialization (`:2200-2204`) | TP/late-fill race, duplicate callbacks, web/Telegram race and crashes create at most one exact current-exposure close |
+| HIGH-16 — durable serialized close | PARTIAL | Close binds account, position/version, exact side/quantity, NET/reduce-only, working-order hash, second confirmation and policies (`:1816-1819`); Telegram atomically creates a command/receipt/effect under account/instrument serialization (`:2200-2204`). The target does not require a channel-neutral unique close claim or a `CLOSE_PENDING` projection CAS, and does not close the venue-fill window after reconciliation but before POST. | Race web/Telegram closes and TP fills before/after reconciliation, claim and POST; require one close claim/effect, no side flip and truthful residual-position reconciliation |
 | HIGH-17 — account credentials/fresh NET mode | RESOLVED | Exact `ExchangeAccount` secret resolution forbids global/singleton fallback; fingerprint/version, UID, demo host, attestation and immediate per-effect NET probe fail before POST (`:2120-2137`) | Cross-wired cache, credential rotation, UID mismatch and mode changes at each boundary never POST |
 | HIGH-18 — receipt identity/state truth | RESOLVED | Stable receipt, immutable transitions and rebuildable monotonic projection/watermark are separated (`:1914-1927`) | Replays across acknowledgement, fills, cancel, close and correction retain identity and immutable history |
 | HIGH-19 — journal venue truth | RESOLVED | Projector-owned fills, fees, funding, gross/net PnL, venue IDs and links cannot be edited/deleted; corrections are append-only and sourced (`:2206-2225`) | Post-fill edits/deletes cannot alter facts; corrections retain actor, reason, prior/new values, source and supersession |
@@ -150,19 +150,22 @@ cannot release it (`:1861-1870`).
 
 The command claim and kill-switch activation use the same account safety epoch and stable lock
 order. Activation wins if its epoch commits before the command's final claim predicate; a
-stale epoch blocks and rolls back the reservation/effect (`:1855-1859`). This defines a
-database linearization point for the race. After exposure or uncertainty exists, the operation
-matrix permits only authenticated exact-order cancellation or fresh reconciled no-increase
-reduce-only recovery (`:2175-2182`).
+stale epoch blocks and rolls back the reservation/effect (`:1855-1859`). The target does not
+define the outcome when activation commits after that predicate but before the durable effect
+POST. A dispatch-time epoch predicate or an explicit claim-as-linearization policy with
+immediate cancel/reconciliation is required. After exposure or uncertainty exists, the
+operation matrix permits only authenticated exact-order cancellation or fresh reconciled
+no-increase reduce-only recovery (`:2175-2182`).
 
 ## 7. Entry, cancel, close and execution state
 
 Entry, cancel and close have distinct typed commands and semantic hash namespaces
 (`:1809-1824`). Close binds the reconciled position ID/version, side, exact quantity/unit,
 `reduce_only=true`, NET mode, working-order set/hash, current basis/freshness state and second
-confirmation. Account/instrument serialization and fresh reconciliation make duplicate
-Telegram/web close and concurrent fill/working-order races converge or reject
-(`:1816-1819`, `:2200-2204`).
+confirmation. Account/instrument serialization and fresh reconciliation are necessary but
+not sufficient: the target does not state a channel-neutral unique close claim or atomic
+`CLOSE_PENDING` version predicate, and a venue working order can fill after reconciliation but
+before the close POST (`:1816-1819`, `:2200-2204`).
 
 | Required state/truth | Deterministic contract |
 |---|---|
@@ -173,7 +176,7 @@ Telegram/web close and concurrent fill/working-order races converge or reject
 | `CANCELLED` | Authoritative terminal zero-fill cancellation; only unused reservation is released |
 | `PARTIALLY_FILLED_CANCELLED` | Filled exposure remains an open position; only remainder is cancelled |
 | `POSITION_OPEN` | Derived from unique net fills, including partial entry fills |
-| `CLOSE_PENDING` | One serialized position/version-bound reduce-only close effect exists |
+| `CLOSE_PENDING` | Required projection state, but uniqueness across channels and its atomic version predicate remain to be specified |
 | `RECONCILIATION_REQUIRED` | Uncertain submit/cancel/fill/PnL remains visible and quarantined; no fabricated fill/finality |
 | absence proof/recovery | `ABSENCE_PENDING -> ABSENCE_PROVEN -> RESUBMIT_AUTHORIZED`; repeated bounded client-ID proof is required |
 | `OPERATOR_HOLD` | Unresolved conflict preserves account/instrument quarantine |
@@ -255,7 +258,7 @@ conservative risk. Stale or failed basis blocks `ActionEligibility` without rewr
 | duplicate first writer | One idempotency binding, authorization consumption, entry claim, receipt, effect, client ID and at most one venue order | DEFINED |
 | different-key same-plan race | Unique plan/account entry claim admits one; other conflicts without a second effect | DEFINED |
 | different plans racing risk cap | Serializable account reservation admits only capacity-fitting claims | DEFINED |
-| kill-switch race | Shared safety epoch/lock order gives a deterministic claim linearization; stale claim rolls back | DEFINED |
+| kill-switch race | Claim-time ordering is defined, but activation after claim commit and before effect POST has no dispatch rule | PARTIAL — HIGH-14 |
 | crash before DB commit | Transaction rollback leaves no consumption, reservation, receipt, effect or call | DEFINED |
 | crash after DB commit before send | Persisted single effect is recovered under lease/fence and uses one client ID | DEFINED |
 | crash after effect claim / possible send | Treat as uncertain, query by client ID and finality window; never blind POST | DEFINED |
@@ -264,8 +267,8 @@ conservative risk. Stale or failed basis blocks `ActionEligibility` without rewr
 | partial fill | Unique fill immediately updates position, actual exposure and remaining reservation | DEFINED |
 | late fill | Append and idempotently update the open position even after cancel request/result | DEFINED |
 | cancel race | `CANCEL_RECONCILIATION_REQUIRED`; settle as zero-fill `CANCELLED` or `PARTIALLY_FILLED_CANCELLED` | DEFINED |
-| duplicate close | Position/version/working-order binding plus account serialization yields one close or stale-state rejection | DEFINED |
-| close plus concurrent fill | Fresh serialized re-reconciliation changes the bound projection or rejects the stale close | DEFINED |
+| duplicate close | No channel-neutral unique close claim or mandatory `CLOSE_PENDING` CAS prevents distinct web/Telegram keys from claiming the same projection | PARTIAL — HIGH-16 |
+| close plus concurrent fill | Fresh reconciliation does not govern a TP/late fill arriving after the snapshot but before close POST | PARTIAL — HIGH-16 |
 | wrong account | Plan/authorization/provider binding rejects before consumption/reservation/effect/POST | DEFINED |
 | stale credential | Version/fingerprint/attestation check rejects before POST | DEFINED |
 | position-mode change | Immediate per-effect NET probe rejects hedge/unknown mode before POST | DEFINED |
@@ -277,32 +280,73 @@ conservative risk. Stale or failed basis blocks `ActionEligibility` without rewr
 | journal projector retry | Source-version dedupe plus unique aggregate and leased retry applies one fact | DEFINED |
 | reconciliation timeout | New exposure quarantined; uncertainty remains visible; no absence/final PnL inference | DEFINED |
 
-No requested failure has an undefined unsafe state.
+The three partial matrix rows are the two remaining PR #67 HIGH findings; no additional unsafe
+state was found.
 
 ## 14. Remaining issues
 
-None. There are no remaining PR #67 partial/unresolved findings and no new blocker or high.
-Implementation must still satisfy every deterministic test in the closure and failure tables;
-failure to implement those contracts would invalidate this architecture approval.
+### HIGH-14 — kill-switch activation after claim but before dispatch
+
+- **Severity:** HIGH
+- **Source finding:** PR #67 HIGH-14 — operation-specific `BLOCK`/`WARN` matrix.
+- **Exact evidence:** the claim transaction rechecks the safety epoch and defines activation
+  precedence only through the claim's final predicate (`:1848-1859`). The effect worker then
+  leases and sends (`:1878-1884`), while the only check explicitly required immediately before
+  POST is account/credential/NET mode (`:2131-2137`).
+- **Failure scenario:** an entry effect is durably committed, the kill switch activates before
+  the venue POST, and the dispatcher still sends because its claim-time epoch was valid.
+- **Required correction:** add a dispatch-attempt safety-epoch/kill-switch predicate. Activation
+  before that predicate must suppress an unsent POST. Define the linearization and mandatory
+  cancellation/reconciliation behavior when activation follows dispatch authorization.
+- **Required deterministic test:** place barriers after command commit, after effect lease,
+  immediately before the final dispatch predicate and after socket send. Activate the kill
+  switch at each barrier and assert the declared result, no unauthorized POST and no exposure
+  increase.
+
+### HIGH-16 — close uniqueness and the post-reconciliation venue-fill race
+
+- **Severity:** HIGH
+- **Source finding:** PR #67 HIGH-16 — durable Telegram close and working-order serialization.
+- **Exact evidence:** `ClosePositionCommand` binds position projection and working-order hash
+  (`:1816-1819`), and Telegram creates its command/receipt/effect under account/instrument
+  serialization (`:2200-2204`). No database-unique close claim or required atomic
+  `CLOSE_PENDING` projection-version transition is stated. No rule settles a competing venue
+  fill after reconciliation but before close POST.
+- **Failure scenario:** web and Telegram use different keys after reading the same position
+  version, or a take-profit fills after the close snapshot. Two close effects may be claimed,
+  or the intended close may reject/under-close against an unrepresented residual position.
+  `reduce_only=true` prevents a side flip but does not provide one-close convergence or exact
+  residual closure.
+- **Required correction:** require a channel-neutral database-unique close claim, or an atomic
+  `POSITION_OPEN(version) -> CLOSE_PENDING` CAS, keyed by account, position and projection
+  version. Pending close effects must enter the working-order hash. Cancel/reconcile competing
+  exits to bounded finality, then derive the residual reduce-only quantity; define durable
+  cancel/close effect recovery equivalent to submit.
+- **Required deterministic test:** race concurrent web/Telegram close with partial/full TP
+  fills before reconciliation, after reconciliation, after claim and before POST. Assert one
+  close claim/effect, no exposure increase/side flip, and truthful residual-position state.
+
+No blocker remains partial or unresolved. These two HIGH corrections must be incorporated into
+the canonical architecture and deterministically tested before Phase 1 implementation begins.
 
 ## 15. CI and scope gate
 
-CI is evidence separate from architecture safety. At the review's initial exact-head query,
+CI is evidence separate from architecture safety. At the final pre-publication query,
 GitHub's push workflow for canonical commit
-`549e42a42fb16765ec0947ef3ba08550459dd1f5` was still in progress. The following exact-head
+`549e42a42fb16765ec0947ef3ba08550459dd1f5` remained in progress. The following exact-head
 checks/status had succeeded:
 
+- backend;
 - deployment-safety;
 - docker-build;
+- evaluation;
 - frontend;
 - Vercel.
 
-The backend check was still in progress; evaluation and e2e-smoke had not yet appeared on the
-canonical merge-commit run. PR #64's pre-merge head had green backend, deployment-safety,
-frontend, docker-build, evaluation, e2e-smoke, Vercel and Vercel Preview Comments, but that is
-not substituted for exact canonical-head CI. The final publication step must record the latest
-canonical exact-head result without changing the safety verdict solely because documentation
-CI is green.
+The exact-head `e2e-smoke` job was still in progress. PR #64's pre-merge head had green
+backend, deployment-safety, frontend, docker-build, evaluation, e2e-smoke, Vercel and Vercel
+Preview Comments, but that is not substituted for the pending canonical merge-commit job.
+CI status does not change the architecture verdict.
 
 The canonical change is documentation-only relative to prior `main`. This re-review adds only
 this report. It changes no architecture, product code, migration, deployment configuration,
@@ -310,11 +354,10 @@ feature flag or runtime capability.
 
 ## 16. Final safety verdict
 
-**APPROVED FOR PHASE 1 IMPLEMENTATION**
+**APPROVED WITH REQUIRED PRE-IMPLEMENTATION CORRECTIONS**
 
-This authorizes only the dependency-ordered Phase 1 safety foundation in
-`agentic_redesign_target_architecture.md:2267-2293`. It does not authorize Phase 2+, deployment,
-feature activation, worker/watcher operation, Telegram delivery/action, BloFin connectivity or
-demo execution, production-host access, real trading, or merging any review PR. All flags and
-external execution remain disabled until their later architecture, deterministic-test and
-separate deployment-review gates pass.
+The corrected architecture may proceed only after HIGH-14 and HIGH-16 are added to the
+canonical contract and this gate is repeated against the new exact head. This verdict does not
+authorize Phase 1 coding, Phase 2+, deployment, feature activation, worker/watcher operation,
+Telegram delivery/action, BloFin connectivity or demo execution, production-host access, real
+trading, or merging any review PR. All flags and external execution remain disabled.
