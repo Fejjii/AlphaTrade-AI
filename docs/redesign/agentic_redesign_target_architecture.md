@@ -2,7 +2,10 @@
 
 **Design basis:** `main@c0bd1d4d9c49948c44e7e23dc2a2572ea68a4a20`
 **Revision basis:** independent architecture review PR #65 at `3a1a80f`
-**Status:** revised proposed architecture; no product implementation or capability enablement
+**Final review basis:** architecture consistency PR #66 at `4c4a66b`; safety/data/execution
+PR #67 at `a13c60c`
+**Status:** final corrected proposed architecture; no product implementation or capability
+enablement
 **Non-negotiable boundary:** paper/internal simulation and BloFin demo only. No production
 exchange host, real-money order, withdrawal, transfer, or live-trading enablement is part of
 this architecture.
@@ -209,7 +212,9 @@ flowchart TD
     POL -->|READ_ONLY| READ["Read evidence/market/positions/journal/config"]
     POL -->|PLAN| PLAN["Build inspectable plan draft"]
     POL -->|MUTATION| PREVIEW["Build mutation preview"]
-    POL -->|APPROVAL| APPA["Validate action token + exact plan revision"]
+    POL -->|APPROVE| APPA["Validate action token + exact plan revision"]
+    POL -->|REJECT| REJ["Atomically reject; never authorize"]
+    POL -->|SKIP| SKP["Atomically skip; never authorize"]
     POL -->|EXECUTION| EXEG["Require EXECUTE_PAPER_PLAN + authorization"]
     POL -->|CONFIGURATION| CFG["Read or confirmed update"]
     POL -->|JOURNAL| JOP["Read or confirmed journal operation"]
@@ -218,6 +223,8 @@ flowchart TD
     CONF -->|yes| MUT["Execute idempotent service command"]
     APPA --> AUTHZ["Persist one-time ApprovalAuthorization"]
     AUTHZ --> RESP
+    REJ --> RESP
+    SKP --> RESP
     EXEG --> ES["ExecutionService command boundary"]
     ES --> RISK["Risk / kill switch / freshness / eligibility"]
     RISK -->|BLOCK| RESP
@@ -237,13 +244,18 @@ flowchart TD
 Graph rules:
 
 - `READ_ONLY` branches have no graph path to proposal creation, approval creation, execution,
-  strategy mutation, backtest mutation, paper-validation mutation, watcher mutation or
-  configuration changes.
+  strategy mutation, backtest mutation, paper-validation mutation, watcher mutation,
+  configuration changes or any other domain write. The exhaustive operational persistence
+  allowlist and the deny-by-default repository contract are defined in §21.
 - `PLAN_TRADE` may create an immutable `TradePlanRevision` only when every executable input is
   complete, fresh, non-fallback, sequence-complete and market-correct. Otherwise it returns
   `ANALYSIS ONLY / CANNOT CREATE EXECUTABLE PLAN` and creates no executable-shaped resource.
-- `APPROVE` applies only to one exact plan revision and content hash. It records an
+- `APPROVE` applies only to one exact plan revision, complete account-bound order and content
+  hash. It records an
   `ApprovalAuthorization`; it does not submit an order.
+- `REJECT` and `SKIP` dispatch by exact action to their own transitions. Neither can call
+  authorization issuance, and both make authorization creation impossible for the rejected or
+  skipped state.
 - `EXECUTE_PAPER_PLAN` is the sole explicit execution intent. It routes the typed command to
   `ExecutionService`; that service rechecks action eligibility and atomically consumes the
   authorization only after `ALLOW`.
@@ -360,8 +372,8 @@ tenant-scoped and cannot enter the global observation store.
 MarketObservation
   schema_version: "1.0"
   observation_id: UUID
-  observation_type: OHLCV | TRADE | CVD | ORDER_BOOK | TRADINGVIEW |
-                    STRUCTURE | VOLUME
+  observation_type: OHLCV | TRADE | CVD | ORDER_BOOK | VOLUME | STRUCTURE |
+                    PUBLIC_EXTERNAL_MARKET_SIGNAL
   venue: VenueId
   market_type: SPOT | PERPETUAL | FUTURE
   instrument_id: canonical instrument identity
@@ -376,7 +388,7 @@ MarketObservation
   provider: provider identity
   source_event_id: string
   sequence_or_cursor: typed sequence/cursor reference?
-  freshness: FRESH | AGING | STALE | GAP | UNKNOWN
+  ingestion_freshness: FRESH | AGING | STALE | GAP | UNKNOWN
   finality: FINAL | FORMING | CORRECTED | UNKNOWN
   finality_policy_version: immutable policy version
   post_close_grace_seconds: non-negative integer?
@@ -385,21 +397,25 @@ MarketObservation
   supersedes_observation_id: UUID?
   adapter_version: immutable version
   payload: OHLCVPayload | TradeEvent | CvdWindow | OrderBookPayload |
-           TradingViewPayload | StructurePayload | VolumePayload
+           VolumePayload | StructurePayload | PublicExternalMarketSignalPayload
   content_hash: SHA-256 over canonical envelope and payload
   recorded_at: datetime
 ```
 
-The uniqueness key is source-specific and venue-scoped, for example
-`(venue, market_type, instrument_id, observation_type, source_event_id, adapter_version)`.
+The natural uniqueness key is source-specific and venue-scoped and excludes adapter version:
+`(source, venue, market_type, instrument_id, observation_type, source_event_id)`.
+Adapter changes append/select normalization revisions under that natural event; they do not
+duplicate the venue fact.
 Corrections append a new observation and reference `supersedes_observation_id`; they do not
 rewrite evidence already bound to an assessment. Decimal values, units, contract size and quote
 currency are explicit. Generic untyped metrics are not an executable evidence contract.
 
-Every executable use requires `is_live=true`, `fallback_used=false`, `freshness=FRESH`, known
-correct venue/market/instrument identity, required finality, complete history and complete
-sequence state. Degraded observations may be displayed with limitations but cannot confirm a
-setup, create a candidate, create an executable plan or support execution.
+Every executable use requires `is_live=true`, `fallback_used=false`, a fresh consumer-time
+evaluation against an immutable `FreshnessPolicy`, known correct venue/market/instrument
+identity, required finality, complete history and complete sequence state. Persisted
+`ingestion_freshness` is evidence, not permanent truth. Degraded or expired observations may
+be displayed with limitations but cannot confirm a setup, create a candidate, create an
+executable plan, authorize or support execution.
 
 ### Perpetual trade-flow contracts
 
@@ -490,8 +506,9 @@ ActionEligibility
 
 Candidate
   candidate_id; organization_id; strategy_version_id; setup_definition_id
-  assessment_id; evidence_window_hash; instrument_id; timeframe
-  evidence_venue; state; created_at; valid_until; transition_version
+  fusion_policy_version; direction; assessment_id; evidence_window_hash
+  evidence_venue; evidence_market; evidence_instrument; timeframe
+  state; created_at; valid_until; transition_version
   idempotency_key; content_hash; correlation_id
 ```
 
@@ -502,7 +519,9 @@ account state, current data quality and execution venue state. Account state can
 alert or block an action but can never rewrite objective setup truth.
 
 The candidate database key is
-`(organization_id, strategy_version_id, instrument_id, timeframe, evidence_window_hash)`.
+`(organization_id, strategy_version_id, setup_definition_id, fusion_policy_version,
+direction, evidence_venue, evidence_market, evidence_instrument, timeframe,
+evidence_window_hash)`.
 `evidence_window_hash` canonically represents the semantic setup window across all contributing
 sources, so equivalent watcher, TradingView or detector evidence converges on one candidate
 rather than creating one candidate per source or venue. Evidence venue identities remain on
@@ -587,12 +606,14 @@ StrategyPatternSpec (embedded in one immutable UserStrategyVersion)
   alert_threshold: 0..1
   historical_statistics: immutable snapshot reference
   paper_statistics: immutable snapshot reference
-  promotion_state: DRAFT | STRUCTURED | HISTORICALLY_VALIDATED |
-                   PAPER_VALIDATING | REVIEW_REQUIRED | APPROVED | RETIRED
 ```
 
-`SetupDefinition(strategy_version_id, compiler_version, compiled_ast, content_hash, created_at)`
-has a one-to-one uniqueness constraint on `strategy_version_id`. The allowlisted AST supports
+Promotion and activation are not Pattern Card content. Append-only `StrategyLifecycleEvent`
+records carry `DRAFT | STRUCTURED | HISTORICALLY_VALIDATED | PAPER_VALIDATING |
+REVIEW_REQUIRED | APPROVED | ACTIVE | RETIRED`, actor, reason, effective time and prior event.
+
+`CompiledSetupDefinition(strategy_version_id, compiler_version, compiled_ast, content_hash,
+created_at)` has a one-to-one uniqueness constraint on `strategy_version_id`. The allowlisted AST supports
 only typed, deterministic operands, units, comparisons, boolean composition, bounded windows,
 cross-series alignment, and ordered sequence steps. The compiler rejects unknown fields,
 ambiguous units, unsupported constructs and approximate semantic mappings.
@@ -734,34 +755,37 @@ TradePlanRevision
   user_id: UUID
   candidate_id: UUID
   strategy_version_id: UUID
-  pattern_version_id: same authoritative UserStrategyVersion identity
+  setup_definition_id: exact compiled setup artifact
   evidence_ids: non-empty ordered list[UUID]
   evidence_venue: VenueId
   execution_venue: VenueId
-  symbol: provider symbol
-  instrument_id: canonical instrument
-  market_type: PERPETUAL
+  evidence_market_identity: typed venue/market/instrument/provider-symbol identity
+  execution_instrument_identity: typed venue/market/instrument/provider-symbol/rules identity
   timeframe: Timeframe
   side: BUY | SELL
   entry_zone: typed lower/upper Decimal with units
   stop: Decimal with units
   targets: ordered non-empty typed targets
   runner_logic: compiled deterministic exit/size rule
-  position_size: Decimal with quantity units
+  account_id: internal execution account
+  exchange_account_id: demo exchange account when applicable
+  order_type; time_in_force; explicit market/null or limit-price semantics
+  quantity; quantity_unit; reduce_only
+  position_size: Decimal with execution-venue quantity units
   risk: typed budget, maximum loss, fees/slippage and R values
   leverage: Decimal
   valid_until: datetime
   input_provenance: observation windows, source/adapter versions and finality
   calculation_inputs: canonical Decimal inputs, formulas, rounding and instrument rules
-  content_hash: SHA-256 over all executable content
+  content_hash: SHA-256 over every execution-affecting field
   correlation_id: UUID
   created_at: datetime
 ```
 
 `TradePlanRevision` is immutable after creation. Any `REDUCE_RISK`, changed level, refreshed
 evidence, size, venue basis, instrument rule or partial-fill adjustment creates a new revision
-and invalidates prior authorizations. `pattern_version_id` is a compatibility name for the same
-`UserStrategyVersion`, not a separate identity.
+and invalidates prior authorizations. Only `strategy_version_id` is persisted;
+`pattern_version_id` may exist solely as a validated API compatibility alias and must equal it.
 
 No executable placeholder is legal. Missing, stale, fallback, incomplete, wrong-market,
 wrong-venue or sequence-gapped input returns exactly
@@ -799,6 +823,9 @@ wrong-revision or wrong-hash authorization fails and is audited.
 
 ### Execution command and idempotency
 
+The following is a transport envelope, not an independently editable order. The complete
+normative semantic payload and command union are in §§22–24.
+
 ```text
 ExecutionCommand
   execution_command_id: UUID
@@ -809,21 +836,14 @@ ExecutionCommand
   plan_id: UUID
   immutable_resource_revision: revision_id
   authorization_id: UUID
-  venue: VenueId
-  account_id: UUID
-  instrument_id: canonical instrument
-  side: BUY | SELL
-  order_type: MARKET | LIMIT
-  quantity: Decimal with units
-  price: Decimal? with units
   plan_content_hash: SHA-256
-  canonical_command_hash: SHA-256
+  canonical_payload_hash: SHA-256 of CanonicalExecutionPayloadV1
   correlation_id: UUID
   created_at: datetime
 ```
 
-The canonical command hash is calculated from every identity and payload field above using a
-versioned canonical serializer. A unique idempotency record binds the opaque key to
+The canonical payload hash excludes the opaque key and all transport/server metadata. A unique
+idempotency record binds the opaque key to
 organization, principal/account and command hash. A key-only lookup can expose only that
 binding decision; it cannot return an order. The service first locks the record and validates
 organization, principal and hash, then resolves the receipt/order through tenant-scoped
@@ -1049,10 +1069,11 @@ Rules:
 If demo mode is disabled, existing internal paper execution remains available and clearly
 labelled.
 
-`ExecutionReceipt` records the immutable command ID/hash, authorization ID, tenant/account,
-execution mode, venue/instrument, authoritative order IDs, accepted/submitted timestamps,
-current state, fill aggregates, reconciliation state and content hash. It never says
-`FILLED` unless demo venue order/fill evidence confirms it. `ReconciliationState` records
+`ExecutionReceipt` is a stable identity and command relationship. Immutable
+`ExecutionTransition` events hold submitted/acknowledged/fill/cancel/close/reconciliation
+facts, and a versioned `ExecutionProjection` holds current state and aggregates. Replay returns
+the same receipt identity with the latest authorized projection and event watermark. It never
+says `FILLED` unless demo venue order/fill evidence confirms it. `ReconciliationState` records
 source snapshots/cursors, compared facts, differences, last successful check, next action and
 `CONSISTENT | PENDING | REQUIRED | FAILED`; uncertainty is an explicit operational state, not
 an exception that can be swallowed.
@@ -1222,19 +1243,16 @@ secondary expert workflows even when absent from primary navigation.
 Nothing involving CVD, watcher automation, Telegram mutation or BloFin automation may precede
 this phase:
 
-1. Freeze existing paper-only, live-host denial, kill-switch and deterministic-risk invariants
-   as characterization tests.
-2. Repair execution idempotency so organization, principal/account, immutable revision and
-   canonical payload are validated before replay.
-3. Implement authoritative `IntentDecision`, operation classes, clarification and central
-   policy across every tool action; enforce the same policy at service/persistence boundaries.
-4. Remove every analysis/question-to-mutation path, with no read-only graph edge to proposals,
-   approvals, execution, strategy/backtest/paper-validation/watcher or configuration writes.
-5. Make successful no-op mutation/execution tools fail closed; only real authoritative services
-   may return success.
-6. Define and persist immutable `TradePlanRevision`; prohibit executable placeholders.
-7. Define exact-revision `ApprovalAuthorization` and atomic one-time consumption by the
-   separate `EXECUTE_PAPER_PLAN` operation.
+1. Replace legacy configuration semantics with the permanent exact-paper-mode invariant.
+2. Enforce the exhaustive `READ_ONLY` non-interference contract.
+3. Remove or fail closed every fake successful mutation/execution tool.
+4. Implement the complete account-specific `TradePlanRevision` order binding.
+5. Implement account/order-bound, unique `ApprovalAuthorization`.
+6. Implement `CanonicalExecutionPayloadV1` and its versioned serializer.
+7. Implement tenant/account-scoped idempotency and the unique plan execution claim.
+8. Implement serializable `RiskReservation` and kill-switch precedence.
+9. Implement append-only `ExecutionReceipt`/`ExecutionTransition` and versioned projection.
+10. Pass PostgreSQL concurrency and crash-injection tests before any later phase.
 
 ### Phase 2 — model routing
 
@@ -1277,7 +1295,8 @@ transitions, honest health and non-local fenced distributed locking. Flags remai
 
 Add transactional outbox and at-least-once outbound claims, verified private-chat enrollment,
 durable receipts, then actions in the required order: `STATUS`, `EXPLAIN`, `SHOW_CHART`,
-`REJECT`, `SKIP`, `APPROVE`, `REDUCE_RISK`, `CLOSE`. Flags remain off.
+`REJECT`, `SKIP`, `APPROVE`, `REDUCE_RISK`. `CLOSE` remains unavailable until Phase 9
+NET-mode reconciliation, command and partial-fill/cancel tests pass. Flags remain off.
 
 ### Phase 9 — BloFin demo reconciliation
 
@@ -1434,11 +1453,11 @@ proceeding; no fallback/spot substitution is allowed.
 | Price structure | Analysis engine and detectors | Pattern adapter and fixtures |
 | Volume | OHLCV, volume ratio/VWAP | Pattern-specific volume predicate |
 | CVD | None | Read-only trade source, signed-trade normalizer, rolling CVD/divergence |
-| Order flow | Order-book contract | Stream/snapshot quality, imbalance/exhaustion features |
+| Optional resting-liquidity/L2 evidence | Order-book contract | Stream/snapshot quality and optional book features; never substitutes for signed trade flow |
 | Watcher | Worker, lock, health, watcher persistence | Unified pipeline and non-local lock fail-closed |
 | Evidence | Provider envelopes and source records | Normalized evidence/store/adapters |
 | Fusion | Orchestration checks offer patterns | New deterministic fusion lifecycle |
-| Agent candidate | Agent runtime, RAG, narrative, paper candidates | Explicit candidate synthesis intent/tool |
+| Agent candidate | Agent runtime, RAG, narrative, paper candidates | Candidate presentation/explanation only; deterministic fusion remains sole creation authority |
 | Telegram alert | Alerts/preferences/provider/manual delivery | Outbox, rich formatter, automatic sender |
 | User approval | Approval records/service | Authenticated inbound callback/action nonce |
 | Risk gate | Existing risk, daily accounting, kill switch, sizing | Bind fused/plan freshness and demo state |
@@ -1495,7 +1514,9 @@ whenever market or execution identity applies.
 | `TradePlanRevision` | Stable plan ID + immutable revision ID; organization, user, candidate and exact strategy/setup identity | Immutable created/valid-until, evidence/calculation provenance, evidence and execution venues, correlation and content hash | New executable change creates revision; `DRAFT -> APPROVAL_ELIGIBLE -> SUPERSEDED/EXPIRED`; no placeholder-shaped revision |
 | `ApprovalAuthorization` | Authorization ID owned by organization/user and bound to exact plan revision/hash, channel and actor | Immutable created/expiry plus content hash; consumption timestamps append | One-time compare-and-set `AVAILABLE -> CONSUMING -> CONSUMED`; may become `EXPIRED/REVOKED`; replay/wrong version fails |
 | `ExecutionCommand` | Command ID and tenant/principal-scoped idempotency key; account, operation, exact revision, venue/instrument/payload | Immutable created time, correlation ID, plan hash and canonical command hash | Identical principal+payload returns original receipt; key/principal/payload mismatch rejects; `RECEIVED -> CLAIMED -> COMPLETED/REJECTED/RECONCILIATION_REQUIRED` |
-| `ExecutionReceipt` | Receipt ID owned by organization/user/account and linked one-to-one with command; venue client/order IDs | Immutable accepted/submitted/updated transition facts, correlation and content hash | Command replay returns same receipt; venue IDs unique; states follow submit/ack/partial/fill/cancel/close/reconciliation lifecycle |
+| `ExecutionReceipt` | Stable receipt ID owned by organization/user/account and linked one-to-one with command | Immutable identity/command relationship | Replay returns stable identity plus latest `ExecutionProjection` and event watermark |
+| `ExecutionTransition` | Receipt-scoped append-only event ID and source fact identity | Immutable prior/new state, authoritative fact, occurred/recorded time and content hash | Event/source uniqueness; history never updates |
+| `ExecutionProjection` | Receipt ID plus monotonically increasing projection version | Rebuildable latest state, quantities, fees and reconciliation status | Optimistic version; derived only from authorized transitions |
 | `ReconciliationState` | Organization/account/order/position scoped state ID with venue/instrument | Immutable check snapshots, observed/received/checked times, correlation and content hash | Source/check key dedupe; `PENDING -> CONSISTENT` or `REQUIRED -> CONSISTENT/FAILED`; unresolved state blocks final truth |
 | `JournalProjectionEvent` | Organization-owned event ID; source aggregate/event ID and canonical JournalTrade ID/correlation | Immutable occurred/recorded times, typed payload, source content hash and event content hash | Unique `(correlation_id, event_type, source_event_id)`; `PENDING -> CLAIMED -> APPLIED`, retryable failure/dead-letter; one lifecycle maps to one `JournalTrade` |
 
@@ -1507,9 +1528,11 @@ Journal projection cannot finalize PnL while reconciliation is unresolved.
 
 The sequence below is dependency-ordered, not a schedule:
 
-1. Complete Phase 1 safety foundation in full: freeze invariants; repair idempotency; enforce
-   intent/operation at graph and service boundaries; eliminate read-to-mutation paths; fail
-   closed stubs; add immutable plan revisions and consumable authorizations.
+1. Complete Phase 1 safety foundation in the exact ten-slice order in §15: replace unsafe
+   configuration semantics; enforce read-only non-interference; fail closed stubs; bind the
+   complete account-specific order and authorization; add canonical semantic hashing, scoped
+   idempotency/unique execution claim, serializable risk reservation, append-only execution
+   state, and PostgreSQL concurrency/crash tests.
 2. Complete Phase 2 model routing and actual-call metering before any new Tier A/B caller.
 3. Complete Phase 3 strategy/setup identity, immutability, AST and compiler.
 4. Complete Phase 4 canonical journal read adapters and typed behavioral backfill parity.
@@ -1576,3 +1599,775 @@ The 18 mandatory corrections from PR #65 are all accepted architecturally:
     perpetual feed/instrument/freshness/sequence semantics before implementation.
 18. **Automation remains disabled:** no deployment, feature flag, worker, watcher, Telegram,
     BloFin DEMO or live-trading enablement is authorized by this architecture.
+
+## 21. Final normative safety and operation contract
+
+Sections 21–30 are the final normative correction layer produced from PR #66 and PR #67. If
+earlier illustrative schemas, diagrams, phase labels or prose differ, these sections control.
+Implementation must not select the less restrictive interpretation.
+
+### Permanent paper mode
+
+Phase 1 replaces unsafe legacy semantics; it does not characterize them as behavior to keep.
+The permanent invariant for every API, worker, task runner, direct service, provider factory
+and test composition root is:
+
+```text
+EXECUTION_MODE == PAPER
+ENABLE_REAL_TRADING == false
+EXCHANGE_MODE in {paper_internal, paper_exchange_demo}
+trade_live == tombstoned and rejected
+execution-capable process + READ_ONLY mode == invalid configuration
+```
+
+- `Settings` construction rejects `ENABLE_REAL_TRADING=true` and every execution mode except
+  exact `PAPER`, in local, test, staging and production.
+- An execution-capable service checks exact `PAPER` and false real-trading state before any
+  database mutation or provider call. `READ_ONLY` may perform approved reads but cannot place
+  even an internal paper order.
+- Provider construction rejects live credentials, a live-trading option, production hosts or
+  any adapter configuration with a latent live switch. Real-money hosts are unreachable by
+  allowlist and network policy.
+- Configuration APIs, models, Telegram, environment combinations and runtime mutation cannot
+  alter these constants. Future adapters implement paper/demo capability explicitly; they do
+  not inherit `trade`, `live`, `real_trading_enabled` or equivalent switches.
+
+### Exact action routing
+
+Dispatch uses `(intent, requested_action)`, never operation class alone:
+
+| Action | Required transition | Authorization effect |
+|---|---|---|
+| `APPROVE` | eligible plan revision -> approved; idempotently issue exact authorization | may create one `ApprovalAuthorization` |
+| `REJECT` | exact candidate/plan -> `REJECTED` with actor/reason/version | cannot create; revoke applicable unconsumed descendants atomically |
+| `SKIP` | exact candidate/evidence window -> `SKIPPED` with actor/reason/version | cannot create; revoke applicable unconsumed descendants atomically |
+
+Repository methods for authorization issuance accept only the `APPROVE` discriminator and
+reject every other intent before writing. `MessageClass.COMMAND` is removed during the
+`IntentDecision` migration; no compatibility branch may emit it.
+
+### READ_ONLY persistence allowlist
+
+`READ_ONLY` means no domain/workflow mutation. The exhaustive allowed persistence list is:
+
+1. append-only audit and security events;
+2. atomic quota/rate-limit counters;
+3. usage and actual model-call telemetry;
+4. conversation memory only when classified `NON_DOMAIN_MEMORY`, incapable of triggering a
+   workflow, excluded from retrieval that can authorize action, and retention-policy allowed.
+
+Every allowed record carries operation class, request/correlation identity, tenant/principal
+scope, purpose and retention class. It cannot enqueue an outbox effect or invoke a domain
+projector. Everything else is denied, including proposals, plan revisions, approvals,
+execution commands, orders, fills, positions, strategy/setup mutation, backtests, validation
+runs, watcher/subscription configuration, candidate/assessment/action state, journal mutation,
+risk/configuration mutation and notification mutation. A repository interceptor uses an
+exhaustive allowlist and deny-by-default behavior; graph and service tests assert both allowed
+operational writes and zero forbidden writes.
+
+Configuration and journal reads branch separately from
+`preview -> explicit confirmation -> service policy recheck -> write`. Execution gate output
+is only `ALLOW | BLOCK`; every warning-producing rule is versioned as either `BLOCK` or a
+bounded non-execution advisory. No implicit `WARN -> ALLOW` path exists.
+
+## 22. Complete approved-order and account binding
+
+### TradePlanRevision
+
+`TradePlanRevision` is the sole immutable executable-order source. Its canonical content hash
+covers this complete field set:
+
+```text
+identity:
+  schema_version; plan_id; revision_id; organization_id; user_id
+  account_id; exchange_account_id?
+  strategy_version_id; setup_definition_id; candidate_id
+provenance:
+  ordered evidence_ids
+  evidence_venue; evidence_market; evidence_instrument
+  execution_venue; execution_market; execution_instrument
+  instrument_mapping_version
+order:
+  side; quantity; quantity_unit; order_type; time_in_force
+  limit_price + price_unit OR explicit null + MARKET marker
+  entry_zone; entry_zone_derivation
+  slippage_policy; reduce_only; position/account binding when applicable
+instrument rules:
+  contract_multiplier; linear_or_inverse; base/quote/settlement currencies
+  tick_size; lot_size; minimum_quantity; minimum_notional
+  instrument_rule_version
+cross-venue:
+  basis_policy; evidence_price; execution_price; formula
+  basis_timestamp; basis_tolerance; basis_freshness
+risk and exits:
+  risk_budget; maximum_loss; fees/funding/slippage allowance
+  stop; ordered targets; runner rules; leverage/margin assumptions
+validity and calculations:
+  valid_from; valid_until
+  every calculation input, formula identifier/version, Decimal result,
+  unit conversion, precision, rounding mode and conservative remainder
+content_hash:
+  CanonicalTradePlanContentV1 hash over every field above except content_hash itself
+```
+
+The account IDs are non-null as applicable. Evidence and execution market identities are
+distinct typed values. Any changed quantity, unit, order type, market/limit behavior, price,
+TIF, rounding, venue rule, mapping, basis, risk, stop, target, runner, validity or calculation
+creates a new revision. No dynamic executable value may be supplied later.
+
+### ApprovalAuthorization
+
+```text
+ApprovalAuthorization
+  authorization_id; organization_id; user_id
+  account_id; exchange_account_id?
+  operation; plan_id; revision_id; plan_content_hash
+  execution_venue; execution_instrument
+  verified_account_mode
+  permission_attestation_id; permission_attestation_version
+  expires_at; state: AVAILABLE | CONSUMED | EXPIRED | REVOKED
+  channel; actor; created_at; consumed_at?
+```
+
+Issuance is idempotent and database-unique for
+`(organization_id, account_id, exchange_account_id-or-null, revision_id, plan_content_hash,
+operation)` while available. This prevents two tabs/channels from minting two usable grants.
+The exact account mode and permission attestation used for approval are part of the bound
+identity; fresh execution checks may reject but may never substitute consent.
+
+`ExecutionService` tenant-loads and locks the authorization and revision, recomputes the plan
+hash, and derives the venue payload only from the revision. A caller/channel may supply
+transport IDs and redundant assertions for early error reporting, but cannot introduce an
+executable field. Any redundant mismatch is rejected before authorization consumption, risk
+reservation, execution-domain database mutation, durable venue effect or venue call.
+
+First slice uniqueness enforces:
+
+```text
+ONE PLAN REVISION + ONE ACCOUNT -> AT MOST ONE ENTRY EXECUTION CLAIM
+```
+
+The execution claim is database-unique for
+`(organization_id, account_id, exchange_account_id-or-null, revision_id, ENTRY)`.
+Intentional split execution is unsupported. A future design must first create explicitly
+numbered immutable child slices, each included in the approved parent content hash.
+
+## 23. Canonical execution identity and operation commands
+
+### CanonicalExecutionPayloadV1
+
+Only semantic execution identity enters the retry fingerprint:
+
+```text
+CanonicalExecutionPayloadV1
+  serializer_version = "CanonicalExecutionPayloadV1"
+  organization_id
+  principal: {user_id, account_id, exchange_account_id?}
+  operation
+  plan_id; immutable_plan_revision_id
+  approval_authorization_id; plan_content_hash
+  execution_venue; execution_instrument
+  side; order_type; time_in_force
+  quantity: {value, unit}
+  price: {value, unit} | null with explicit market_marker=true
+  reduce_only
+  position_binding?; account_binding
+  instrument_rule_version
+  execution_policy_version
+```
+
+Excluded fields are the opaque idempotency key, `execution_command_id`, `correlation_id`,
+`request_id`, `receipt_id`, `received_at`, `created_at`, retry count, HTTP headers/metadata,
+trace/span metadata and every transport timestamp.
+
+Canonical encoding is UTF-8 JSON with lexicographically sorted object keys, no insignificant
+whitespace and no duplicate keys. UUIDs are lowercase hyphenated RFC 4122 strings. Enums are
+their exact versioned uppercase wire values. Strings are Unicode NFC and are never trimmed or
+case-folded implicitly. `null` is JSON `null`; omission is distinct from null and prohibited
+for required keys. Decimals are `{value, scale}` where `value` is a base-10 signed integer
+string with no leading plus or redundant leading zeros and `scale` is a non-negative integer;
+schema-declared normalization makes `1`, `1.0` and `1.00` equivalent only for the same unit.
+Arrays preserve semantic order; set-like collections are sorted by their canonical encoded
+element bytes and reject duplicates. Maps use sorted keys. The serializer version is included
+in the hash preimage. SHA-256 is over the exact canonical bytes.
+
+Different request metadata for the same semantic payload hashes identically. Changing any
+listed semantic field changes the hash.
+
+### Discriminated commands
+
+- `SubmitEntryCommand` binds `CanonicalExecutionPayloadV1`, entry execution claim and approved
+  revision; it cannot override revision content.
+- `CancelOrderCommand` binds organization/principal/account, exact receipt/order ID and order
+  projection version, venue/instrument, remaining quantity snapshot, cancel policy and
+  authorization policy.
+- `ClosePositionCommand` binds organization/principal/account/exchange account, reconciled
+  position ID and projection version, execution instrument, current reconciled side and
+  quantity/unit, `reduce_only=true`, NET position mode, working-order set/hash, basis/freshness
+  state, second confirmation authorization/nonce and policy versions.
+
+Each command has a distinct canonical hash namespace:
+`alphatrade/submit-entry/v1`, `alphatrade/cancel-order/v1` or
+`alphatrade/close-position/v1`. Cross-operation opaque-key reuse is a conflict. Entry,
+cancel and close replays converge only when their complete semantic payload is identical.
+
+## 24. First-writer, risk reservation and execution state protocol
+
+### Deterministic pre-submit result
+
+Complete plan/account/permission/mode/freshness/basis/eligibility/risk checks may run before the
+claim transaction without consuming authorization. A `BLOCK` creates an immutable terminal
+blocked command receipt for that key/payload and leaves authorization `AVAILABLE`, unless plan
+expiry or parent-state invalidation requires atomic revocation. Replaying the key returns the
+same block. A later attempt requires a new explicit command/key and all fresh checks.
+
+### Exact PostgreSQL transaction
+
+After an `ALLOW`, one database transaction, with account-scoped serialization or serializable
+retry semantics, must:
+
+1. atomically insert-or-lock the tenant/account-scoped idempotency row keyed by
+   `(organization, account principal, operation namespace, opaque key)`;
+2. bind `CanonicalExecutionPayloadV1` hash; same binding replays, while principal,
+   operation or payload mismatch rejects;
+3. claim the immutable command and enforce the unique plan-revision/account entry claim;
+4. revalidate the locked authorization/revision/hash/account and consume authorization with
+   `UPDATE ... WHERE state='AVAILABLE' AND version=:expected`;
+5. lock current risk-accounting state, recheck kill-switch epoch, and create an atomic
+   `RiskReservation`;
+6. create stable `ExecutionReceipt` identity with projection state `SUBMITTING`;
+7. create exactly one durable `VenueSubmitEffect` with deterministic client order ID derived
+   from operation namespace, account, immutable resource and canonical payload hash;
+8. commit.
+
+No venue network call occurs before commit and no database transaction remains open across
+network I/O. A kill-switch activation transaction locks/advances the same account safety epoch.
+If activation and command claim race, lock order is safety epoch then account risk state;
+activation wins whenever its epoch commits before the claim's final predicate. A stale epoch
+causes `BLOCK`, reservation rollback and no effect.
+
+### RiskReservation
+
+One reservation atomically charges the conservative maximum for pending order exposure,
+ambiguous/submitting orders, open-order notional, daily trade slots, daily-loss allocation,
+total exposure, symbol exposure and applicable strategy-specific limits. It carries account,
+plan/command/receipt, instrument, policy/snapshot versions, Decimal amounts/units, created
+epoch and release source. It remains charged in `SUBMITTING`, `ACKNOWLEDGED`,
+`PARTIALLY_FILLED` and `RECONCILIATION_REQUIRED`. Every unique fill atomically converts
+reserved exposure to actual open-position exposure; unused remainder releases only after
+authoritative terminal cancellation/rejection/expiry/absence. Timeout or uncertainty never
+releases capacity.
+
+Entry or exposure increase is always blocked by kill switch/daily loss/Tier C `BLOCK`.
+Authenticated cancel and exact reconciled reduce-only decrease/close follow a separate
+versioned emergency matrix: they may reduce uncertainty/exposure but can never increase,
+reverse or exceed current net exposure.
+
+### Durable external-effect claim and recovery
+
+`VenueSubmitEffect` workers claim with a renewable lease, monotonically increasing fencing
+token and compare-and-set state. The provider receives the persisted deterministic client
+order ID. Lease loss prevents further writes. No ambiguous result permits blind semantic
+resubmit; reconciliation first queries by client order ID over the venue's documented
+visibility/finality window.
+
+| Crash/failure point | Required recovery |
+|---|---|
+| before claim transaction commit | transaction rolls back; no authorization use, reservation, receipt/effect or call |
+| after commit, before send | lease recovery claims the one persisted effect and sends once |
+| during send / after bytes sent | mark uncertainty; query/reconcile by client order ID; do not POST again |
+| after venue acceptance, before local update | lookup discovers order; append acknowledgement transition |
+| after receipt transition commit | replay returns stable receipt and latest projection |
+| after partial fill | unique fill updates projection, position and reservation; remainder stays reserved |
+| during reconciliation | lease recovery resumes from persisted cursor; uncertainty and quarantine remain |
+
+“Authoritative absence” requires the venue's bounded finality window, repeated client-ID
+queries/cursors and duplicate-safe client-ID contract; a single negative lookup is never
+absence. If the venue cannot prove identity/finality, resubmit is forbidden and the
+account/instrument remains quarantined for new exposure. Only reconciliation, cancel and exact
+reduce-only recovery actions remain eligible.
+
+### Stable receipt and append-only state
+
+`ExecutionReceipt(receipt_id, command_id, authorization_id, organization/account bindings,
+created_at)` never changes identity. `ExecutionTransition` is append-only with transition ID,
+receipt ID, prior/new state, authoritative source fact, source identity, quantities/units,
+occurred/observed/recorded times, actor/policy and content hash.
+`ExecutionProjection(receipt_id, version, state, filled_quantity, remaining_quantity,
+weighted_price, fees, funding, position_id, reconciliation_status, event_watermark)` is
+rebuildable and updated by optimistic version.
+
+Every unique partial fill immediately updates cumulative quantity, price, fees, open position
+and actual exposure. Cancelling affects only unfilled remainder; a partial-fill cancellation
+ends as `PARTIALLY_FILLED_CANCELLED` with an open position. Late fills append and update that
+position. Replay always returns stable receipt identity, latest authorized projection and
+event watermark; historical transitions/hashes never change.
+
+Required PostgreSQL tests use barriers for 2 and 5 identical first writers, distinct commands
+competing for one capacity limit, duplicate approvals, different keys for one plan, kill-switch
+claim races, partial-fill/cancel races and each crash point above. Assertions are one
+authorization consumption, one execution claim/receipt/effect/client ID, at most one venue
+order, serializable capacity and truthful recoverable state.
+
+## 25. Market ownership, payloads, freshness and cross-venue identity
+
+### Ownership domains
+
+`PublicMarketObservation` stores only public, shareable venue facts and globally deduplicates
+by natural source event. It has privacy class `PUBLIC_MARKET_DATA` and no tenant IDs.
+`TenantExternalAssertion` stores organization-owned TradingView alerts, proprietary signals,
+user strategy references/links and manually asserted levels. It has privacy class
+`TENANT_CONFIDENTIAL`, tenant-scoped uniqueness and authorization, and may reference public
+observation IDs. A private assertion can never enter a global index, hash namespace, query,
+cache or deduplication decision. A source advertised as public external signal enters the
+public domain only after an explicit source/privacy policy proves that its entire payload and
+links are public.
+
+All payloads carry schema/policy version, venue, market, canonical instrument, provider symbol,
+event/interval identity, event and receive times, source natural identity, adapter normalization
+revision, explicit units, finality applicability, sequence applicability, correction/
+supersession reference, privacy/ownership scope and canonical content hash. Hashes exclude
+database IDs, receive/recorded time, request/trace metadata and mutable processing status;
+they include semantic source time, natural event/revision identity, values/units, venue/market/
+instrument, finality evidence and normalization policy.
+
+### Typed payloads
+
+| Payload | Required semantic fields | Finality/sequence/correction contract |
+|---|---|---|
+| `OHLCVPayload` | interval open/close times; open/high/low/close price with quote unit; base/contract volume plus unit; trade count?; provider completion flag | `FINAL` iff provider complete and `evaluated_at >= interval_end + grace(policy)`; forming/final/correction are appended revisions; sequence not required unless provider supplies one |
+| `TradeEvent` | venue trade ID; event time; price/unit; raw quantity/unit; contract multiplier/formula; normalized base and quote/settlement quantities; aggressor side/convention | natural trade identity excludes adapter version; ordered venue sequence/event-ID tie-break; correction selects one normalization revision; stable fill/trade ID mandatory |
+| `CvdWindow` | half-open `[start,end)`; first/last included trade IDs; event-set hash; signed quote/settlement delta/unit; total volume/unit; baseline/reset policy; count; cursor bounds | complete only with contiguous selected trade set, known aggressor convention and fresh warm-up; corrections append a window; no unresolved reconnect segment |
+| `OrderBookPayload` | snapshot/update ID range; bids/asks as ordered price/quantity/unit levels; depth; checksum? | usable only with documented snapshot+delta sequence proof; correction/supersession appends; optional resting-liquidity evidence only |
+| `VolumePayload` | exact interval/window; volume kind (`BASE`, `CONTRACT`, `QUOTE`, `SETTLEMENT`, `TRADE_COUNT`); Decimal value/unit; aggregation formula | inherits contributing-event finality and completeness; source IDs/event-set hash identify corrections |
+| `StructurePayload` | algorithm/version; timeframe; swing/level IDs and price units; direction; source observation hashes; effective/cutoff times | final only when all inputs are selected final revisions; changed input or algorithm appends and supersedes |
+| `PublicExternalMarketSignalPayload` | public source identity; event ID/time; typed signal kind/direction/value/unit; public policy/version and public references only | explicit source revision/finality; sequence only if defined; corrections append; tenant links forbidden |
+| `TenantExternalAssertion` | organization/user; assertion source/event ID; strategy/setup/level references; typed venue/market/instrument claim; received/expiry times; redacted raw hash | tenant unique; append-only correction/supersession; may reference public observations but never becomes one |
+
+For linear contracts, normalized quote quantity is `price * base_quantity`; contract quantity
+first uses the exact multiplier. Inverse instruments use a versioned venue formula and
+settlement currency. Intermediate arithmetic is unrounded Decimal; only schema-declared
+precision/rounding is applied. Event-time windows are half-open; equal timestamps use natural
+event ID/sequence ordering. A natural trade is counted once across adapter revisions.
+
+V1 reconnect policy is fail-closed: every reconnect starts a new connection epoch, current CVD
+becomes unusable, bounded authoritative backfill deduplicates by natural trade ID, contiguous
+coverage must be proven, and a complete fresh warm-up must finish before usable windows resume.
+Cross-connection CVD windows are not supported in V1.
+
+Freshness is evaluated at every assessment, candidate confirmation, plan creation, approval
+and execution boundary from event/receive clocks against a versioned `FreshnessPolicy`.
+`FreshnessEvaluation(observation_revision_ids, policy_version, evaluated_at, valid_until,
+clock_skew_result, state)` is immutable. Time passing beyond `valid_until` fails closed without
+requiring a new market event.
+
+### Cross-venue execution
+
+`EvidenceMarketIdentity` and `ExecutionInstrumentIdentity` are separate on assessment,
+candidate, plan, eligibility, authorization, command, receipt, reconciliation and journal.
+Each includes venue, product/market type, provider symbol, canonical base/quote/settlement,
+linear/inverse type and source timestamp. Execution identity additionally binds mapping
+version, contract multiplier, quantity unit, tick/lot/minimum rules and their version.
+
+`BasisSnapshot` binds both source prices/units, conversion formula, timestamp, freshness,
+tolerance and basis-policy version. Deterministic conversion rounds down quantity and computes
+conservative risk using execution-venue rules only. A stale or breached basis sets
+`ActionEligibility=BLOCKED`; it never mutates or supersedes historical `SetupAssessment`.
+
+## 26. Strategy/setup migration, immutable AST and candidate identity
+
+### Explicit SetupDefinition migration
+
+The target does not repurpose current global `SetupDefinition` rows:
+
+- `GlobalSetupTemplate` is a compatibility view/identity over legacy built-in
+  `(StrategyId, name, version)` rows and remains global/read-only.
+- `UserStrategy` is the tenant-owned stable authored identity.
+- `UserStrategyVersion` is immutable authored content with one canonical strategy-version ID.
+- `CompiledSetupDefinition` is a tenant-owned immutable compiler artifact for exactly one
+  strategy version, with organization, compiler/grammar versions, AST and content hash.
+
+Migration order:
+
+1. add new tables and nullable compatibility references without rewriting legacy rows;
+2. populate `GlobalSetupTemplate` aliases for every legacy row using stable legacy IDs;
+3. for each tenant adoption, create a tenant `UserStrategy`/version and compile a new artifact;
+4. backfill references to either explicit `global_template_id` or
+   `compiled_setup_definition_id`, never an ambiguous polymorphic value;
+5. dual-read with exact alias validation while all new writes use tenant artifacts;
+6. make new references non-null where the owning workflow is migrated;
+7. retire legacy writes only after row/link/hash parity, rollback and zero-unmapped-reference
+   reports pass.
+
+Aliases include legacy table/ID, normalized legacy name/version and target ID. Name collisions
+never auto-merge: exact legacy ID mapping wins; otherwise migration records
+`COLLISION_REVIEW_REQUIRED` and leaves the row global. Foreign keys remain valid through the
+compatibility view until all consumers migrate. Read compatibility never presents a global
+row as tenant-owned.
+
+### Immutable content and lifecycle
+
+Pattern content excludes promotion/activation state. `StrategyLifecycleEvent` is append-only
+and records strategy version, prior/new lifecycle state, actor, reason, evidence snapshot,
+occurred time and event hash. Activation is a projection over events; rollback appends an
+activation event selecting an older immutable version.
+
+### Deterministic AST grammar V1
+
+```text
+Expr :=
+  Literal(decimal|boolean|duration|timestamp|enum, Unit)
+  | Field(path, ValueType, Unit)
+  | Unary(NEGATE|NOT, Expr)
+  | Arithmetic(ADD|SUBTRACT|MULTIPLY|DIVIDE|MIN|MAX, Expr...)
+  | Compare(EQ|NE|LT|LTE|GT|GTE, Expr, Expr)
+  | Boolean(AND|OR, Expr...)
+  | WindowAggregate(MIN|MAX|SUM|MEAN|COUNT|FIRST|LAST, Series, Window)
+  | Crosses(ABOVE|BELOW, left, right, strict, alignment)
+  | IsMissing(Expr)
+
+Pattern :=
+  preconditions: Boolean
+  sequence: ordered PatternStep[]
+  trigger: Boolean
+  invalidation: Boolean[]
+  expiration: Duration|final-bar-count
+
+PatternStep :=
+  step_id; predicate; min_offset; max_offset; finality_requirement
+  reset_on; invalidate_on; overlap_policy
+```
+
+Operands are allowlisted typed fields or literals; no arbitrary code, reflection, network or
+model call is legal. Addition/subtraction/comparison require compatible units. Multiplication/
+division derive a declared unit and reject unsupported dimensions. Division by zero, overflow,
+ambiguous unit or unavailable conversion is `MISSING`, never zero or false by approximation.
+Decimals use arbitrary precision with grammar-declared scale and rounding only at named
+boundaries; default rounding is forbidden.
+
+`AND`/`OR` use total three-valued logic (`TRUE`, `FALSE`, `MISSING`); required `MISSING` fails
+the predicate and records a reason. Window bounds are explicit half-open event-time intervals
+or exact counts of final bars, bounded by policy maximum. Series alignment declares exact,
+previous-final, or bounded as-of semantics and tolerance; interpolation is forbidden unless a
+versioned operator explicitly permits it. Higher-timeframe values must be final and available
+before the lower-timeframe evaluation cutoff.
+
+Sequence evaluation orders by `(event_time, source_sequence, natural_event_id)`. Steps must
+match within min/max offsets. `reset_on` returns to step zero; `invalidate_on` terminates the
+occurrence; `overlap_policy` is one of `DISALLOW`, `RESTART_AT_CURRENT`, or
+`ALLOW_DISTINCT_START`, with stable earliest-start/lowest-ID tie-breaks. Expiration and
+invalidation are explicit terminal transitions. Corrections replay from the earliest affected
+event and append a superseding assessment. Independent evaluators receive the same selected
+observation revisions, AST bytes, policy versions and clock and must produce byte-identical
+rule results.
+
+`ManualLevelRevision` is immutable and binds level ID/revision/hash, author, organization,
+evidence venue/market/instrument, price/unit, effective time, created time and supersession.
+The first-slice resistance revision must exist before the trigger cutoff and is included in the
+evidence window; mutable current levels are ineligible.
+
+### CanonicalEvidenceWindowV1 and candidate uniqueness
+
+The versioned hash preimage includes organization, strategy version,
+`CompiledSetupDefinition` ID/hash, fusion/finality/freshness policy versions, direction,
+evidence venue/market/instrument, timeframe, half-open final interval bounds, trigger natural
+identity/revision, mandatory evidence roles, selected public observation content hashes,
+tenant assertion IDs/content hashes where required, manual-level revision, source set and
+correction-selection policy. It excludes receive/record times, scan/action/correlation IDs and
+optional presentation evidence. Optional evidence changes enrich an immutable assessment
+revision; it creates a new candidate only when a required role, policy-selected observation,
+direction, venue or semantic bound changes.
+
+Database uniqueness enforces one active semantic candidate for the full key in §5. Terminal
+`REJECTED`, `SKIPPED`, `EXPIRED` or `INVALIDATED` candidates cannot be resurrected; a new
+candidate needs a distinct canonical window. One delivery-intent key is unique per candidate
+revision and delivery-policy version. Watcher, detector and TradingView adapters feed the same
+assessment command. `PaperValidationCandidate` remains a downstream validation/evaluation
+queue referencing the canonical candidate; it is not a source adapter or competing identity.
+
+The first-slice CVD window must extend through both swing `S` and trigger `T`; otherwise `S` is
+constrained to the complete window. The signed-flow ratio is named
+`trigger_bar_aggressive_sell_imbalance`; “exhaustion” additionally requires the versioned
+price-response/declining-aggression predicate. Signed perpetual executions are mandatory;
+complete L2 data cannot substitute.
+
+## 27. Account-scoped demo execution and action cascade
+
+### ExchangeAccount and provider resolution
+
+```text
+ExchangeAccount
+  exchange_account_id; organization_id; owner_user_id; internal_account_id
+  venue; venue_account_uid; demo_host
+  secret_reference; credential_fingerprint; credential_version
+  permission_attestation_id; attestation_version; attested_at; expires_at
+  allowed_permissions; denied_permissions; state
+```
+
+Provider resolution requires the exact authorized `ExchangeAccount`, resolves only its secret
+reference, and validates credential fingerprint/version, venue account UID and demo host.
+Global credentials and singleton/global credential fallback are forbidden. A NET-mode probe
+runs immediately before every side-effecting entry or close POST and is bound to the effect
+attempt. Hedge, long/short or unknown mode rejects before submit. Credential rotation,
+account-UID mismatch, stale/failed permission attestation or host mismatch rejects and leaves
+the durable effect safely reconcilable.
+
+Fill identity is venue trade/fill ID scoped to exchange account and order. If the venue cannot
+provide one, a documented collision-analyzed composite identity is mandatory; otherwise the
+source is unsupported and reconciliation remains unresolved. Overlapping cursors, corrections
+and delayed visibility are versioned. Timeout/failed reconciliation quarantines new exposure
+for the account/instrument; it never infers absence or final truth.
+
+### Atomic descendant action matrix
+
+| Action/state | Candidate | Plan revision | Authorization | Command/receipt |
+|---|---|---|---|---|
+| `REJECT`, no claimed command | append `REJECTED` | unexecuted descendant -> `SUPERSEDED/REJECTED` | revoke available in same transaction | none created |
+| `SKIP`, no claimed command | append `SKIPPED` for window | unexecuted descendant -> `SUPERSEDED/SKIPPED` | revoke available in same transaction | none created |
+| `REJECT/SKIP`, command claimed but not submitted | preserve parent action event | immutable plan preserved | consumed state preserved | attempt deterministic effect cancellation; receipt truth remains |
+| `REJECT/SKIP`, submitted/acknowledged/filled | preserve action as later user intent | immutable history unchanged | consumed unchanged | never erase; cancel/reduce requires operation-specific command |
+| `REDUCE_RISK` preview | no transition | compute non-persistent preview only | unchanged | unchanged |
+| confirmed `REDUCE_RISK`, no claimed command | candidate remains linked | atomically create new lower-risk revision and supersede old | revoke old available grant; issue new only by separate `APPROVE` | none |
+| confirmed `REDUCE_RISK`, claimed/submitted | do not rewrite occurrence | preserve both revisions | consumed authorization remains historical | existing command remains; lower-risk management is a new authorized action |
+
+The transaction locks candidate, plan and authorization in stable order. Parent-state changes
+cannot erase a submitted command or venue fact.
+
+### Risk operation matrix
+
+| Operation | Kill switch/daily-loss `BLOCK` |
+|---|---|
+| entry or exposure increase | reject; no authorization consumption/effect |
+| cancel working entry/exit | permit only authenticated exact-order cancel under cancel policy; ingest late fills |
+| reduce-only close/decrease | permit only fresh reconciled NET quantity, `reduce_only=true`, no side flip/increase and required second confirmation |
+| leverage/position-mode/account mutation | always reject |
+
+### Telegram domain idempotency
+
+Persist before delegation:
+
+- `BotInstallation` with organization, bot identity, credential version, endpoint secret
+  version, state and rotation lineage;
+- hashed one-time `TelegramEnrollmentChallenge` with org/user/bot, expiry and CAS state;
+- `TelegramBinding` with org/user/Telegram user/private chat/bot, verification/revocation and
+  one-active-binding policy;
+- bot-installation-scoped update and callback receipts;
+- `TelegramActionNonce` bound to one action/resource/revision/hash/actor/binding, expiry and CAS;
+- `ActionExecution` with immutable `action_execution_id`, canonical action hash,
+  `RECEIVED | CLAIMED | APPLIED | REJECTED | RETRYABLE | DEAD_LETTER`, lease/fence, domain
+  result reference and event watermark.
+
+Every domain mutation receives `action_execution_id` and canonical action hash. Local domain
+mutation and result linkage are atomic where possible. If the mutation commits before the
+Telegram receipt update, recovery queries the authoritative domain result by that identity and
+does not issue an unbound second mutation. `CLOSE` atomically consumes the second nonce,
+creates one `ClosePositionCommand`/receipt and one close effect while holding account/instrument
+serialization.
+
+### Journal truth and uniqueness
+
+Candidate/reject/skip remain lifecycle events and never create `JournalTrade`. The canonical
+trade aggregate begins at approved-plan or first-fill policy boundary and is database-unique
+for `(organization_id, execution_lifecycle_id)`; planned-never-executed records use the
+non-null plan execution-claim identity and are excluded from executed statistics.
+
+User-owned reflective fields are thesis reflection, notes, emotions, tags, screenshots and
+manually labelled assertions. Projector-owned facts are entry/exit fills, size, leverage
+actually used, fees, funding, gross/net PnL, venue IDs, position/order/reconciliation links and
+execution outcomes. Users cannot overwrite or hard-delete projector facts after execution
+exists. Corrections append actor, reason, prior/new value, authoritative source and
+supersession. Manual assertions are stored separately and visibly labelled. Hard delete is
+permitted only for non-executed drafts when policy allows; otherwise use a tombstone.
+
+`JournalProjectionEvent` identity includes source system, account/aggregate, event type,
+source event ID/version and supersession. States are
+`PENDING | CLAIMED | RETRY_SCHEDULED | APPLIED | DEAD_LETTER`, with lease/fence, attempt count,
+next attempt and sanitized error category. Every event transactionally resolves the unique
+trade aggregate before applying one append-only fact.
+
+## 28. Worker, model, frontend and deterministic replay completion
+
+Worker coordination persists a monotonically increasing `WorkerLeaseEpoch`. Every
+worker-caused `ScanAttempt`, observation link, assessment, candidate transition and outbox
+insert includes a database predicate that its incoming fence equals the current active epoch.
+Lease renewal loss cancels work; stale writes fail in the committing transaction.
+`ScanAttempt`, `SourceFetchAttempt` and `SubscriptionEvaluationAttempt` are separately committed
+and carry worker/lease epoch, policy versions, start/heartbeat/finish, counts, status, sanitized
+error and recovery disposition. All outputs link to exact attempts.
+
+Manual and worker evaluation use one typed command mode:
+`PREVIEW | PERSIST_EVIDENCE | PERSIST_AND_NOTIFY`. Preview writes no durable state. Persistent
+modes use the same adapters, clock, policies, repositories, candidate key and delivery
+uniqueness; authorized manual persistence converges with worker persistence without pretending
+to own the worker lease.
+
+The outbox is defined by a transactional failure boundary, not destination type. It includes
+Telegram delivery, demo venue effects and asynchronous journal projection. Pure calculations
+stay in-process.
+
+`ModelTaskRequest` includes optional typed account, aggregate/resource IDs, purpose and
+retention binding in addition to organization/user. Models may present or explain a frozen
+candidate; only deterministic fusion can create or transition one. The phrase “candidate
+synthesis” means presentation only and must not name a mutation capability.
+
+The four primary navigation labels are route shells, not mega-pages. Agent tabs own
+conversation, evidence and plan/approval views; Safety tabs own trading safety, providers and
+audit. Strategy Lab/validation and account/team/billing remain secondary focused routes.
+Phase 1 deletes no route.
+
+Immutable sanitized replay bundles begin with raw REST/stream payloads and include arrival
+order, event/wall clocks, reconnect markers, instrument specs, adapter/finality/freshness/
+fusion versions and expected normalized hashes, cursor/gap ledger, CVD windows, transition
+reasons and candidate key. Replay from empty/partial databases, shuffled delivery, restart and
+adapter revision must select the same semantic revisions and results.
+
+`MetricEvaluationSnapshot` binds metric definition/version, sample/cohort hash, assumptions,
+completeness, source projection watermark, provenance and result. Analytics and learning use
+snapshots so later corrections append a new evaluation rather than rewriting old results.
+
+## 29. Final dependency-ordered implementation plan
+
+Phase 1 consists only of these slices, in order:
+
+1. permanent paper-mode invariant;
+2. exhaustive `READ_ONLY` non-interference;
+3. remove or fail closed fake successful mutation tools;
+4. complete account-specific `TradePlanRevision` order binding;
+5. `ApprovalAuthorization` account/order binding and unique issuance;
+6. `CanonicalExecutionPayloadV1` and serializer;
+7. scoped idempotency record and unique execution claim;
+8. serializable `RiskReservation` and safety-epoch precedence;
+9. append-only `ExecutionReceipt`/`ExecutionTransition` and versioned projection;
+10. PostgreSQL concurrency/crash/fencing tests.
+
+Phase 1 may introduce contract tables only with non-null authoritative provenance. It must not
+persist an executable plan until exact strategy/setup/candidate/evidence identities exist; the
+initial plan slice may use deterministic fixtures and fail-closed scaffolding, then executable
+storage activates only after those dependencies are available. Optional/transitional
+provenance is forbidden.
+
+Only after all ten slices pass:
+
+1. model router and actual-call telemetry;
+2. strategy/setup migration, lifecycle records and AST compiler;
+3. canonical journal compatibility migration;
+4. market source/payload/freshness/replay contracts;
+5. observations, evidence/fusion and candidate identity;
+6. watcher pipeline/fenced worker while disabled;
+7. Telegram enrollment/outbox/actions except `CLOSE`, while disabled;
+8. BloFin demo account-scoped external execution, reconciliation and then Telegram `CLOSE`,
+   while external execution remains disabled;
+9. automatic journal projection;
+10. analytics and controlled learning;
+11. frontend consolidation.
+
+No deployment or feature flag activation is included. Worker, watcher automation, TradingView
+automation, Telegram automation and BloFin demo external execution remain disabled.
+
+## 30. Phase 0 validation and implementation acceptance gates
+
+This documentation revision is complete only if:
+
+- every PR #66 and PR #67 finding appears in §31 and no blocker is unresolved;
+- the approved content hash binds every executable order/calculation/account field;
+- authorization binds internal and applicable exchange account plus permission/mode identity;
+- the canonical retry fingerprint excludes all transport/retry metadata;
+- the exact first-writer transaction commits before network I/O and recovery never blindly
+  resubmits;
+- risk capacity is serializable and remains reserved through uncertainty;
+- one plan revision/account has at most one entry execution claim;
+- exact paper mode is permanent across settings/service/provider/channel paths;
+- `REJECT`/`SKIP` cannot enter authorization issuance;
+- READ_ONLY uses the exhaustive operational-write allowlist;
+- public observations and tenant assertions cannot cross ownership domains;
+- setup migration never relabels global legacy rows as tenant-owned;
+- AST/evaluator and candidate/evidence-window identity are replay deterministic;
+- receipt identity, transitions and projection are distinct;
+- demo credentials are account-scoped and NET mode is probed immediately before effects;
+- journal venue facts are projector-owned and corrections are append-only;
+- action cascades preserve submitted historical truth;
+- entry/cancel/close have separate semantic hash namespaces;
+- Telegram action execution is domain-idempotency-bound;
+- cross-venue instrument/rule/basis identity is explicit and basis affects eligibility only;
+- Phase 1 order matches §29.
+
+Required Phase 1 PostgreSQL tests run against real PostgreSQL, not SQLite emulation. Provider
+and crash tests use deterministic fakes and make no external call by default. Product code,
+migrations, deployment, feature flags and runtime automation remain unchanged by Phase 0.
+
+## 31. FINAL REVIEW RESOLUTION MATRIX
+
+All findings are accepted and corrected in the target contract. “Resolved” is architectural
+closure, not a claim of runtime implementation.
+
+### PR #66 — final architecture and consistency review
+
+| Review | Finding ID | Severity | Overlap group | Accepted/rejected | Canonical correction | Target contract | Implementation phase | Required deterministic test |
+|---|---|---|---|---|---|---|---|---|
+| PR #66 | FINAL-BLOCKER-01 | BLOCKER | Complete approved order | Accepted | Plan/hash binds account, both instruments, full order/rules/basis/risk/calculations; service derives payload | §§22–23 | Phase 1.4–1.6 | Mutate each executable field; reject before consumption/reservation/write/effect |
+| PR #66 | FINAL-HIGH-01 | HIGH | Exact action routing | Accepted | Only exact `APPROVE` issues authorization; reject/skip use separate transitions | §21, §27 | Phase 1.2/1.5 | REJECT/SKIP across states create zero authorizations |
+| PR #66 | FINAL-HIGH-02 | HIGH | Semantic retry identity | Accepted | Versioned canonical payload excludes command/correlation/time/transport fields | §23 | Phase 1.6 | Vary metadata/JSON order/Decimal spelling; same hash; semantic mutation conflicts |
+| PR #66 | FINAL-HIGH-03 | HIGH | READ_ONLY | Accepted | Exhaustive operational-write allowlist; all domain repositories deny by default | §21 | Phase 1.2 | Assert exact allowed rows and zero forbidden domain writes |
+| PR #66 | FINAL-HIGH-04 | HIGH | Evidence ownership/types | Accepted | Public observations split from tenant assertions; all payloads typed with hash/correction semantics | §25 | Market contracts | Two-tenant TradingView isolation plus payload replay/hash fixtures |
+| PR #66 | FINAL-HIGH-05 | HIGH | Setup migration | Accepted | Global compatibility template remains global; tenant strategy/version/compiled artifact created separately | §26 | Strategy/setup migration | Alias/backfill/collision/FK/read-parity/rollback tests |
+| PR #66 | FINAL-HIGH-06 | HIGH | Pattern immutability/AST | Accepted | Lifecycle state moved to append-only events; AST V1/evaluator fully specified | §26 | Strategy/setup migration | Golden AST, missing/unit/window/alignment/sequence/correction replay |
+| PR #66 | FINAL-HIGH-07 | HIGH | Candidate identity | Accepted | Full strategy/setup/fusion/direction/venue/window key; validation candidate stays downstream | §26 | Evidence/fusion | Equal/enriched/corrected/policy/opposite-direction concurrency matrix |
+| PR #66 | FINAL-HIGH-08 | HIGH | Execution/reconciliation | Accepted | Durable effect/reconcile protocol, partial-cancel state, Decimal/source/finality rules | §§24, 27 | Phase 1 then demo reconciliation | Ambiguous submit/cancel, delayed visibility, partial/late fills, PnL conflicts |
+| PR #66 | FINAL-HIGH-09 | HIGH | Immutable level evidence | Accepted | `ManualLevelRevision` is cutoff-bound and hashed into evidence window | §26 | Strategy/setup migration | Later edit cannot alter prior assessment; pre-trigger cutoff enforced |
+| PR #66 | FINAL-HIGH-10 | HIGH | Migration dependency | Accepted | Phase 1 uses non-null fixtures/scaffolding; executable storage waits for exact identities | §29 | Phase 1/evidence prerequisite | No executable plan with optional/transitional provenance |
+| PR #66 | FINAL-HIGH-11 | HIGH | Telegram contracts/order | Accepted | Typed bot/enrollment/binding/nonce/receipt records; CLOSE follows reconciliation | §§27, 29 | Telegram then demo reconciliation | Enrollment/rotation/replay plus CLOSE unavailable before prerequisite gate |
+| PR #66 | FINAL-HIGH-12 | HIGH | Journal uniqueness | Accepted | One database-unique trade aggregate per execution lifecycle; candidate events stay outside | §27 | Journal compatibility/projection | Concurrent plan/fill/close projectors create one trade |
+| PR #66 | FINAL-MEDIUM-01 | MEDIUM | Deterministic planning | Accepted | Plan service persists/returns frozen result or analysis-only terminal before synthesis | §§22, 29 | Phase 1.4 | Model synthesis cannot create/alter revision |
+| PR #66 | FINAL-MEDIUM-02 | MEDIUM | Confirm/write and gate enums | Accepted | Separate read/preview/confirm/write branches; execution uses only `ALLOW/BLOCK` | §21, §27 | Phase 1.2 | Config/journal confirmation matrix and warning-policy fixtures |
+| PR #66 | FINAL-MEDIUM-03 | MEDIUM | Outbox scope | Accepted | Outbox applies to every cross-transaction failure boundary, including journal projection | §28 | Relevant side-effect phases | Commit/crash/retry per Telegram, venue and journal effect |
+| PR #66 | FINAL-MEDIUM-04 | MEDIUM | Model least privilege | Accepted | Model request adds typed account/resource/purpose/retention scope | §28 | Model router | Cross-account/resource context denied and retention enforced |
+| PR #66 | FINAL-MEDIUM-05 | MEDIUM | Frontend composition | Accepted | Four route shells use focused tabs; expert/account/billing routes remain secondary | §28 | Frontend consolidation | Route ownership/compatibility tests; no Phase 1 deletion |
+| PR #66 | FINAL-MEDIUM-06 | MEDIUM | CVD predicate | Accepted | CVD spans S/T; ratio renamed imbalance; exhaustion requires response/decline predicate | §26 | Market/evidence | Swing-window boundary and accurate feature-label fixtures |
+| PR #66 | FINAL-MEDIUM-07 | MEDIUM | Deterministic candidate authority | Accepted | Models present/explain only; fusion alone creates/transitions candidate | §28 | Model router/evidence | Model output cannot write or transition candidate |
+| PR #66 | FINAL-MEDIUM-08 | MEDIUM | Journal retry/analytics | Accepted | Projection lease/retry/dead-letter states and immutable metric snapshots | §§27–28 | Journal/analytics | Retry ownership/dead-letter and reproducible snapshot replay |
+| PR #66 | FINAL-MEDIUM-09 | MEDIUM | Strategy identity | Accepted | Persist only canonical `strategy_version_id`; compatibility name is validated API alias | §§22, 26 | Strategy/setup migration | Alias mismatch rejected; one persisted identity |
+| PR #66 | FINAL-LOW-01 | LOW | Dead classifier branch | Accepted | Remove dead `MessageClass.COMMAND` during `IntentDecision` migration | §21 | Phase 1.2 | Classifier cannot emit/rout dead class |
+
+### PR #67 — final safety, data and execution review
+
+| Review | Finding ID | Severity | Overlap group | Accepted/rejected | Canonical correction | Target contract | Implementation phase | Required deterministic test |
+|---|---|---|---|---|---|---|---|---|
+| PR #67 | BLOCKER-01 | BLOCKER | Account-bound approval | Accepted | Plan/authorization bind internal and demo account, mode, attestation, operation and instrument | §22 | Phase 1.4–1.5 | One user/two accounts: A authorization cannot act on B before any mutation |
+| PR #67 | BLOCKER-02 | BLOCKER | Semantic retry identity | Accepted | Exhaustive `CanonicalExecutionPayloadV1` and canonical serializer | §23 | Phase 1.6 | Transport variants converge; each semantic-field change alters hash |
+| PR #67 | BLOCKER-03 | BLOCKER | First writer/crash safety | Accepted | One claim transaction commits receipt/effect/client ID before leased network call | §24 | Phase 1.7–1.10 | PostgreSQL 2/5 writers and crash injection at every boundary |
+| PR #67 | BLOCKER-04 | BLOCKER | Serializable risk | Accepted | Account serialization/atomic reservation covers all pending/ambiguous capacity | §24 | Phase 1.8 | Distinct commands over one limit: one submit, one authoritative block |
+| PR #67 | BLOCKER-05 | BLOCKER | One execution per plan | Accepted | Unique approval issuance plus unique plan/account entry claim | §§22, 24 | Phase 1.5/1.7 | Concurrent tabs/channels/keys produce one grant/claim/effect |
+| PR #67 | BLOCKER-06 | BLOCKER | Permanent paper mode | Accepted | Replace legacy trade/read-only mutation semantics; exact PAPER everywhere | §21 | Phase 1.1 | Local/test/staging/prod settings/API/worker/service/provider negative matrix |
+| PR #67 | HIGH-01 | HIGH | Risk-block retry | Accepted | Blocked command/receipt is terminal; grant remains available unless invalidated; new action/key required | §24 | Phase 1.7–1.8 | Replay old block, clear condition, explicit new command succeeds once |
+| PR #67 | HIGH-02 | HIGH | Consumer-time freshness | Accepted | Immutable freshness evaluation with policy/evaluated-at/valid-until at every boundary | §25 | Market contracts | Advance clock without new event; assessment/plan/approval/execution block |
+| PR #67 | HIGH-03 | HIGH | Reconnect/CVD | Accepted | V1 starts new epoch, deduped contiguous backfill and fresh warm-up; no cross-epoch window | §25 | Market contracts | Disconnect/overlap/reorder/reset/gap recovery byte-identical replay |
+| PR #67 | HIGH-04 | HIGH | Worker fencing | Accepted | Database-enforced monotonic lease epoch predicates on every worker-caused write | §28 | Watcher | Pause stale A, commit B, resume A: all A writes rejected |
+| PR #67 | HIGH-05 | HIGH | Candidate convergence | Accepted | `CanonicalEvidenceWindowV1`, terminal non-resurrection and delivery uniqueness | §26 | Evidence/fusion | Equal/enriched/corrected/adjacent/policy/venue/expired matrix |
+| PR #67 | HIGH-06 | HIGH | Cross-venue units | Accepted | Separate complete evidence/execution identities, conversion rules and basis snapshot | §25 | Market/planning | Multiplier/lot/inverse/tick differences convert conservatively or block |
+| PR #67 | HIGH-07 | HIGH | Partial-fill exposure | Accepted | Every fill immediately updates position/exposure; cancel removes remainder only | §24 | Demo reconciliation | Zero/multiple/duplicate/late/partial-cancel/partial-close fills |
+| PR #67 | HIGH-08 | HIGH | Fill/finality quarantine | Accepted | Stable fill identity, bounded lookup finality, no single-negative absence, quarantine uncertainty | §27 | Demo reconciliation | Missing IDs, overlap pages, delayed visibility and timeout |
+| PR #67 | HIGH-09 | HIGH | Approved payload comparison | Accepted | Service loads/hash-verifies plan and derives all venue fields; assertions may not override | §22 | Phase 1.4–1.7 | Independently mutate every executable assertion; zero downstream mutation |
+| PR #67 | HIGH-10 | HIGH | Candle finality | Accepted | Exact provider-complete plus interval-end/grace predicate; revisions append | §25 | Market contracts | Before/at/during/after grace and correction fixtures |
+| PR #67 | HIGH-11 | HIGH | Trade/CVD identity/math | Accepted | Natural event independent of adapter; explicit units/formulas/windows/event set/reset | §25 | Market contracts | Adapter revisions, linear/inverse, boundaries, duplicates and corrections |
+| PR #67 | HIGH-12 | HIGH | TradingView privacy | Accepted | Tenant assertions never enter public observation storage/indexes | §25 | Market contracts | Similar IDs/payloads across tenants remain isolated |
+| PR #67 | HIGH-13 | HIGH | Scan lineage | Accepted | Durable scan/source/subscription attempts link every output and recovery | §28 | Watcher | Crash after each persistence boundary; honest lineage and no duplicates |
+| PR #67 | HIGH-14 | HIGH | Operation risk policy | Accepted | Entry blocked; exact cancel/reduce recovery uses explicit no-increase matrix; no WARN ambiguity | §§21, 27 | Phase 1/demo reconciliation | Kill switch/daily loss before/after submit/partial/cancel/close |
+| PR #67 | HIGH-15 | HIGH | Telegram identities | Accepted | Bot-scoped installation/enrollment/binding/update/callback/action contracts and rotation | §27 | Telegram | Replay/concurrent enrollment, wrong user/chat, expiry, revoke and bot rotation |
+| PR #67 | HIGH-16 | HIGH | Durable close | Accepted | Position/version/working-order-bound close command; nonce/command/effect claimed atomically | §§23, 27 | Demo reconciliation then Telegram CLOSE | TP race, duplicate callbacks, web/Telegram close and crash boundaries |
+| PR #67 | HIGH-17 | HIGH | Account credential/mode | Accepted | Exact account secret resolution, no global fallback, immediate NET probe per effect | §27 | Demo reconciliation | Provider cache cross-wire, rotation, UID/mode changes reject before POST |
+| PR #67 | HIGH-18 | HIGH | Execution state identity | Accepted | Stable receipt, append-only transitions, monotonic projection/watermark | §24 | Phase 1.9 | Replay across ack/fill/cancel/close/correction preserves history |
+| PR #67 | HIGH-19 | HIGH | Journal truth ownership | Accepted | Reflective fields separate; venue facts projector-owned; append-only corrections/tombstones | §27 | Journal compatibility | Post-fill edit/delete cannot alter facts; correction preserves provenance |
+| PR #67 | HIGH-20 | HIGH | Action cascade | Accepted | Atomic reject/skip/reduce-risk matrix across candidate/plan/grant/command | §27 | Phase 1/Telegram | Full state cross-product and claim races |
+| PR #67 | MEDIUM-01 | MEDIUM | Operation commands | Accepted | Discriminated entry/cancel/close commands and hash namespaces | §23 | Phase 1/demo reconciliation | Cross-operation key conflict and per-operation semantic replay |
+| PR #67 | MEDIUM-02 | MEDIUM | Telegram-domain idempotency | Accepted | Persist action execution before delegation; pass ID/hash; query result on recovery | §27 | Telegram | Crash after each domain commit for every mutating action |
+| PR #67 | MEDIUM-03 | MEDIUM | Journal aggregate uniqueness | Accepted | Unique execution-lifecycle mapping and transactional resolve-before-project | §27 | Journal projection | Concurrent events in all orders create one trade/effect |
+| PR #67 | MEDIUM-04 | MEDIUM | L2 terminology | Accepted | L2 is optional resting liquidity; signed executions exclusively supply CVD/imbalance | §§25–26 | Market contracts | Book changes do not change CVD; no trades means no confirmation |
+| PR #67 | MEDIUM-05 | MEDIUM | Canonical fixtures | Accepted | Raw immutable replay bundles include clocks/order/versions/expected hashes and ledgers | §28 | Market/evidence | Empty/partial DB, shuffle, restart and adapter-revision replay |
+| PR #67 | MEDIUM-06 | MEDIUM | Manual/worker persistence | Accepted | One evaluation command with preview/evidence/notify modes; persistent callers converge | §28 | Watcher | Race worker, manual preview and authorized persistence |
+| PR #67 | MEDIUM-07 | MEDIUM | Journal source/draft boundary | Accepted | Namespaced source/version/supersession; no trade row for candidate/reject/skip | §27 | Journal compatibility | Same source ID across accounts, correction and unexecuted candidate tests |
+
+### Closure totals
+
+- PR #66: **1/1 BLOCKER, 12/12 HIGH, 9/9 MEDIUM and 1/1 LOW resolved**.
+- PR #67: **6/6 BLOCKER, 20/20 HIGH and 7/7 MEDIUM resolved**.
+- Unresolved blockers: **0**.

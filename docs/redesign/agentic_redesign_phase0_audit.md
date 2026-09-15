@@ -4,6 +4,9 @@
 **Audit scope:** repository evidence only; architecture/documentation only
 **Safety boundary:** paper/internal simulation or BloFin demo only; real-money execution remains
 disabled
+**Final review inputs:** PR #66 at `4c4a66b`; PR #67 at `a13c60c`
+**Canonical correction status:** all final review findings are represented and resolved in the
+target contract; no runtime implementation is claimed
 
 ## 1. Executive assessment
 
@@ -793,3 +796,116 @@ refer to the dependency-corrected migration in the target architecture.
 | HIGH-18 | HIGH | Accepted | Demo credentials, permissions, account, organization and user are non-null bound; probe uncertainty fails closed | Exchange account authorization | 9 | Missing/stale/failed permission attestation and cross-tenant account use reject |
 | HIGH-19 | HIGH | Accepted | Introduce allowlisted typed predicate/sequence AST; unsupported existing rules reject rather than approximate | Strategy compiler | 3 | Golden compiler fixtures and unsupported-construct negative tests |
 | HIGH-20 | HIGH | Accepted | Typed behavioral journal backfill preserves emotions, mistakes, tags, attachments, links and RAG lineage | Canonical journal migration | 4 | Dry-run/idempotency plus row, link, discipline, coaching and RAG parity fixtures |
+
+## 22. Final-review current-state corrections
+
+The independent PR #66 and PR #67 reviews were read in full. They found that the previous
+target architecture was not implementation-ready even though the checked-in runtime remained
+disabled and paper-oriented. These are target-contract defects, not evidence that a live order
+was placed.
+
+### Execution and approval
+
+The current repository and the superseded target description did not provide a complete
+account-specific consent chain:
+
+- the prior `TradePlanRevision` omitted material executable fields and distinct evidence versus
+  execution instrument identities;
+- the prior authorization omitted internal/exchange account binding;
+- the prior command independently supplied order fields;
+- the prior canonical command hash included retry-variant command/correlation/time fields;
+- first-writer, authorization-consumption, risk-reservation, durable-effect and network commit
+  boundaries were not fully ordered;
+- single-use authorization did not enforce one execution claim per plan/account;
+- mutable receipt state and immutable receipt hash semantics conflicted.
+
+The final target now makes the immutable account-specific plan the sole executable source,
+defines `CanonicalExecutionPayloadV1`, commits one first-writer transaction before network I/O,
+reserves risk serializably, enforces one entry claim per revision/account, and separates stable
+receipt identity from append-only transitions and the current projection.
+
+### Current configuration is not the final permanent invariant
+
+The earlier “freeze existing paper-only behavior” wording was inaccurate for the requested
+permanent contract. Current defaults and staging blueprint are safe, but repository review
+found that local `Settings` can accept `execution_mode=trade` with real trading enabled and
+that `ExecutionService` does not require exact paper mode; a `read_only` configuration can
+therefore fail to block internal paper mutation by mode alone. This task does not change that
+runtime code.
+
+The target explicitly requires Phase 1 to replace those legacy semantics: settings,
+execution-capable services and provider construction must accept only exact `PAPER`, must
+always reject `ENABLE_REAL_TRADING=true`, must keep `trade_live` tombstoned, and must reject
+execution from `READ_ONLY`.
+
+### Data, identity and ownership
+
+Review confirmed additional current/target migration facts:
+
+- current `SetupDefinition` rows are global legacy built-in identities and cannot be silently
+  repurposed as tenant-owned compiled artifacts;
+- current tenant-owned TradingView signals may carry private strategy/link metadata and cannot
+  enter a globally deduplicated public observation store;
+- current mutable manual chart levels cannot serve as immutable historical resistance evidence
+  without revisions;
+- current candidate families require a full direction/setup/fusion/evidence-window identity
+  and an explicit downstream role for `PaperValidationCandidate`;
+- current global exchange credential construction must be replaced by exact tenant
+  `ExchangeAccount` resolution before demo execution;
+- current journal update/delete APIs expose venue-derived fields to ordinary mutation, so the
+  target must separate reflective user fields from projector-owned execution truth.
+
+### Operational persistence and automation
+
+`READ_ONLY` cannot literally mean “no database writes” while audit, quota, usage/model-call
+telemetry and optional non-domain conversation memory remain operational. The final target
+therefore adopts an exhaustive allowlist for those non-domain records and denies every other
+write. Worker fencing, scan-attempt lineage, Telegram identity/action receipts and journal
+projection retries are now explicit target contracts, but all corresponding automation remains
+disabled.
+
+## 23. Final canonical correction inventory
+
+The normative corrections are in
+`docs/redesign/agentic_redesign_target_architecture.md` §§21–30. The exhaustive
+`FINAL REVIEW RESOLUTION MATRIX` in §31 represents:
+
+- PR #66: 1 BLOCKER, 12 HIGH, 9 MEDIUM and 1 LOW finding;
+- PR #67: 6 BLOCKER, 20 HIGH and 7 MEDIUM findings.
+
+Overlapping findings are resolved through shared contracts rather than duplicate mechanisms:
+
+| Shared correction group | Canonical result |
+|---|---|
+| Approved order and account | Complete hashed `TradePlanRevision` plus exact account/mode/permission authorization |
+| Retry, concurrency and crash safety | Semantic payload hash, first-writer transaction, durable effect lease/fence and no blind retry |
+| Deterministic risk | Atomic charged reservation through ambiguity plus safety-epoch precedence |
+| One plan/one execution | Unique approval issuance and unique revision/account entry claim |
+| Execution truth | Stable receipt, append-only transitions, versioned projection and immediate partial-fill exposure |
+| Evidence truth | Public observations versus tenant assertions, typed payloads, consumer-time freshness and deterministic replay |
+| Strategy occurrence identity | Explicit legacy setup migration, immutable AST/lifecycle, canonical evidence window and candidate key |
+| Remote/account safety | Bot/action/domain idempotency, account-scoped demo credentials and immediate NET-mode probe |
+| Journal truth | Unique lifecycle aggregate, projector-owned venue facts and append-only corrections |
+
+No blocker or high finding is deferred. Medium and low findings are also accepted with an
+explicit target contract and deterministic test.
+
+## 24. Phase 0 scope and safety verification
+
+This correction remains architecture/documentation only:
+
+- product code: unchanged;
+- autogenerated or ordinary migrations: unchanged;
+- deployment descriptors: unchanged;
+- feature flags and environment defaults: unchanged;
+- worker: disabled and unchanged;
+- watcher automation: disabled and unchanged;
+- TradingView/paper-signal automation: disabled and unchanged;
+- Telegram automation: disabled and unchanged;
+- BloFin demo external execution: disabled and unchanged;
+- live trading: not enabled; target makes it permanently impossible.
+
+Repository blueprint statements remain configuration intent, not a claim about an unqueried
+live control plane. The next authorized step is not Phase 1 coding: both independent final
+reviewers must first rerun against the new exact canonical head and approve the corrected
+contracts.
