@@ -9,7 +9,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError, PersistencePolicyError, TradingPolicyError, ValidationAppError
+from app.core.errors import (
+    NotFoundError,
+    PersistencePolicyError,
+    TradingPolicyError,
+    ValidationAppError,
+)
 from app.core.operation_policy import (
     PersistenceKind,
     assert_authorization_issuance_allowed,
