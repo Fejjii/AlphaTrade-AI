@@ -21,7 +21,7 @@ risk and exchange safety authoritative, extend the existing strategy and journal
 unify surveillance before enabling automation. The checked-in defaults and BloFin host guards
 also preserve the required paper/demo-only posture.
 
-It is not ready to implement as written. Five critical contracts are unresolved:
+It is not ready to implement as written. Seven critical contracts are unresolved:
 
 1. current read-only analytical wording can create and persist proposals and approval records;
 2. missing market data can become an executable-shaped plan using a placeholder price;
@@ -30,7 +30,10 @@ It is not ready to implement as written. Five critical contracts are unresolved:
 4. the agent's apparent paper-execution tool is a successful no-op, not the authoritative
    `ExecutionService`;
 5. paper-order idempotency is globally keyed, tenant-unscoped on lookup, and not bound to the
-   request payload.
+   request payload;
+6. the required perpetual trade-flow/CVD evidence has no repository provider contract;
+7. current watcher logic can present fallback or incomplete-candle evidence as fresh and alert
+   on it.
 
 The target also mixes objective setup state with account-specific risk eligibility, overlooks an
 existing versioned `SetupDefinition` domain, understates existing watchlist capabilities, and
@@ -44,7 +47,7 @@ implementation begin. This verdict does not recommend a rewrite.
 
 | Severity | Count |
 |---|---:|
-| CRITICAL | 5 |
+| CRITICAL | 7 |
 | HIGH | 20 |
 | MEDIUM | 8 |
 | LOW | 3 |
@@ -170,6 +173,47 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   (and user/account where applicable). Persist a canonical command hash containing operation,
   immutable resource revision, account, side, type, quantity, and price; a replay returns the
   original result only when principal and hash match, otherwise it is rejected and audited.
+
+### CRITICAL-06 — Required perpetual CVD/order-flow evidence has no provider contract
+
+- **Affected area:** first vertical slice, evidence, fusion.
+- **Repository evidence:**
+  - `backend/src/app/providers/market_data.py:131-163` exposes ticker, OHLCV, funding, open
+    interest, and order-book snapshots, but no public trades, stream cursor, or CVD window.
+  - The Binance implementation currently fetches spot `/api/v3/klines`, not USD-M futures
+    klines.
+  - `backend/src/app/providers/exchange/blofin_market_data.py` exposes candles and book snapshots,
+    but not public trades.
+  - Current setup detectors consume OHLCV only.
+- **Why it matters:** the proposed first Pattern requires aggressor-signed perpetual trade flow.
+  OHLCV order-block detection and a one-shot L2 snapshot cannot provide CVD or continuity.
+  Pattern/evidence schema decisions made before source identity, aggressor, timestamp, and gap
+  semantics will not be replayable.
+- **Recommended correction:** contract-test and select one read-only perpetual evidence source
+  before Pattern implementation. Add typed `TradeEvent`, `TradeStreamCursor`, and `CvdWindow`
+  contracts with venue/market/instrument, event ID, aggressor convention, event/receive times,
+  interval boundaries, adapter version, and reconnect/gap state. Fail closed on gaps, stale or
+  fallback data, wrong market, or incomplete warm-up. The intended runtime region must prove
+  access to the selected endpoint.
+
+### CRITICAL-07 — Watcher can alert from fallback or incomplete-candle evidence
+
+- **Affected area:** evidence freshness, watcher safety.
+- **Repository evidence:**
+  - `backend/src/app/providers/market_data.py:224-233` marks mock/fallback OHLCV as
+    `fallback_used=True` and `is_live=False`, but `is_stale=False`.
+  - Binance kline mapping includes the currently forming bar and `OHLCVBar` has no interval end
+    or finality field.
+  - `backend/src/app/services/market_watcher_service.py:295-343` maps freshness from staleness
+    alone, then runs detectors and can create alerts without rejecting fallback or forming data.
+- **Why it matters:** an unavailable provider can fall back to deterministic mock bars that are
+  stored as fresh enough for setup detection; a forming candle can also satisfy a rule that
+  requires the latest closed candle.
+- **Recommended correction:** require `is_live=True`, `fallback_used=False`, `is_stale=False`,
+  correct venue/market, no sequence gap, sufficient history, and final closed bars before setup
+  confirmation. Persist interval start/end/finality and post-close grace. Mock, fallback,
+  forming, or gap-affected evidence is visibly degraded preview only and cannot create a live
+  alert, confirmed candidate, approval-eligible plan, or executable order.
 
 ### HIGH-01 — The watchlist gap is factually overstated
 
@@ -454,22 +498,7 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   again in each mutating service. Treat tool metadata as declarative input to enforcement, not
   documentation.
 
-### HIGH-18 — Watcher confirmation accepts fallback and forming candles
-
-- **Affected area:** evidence freshness, watcher safety.
-- **Repository evidence:**
-  - `backend/src/app/providers/market_data.py:224-233` marks mock/fallback OHLCV as
-    `fallback_used=True` but `is_stale=False`.
-  - Binance kline mapping includes the currently forming bar.
-  - `backend/src/app/services/market_watcher_service.py:295-329` checks staleness but not
-    fallback or closed-candle status before running detectors and creating alerts.
-- **Why it matters:** synthetic or incomplete evidence can produce an apparently fresh,
-  confirmed candidate.
-- **Recommended correction:** preserve the full provider envelope; compute source-specific
-  closed-window and gap state; allow fallback/forming data only in visibly degraded preview.
-  It cannot confirm a setup, create an actionable candidate, or enter an executable plan.
-
-### HIGH-19 — BloFin permissions and account tenancy fail closed only on paper
+### HIGH-18 — BloFin permissions and account tenancy fail closed only on paper
 
 - **Affected area:** BloFin authorization, tenant isolation.
 - **Repository evidence:**
@@ -486,7 +515,7 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   Bind every command, snapshot, order, and fill to non-null exchange account, organization, and
   user IDs; otherwise enforce and document a hard single-tenant initial deployment.
 
-### HIGH-20 — Current structured rules are not an executable Pattern predicate system
+### HIGH-19 — Current structured rules are not an executable Pattern predicate system
 
 - **Affected area:** Pattern Cards, deterministic compilation.
 - **Repository evidence:** `backend/src/app/services/structured_rule_resolver.py:36-72` uses only
@@ -497,6 +526,23 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
 - **Recommended correction:** introduce an allowlisted, typed predicate/sequence AST and
   deterministic compiler as an extension of the strategy version. Migrate existing rules only
   when semantics are exact; reject unsupported constructs instead of approximating them.
+
+### HIGH-20 — Legacy journal backfill loses structured behavioral meaning
+
+- **Affected area:** journal migration, learning parity.
+- **Repository evidence:**
+  - `backend/src/app/services/journal_backfill_service.py:101-182` preserves core links and
+    screenshots but flattens legacy emotions, mistakes, lessons, and improvement rules into
+    free-form notes.
+  - `backend/src/app/services/human_vs_system_service.py:190-204` consumes legacy emotions and
+    mistakes as structured fields.
+- **Why it matters:** row-count and link parity can pass while discipline scores, coaching,
+  lesson candidates, and RAG behavior change. Flattened improvement rules could also be mistaken
+  for authored executable logic.
+- **Recommended correction:** map emotions and mistakes to typed canonical observations with
+  category and provenance; carry lessons/rules as pending advisory observations only. Add
+  behavioral parity fixtures for discipline output, candidate suggestions, tags, screenshots,
+  proposal/position links, and RAG—not only row counts.
 
 ### MEDIUM-01 — Model metering makes an unnecessary LLM call
 
@@ -854,26 +900,28 @@ Recommended dependency order:
    `SetupDefinition` to `UserStrategyVersion`.
 7. Move canonical `JournalTrade` read adapters, per-trade comparison, RAG, and minimal list/detail
    UI; keep legacy compatibility.
-8. Select the read-only trades/depth source and define instrument, aggressor, sequence, gap,
+8. Dry-run and execute idempotent legacy journal backfill only after typed behavioral mapping and
+   row/link/discipline/RAG parity fixtures pass.
+9. Select the read-only trades/depth source and define instrument, aggressor, sequence, gap,
    timestamp, and freshness semantics.
-9. Implement typed normalized observation contracts and adapters for existing OHLCV,
+10. Implement typed normalized observation contracts and adapters for existing OHLCV,
    TradingView, watcher, detector, portfolio, and risk records.
-10. Add the deterministic Pattern evaluator and separate setup-assessment/action-eligibility
+11. Add the deterministic Pattern evaluator and separate setup-assessment/action-eligibility
    state machines.
-11. Add versioned subscriptions associated with `WatchlistItem`; unify worker/manual
+12. Add versioned subscriptions associated with `WatchlistItem`; unify worker/manual
     surveillance; reject fallback/forming bars; add scan lineage, database candidate uniqueness,
     honest health, and fail-closed fenced distributed locking.
-12. Add transactional outbox and Telegram outbound consumer; then verified inbound read-only
+13. Add transactional outbox and Telegram outbound consumer; then verified inbound read-only
     actions, reject/skip, and exact-plan approval.
-13. Bind demo accounts/permissions to tenant principals and extend `ExecutionService` with
+14. Bind demo accounts/permissions to tenant principals and extend `ExecutionService` with
     no-blind-retry submit, client-order lookup, partial-fill/cancel/reduce-only close, and
     reconciliation; keep all flags off.
-14. Add idempotent fill/close journal projection, excursions, analytics, and review-only lesson
+15. Add idempotent fill/close journal projection, excursions, analytics, and review-only lesson
     generation.
-15. Run the complete vertical-slice replay/failure matrix and an independent safety/security
+16. Run the complete vertical-slice replay/failure matrix and an independent safety/security
     review.
-16. Assemble four frontend surfaces and hide old primary links only after compatibility tests.
-17. Enable any staging/demo feature only in a separately authorized deployment task.
+17. Assemble four frontend surfaces and hide old primary links only after compatibility tests.
+18. Enable any staging/demo feature only in a separately authorized deployment task.
 
 ## 15. First vertical-slice verdict
 
@@ -896,21 +944,30 @@ The CVD gap exists for both symbols. The choice does not remove the need for a s
 
 Deterministic draft rules:
 
-1. The latest closed 15m candle trades above a confirmed prior 15m swing high that lies within a
-   bounded ATR distance of a versioned 4h resistance/manual level.
-2. Excursion above the swing is at least `0.25 * ATR(14)` and the candle closes back below the
-   prior swing high, reusing the current liquidity-sweep detector semantics.
-3. Trigger-window 15m volume is at least `1.5 *` the median/mean of the preceding 20 closed
-   15m bars; the exact statistic is fixed in the Pattern version.
-4. Price makes a higher high while cumulative aggressor delta over the matched swing window
-   makes a lower high.
-5. Aggressive-buy efficiency deteriorates in the final push: positive taker-buy delta produces
-   less upward price movement than the preceding push, then signed delta turns negative before
-   or during the trigger close.
-6. Entry trigger is the first closed 15m candle below the swept swing level after rules 1-5.
-7. Invalidation is the exhausted high plus a versioned ATR/tick buffer. TTL is a fixed number of
-   closed 15m bars. Any trade-sequence gap, stale source, fallback, or new high invalidates the
-   assessment.
+1. Load at least 100 final 15m bars and 30 final 4h bars.
+2. Compute Wilder ATR(14), matching the existing indicator semantics.
+3. Let `S` be the most recent confirmed 15m swing high using strict left=2/right=2 fractal
+   semantics.
+4. Select the nearest active versioned 4h manual resistance `R`, tie-breaking by stable level
+   ID, and require `abs(S - R) <= 0.50 * ATR4h(14)`.
+5. For final trigger candle `T`, require `T.high >= S + 0.25 * ATR15m(14)`,
+   `T.close < S`, and `T.close < T.open`, extending the current bearish liquidity-sweep rule.
+6. Require `T.volume / mean(volume of the preceding 20 final 15m bars) >= 1.50`.
+7. Build quote-volume CVD from ordered perpetual trades: buyer aggressor contributes
+   `+price * quantity`, seller aggressor contributes `-price * quantity`; use a fixed baseline
+   at the open of the 32nd 15m bar before `T`.
+8. Require bearish divergence: `T.high > S` and CVD at `T` close is below CVD at `S` bar close.
+9. Require trigger-bar reversal:
+   `signed_quote_delta_T / total_quote_volume_T <= -0.10`.
+10. Evidence must have no sequence/reconnect gap, fallback, wrong market, or incomplete window;
+    latest trade event at trigger evaluation is no more than 10 seconds old.
+11. Emit one assessment/candidate key for
+    `(strategy_version, venue, instrument, 15m, T_interval)`.
+12. Invalidation is `T.high + max(0.10 * ATR15m(14), 2 * venue_tick_size)`; expire after two
+    additional final 15m bars.
+13. Before plan approval, invalidate market state on a later high above invalidation,
+    source gap/staleness/fallback, or strategy-version replacement. A cross-venue basis above a
+    conservative initial 20 bps blocks action eligibility without rewriting Pattern truth.
 
 Thresholds above are a starting specification for fixtures, not validated trading claims.
 Historical and paper evidence must determine whether the Pattern is promotable.
@@ -920,8 +977,8 @@ Historical and paper evidence must determine whether the Pattern is promotable.
 Preferred evidence venue:
 
 1. **Binance USD-M Futures 15m and 4h klines** for structure, ATR, closed-candle volume, and
-   resistance context. Extend the existing Binance provider's already configured futures base
-   rather than mixing spot OHLCV with perpetual execution.
+   resistance context through a new perpetual-market adapter. The current Binance implementation
+   calls spot `/api/v3/klines`; it must not be silently reused as USD-M evidence.
 2. **Binance USD-M Futures aggregate trades** (`/fapi/v1/aggTrades` for bounded backfill and
    `<symbol>@aggTrade` for streaming) for aggressor-signed CVD and buy-efficiency/exhaustion.
    Persist aggregate trade ID and buyer-maker classification semantics.
@@ -930,15 +987,19 @@ Preferred evidence venue:
    required until spoofing/sequence limitations are evaluated.
 4. Existing versioned 4h manual levels or deterministic swing levels for resistance.
 5. Existing portfolio/risk/kill-switch state only for separate action eligibility.
-6. **BloFin demo ticker/order detail/fills/positions** only for execution-time venue price,
-   contract sizing, basis check, and reconciliation—not as a substitute for the Binance
-   evidence feed.
+6. **BloFin demo ticker/order detail/fills/positions/account bills** only for execution-time
+   venue price, contract sizing, basis check, and reconciliation—not as a substitute for the
+   Binance evidence feed.
 
 Because evidence and execution are cross-venue, every plan must record both instruments and
 block when the BloFin demo price basis versus the evidence venue exceeds a conservative,
 versioned tolerance. Alternatively, use BloFin demo public trades/books/candles consistently
 after a dedicated provider contract is implemented and validated; its current repository
 provider lacks trades and is coupled to demo configuration.
+
+The selected public feed must be reachable from the intended deployment region. This review
+environment observed HTTP 451 from the checked-in Binance hosts on 2026-09-15, so a passing
+contract/continuity probe in the actual runtime is a release prerequisite, not an assumption.
 
 Official API references used only to assess source feasibility:
 
@@ -949,6 +1010,20 @@ Official API references used only to assess source feasibility:
 - Binance USD-M diff depth:
   <https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Diff-Book-Depth-Streams>
 - BloFin API and demo endpoints: <https://docs.blofin.com/index.html>
+
+### Required end-to-end proof
+
+The vertical-slice drill must persist and correlate IDs for:
+
+`evidence window -> Pattern assessment -> candidate -> outbox delivery -> authenticated Telegram
+receipt -> immutable plan revision -> approval -> fresh risk result -> BloFin demo client/order
+IDs -> fills -> reconciled position -> reduce-only close -> reconciled fees/funding/PnL ->
+exactly one JournalTrade -> analytics -> pending lesson`.
+
+Mandatory negative drills cover stale/fallback/forming evidence, stream gap/reconnect, duplicate
+candidate, duplicate Telegram delivery/callback, expired or wrong-version nonce, ambiguous demo
+submit, partial fill plus cancel, wrong position mode, cross-venue basis breach, risk/kill-switch
+block, duplicate journal projection, and unresolved reconciliation.
 
 ### Why this slice is best
 
@@ -985,7 +1060,8 @@ untested SOL preference as architecture evidence.
     uncertainty; prohibit blind mutation retries; add client-order lookup, partial fill, cancel,
     position mode, reconciliation, and venue/fill uniqueness.
 15. Decide net-mode versus hedge-mode close policy.
-16. Move canonical journal adapters earlier and prohibit automatic strategy self-modification.
+16. Move canonical journal adapters earlier; require typed behavioral backfill parity; prohibit
+    automatic strategy self-modification.
 17. Adopt and record the first-slice feed/instrument/freshness/sequence contract before fusion
     implementation.
 18. Keep worker, watcher, Telegram, BloFin demo execution, and live trading disabled throughout
