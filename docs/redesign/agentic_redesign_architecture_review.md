@@ -21,14 +21,16 @@ risk and exchange safety authoritative, extend the existing strategy and journal
 unify surveillance before enabling automation. The checked-in defaults and BloFin host guards
 also preserve the required paper/demo-only posture.
 
-It is not ready to implement as written. Four critical contracts are unresolved:
+It is not ready to implement as written. Five critical contracts are unresolved:
 
 1. current read-only analytical wording can create and persist proposals and approval records;
 2. missing market data can become an executable-shaped plan using a placeholder price;
 3. the target contradicts itself about whether `APPROVE` merely records approval or causes demo
    execution, while the repository has no immutable plan version or consumable approval;
 4. the agent's apparent paper-execution tool is a successful no-op, not the authoritative
-   `ExecutionService`.
+   `ExecutionService`;
+5. paper-order idempotency is globally keyed, tenant-unscoped on lookup, and not bound to the
+   request payload.
 
 The target also mixes objective setup state with account-specific risk eligibility, overlooks an
 existing versioned `SetupDefinition` domain, understates existing watchlist capabilities, and
@@ -42,9 +44,9 @@ implementation begin. This verdict does not recommend a rewrite.
 
 | Severity | Count |
 |---|---:|
-| CRITICAL | 4 |
-| HIGH | 16 |
-| MEDIUM | 7 |
+| CRITICAL | 5 |
+| HIGH | 20 |
+| MEDIUM | 8 |
 | LOW | 3 |
 
 ## 2. Reuse verdict
@@ -56,7 +58,7 @@ still create parallel concepts.
 |---|---|---|
 | Intent/operation policy | `agents/routing.py`, `agents/mutation_policy.py`, typed `AgentState` | Add one policy contract; do not add a second agent framework |
 | Planning | `PreTradeAnalysisService`, `PositionSizingService`, `LossAcceptanceService`, `ProposalService` | Extend; remove executable placeholders |
-| Watcher subscriptions | `WatchlistItem`, `MarketService` | Extend the existing item; a separate subscription identity is not justified |
+| Watcher subscriptions | `WatchlistItem`, `MarketService` | Keep watchlist symbol curation; add only a versioned policy identity that associates exact watchlist markets/timeframes with strategy versions |
 | Normalized evidence | `MarketDataEnvelope` plus watcher/TradingView/detector adapters | Add a typed envelope and append-only observations; do not copy every source payload |
 | Fusion/candidate lifecycle | `PaperSignalOrchestrationDecision`, `PaperValidationCandidate`, watcher and TradingView adapters | Generalize one assessment state machine; do not add a third candidate flow |
 | Pattern Cards | `UserStrategyVersion`, `StrategyCard`, `StructuredRules`, and existing `SetupDefinition` | Define one identity mapping and immutable compiled artifact |
@@ -150,6 +152,25 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   phase by making it fail closed. Only after immutable plan/approval and operation policy exist
   should the agent facade delegate to the same `ExecutionService` command as the API.
 
+### CRITICAL-05 — Order idempotency can disclose another tenant's order
+
+- **Affected area:** execution API, tenant isolation, duplicate-order protection.
+- **Repository evidence:**
+  - `backend/src/app/db/models.py:1244-1265` makes `Order.idempotency_key` globally unique rather
+    than organization-scoped.
+  - `backend/src/app/repositories/orders.py:16-18` looks up replay solely by key.
+  - `backend/src/app/services/execution_service.py:136-146` returns that replay before deriving
+    and validating the proposal's tenant or a request fingerprint.
+  - `backend/src/app/api/routes/execution.py:50-58` returns the order without a second ownership
+    check.
+- **Why it matters:** a known or colliding key can return another organization's paper order.
+  Reusing one key with a changed proposal, quantity, side, or plan revision can also return an
+  unrelated old result rather than reject the mismatch.
+- **Recommended correction:** scope both uniqueness and convergence queries by organization
+  (and user/account where applicable). Persist a canonical command hash containing operation,
+  immutable resource revision, account, side, type, quantity, and price; a replay returns the
+  original result only when principal and hash match, otherwise it is rejected and audited.
+
 ### HIGH-01 — The watchlist gap is factually overstated
 
 - **Affected area:** reuse, watcher subscription model.
@@ -159,11 +180,14 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   - `backend/src/app/schemas/market.py:39-67` requires typed timeframes and strategies.
   - `backend/src/app/services/market_service.py:30-94` validates and persists those fields.
   - PR #64 states that watchlist items lack timeframe/pattern/evidence-expression subscriptions.
-- **Why it matters:** the incorrect claim encourages a new `WatcherSubscription` identity when
-  most of that identity already exists.
-- **Recommended correction:** extend `WatchlistItem` with immutable revision/audit metadata,
-  user-strategy-version references, evidence policy, threshold bounds, and delivery preference
-  references. Keep one row per user/org/symbol/exchange; do not introduce a multi-symbol row.
+- **Why it matters:** the incorrect claim encourages duplication, but directly adding every
+  versioned policy field to this mutable symbol-curation row would also overload it.
+- **Recommended correction:** keep `WatchlistItem` as the existing per-user symbol/exchange
+  curation and migration input. If independent enable/disable, exact strategy version, fusion
+  policy, threshold, confirmer, and audit history are required, use a minimal stable
+  `WatcherSubscription` plus immutable `WatcherSubscriptionVersion` and association rows to
+  watchlist market/timeframe entries. Do not duplicate symbol identity, watchlist ownership, or
+  market validation in the new model.
 
 ### HIGH-02 — Pattern Card identity ignores the existing `SetupDefinition`
 
@@ -267,7 +291,9 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
 - **Recommended correction:** define a database-enforced candidate key such as
   `(organization_id, strategy_version_id, instrument_id, timeframe, evidence_window_hash)`.
   Use transactional insert/upsert and optimistic transition versioning. Keep alert delivery
-  dedupe separate.
+  dedupe separate. Claim pending deliveries durably before provider calls and include due failed
+  attempts in retry selection; current check-then-insert and unclaimed delivery selection are
+  insufficient.
 
 ### HIGH-08 — Worker and manual watcher are different pipelines and scopes
 
@@ -279,11 +305,17 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
     stores observations, and can create in-app alerts.
   - `backend/src/app/services/market_watcher_scanner.py:17-18` separately hard-codes
     BTC/ETH/SOL and 15m/1h.
+  - `backend/src/app/workers/scanner.py:35-60` swallows per-symbol failures and still reports
+    the configured symbol count; detections are not linked to an organization or scan-run
+    identity.
 - **Why it matters:** simply adding subscriptions to the worker will not make behavior,
-  dedupe, or tenant lineage match manual scans.
+  dedupe, tenant lineage, or health reporting match manual scans. An all-provider failure can
+  still appear successful.
 - **Recommended correction:** create one organization-aware surveillance application service
   used by both worker and dry-run API. Batch shared market fetches, then evaluate each tenant's
-  strategy version and alert policy separately.
+  strategy version and alert policy separately. Create the scan attempt first, report
+  attempted/succeeded/failed counts, link all outputs, and mark partial/all-source failure
+  degraded/failed.
 
 ### HIGH-09 — Worker locking fails open outside local development
 
@@ -303,12 +335,16 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
     `backend/src/app/schemas/notifications.py` store only a user-editable Telegram chat ID.
   - Current Telegram code is outbound-only; there is no Telegram user ID, chat type, verified
     binding, callback, nonce, update receipt, or webhook route.
+  - `backend/src/app/api/routes/approvals.py:69-82` and
+    `backend/src/app/api/routes/positions.py:68-83` scope mutations to organization but do not
+    enforce the resource's user ownership.
 - **Why it matters:** possession or entry of a chat ID is not proof that the Telegram user is
   the authenticated AlphaTrade user. Group chats also create confused-deputy risk.
 - **Recommended correction:** define an authenticated enrollment challenge initiated in the
   web app and completed by the same Telegram user in a private chat. Persist organization,
   AlphaTrade user, Telegram user, chat, bot identity, chat type, verified-at/revoked-at, and
-  allowed actions. Reject groups by default and recheck role/ownership on every action.
+  allowed actions. Reject groups by default and make gateway service queries require trusted
+  organization ID, user ID, role, and resource ownership on every action.
 
 ### HIGH-11 — “Exactly-once-effect” is not a valid external-delivery guarantee
 
@@ -331,14 +367,19 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
     order ID.
   - `backend/src/app/providers/exchange/blofin_execution.py:115-125` calls
     `/api/v1/trade/order` with `orderId`.
+  - `backend/src/app/providers/exchange/blofin_client.py:179-209,239-251` retries network,
+    429, and 5xx failures for every HTTP method, including mutating order POSTs.
   - Current BloFin documentation defines `GET /api/v1/trade/order-detail` and allows either
     `orderId` or `clientOrderId`.
 - **Why it matters:** after a submit timeout, the system may have only its client order ID.
   Current code cannot perform the target's mandatory lookup-before-retry and appears to call a
-  different query endpoint.
+  different query endpoint. Blind transport retry can duplicate an accepted order whose response
+  was lost.
 - **Recommended correction:** update the provider contract to query order detail by exactly one
-  of venue order ID or client order ID, then make ambiguous submit transition to
-  `RECONCILIATION_REQUIRED`. Contract-test the current demo API before enabling it.
+  of venue order ID or client order ID. Do not transparently retry an ambiguously sent mutation:
+  persist `SUBMITTING`, transition to `RECONCILIATION_REQUIRED`, query by deterministic client
+  order ID, and only submit again after proving absence. Contract-test the demo API before
+  enabling it.
 
 ### HIGH-13 — Exchange-order and fill persistence lacks natural uniqueness
 
@@ -395,6 +436,68 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   reconciliation precedence. Keep unresolved differences visible and block journal
   finalization rather than fabricating totals.
 
+### HIGH-17 — Question-shaped agent actions bypass confirmation
+
+- **Affected area:** agent mutation policy, strategy and paper-validation workflows.
+- **Repository evidence:**
+  - `backend/src/app/agents/strategy_intent.py` can classify “Would you build a strategy card?”,
+    “Can you run backtest BTC?”, and “Could you start paper validation?” as mutating workflow
+    intents.
+  - `backend/src/app/agents/nodes.py` dispatches strategy create, backtest run, paper-validation
+    start, and scans without a central operation/confirmation gate.
+  - `backend/src/app/tools/registry.py:120-126` does not enforce the registered
+    `requires_approval` metadata; the corresponding tool actions persist immediately.
+- **Why it matters:** fixing generic analysis-to-proposal routing alone leaves several
+  conversational paths where a question creates records, workload, or simulated paper trades.
+- **Recommended correction:** inventory every tool action into operation classes. Enforce
+  read-only question semantics, preview, confirmation, principal, and idempotency centrally and
+  again in each mutating service. Treat tool metadata as declarative input to enforcement, not
+  documentation.
+
+### HIGH-18 — Watcher confirmation accepts fallback and forming candles
+
+- **Affected area:** evidence freshness, watcher safety.
+- **Repository evidence:**
+  - `backend/src/app/providers/market_data.py:224-233` marks mock/fallback OHLCV as
+    `fallback_used=True` but `is_stale=False`.
+  - Binance kline mapping includes the currently forming bar.
+  - `backend/src/app/services/market_watcher_service.py:295-329` checks staleness but not
+    fallback or closed-candle status before running detectors and creating alerts.
+- **Why it matters:** synthetic or incomplete evidence can produce an apparently fresh,
+  confirmed candidate.
+- **Recommended correction:** preserve the full provider envelope; compute source-specific
+  closed-window and gap state; allow fallback/forming data only in visibly degraded preview.
+  It cannot confirm a setup, create an actionable candidate, or enter an executable plan.
+
+### HIGH-19 — BloFin permissions and account tenancy fail closed only on paper
+
+- **Affected area:** BloFin authorization, tenant isolation.
+- **Repository evidence:**
+  - `backend/src/app/core/exchange_readiness.py:69-80` returns without blocking when permission
+    probing fails.
+  - `backend/src/app/providers/exchange/factory.py:39-119` resolves global settings credentials
+    without tenant/account context or a fresh permission probe.
+  - `backend/src/app/db/models.py:205-217` defines `ExchangeAccount`, but execution does not use
+    it; `ExchangeOrder.organization_id` is nullable and has no account/user foreign key.
+- **Why it matters:** demo-host validation does not prove read+trade/no-transfer/no-withdraw
+  scope. In a multi-tenant process, organizations could operate the same global demo account.
+- **Recommended correction:** require a recent successful permission attestation before a demo
+  execution session/order, invalidate it on auth/key changes, and fail closed on probe failure.
+  Bind every command, snapshot, order, and fill to non-null exchange account, organization, and
+  user IDs; otherwise enforce and document a hard single-tenant initial deployment.
+
+### HIGH-20 — Current structured rules are not an executable Pattern predicate system
+
+- **Affected area:** Pattern Cards, deterministic compilation.
+- **Repository evidence:** `backend/src/app/services/structured_rule_resolver.py:36-72` uses only
+  the first entry rule, ignores its conditions and no-trade conditions, and approximates
+  ATR/swing semantics with constants.
+- **Why it matters:** directly labelling existing `StructuredRules` as the deterministic Pattern
+  engine would silently change authored meaning and overstate reuse.
+- **Recommended correction:** introduce an allowlisted, typed predicate/sequence AST and
+  deterministic compiler as an extension of the strategy version. Migrate existing rules only
+  when semantics are exact; reject unsupported constructs instead of approximating them.
+
 ### MEDIUM-01 — Model metering makes an unnecessary LLM call
 
 - **Affected area:** model routing, cost/latency observability.
@@ -402,7 +505,9 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
   `llm.complete()` in `usage_tracking`; `narrative_enhancement` may make another call, and
   narrative generation is enabled by default.
 - **Why it matters:** a routine request can pay for two model calls although only one produces
-  user value; placeholder usage can be mistaken for actual generation metadata.
+  user value; placeholder usage can be mistaken for actual generation metadata. The metering
+  request also sends raw user text, still runs when narrative LLM use is disabled, and can abort
+  an otherwise deterministic response when its provider fails.
 - **Recommended correction:** propagate provider usage from the actual routed call. If no model
   ran, use a labelled deterministic token estimate and zero provider latency; never invoke a
   model solely to meter it.
@@ -485,6 +590,19 @@ explicitly estimates, not measurements. They should not be used as acceptance cr
 - **Recommended correction:** correct the watchlist and worker statements. Keep counts explicitly
   tied to the audited commit and avoid treating file counts as behavioral validation.
 
+### MEDIUM-08 — `ModelRouter` is absent from migration order and its contract omits classification
+
+- **Affected area:** model routing, migration order, data egress.
+- **Repository evidence:** target §8 defines a task-aware router using task, impact, and data
+  classification, but its `ModelTaskRequest` omits `data_classification`; target migration
+  phases and implementation sequence do not add the router before Tier A/B consumers.
+- **Why it matters:** Pattern drafting and learning assume routed models without a scheduled
+  implementation step. Journal, portfolio, and user-rule data also need explicit provider
+  egress/redaction policy.
+- **Recommended correction:** add a model-routing phase before any Tier A/B consumer. Include
+  data classification, tenant/user scope, prompt-policy version, allowed providers/retention,
+  budgets, fallback, validation, and telemetry in the typed request and tests.
+
 ### LOW-01 — `MessageClass.COMMAND` is routed but never assigned
 
 - **Affected area:** agent taxonomy.
@@ -551,9 +669,8 @@ Verified reusable controls:
 - `Settings.real_trading_enabled` requires both trade mode and the explicit flag.
 - `core/exchange_safety.py` permanently rejects `trade_live`, production BloFin hosts, missing
   demo credentials, and any demo/live-axis conflict.
-- `ExecutionService` binds proposal and approval, enforces unique internal idempotency key,
-  checks kill switch twice, re-evaluates daily risk/overtrading/green-day controls, and rejects
-  stale/fallback market data.
+- `ExecutionService` binds proposal and approval, checks kill switch twice, re-evaluates daily
+  risk/overtrading/green-day controls, and rejects stale/fallback current market data.
 - paper-signal orchestration has deterministic age, cooldown, daily-loss, kill-switch, and
   conflict checks.
 - audit records exist across proposal, approval, execution, watcher, delivery, and sync paths.
@@ -563,8 +680,8 @@ Required preservation:
 1. the LLM cannot change risk inputs, thresholds, freshness, position size, or eligibility;
 2. execution-time Tier C remains a fresh server-side check and `BLOCK` is final;
 3. mock/fallback evidence may be displayed but never confirms a candidate or executable plan;
-4. candidate dedupe, approval consumption, venue client IDs, fills, and outbox receipts receive
-   database constraints;
+4. order idempotency is tenant-scoped and request-fingerprinted; candidate dedupe, approval
+   consumption, venue client IDs, fills, and outbox receipts receive database constraints;
 5. all watcher, Telegram, and BloFin flags stay off until separate test and deployment review;
 6. no live-money path is introduced.
 
@@ -607,6 +724,8 @@ Recommended identity:
 - examples/counterexamples: references to canonical journal/evidence/attachments;
 - screenshot input: non-executable evidence from which a reviewed draft may be produced.
 
+The executable rule language needs an allowlisted typed predicate/sequence AST; current
+`StructuredRules` resolution is an incomplete authored-data adapter, not the Pattern engine.
 No screenshot, RAG result, lesson, or model output may directly modify executable rules.
 
 ## 8. Model-routing verdict
@@ -620,21 +739,25 @@ No screenshot, RAG result, lesson, or model output may directly modify executabl
 - **Tier C:** all calculations, fusion, freshness, risk, permissions, idempotency, state
   transitions, sizing, and execution.
 
-Record task type, prompt version, tier, provider/model, every attempt, input/output tokens,
-latency, validation, fallback reason, and estimated/provider cost. A model outage returns
-deterministic facts or human review; it never relaxes safety.
+Record task type, data classification, tenant/user scope, prompt-policy version, tier,
+allowed provider/retention policy, provider/model, every attempt, input/output tokens, latency,
+validation, fallback reason, and estimated/provider cost. Add the router to migration order
+before its first consumer. A model outage returns deterministic facts or human review; it never
+relaxes safety.
 
 ## 9. Continuous watcher verdict
 
 **Verdict:** the current worker, heartbeat, watcher, watchlist, and observations are reusable,
 but they do not yet form a safe always-on system.
 
-`WatcherSubscription` behavior is necessary; a new top-level identity is not. Extend
-`WatchlistItem`, use one row per symbol/exchange, and add revisioned strategy-version/evidence
-policy. Unify manual and worker evaluation through one tenant-aware application service. Require
-distributed locking outside local, lease renewal, source batching, closed-candle boundaries,
-trade/depth sequence-gap detection, candidate TTL, database uniqueness, retry-safe transitions,
-and degraded heartbeat state.
+`WatcherSubscription` behavior and a versioned policy identity are justified, but symbol
+curation is not duplicated. Keep `WatchlistItem` per user/symbol/exchange; associate immutable
+subscription versions with exact watchlist market/timeframe entries, strategy versions, fusion
+policy, thresholds, and delivery policy. Unify manual and worker evaluation through one
+tenant-aware application service. Require distributed locking outside local, lease renewal and
+fencing, source batching, closed-candle/fallback rejection, trade/depth sequence-gap detection,
+candidate TTL, database uniqueness, retry-safe transitions, scan lineage, and honest degraded
+heartbeat state.
 
 ## 10. Telegram verdict
 
@@ -663,8 +786,9 @@ mirroring into an explicit venue-coordinated lifecycle.
 
 Current demo-host controls are strong. Current order semantics are not sufficient:
 
+- permission probes can fail open and execution uses global, tenant-unbound credentials;
 - internal order/position is marked filled before demo submission;
-- submit failure is swallowed as best-effort;
+- mutating POSTs are transport-retried, then submit failure is swallowed as best-effort;
 - client-order lookup is missing;
 - cancel is disconnected;
 - partial fills do not drive position state;
@@ -717,34 +841,39 @@ correlation, canonical-journal adapters, and evidence-source contracts must move
 
 Recommended dependency order:
 
-1. Freeze paper/live-host/kill-switch/risk/idempotency invariants and characterize current
-   agent persistence/stub defects.
+1. Freeze paper/live-host/kill-switch/risk invariants; fix tenant-scoped, payload-bound order
+   idempotency; characterize current agent persistence/stub defects.
 2. Implement `IntentDecision`, operation classes, clarification, and graph/persistence
-   non-interference tests.
+   non-interference tests across every mutating tool action.
 3. Make agent execution fail closed; remove every successful no-op mutation tool from reach.
 4. Define immutable plan revision, consumable approval, lifecycle correlation, and event/outbox
    identity contracts.
-5. Enforce immutable strategy versions and map `SetupDefinition` to `UserStrategyVersion`.
-6. Move canonical `JournalTrade` read adapters, per-trade comparison, RAG, and minimal list/detail
+5. Implement the typed model router, data-egress policy, actual-call metering, and fallback
+   behavior before any Tier A/B consumer.
+6. Enforce immutable strategy versions, define the exact predicate compiler, and map
+   `SetupDefinition` to `UserStrategyVersion`.
+7. Move canonical `JournalTrade` read adapters, per-trade comparison, RAG, and minimal list/detail
    UI; keep legacy compatibility.
-7. Select the read-only trades/depth source and define instrument, aggressor, sequence, gap,
+8. Select the read-only trades/depth source and define instrument, aggressor, sequence, gap,
    timestamp, and freshness semantics.
-8. Implement typed normalized observation contracts and adapters for existing OHLCV,
+9. Implement typed normalized observation contracts and adapters for existing OHLCV,
    TradingView, watcher, detector, portfolio, and risk records.
-9. Add the deterministic Pattern evaluator and separate setup-assessment/action-eligibility
+10. Add the deterministic Pattern evaluator and separate setup-assessment/action-eligibility
    state machines.
-10. Extend `WatchlistItem`; unify worker/manual surveillance; add database candidate uniqueness
-    and fail-closed distributed locking.
-11. Add transactional outbox and Telegram outbound consumer; then verified inbound read-only
+11. Add versioned subscriptions associated with `WatchlistItem`; unify worker/manual
+    surveillance; reject fallback/forming bars; add scan lineage, database candidate uniqueness,
+    honest health, and fail-closed fenced distributed locking.
+12. Add transactional outbox and Telegram outbound consumer; then verified inbound read-only
     actions, reject/skip, and exact-plan approval.
-12. Extend `ExecutionService` with demo order lookup, partial-fill/cancel/reduce-only close, and
+13. Bind demo accounts/permissions to tenant principals and extend `ExecutionService` with
+    no-blind-retry submit, client-order lookup, partial-fill/cancel/reduce-only close, and
     reconciliation; keep all flags off.
-13. Add idempotent fill/close journal projection, excursions, analytics, and review-only lesson
+14. Add idempotent fill/close journal projection, excursions, analytics, and review-only lesson
     generation.
-14. Run the complete vertical-slice replay/failure matrix and an independent safety/security
+15. Run the complete vertical-slice replay/failure matrix and an independent safety/security
     review.
-15. Assemble four frontend surfaces and hide old primary links only after compatibility tests.
-16. Enable any staging/demo feature only in a separately authorized deployment task.
+16. Assemble four frontend surfaces and hide old primary links only after compatibility tests.
+17. Enable any staging/demo feature only in a separately authorized deployment task.
 
 ## 15. First vertical-slice verdict
 
@@ -833,27 +962,33 @@ untested SOL preference as architecture evidence.
 ## 16. Mandatory corrections before implementation
 
 1. Correct Phase 0's watchlist and worker-environment facts.
-2. Resolve `APPROVE` versus execution semantics and define immutable, single-use plan approval.
-3. Make read-only analysis structurally unable to create in-memory or durable proposals.
-4. Remove executable placeholders and bind plans to immutable fresh evidence.
-5. Remove successful no-op mutation/execution tools from agent reach.
-6. Separate deterministic setup assessment from account/action eligibility.
-7. Replace the generic tenant-bound evidence design with global typed market observations plus
+2. Fix order idempotency so tenant, principal, immutable resource revision, and canonical request
+   payload are bound before replay.
+3. Resolve `APPROVE` versus execution semantics and define immutable, single-use plan approval.
+4. Make read-only questions structurally unable to create proposals, strategies, backtests,
+   validation runs/scans, simulated trades, or other workload.
+5. Remove executable placeholders and bind plans to immutable fresh evidence.
+6. Remove successful no-op mutation/execution tools from agent reach.
+7. Separate deterministic setup assessment from account/action eligibility.
+8. Replace the generic tenant-bound evidence design with global typed market observations plus
    tenant-scoped assessments.
-8. Define one Pattern identity across `UserStrategyVersion` and `SetupDefinition`; enforce
-   immutable versions.
-9. Generalize existing orchestration rather than create a parallel fusion/candidate flow.
-10. Extend `WatchlistItem`; unify worker/manual scans; enforce fail-closed distributed locking
-    and database candidate uniqueness.
-11. Define verified Telegram enrollment, private-chat/user binding, nonce/receipt state, and
+9. Define one Pattern identity across `UserStrategyVersion` and `SetupDefinition`; enforce
+   immutable versions and an exact typed predicate compiler.
+10. Add the data-classified model-routing phase and remove the metering-only LLM call.
+11. Generalize existing orchestration rather than create a parallel fusion/candidate flow.
+12. Preserve `WatchlistItem` curation; add only a minimal versioned subscription policy; unify
+    worker/manual scans; reject fallback/forming evidence; enforce scan lineage, honest health,
+    fail-closed fenced locking, and database candidate uniqueness.
+13. Define verified Telegram enrollment, private-chat/user ownership, nonce/receipt state, and
     at-least-once/idempotent semantics.
-12. Extend BloFin provider contracts for client-order lookup, partial fill, cancel, position
-    mode, and reconciliation; add venue/fill uniqueness.
-13. Decide net-mode versus hedge-mode close policy.
-14. Move canonical journal adapters earlier and prohibit automatic strategy self-modification.
-15. Adopt and record the first-slice feed/instrument/freshness/sequence contract before fusion
+14. Bind BloFin credentials/permissions to the tenant account and fail closed on permission
+    uncertainty; prohibit blind mutation retries; add client-order lookup, partial fill, cancel,
+    position mode, reconciliation, and venue/fill uniqueness.
+15. Decide net-mode versus hedge-mode close policy.
+16. Move canonical journal adapters earlier and prohibit automatic strategy self-modification.
+17. Adopt and record the first-slice feed/instrument/freshness/sequence contract before fusion
     implementation.
-16. Keep worker, watcher, Telegram, BloFin demo execution, and live trading disabled throughout
+18. Keep worker, watcher, Telegram, BloFin demo execution, and live trading disabled throughout
     implementation and tests until separately reviewed.
 
 ## 17. Optional improvements
