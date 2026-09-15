@@ -1,11 +1,15 @@
 # AlphaTrade Agentic Redesign — Final Safety, Data, and Execution Review
 
-**Review target:** PR #64  
-**Exact head:** `8511ea15dbd6f036a873a049b1adce84a89104cb`  
+**Review target:** PR #64
+
+**Exact head:** `8511ea15dbd6f036a873a049b1adce84a89104cb`
+
 **Reference:** PR #65 independent architecture review at
-`3a1a80ff7c980b3fcfbb3d239e3bcdc11f161403`  
+`3a1a80ff7c980b3fcfbb3d239e3bcdc11f161403`
+
 **Scope:** final adversarial architecture review only; no implementation, migrations,
-deployment, external API action, delivery, exchange call, or feature enablement  
+deployment, external API action, delivery, exchange call, or feature enablement
+
 **Final verdict:** **NOT APPROVED**
 
 ## 1. Executive safety decision
