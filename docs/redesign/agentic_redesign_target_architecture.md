@@ -89,8 +89,9 @@ flowchart TB
     TS -->|"explicit EXECUTE_PAPER_PLAN"| EXEC
     APP -. "exact consumable authorization" .-> EXEC
     EXEC -->|"invoke final deterministic gates"| RISK
-    RISK -. "ALLOW/BLOCK result" .-> EXEC
-    EXEC --> REC --> JOUR
+    RISK -->|BLOCK| STOP["No submit; return blocked receipt"]
+    RISK -->|ALLOW| SUBMIT["ExecutionService consume authorization + submit"]
+    SUBMIT --> REC --> JOUR
     CAND --> MR
     CONV --> MR
     JOUR --> MR
@@ -220,7 +221,8 @@ flowchart TD
     ES --> RISK["Risk / kill switch / freshness / eligibility"]
     RISK -->|BLOCK| RESP
     RISK -->|ALLOW| CONS["ExecutionService atomically consumes authorization"]
-    CONS --> RESP
+    CONS --> SUBMIT["ExecutionService submit + authoritative receipt"]
+    SUBMIT --> RESP
     READ --> SYN["Optional model synthesis"]
     PLAN --> SYN
     JOP --> SYN
