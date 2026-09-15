@@ -331,22 +331,20 @@ the canonical architecture and deterministically tested before Phase 1 implement
 
 ## 15. CI and scope gate
 
-CI is evidence separate from architecture safety. At the final pre-publication query,
-GitHub's push workflow for canonical commit
-`549e42a42fb16765ec0947ef3ba08550459dd1f5` remained in progress. The following exact-head
-checks/status had succeeded:
+CI is evidence separate from architecture safety. At the final exact-head query, GitHub's push
+workflow for canonical commit `549e42a42fb16765ec0947ef3ba08550459dd1f5`
+completed successfully. The following exact-head checks/status succeeded:
 
 - backend;
 - deployment-safety;
 - docker-build;
+- e2e-smoke;
 - evaluation;
 - frontend;
 - Vercel.
 
-The exact-head `e2e-smoke` job was still in progress. PR #64's pre-merge head had green
-backend, deployment-safety, frontend, docker-build, evaluation, e2e-smoke, Vercel and Vercel
-Preview Comments, but that is not substituted for the pending canonical merge-commit job.
-CI status does not change the architecture verdict.
+The review PR's documentation CI was still in progress after the final report update. CI
+status does not change the architecture verdict.
 
 The canonical change is documentation-only relative to prior `main`. This re-review adds only
 this report. It changes no architecture, product code, migration, deployment configuration,
