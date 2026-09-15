@@ -14,6 +14,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
+from app.core.persistence_firewall import install_persistence_firewall
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
@@ -49,6 +50,7 @@ def get_session_factory() -> sessionmaker[Session]:
 
 def get_session() -> Iterator[Session]:
     """FastAPI dependency yielding a session and ensuring cleanup."""
+    install_persistence_firewall()
     factory = get_session_factory()
     session = factory()
     try:

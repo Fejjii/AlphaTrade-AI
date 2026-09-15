@@ -47,14 +47,17 @@ def test_registry_rejects_duplicate() -> None:
 
 
 def test_paper_execution_tool_is_sensitive_and_requires_approval() -> None:
+    from app.tools.fail_closed import ToolFailureCode
+
     registry = build_default_registry()
     tool = registry.get("paper_execution")
     assert tool is not None
     assert tool.requires_approval
     out = registry.execute("paper_execution", {})
-    assert out.success
+    assert out.success is False
     assert out.result is not None
-    assert out.result.get("mode") == "paper"
+    assert out.result.get("code") == ToolFailureCode.NOT_IMPLEMENTED.value
+    assert out.result.get("mode") != "trade"
 
 
 def test_risk_checker_tool_runs_engine() -> None:

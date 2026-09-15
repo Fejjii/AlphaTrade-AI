@@ -45,14 +45,19 @@ def test_auth_cookie_samesite_normalized() -> None:
     assert settings.auth_cookie_samesite == "none"
 
 
-def test_trade_mode_requires_explicit_real_trading_flag() -> None:
-    with pytest.raises(ValidationError, match="enable_real_trading"):
+def test_trade_mode_is_permanently_rejected() -> None:
+    with pytest.raises(ValidationError, match="execution_mode=trade is permanently rejected"):
         Settings(execution_mode="trade", enable_real_trading=False)
 
 
-def test_real_trading_enabled_only_when_fully_configured() -> None:
-    settings = Settings(execution_mode="trade", enable_real_trading=True)
-    assert settings.real_trading_enabled is True
+def test_enable_real_trading_true_is_permanently_rejected() -> None:
+    with pytest.raises(ValidationError, match="ENABLE_REAL_TRADING=true is permanently rejected"):
+        Settings(execution_mode="paper", enable_real_trading=True)
+
+
+def test_real_trading_enabled_cannot_be_constructed() -> None:
+    with pytest.raises(ValidationError, match="permanently rejected"):
+        Settings(execution_mode="trade", enable_real_trading=True)
 
 
 def test_redis_url_normalizes_redis_cli_wrapper() -> None:

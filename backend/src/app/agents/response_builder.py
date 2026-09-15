@@ -40,11 +40,13 @@ def _approval_status(agent: AgentState) -> str:
 def _setup_type(agent: AgentState) -> str | None:
     if agent.trade_proposal is not None:
         return agent.trade_proposal.strategy_id.value
-    if agent.intent is Intent.MONITOR:
+    if agent.intent is Intent.MONITOR or agent.intent is Intent.MARKET_ANALYSIS:
         return "monitor"
+    if agent.intent is Intent.SETUP_ANALYSIS:
+        return "setup_analysis"
     if agent.intent is Intent.EXPLAIN:
         return "explain"
-    if agent.intent is Intent.REVIEW:
+    if agent.intent is Intent.REVIEW or agent.intent is Intent.REVIEW_TRADE:
         return "review"
     if agent.intent in {
         Intent.STRATEGY_CARD,
@@ -121,7 +123,7 @@ def build_trading_analysis(agent: AgentState, runtime: AgentRuntime) -> TradingA
     market_quality = _market_data_quality(runtime, agent)
     paper_disclaimer = (
         "Paper mode only — no real exchange execution. Approval required before any paper order."
-        if agent.intent is Intent.EXECUTE or agent.trade_proposal is not None
+        if agent.intent is Intent.EXECUTE_PAPER_PLAN or agent.trade_proposal is not None
         else "Paper mode only — analysis and education; no live orders."
     )
 

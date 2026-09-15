@@ -116,6 +116,13 @@ class ServiceUnavailableError(AppError):
     code = "service_unavailable"
 
 
+class PersistencePolicyError(AppError):
+    """Raised when a READ_ONLY (or other) operation class forbids a domain write."""
+
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "readonly_persistence_denied"
+
+
 def _error_body(*, code: str, message: str, request: Request, details: dict | None = None) -> dict:
     body: dict[str, Any] = {"error": {"code": code, "message": message}}
     request_id = getattr(request.state, "request_id", None)

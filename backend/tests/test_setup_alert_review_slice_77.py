@@ -17,12 +17,7 @@ from app.db.base import Base
 from app.db.models import Membership, Organization, User
 from app.db.session import get_session
 from app.main import create_app
-from app.schemas.common import (
-    MembershipRole,
-    PaperAlertSource,
-    PaperAlertType,
-    SetupAlertReviewStatus,
-)
+from app.schemas.common import MembershipRole, PaperAlertSource, PaperAlertType
 from app.security.passwords import hash_password
 from app.security.rate_limit import reset_rate_limiter
 from app.services.paper_alert_service import PaperAlertService
@@ -421,63 +416,14 @@ def test_setup_review_metadata_redacted(
     assert metadata["api_key"] == "***REDACTED***"
 
 
-def test_setup_review_real_trading_enabled_still_review_only(
-    client: tuple[TestClient, sessionmaker[Session]],
-) -> None:
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def test_setup_review_real_trading_enabled_still_review_only() -> None:
+    from pydantic import ValidationError
 
-    @event.listens_for(engine, "connect")
-    def _fk(dbapi_conn: object, _record: object) -> None:
-        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
-    settings = Settings(
-        **{
-            **_BASE,
-            "execution_mode": "trade",
-            "enable_real_trading": True,
-        }
-    )
-
-    with factory() as session:
-        session.add(Organization(id=ORG_A, name="Review Org A"))
-        session.add(
-            User(
-                id=USER_A,
-                email="review-a@test.example",
-                hashed_password=hash_password("SecurePass123!", settings),
-                email_verified=True,
-            )
+    with pytest.raises(ValidationError, match="ENABLE_REAL_TRADING=true"):
+        Settings(
+            **{
+                **_BASE,
+                "execution_mode": "trade",
+                "enable_real_trading": True,
+            }
         )
-        session.flush()
-        session.add(Membership(user_id=USER_A, organization_id=ORG_A, role=MembershipRole.OWNER))
-        session.commit()
-
-    app = create_app(settings=settings)
-
-    def _override_session() -> Iterator[Session]:
-        with factory() as session:
-            yield session
-
-    app.dependency_overrides[get_session] = _override_session
-
-    with TestClient(app) as test_client:
-        headers = _auth(test_client, "review-a@test.example")
-        alert_id = _create_market_watcher_alert(factory)
-        response = test_client.patch(
-            f"/alerts/setup-review/{alert_id}",
-            headers=headers,
-            json={"review_status": SetupAlertReviewStatus.IMPORTANT.value},
-        )
-        assert response.status_code == 200
-        assert response.json()["review_status"] == "important"
-
-    app.dependency_overrides.clear()
-    engine.dispose()

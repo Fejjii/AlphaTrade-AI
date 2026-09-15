@@ -12,6 +12,7 @@ from app.agents.graph import compile_agent_graph
 from app.agents.runtime import AgentRuntime
 from app.agents.state_utils import parse_state, state_to_dict
 from app.core.config import Settings, get_settings
+from app.core.operation_policy import reset_operation_decision
 from app.observability.context import bind_identity, get_or_create_trace_id, set_trace_id
 from app.providers.factory import resolve_market_data_provider
 from app.schemas.agent import AgentState
@@ -99,18 +100,21 @@ class AgentService:
         )
         self._runtime.observability.emit_agent_run_started(initial)
         started = time.perf_counter()
-        result_dict = self._graph.invoke(state_to_dict(initial))
-        agent = parse_state(result_dict)
-        elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        self._runtime.observability.emit_agent_run_completed(agent, latency_ms=elapsed_ms)
+        try:
+            result_dict = self._graph.invoke(state_to_dict(initial))
+            agent = parse_state(result_dict)
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+            self._runtime.observability.emit_agent_run_completed(agent, latency_ms=elapsed_ms)
 
-        if self._runtime.workflow_persistence is not None:
-            persisted = self._runtime.workflow_persistence.persist_agent_outcome(agent)
-            if persisted.proposal_id is not None:
-                agent = agent.model_copy(update={"proposal_id": persisted.proposal_id})
-            if persisted.approval_id is not None:
-                agent = agent.model_copy(update={"approval_id": persisted.approval_id})
-            self._runtime.session.commit()  # type: ignore[union-attr]
+            if self._runtime.workflow_persistence is not None:
+                persisted = self._runtime.workflow_persistence.persist_agent_outcome(agent)
+                if persisted.proposal_id is not None:
+                    agent = agent.model_copy(update={"proposal_id": persisted.proposal_id})
+                if persisted.approval_id is not None:
+                    agent = agent.model_copy(update={"approval_id": persisted.approval_id})
+                self._runtime.session.commit()  # type: ignore[union-attr]
+        finally:
+            reset_operation_decision()
 
         return self._to_response(agent, context)
 

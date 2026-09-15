@@ -46,6 +46,11 @@ class AgentRuntime:
     rate_limited: bool = False
 
     def __post_init__(self) -> None:
+        from app.core.paper_safety import assert_execution_capable_composition_root
+        from app.core.persistence_firewall import install_persistence_firewall
+
+        assert_execution_capable_composition_root(self.settings)
+        install_persistence_firewall()
         if self.llm_provider is None:
             self.llm_provider = resolve_providers(self.settings).llm
         if self.narrative_service is None and self.llm_provider is not None:

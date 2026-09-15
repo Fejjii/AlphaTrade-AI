@@ -9,7 +9,13 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError, ValidationAppError
+from app.core.errors import NotFoundError, PersistencePolicyError, TradingPolicyError, ValidationAppError
+from app.core.operation_policy import (
+    PersistenceKind,
+    assert_authorization_issuance_allowed,
+    assert_write_allowed,
+    get_operation_decision,
+)
 from app.db.models import ApprovalAuthorization as ApprovalAuthorizationModel
 from app.db.models import ApprovalRequest as ApprovalModel
 from app.db.models import TradePlanRevision as TradePlanRevisionModel
@@ -21,6 +27,7 @@ from app.repositories.approvals import (
 )
 from app.repositories.proposals import ProposalRepository
 from app.repositories.trade_plans import TradePlanRevisionRepository
+from app.schemas.agent import OperationClass, RequestedAction
 from app.schemas.approval import (
     ApprovalAuthorization,
     ApprovalAuthorizationAssertion,
@@ -79,6 +86,19 @@ class ApprovalService:
         approval_reason: str | None = None,
     ) -> ApprovalRequest:
         """Preserve the legacy analysis-proposal approval workflow."""
+        decision = get_operation_decision()
+        if decision is not None:
+            if decision.requested_action in {RequestedAction.REJECT, RequestedAction.SKIP}:
+                raise TradingPolicyError(
+                    "REJECT/SKIP cannot create or issue an authorization.",
+                    details={"requested_action": decision.requested_action.value},
+                )
+            if decision.operation_class is OperationClass.READ_ONLY:
+                raise PersistencePolicyError(
+                    "READ_ONLY forbids approval persistence.",
+                    details={"kind": PersistenceKind.APPROVAL.value},
+                )
+            assert_write_allowed(PersistenceKind.APPROVAL, decision)
         existing = self._repo.get_by_proposal(proposal_id)
         if existing is not None:
             return self._to_schema(existing)
@@ -118,6 +138,7 @@ class ApprovalService:
         approval_reason: str | None = None,
     ) -> ApprovalRequest:
         """Create one pending decision bound to the current immutable plan revision."""
+        assert_write_allowed(PersistenceKind.APPROVAL, get_operation_decision())
         revision = self._revisions.get_scoped(
             revision_id,
             organization_id=organization_id,
@@ -316,6 +337,10 @@ class ApprovalService:
         assertion: ApprovalAuthorizationAssertion | None = None,
     ) -> ApprovalAuthorization:
         """Idempotently issue the sole authorization; reject non-APPROVE discriminators."""
+        operation_decision = get_operation_decision()
+        if operation_decision is not None:
+            assert_authorization_issuance_allowed(operation_decision)
+            assert_write_allowed(PersistenceKind.AUTHORIZATION, operation_decision)
         if decision is not AuthorizationDecision.APPROVE:
             raise ValidationAppError("Only APPROVE can issue an authorization.")
         approval = self._repo.get_scoped(

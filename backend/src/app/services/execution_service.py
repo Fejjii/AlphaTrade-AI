@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.errors import IdempotencyConvergenceError, NotFoundError, TradingPolicyError
+from app.core.operation_policy import PersistenceKind, assert_write_allowed
+from app.core.paper_safety import assert_execution_capable_composition_root
 from app.db.models import ExchangeFill, ExchangeOrder, Order, Position, TradeProposal
 from app.providers.exchange.base import (
     ExchangeExecutionProvider,
@@ -106,8 +108,11 @@ class ExecutionService:
             daily_risk=self._daily_risk,
             kill_switch=self._kill_switch,
         )
+        assert_execution_capable_composition_root(settings)
 
     def place_paper_order(self, request: PaperOrderRequest) -> PaperOrderPlacementResult:
+        assert_execution_capable_composition_root(self._settings)
+        assert_write_allowed(PersistenceKind.EXECUTION)
         if self._settings.real_trading_enabled:
             raise TradingPolicyError(
                 "Real trading is disabled in this environment.",
