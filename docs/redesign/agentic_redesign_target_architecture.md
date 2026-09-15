@@ -175,7 +175,7 @@ sequenceDiagram
     U->>A: explicit EXECUTE_PAPER_PLAN for that revision
     A->>S: typed command + exact authorization
     S->>R: validate authorization + recheck current facts
-    R-->>S: BLOCK/WARN stops; ALLOW continues
+    R-->>S: BLOCK stops; ALLOW continues (warnings mapped by policy first)
     S->>S: atomically consume authorization only after ALLOW
     S->>X: submit demo-only order
     X-->>S: acknowledgement/fills
@@ -197,9 +197,10 @@ Every private or action step has:
 - source/provenance/freshness/fallback metadata.
 
 Global public market observations omit tenant ownership and are referenced by tenant-scoped
-assessments. The outbox is needed only for side effects that cross a failure boundary
-(Telegram and demo venue calls). Pure in-process deterministic calculations remain direct
-calls. External delivery is at least once; internal effects are idempotent.
+assessments. The outbox is required for side effects that cross a transaction/failure boundary,
+including Telegram delivery, demo venue calls and asynchronous journal projection. Pure
+in-process deterministic calculations remain direct calls. External delivery is at least once;
+internal effects are idempotent.
 
 ## 3. Target agent graph
 
@@ -1898,6 +1899,18 @@ absence. If the venue cannot prove identity/finality, resubmit is forbidden and 
 account/instrument remains quarantined for new exposure. Only reconciliation, cancel and exact
 reduce-only recovery actions remain eligible.
 
+The explicit uncertain-submit state path is
+`RECONCILIATION_REQUIRED -> ABSENCE_PENDING -> ABSENCE_PROVEN ->
+RESUBMIT_AUTHORIZED -> SUBMITTING`. `ABSENCE_PROVEN` requires the bounded proof above;
+`RESUBMIT_AUTHORIZED` is an append-only recovery decision by versioned policy/operator role,
+reuses the same claimed command, risk reservation, durable effect and deterministic client
+order ID, and never consumes a second authorization or creates a second semantic submit
+identity. Any detected venue order instead transitions to `ACKNOWLEDGED` or the observed fill
+state. Venue rejection/expiry transitions to `REJECTED`/`EXPIRED`; unresolved conflict
+transitions to `OPERATOR_HOLD` and preserves quarantine. Ambiguous cancel transitions through
+`CANCEL_RECONCILIATION_REQUIRED`; zero-fill terminal cancellation is `CANCELLED`, while any
+filled quantity plus cancelled remainder is `PARTIALLY_FILLED_CANCELLED` with an open position.
+
 ### Stable receipt and append-only state
 
 `ExecutionReceipt(receipt_id, command_id, authorization_id, organization/account bindings,
@@ -2129,6 +2142,21 @@ source is unsupported and reconciliation remains unresolved. Overlapping cursors
 and delayed visibility are versioned. Timeout/failed reconciliation quarantines new exposure
 for the account/instrument; it never infers absence or final truth.
 
+Authoritative monetary reconciliation uses explicit settlement currency and Decimal arithmetic.
+For linear contracts, gross realized PnL is direction-signed
+`(exit_price - entry_price) * net_base_quantity` for long and its negation for short, after
+contract-quantity conversion by the bound multiplier. Inverse contracts use the exact
+versioned venue formula; they are never approximated by the linear formula. `fee_cost` is
+normalized from unique venue fee/bill records as positive for a paid cost and negative for a
+rebate. Funding is positive for a settlement-currency credit and negative for a debit. Net PnL
+is `gross_realized_pnl + funding - fee_cost` after currency-normalized authoritative facts.
+
+Source precedence is: unique venue fills for quantity/price; venue fee/trade/bill ledger for
+fees and funding; reconciled venue position/account snapshots as consistency checks; internal
+estimates only as explicitly provisional display values. Lower-precedence data cannot
+overwrite higher-precedence facts. Conflicts, missing currency conversion, missing multiplier
+or non-final pages keep `RECONCILIATION_REQUIRED`; they cannot finalize journal or analytics.
+
 ### Atomic descendant action matrix
 
 | Action/state | Candidate | Plan revision | Authorization | Command/receipt |
@@ -2237,6 +2265,13 @@ completeness, source projection watermark, provenance and result. Analytics and 
 snapshots so later corrections append a new evaluation rather than rewriting old results.
 
 ## 29. Final dependency-ordered implementation plan
+
+Before replacing behavior, Phase 1 characterization fixtures freeze evidence of the known
+defects—not the defects as accepted semantics: analysis-to-proposal writes, successful no-op
+execution tools, global key-only replay, internal-fill-first demo mirroring and incomplete
+cancel/partial-fill status. Each corresponding slice then changes its acceptance assertion to
+the corrected contract below. Characterization must never preserve `trade + true`,
+READ_ONLY mutation or any other unsafe legacy behavior as a target invariant.
 
 Phase 1 consists only of these slices, in order:
 
