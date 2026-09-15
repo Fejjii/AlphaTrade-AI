@@ -209,7 +209,11 @@ All route modules are mounted in `backend/src/app/main.py`.
 No major backend family is a removal candidate during migration. Stubs in
 `tools/registry.py` (`funding`, `scenario_simulator`, `journal_writer`, `position_reader`,
 `paper_execution`) should be replaced by adapters to existing real services or deprecated
-after callers move; they must not become a second execution path.
+after callers move. The present `paper_execution` registration is specifically unsafe:
+`_stub_execute` returns success without calling `ExecutionService`. It must fail closed in the
+first safety phase and cannot remain an agent execution path. Every future agent, API, or
+Telegram execution request must delegate the same typed command to `ExecutionService`, which
+remains the sole execution authority.
 
 ## 5. Agent and intent-routing audit
 
@@ -254,6 +258,10 @@ Defects relevant to redesign:
 8. `risk_settings_tool` and `notification_preferences_tool` are registered in
    `backend/src/app/tools/registry.py`, but no agent node dispatches them. Documentation or a
    registry entry alone is therefore not evidence of conversational configuration support.
+9. The persistence boundary does not independently reject a proposal produced under a
+   read-only operation class because no authoritative operation class exists today.
+10. Question-shaped strategy, backtest, paper-validation, scan and scheduler requests can
+    reach mutating tool actions without one central preview/confirmation policy.
 
 The existing taxonomy is much broader than the target table below:
 `backend/src/app/schemas/agent.py` defines strategy, backtest, lesson, paper-validation,
@@ -276,6 +284,7 @@ keyword-driven and lacks a uniform operation-class policy.
 | `APPROVE` | Message class only; no first-class intent | MISSING in agent |
 | `REJECT` | Message class only; lesson reject sub-intent exists | PARTIALLY IMPLEMENTED |
 | `SKIP` | No first-class intent | MISSING |
+| `EXECUTE_PAPER_PLAN` | Generic `EXECUTE` can reach a successful no-op tool; real API path uses `ExecutionService` | MISSING/unsafe mapping |
 
 ## 6. LLM/model audit
 
@@ -346,6 +355,12 @@ order book through typed envelopes containing source, timestamp, live/stale stat
 and fallback. Binance failures fall back to deterministic mock data and mark that fact. This is
 good for UI continuity but must be ineligible for candidate confirmation/execution.
 
+The current market contract is not sufficient for the target evidence model. Historical public
+market facts are correctly shareable rather than tenant-owned, but there is no global typed
+observation envelope carrying venue, market type, instrument, event/receive time, interval
+finality, sequence/cursor state, adapter version and content hash. Private setup/action state
+must therefore not be folded into, or used to duplicate, those public observations.
+
 Historical candles are persisted and bounded through
 `backend/src/app/services/historical_candle_service.py` and
 `repositories/historical_candles.py`. Watcher scans currently support only BTC/ETH/SOL and
@@ -383,11 +398,15 @@ persisted.
 Technical debt:
 
 - worker and manual watcher use different scan pipelines;
-- watchlist items do not carry timeframe/pattern/evidence-expression subscriptions;
+- `WatchlistItem` already carries exchange, symbol, typed timeframes and strategy IDs; it lacks
+  an immutable policy version binding an exact strategy version, fusion policy, threshold,
+  delivery policy and enabled state;
 - supported symbols/timeframes are hard-coded in the scanner;
 - Redis lock construction falls back to a process-local lock when
   `rate_limit_use_redis=false` or when Redis cannot be reached, even outside local; this
   weakens cross-instance exclusion and should fail closed for an always-on deployment;
+- watcher freshness currently derives from staleness alone, so fallback bars marked
+  `is_stale=False` and a currently forming candle can reach detection/alert code;
 - no durable event/outbox connects evidence, alerts, approval, execution and journal;
 - scan freshness is present, but candidate-level expiry and source-specific freshness are not
   unified.
@@ -597,10 +616,10 @@ configuration is environment-driven elsewhere; no live deployment status is infe
 repository.
 
 The worker shares the same `Settings` deployment validator as the API. The checked-in worker
-block declares database, Redis, JWT and OpenAI settings, but not `QDRANT_URL` or
-`CORS_ORIGINS`, both required by `backend/src/app/core/deployment_safety.py` in staging even
-though a worker does not directly use browser CORS. Unless those values are supplied separately
-in the Render dashboard, enabling the worker would fail settings validation. This deployment
+block declares database, Redis, JWT, OpenAI and `QDRANT_URL` settings, but not
+`CORS_ORIGINS`, which `backend/src/app/core/deployment_safety.py` requires in staging even
+though a worker does not directly use browser CORS. Unless that value is supplied separately in
+the Render dashboard, enabling the worker would fail settings validation. This deployment
 contract should be simplified or made role-aware before activation.
 
 ## 15. Test and evaluation audit
@@ -674,6 +693,9 @@ review.
 11. BloFin demo order/fill/position/PnL reconciliation and integrated reduce-only close.
 12. Task-aware model router and per-tier budgets/fallback policy.
 13. Full lifecycle correlation ID from detection through learning/promotion.
+14. Immutable `TradePlanRevision` and one-time `ApprovalAuthorization` contracts.
+15. Principal- and payload-bound order idempotency; current lookup is global by key.
+16. Separate objective `SetupAssessment` and tenant/account `ActionEligibility` states.
 
 ## 18. Technical debt relevant to redesign
 
@@ -687,8 +709,12 @@ review.
 - Pre-trade planning uses fixed percentages and a placeholder price on missing data.
 - Some registered agent tools are successful no-op stubs and can misrepresent capability.
 - Generic tool risk metadata does not centrally enforce every mutation confirmation.
+- Paper-order replay is globally keyed, looked up before tenant validation, and not bound to a
+  canonical command payload.
 - Automatic Telegram service is a preview despite naming that can suggest delivery.
 - Demo execution mirror treats venue failure as best-effort after internal fill.
+- Exchange credentials and permission readiness are global rather than bound to an explicit
+  tenant/account principal; permission-probe uncertainty can fail open.
 - Model cost rates are placeholders and do not cover routed tiers.
 - A usage-metering node invokes the LLM without adding reasoning value and can duplicate the
   narrative call.
@@ -729,3 +755,39 @@ half of current routes should remain prominent.
 
 There is no blocker to completing Phase 0 architecture. These are implementation gates. No
 live-trading capability is required or proposed.
+
+## 21. Independent Review Resolution Matrix
+
+Every CRITICAL and HIGH finding from PR #65 is accepted. “Accepted” means the revised target
+architecture adopts the correction; it does not claim product implementation. Phase numbers
+refer to the dependency-corrected migration in the target architecture.
+
+| Finding ID | Severity | Accepted / rejected | Architectural correction | Target component | Migration phase | Validation requirement |
+|---|---|---|---|---|---|---|
+| CRITICAL-01 | CRITICAL | Accepted | Authoritative typed intent/operation policy; read-only graph has no mutation edge; persistence rechecks policy | Agent graph and workflow persistence | 1 | Graph-path proof plus zero proposal/approval/execution/configuration/strategy/backtest/validation/watcher writes for read-only cases |
+| CRITICAL-02 | CRITICAL | Accepted | Immutable `TradePlanRevision` requires fresh complete provenance; missing/degraded data returns analysis-only and no executable plan | Planning and execution eligibility | 1 | Missing, stale, fallback, incomplete, wrong-market and gapped fixtures create no executable plan |
+| CRITICAL-03 | CRITICAL | Accepted | `APPROVE` creates one exact one-time authorization; separate `EXECUTE_PAPER_PLAN` atomically consumes it | Approval and execution | 1 | Wrong revision/hash/principal, expiry and replay fail; approval alone creates no order |
+| CRITICAL-04 | CRITICAL | Accepted | Successful no-op execution/mutation tools fail closed; all channels delegate to `ExecutionService` | Tool facade and execution | 1 | No tool can report execution without an `ExecutionService` receipt |
+| CRITICAL-05 | CRITICAL | Accepted | Idempotency is organization/principal/payload/revision bound using a persisted canonical command hash | Execution idempotency | 1 | Same payload returns original result; key collision across principal or payload rejects and audits |
+| CRITICAL-06 | CRITICAL | Accepted | Add perpetual `TradeEvent`, `TradeStreamCursor`, and `CvdWindow` contracts before pattern implementation | Market source adapters | 5 | Contract/replay tests cover aggressor semantics, continuity, gaps, wrong market, stale/fallback and warm-up |
+| CRITICAL-07 | CRITICAL | Accepted | Watcher rejects fallback, non-live, stale, forming, wrong-market, incomplete and sequence-gapped evidence | Surveillance pipeline | 7 | Negative watcher fixtures create no confirmed setup/candidate/alert/plan |
+| HIGH-01 | HIGH | Accepted | Preserve `WatchlistItem`; add only a minimal immutable watcher policy association/version | Watcher policy | 7 | Migration proves no duplicate symbol ownership and exact policy-version lineage |
+| HIGH-02 | HIGH | Accepted | Map `UserStrategy` -> `UserStrategyVersion` -> one compiled `SetupDefinition`; no independent pattern ID | Strategy/setup identity | 3 | One-to-one strategy-version/setup-definition constraint and lineage tests |
+| HIGH-03 | HIGH | Accepted | Every semantic card/rule change creates a new immutable strategy version | Strategy versioning | 3 | Existing version content hashes remain stable across edit/lesson workflows |
+| HIGH-04 | HIGH | Accepted | Global discriminated `MarketObservation`; tenant `SetupAssessment`; tenant/account `ActionEligibility` | Observation and assessment data | 6 | Public facts dedupe globally while private facts remain tenant-isolated |
+| HIGH-05 | HIGH | Accepted | Objective setup truth is independent from action risk/eligibility | Pattern assessment and risk | 6 | Same market evidence reproduces setup state across different account states |
+| HIGH-06 | HIGH | Accepted | Generalize current orchestration transition shape and adapt existing candidate flows; no third independent lifecycle | Assessment/candidate adapters | 6 | Compatibility tests show one canonical transition lineage |
+| HIGH-07 | HIGH | Accepted | Database-enforced candidate uniqueness and transactional retry-safe transitions; delivery dedupe remains separate | Candidate and outbox | 7 | Concurrent source/worker replay yields one candidate and bounded delivery attempts |
+| HIGH-08 | HIGH | Accepted | One tenant-aware evaluation service serves worker and manual dry runs with honest scan counts | Surveillance application service | 7 | Same fixture produces the same assessment; partial/all failures are reported accurately |
+| HIGH-09 | HIGH | Accepted | Non-local distributed lock, lease renewal and fencing token are mandatory; failure blocks scans | Worker coordination | 7 | Lock loss/expiry/restart tests prevent stale holder writes and mark heartbeat unhealthy |
+| HIGH-10 | HIGH | Accepted | Verified private-chat Telegram enrollment binds org/user/Telegram user/chat/bot and resource ownership | Telegram gateway | 8 | Enrollment spoof, group chat, wrong user/tenant and revoked binding all fail |
+| HIGH-11 | HIGH | Accepted | Promise at-least-once delivery with idempotent internal effects, durable claims and replay receipts—not exactly-once external delivery | Outbox and remote actions | 8 | Crash/retry fixtures may redeliver but never duplicate internal mutation |
+| HIGH-12 | HIGH | Accepted | No blind mutation POST retry; uncertain submit enters reconciliation and lookup accepts client or venue order ID | BloFin provider/coordinator | 9 | Lost-response drill resolves by client order ID before any resubmit |
+| HIGH-13 | HIGH | Accepted | Venue/account-scoped client/order ID uniqueness, fill uniqueness, optimistic state version and append-only transitions | Exchange persistence | 9 | Reconciliation replay cannot duplicate order or fill |
+| HIGH-14 | HIGH | Accepted | Cancel routes through `ExecutionService`, ingests late fills and resolves final remaining quantity | Execution lifecycle | 9 | Partial-fill/cancel race converges to reconciled order and position state |
+| HIGH-15 | HIGH | Accepted | First slice is NET MODE ONLY; unknown/hedge mode is rejected without side reinterpretation | Position-mode policy | 9 | Approval/execution negative tests reject non-net mode before submit |
+| HIGH-16 | HIGH | Accepted | Reconcile order details, fills, positions, fees, funding and realized PnL with explicit sign/currency semantics | Reconciliation and journal | 9–10 | Unresolved differences remain visible and block final journal state |
+| HIGH-17 | HIGH | Accepted | Question semantics default read-only; central and service-boundary operation policy covers every tool action | Agent/tool policy | 1 | Adversarial question corpus produces previews/clarification and zero writes |
+| HIGH-18 | HIGH | Accepted | Demo credentials, permissions, account, organization and user are non-null bound; probe uncertainty fails closed | Exchange account authorization | 9 | Missing/stale/failed permission attestation and cross-tenant account use reject |
+| HIGH-19 | HIGH | Accepted | Introduce allowlisted typed predicate/sequence AST; unsupported existing rules reject rather than approximate | Strategy compiler | 3 | Golden compiler fixtures and unsupported-construct negative tests |
+| HIGH-20 | HIGH | Accepted | Typed behavioral journal backfill preserves emotions, mistakes, tags, attachments, links and RAG lineage | Canonical journal migration | 4 | Dry-run/idempotency plus row, link, discipline, coaching and RAG parity fixtures |
