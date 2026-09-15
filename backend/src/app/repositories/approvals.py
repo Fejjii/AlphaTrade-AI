@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 
 from app.db.models import ApprovalAuthorization, ApprovalRequest
 from app.repositories.base import SQLAlchemyRepository
@@ -130,7 +131,8 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
             .values(state=AuthorizationState.EXPIRED, updated_at=at)
             .execution_options(synchronize_session=False)
         )
-        return bool(self._session.execute(stmt).rowcount)
+        result = cast(CursorResult[Any], self._session.execute(stmt))
+        return bool(result.rowcount)
 
     def revoke_available(self, authorization_id: uuid.UUID, *, at: datetime) -> bool:
         stmt = (
@@ -142,7 +144,8 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
             .values(state=AuthorizationState.REVOKED, updated_at=at)
             .execution_options(synchronize_session=False)
         )
-        return bool(self._session.execute(stmt).rowcount)
+        result = cast(CursorResult[Any], self._session.execute(stmt))
+        return bool(result.rowcount)
 
     def revoke_for_superseded_plan(
         self,
@@ -163,7 +166,8 @@ class ApprovalAuthorizationRepository(SQLAlchemyRepository[ApprovalAuthorization
             .values(state=AuthorizationState.REVOKED, updated_at=at)
             .execution_options(synchronize_session=False)
         )
-        return int(self._session.execute(stmt).rowcount or 0)
+        result = cast(CursorResult[Any], self._session.execute(stmt))
+        return int(result.rowcount or 0)
 
 
 class ApprovalAuthorizationConsumptionPort(Protocol):

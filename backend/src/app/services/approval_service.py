@@ -27,7 +27,7 @@ from app.schemas.approval import (
     ApprovalDecisionRequest,
     ApprovalRequest,
 )
-from app.schemas.audit import AuditRecordCreate
+from app.schemas.audit import AuditRecord, AuditRecordCreate
 from app.schemas.common import (
     ActorType,
     ApprovalAction,
@@ -612,7 +612,11 @@ class ApprovalService:
             authorization_content_hash=row.authorization_content_hash,
         )
 
-    def _record_audit(self, event_type: AuditEventType, **fields: object):
+    def _record_audit(
+        self,
+        event_type: AuditEventType,
+        **fields: object,
+    ) -> AuditRecord | None:
         return self._audit.record(
             AuditRecordCreate(
                 request_id="approval-api",
@@ -620,10 +624,10 @@ class ApprovalService:
                 event_type=event_type,
                 resource_type="approval",
                 resource_id=str(fields["resource_id"]),
-                organization_id=fields["organization_id"],  # type: ignore[arg-type]
-                user_id=fields["user_id"],  # type: ignore[arg-type]
+                organization_id=fields["organization_id"],
+                user_id=fields["user_id"],
                 actor_type=ActorType.USER,
-                metadata=fields.get("metadata", {}),  # type: ignore[arg-type]
+                metadata=fields.get("metadata", {}),
             )
         )
 

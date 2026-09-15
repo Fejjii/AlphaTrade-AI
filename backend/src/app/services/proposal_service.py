@@ -391,9 +391,9 @@ class ProposalService:
                 event_type=event_type,
                 resource_type="trade_proposal",
                 resource_id=str(fields["resource_id"]),
-                organization_id=fields["organization_id"],  # type: ignore[arg-type]
-                user_id=fields["user_id"],  # type: ignore[arg-type]
+                organization_id=fields["organization_id"],
+                user_id=fields["user_id"],
                 actor_type=ActorType.AGENT,
-                metadata=fields.get("metadata", {}),  # type: ignore[arg-type]
+                metadata=fields.get("metadata", {}),
             )
         )

@@ -8,7 +8,7 @@ import unicodedata
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -75,6 +75,7 @@ def _canonical_decimal(value: Decimal) -> dict[str, str | int]:
 
     normalized = value.normalize()
     sign, digits, exponent = normalized.as_tuple()
+    exponent = cast(int, exponent)
     coefficient = int("".join(str(digit) for digit in digits))
     if exponent >= 0:
         coefficient *= 10**exponent
