@@ -80,7 +80,7 @@ def test_live_execution_mode_rejected() -> None:
 
 
 def test_production_live_exchange_host_rejected() -> None:
-    with pytest.raises(ValidationError, match="production host"):
+    with pytest.raises(ValidationError, match=r"production(/live)? host"):
         Settings(blofin_demo_rest_base_url="https://openapi.blofin.com")
 
 

@@ -71,7 +71,7 @@ def test_paper_exchange_demo_requires_rest_url() -> None:
 
 
 def test_paper_exchange_demo_rejects_production_host() -> None:
-    with pytest.raises(ValidationError, match="production host"):
+    with pytest.raises(ValidationError, match=r"production(/live)? host"):
         Settings(**{**_DEMO_OK, "blofin_demo_rest_base_url": "https://openapi.blofin.com"})
 
 
