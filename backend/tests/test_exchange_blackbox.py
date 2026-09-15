@@ -71,7 +71,7 @@ def test_blackbox_trade_live_blocked() -> None:
 
 
 def test_blackbox_production_blofin_host_blocked() -> None:
-    with pytest.raises(ValidationError, match="production host"):
+    with pytest.raises(ValidationError, match=r"production(/live)? host"):
         Settings(**{**_DEMO_OK, "blofin_demo_rest_base_url": "https://openapi.blofin.com"})
 
 

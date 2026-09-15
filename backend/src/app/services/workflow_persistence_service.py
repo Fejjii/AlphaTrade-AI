@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.schemas.agent import AgentState
+from app.core.operation_policy import PersistenceKind, write_allowed
+from app.schemas.agent import AgentState, Intent, OperationClass
 from app.schemas.common import RiskAction, SafetyVerdict
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
@@ -28,11 +29,18 @@ class WorkflowPersistenceService:
         self._approvals = ApprovalService(session, audit_service)
 
     def persist_agent_outcome(self, agent: AgentState) -> PersistedWorkflow:
+        decision = agent.intent_decision
+        if decision is not None and decision.operation_class is OperationClass.READ_ONLY:
+            return PersistedWorkflow()
+        if decision is not None and not write_allowed(PersistenceKind.PROPOSAL, decision):
+            return PersistedWorkflow()
         if agent.trade_proposal is None:
             return PersistedWorkflow()
         if agent.safety_verdict is SafetyVerdict.BLOCK:
             return PersistedWorkflow()
         if agent.risk_result and agent.risk_result.action is RiskAction.BLOCK:
+            return PersistedWorkflow()
+        if agent.intent is not Intent.PLAN_TRADE:
             return PersistedWorkflow()
 
         proposal = self._proposals.create_from_agent(agent)

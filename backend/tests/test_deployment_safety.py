@@ -68,7 +68,7 @@ def test_staging_rejects_cookie_mode_disabled() -> None:
 
 
 def test_staging_rejects_real_trading_enabled() -> None:
-    with pytest.raises(ValidationError, match="enable_real_trading"):
+    with pytest.raises(ValidationError, match="ENABLE_REAL_TRADING=true"):
         Settings(**{**_STAGING_BASE, "enable_real_trading": True})
 
 

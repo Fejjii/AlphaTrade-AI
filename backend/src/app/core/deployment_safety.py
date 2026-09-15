@@ -43,6 +43,8 @@ def validate_deployment_settings(settings: Settings) -> None:
         errors.append("enable_real_trading must be false in staging/production")
     if settings.execution_mode is ExecutionMode.TRADE:
         errors.append("execution_mode=trade is not allowed in staging/production")
+    if settings.execution_mode is not ExecutionMode.PAPER:
+        errors.append("execution_mode must be paper in staging/production")
 
     # The demo exchange is allowed in staging only (for validation), never in
     # production. ``trade_live`` is rejected globally by exchange_safety.

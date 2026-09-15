@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -330,40 +330,14 @@ def test_no_execution_service_called(slice75_db: sessionmaker[Session]) -> None:
         place_order.assert_not_called()
 
 
-def test_real_trading_blocks_and_persists_blocked(slice75_db: sessionmaker[Session]) -> None:
-    settings = Settings(
-        **{
-            **_BASE,
-            "execution_mode": ExecutionMode.TRADE.value,
-            "enable_real_trading": True,
-        }
-    )
-    get_settings.cache_clear()
-    app = create_app(settings=settings)
+def test_real_trading_blocks_and_persists_blocked() -> None:
+    from pydantic import ValidationError
 
-    def _override_session() -> Iterator[Session]:
-        with slice75_db() as session:
-            yield session
-
-    app.dependency_overrides[get_session] = _override_session
-    client = TestClient(app)
-    login = client.post(
-        "/auth/login",
-        json={"email": "owner75a@test.example", "password": "TestPassword123!"},
-    )
-    client.headers.update({"Authorization": f"Bearer {login.json()['tokens']['access_token']}"})
-    resp = client.post(
-        "/market-watcher/scan",
-        json={
-            "confirm": SCAN_CONFIRM_PHRASE,
-            "symbols": ["BTCUSDT"],
-            "timeframes": ["15m"],
-            "dry_run": True,
-        },
-    )
-    assert resp.json()["status"] == "blocked"
-    summary = client.get("/market-watcher/summary").json()
-    assert summary["last_scan_status"] == "blocked"
-    with slice75_db() as session:
-        count = session.scalar(select(func.count()).select_from(MarketWatcherScanRecord))
-        assert count == 1
+    with pytest.raises(ValidationError, match="ENABLE_REAL_TRADING=true"):
+        Settings(
+            **{
+                **_BASE,
+                "execution_mode": ExecutionMode.TRADE.value,
+                "enable_real_trading": True,
+            }
+        )

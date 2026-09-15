@@ -45,11 +45,9 @@ def test_happy_path_trading_analysis() -> None:
         timeframe="4h",
     )
     assert response.reply
-    assert response.risk_result is not None
-    assert response.tool_outputs
+    assert response.proposal_id is None
     assert response.usage is not None
     assert response.usage.tool_calls >= 0
-    assert response.confidence is not None
 
 
 def test_guardrail_blocked_path() -> None:
@@ -124,7 +122,7 @@ def test_high_risk_proposal_requires_approval() -> None:
 
 def test_risk_engine_block_path() -> None:
     response = _service().run(
-        "Plan btc long [test_no_stop]",
+        "Plan trade BTC long [test_no_stop]",
         _context(),
         symbol="BTCUSDT",
     )
@@ -168,7 +166,7 @@ def test_moderation_blocks_guaranteed_profit() -> None:
 
 
 def test_leverage_block_via_high_risk_marker() -> None:
-    response = _service().run("plan btc [test_high_risk]", _context(), symbol="BTCUSDT")
+    response = _service().run("plan trade btc [test_high_risk]", _context(), symbol="BTCUSDT")
     assert response.risk_result is not None
     assert response.risk_result.action is RiskAction.BLOCK
 

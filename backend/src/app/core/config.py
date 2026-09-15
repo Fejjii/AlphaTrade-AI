@@ -26,9 +26,10 @@ class Environment(StrEnum):
 class ExecutionMode(StrEnum):
     """Trading execution mode.
 
-    ``paper`` is the only safe default. ``trade`` additionally requires
-    ``enable_real_trading=True`` (enforced below) and is intentionally not
-    wired in this scaffold.
+    ``paper`` is the only valid trading mode. ``trade`` is a tombstone: selecting
+    it refuses Settings construction in every environment. ``read_only`` may be
+    constructed for a future read-only process but cannot be combined with an
+    execution-capable composition root (API, worker, AgentRuntime, ExecutionService).
     """
 
     PAPER = "paper"
@@ -436,17 +437,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _enforce_trading_safety(self) -> Settings:
-        """Refuse to start with an inconsistent/unsafe trading configuration.
+        """Refuse to start with any live/real trading configuration.
 
-        Real execution requires BOTH ``execution_mode=trade`` and
-        ``enable_real_trading=True``. Any other combination is forced to a safe,
-        explicit state instead of silently allowing live orders.
+        Phase 1 permanent paper invariant: ENABLE_REAL_TRADING=true and
+        execution_mode=trade fail closed in local, test, staging and production.
+        ``trade`` cannot silently alias paper.
         """
-        if self.execution_mode is ExecutionMode.TRADE and not self.enable_real_trading:
-            raise ValueError(
-                "execution_mode=trade requires enable_real_trading=true. "
-                "Refusing to start in an ambiguous trading configuration."
-            )
+        from app.core.paper_safety import validate_permanent_paper_settings
+
+        validate_permanent_paper_settings(self)
         return self
 
     @model_validator(mode="after")
@@ -503,8 +502,12 @@ class Settings(BaseSettings):
 
     @property
     def real_trading_enabled(self) -> bool:
-        """True only when live order execution is fully and explicitly enabled."""
-        return self.execution_mode is ExecutionMode.TRADE and self.enable_real_trading
+        """Always false: live order execution cannot be constructed.
+
+        Kept as a boolean derived from both flags so any latent combination
+        remains fail-closed even if a future caller bypasses Settings validators.
+        """
+        return False
 
     @property
     def blofin_demo_configured(self) -> bool:

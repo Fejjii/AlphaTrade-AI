@@ -71,7 +71,7 @@ def test_paper_exchange_demo_requires_rest_url() -> None:
 
 
 def test_paper_exchange_demo_rejects_production_host() -> None:
-    with pytest.raises(ValidationError, match="production host"):
+    with pytest.raises(ValidationError, match=r"production(/live)? host"):
         Settings(**{**_DEMO_OK, "blofin_demo_rest_base_url": "https://openapi.blofin.com"})
 
 
@@ -91,7 +91,10 @@ def test_paper_exchange_demo_rejects_bad_ws_host() -> None:
 
 
 def test_paper_exchange_demo_requires_paper_execution_mode() -> None:
-    with pytest.raises(ValidationError, match="requires execution_mode=paper"):
+    with pytest.raises(
+        ValidationError,
+        match=r"execution-capable process|requires execution_mode=paper",
+    ):
         Settings(**{**_DEMO_OK, "execution_mode": "read_only"})
 
 

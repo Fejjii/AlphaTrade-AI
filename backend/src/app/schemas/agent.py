@@ -26,8 +26,14 @@ from app.schemas.usage import UsageEvent
 
 
 class MessageClass(StrEnum):
+    """Surface class of the inbound message.
+
+    ``COMMAND`` is tombstoned. The IntentDecision migration must not emit it;
+    routing uses ``(intent, requested_action)`` instead.
+    """
+
     QUESTION = "question"
-    COMMAND = "command"
+    COMMAND = "command"  # tombstone — classifier must never emit this
     ANALYSIS_REQUEST = "analysis_request"
     APPROVAL_RESPONSE = "approval_response"
     JOURNAL_ENTRY = "journal_entry"
@@ -36,12 +42,30 @@ class MessageClass(StrEnum):
 
 
 class Intent(StrEnum):
-    MONITOR = "monitor"
+    """Canonical and legacy intents.
+
+    New routing keys (architecture §4): MARKET_ANALYSIS, SETUP_ANALYSIS, APPROVE,
+    REJECT, SKIP, EXECUTE_PAPER_PLAN. Legacy ``EXECUTE`` / ``MONITOR`` remain as
+    enum members so stored rows parse, but the classifier never emits them.
+    """
+
+    MARKET_ANALYSIS = "market_analysis"
+    SETUP_ANALYSIS = "setup_analysis"
     PLAN_TRADE = "plan_trade"
+    REVIEW_TRADE = "review_trade"
+    MANAGE_POSITION = "manage_position"
+    JOURNAL = "journal"
+    EXPLAIN = "explain"
+    CONFIGURE = "configure"
+    APPROVE = "approve"
+    REJECT = "reject"
+    SKIP = "skip"
+    EXECUTE_PAPER_PLAN = "execute_paper_plan"
+    # Legacy aliases — classifier must not emit these.
+    MONITOR = "monitor"
     EXECUTE = "execute"
     REVIEW = "review"
     UPDATE_RULE = "update_rule"
-    EXPLAIN = "explain"
     STRATEGY_CARD = "strategy_card"
     PRE_TRADE = "pre_trade"
     POSITION_SIZE = "position_size"
@@ -82,6 +106,108 @@ class Intent(StrEnum):
     UNKNOWN = "unknown"
 
 
+class OperationClass(StrEnum):
+    READ_ONLY = "read_only"
+    PLAN = "plan"
+    MUTATION = "mutation"
+    APPROVAL = "approval"
+    EXECUTION = "execution"
+    CONFIGURATION = "configuration"
+    JOURNAL = "journal"
+
+
+class AgentChannel(StrEnum):
+    WEB = "web"
+    API = "api"
+    TELEGRAM = "telegram"
+    WORKER = "worker"
+
+
+class ClassifierSource(StrEnum):
+    DETERMINISTIC = "deterministic"
+    TIER_B = "tier_b"
+    DETERMINISTIC_FALLBACK = "deterministic_fallback"
+
+
+class RequestedAction(StrEnum):
+    """Exact requested side-effect. Authorization issuance requires APPROVE."""
+
+    NONE = "none"
+    CLARIFY = "clarify"
+    APPROVE = "approve"
+    REJECT = "reject"
+    SKIP = "skip"
+    CREATE_PLAN = "create_plan"
+    EXECUTE_PAPER_PLAN = "execute_paper_plan"
+    PREVIEW = "preview"
+    CONFIRM_WRITE = "confirm_write"
+
+
+class MemoryClass(StrEnum):
+    """Only NON_DOMAIN_MEMORY may persist under READ_ONLY."""
+
+    NON_DOMAIN_MEMORY = "non_domain_memory"
+    DOMAIN_MEMORY = "domain_memory"
+
+
+class PrincipalRef(BaseModel):
+    """Typed user/account principal bound to one IntentDecision."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    user_id: UUID | None = None
+    account_id: UUID | None = None
+
+
+class ExtractedParameters(BaseModel):
+    """Bounded extracted parameters. Extra fields are forbidden."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str | None = None
+    timeframe: str | None = None
+    plan_id: UUID | None = None
+    revision_id: UUID | None = None
+    target_id: UUID | None = None
+
+
+class IntentDecision(BaseModel):
+    """Immutable per-request routing contract (architecture §4)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    intent: Intent
+    operation_class: OperationClass
+    organization_id: UUID | None = None
+    principal: PrincipalRef = Field(default_factory=PrincipalRef)
+    channel: AgentChannel = AgentChannel.WEB
+    target_type: str | None = None
+    target_id: UUID | None = None
+    target_revision_id: UUID | None = None
+    target_content_hash: str | None = None
+    requested_action: RequestedAction = RequestedAction.NONE
+    extracted_parameters: ExtractedParameters = Field(default_factory=ExtractedParameters)
+    explicit_confirmation: bool = False
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    ambiguity_reasons: tuple[str, ...] = ()
+    requires_clarification: bool = False
+    classifier_source: ClassifierSource = ClassifierSource.DETERMINISTIC
+
+    @property
+    def is_read_only(self) -> bool:
+        return self.operation_class is OperationClass.READ_ONLY
+
+    @property
+    def may_issue_authorization(self) -> bool:
+        """Only exact APPROVE may issue authorization. REJECT/SKIP never authorize."""
+        return (
+            self.intent is Intent.APPROVE
+            and self.requested_action is RequestedAction.APPROVE
+            and self.operation_class is OperationClass.APPROVAL
+            and not self.requires_clarification
+        )
+
+
 class AgentState(BaseModel):
     """Mutable workflow state passed between graph nodes."""
 
@@ -101,6 +227,8 @@ class AgentState(BaseModel):
     # Classification
     message_class: MessageClass = MessageClass.UNKNOWN
     intent: Intent = Intent.UNKNOWN
+    intent_decision: IntentDecision | None = None
+    requires_clarification: bool = False
     safety_verdict: SafetyVerdict | None = None
 
     # Gathered context

@@ -23,6 +23,13 @@ class SQLAlchemyRepository[ModelT: Base]:
         self._session = session
 
     def add(self, entity: ModelT) -> ModelT:
+        from app.core.persistence_firewall import (
+            assert_entity_write_allowed,
+            install_persistence_firewall,
+        )
+
+        install_persistence_firewall()
+        assert_entity_write_allowed(entity)
         self._session.add(entity)
         self._session.flush()
         return entity

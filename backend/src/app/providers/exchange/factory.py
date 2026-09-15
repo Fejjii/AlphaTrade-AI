@@ -13,6 +13,10 @@ import httpx
 import structlog
 
 from app.core.config import Settings
+from app.core.paper_safety import (
+    assert_execution_capable_composition_root,
+    assert_permanent_paper_mode,
+)
 from app.providers.base import BaseMockProvider, Provider, ProviderKind
 from app.providers.exchange.base import ExchangeAccountProvider, ExchangeExecutionProvider
 from app.providers.exchange.blofin_account import BloFinAccountProvider
@@ -73,6 +77,7 @@ def resolve_exchange_provider(
 
     Raises ``ValueError`` if the demo API key carries money-movement scope.
     """
+    assert_permanent_paper_mode(settings)
     if not (settings.exchange_demo_active and settings.blofin_demo_configured):
         return _mock_exchange(settings)
 
@@ -105,6 +110,7 @@ def resolve_exchange_execution_provider(
     The provider re-verifies safety (real trading disabled, demo host) on every
     call, so this resolver does not perform the network permission probe.
     """
+    assert_execution_capable_composition_root(settings)
     if not (settings.exchange_demo_active and settings.blofin_demo_configured):
         return None
     if settings.real_trading_enabled:  # defense-in-depth; should be impossible

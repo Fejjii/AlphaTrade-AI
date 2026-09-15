@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -97,16 +98,6 @@ def telegram_configured_client() -> Iterator[tuple[TestClient, sessionmaker[Sess
         **_BASE,
         "telegram_bot_token": "bot123456789:TESTTOKEN_secret_value",
         "telegram_chat_id": "999888777",
-    }
-    yield from _build_client(Settings(**settings))
-
-
-@pytest.fixture
-def real_trading_client() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
-    settings = {
-        **_BASE,
-        "execution_mode": "trade",
-        "enable_real_trading": True,
     }
     yield from _build_client(Settings(**settings))
 
@@ -244,16 +235,15 @@ def test_deliver_telegram_other_tenant_forbidden(
     assert response.status_code == 404
 
 
-def test_deliver_telegram_real_trading_blocked(
-    real_trading_client: tuple[TestClient, sessionmaker[Session]],
-) -> None:
-    test_client, factory = real_trading_client
-    headers, org_id, user_id = _register_owner(test_client, email="real-trading@example.com")
-    alert_id = _create_alert(factory, org_id=org_id, user_id=user_id)
-    response = _post_deliver(test_client, alert_id, headers)
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "blocked"
-    assert response.json()["error_code"] == "real_trading_enabled"
+def test_deliver_telegram_real_trading_blocked() -> None:
+    with pytest.raises(ValidationError, match="permanently rejected"):
+        Settings(
+            **{
+                **_BASE,
+                "execution_mode": "trade",
+                "enable_real_trading": True,
+            }
+        )
 
 
 def test_deliver_telegram_missing_config_skipped(

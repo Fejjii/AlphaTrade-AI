@@ -14,10 +14,129 @@ from app.services.rag_service import RagService
 from app.services.risk_service import RiskService
 from app.strategies.registry import get_strategy_registry
 from app.tools.base import ToolDefinition
+from app.tools.fail_closed import ToolFailureCode, fail_closed
 
 
-def _stub_execute(name: str) -> ToolOutput:
-    return ToolOutput(tool_name=name, success=True, result={"status": "mock", "mode": "paper"})
+def _unavailable(name: str, reason: str) -> ToolOutput:
+    return fail_closed(name, ToolFailureCode.UNAVAILABLE, reason)
+
+
+_MUTATING_TOOL_ACTIONS: dict[str, frozenset[str]] = {
+    "strategy_library_tool": frozenset({"create"}),
+    "backtest_tool": frozenset({"run"}),
+    "lesson_review_tool": frozenset({"accept", "reject", "create_version_from_lesson"}),
+    "paper_validation_tool": frozenset(
+        {
+            "start",
+            "scan",
+            "scheduler_tick",
+            "deliver_pending",
+            "market_watcher_scan",
+            "bridge_tick",
+        }
+    ),
+    "risk_settings_tool": frozenset({"update"}),
+    "notification_preferences_tool": frozenset({"update", "test"}),
+}
+
+_ALWAYS_MUTATING_TOOLS = frozenset(
+    {
+        "paper_execution",
+        "journal_writer",
+    }
+)
+
+
+def _funding_execute(args: dict[str, Any], market_data_service: MarketDataService) -> ToolOutput:
+    """Read-only funding context from the market-data service. Never a trading signal."""
+    from app.schemas.common import Timeframe
+
+    start = time.perf_counter()
+    try:
+        symbol = str(args.get("symbol", "BTCUSDT"))
+        tf = Timeframe(str(args.get("timeframe", "4h")))
+        snapshot = market_data_service.get_snapshot(symbol, tf)
+        latency = (time.perf_counter() - start) * 1000
+        funding = snapshot.funding_rate
+        return ToolOutput(
+            tool_name="funding",
+            success=True,
+            result={
+                "symbol": symbol,
+                "funding_rate": str(funding) if funding is not None else None,
+                "source": snapshot.meta.source,
+                "is_live": snapshot.meta.is_live,
+                "fallback_used": snapshot.meta.fallback_used,
+                "not_trading_signal": True,
+            },
+            latency_ms=latency,
+            used_fallback=snapshot.meta.fallback_used,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="funding", success=False, error=str(exc))
+
+
+def _position_reader_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.audit_service import AuditService
+    from app.services.position_service import PositionService
+
+    if session is None:
+        return _unavailable("position_reader", "Database session required to read positions.")
+    try:
+        org = args.get("organization_id")
+        user = args.get("user_id")
+        if org is None or user is None:
+            return ToolOutput(
+                tool_name="position_reader",
+                success=False,
+                error="organization_id and user_id are required.",
+            )
+        service = PositionService(session, AuditService(session))
+        items, total = service.list_positions(
+            organization_id=_uuid.UUID(str(org)),
+            user_id=_uuid.UUID(str(user)),
+            limit=20,
+        )
+        return ToolOutput(
+            tool_name="position_reader",
+            success=True,
+            result={
+                "items": [i.model_dump(mode="json") for i in items],
+                "total": total,
+                "read_only": True,
+            },
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="position_reader", success=False, error=str(exc))
+
+
+def _paper_execution_execute(_args: dict[str, Any]) -> ToolOutput:
+    """Agent paper execution is not an authority path in Phase 1 slices 1-3."""
+    return fail_closed(
+        "paper_execution",
+        ToolFailureCode.NOT_IMPLEMENTED,
+        "Agent paper_execution is not wired to ExecutionService. "
+        "EXECUTE_PAPER_PLAN persistence is owned by a later Phase 1 slice.",
+    )
+
+
+def _journal_writer_execute(_args: dict[str, Any]) -> ToolOutput:
+    return fail_closed(
+        "journal_writer",
+        ToolFailureCode.NOT_IMPLEMENTED,
+        "journal_writer is not an authoritative journal adapter. "
+        "Journal writes require confirmed JOURNAL operation class via JournalTradeService.",
+    )
+
+
+def _scenario_simulator_execute(_args: dict[str, Any]) -> ToolOutput:
+    return fail_closed(
+        "scenario_simulator",
+        ToolFailureCode.UNAVAILABLE,
+        "scenario_simulator has no authoritative domain implementation.",
+    )
 
 
 def _risk_checker_execute(args: dict[str, Any]) -> ToolOutput:
@@ -118,11 +237,27 @@ class ToolRegistry:
         ]
 
     def execute(self, name: str, arguments: dict[str, Any]) -> ToolOutput:
+        from app.core.operation_policy import get_operation_decision
+        from app.schemas.agent import OperationClass
+        from app.tools.fail_closed import ToolFailureCode, fail_closed
+
         tool = self._tools.get(name)
         if tool is None:
             return ToolOutput(tool_name=name, success=False, error=f"Unknown tool: {name}")
         if not tool.enabled:
             return ToolOutput(tool_name=name, success=False, error="Tool is disabled.")
+        decision = get_operation_decision()
+        if decision is not None and decision.operation_class is OperationClass.READ_ONLY:
+            action = str(arguments.get("action", "")).strip().lower()
+            mutating = name in _ALWAYS_MUTATING_TOOLS or (
+                action in _MUTATING_TOOL_ACTIONS.get(name, frozenset())
+            )
+            if mutating:
+                return fail_closed(
+                    name,
+                    ToolFailureCode.BLOCKED,
+                    "READ_ONLY forbids mutation/execution tools.",
+                )
         return tool.execute(arguments)
 
 
@@ -1594,7 +1729,7 @@ def build_default_registry(
             provider_dependencies=("mock-market-data",),
             has_fallback=True,
             enabled=True,
-            execute=lambda _a: _stub_execute("funding"),
+            execute=lambda args: _funding_execute(args, mds),
         ),
         ToolDefinition(
             name="risk_checker",
@@ -1624,7 +1759,7 @@ def build_default_registry(
             provider_dependencies=(),
             has_fallback=False,
             enabled=True,
-            execute=lambda _a: _stub_execute("scenario_simulator"),
+            execute=_scenario_simulator_execute,
         ),
         ToolDefinition(
             name="journal_writer",
@@ -1634,7 +1769,7 @@ def build_default_registry(
             provider_dependencies=(),
             has_fallback=False,
             enabled=True,
-            execute=lambda _a: _stub_execute("journal_writer"),
+            execute=_journal_writer_execute,
         ),
         ToolDefinition(
             name="position_reader",
@@ -1644,7 +1779,7 @@ def build_default_registry(
             provider_dependencies=(),
             has_fallback=False,
             enabled=True,
-            execute=lambda _a: _stub_execute("position_reader"),
+            execute=lambda args: _position_reader_execute(args, db_session),
         ),
         ToolDefinition(
             name="paper_execution",
@@ -1654,7 +1789,7 @@ def build_default_registry(
             provider_dependencies=("mock-exchange",),
             has_fallback=False,
             enabled=True,
-            execute=lambda _a: _stub_execute("paper_execution"),
+            execute=_paper_execution_execute,
         ),
         ToolDefinition(
             name="analytics_summary_tool",

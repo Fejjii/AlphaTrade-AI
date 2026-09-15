@@ -125,7 +125,12 @@ def _maybe_start_in_process_worker(settings: Settings):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and configure the FastAPI application."""
+    from app.core.paper_safety import assert_execution_capable_composition_root
+    from app.core.persistence_firewall import install_persistence_firewall
+
     settings = settings or get_settings()
+    assert_execution_capable_composition_root(settings)
+    install_persistence_firewall()
     configure_logging(log_level=settings.log_level, json_logs=settings.log_json)
 
     docs_enabled = settings.environment == Environment.LOCAL

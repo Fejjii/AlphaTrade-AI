@@ -69,6 +69,16 @@ class OutputValidationGuardrail:
     def _is_trading_output(self, data: GuardrailInput, text: str) -> bool:
         if data.has_trade_proposal:
             return True
+        intent = str(data.metadata.get("intent") or "")
+        if intent in {
+            "market_analysis",
+            "setup_analysis",
+            "plan_trade",
+            "execute_paper_plan",
+            "monitor",
+            "review_trade",
+        }:
+            return True
         lowered = text.lower()
         return any(
             token in lowered
