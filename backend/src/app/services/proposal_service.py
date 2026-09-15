@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationAppError
 from app.core.operation_policy import PersistenceKind, assert_write_allowed
 from app.db.models import TradeProposal as TradeProposalModel
 from app.repositories.proposals import ProposalRepository
+from app.repositories.trade_plans import TradePlanRevisionRepository
 from app.schemas.agent import AgentState, Intent, OperationClass
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
@@ -26,14 +27,21 @@ from app.schemas.proposal import (
     TradeProposal,
     TradeProposalCreate,
 )
+from app.schemas.trade_plan import (
+    TradePlanRevision,
+    TradePlanRevisionCreate,
+)
 from app.services.audit_service import AuditService
 from app.services.loss_acceptance_service import LossAcceptanceService
 from app.services.mappers.proposal_mapper import exit_to_columns, proposal_to_schema
+from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 
 
 class ProposalService:
     def __init__(self, session: Session, audit_service: AuditService) -> None:
+        self._session = session
         self._repo = ProposalRepository(session)
+        self._revisions = TradePlanRevisionRepository(session)
         self._audit = audit_service
 
     def create(self, data: TradeProposalCreate) -> TradeProposal:
@@ -172,6 +180,62 @@ class ProposalService:
         self._repo.add(row)
         return proposal_to_schema(row)
 
+    def create_revision(
+        self,
+        proposal_id: uuid.UUID,
+        data: TradePlanRevisionCreate,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> TradePlanRevision:
+        """Fail closed until an authoritative planner and permission source are available."""
+        del proposal_id, data, organization_id, user_id
+        raise ValidationAppError(
+            "ANALYSIS_ONLY_CANNOT_CREATE_EXECUTABLE_PLAN: "
+            "authoritative plan construction and permission attestation are unavailable."
+        )
+
+    def get_revision(
+        self,
+        proposal_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> TradePlanRevision:
+        row = self._revisions.get_scoped(
+            revision_id,
+            plan_id=proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if row is None:
+            raise NotFoundError("Trade plan revision not found")
+        return trade_plan_revision_to_schema(row)
+
+    def list_revisions(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> list[TradePlanRevision]:
+        proposal = self._repo.get_scoped(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if proposal is None:
+            raise NotFoundError("Trade proposal not found")
+        return [
+            trade_plan_revision_to_schema(row)
+            for row in self._revisions.list_for_plan_scoped(
+                proposal_id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        ]
+
     def _record_audit(self, event_type: AuditEventType, **fields: object) -> None:
         self._audit.record(
             AuditRecordCreate(
@@ -180,9 +244,9 @@ class ProposalService:
                 event_type=event_type,
                 resource_type="trade_proposal",
                 resource_id=str(fields["resource_id"]),
-                organization_id=fields["organization_id"],  # type: ignore[arg-type]
-                user_id=fields["user_id"],  # type: ignore[arg-type]
+                organization_id=fields["organization_id"],
+                user_id=fields["user_id"],
                 actor_type=ActorType.AGENT,
-                metadata=fields.get("metadata", {}),  # type: ignore[arg-type]
+                metadata=fields.get("metadata", {}),
             )
         )

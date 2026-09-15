@@ -20,11 +20,13 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -32,6 +34,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -95,6 +98,15 @@ from app.schemas.common import (
     TradingViewSignalStatus,
     UsageStatus,
     UserRole,
+)
+from app.schemas.trade_plan import (
+    AccountMode,
+    AuthorizationChannel,
+    AuthorizationState,
+    PlanOperation,
+)
+from app.schemas.trade_plan import (
+    ExecutionMode as PlanExecutionMode,
 )
 
 _MONEY = Numeric(20, 8)
@@ -204,6 +216,14 @@ class RefreshToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ExchangeAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "exchange_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "user_id",
+            name="uq_exchange_account_tenant_owner",
+        ),
+    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
@@ -215,6 +235,35 @@ class ExchangeAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[ExchangeAccountStatus] = mapped_column(
         _enum(ExchangeAccountStatus), default=ExchangeAccountStatus.ACTIVE
     )
+
+
+class ExecutionAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Internal paper account identity used to scope plans and authorizations."""
+
+    __tablename__ = "execution_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "user_id",
+            name="uq_execution_account_tenant_owner",
+        ),
+        CheckConstraint("execution_mode = 'PAPER'", name="ck_execution_account_paper"),
+        CheckConstraint("account_mode = 'NET'", name="ck_execution_account_net"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    execution_mode: Mapped[PlanExecutionMode] = mapped_column(
+        _enum(PlanExecutionMode), default=PlanExecutionMode.PAPER, nullable=False
+    )
+    account_mode: Mapped[AccountMode] = mapped_column(
+        _enum(AccountMode), default=AccountMode.NET, nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -316,6 +365,14 @@ class StrategySignal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "trade_proposals"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "user_id",
+            name="uq_trade_proposal_tenant_owner",
+        ),
+    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
@@ -356,6 +413,14 @@ class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         _enum(LossAcceptanceStatus), default=LossAcceptanceStatus.NOT_REQUIRED
     )
     actual_loss_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    latest_plan_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "trade_plan_revisions.id",
+            name="fk_trade_proposals_latest_plan_revision",
+            use_alter=True,
+        ),
+        nullable=True,
+    )
 
 
 class UserStrategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1215,11 +1280,102 @@ class WatchlistItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable executable child revision of the existing TradeProposal plan root."""
+
+    __tablename__ = "trade_plan_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["plan_id", "organization_id", "user_id"],
+            ["trade_proposals.id", "trade_proposals.organization_id", "trade_proposals.user_id"],
+            name="fk_trade_plan_revision_plan_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "organization_id", "user_id"],
+            [
+                "execution_accounts.id",
+                "execution_accounts.organization_id",
+                "execution_accounts.user_id",
+            ],
+            name="fk_trade_plan_revision_account_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["exchange_account_id", "organization_id", "user_id"],
+            [
+                "exchange_accounts.id",
+                "exchange_accounts.organization_id",
+                "exchange_accounts.user_id",
+            ],
+            name="fk_trade_plan_revision_exchange_account_tenant",
+        ),
+        UniqueConstraint(
+            "id",
+            "plan_id",
+            "organization_id",
+            "user_id",
+            "account_id",
+            name="uq_trade_plan_revision_binding",
+        ),
+        CheckConstraint("schema_version = 'CanonicalTradePlanContentV1'", name="ck_plan_schema_v1"),
+        CheckConstraint("operation = 'SUBMIT_ENTRY'", name="ck_plan_submit_entry"),
+        CheckConstraint("expected_account_mode = 'NET'", name="ck_plan_expected_net"),
+        CheckConstraint("length(content_hash) = 64", name="ck_plan_content_hash_length"),
+        Index(
+            "ix_trade_plan_revisions_plan_created",
+            "organization_id",
+            "plan_id",
+            "created_at",
+        ),
+    )
+
+    plan_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    exchange_account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation: Mapped[PlanOperation] = mapped_column(_enum(PlanOperation), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=False
+    )
+    setup_definition_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("setup_definitions.id"), nullable=False
+    )
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("paper_validation_candidates.id"), nullable=False
+    )
+    expected_account_mode: Mapped[AccountMode] = mapped_column(_enum(AccountMode), nullable=False)
+    permission_attestation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    permission_attestation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_venue: Mapped[str] = mapped_column(String(40), nullable=False)
+    execution_instrument: Mapped[str] = mapped_column(String(120), nullable=False)
+    execution_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    semantic_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    correlation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    presentation_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+@event.listens_for(TradePlanRevision, "before_update")
+@event.listens_for(TradePlanRevision, "before_delete")
+def _prevent_trade_plan_revision_mutation(
+    _mapper: object,
+    _connection: object,
+    _target: TradePlanRevision,
+) -> None:
+    raise ValueError("TradePlanRevision rows are immutable; create a new revision.")
+
+
 class ApprovalRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "approvals"
 
-    proposal_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("trade_proposals.id"), unique=True, nullable=False
+    proposal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("trade_proposals.id"), nullable=False)
+    plan_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("trade_plan_revisions.id"), unique=True, nullable=True
     )
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
@@ -1238,7 +1394,99 @@ class ApprovalRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     audit_event_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("audit_logs.id"), nullable=True
     )
+    authorization_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ApprovalAuthorization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One exact, account-bound authorization issued by an APPROVE decision."""
+
+    __tablename__ = "approval_authorizations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["revision_id", "plan_id", "organization_id", "user_id", "account_id"],
+            [
+                "trade_plan_revisions.id",
+                "trade_plan_revisions.plan_id",
+                "trade_plan_revisions.organization_id",
+                "trade_plan_revisions.user_id",
+                "trade_plan_revisions.account_id",
+            ],
+            name="fk_approval_authorization_revision_binding",
+        ),
+        ForeignKeyConstraint(
+            ["exchange_account_id", "organization_id", "user_id"],
+            [
+                "exchange_accounts.id",
+                "exchange_accounts.organization_id",
+                "exchange_accounts.user_id",
+            ],
+            name="fk_approval_authorization_exchange_account_tenant",
+        ),
+        CheckConstraint("operation = 'SUBMIT_ENTRY'", name="ck_authorization_submit_entry"),
+        CheckConstraint("execution_mode = 'PAPER'", name="ck_authorization_paper"),
+        CheckConstraint("verified_account_mode = 'NET'", name="ck_authorization_verified_net"),
+        CheckConstraint(
+            "length(plan_content_hash) = 64",
+            name="ck_authorization_plan_hash_length",
+        ),
+        CheckConstraint(
+            "length(authorization_content_hash) = 64",
+            name="ck_authorization_content_hash_length",
+        ),
+        Index(
+            "uq_available_approval_authorization",
+            "organization_id",
+            "account_id",
+            "exchange_account_scope_key",
+            "revision_id",
+            "plan_content_hash",
+            "operation",
+            unique=True,
+            postgresql_where=text("state = 'AVAILABLE'"),
+            sqlite_where=text("state = 'AVAILABLE'"),
+        ),
+    )
+
+    approval_request_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("approvals.id"), unique=True, nullable=False
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_accounts.id"), nullable=False
+    )
+    exchange_account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    exchange_account_scope_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    operation: Mapped[PlanOperation] = mapped_column(_enum(PlanOperation), nullable=False)
+    execution_mode: Mapped[PlanExecutionMode] = mapped_column(
+        _enum(PlanExecutionMode), nullable=False
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    plan_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_venue: Mapped[str] = mapped_column(String(40), nullable=False)
+    execution_instrument: Mapped[str] = mapped_column(String(120), nullable=False)
+    verified_account_mode: Mapped[AccountMode] = mapped_column(_enum(AccountMode), nullable=False)
+    permission_attestation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    permission_attestation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[AuthorizationState] = mapped_column(
+        _enum(AuthorizationState), default=AuthorizationState.AVAILABLE, nullable=False
+    )
+    channel: Mapped[AuthorizationChannel] = mapped_column(
+        _enum(AuthorizationChannel), nullable=False
+    )
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    correlation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_by_execution_command_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    authorization_content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
 
 
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):

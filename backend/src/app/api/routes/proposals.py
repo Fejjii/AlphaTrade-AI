@@ -15,6 +15,7 @@ from app.schemas.proposal import (
     TradeProposal,
     TradeProposalCreate,
 )
+from app.schemas.trade_plan import TradePlanRevision
 from app.schemas.workflow import ProposalWorkflowView
 from app.security.rbac import TraderDep
 from app.security.tenant import ensure_same_organization
@@ -115,3 +116,39 @@ async def update_loss_acceptance(
     result = proposal_service.update_loss_acceptance(proposal_id, body)
     session.commit()
     return result
+
+
+@router.get(
+    "/{proposal_id}/revisions",
+    response_model=list[TradePlanRevision],
+    summary="List immutable plan revisions",
+)
+async def list_trade_plan_revisions(
+    proposal_id: uuid.UUID,
+    tenant: TenantDep,
+    proposal_service: ProposalServiceDep,
+) -> list[TradePlanRevision]:
+    return proposal_service.list_revisions(
+        proposal_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.get(
+    "/{proposal_id}/revisions/{revision_id}",
+    response_model=TradePlanRevision,
+    summary="Get one immutable plan revision",
+)
+async def get_trade_plan_revision(
+    proposal_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    tenant: TenantDep,
+    proposal_service: ProposalServiceDep,
+) -> TradePlanRevision:
+    return proposal_service.get_revision(
+        proposal_id,
+        revision_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
