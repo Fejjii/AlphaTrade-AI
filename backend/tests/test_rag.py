@@ -351,7 +351,7 @@ def test_rag_does_not_bypass_risk_engine_or_create_trading_signal(
     )
     service = AgentService(runtime=runtime)
     response = service.run(
-        "Plan btc long [test_no_stop]",
+        "Plan trade BTC long [test_no_stop]",
         AgentInvokeContext(
             request_id="rag-safety",
             user_id=USER_ID,
