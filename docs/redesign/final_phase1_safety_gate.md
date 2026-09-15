@@ -1,8 +1,8 @@
 # Final Phase 1 Execution-Safety Gate — PR #70
 
-**Target branch:** `cursor/final-architecture-alignment-c5d7`  
-**Exact head:** `d8f684f7c7a945986951c01aaed10bb3261eff4f`  
-**Reference:** PR #68 at `e050d743837c75694044a1fd6808315b7aca605f`  
+**Target branch:** `cursor/final-architecture-alignment-c5d7`
+**Exact head:** `d8f684f7c7a945986951c01aaed10bb3261eff4f`
+**Reference:** PR #68 at `e050d743837c75694044a1fd6808315b7aca605f`
 **Scope:** narrow adversarial architecture gate; documentation only
 
 ## Final verdict
