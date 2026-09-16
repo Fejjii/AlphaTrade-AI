@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from app.services.canonical_serialization import canonical_sha256
 from app.watcher.contracts import (
@@ -73,9 +74,19 @@ def evaluation_input_hash(request: ScanRequest) -> str:
     return canonical_sha256(payload)
 
 
-def derive_scan_scope(*, organization_id: object, policy_id: object, timeframe: str | None) -> str:
+def derive_scan_scope(*, policy_id: object, timeframe: str | None) -> str:
+    """Logical scan scope. Tenant identity is not encoded in this string."""
+
     tf = timeframe if timeframe else "*"
-    return f"{organization_id}:{policy_id}:{tf}"
+    return f"{policy_id}:{tf}"
+
+
+def tenant_scope_key(organization_id: UUID, scan_scope: str) -> tuple[UUID, str]:
+    """Authoritative synchronization key: organization_id + scan_scope."""
+
+    if not scan_scope:
+        raise ValueError("scan_scope is required")
+    return (organization_id, scan_scope)
 
 
 def _opt_uuid(value: object | None) -> str | None:

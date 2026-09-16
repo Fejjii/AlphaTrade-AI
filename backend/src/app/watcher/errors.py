@@ -34,6 +34,12 @@ class LeaseConflictError(ConflictError):
     code = "watcher_lease_conflict"
 
 
+class WatcherTenantMismatchError(ConflictError):
+    """Caller organization_id does not match the stored watcher record."""
+
+    code = "watcher_tenant_mismatch"
+
+
 class WatcherContractError(WatcherError):
     """Evaluation outcome violated orchestration honesty invariants."""
 

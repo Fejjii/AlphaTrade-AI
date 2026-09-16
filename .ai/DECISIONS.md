@@ -641,12 +641,16 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
      deterministic in-memory repository for this wave.
   2. Manual and worker callers share one `WatcherOrchestrator.evaluate` boundary
      (`PREVIEW | PERSIST_EVIDENCE | PERSIST_AND_NOTIFY`). Notify stays blocked.
-  3. One fenced worker owns a scan scope; stale fence holders cannot publish.
+  3. One fenced worker owns a tenant-scoped scan key `(organization_id, scan_scope)`;
+     stale fence holders cannot publish. `scan_scope` strings are not a tenant boundary.
   4. Every scan has an immutable lineage; attempts are append-only; retries are
      idempotent; failures cannot be rewritten as successes.
   5. Health is exclusive `healthy | degraded | blocked | stale`.
   6. `WATCHER_ORCHESTRATION_ENABLED` defaults false and is not wired into the
      live worker loop. No shared ORM model or Alembic changes.
+  7. WatcherStore methods take `organization_id` explicitly and reject organization
+     mismatch. Lease, fence, heartbeat, health, latest-attempt-by-scope, and
+     lineage-by-scope are keyed by `(organization_id, scan_scope)`.
 - **Alternatives considered:** Extend `MarketWatcherService` / SQLAlchemy models
   now (rejected: collides with parallel agents and premature PostgreSQL binding);
   process-local locks only (rejected: architecture requires monotonic lease

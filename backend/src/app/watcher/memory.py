@@ -26,7 +26,8 @@ from app.watcher.contracts import (
     WatcherPolicyVersion,
     WorkerLease,
 )
-from app.watcher.errors import WatcherIdempotencyConflictError
+from app.watcher.errors import WatcherIdempotencyConflictError, WatcherTenantMismatchError
+from app.watcher.hashing import tenant_scope_key
 
 
 class FakeClock:
@@ -150,12 +151,20 @@ class InMemoryWatcherStore:
         self._attempts_by_lineage: dict[UUID, list[UUID]] = {}
         self._source_fetches: dict[UUID, list[SourceFetchAttempt]] = {}
         self._subscription_evals: dict[UUID, list[SubscriptionEvaluationAttempt]] = {}
-        self._leases: dict[str, WorkerLease] = {}
-        self._heartbeats: dict[str, WatcherHeartbeat] = {}
+        self._leases: dict[tuple[UUID, str], WorkerLease] = {}
+        self._heartbeats: dict[tuple[UUID, str], WatcherHeartbeat] = {}
         self._policies: dict[tuple[UUID, int], WatcherPolicyVersion] = {}
-        self._health: dict[str, WatcherHealthSnapshot] = {}
+        self._health: dict[tuple[UUID, str], WatcherHealthSnapshot] = {}
         self._events: list[WatcherObservabilityEvent] = []
-        self._lineage_by_scope: dict[str, list[UUID]] = {}
+        self._lineage_by_scope: dict[tuple[UUID, str], list[UUID]] = {}
+
+    @staticmethod
+    def _reject_mismatch(stored_org: UUID, organization_id: UUID, *, record: str) -> None:
+        if stored_org != organization_id:
+            raise WatcherTenantMismatchError(
+                "Watcher record belongs to a different organization.",
+                details={"record": record},
+            )
 
     def get_schedule(
         self,
@@ -183,17 +192,26 @@ class InMemoryWatcherStore:
             self._schedules[key] = row
             return row
 
-    def get_lineage(self, lineage_id: UUID) -> ScanLineage | None:
+    def get_lineage(self, lineage_id: UUID, organization_id: UUID) -> ScanLineage | None:
         with self._lock:
-            return self._lineages.get(lineage_id)
+            current = self._lineages.get(lineage_id)
+            if current is None:
+                return None
+            self._reject_mismatch(current.organization_id, organization_id, record="lineage")
+            return current
 
     def insert_lineage(self, row: ScanLineage) -> ScanLineage:
         with self._lock:
             existing = self._lineages.get(row.lineage_id)
             if existing is not None:
+                self._reject_mismatch(
+                    existing.organization_id, row.organization_id, record="lineage"
+                )
                 return existing
             self._lineages[row.lineage_id] = row
-            self._lineage_by_scope.setdefault(row.scan_scope, []).append(row.lineage_id)
+            self._lineage_by_scope.setdefault(
+                tenant_scope_key(row.organization_id, row.scan_scope), []
+            ).append(row.lineage_id)
             return row
 
     def cas_lineage_terminal(
@@ -201,9 +219,11 @@ class InMemoryWatcherStore:
         lineage_id: UUID,
         attempt_id: UUID,
         status: str,
+        organization_id: UUID,
     ) -> ScanLineage:
         with self._lock:
             current = self._lineages[lineage_id]
+            self._reject_mismatch(current.organization_id, organization_id, record="lineage")
             if (
                 current.terminal_status is ScanAttemptStatus.SUCCEEDED
                 and current.terminal_attempt_id is not None
@@ -263,14 +283,17 @@ class InMemoryWatcherStore:
     def claim_lease(
         self,
         *,
-        scan_scope: str,
         organization_id: UUID,
+        scan_scope: str,
         owner_id: str,
         ttl_seconds: int,
         now: datetime,
     ) -> tuple[bool, WorkerLease, str]:
+        key = tenant_scope_key(organization_id, scan_scope)
         with self._lock:
-            current = self._leases.get(scan_scope)
+            current = self._leases.get(key)
+            if current is not None:
+                self._reject_mismatch(current.organization_id, organization_id, record="lease")
             active = (
                 current is not None
                 and current.owner_id is not None
@@ -285,7 +308,7 @@ class InMemoryWatcherStore:
                             "expires_at": now + timedelta(seconds=ttl_seconds),
                         }
                     )
-                    self._leases[scan_scope] = renewed
+                    self._leases[key] = renewed
                     return True, renewed, "renewed"
                 return False, current, "lease_held"
             epoch = 1 if current is None else current.lease_epoch + 1
@@ -299,12 +322,13 @@ class InMemoryWatcherStore:
                 renewed_at=now,
                 expires_at=now + timedelta(seconds=ttl_seconds),
             )
-            self._leases[scan_scope] = claimed
+            self._leases[key] = claimed
             return True, claimed, "claimed"
 
     def renew_lease(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         fencing_token: int,
@@ -313,29 +337,36 @@ class InMemoryWatcherStore:
     ) -> bool:
         with self._lock:
             if not self._fence_is_active_unlocked(
+                organization_id=organization_id,
                 scan_scope=scan_scope,
                 owner_id=owner_id,
                 fencing_token=fencing_token,
                 now=now,
             ):
                 return False
-            current = self._leases[scan_scope]
+            key = tenant_scope_key(organization_id, scan_scope)
+            current = self._leases[key]
             renewed = current.model_copy(
                 update={
                     "renewed_at": now,
                     "expires_at": now + timedelta(seconds=ttl_seconds),
                 }
             )
-            self._leases[scan_scope] = renewed
+            self._leases[key] = renewed
             return True
 
-    def get_lease(self, scan_scope: str) -> WorkerLease | None:
+    def get_lease(self, organization_id: UUID, scan_scope: str) -> WorkerLease | None:
         with self._lock:
-            return self._leases.get(scan_scope)
+            current = self._leases.get(tenant_scope_key(organization_id, scan_scope))
+            if current is None:
+                return None
+            self._reject_mismatch(current.organization_id, organization_id, record="lease")
+            return current
 
     def fence_is_active(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         fencing_token: int,
@@ -343,6 +374,7 @@ class InMemoryWatcherStore:
     ) -> bool:
         with self._lock:
             return self._fence_is_active_unlocked(
+                organization_id=organization_id,
                 scan_scope=scan_scope,
                 owner_id=owner_id,
                 fencing_token=fencing_token,
@@ -352,13 +384,17 @@ class InMemoryWatcherStore:
     def _fence_is_active_unlocked(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         fencing_token: int,
         now: datetime,
     ) -> bool:
-        current = self._leases.get(scan_scope)
-        if current is None or current.owner_id != owner_id:
+        current = self._leases.get(tenant_scope_key(organization_id, scan_scope))
+        if current is None:
+            return False
+        self._reject_mismatch(current.organization_id, organization_id, record="lease")
+        if current.owner_id != owner_id:
             return False
         if current.fencing_token != fencing_token or current.lease_epoch != fencing_token:
             return False
@@ -369,6 +405,7 @@ class InMemoryWatcherStore:
     def record_heartbeat(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         lease_epoch: int,
@@ -376,7 +413,9 @@ class InMemoryWatcherStore:
         now: datetime,
         detail: str | None = None,
     ) -> WatcherHeartbeat:
+        key = tenant_scope_key(organization_id, scan_scope)
         beat = WatcherHeartbeat(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             owner_id=owner_id,
             lease_epoch=lease_epoch,
@@ -385,12 +424,19 @@ class InMemoryWatcherStore:
             detail=detail,
         )
         with self._lock:
-            self._heartbeats[scan_scope] = beat
+            existing = self._heartbeats.get(key)
+            if existing is not None:
+                self._reject_mismatch(existing.organization_id, organization_id, record="heartbeat")
+            self._heartbeats[key] = beat
             return beat
 
-    def get_heartbeat(self, scan_scope: str) -> WatcherHeartbeat | None:
+    def get_heartbeat(self, organization_id: UUID, scan_scope: str) -> WatcherHeartbeat | None:
         with self._lock:
-            return self._heartbeats.get(scan_scope)
+            current = self._heartbeats.get(tenant_scope_key(organization_id, scan_scope))
+            if current is None:
+                return None
+            self._reject_mismatch(current.organization_id, organization_id, record="heartbeat")
+            return current
 
     def put_policy_version(self, version: WatcherPolicyVersion) -> WatcherPolicyVersion:
         key = (version.identity.policy_id, version.version)
@@ -411,18 +457,34 @@ class InMemoryWatcherStore:
             return self._policies.get((policy_id, version))
 
     def remember_health(self, snapshot: WatcherHealthSnapshot) -> None:
+        key = tenant_scope_key(snapshot.organization_id, snapshot.scan_scope)
         with self._lock:
-            self._health[snapshot.scan_scope] = snapshot
+            existing = self._health.get(key)
+            if existing is not None:
+                self._reject_mismatch(
+                    existing.organization_id, snapshot.organization_id, record="health"
+                )
+            self._health[key] = snapshot
 
-    def latest_health(self, scan_scope: str) -> WatcherHealthSnapshot | None:
+    def latest_health(self, organization_id: UUID, scan_scope: str) -> WatcherHealthSnapshot | None:
         with self._lock:
-            return self._health.get(scan_scope)
+            current = self._health.get(tenant_scope_key(organization_id, scan_scope))
+            if current is None:
+                return None
+            self._reject_mismatch(current.organization_id, organization_id, record="health")
+            return current
 
-    def latest_attempt_for_scope(self, scan_scope: str) -> ScanAttempt | None:
+    def latest_attempt_for_scope(
+        self, organization_id: UUID, scan_scope: str
+    ) -> ScanAttempt | None:
         with self._lock:
-            lineage_ids = self._lineage_by_scope.get(scan_scope, [])
+            lineage_ids = self._lineage_by_scope.get(
+                tenant_scope_key(organization_id, scan_scope), []
+            )
             latest: ScanAttempt | None = None
             for lineage_id in lineage_ids:
+                lineage = self._lineages[lineage_id]
+                self._reject_mismatch(lineage.organization_id, organization_id, record="lineage")
                 for attempt_id in self._attempts_by_lineage.get(lineage_id, []):
                     attempt = self._attempts[attempt_id]
                     if latest is None or attempt.started_at >= latest.started_at:

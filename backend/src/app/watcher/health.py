@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from app.watcher.contracts import (
     ScanAttempt,
@@ -13,10 +14,12 @@ from app.watcher.contracts import (
     WatcherRuntimeConfig,
     WorkerLease,
 )
+from app.watcher.errors import WatcherTenantMismatchError
 
 
 def project_health(
     *,
+    organization_id: UUID,
     scan_scope: str,
     config: WatcherRuntimeConfig,
     now: datetime,
@@ -24,8 +27,10 @@ def project_health(
     heartbeat: WatcherHeartbeat | None,
     latest_attempt: ScanAttempt | None,
 ) -> WatcherHealthSnapshot:
+    _reject_health_mismatch(organization_id, lease, heartbeat)
     if not config.enabled:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -47,6 +52,7 @@ def project_health(
 
     if heartbeat is None or seconds_since_beat is None or seconds_since_beat > stale_after:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -60,6 +66,7 @@ def project_health(
 
     if lease_expired:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -78,6 +85,7 @@ def project_health(
         ScanAttemptStatus.CONVERGED_REPLAY,
     }:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -90,6 +98,7 @@ def project_health(
         )
     if last_status is ScanAttemptStatus.BLOCKED:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -102,6 +111,7 @@ def project_health(
         )
     if last_status in {ScanAttemptStatus.DEGRADED, ScanAttemptStatus.FAILED}:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -114,6 +124,7 @@ def project_health(
         )
     if last_status is ScanAttemptStatus.STARTED:
         return _snapshot(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=config,
             now=now,
@@ -126,6 +137,7 @@ def project_health(
         )
 
     return _snapshot(
+        organization_id=organization_id,
         scan_scope=scan_scope,
         config=config,
         now=now,
@@ -144,8 +156,26 @@ def _seconds_since(stamp: datetime | None, now: datetime) -> float | None:
     return (now - stamp).total_seconds()
 
 
+def _reject_health_mismatch(
+    organization_id: UUID,
+    lease: WorkerLease | None,
+    heartbeat: WatcherHeartbeat | None,
+) -> None:
+    if lease is not None and lease.organization_id != organization_id:
+        raise WatcherTenantMismatchError(
+            "Watcher lease belongs to a different organization.",
+            details={"record": "lease"},
+        )
+    if heartbeat is not None and heartbeat.organization_id != organization_id:
+        raise WatcherTenantMismatchError(
+            "Watcher heartbeat belongs to a different organization.",
+            details={"record": "heartbeat"},
+        )
+
+
 def _snapshot(
     *,
+    organization_id: UUID,
     scan_scope: str,
     config: WatcherRuntimeConfig,
     now: datetime,
@@ -158,6 +188,7 @@ def _snapshot(
 ) -> WatcherHealthSnapshot:
     return WatcherHealthSnapshot(
         state=state,
+        organization_id=organization_id,
         scan_scope=scan_scope,
         enabled=config.enabled,
         lease_owner=lease.owner_id if lease is not None else None,

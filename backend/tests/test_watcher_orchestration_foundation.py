@@ -29,7 +29,11 @@ from app.watcher.contracts import (
     WatcherPolicyIdentity,
     WatcherPolicyVersion,
 )
-from app.watcher.errors import SimulatedWorkerCrashError, WatcherIdempotencyConflictError
+from app.watcher.errors import (
+    SimulatedWorkerCrashError,
+    WatcherIdempotencyConflictError,
+    WatcherTenantMismatchError,
+)
 from app.watcher.hashing import derive_scan_scope, evaluation_input_hash, policy_content_hash
 from app.watcher.memory import (
     FakeClock,
@@ -71,14 +75,15 @@ def _request(
     timeframe: str | None = "15m",
     organization_id: UUID | None = None,
     extra_items: tuple[UUID, ...] = (),
+    scan_scope: str | None = None,
 ) -> ScanRequest:
     org = organization_id or policy.identity.organization_id
     items = (policy.identity.watchlist_item_id, *extra_items)
     return ScanRequest(
         organization_id=org,
         principal_id=principal_id,
-        scan_scope=derive_scan_scope(
-            organization_id=org,
+        scan_scope=scan_scope
+        or derive_scan_scope(
             policy_id=policy.identity.policy_id,
             timeframe=timeframe,
         ),
@@ -193,7 +198,7 @@ def test_same_request_replay_does_not_re_evaluate() -> None:
     assert second.attempt_id == first.attempt_id
     assert evaluator.call_count == 1
     assert first.lineage_id is not None
-    lineage = store.get_lineage(first.lineage_id)
+    lineage = store.get_lineage(first.lineage_id, policy.identity.organization_id)
     assert lineage is not None
     assert len(store.list_attempts(lineage.lineage_id)) == 1
     _assert_no_side_effects(probe)
@@ -249,7 +254,7 @@ def test_concurrent_worker_claim_single_owner() -> None:
     store = InMemoryWatcherStore()
     clock = FakeClock()
     org = uuid4()
-    scope = f"{org}:policy:15m"
+    scope = "policy-15m"
     barrier = threading.Barrier(2)
     results: list[tuple[bool, int, str]] = []
 
@@ -274,7 +279,7 @@ def test_concurrent_worker_claim_single_owner() -> None:
     assert len(acquired) == 1
     assert len(rejected) == 1
     assert rejected[0][2] == "lease_held"
-    lease = store.get_lease(scope)
+    lease = store.get_lease(org, scope)
     assert lease is not None
     assert lease.fencing_token == acquired[0][1]
 
@@ -318,12 +323,17 @@ def test_expired_lease_allows_new_owner_and_invalidates_old_fence() -> None:
     org = uuid4()
     scope = "scope-expired"
     acquired_a, lease_a, _reason_a = store.claim_lease(
-        scan_scope=scope, organization_id=org, owner_id="worker-a", ttl_seconds=10, now=clock.now()
+        organization_id=org,
+        scan_scope=scope,
+        owner_id="worker-a",
+        ttl_seconds=10,
+        now=clock.now(),
     )
     assert acquired_a is True
     clock.advance(11)
     assert (
         store.fence_is_active(
+            organization_id=org,
             scan_scope=scope,
             owner_id="worker-a",
             fencing_token=lease_a.fencing_token,
@@ -332,12 +342,17 @@ def test_expired_lease_allows_new_owner_and_invalidates_old_fence() -> None:
         is False
     )
     acquired_b, lease_b, _reason_b = store.claim_lease(
-        scan_scope=scope, organization_id=org, owner_id="worker-b", ttl_seconds=10, now=clock.now()
+        organization_id=org,
+        scan_scope=scope,
+        owner_id="worker-b",
+        ttl_seconds=10,
+        now=clock.now(),
     )
     assert acquired_b is True
     assert lease_b.fencing_token == lease_a.fencing_token + 1
     assert (
         store.fence_is_active(
+            organization_id=org,
             scan_scope=scope,
             owner_id="worker-a",
             fencing_token=lease_a.fencing_token,
@@ -347,6 +362,7 @@ def test_expired_lease_allows_new_owner_and_invalidates_old_fence() -> None:
     )
     assert (
         store.fence_is_active(
+            organization_id=org,
             scan_scope=scope,
             owner_id="worker-b",
             fencing_token=lease_b.fencing_token,
@@ -390,7 +406,7 @@ def test_stale_fence_cannot_publish_valid_results() -> None:
     assert attempt is not None
     assert attempt.status is ScanAttemptStatus.REJECTED_STALE_FENCE
     assert stolen.lineage_id is not None
-    lineage = store.get_lineage(stolen.lineage_id)
+    lineage = store.get_lineage(stolen.lineage_id, request.organization_id)
     assert lineage is not None
     assert lineage.terminal_status is not ScanAttemptStatus.SUCCEEDED
 
@@ -406,7 +422,7 @@ def test_stale_fence_cannot_publish_valid_results() -> None:
     assert winner.published is True
     assert winner.fencing_token != stolen.fencing_token
     assert winner.lineage_id is not None
-    refreshed = store.get_lineage(winner.lineage_id)
+    refreshed = store.get_lineage(winner.lineage_id, request.organization_id)
     assert refreshed is not None
     assert refreshed.terminal_attempt_id == winner.attempt_id
     assert refreshed.terminal_status is ScanAttemptStatus.SUCCEEDED
@@ -558,7 +574,7 @@ def test_failure_propagation_does_not_become_success() -> None:
     assert result.outcome.status is EvaluationStatus.FAILED
     assert result.outcome.reason_code == "failure_not_propagated"
     assert result.lineage_id is not None
-    lineage = store.get_lineage(result.lineage_id)
+    lineage = store.get_lineage(result.lineage_id, policy.identity.organization_id)
     assert lineage is not None
     assert lineage.terminal_status is ScanAttemptStatus.FAILED
     _assert_no_side_effects(probe)
@@ -594,7 +610,7 @@ def test_health_degradation_and_stale() -> None:
     result = orch.run_worker(request, worker_id="worker-1")
     assert result.health.state is WatcherHealthState.DEGRADED
     clock.advance(91)
-    stale = orch.health(request.scan_scope)
+    stale = orch.health(request.organization_id, request.scan_scope)
     assert stale.state is WatcherHealthState.STALE
     _assert_no_side_effects(probe)
 
@@ -629,7 +645,7 @@ def test_scan_lineage_is_immutable_across_retry() -> None:
     second = orch.run_worker(request, worker_id="worker-1")
     assert first.lineage_id == second.lineage_id
     assert first.lineage_id is not None
-    lineage = store.get_lineage(first.lineage_id)
+    lineage = store.get_lineage(first.lineage_id, policy.identity.organization_id)
     assert lineage is not None
     assert lineage.request_hash == first.request_hash
     attempts = store.list_attempts(lineage.lineage_id)
@@ -724,3 +740,226 @@ def test_settings_fixture_keeps_watcher_disabled(settings: Settings) -> None:
     assert settings.watcher_orchestration_enabled is False
     assert settings.market_watcher_enabled is False
     assert runtime_config_from_settings(settings).enabled is False
+
+
+SHARED_TENANT_SCOPE = "identical-scan-scope"
+
+
+def test_derive_scan_scope_does_not_embed_organization_id() -> None:
+    org = uuid4()
+    policy_id = uuid4()
+    scope = derive_scan_scope(policy_id=policy_id, timeframe="15m")
+    assert str(org) not in scope
+    assert str(policy_id) in scope
+    assert ":" in scope
+
+
+def test_two_organizations_same_scan_scope_concurrent_lease_acquisition() -> None:
+    store = InMemoryWatcherStore()
+    clock = FakeClock()
+    org_a = uuid4()
+    org_b = uuid4()
+    barrier = threading.Barrier(2)
+    results: dict[str, tuple[bool, int, str]] = {}
+    lock = threading.Lock()
+
+    def _claim(label: str, org: UUID) -> None:
+        barrier.wait()
+        acquired, lease, reason = store.claim_lease(
+            organization_id=org,
+            scan_scope=SHARED_TENANT_SCOPE,
+            owner_id=f"worker-{label}",
+            ttl_seconds=30,
+            now=clock.now(),
+        )
+        with lock:
+            results[label] = (acquired, lease.fencing_token, reason)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        pool.submit(_claim, "a", org_a)
+        pool.submit(_claim, "b", org_b)
+        pool.shutdown(wait=True)
+
+    assert results["a"][0] is True
+    assert results["b"][0] is True
+    lease_a = store.get_lease(org_a, SHARED_TENANT_SCOPE)
+    lease_b = store.get_lease(org_b, SHARED_TENANT_SCOPE)
+    assert lease_a is not None
+    assert lease_b is not None
+    assert lease_a.organization_id == org_a
+    assert lease_b.organization_id == org_b
+    assert lease_a.owner_id == "worker-a"
+    assert lease_b.owner_id == "worker-b"
+    assert lease_a.fencing_token == 1
+    assert lease_b.fencing_token == 1
+    assert store.get_lease(org_a, SHARED_TENANT_SCOPE) is not store.get_lease(
+        org_b, SHARED_TENANT_SCOPE
+    )
+
+
+def test_tenant_cannot_invalidate_other_tenant_fence() -> None:
+    store = InMemoryWatcherStore()
+    clock = FakeClock()
+    org_a = uuid4()
+    org_b = uuid4()
+    acquired_a, lease_a, _reason_a = store.claim_lease(
+        organization_id=org_a,
+        scan_scope=SHARED_TENANT_SCOPE,
+        owner_id="worker-a",
+        ttl_seconds=30,
+        now=clock.now(),
+    )
+    acquired_b, lease_b, _reason_b = store.claim_lease(
+        organization_id=org_b,
+        scan_scope=SHARED_TENANT_SCOPE,
+        owner_id="worker-b",
+        ttl_seconds=30,
+        now=clock.now(),
+    )
+    assert acquired_a is True
+    assert acquired_b is True
+    stolen, _lease_stolen, stolen_reason = store.claim_lease(
+        organization_id=org_b,
+        scan_scope=SHARED_TENANT_SCOPE,
+        owner_id="worker-b2",
+        ttl_seconds=30,
+        now=clock.now(),
+    )
+    assert stolen is False
+    assert stolen_reason == "lease_held"
+    assert (
+        store.fence_is_active(
+            organization_id=org_a,
+            scan_scope=SHARED_TENANT_SCOPE,
+            owner_id="worker-a",
+            fencing_token=lease_a.fencing_token,
+            now=clock.now(),
+        )
+        is True
+    )
+    assert (
+        store.fence_is_active(
+            organization_id=org_b,
+            scan_scope=SHARED_TENANT_SCOPE,
+            owner_id="worker-a",
+            fencing_token=lease_a.fencing_token,
+            now=clock.now(),
+        )
+        is False
+    )
+    refreshed_a = store.get_lease(org_a, SHARED_TENANT_SCOPE)
+    assert refreshed_a is not None
+    assert refreshed_a.fencing_token == lease_a.fencing_token
+    assert refreshed_a.owner_id == "worker-a"
+    refreshed_b = store.get_lease(org_b, SHARED_TENANT_SCOPE)
+    assert refreshed_b is not None
+    assert refreshed_b.fencing_token == lease_b.fencing_token
+    assert refreshed_b.owner_id == "worker-b"
+
+
+def test_tenant_heartbeat_health_lineage_and_latest_attempt_isolation() -> None:
+    store = InMemoryWatcherStore()
+    clock = FakeClock()
+    policy_a = _policy(clock)
+    policy_b = _policy(clock)
+    request_a = _request(policy_a, key="tenant-a", scan_scope=SHARED_TENANT_SCOPE)
+    request_b = _request(policy_b, key="tenant-b", scan_scope=SHARED_TENANT_SCOPE)
+    assert request_a.scan_scope == request_b.scan_scope == SHARED_TENANT_SCOPE
+    assert request_a.organization_id != request_b.organization_id
+    assert str(request_a.organization_id) not in request_a.scan_scope
+    assert str(request_b.organization_id) not in request_b.scan_scope
+    orch_a = build_orchestrator(
+        enabled=True,
+        store=store,
+        clock=clock,
+        evaluator=ScriptedEvaluationBoundary(),
+        side_effects=SideEffectProbe(),
+    )
+    orch_b = build_orchestrator(
+        enabled=True,
+        store=store,
+        clock=clock,
+        evaluator=ScriptedEvaluationBoundary(default=EvaluationStatus.FAILED),
+        side_effects=SideEffectProbe(),
+    )
+    result_a = orch_a.run_worker(request_a, worker_id="worker-a")
+    result_b = orch_b.run_worker(request_b, worker_id="worker-b")
+    assert result_a.status.value == "succeeded"
+    assert result_b.status.value == "failed"
+    assert result_a.published is True
+    assert result_b.published is True
+    assert result_a.lineage_id != result_b.lineage_id
+
+    beat_a = store.get_heartbeat(request_a.organization_id, SHARED_TENANT_SCOPE)
+    beat_b = store.get_heartbeat(request_b.organization_id, SHARED_TENANT_SCOPE)
+    assert beat_a is not None
+    assert beat_b is not None
+    assert beat_a.owner_id == "worker-a"
+    assert beat_b.owner_id == "worker-b"
+    assert beat_a.organization_id == request_a.organization_id
+    assert beat_b.organization_id == request_b.organization_id
+    assert beat_a.detail != beat_b.detail
+
+    health_a = orch_a.health(request_a.organization_id, SHARED_TENANT_SCOPE)
+    health_b = orch_b.health(request_b.organization_id, SHARED_TENANT_SCOPE)
+    assert health_a.state is WatcherHealthState.HEALTHY
+    assert health_b.state is WatcherHealthState.DEGRADED
+    assert health_a.organization_id == request_a.organization_id
+    assert health_b.organization_id == request_b.organization_id
+    assert health_a.last_lineage_id == result_a.lineage_id
+    assert health_b.last_lineage_id == result_b.lineage_id
+    stored_health_a = store.latest_health(request_a.organization_id, SHARED_TENANT_SCOPE)
+    stored_health_b = store.latest_health(request_b.organization_id, SHARED_TENANT_SCOPE)
+    assert stored_health_a is not None
+    assert stored_health_b is not None
+    assert stored_health_a.state is WatcherHealthState.HEALTHY
+    assert stored_health_b.state is WatcherHealthState.DEGRADED
+
+    latest_a = store.latest_attempt_for_scope(request_a.organization_id, SHARED_TENANT_SCOPE)
+    latest_b = store.latest_attempt_for_scope(request_b.organization_id, SHARED_TENANT_SCOPE)
+    assert latest_a is not None
+    assert latest_b is not None
+    assert latest_a.lineage_id == result_a.lineage_id
+    assert latest_b.lineage_id == result_b.lineage_id
+    assert latest_a.status is ScanAttemptStatus.SUCCEEDED
+    assert latest_b.status is ScanAttemptStatus.FAILED
+
+    assert result_a.lineage_id is not None
+    lineage_a = store.get_lineage(result_a.lineage_id, request_a.organization_id)
+    assert lineage_a is not None
+    assert lineage_a.organization_id == request_a.organization_id
+    with pytest.raises(WatcherTenantMismatchError):
+        store.get_lineage(result_a.lineage_id, request_b.organization_id)
+
+
+def test_organization_mismatch_is_rejected_on_lineage_and_cas() -> None:
+    store = InMemoryWatcherStore()
+    clock = FakeClock()
+    policy = _policy(clock)
+    orch = build_orchestrator(
+        enabled=True,
+        store=store,
+        clock=clock,
+        evaluator=ScriptedEvaluationBoundary(),
+        side_effects=SideEffectProbe(),
+    )
+    result = orch.run_worker(_request(policy, scan_scope=SHARED_TENANT_SCOPE), worker_id="worker-1")
+    assert result.lineage_id is not None
+    other_org = uuid4()
+    with pytest.raises(WatcherTenantMismatchError) as mismatch:
+        store.get_lineage(result.lineage_id, other_org)
+    assert mismatch.value.code == "watcher_tenant_mismatch"
+    with pytest.raises(WatcherTenantMismatchError):
+        store.cas_lineage_terminal(
+            result.lineage_id,
+            result.attempt_id or uuid4(),
+            ScanAttemptStatus.SUCCEEDED.value,
+            other_org,
+        )
+    assert store.get_lease(other_org, SHARED_TENANT_SCOPE) is None
+    assert store.get_heartbeat(other_org, SHARED_TENANT_SCOPE) is None
+    assert store.latest_health(other_org, SHARED_TENANT_SCOPE) is None
+    assert store.latest_attempt_for_scope(other_org, SHARED_TENANT_SCOPE) is None
+    own_lease = store.get_lease(policy.identity.organization_id, SHARED_TENANT_SCOPE)
+    assert own_lease is not None
+    assert own_lease.organization_id == policy.identity.organization_id
