@@ -26,6 +26,12 @@ class CrossTenantLevelError(ForbiddenError):
     code = "manual_level_cross_tenant_rejected"
 
 
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _level_value(
     price: Decimal | None, low: Decimal | None, high: Decimal | None
 ) -> Decimal | None:
@@ -76,8 +82,8 @@ def _revision_hash(
             "price_low": price_low,
             "price_high": price_high,
             "valid": valid,
-            "effective_at": effective_at,
-            "created_at": created_at,
+            "effective_at": _aware_utc(effective_at),
+            "created_at": _aware_utc(created_at),
             "supersedes_revision_id": str(supersedes_revision_id)
             if supersedes_revision_id
             else None,

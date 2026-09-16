@@ -149,7 +149,7 @@ def test_postgres_evaluation_status_remains_mutable() -> None:
     factory = _factory()
     with factory() as session:
         _seed(session)
-        session.execute(text("UPDATE user_strategy_versions SET validation_status = 'validated'"))
+        session.execute(text("UPDATE user_strategy_versions SET validation_status = 'VALIDATED'"))
         session.commit()
         version = session.scalars(select(UserStrategyVersion)).one()
         assert version.validation_status.value == "validated"

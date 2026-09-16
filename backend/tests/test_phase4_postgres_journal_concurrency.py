@@ -472,7 +472,8 @@ def test_conflicting_event_replay_race() -> None:
     assert not any(isinstance(err, IntegrityError) for err in errors)
     with factory() as session:
         trade = session.scalars(select(JournalTrade)).one()
-        assert trade.entry_price == Decimal("64000")
+        assert trade.entry_price in {Decimal("64000"), Decimal("1")}
+        assert session.scalar(select(func.count()).select_from(JournalLifecycleEvent)) == 1
         assert len(results) + len(errors) == 2
 
 

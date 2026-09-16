@@ -51,6 +51,15 @@ _PG_SEMANTIC_COLUMNS = (
     "content_diff",
     "content_hash",
 )
+_PG_JSON_COLUMNS = frozenset(
+    {
+        "card",
+        "structured_rules",
+        "lesson_source_metadata",
+        "pattern_spec",
+        "content_diff",
+    }
+)
 
 _PG_VERSION_FUNCTION = "alphatrade_forbid_strategy_version_semantic_mutation"
 _PG_VERSION_MARKER = "alphatrade_strategy_version_immutable"
@@ -132,7 +141,12 @@ def strategy_version_pg_immutability_install_statements() -> tuple[str, ...]:
     """PostgreSQL trigger: semantic columns immutable; evaluation status remains mutable."""
 
     comparisons = " OR ".join(
-        f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in _PG_SEMANTIC_COLUMNS
+        (
+            f"NEW.{column}::jsonb IS DISTINCT FROM OLD.{column}::jsonb"
+            if column in _PG_JSON_COLUMNS
+            else f"NEW.{column} IS DISTINCT FROM OLD.{column}"
+        )
+        for column in _PG_SEMANTIC_COLUMNS
     )
     allowed = ", ".join(sorted(_MUTABLE_EVALUATION_FIELDS))
     function_sql = f"""

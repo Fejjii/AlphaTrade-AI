@@ -268,21 +268,22 @@ class OpenAILLMProvider:
     def uses_responses_api(self, model: str | None = None) -> bool:
         return model_requires_responses_api(model or self._default_model)
 
-    def _may_use_internal_fallback(self, request: LLMCompletionRequest) -> bool:
-        return (
-            not self._fail_closed and self._fallback is not None and request.allow_internal_fallback
-        )
+    def _internal_fallback(self, request: LLMCompletionRequest) -> MockLLMProvider | None:
+        if self._fail_closed or not request.allow_internal_fallback:
+            return None
+        return self._fallback
 
     def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
         from app.core.errors import ServiceUnavailableError
 
+        fallback = self._internal_fallback(request)
         if not self._api_key:
-            if not self._may_use_internal_fallback(request):
+            if fallback is None:
                 raise ServiceUnavailableError(
                     "LLM provider is unavailable.",
                     details={"reason": "openai_api_key_missing", "provider": self.name},
                 )
-            return self._fallback.complete(request)
+            return fallback.complete(request)
 
         started = time.perf_counter()
         model = (request.model or self._default_model).strip() or self._default_model
@@ -311,12 +312,12 @@ class OpenAILLMProvider:
                 error_code=details.get("error_code"),
                 api=details.get("api"),
             )
-            if not self._may_use_internal_fallback(request):
+            if fallback is None:
                 raise ServiceUnavailableError(
                     "LLM provider is unavailable.",
                     details=details,
                 ) from exc
-            result = self._fallback.complete(request)
+            result = fallback.complete(request)
             return LLMCompletionResult(
                 content=result.content,
                 model=result.model,
@@ -335,12 +336,12 @@ class OpenAILLMProvider:
                 "error_code": "empty_output",
                 "provider": self.name,
             }
-            if not self._may_use_internal_fallback(request):
+            if fallback is None:
                 raise ServiceUnavailableError(
                     "LLM provider is unavailable.",
                     details=details,
                 )
-            result = self._fallback.complete(request)
+            result = fallback.complete(request)
             return LLMCompletionResult(
                 content=result.content,
                 model=result.model,
