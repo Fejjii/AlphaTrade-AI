@@ -5,10 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.cvd import select_trades_in_window
+from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
     FormingCandleError,
     WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.hashing import with_content_hash
@@ -16,6 +19,7 @@ from app.market_contracts.identity import (
     EvidenceMarketIdentity,
     InstrumentIdentity,
     require_instrument,
+    require_perpetual,
 )
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
 from app.market_contracts.replay_fixtures import canonical_first_slice_fixture
@@ -53,9 +57,7 @@ class ReplayPerpetualSource:
         min_final_bars: int,
         evaluated_at: datetime,
     ) -> ClosedOhlcvSeries:
-        require_instrument(identity, instrument)
-        if identity.provenance.fallback_used:
-            raise WrongMarketError("Replay evidence cannot record a fallback.")
+        self._assert_identity(identity, instrument)
         bars = self._bars_for(timeframe)
         if not bars:
             raise FormingCandleError(f"Replay fixture has no {timeframe.value} bars.")
@@ -77,7 +79,7 @@ class ReplayPerpetualSource:
         source_connection_id: UUID,
         receive_at: datetime,
     ) -> OrderedTradeBatch:
-        require_instrument(identity, instrument)
+        self._assert_identity(identity, instrument)
         selected = select_trades_in_window(self._trades, start=start, end=end)
         retagged: list[TradeEvent] = []
         for trade in selected:
@@ -91,10 +93,18 @@ class ReplayPerpetualSource:
                 with_content_hash(updated, extra_exclude=frozenset({"source_connection_id"}))
             )
         ordered = order_trades(retagged)
+        coverage = build_complete_trade_window_coverage(
+            identity=identity,
+            lineage_id=source_connection_id,
+            requested_start=start,
+            requested_end=end,
+            trades=ordered,
+        )
         batch = OrderedTradeBatch(
             identity=identity,
             trades=ordered,
             source_connection_id=source_connection_id,
+            coverage=coverage,
             content_hash="0" * 64,
         )
         return with_content_hash(batch)
@@ -117,6 +127,29 @@ class ReplayPerpetualSource:
         if timeframe is Timeframe.H4:
             return self._bars_4h
         raise WrongMarketError(f"Replay fixture does not include timeframe {timeframe.value}.")
+
+    def _assert_identity(
+        self,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+    ) -> None:
+        require_perpetual(identity)
+        require_instrument(identity, instrument)
+        source = identity.source
+        provenance = identity.provenance
+        if (
+            source.family is not SourceFamily.REPLAY_FIXTURE
+            or source.provider_name != self.name
+            or provenance.source_family is not SourceFamily.REPLAY_FIXTURE
+            or provenance.provider_name != self.name
+            or provenance.is_live
+            or not provenance.is_mock
+        ):
+            raise WrongSourceError(
+                "Replay evidence identity must exactly identify the replay provider."
+            )
+        if identity.provenance.fallback_used:
+            raise WrongMarketError("Replay evidence cannot record a fallback.")
 
 
 def replay_identity(timeframe: Timeframe) -> EvidenceMarketIdentity:

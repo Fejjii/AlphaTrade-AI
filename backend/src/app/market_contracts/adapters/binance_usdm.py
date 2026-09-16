@@ -12,6 +12,7 @@ import httpx
 
 from app.market_contracts.adapters.aggtrades import fetch_complete_agg_trade_rows
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
+from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
     FallbackForbiddenError,
@@ -20,6 +21,7 @@ from app.market_contracts.errors import (
     SpotFallbackRejectedError,
     WrongInstrumentError,
     WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.freshness import first_slice_freshness_policy
@@ -158,10 +160,18 @@ class BinanceUsdmPerpetualSource:
             for row in rows
         ]
         ordered = order_trades(raw_trades)
+        coverage = build_complete_trade_window_coverage(
+            identity=identity,
+            lineage_id=source_connection_id,
+            requested_start=start,
+            requested_end=end,
+            trades=ordered,
+        )
         batch = OrderedTradeBatch(
             identity=identity,
             trades=ordered,
             source_connection_id=source_connection_id,
+            coverage=coverage,
             content_hash="0" * 64,
         )
         return with_content_hash(batch)
@@ -246,9 +256,18 @@ class BinanceUsdmPerpetualSource:
             raise WrongMarketError("Binance USD-M adapter cannot serve a non-USD-M product.")
         if identity.instrument.market_type is not MarketType.PERPETUAL:
             raise WrongMarketError("Binance USD-M adapter cannot serve non-perpetual markets.")
-        if identity.source.family is SourceFamily.REPLAY_FIXTURE:
-            raise FallbackForbiddenError(
-                "Live USD-M adapter cannot be labelled as a replay source."
+        source = identity.source
+        provenance = identity.provenance
+        if (
+            source.family is not SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
+            or source.provider_name != self.name
+            or provenance.source_family is not SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
+            or provenance.provider_name != self.name
+            or not provenance.is_live
+            or provenance.is_mock
+        ):
+            raise WrongSourceError(
+                "Live USD-M evidence identity must exactly identify the live Binance provider."
             )
         if identity.provenance.fallback_used:
             raise FallbackForbiddenError("Live USD-M evidence cannot record fallback_used=true.")

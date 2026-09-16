@@ -661,12 +661,21 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   8. **AggTrades retrieval** chunks `startTime`/`endTime` to < 1 hour and paginates
      further pages with `fromId` only. Mixed time+fromId queries are forbidden.
      Incomplete pages or sequence holes fail closed.
-  9. **CVD completeness** is derived from a `TradeStreamSnapshot` cursor proof
-     (contiguous sequences, no caller-supplied NONE/COMPLETE shortcut). First-slice
-     action eligibility also requires the snapshot terminal trade to pass the 10s
-     freshness policy.
+  9. **CVD completeness** is derived from a `TradeStreamSnapshot` plus immutable
+     `TradeWindowCoverageProof`. The proof binds exact market/source identity,
+     lineage, requested/actual half-open bounds, gap/completeness state, terminal
+     trade identities, ordered trade-set hash, and content hash. It must cover the
+     entire T-32 through trigger-end window. Count and internal continuity alone
+     are insufficient. First-slice action eligibility also requires terminal trade
+     freshness ≤10s.
   10. **Live evidence hosts** are explicit approved USD-M HTTPS identities
       (`fapi.binance.com`). Arbitrary hosts and `http://` are rejected.
+  11. **End-to-end identity** requires every normalized trade to exactly match the
+      stream market/instrument and represented source fields. CVD/flow identity must
+      exactly equal the authoritative snapshot identity.
+  12. **Signed quote flow** consumes the same proven stream as CVD and requires
+      complete trigger-bar coverage, no gap, matching lineage/aggressor convention,
+      and fresh terminal evidence. Raw trade lists are not accepted.
 - **Alternatives considered:** Relabel the existing spot kline adapter as perpetual
   (rejected: incompatible market); fall back to spot or mock when USD-M is blocked
   (rejected: false evidence); persist observations in this phase (rejected: no migration

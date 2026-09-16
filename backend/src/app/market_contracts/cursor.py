@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from app.market_contracts.enums import GapState, ReconnectState, WarmUpStatus
+from app.market_contracts.coverage import (
+    TradeWindowCoverageProof,
+    build_partial_assembly_coverage,
+    require_trade_matches_identity,
+    verify_trade_window_coverage,
+)
+from app.market_contracts.enums import DataCompleteness, GapState, ReconnectState, WarmUpStatus
 from app.market_contracts.errors import (
     CursorRecoveryError,
     DuplicateDataError,
     GapDetectedError,
     OutOfOrderTradesError,
     UnrecoverableGapError,
+    WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import EvidenceMarketIdentity, require_perpetual
 from app.market_contracts.models import CanonicalModel
-from app.market_contracts.trades import TradeEvent, order_trades
+from app.market_contracts.trades import OrderedTradeBatch, TradeEvent, order_trades
+
+_MIN_COVERAGE_INTERVAL = timedelta(microseconds=1)
 
 
 class TradeStreamCursor(CanonicalModel):
@@ -55,7 +65,27 @@ class TradeStreamCursor(CanonicalModel):
 class TradeStreamSnapshot(CanonicalModel):
     cursor: TradeStreamCursor
     trades: list[TradeEvent]
+    coverage: TradeWindowCoverageProof
     usable: bool
+
+    @model_validator(mode="after")
+    def _coverage_matches_cursor(self) -> TradeStreamSnapshot:
+        verify_trade_window_coverage(
+            self.coverage,
+            identity=self.cursor.identity,
+            lineage_id=self.cursor.connection_identity,
+            trades=self.trades,
+        )
+        expected_usable = (
+            self.cursor.gap_state is GapState.NONE
+            and self.cursor.warm_up_status is WarmUpStatus.COMPLETE
+            and self.cursor.reconnect_state in {ReconnectState.CONTINUOUS, ReconnectState.RECOVERED}
+            and self.coverage.gap_state is GapState.NONE
+            and self.coverage.completeness is DataCompleteness.COMPLETE
+        )
+        if self.usable != expected_usable:
+            raise ValueError("Trade snapshot usable flag does not match cursor and coverage proof.")
+        return self
 
 
 def _hash_cursor(cursor: TradeStreamCursor) -> TradeStreamCursor:
@@ -151,6 +181,7 @@ class TradeStreamAssembler:
         )
         self._by_id: dict[str, TradeEvent] = {}
         self._ordered: list[TradeEvent] = []
+        self._coverage: TradeWindowCoverageProof | None = None
         self._watermark_sequence: int | None = None
 
     @property
@@ -181,6 +212,37 @@ class TradeStreamAssembler:
         ordered = order_trades(trades)
         self._accept_live(ordered, observed_at=observed_at)
         self._refresh_warm_up(observed_at)
+        self._refresh_partial_coverage(observed_at)
+        return self._snapshot()
+
+    def ingest_batch(
+        self,
+        batch: OrderedTradeBatch,
+        *,
+        observed_at: datetime,
+    ) -> TradeStreamSnapshot:
+        """Ingest one retrieval-bound batch and preserve its authoritative coverage proof."""
+        if self._ordered:
+            raise CursorRecoveryError(
+                "Authoritative retrieval batches require a fresh stream assembler."
+            )
+        if batch.identity != self._identity:
+            raise WrongMarketError(
+                "Trade batch identity does not exactly match the stream evidence identity."
+            )
+        if batch.source_connection_id != self.connection_identity:
+            raise WrongSourceError(
+                "Trade batch lineage does not match the stream connection identity."
+            )
+        verify_trade_window_coverage(
+            batch.coverage,
+            identity=self._identity,
+            lineage_id=self.connection_identity,
+            trades=batch.trades,
+        )
+        self._accept_live(batch.trades, observed_at=observed_at)
+        self._refresh_warm_up(observed_at)
+        self._coverage = batch.coverage
         return self._snapshot()
 
     def begin_reconnect(self, *, observed_at: datetime) -> TradeStreamCursor:
@@ -203,6 +265,7 @@ class TradeStreamAssembler:
                 }
             )
         )
+        self._coverage = None
         return self._cursor
 
     def recover_from_backfill(
@@ -261,6 +324,7 @@ class TradeStreamAssembler:
                     update={"reconnect_state": ReconnectState.CONTINUOUS, "updated_at": now}
                 )
             )
+        self._refresh_partial_coverage(observed_at)
         return self._snapshot()
 
     def _dedupe_ordered(self, trades: list[TradeEvent]) -> list[TradeEvent]:
@@ -268,6 +332,7 @@ class TradeStreamAssembler:
         unique: list[TradeEvent] = []
         seen: dict[str, str] = {}
         for trade in ordered:
+            require_trade_matches_identity(trade, self._identity)
             prior = seen.get(trade.venue_trade_id)
             if prior is None:
                 seen[trade.venue_trade_id] = trade.content_hash
@@ -294,10 +359,12 @@ class TradeStreamAssembler:
     def _accept_live(self, ordered: list[TradeEvent], *, observed_at: datetime) -> None:
         now = observed_at.astimezone(UTC)
         for trade in ordered:
+            require_trade_matches_identity(trade, self._identity)
             if trade.source_connection_id != self._cursor.connection_identity:
                 raise CursorRecoveryError(
                     "Trade connection epoch does not match the current cursor epoch."
                 )
+        for trade in ordered:
             existing = self._by_id.get(trade.venue_trade_id)
             if existing is not None:
                 if existing.content_hash != trade.content_hash:
@@ -368,6 +435,32 @@ class TradeStreamAssembler:
             self._cursor.model_copy(update={"warm_up_status": status, "updated_at": now})
         )
 
+    def _refresh_partial_coverage(self, observed_at: datetime) -> None:
+        if not self._ordered:
+            requested_start = self._cursor.connected_at
+            requested_end = max(
+                observed_at.astimezone(UTC),
+                requested_start + _MIN_COVERAGE_INTERVAL,
+            )
+        else:
+            requested_start = min(
+                self._cursor.connected_at,
+                self._ordered[0].event_timestamp,
+            )
+            requested_end = max(
+                observed_at.astimezone(UTC),
+                self._ordered[-1].event_timestamp + _MIN_COVERAGE_INTERVAL,
+                requested_start + _MIN_COVERAGE_INTERVAL,
+            )
+        self._coverage = build_partial_assembly_coverage(
+            identity=self._identity,
+            lineage_id=self._cursor.connection_identity,
+            requested_start=requested_start,
+            requested_end=requested_end,
+            trades=self._ordered,
+            gap_state=self._cursor.gap_state,
+        )
+
     def _fail_unrecoverable(
         self, observed_at: datetime, *, gap_start: int | None, gap_end: int | None
     ) -> None:
@@ -389,10 +482,20 @@ class TradeStreamAssembler:
         )
 
     def _snapshot(self) -> TradeStreamSnapshot:
+        if self._coverage is None:
+            self._refresh_partial_coverage(self._cursor.updated_at)
+        assert self._coverage is not None
         usable = (
             self._cursor.gap_state is GapState.NONE
             and self._cursor.warm_up_status is WarmUpStatus.COMPLETE
             and self._cursor.reconnect_state
             in {ReconnectState.CONTINUOUS, ReconnectState.RECOVERED}
+            and self._coverage.gap_state is GapState.NONE
+            and self._coverage.completeness is DataCompleteness.COMPLETE
         )
-        return TradeStreamSnapshot(cursor=self._cursor, trades=list(self._ordered), usable=usable)
+        return TradeStreamSnapshot(
+            cursor=self._cursor,
+            trades=list(self._ordered),
+            coverage=self._coverage,
+            usable=usable,
+        )
