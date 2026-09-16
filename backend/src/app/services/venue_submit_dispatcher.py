@@ -97,7 +97,9 @@ class VenueSubmitDispatcher:
             organization_id=command.organization_id, account_id=command.account_id
         )
         effect = self._require_effect_locked(command_id)
-        if self._epoch_blocks(epoch_value=int(effect.safety_epoch), current=epoch):
+        if self._safety_blocks_dispatch(
+            command=command, epoch=epoch, claimed_epoch=int(effect.safety_epoch)
+        ):
             self._block_before_dispatch(command=command, effect=effect, now=now)
             return effect
         if effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED:
@@ -156,7 +158,9 @@ class VenueSubmitDispatcher:
                 )
             commit_barrier3(self._session)
             return effect
-        if self._epoch_blocks(epoch_value=int(effect.safety_epoch), current=epoch):
+        if self._safety_blocks_dispatch(
+            command=command, epoch=epoch, claimed_epoch=int(effect.safety_epoch)
+        ):
             self._block_before_dispatch(command=command, effect=effect, now=now)
             commit_barrier3(self._session)
             return effect
@@ -248,11 +252,21 @@ class VenueSubmitDispatcher:
         fill_quantity: Decimal,
         fill_price: Decimal,
         source_identity: str,
+        occurred_at: datetime,
         venue_source: str = "phase1-fake-venue",
-        occurred_at: datetime | None = None,
     ) -> UniqueFillResult:
         now = _aware(self._clock())
-        fill_time = _aware(occurred_at) if occurred_at is not None else now
+        if source_identity is None or not str(source_identity).strip():
+            raise ConflictError(
+                "Authoritative fill identity is required.",
+                details={"reason": "missing_source_fill_identity"},
+            )
+        if occurred_at is None:
+            raise ConflictError(
+                "Authoritative fill occurrence time is required.",
+                details={"reason": "missing_authoritative_occurred_at"},
+            )
+        fill_time = _aware(occurred_at)
         if fill_quantity <= 0 or fill_price <= 0:
             raise ConflictError(
                 "Fill quantity and price must be positive.",
@@ -578,6 +592,17 @@ class VenueSubmitDispatcher:
         reservation.release_state = RiskReservationReleaseState.RELEASED
         reservation.release_reason = reason
         reservation.updated_at = now
+
+    def _safety_blocks_dispatch(
+        self,
+        *,
+        command: ExecutionCommand,
+        epoch: AccountSafetyEpoch,
+        claimed_epoch: int,
+    ) -> bool:
+        if self._epochs.organization_kill_active(command.organization_id):
+            return True
+        return self._epoch_blocks(epoch_value=claimed_epoch, current=epoch)
 
     def _epoch_blocks(self, *, epoch_value: int, current: AccountSafetyEpoch) -> bool:
         return bool(current.blocking) or int(current.epoch) != epoch_value

@@ -14,18 +14,23 @@ from app.core.operation_policy import operation_scope
 from app.db.models import (
     AccountRiskAccountingState,
     ApprovalAuthorization,
+    ApprovalRequest,
     ExecutionCommand,
     ExecutionFillFact,
     ExecutionIdempotencyBinding,
     ExecutionProjection,
     ExecutionReceipt,
     ExecutionTransition,
+    Order,
     PlanEntryExecutionClaim,
+    Position,
     RiskReservation,
     VenueSubmitEffect,
 )
 from app.providers.execution.fake_venue import FakeVenueBehavior, FakeVenueSubmitProvider
 from app.schemas.agent import Intent, IntentDecision, OperationClass, RequestedAction
+from app.schemas.common import ApprovalStatus, OrderSide, OrderType, RiskSeverity
+from app.schemas.execution import PaperOrderRequest
 from app.schemas.execution_protocol import (
     ExecutionCommandOutcome,
     ExecutionReceiptState,
@@ -37,6 +42,10 @@ from app.schemas.trade_plan import AuthorizationState
 from app.services.audit_service import AuditService
 from app.services.execution_claim import conservative_reservation
 from app.services.execution_client_order_id import derive_entry_client_order_id
+from app.services.execution_service import (
+    LEGACY_DEMO_MIRROR_REASON,
+    LEGACY_PAPER_EXECUTION_REASON,
+)
 from app.services.execution_transitions import rebuild_projection_from_transitions
 from app.services.risk.kill_switch import KillSwitchService
 from tests.support.phase1_plan_fixtures import (
@@ -496,6 +505,7 @@ def test_unique_fill_converts_reservation_and_appends_transition(session: Sessio
         fill_quantity=Decimal("1"),
         fill_price=Decimal("100.10"),
         source_identity="fill-1",
+        occurred_at=EXECUTE_AT,
     )
     session.commit()
     projection = session.scalar(
@@ -827,6 +837,347 @@ def test_conflicting_fill_identity_fails_closed(session: Session) -> None:
             fill_quantity=Decimal("1"),
             fill_price=Decimal("999"),
             source_identity="fill-same",
+            occurred_at=EXECUTE_AT,
+        )
+    assert exc.value.details["reason"] == "conflicting_fill_identity"
+
+
+def _legacy_paper_request(
+    ids: dict[str, object],
+    *,
+    approval_id: object,
+    key: str = "legacy-bypass",
+) -> PaperOrderRequest:
+    return PaperOrderRequest(
+        proposal_id=ids["proposal_id"],  # type: ignore[arg-type]
+        approval_id=approval_id,  # type: ignore[arg-type]
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        size=Decimal("0.005"),
+        idempotency_key=key,
+    )
+
+
+def test_legacy_place_paper_order_cannot_create_order_or_position(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    with pytest.raises(TradingPolicyError) as exc:
+        service.place_paper_order(
+            _legacy_paper_request(ids, approval_id=authorization.authorization_id)
+        )
+    assert exc.value.details["reason"] == LEGACY_PAPER_EXECUTION_REASON
+    session.commit()
+    assert session.scalar(select(func.count()).select_from(Order)) == 0
+    assert session.scalar(select(func.count()).select_from(Position)) == 0
+    assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 0
+    assert session.scalar(select(func.count()).select_from(PlanEntryExecutionClaim)) == 0
+    del plan
+
+
+def test_legacy_path_cannot_call_demo_provider(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    provider = FakeVenueSubmitProvider()
+    service = execution_service(session)
+    service._exchange_execution = provider  # type: ignore[assignment]
+    with pytest.raises(TradingPolicyError) as exc:
+        service.place_paper_order(
+            _legacy_paper_request(ids, approval_id=authorization.authorization_id, key="no-demo-1")
+        )
+    assert exc.value.details["reason"] == LEGACY_PAPER_EXECUTION_REASON
+    assert provider.submit_count == 0
+    assert service._demo_routing_enabled() is False
+    with pytest.raises(TradingPolicyError) as mirror_exc:
+        service._mirror_to_demo_venue(
+            request=_legacy_paper_request(
+                ids, approval_id=authorization.authorization_id, key="mirror-x"
+            ),
+            order=None,  # type: ignore[arg-type]
+            bound=None,  # type: ignore[arg-type]
+        )
+    assert mirror_exc.value.details["reason"] == LEGACY_DEMO_MIRROR_REASON
+    del plan
+
+
+def test_legacy_approval_request_cannot_substitute_for_authorization(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    legacy = ApprovalRequest(
+        proposal_id=ids["proposal_id"],
+        plan_revision_id=None,
+        organization_id=ids["organization"].id,
+        user_id=ids["user"].id,
+        status=ApprovalStatus.APPROVED,
+        risk_level=RiskSeverity.MEDIUM,
+        confidence=0.7,
+    )
+    session.add(legacy)
+    session.flush()
+    service = execution_service(session)
+    with pytest.raises((NotFoundError, TradingPolicyError, ConflictError)):
+        service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key="legacy-auth-swap").model_copy(
+                update={"authorization_id": legacy.id}
+            ),
+            clock=lambda: EXECUTE_AT,
+        )
+    with pytest.raises(TradingPolicyError) as exc:
+        service.place_paper_order(
+            _legacy_paper_request(ids, approval_id=legacy.id, key="legacy-ar")
+        )
+    assert exc.value.details["reason"] == LEGACY_PAPER_EXECUTION_REASON
+    assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 0
+    assert session.scalar(select(func.count()).select_from(PlanEntryExecutionClaim)) == 0
+
+
+def test_only_execute_paper_plan_reaches_claim_boundary(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    with pytest.raises(TradingPolicyError):
+        service.place_paper_order(
+            _legacy_paper_request(ids, approval_id=authorization.authorization_id, key="not-claim")
+        )
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="real-claim"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    assert claimed.replayed is False
+    assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 1
+    assert session.scalar(select(func.count()).select_from(PlanEntryExecutionClaim)) == 1
+
+
+def test_global_kill_switch_after_restart_blocks_lease_send(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    first = execution_service(session)
+    claimed = first.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="gks-lease"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    restarted = execution_service(session, global_kill_switch_active=True)
+    blocked = restarted.lease_paper_plan_effect(command_id=claimed.command_id, owner="worker-1")
+    session.commit()
+    assert blocked.state is VenueSubmitEffectState.PROVEN_UNSENT
+    provider = FakeVenueSubmitProvider()
+    with pytest.raises(ConflictError):
+        restarted.attempt_fake_paper_plan_send(
+            command_id=claimed.command_id,
+            owner="worker-1",
+            fencing_token=int(blocked.fencing_token),
+            provider=provider,
+        )
+    assert provider.submit_count == 0
+    reservation = session.scalar(
+        select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
+    )
+    assert reservation is not None
+    assert reservation.release_state is RiskReservationReleaseState.RELEASED
+
+
+def test_global_kill_switch_after_lease_blocks_barrier3(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    first = execution_service(session)
+    claimed = first.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="gks-b3"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    leased = first.lease_paper_plan_effect(command_id=claimed.command_id, owner="worker-1")
+    session.commit()
+    token = int(leased.fencing_token)
+    restarted = execution_service(session, global_kill_switch_active=True)
+    blocked = restarted.authorize_paper_plan_dispatch(
+        command_id=claimed.command_id,
+        owner="worker-1",
+        fencing_token=token,
+    )
+    assert blocked.state is VenueSubmitEffectState.PROVEN_UNSENT
+    provider = FakeVenueSubmitProvider()
+    with pytest.raises(ConflictError):
+        restarted.attempt_fake_paper_plan_send(
+            command_id=claimed.command_id,
+            owner="worker-1",
+            fencing_token=token,
+            provider=provider,
+        )
+    assert provider.submit_count == 0
+
+
+def test_linear_contract_multiplier_fill_exposure(session: Session) -> None:
+    rules = {
+        "contract_multiplier": "10",
+        "contract_type": "LINEAR",
+        "base_currency": "BTC",
+        "quote_currency": "USDT",
+        "settlement_currency": "USDT",
+        "tick_size": "0.10",
+        "lot_size": "1",
+        "minimum_quantity": "1",
+        "minimum_notional": "5",
+        "rules_version": "blofin-rules-2026-09-15",
+    }
+    ids, plan, authorization = prepared_authorized_plan(session, instrument_rules=rules)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="mult-fill"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    reservation = session.scalar(
+        select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
+    )
+    accounting = session.scalar(
+        select(AccountRiskAccountingState).where(
+            AccountRiskAccountingState.account_id == claimed.receipt.account_id
+        )
+    )
+    assert reservation is not None
+    assert accounting is not None
+    assert reservation.contract_multiplier == Decimal("10")
+    reserved_before = reservation.remaining_reserved_notional
+    expected_reserved = (
+        Decimal("2") * Decimal("100.10") * Decimal("10") + Decimal("1") + Decimal("0.75")
+    )
+    assert reserved_before == expected_reserved
+    assert reserved_before == accounting.reserved_notional
+    fill = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="mult-fill-1",
+        occurred_at=EXECUTE_AT,
+    )
+    session.commit()
+    session.refresh(reservation)
+    session.refresh(accounting)
+    fill_notional = Decimal("1000")
+    assert fill.weighted_price == Decimal("100")
+    assert reservation.remaining_reserved_notional == reserved_before - fill_notional
+    assert accounting.actual_notional == fill_notional
+    assert accounting.reserved_notional == reservation.remaining_reserved_notional
+    assert Decimal(str((accounting.symbol_actual or {}).get(reservation.instrument, "0"))) == (
+        fill_notional
+    )
+    assert Decimal(str((accounting.symbol_reserved or {}).get(reservation.instrument, "0"))) == (
+        reservation.remaining_reserved_notional
+    )
+
+
+def test_inverse_contract_fails_closed_at_claim(session: Session) -> None:
+    rules = {
+        "contract_multiplier": "1",
+        "contract_type": "INVERSE",
+        "base_currency": "BTC",
+        "quote_currency": "USD",
+        "settlement_currency": "BTC",
+        "tick_size": "0.10",
+        "lot_size": "1",
+        "minimum_quantity": "1",
+        "minimum_notional": "5",
+        "rules_version": "blofin-rules-2026-09-15",
+    }
+    ids, plan, authorization = prepared_authorized_plan(session, instrument_rules=rules)
+    service = execution_service(session)
+    with pytest.raises(TradingPolicyError) as exc:
+        service.execute_paper_plan(
+            execute_request(ids, plan, authorization, key="inverse-block"),
+            clock=lambda: EXECUTE_AT,
+        )
+    assert exc.value.details["reason"] == "inverse_contract_exposure_undefined"
+    assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 0
+
+
+def test_missing_and_empty_source_fill_identity_rejected(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="fill-id-req"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    with pytest.raises(ConflictError) as missing:
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity=None,  # type: ignore[arg-type]
+            occurred_at=EXECUTE_AT,
+        )
+    assert missing.value.details["reason"] == "missing_source_fill_identity"
+    with pytest.raises(ConflictError) as empty:
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="",
+            occurred_at=EXECUTE_AT,
+        )
+    assert empty.value.details["reason"] == "missing_source_fill_identity"
+    with pytest.raises(ConflictError) as blank:
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="   ",
+            occurred_at=EXECUTE_AT,
+        )
+    assert blank.value.details["reason"] == "missing_source_fill_identity"
+    assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 0
+
+
+def test_missing_authoritative_occurred_at_rejected(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="fill-time-req"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    with pytest.raises(ConflictError) as exc:
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("100"),
+            source_identity="timed-fill",
+            occurred_at=None,  # type: ignore[arg-type]
+        )
+    assert exc.value.details["reason"] == "missing_authoritative_occurred_at"
+    assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 0
+
+
+def test_identical_fill_replay_and_conflicting_replay(session: Session) -> None:
+    ids, plan, authorization = prepared_authorized_plan(session)
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="fill-replay-id"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    first = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="venue-fill-stable",
+        occurred_at=EXECUTE_AT,
+    )
+    session.commit()
+    replay = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="venue-fill-stable",
+        occurred_at=EXECUTE_AT,
+    )
+    session.commit()
+    assert first.replayed is False
+    assert replay.replayed is True
+    assert replay.filled_quantity == first.filled_quantity
+    with pytest.raises(ConflictError) as exc:
+        service.apply_paper_plan_fill(
+            command_id=claimed.command_id,
+            fill_quantity=Decimal("1"),
+            fill_price=Decimal("101"),
+            source_identity="venue-fill-stable",
             occurred_at=EXECUTE_AT,
         )
     assert exc.value.details["reason"] == "conflicting_fill_identity"

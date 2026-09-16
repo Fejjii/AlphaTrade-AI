@@ -64,7 +64,7 @@ from app.schemas.execution_protocol import (
     VenueSubmitEffectState,
     VenueSubmitEffectView,
 )
-from app.schemas.trade_plan import PlanOperation, TradePlanRevision
+from app.schemas.trade_plan import ContractType, PlanOperation, QuantityUnit, TradePlanRevision
 from app.services.approval_service import ApprovalService
 from app.services.canonical_execution_payload import CanonicalExecutionPayloadSerializerV1
 from app.services.execution_client_order_id import derive_entry_client_order_id
@@ -87,6 +87,8 @@ class ReservationIntent:
     exposure_unit: str
     remaining_quantity: Decimal
     quantity_unit: str
+    contract_multiplier: Decimal
+    contract_type: str
 
 
 @dataclass
@@ -579,6 +581,10 @@ class PaperPlanClaimService:
             total_exposure=intent.pending_notional,
             symbol_exposure=intent.pending_notional,
             remaining_reserved_notional=intent.pending_notional,
+            converted_trade_slots=0,
+            contract_multiplier=intent.contract_multiplier,
+            contract_type=intent.contract_type,
+            quantity_unit=intent.quantity_unit,
             exposure_unit=intent.exposure_unit,
             safety_epoch=epoch_value,
             release_state=RiskReservationReleaseState.CHARGED,
@@ -706,6 +712,16 @@ class PaperPlanClaimService:
 
 
 def conservative_reservation(plan: TradePlanRevision) -> ReservationIntent:
+    if plan.instrument_rules.contract_type is ContractType.INVERSE:
+        raise TradingPolicyError(
+            "Inverse contract exposure conversion is not defined for Phase 1.",
+            details={"reason": "inverse_contract_exposure_undefined"},
+        )
+    if plan.quantity.unit not in {QuantityUnit.CONTRACTS.value, QuantityUnit.BASE.value}:
+        raise TradingPolicyError(
+            "Phase 1 reservation requires CONTRACTS or BASE quantity units.",
+            details={"reason": "unsupported_quantity_unit", "quantity_unit": plan.quantity.unit},
+        )
     quantity = plan.quantity.value
     multiplier = plan.instrument_rules.contract_multiplier
     if plan.limit_price is not None:
@@ -725,6 +741,8 @@ def conservative_reservation(plan: TradePlanRevision) -> ReservationIntent:
         exposure_unit=unit,
         remaining_quantity=quantity,
         quantity_unit=plan.quantity.unit,
+        contract_multiplier=multiplier,
+        contract_type=plan.instrument_rules.contract_type.value,
     )
 
 

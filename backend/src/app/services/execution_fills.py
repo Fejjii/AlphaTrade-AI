@@ -5,8 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
+from app.core.errors import ConflictError
 from app.db.models import AccountRiskAccountingState, RiskReservation
 from app.schemas.execution_protocol import RiskReservationReleaseReason, RiskReservationReleaseState
+from app.schemas.trade_plan import ContractType, QuantityUnit
 from app.services.canonical_serialization import canonical_sha256
 
 
@@ -50,6 +52,37 @@ def cumulative_weighted_price(
     return (previous_filled * previous_weighted + fill_quantity * fill_price) / total
 
 
+def fill_quote_exposure(
+    *,
+    reservation: RiskReservation,
+    fill_quantity: Decimal,
+    fill_price: Decimal,
+) -> Decimal:
+    """Quote exposure for one fill using immutable reservation instrument semantics."""
+
+    contract_type = str(reservation.contract_type)
+    quantity_unit = str(reservation.quantity_unit)
+    multiplier = reservation.contract_multiplier
+    if not isinstance(multiplier, Decimal):
+        multiplier = Decimal(str(multiplier))
+    if contract_type == ContractType.INVERSE.value:
+        raise ConflictError(
+            "Inverse contract fill conversion is not defined for Phase 1.",
+            details={"reason": "inverse_contract_fill_undefined"},
+        )
+    if contract_type != ContractType.LINEAR.value:
+        raise ConflictError(
+            "Unknown contract type for fill conversion.",
+            details={"reason": "unsupported_contract_type", "contract_type": contract_type},
+        )
+    if quantity_unit not in {QuantityUnit.CONTRACTS.value, QuantityUnit.BASE.value}:
+        raise ConflictError(
+            "Phase 1 fill conversion requires CONTRACTS or BASE quantity units.",
+            details={"reason": "unsupported_quantity_unit", "quantity_unit": quantity_unit},
+        )
+    return fill_quantity * fill_price * multiplier
+
+
 def adjust_symbol_map(
     mapping: dict[str, object] | None, instrument: str, delta: Decimal
 ) -> dict[str, str]:
@@ -76,9 +109,14 @@ def convert_reservation_for_fill(
 
     Unused remainder stays charged. Daily-loss allocation stays reserved while
     the position remains open. Trade slots convert once per reservation.
+    Linear CONTRACTS/BASE quote exposure uses the bound contract multiplier.
     """
 
-    fill_notional = fill_quantity * fill_price
+    fill_notional = fill_quote_exposure(
+        reservation=reservation,
+        fill_quantity=fill_quantity,
+        fill_price=fill_price,
+    )
     convert = min(fill_notional, reservation.remaining_reserved_notional)
     reservation.remaining_reserved_notional -= convert
     reservation.release_reason = RiskReservationReleaseReason.FILL_CONVERSION

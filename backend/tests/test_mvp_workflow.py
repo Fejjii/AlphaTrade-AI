@@ -29,7 +29,7 @@ from app.schemas.rag import RagQuery
 from app.schemas.risk import RiskCheckResult, TriggeredRule
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
-from app.services.execution_service import ExecutionService
+from app.services.execution_service import LEGACY_PAPER_EXECUTION_REASON, ExecutionService
 from app.services.journal_rag_sync_service import JournalRagSyncService, sanitize_journal_text
 from app.services.journal_service import JournalService
 from app.services.proposal_service import ProposalService
@@ -94,19 +94,20 @@ def test_full_proposal_approval_paper_flow(
     with factory() as session:
         proposal_id, approval_id = _create_proposal_with_approval(session, approve=True)
         execution = ExecutionService(session, settings, AuditService(session))
-        order = execution.place_paper_order(
-            PaperOrderRequest(
-                proposal_id=proposal_id,
-                approval_id=approval_id,
-                symbol="BTCUSDT",
-                side="buy",
-                type="market",
-                size=Decimal("0.005"),
-                idempotency_key="mvp-flow-001",
+        with pytest.raises(TradingPolicyError) as exc:
+            execution.place_paper_order(
+                PaperOrderRequest(
+                    proposal_id=proposal_id,
+                    approval_id=approval_id,
+                    symbol="BTCUSDT",
+                    side="buy",
+                    type="market",
+                    size=Decimal("0.005"),
+                    idempotency_key="mvp-flow-001",
+                )
             )
-        ).order
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         session.commit()
-        assert order.mode.value == "paper"
 
     client, _ = _authed_client(factory, settings)
     with client:
@@ -119,7 +120,7 @@ def test_full_proposal_approval_paper_flow(
         audit = client.get("/audit/events", params={"limit": 20})
         assert audit.status_code == 200
         event_types = {item["event_type"] for item in audit.json()["items"]}
-        assert AuditEventType.PAPER_ORDER_CREATED.value in event_types
+        assert AuditEventType.PAPER_ORDER_CREATED.value not in event_types
 
 
 def test_rejected_approval_cannot_execute(
@@ -136,7 +137,7 @@ def test_rejected_approval_cannot_execute(
 
     with factory() as session:
         execution = ExecutionService(session, settings, AuditService(session))
-        with pytest.raises(TradingPolicyError):
+        with pytest.raises(TradingPolicyError) as exc:
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal_id,
@@ -148,6 +149,7 @@ def test_rejected_approval_cannot_execute(
                     idempotency_key="mvp-reject-001",
                 )
             )
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_needs_more_analysis_cannot_execute(
@@ -164,7 +166,7 @@ def test_needs_more_analysis_cannot_execute(
 
     with factory() as session:
         execution = ExecutionService(session, settings, AuditService(session))
-        with pytest.raises(TradingPolicyError):
+        with pytest.raises(TradingPolicyError) as exc:
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal_id,
@@ -176,6 +178,7 @@ def test_needs_more_analysis_cannot_execute(
                     idempotency_key="mvp-nma-001",
                 )
             )
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_risk_blocked_proposal_cannot_execute(
@@ -205,7 +208,7 @@ def test_risk_blocked_proposal_cannot_execute(
 
     with factory() as session:
         execution = ExecutionService(session, settings, AuditService(session))
-        with pytest.raises(TradingPolicyError):
+        with pytest.raises(TradingPolicyError) as exc:
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal_id,
@@ -217,6 +220,7 @@ def test_risk_blocked_proposal_cannot_execute(
                     idempotency_key="mvp-risk-001",
                 )
             )
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_modified_approval_preserves_audit(

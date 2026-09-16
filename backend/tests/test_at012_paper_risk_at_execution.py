@@ -9,14 +9,22 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
 from app.core.errors import TradingPolicyError
 from app.db.base import Base
-from app.db.models import DailyRiskState, Membership, Organization, Position, User, UserRiskSettings
+from app.db.models import (
+    DailyRiskState,
+    Membership,
+    Order,
+    Organization,
+    Position,
+    User,
+    UserRiskSettings,
+)
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.common import (
     ApprovalAction,
@@ -32,7 +40,7 @@ from app.schemas.risk import KillSwitchMutationRequest, RiskCheckResult, Trigger
 from app.security.passwords import hash_password
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
-from app.services.execution_service import ExecutionService
+from app.services.execution_service import LEGACY_PAPER_EXECUTION_REASON, ExecutionService
 from app.services.proposal_service import ProposalService
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
@@ -188,17 +196,46 @@ def _request(
     )
 
 
+def _assert_legacy_place_closed(exc: pytest.ExceptionInfo[TradingPolicyError]) -> None:
+    assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+
+
+def _seed_open_position(session: Session, *, proposal_id: uuid.UUID | None = None) -> Position:
+    from datetime import UTC, datetime
+
+    from app.schemas.common import PositionStatus, TradeDirection
+
+    position = Position(
+        organization_id=ORG_ID,
+        user_id=USER_ID,
+        strategy_id=StrategyId.HTF_TREND_PULLBACK,
+        linked_proposal_id=proposal_id,
+        symbol="BTCUSDT",
+        direction=TradeDirection.LONG,
+        size=_SIZE,
+        entry_price=_ENTRY,
+        leverage=Decimal("3"),
+        stop_loss=_STOP,
+        take_profits=[],
+        status=PositionStatus.OPEN,
+        opened_at=datetime.now(UTC),
+    )
+    session.add(position)
+    session.flush()
+    return position
+
+
 def test_valid_fresh_risk_allows_paper_placement(
     at012_db: tuple[sessionmaker[Session], Settings],
 ) -> None:
     factory, settings = at012_db
     with factory() as session:
         pid, aid = _seed(session)
-        order = _execution(session, settings).place_paper_order(_request(pid, aid)).order
-        session.commit()
-        assert order.mode.value == "paper"
-        assert order.size == _SIZE
-        assert order.price == _ENTRY
+        with pytest.raises(TradingPolicyError) as exc:
+            _execution(session, settings).place_paper_order(_request(pid, aid))
+        _assert_legacy_place_closed(exc)
+        assert session.scalar(select(func.count()).select_from(Order)) == 0
+        assert session.scalar(select(func.count()).select_from(Position)) == 0
 
 
 def test_missing_risk_result_blocked(
@@ -209,7 +246,7 @@ def test_missing_risk_result_blocked(
         pid, aid = _seed(session, include_risk=False)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid, aid, key="miss-risk"))
-        assert exc.value.details.get("reason") == "missing_risk_result"
+        _assert_legacy_place_closed(exc)
 
 
 def test_stale_stored_block_still_blocked(
@@ -235,12 +272,7 @@ def test_stale_stored_block_still_blocked(
         pid, aid = _seed(session, risk_result=blocked)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid, aid, key="stale-blk"))
-        # Eligibility short-circuits on stored BLOCK before fresh re-eval.
-        assert exc.value.details.get("reason") in {
-            "stale_risk_blocked",
-            "fresh_risk_blocked",
-            "eligibility_blocked",
-        }
+        _assert_legacy_place_closed(exc)
 
 
 def test_zero_stop_distance_blocked(
@@ -251,7 +283,7 @@ def test_zero_stop_distance_blocked(
         pid, aid = _seed(session, stop=_ENTRY)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid, aid, key="zero-stop"))
-        assert exc.value.details.get("reason") == "invalid_stop_distance"
+        _assert_legacy_place_closed(exc)
 
 
 def test_missing_stop_blocked(at012_db: tuple[sessionmaker[Session], Settings]) -> None:
@@ -330,10 +362,7 @@ def test_kill_switch_active_blocked(
         pid, aid = _seed(session)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid, aid, key="kill-switch"))
-        assert exc.value.details.get("reason") in {
-            "kill_switch_active",
-            "fresh_risk_blocked",
-        }
+        _assert_legacy_place_closed(exc)
 
 
 def test_daily_loss_limit_exceeded_blocked(
@@ -385,7 +414,7 @@ def test_daily_loss_limit_exceeded_blocked(
         pid, aid = _seed(session)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid, aid, key="dailyloss"))
-        assert exc.value.details.get("reason") == "fresh_risk_blocked"
+        _assert_legacy_place_closed(exc)
 
 
 def test_exposure_size_limit_exceeded_blocked(
@@ -400,8 +429,7 @@ def test_exposure_size_limit_exceeded_blocked(
             _execution(session, settings).place_paper_order(
                 _request(pid, aid, size=oversized, key="exposure")
             )
-        assert exc.value.details.get("reason") == "fresh_risk_blocked"
-        assert "max_position_size" in str(exc.value.details.get("rules", ""))
+        _assert_legacy_place_closed(exc)
 
 
 def test_modified_client_size_blocked(
@@ -414,7 +442,7 @@ def test_modified_client_size_blocked(
             _execution(session, settings).place_paper_order(
                 _request(pid, aid, size=Decimal("0.01"), key="size-mis")
             )
-        assert exc.value.details.get("reason") == "size_mismatch"
+        _assert_legacy_place_closed(exc)
 
 
 def test_modified_client_price_blocked(
@@ -427,7 +455,7 @@ def test_modified_client_price_blocked(
             _execution(session, settings).place_paper_order(
                 _request(pid, aid, price=Decimal("61000"), key="price-mis")
             )
-        assert exc.value.details.get("reason") == "price_mismatch"
+        _assert_legacy_place_closed(exc)
 
 
 def test_modified_client_symbol_blocked(
@@ -440,7 +468,7 @@ def test_modified_client_symbol_blocked(
             _execution(session, settings).place_paper_order(
                 _request(pid, aid, symbol="ETHUSDT", key="sym-mism")
             )
-        assert exc.value.details.get("reason") == "symbol_mismatch"
+        _assert_legacy_place_closed(exc)
 
 
 def test_modified_client_side_blocked(
@@ -453,7 +481,7 @@ def test_modified_client_side_blocked(
             _execution(session, settings).place_paper_order(
                 _request(pid, aid, side="sell", key="side-mism")
             )
-        assert exc.value.details.get("reason") == "side_mismatch"
+        _assert_legacy_place_closed(exc)
 
 
 def test_degraded_market_data_refused_when_live_expected(
@@ -475,7 +503,7 @@ def test_degraded_market_data_refused_when_live_expected(
             _execution(session, settings, market_data_service=mock_md).place_paper_order(
                 _request(pid, aid, key="stale-md")
             )
-        assert exc.value.details.get("reason") == "market_data_degraded"
+        _assert_legacy_place_closed(exc)
 
 
 def test_paper_defaults_unchanged_in_settings(
@@ -512,7 +540,10 @@ def test_paper_close_honors_explicit_exit_price_when_live_expected(
 
     with factory() as session:
         pid, aid = _seed(session)
-        _execution(session, settings).place_paper_order(_request(pid, aid, key="close-bind"))
+        _seed_open_position(session, proposal_id=pid)
+        with pytest.raises(TradingPolicyError) as exc:
+            _execution(session, settings).place_paper_order(_request(pid, aid, key="close-bind"))
+        _assert_legacy_place_closed(exc)
         session.commit()
         position = session.scalar(
             select(Position).where(
@@ -549,30 +580,17 @@ def test_sequential_orders_cannot_bypass_exposure_with_stale_state(
     # Each order: 0.005 * 60000 = 300 (3% of 10k). Two open → 600 > 5% cap.
     with factory() as session:
         pid1, aid1 = _seed(session)
-        first = (
-            _execution(session, settings)
-            .place_paper_order(_request(pid1, aid1, key="seq-ord-1"))
-            .order
-        )
+        _seed_open_position(session, proposal_id=pid1)
         session.commit()
-        assert first.size == _SIZE
-
-        daily = session.scalar(
-            select(DailyRiskState).where(
-                DailyRiskState.organization_id == ORG_ID,
-                DailyRiskState.user_id == USER_ID,
-            )
-        )
-        assert daily is not None
-        assert daily.trade_count == 1
-        assert daily.unrealized_pnl == Decimal("0")
-        # Open exposure is recomputed at next evaluate from positions, not client state.
+        with pytest.raises(TradingPolicyError) as first_exc:
+            _execution(session, settings).place_paper_order(_request(pid1, aid1, key="seq-ord-1"))
+        _assert_legacy_place_closed(first_exc)
 
         pid2, aid2 = _seed(session)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid2, aid2, key="seq-ord-2"))
-        assert exc.value.details.get("reason") == "fresh_risk_blocked"
-        assert "max_position_size" in str(exc.value.details.get("rules", ""))
+        _assert_legacy_place_closed(exc)
+        assert session.scalar(select(func.count()).select_from(Order)) == 0
 
 
 def test_realized_loss_updates_daily_state_and_blocks_next_order(
@@ -580,8 +598,6 @@ def test_realized_loss_updates_daily_state_and_blocks_next_order(
 ) -> None:
     """Closing at a loss must update DailyRiskState before the next place_paper_order."""
 
-    from app.db.models import Position
-    from app.schemas.common import PositionStatus
     from app.schemas.position import ClosePaperPositionRequest
     from app.services.position_service import PositionService
 
@@ -605,16 +621,13 @@ def test_realized_loss_updates_daily_state_and_blocks_next_order(
         session.commit()
 
         pid1, aid1 = _seed(session)
-        _execution(session, settings).place_paper_order(_request(pid1, aid1, key="loss-ord1"))
+        position = _seed_open_position(session, proposal_id=pid1)
+        with pytest.raises(TradingPolicyError) as first_exc:
+            _execution(session, settings).place_paper_order(_request(pid1, aid1, key="loss-ord1"))
+        _assert_legacy_place_closed(first_exc)
         session.commit()
 
-        position = session.scalar(
-            select(Position).where(
-                Position.organization_id == ORG_ID,
-                Position.status == PositionStatus.OPEN,
-            )
-        )
-        assert position is not None
+        assert position.id is not None
         # size 0.005, entry 60000 → exit 30000 yields -150 realized (< -100 limit)
         PositionService(session, AuditService(session)).close_paper(
             position.id,
@@ -635,5 +648,5 @@ def test_realized_loss_updates_daily_state_and_blocks_next_order(
         pid2, aid2 = _seed(session)
         with pytest.raises(TradingPolicyError) as exc:
             _execution(session, settings).place_paper_order(_request(pid2, aid2, key="loss-ord2"))
-        assert exc.value.details.get("reason") == "fresh_risk_blocked"
-        assert "max_daily_loss" in str(exc.value.details.get("rules", ""))
+        _assert_legacy_place_closed(exc)
+        assert session.scalar(select(func.count()).select_from(Order)) == 0

@@ -259,7 +259,7 @@ def test_execution_paper_order(client_with_db: tuple[TestClient, sessionmaker[Se
             "idempotency_key": "test-key-001",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 403
     body = response.json()
-    assert body["mode"] == "paper"
-    assert body["exchange_order_id"].startswith("paper-")
+    assert body["error"]["code"] == "trading_policy_violation"
+    assert "EXECUTE_PAPER_PLAN" in body["error"]["message"]

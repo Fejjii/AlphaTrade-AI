@@ -85,7 +85,11 @@ def sqlite_session() -> Iterator[Session]:
     engine.dispose()
 
 
-def paper_settings(*, database_url: str) -> Settings:
+def paper_settings(
+    *,
+    database_url: str,
+    global_kill_switch_active: bool = False,
+) -> Settings:
     return Settings(
         environment="local",
         log_json=False,
@@ -99,6 +103,7 @@ def paper_settings(*, database_url: str) -> Settings:
         rate_limit_use_redis=False,
         access_token_denylist_use_redis=False,
         metrics_enabled=False,
+        global_kill_switch_active=global_kill_switch_active,
     )
 
 
@@ -106,10 +111,14 @@ def execution_service(
     session: Session,
     *,
     database_url: str = "sqlite+pysqlite:///:memory:",
+    global_kill_switch_active: bool = False,
 ) -> ExecutionService:
     return ExecutionService(
         session,
-        paper_settings(database_url=database_url),
+        paper_settings(
+            database_url=database_url,
+            global_kill_switch_active=global_kill_switch_active,
+        ),
         AuditService(session),
     )
 

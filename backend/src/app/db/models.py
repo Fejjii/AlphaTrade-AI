@@ -1867,6 +1867,11 @@ class RiskReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "converted_trade_slots >= 0",
             name="ck_risk_reservation_converted_slots",
         ),
+        CheckConstraint("contract_multiplier > 0", name="ck_risk_reservation_multiplier"),
+        CheckConstraint(
+            "contract_type IN ('LINEAR', 'INVERSE')",
+            name="ck_risk_reservation_contract_type",
+        ),
         ForeignKeyConstraint(
             ["command_id"],
             ["execution_commands.id"],
@@ -1903,6 +1908,9 @@ class RiskReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     symbol_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     remaining_reserved_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     converted_trade_slots: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    contract_multiplier: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    contract_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity_unit: Mapped[str] = mapped_column(String(32), nullable=False)
     exposure_unit: Mapped[str] = mapped_column(String(32), nullable=False)
     safety_epoch: Mapped[int] = mapped_column(BigInteger, nullable=False)
     release_state: Mapped[RiskReservationReleaseState] = mapped_column(
@@ -1974,6 +1982,10 @@ class ExecutionFillFact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("quantity > 0", name="ck_execution_fill_fact_quantity"),
         CheckConstraint("price > 0", name="ck_execution_fill_fact_price"),
+        CheckConstraint(
+            "length(trim(source_fill_identity)) > 0",
+            name="ck_execution_fill_fact_source_identity",
+        ),
         CheckConstraint(
             "length(content_hash) = 64",
             name="ck_execution_fill_fact_hash_length",
