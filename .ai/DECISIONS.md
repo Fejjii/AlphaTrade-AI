@@ -628,3 +628,60 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `docs/paper_signal_orchestration.md`; tests in
   `test_at038_paper_signal_orchestration.py` + frontend page tests.
 - **Validation:** Targeted backend + frontend tests on feature branch; no deploy.
+
+## AT-ADR-021 — Phase 5 Binance USD-M perpetual evidence contracts (no spot fallback)
+- **Date:** 2026-09-16
+- **Status:** Accepted (implemented on PR #80, draft; do not merge pending independent review)
+- **Context:** The first BTCUSDT vertical slice requires closed perpetual 15m/4h OHLCV,
+  ordered USD-M aggregate trades, quote-volume CVD, and signed quote flow. The existing
+  `binance-public` adapter uses spot `/api/v3/klines` and may silently fall back to mock
+  data. Architecture §17/§25 forbid forming-candle confirmation, spot substitution, and
+  unresolved reconnect gaps.
+- **Decision:**
+  1. **Separate perpetual evidence package** (`app.market_contracts`) with typed venue,
+     market, instrument, source, provider, interval, finality, revision, timestamps,
+     freshness, content hash, and provenance. Phase 1 execution modules are not modified.
+  2. **Preferred source is Binance USD-M public REST** (`fapi.binance.com` klines +
+     aggTrades). GET-only path allowlist. No API keys. No order/position/account paths.
+  3. **No spot fallback and no mock substitute** for live USD-M evidence. Regional
+     unavailability fails closed (`RegionalProviderFailureError`) and reports
+     `using_fallback=false`.
+  4. **FINAL candles only.** Forming klines are represented but cannot enter a
+     `ClosedOhlcvSeries`. First slice requires 100 final 15m and 30 final 4h bars.
+  5. **Trade stream cursor** is `INITIAL -> CONTINUOUS -> RECONNECTING -> RECOVERED`.
+     Every reconnect starts a new epoch. Unresolved sequence gaps are
+     `UNRECOVERABLE` and fail closed. Cross-connection CVD windows are not supported.
+  6. **CVD** is unrounded Decimal quote volume: buyer aggressor `+price*qty*multiplier`,
+     seller aggressor negative. Baseline is 0 at the open of the 32nd 15m bar before
+     trigger T. Signed flow is `signed_quote_delta / total_quote_volume` on the trigger
+     bar. Binance aggressor convention is `m=true` ⇒ seller aggressor (`buyer-is-maker/v1`).
+  7. **Default runtime source is replay fixtures** (`PERPETUAL_EVIDENCE_SOURCE=replay`)
+     so local/CI never require Binance reachability. Replay is explicitly mock, not a
+     silent live fallback.
+  8. **AggTrades retrieval** chunks `startTime`/`endTime` to < 1 hour and paginates
+     further pages with `fromId` only. Mixed time+fromId queries are forbidden.
+     Incomplete pages or sequence holes fail closed.
+  9. **CVD completeness** is derived from a `TradeStreamSnapshot` plus immutable
+     `TradeWindowCoverageProof`. The proof binds exact market/source identity,
+     lineage, requested/actual half-open bounds, gap/completeness state, terminal
+     trade identities, ordered trade-set hash, and content hash. It must cover the
+     entire T-32 through trigger-end window. Count and internal continuity alone
+     are insufficient. First-slice action eligibility also requires terminal trade
+     freshness ≤10s.
+  10. **Live evidence hosts** are explicit approved USD-M HTTPS identities
+      (`fapi.binance.com`). Arbitrary hosts and `http://` are rejected.
+  11. **End-to-end identity** requires every normalized trade to exactly match the
+      stream market/instrument and represented source fields. CVD/flow identity must
+      exactly equal the authoritative snapshot identity.
+  12. **Signed quote flow** consumes the same proven stream as CVD and requires
+      complete trigger-bar coverage, no gap, matching lineage/aggressor convention,
+      and fresh terminal evidence. Raw trade lists are not accepted.
+- **Alternatives considered:** Relabel the existing spot kline adapter as perpetual
+  (rejected: incompatible market); fall back to spot or mock when USD-M is blocked
+  (rejected: false evidence); persist observations in this phase (rejected: no migration
+  unless unavoidable; later phases own candidate/observation storage).
+- **Safety impact:** Read-only market evidence only; no execution path change;
+  `ENABLE_REAL_TRADING=false` and `EXECUTION_MODE=paper` unchanged.
+- **Consequences:** Docs in `docs/market_source_contracts.md`; tests in
+  `test_phase5_*.py`. Pattern/fusion/watcher remain out of scope.
+- **Validation:** Targeted Phase 5 pytest, full backend pytest, ruff, scoped mypy.

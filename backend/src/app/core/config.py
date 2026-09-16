@@ -235,6 +235,10 @@ class Settings(BaseSettings):
     market_data_futures_base_url: str = "https://fapi.binance.com"
     market_data_cache_use_redis: bool = True
     market_data_timeout_seconds: float = 10.0
+    # Phase 5 perpetual evidence: replay fixtures by default; live USD-M is opt-in.
+    # Never falls back to spot. Values: replay | binance_usdm
+    perpetual_evidence_source: str = "replay"
+    perpetual_evidence_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
 
     # --- Observability ---
     langsmith_api_key: str = ""
@@ -439,6 +443,18 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.upper()
         return value
+
+    @field_validator("perpetual_evidence_source")
+    @classmethod
+    def _validate_perpetual_evidence_source(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"replay", "mock", "fixture", "binance_usdm", "binance-usdm", "usdm"}
+        if normalized not in allowed:
+            raise ValueError(
+                "perpetual_evidence_source must be replay or binance_usdm "
+                "(spot fallback is not a legal value)."
+            )
+        return normalized
 
     @model_validator(mode="after")
     def _enforce_trading_safety(self) -> Settings:

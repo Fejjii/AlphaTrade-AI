@@ -806,3 +806,28 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Gap: expand Playwright coverage of real-trading refusal and approval gating in UI.
 - Validation: e2e specs pass in CI; paper-only asserted.
 - Recommended model: Sonnet 4.6
+
+---
+
+## Agentic redesign — market evidence
+
+### AT-041 — Phase 5 market source contracts and evidence foundations
+- Priority: P0 · Status: DONE · Dependencies: Phases 1–4 on `main` · Risk: Medium
+- Safety classification: Paper-safe / read-only market evidence; no execution path
+- Goal: Contract-test Binance USD-M perpetual OHLCV and aggregate trades for the first
+  BTCUSDT 15m/4h slice; freeze identity, finality, freshness, cursor/gap, CVD, signed
+  quote flow, provenance, and replay fixtures. No watcher, Telegram, candidates,
+  execution, or frontend.
+- Branch: `cursor/phase5-market-contracts-852a`
+- PR: https://github.com/Fejjii/AlphaTrade-AI/pull/80 (draft; do not merge)
+- Validation: 62 Phase 5 tests cover closed/forming candles, wrong market/instrument/source,
+  immutable full-window coverage, missing prefix/suffix, gap/duplicate/out-of-order/cursor
+  recovery, freshness/stale, CVD exact arithmetic, proven signed quote flow, aggressor
+  semantics, content-hash stability, replay determinism, provider provenance, regional
+  failure, HTTPS host binding, aggTrades pagination, and no spot fallback. Local Ruff clean;
+  mypy `--strict` on `src/app/market_contracts` Success (23 files). Full backend and all
+  GitHub CI jobs passed on closure revision `d73ed26602e01f438707717d184be0b798c74ea9`
+  (1723 backend tests; run 35146515639). Final exact provider/source-boundary hardening is
+  included in the follow-up PR #80 HEAD validation. Paper posture unchanged.
+- Recommended model: Grok 4.6
+- ADR: AT-ADR-021 · Docs: `docs/market_source_contracts.md`

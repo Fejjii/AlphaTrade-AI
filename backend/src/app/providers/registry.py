@@ -7,9 +7,12 @@ reporting via :meth:`ProviderStatus.using_fallback`.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import structlog
 
 from app.core.config import Settings, get_settings
+from app.market_contracts.adapters.factory import resolve_perpetual_evidence_source
 from app.providers.base import (
     BaseMockProvider,
     Provider,
@@ -140,6 +143,25 @@ class _MarketDataProviderAdapter:
         return self._inner.status()
 
 
+class _StatusReporter(Protocol):
+    name: str
+    kind: ProviderKind
+
+    def status(self) -> ProviderStatus: ...
+
+
+class _PerpetualEvidenceAdapter:
+    """Status-only wrapper for the Phase 5 read-only perpetual evidence source."""
+
+    def __init__(self, inner: _StatusReporter) -> None:
+        self._inner = inner
+        self.name = inner.name
+        self.kind = inner.kind
+
+    def status(self) -> ProviderStatus:
+        return self._inner.status()
+
+
 def build_default_registry(settings: Settings) -> ProviderRegistry:
     """Create the registry for the current settings."""
     registry = ProviderRegistry()
@@ -159,6 +181,8 @@ def build_default_registry(settings: Settings) -> ProviderRegistry:
     registry.register(_BillingProviderAdapter(resolve_billing_provider(settings)))
     market_data = resolve_market_data_provider(settings)
     registry.register(_MarketDataProviderAdapter(market_data))
+    perpetual_evidence = resolve_perpetual_evidence_source(settings)
+    registry.register(_PerpetualEvidenceAdapter(perpetual_evidence))
 
     # Exchange: mock by default; BloFin demo (read-only) when explicitly enabled.
     resolved_exchange = resolve_exchange_provider(settings)
