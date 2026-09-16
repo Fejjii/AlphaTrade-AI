@@ -1,0 +1,123 @@
+"""Replay perpetual source: identical results without network calls."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from app.market_contracts.cvd import select_trades_in_window
+from app.market_contracts.errors import (
+    FormingCandleError,
+    WrongMarketError,
+)
+from app.market_contracts.first_slice import first_slice_identity
+from app.market_contracts.hashing import with_content_hash
+from app.market_contracts.identity import (
+    EvidenceMarketIdentity,
+    InstrumentIdentity,
+    require_instrument,
+)
+from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
+from app.market_contracts.replay_fixtures import canonical_first_slice_fixture
+from app.market_contracts.trades import OrderedTradeBatch, TradeEvent, order_trades
+from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
+from app.schemas.common import Timeframe
+
+
+class ReplayPerpetualSource:
+    """Deterministic in-process source backed by the canonical first-slice fixture."""
+
+    name = "binance-usdm-perpetual-replay"
+    kind = ProviderKind.MARKET_DATA
+
+    def __init__(
+        self,
+        *,
+        bars_15m: list[OhlcvBar] | None = None,
+        bars_4h: list[OhlcvBar] | None = None,
+        trades: list[TradeEvent] | None = None,
+        evaluated_at: datetime | None = None,
+    ) -> None:
+        fixture = canonical_first_slice_fixture(evaluated_at=evaluated_at)
+        self._evaluated_at = evaluated_at or fixture["evaluated_at"]
+        self._bars_15m = bars_15m or list(fixture["bars_15m"])
+        self._bars_4h = bars_4h or list(fixture["bars_4h"])
+        self._trades = trades or list(fixture["trades"])
+
+    def fetch_closed_ohlcv(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        timeframe: Timeframe,
+        min_final_bars: int,
+        evaluated_at: datetime,
+    ) -> ClosedOhlcvSeries:
+        require_instrument(identity, instrument)
+        if identity.provenance.fallback_used:
+            raise WrongMarketError("Replay evidence cannot record a fallback.")
+        bars = self._bars_for(timeframe)
+        if not bars:
+            raise FormingCandleError(f"Replay fixture has no {timeframe.value} bars.")
+        return require_closed_series(
+            bars,
+            identity=identity,
+            timeframe=timeframe,
+            evaluated_at=evaluated_at,
+            min_bars=min_final_bars,
+        )
+
+    def fetch_ordered_trades(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> OrderedTradeBatch:
+        require_instrument(identity, instrument)
+        selected = select_trades_in_window(self._trades, start=start, end=end)
+        retagged: list[TradeEvent] = []
+        for trade in selected:
+            updated = trade.model_copy(
+                update={
+                    "source_connection_id": source_connection_id,
+                    "receive_timestamp": receive_at,
+                }
+            )
+            retagged.append(
+                with_content_hash(updated, extra_exclude=frozenset({"source_connection_id"}))
+            )
+        ordered = order_trades(retagged)
+        batch = OrderedTradeBatch(
+            identity=identity,
+            trades=ordered,
+            source_connection_id=source_connection_id,
+            content_hash="0" * 64,
+        )
+        return with_content_hash(batch)
+
+    def status(self) -> ProviderStatus:
+        return ProviderStatus(
+            name=self.name,
+            kind=self.kind,
+            health=ProviderHealth.HEALTHY,
+            using_fallback=False,
+            is_mock=True,
+            detail="Replay fixtures for Binance USD-M BTCUSDT perpetual evidence (not live).",
+            last_success_at=None,
+            error_message=None,
+        )
+
+    def _bars_for(self, timeframe: Timeframe) -> list[OhlcvBar]:
+        if timeframe is Timeframe.M15:
+            return self._bars_15m
+        if timeframe is Timeframe.H4:
+            return self._bars_4h
+        raise WrongMarketError(f"Replay fixture does not include timeframe {timeframe.value}.")
+
+
+def replay_identity(timeframe: Timeframe) -> EvidenceMarketIdentity:
+    return first_slice_identity(timeframe=timeframe, replay=True, is_live=False)

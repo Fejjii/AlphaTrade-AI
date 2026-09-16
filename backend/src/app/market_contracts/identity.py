@@ -1,0 +1,194 @@
+"""Typed venue, market, instrument, source, and provider identities."""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from decimal import Decimal
+
+from pydantic import Field, field_validator, model_validator
+
+from app.market_contracts.enums import (
+    ContractStyle,
+    MarketType,
+    ProductFamily,
+    SourceFamily,
+    VenueId,
+)
+from app.market_contracts.errors import WrongInstrumentError, WrongMarketError
+from app.market_contracts.models import CanonicalModel, PositiveCanonicalDecimal
+from app.schemas.common import Timeframe
+
+ADAPTER_VERSION = "binance-usdm-perpetual/v1"
+AGGRESSOR_CONVENTION = "binance-usdm-aggtrade/buyer-is-maker/v1"
+HASH_ALGORITHM_VERSION = "canonical-json-sha256/v1"
+INTERVAL_SECONDS: dict[Timeframe, int] = {
+    Timeframe.M1: 60,
+    Timeframe.M3: 180,
+    Timeframe.M5: 300,
+    Timeframe.M15: 900,
+    Timeframe.M30: 1800,
+    Timeframe.H1: 3600,
+    Timeframe.H2: 7200,
+    Timeframe.H4: 14400,
+    Timeframe.H6: 21600,
+    Timeframe.H12: 43200,
+    Timeframe.D1: 86400,
+    Timeframe.D3: 259200,
+    Timeframe.W1: 604800,
+}
+
+
+class InstrumentIdentity(CanonicalModel):
+    """Canonical perpetual instrument identity; independent of provider symbol formatting."""
+
+    venue: VenueId
+    market_type: MarketType
+    product_family: ProductFamily
+    contract_style: ContractStyle
+    instrument_id: str = Field(min_length=8, max_length=80)
+    provider_symbol: str = Field(min_length=2, max_length=32)
+    base_asset: str = Field(min_length=2, max_length=16)
+    quote_asset: str = Field(min_length=2, max_length=16)
+    settlement_asset: str = Field(min_length=2, max_length=16)
+    contract_multiplier: PositiveCanonicalDecimal
+    price_unit: str = Field(min_length=1, max_length=16)
+    base_quantity_unit: str = Field(min_length=1, max_length=16)
+    quote_quantity_unit: str = Field(min_length=1, max_length=16)
+
+    @field_validator("provider_symbol", "base_asset", "quote_asset", "settlement_asset")
+    @classmethod
+    def _upper_token(cls, value: str) -> str:
+        token = value.strip().upper()
+        if not token.isalnum():
+            raise ValueError("Asset and symbol tokens must be alphanumeric.")
+        return token
+
+    @model_validator(mode="after")
+    def _linear_usdm_consistency(self) -> InstrumentIdentity:
+        if self.market_type is MarketType.PERPETUAL and self.product_family is ProductFamily.SPOT:
+            raise WrongMarketError("Spot product family cannot be labelled perpetual.")
+        if (
+            self.contract_style is ContractStyle.LINEAR
+            and self.quote_asset != self.settlement_asset
+        ):
+            raise ValueError("Linear contracts must settle in the quote asset.")
+        return self
+
+
+class SourceIdentity(CanonicalModel):
+    family: SourceFamily
+    provider_name: str = Field(min_length=3, max_length=80)
+    adapter_version: str = Field(min_length=3, max_length=80)
+    aggressor_convention: str = Field(min_length=3, max_length=120)
+
+
+class ProviderProvenance(CanonicalModel):
+    """Read-only provider provenance attached to every evidence envelope."""
+
+    provider_name: str = Field(min_length=3, max_length=80)
+    source_family: SourceFamily
+    adapter_version: str = Field(min_length=3, max_length=80)
+    is_live: bool
+    fallback_used: bool
+    is_mock: bool
+    regional_failure: bool = False
+    detail: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def _no_silent_fallback(self) -> ProviderProvenance:
+        if self.fallback_used:
+            raise ValueError("Perpetual evidence provenance cannot record a silent fallback.")
+        if self.is_live and self.is_mock:
+            raise ValueError("Live evidence cannot also be mock.")
+        return self
+
+
+class EvidenceMarketIdentity(CanonicalModel):
+    """Full identity required on every first-slice evidence object."""
+
+    venue: VenueId
+    market_type: MarketType
+    instrument: InstrumentIdentity
+    timeframe: Timeframe | None = None
+    source: SourceIdentity
+    provenance: ProviderProvenance
+
+    @model_validator(mode="after")
+    def _instrument_matches_envelope(self) -> EvidenceMarketIdentity:
+        inst = self.instrument
+        if inst.venue != self.venue:
+            raise WrongMarketError("Instrument venue does not match envelope venue.")
+        if inst.market_type != self.market_type:
+            raise WrongMarketError("Instrument market type does not match envelope market type.")
+        return self
+
+
+def interval_timedelta(timeframe: Timeframe) -> timedelta:
+    try:
+        seconds = INTERVAL_SECONDS[timeframe]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported timeframe {timeframe.value}.") from exc
+    return timedelta(seconds=seconds)
+
+
+def canonical_instrument_id(
+    *,
+    venue: VenueId,
+    product_family: ProductFamily,
+    market_type: MarketType,
+    symbol: str,
+) -> str:
+    return f"{venue.value}:{product_family.value}:{market_type.value}:{symbol.upper()}"
+
+
+def binance_usdm_btcusdt() -> InstrumentIdentity:
+    """Canonical first-slice instrument: Binance USD-M BTCUSDT perpetual."""
+    symbol = "BTCUSDT"
+    return InstrumentIdentity(
+        venue=VenueId.BINANCE,
+        market_type=MarketType.PERPETUAL,
+        product_family=ProductFamily.USDM_FUTURES,
+        contract_style=ContractStyle.LINEAR,
+        instrument_id=canonical_instrument_id(
+            venue=VenueId.BINANCE,
+            product_family=ProductFamily.USDM_FUTURES,
+            market_type=MarketType.PERPETUAL,
+            symbol=symbol,
+        ),
+        provider_symbol=symbol,
+        base_asset="BTC",
+        quote_asset="USDT",
+        settlement_asset="USDT",
+        contract_multiplier=Decimal("1"),
+        price_unit="USDT",
+        base_quantity_unit="BTC",
+        quote_quantity_unit="USDT",
+    )
+
+
+def require_perpetual(identity: EvidenceMarketIdentity) -> None:
+    if identity.market_type is not MarketType.PERPETUAL:
+        raise WrongMarketError(
+            f"Perpetual evidence required; received market_type={identity.market_type.value}."
+        )
+    inst = identity.instrument
+    if inst.market_type is not MarketType.PERPETUAL:
+        raise WrongMarketError("Instrument is not a perpetual contract.")
+    if inst.product_family is ProductFamily.SPOT:
+        raise WrongMarketError("Spot product family is incompatible with perpetual evidence.")
+    if inst.product_family is ProductFamily.COINM_FUTURES:
+        raise WrongMarketError("Coin-M futures cannot substitute for USD-M perpetual evidence.")
+
+
+def require_instrument(identity: EvidenceMarketIdentity, expected: InstrumentIdentity) -> None:
+    if identity.instrument.instrument_id != expected.instrument_id:
+        raise WrongInstrumentError(
+            "Instrument mismatch: "
+            f"expected {expected.instrument_id}, received {identity.instrument.instrument_id}."
+        )
+    if identity.instrument.provider_symbol != expected.provider_symbol:
+        raise WrongInstrumentError(
+            "Provider symbol mismatch: "
+            f"expected {expected.provider_symbol}, "
+            f"received {identity.instrument.provider_symbol}."
+        )

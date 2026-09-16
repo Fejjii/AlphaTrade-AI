@@ -806,3 +806,23 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Gap: expand Playwright coverage of real-trading refusal and approval gating in UI.
 - Validation: e2e specs pass in CI; paper-only asserted.
 - Recommended model: Sonnet 4.6
+
+---
+
+## Agentic redesign — market evidence
+
+### AT-041 — Phase 5 market source contracts and evidence foundations
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: Phases 1–4 on `main` · Risk: Medium
+- Safety classification: Paper-safe / read-only market evidence; no execution path
+- Goal: Contract-test Binance USD-M perpetual OHLCV and aggregate trades for the first
+  BTCUSDT 15m/4h slice; freeze identity, finality, freshness, cursor/gap, CVD, signed
+  quote flow, provenance, and replay fixtures. No watcher, Telegram, candidates,
+  execution, or frontend.
+- Branch: `cursor/phase5-market-contracts-852a`
+- Validation: closed/forming candle tests; wrong market/instrument; gap/duplicate/
+  out-of-order/cursor recovery; freshness/stale; CVD exact arithmetic; signed quote
+  delta; aggressor semantics; content-hash stability; replay determinism; provider
+  provenance; regional failure; no spot fallback; ruff; scoped mypy; full backend
+  pytest; GitHub CI. Paper posture unchanged.
+- Recommended model: Grok 4.6
+- ADR: AT-ADR-021 · Docs: `docs/market_source_contracts.md`
