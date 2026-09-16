@@ -43,11 +43,13 @@ class NarrativeService:
         llm_model: str,
         narrative_validator: NarrativeValidationGuardrail | None = None,
         enabled: bool = True,
+        model_router: Any | None = None,
     ) -> None:
         self._llm = llm_provider
         self._model = llm_model
         self._validator = narrative_validator or NarrativeValidationGuardrail()
         self._enabled = enabled
+        self._router = model_router
 
     def select_prompt_name(self, agent: AgentState) -> str:
         if agent.intent is Intent.REVIEW:
@@ -84,10 +86,10 @@ class NarrativeService:
 
         context = build_sanitized_narrative_context(agent, analysis)
         prompt_name = self.select_prompt_name(agent)
-        llm_result = self._call_llm(prompt_name, context, agent.message)
+        llm_result = self._call_llm(prompt_name, context, agent)
 
         usage = _usage_from_llm(agent, llm_result, feature="agent_narrative")
-        if persist_usage is not None:
+        if persist_usage is not None and self._router is None:
             persist_usage(agent, llm_result=llm_result, feature="agent_narrative")
 
         parsed = llm_result.parsed_json
@@ -157,7 +159,8 @@ class NarrativeService:
     ) -> TradingNarrativeDetail:
         """Deterministic fallback narrative — mirrors authoritative analysis fields."""
         citations_used = [
-            f"{c.title or c.document_id}: {c.snippet[:80]}" for c in (agent.citations or [])[:5]
+            f"{c.title or c.document_id}: {(c.snippet or '')[:80]}"
+            for c in (agent.citations or [])[:5]
         ]
         caution = [
             "Deterministic risk engine and approval workflow are the decision authority.",
@@ -201,21 +204,63 @@ class NarrativeService:
         )
 
     def _call_llm(
-        self, prompt_name: str, context: dict[str, Any], user_message: str
+        self,
+        prompt_name: str,
+        context: dict[str, Any],
+        agent: AgentState,
     ) -> LLMCompletionResult:
         template = load_prompt(prompt_name)
         context_json = json.dumps(redact_mapping(context), default=str)
         filled = template.replace("{{context_json}}", context_json)
         system_content = f"{_NARRATIVE_TASK_MARKER}{prompt_name}\n{filled}"
+        messages = [
+            LLMMessage(role="system", content=system_content),
+            LLMMessage(
+                role="user",
+                content="Produce the narrative JSON for the structured context above.",
+            ),
+        ]
+        if self._router is not None:
+            from app.schemas.model_routing import (
+                ModelContextScope,
+                ModelResourceType,
+                ModelRetentionCategory,
+                ModelRoutingPurpose,
+                ModelTaskRequest,
+            )
+
+            result = self._router.complete(
+                ModelTaskRequest(
+                    purpose=ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
+                    context=ModelContextScope(
+                        organization_id=agent.organization_id,
+                        user_id=agent.user_id,
+                        purpose=ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
+                        resource_type=ModelResourceType.CONVERSATION,
+                        retention_category=ModelRetentionCategory.STANDARD,
+                    ),
+                    correlation_id=agent.request_id,
+                    caller_organization_id=agent.organization_id,
+                    caller_user_id=agent.user_id,
+                    temperature=0.0,
+                    response_format={"type": "json_object"},
+                ),
+                messages,
+            )
+            parsed = result.parsed_output
+            return LLMCompletionResult(
+                content=result.content,
+                model=result.resolved_model or self._model,
+                provider=result.provider or self._llm.name,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                latency_ms=result.total_latency_ms or 0.0,
+                fallback_used=result.fallback_used or result.unavailable,
+                parsed_json=parsed if isinstance(parsed, dict) else None,
+            )
         return self._llm.complete(
             LLMCompletionRequest(
-                messages=[
-                    LLMMessage(role="system", content=system_content),
-                    LLMMessage(
-                        role="user",
-                        content="Produce the narrative JSON for the structured context above.",
-                    ),
-                ],
+                messages=messages,
                 model=self._model,
                 temperature=0.0,
                 max_tokens=900,

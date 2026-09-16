@@ -13,6 +13,7 @@ from app.providers.factory import resolve_providers
 from app.providers.llm import LLMProvider
 from app.services.audit_service import AuditService
 from app.services.market_data_service import MarketDataService
+from app.services.model_router import ModelRouter
 from app.services.narrative_service import NarrativeService
 from app.services.quota_service import QuotaService
 from app.services.rag_service import RagService, build_rag_service
@@ -33,6 +34,7 @@ class AgentRuntime:
     tool_registry: ToolRegistry
     market_data_service: MarketDataService | None = None
     llm_provider: LLMProvider | None = None
+    model_router: ModelRouter | None = None
     narrative_service: NarrativeService | None = None
     rag_service: RagService = field(default_factory=lambda: build_rag_service())
     guardrails: GuardrailService = field(default_factory=GuardrailService)
@@ -51,13 +53,24 @@ class AgentRuntime:
 
         assert_execution_capable_composition_root(self.settings)
         install_persistence_firewall()
+        if self.session is not None and getattr(self.usage_service, "_session", None) is None:
+            self.usage_service = UsageService(self.session)
         if self.llm_provider is None:
             self.llm_provider = resolve_providers(self.settings).llm
+        if self.model_router is None and self.llm_provider is not None:
+            from app.services.model_call_telemetry import ModelCallTelemetryService
+
+            self.model_router = ModelRouter.from_settings(
+                self.llm_provider,
+                self.settings,
+                telemetry=ModelCallTelemetryService(self.session, self.usage_service),
+            )
         if self.narrative_service is None and self.llm_provider is not None:
             self.narrative_service = NarrativeService(
                 llm_provider=self.llm_provider,
                 llm_model=self.settings.llm_model,
                 enabled=self.settings.narrative_llm_enabled,
+                model_router=self.model_router,
             )
         if self.observability is None:
             self.observability = ObservabilityEmitter(

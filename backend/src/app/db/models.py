@@ -109,6 +109,14 @@ from app.schemas.execution_protocol import (
     RiskReservationReleaseState,
     VenueSubmitEffectState,
 )
+from app.schemas.model_routing import (
+    ModelFailureCategory,
+    ModelFallbackPolicy,
+    ModelResourceType,
+    ModelRetentionCategory,
+    ModelRoutingPurpose,
+    ModelRoutingTier,
+)
 from app.schemas.trade_plan import (
     AccountMode,
     AuthorizationChannel,
@@ -2564,6 +2572,69 @@ class UsageEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[UsageStatus] = mapped_column(
         _enum(UsageStatus), default=UsageStatus.SUCCESS, nullable=False
     )
+    event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ModelCallAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Actual LLM call telemetry (Phase 2). Complements UsageEvent; not a second quota system."""
+
+    __tablename__ = "model_call_attempts"
+    __table_args__ = (
+        Index("ix_model_call_attempts_correlation", "correlation_id"),
+        Index(
+            "ix_model_call_attempts_org_event",
+            "organization_id",
+            "event_at",
+        ),
+        CheckConstraint("length(policy_version) > 0", name="ck_model_call_policy_version"),
+        CheckConstraint("NOT mutation_allowed", name="ck_model_call_no_mutation"),
+    )
+
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    usage_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("usage_events.id"), nullable=True
+    )
+    purpose: Mapped[ModelRoutingPurpose] = mapped_column(_enum(ModelRoutingPurpose), nullable=False)
+    tier: Mapped[ModelRoutingTier] = mapped_column(_enum(ModelRoutingTier), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    requested_model: Mapped[str] = mapped_column(String(80), nullable=False)
+    resolved_model: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    fallback_policy: Mapped[ModelFallbackPolicy] = mapped_column(
+        _enum(ModelFallbackPolicy), nullable=False
+    )
+    fallback_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    latency_ms: Mapped[float | None] = mapped_column(nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    failure_category: Mapped[ModelFailureCategory] = mapped_column(
+        _enum(ModelFailureCategory), default=ModelFailureCategory.NONE, nullable=False
+    )
+    status: Mapped[UsageStatus] = mapped_column(
+        _enum(UsageStatus), default=UsageStatus.SUCCESS, nullable=False
+    )
+    estimated_cost: Mapped[Decimal] = mapped_column(_MONEY, default=Decimal("0"), nullable=False)
+    cost_source: Mapped[CostSource] = mapped_column(
+        _enum(CostSource), default=CostSource.UNAVAILABLE, nullable=False
+    )
+    resource_type: Mapped[ModelResourceType] = mapped_column(
+        _enum(ModelResourceType), default=ModelResourceType.GENERIC, nullable=False
+    )
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    retention_category: Mapped[ModelRetentionCategory] = mapped_column(
+        _enum(ModelRetentionCategory),
+        default=ModelRetentionCategory.STANDARD,
+        nullable=False,
+    )
+    mutation_allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

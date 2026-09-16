@@ -15,7 +15,7 @@ from app.core.operation_policy import (
     assert_write_allowed,
     get_operation_decision,
 )
-from app.db.models import AuditLog, OrganizationQuota, UsageEvent
+from app.db.models import AuditLog, ModelCallAttempt, OrganizationQuota, UsageEvent
 from app.schemas.agent import OperationClass
 
 _ALLOWED_READ_ONLY_MODELS: frozenset[type[object]] = frozenset(
@@ -23,6 +23,7 @@ _ALLOWED_READ_ONLY_MODELS: frozenset[type[object]] = frozenset(
         AuditLog,
         UsageEvent,
         OrganizationQuota,
+        ModelCallAttempt,
     }
 )
 
@@ -30,6 +31,7 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "AuditLog": PersistenceKind.AUDIT,
     "UsageEvent": PersistenceKind.USAGE,
     "OrganizationQuota": PersistenceKind.QUOTA,
+    "ModelCallAttempt": PersistenceKind.USAGE,
     "TradeProposal": PersistenceKind.PROPOSAL,
     "ApprovalRequest": PersistenceKind.APPROVAL,
     "Order": PersistenceKind.ORDER,
