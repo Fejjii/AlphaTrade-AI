@@ -219,6 +219,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    # Phase 2 model router — callers never supply free-form model names.
+    llm_tier_a_model: str = "gpt-4o"
+    llm_tier_b_model: str = "gpt-4o-mini"
+    model_router_policy_version: str = "model-router/v1"
+    model_router_fail_closed: bool = False
     embeddings_model: str = "text-embedding-3-small"
     # None = auto (384 mock; OpenAI model native size when key configured).
     embeddings_dimensions: int | None = Field(default=None, ge=1)

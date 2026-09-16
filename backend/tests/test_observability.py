@@ -230,9 +230,12 @@ def test_graph_run_creates_usage_event(db_session: Session) -> None:
     ctx = _invoke_ctx(db_session, "obs-req-4")
     AgentService(runtime=runtime).run("analyze eth trend", ctx)
     usage_rows = list(db_session.scalars(select(UsageEventModel)).all())
-    assert len(usage_rows) >= 1
+    assert usage_rows
+    features = {row.feature for row in usage_rows}
+    assert "agent_chat" not in features
+    assert features == {"agent_narrative"}
     assert usage_rows[0].request_id == "obs-req-4"
-    assert usage_rows[0].feature == "agent_chat"
+    assert usage_rows[0].provider == "mock-llm"
 
 
 def test_audit_persist_failure_non_strict_does_not_crash() -> None:

@@ -77,6 +77,8 @@ class HumanVsSystemComparison(StrictModel):
     emotion_free_baseline: str | None = None
     notes: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    compatibility_fallback: bool = False
+    canonical_journal_trade_id: UUID | None = None
 
 
 class LessonCandidateSuggestion(StrictModel):

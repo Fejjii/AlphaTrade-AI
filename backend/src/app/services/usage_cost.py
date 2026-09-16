@@ -42,6 +42,13 @@ def resolve_usage_cost(
         except ValueError:
             explicit_source = None
 
+    if explicit_source is CostSource.UNAVAILABLE:
+        return ResolvedUsageCost(
+            provider_reported_cost=None,
+            estimated_cost=Decimal("0"),
+            cost_source=CostSource.UNAVAILABLE,
+        )
+
     raw_reported = provider_metadata.get("provider_reported_cost")
     if raw_reported is not None:
         reported = Decimal(str(raw_reported))

@@ -164,6 +164,30 @@ class JournalTradeRepository(SQLAlchemyRepository[JournalTrade]):
         )
         return {ref: trade_id for ref, trade_id in self._session.execute(stmt).all() if ref}
 
+    def find_by_execution_lifecycle(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        execution_lifecycle_id: uuid.UUID,
+    ) -> JournalTrade | None:
+        stmt = select(JournalTrade).where(
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.execution_lifecycle_id == execution_lifecycle_id,
+        )
+        return self._session.scalar(stmt.limit(1))
+
+    def find_by_linked_journal_entry(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        linked_journal_entry_id: uuid.UUID,
+    ) -> JournalTrade | None:
+        stmt = select(JournalTrade).where(
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.linked_journal_entry_id == linked_journal_entry_id,
+        )
+        return self._session.scalar(stmt.limit(1))
+
     def list_replay_candidates(
         self,
         *,

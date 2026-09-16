@@ -138,8 +138,12 @@ def test_usage_metadata_from_mock_llm_provider() -> None:
         ),
     )
     assert response.usage is not None
-    assert response.usage.provider == "mock-llm"
+    assert response.usage.feature == "capacity_estimate"
+    assert response.usage.provider == "none"
+    assert response.usage.model == "none"
     assert response.usage.input_tokens >= 1
+    assert response.narrative_meta is not None
+    assert response.narrative_meta.provider == "mock-llm"
 
 
 def test_registry_with_openai_key_and_fallback_registers_openai_providers() -> None:

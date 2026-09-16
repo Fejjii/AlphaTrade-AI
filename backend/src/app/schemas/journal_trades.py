@@ -203,6 +203,7 @@ class JournalTradeRead(ORMModel):
     linked_journal_entry_id: UUID | None = None
     linked_paper_validation_run_id: UUID | None = None
     external_ref: str | None = None
+    execution_lifecycle_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -15,7 +15,7 @@ from app.core.operation_policy import (
     assert_write_allowed,
     get_operation_decision,
 )
-from app.db.models import AuditLog, OrganizationQuota, UsageEvent
+from app.db.models import AuditLog, ModelCallAttempt, OrganizationQuota, UsageEvent
 from app.schemas.agent import OperationClass
 
 _ALLOWED_READ_ONLY_MODELS: frozenset[type[object]] = frozenset(
@@ -23,6 +23,7 @@ _ALLOWED_READ_ONLY_MODELS: frozenset[type[object]] = frozenset(
         AuditLog,
         UsageEvent,
         OrganizationQuota,
+        ModelCallAttempt,
     }
 )
 
@@ -30,6 +31,7 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "AuditLog": PersistenceKind.AUDIT,
     "UsageEvent": PersistenceKind.USAGE,
     "OrganizationQuota": PersistenceKind.QUOTA,
+    "ModelCallAttempt": PersistenceKind.USAGE,
     "TradeProposal": PersistenceKind.PROPOSAL,
     "ApprovalRequest": PersistenceKind.APPROVAL,
     "Order": PersistenceKind.ORDER,
@@ -38,7 +40,13 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "ExchangeFill": PersistenceKind.FILL,
     "UserStrategy": PersistenceKind.STRATEGY,
     "UserStrategyVersion": PersistenceKind.STRATEGY,
+    "StrategyLifecycleEvent": PersistenceKind.STRATEGY,
     "SetupDefinition": PersistenceKind.SETUP,
+    "GlobalSetupTemplate": PersistenceKind.SETUP,
+    "CompiledSetupDefinition": PersistenceKind.SETUP,
+    "SetupMigrationRun": PersistenceKind.SETUP,
+    "ManualChartLevel": PersistenceKind.STRATEGY,
+    "ManualLevelRevision": PersistenceKind.STRATEGY,
     "BacktestRun": PersistenceKind.BACKTEST,
     "BacktestTrade": PersistenceKind.BACKTEST,
     "BacktestDataset": PersistenceKind.BACKTEST,
@@ -67,6 +75,9 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "JournalTradeObservation": PersistenceKind.JOURNAL,
     "JournalImportBatch": PersistenceKind.JOURNAL,
     "JournalTradeAttachment": PersistenceKind.JOURNAL,
+    "JournalLifecycleEvent": PersistenceKind.JOURNAL,
+    "JournalProjectionReceipt": PersistenceKind.JOURNAL,
+    "JournalTradeVenueCorrection": PersistenceKind.JOURNAL,
     "LessonCandidate": PersistenceKind.JOURNAL,
     "UserRiskSettings": PersistenceKind.RISK_CONFIG,
     "KillSwitchState": PersistenceKind.RISK_CONFIG,

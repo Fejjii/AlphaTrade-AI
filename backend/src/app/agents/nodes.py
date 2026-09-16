@@ -21,7 +21,6 @@ from app.core.operation_policy import set_operation_decision
 from app.guardrails.apply import build_guardrail_updates, merge_safety_verdict
 from app.guardrails.testing import FORCE_INVALID_OUTPUT
 from app.guardrails.types import GuardrailInput
-from app.providers.llm import LLMCompletionRequest, LLMMessage
 from app.schemas.agent import AgentState, Intent, OperationClass
 from app.schemas.common import (
     CostSource,
@@ -1547,54 +1546,56 @@ def memory_update(state: dict, runtime: AgentRuntime) -> dict:
 
 
 def usage_tracking(state: dict, runtime: AgentRuntime) -> dict:
-    agent = parse_state(state)
-    llm = runtime.llm_provider
-    provider_name = llm.name if llm is not None else "mock-llm"
-    llm_result = None
-    if llm is not None:
-        llm_result = llm.complete(
-            LLMCompletionRequest(
-                messages=[LLMMessage(role="user", content=agent.message[:500])],
-                model=runtime.settings.llm_model,
-                temperature=0.0,
-                max_tokens=256,
-            )
-        )
-    input_tokens = llm_result.input_tokens if llm_result else max(len(agent.message) // 4, 1)
-    output_tokens = llm_result.output_tokens if llm_result else 64
-    fallback_used = (llm_result.fallback_used if llm_result else True) or any(
-        o.used_fallback for o in agent.tool_outputs
-    )
+    """Record graph-level usage from actual model calls only.
 
-    runtime.observability.persist_usage(
-        agent,
-        model=runtime.settings.llm_model,
-        provider=provider_name,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        fallback_used=fallback_used,
-        latency_ms=llm_result.latency_ms if llm_result else None,
+    No completion is made merely to meter a request. If no model ran, the
+    envelope is a labelled deterministic estimate (not provider usage).
+    """
+    agent = parse_state(state)
+    attempts = (
+        runtime.model_router.attempts_for(agent.request_id)
+        if runtime.model_router is not None
+        else []
     )
+    actual = [row for row in attempts if row.telemetry_durable]
+    if actual:
+        input_tokens = sum(row.input_tokens for row in actual)
+        output_tokens = sum(row.output_tokens for row in actual)
+        fallback_used = any(row.fallback_used for row in attempts) or any(
+            o.used_fallback for o in agent.tool_outputs
+        )
+        latency_ms = sum(row.latency_ms or 0 for row in actual) or None
+        model = actual[-1].resolved_model
+        cost_source = actual[-1].cost_source
+        provider_name = actual[-1].provider
+        feature = "agent_chat"
+    else:
+        # Labelled capacity estimate only. Never persist as provider usage.
+        input_tokens = max(len(agent.message) // 4, 1)
+        output_tokens = 0
+        fallback_used = any(o.used_fallback for o in agent.tool_outputs)
+        latency_ms = sum(o.latency_ms or 0 for o in agent.tool_outputs) or None
+        model = "none"
+        provider_name = "none"
+        cost_source = CostSource.UNAVAILABLE
+        feature = "capacity_estimate"
+
     usage = UsageEvent(
         organization_id=agent.organization_id,
         user_id=agent.user_id,
         request_id=agent.request_id,
-        feature="agent_chat",
-        model=llm_result.model if llm_result else runtime.settings.llm_model,
+        feature=feature,
+        model=model,
         provider=provider_name,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=input_tokens + output_tokens,
         tool_calls=len(agent.tool_calls),
         fallback_used=fallback_used,
-        latency_ms=(
-            llm_result.latency_ms
-            if llm_result
-            else (sum(o.latency_ms or 0 for o in agent.tool_outputs) or None)
-        ),
+        latency_ms=latency_ms,
         timestamp=datetime.now(UTC),
-        cost_source=CostSource.STATIC_ESTIMATED,
-        cost_is_placeholder=True,
+        cost_source=cost_source,
+        cost_is_placeholder=cost_source is not CostSource.PROVIDER_REPORTED,
     )
     return patch_state(state, {"usage_metadata": dump_partial(usage)})
 
