@@ -108,6 +108,9 @@ def build_window_trades(
             price = bar.open + Decimal(slot)
             quantity = Decimal("0.01") + (Decimal(slot) * Decimal("0.001"))
             event_time = bar.interval_start + (step * (slot + 1))
+            if is_trigger and slot == TRADES_PER_BAR - 1:
+                # Keep the terminal in-window trade inside the 10s first-slice freshness bound.
+                event_time = bar.interval_end - timedelta(seconds=2)
             trades.append(
                 build_trade_event(
                     instrument=bar.instrument,

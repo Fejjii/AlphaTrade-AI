@@ -55,9 +55,23 @@ For linear USD-M:
 
 First-slice CVD window is half-open
 `[open(T-32 15m), end(T))` with baseline `0` at the window start.
+CVD completeness is derived from a `TradeStreamSnapshot` cursor proof
+(contiguous sequences, `gap_state=none`, warm-up complete). Caller-supplied
+COMPLETE/NONE flags are not accepted. First-slice CVD is not action-eligible
+unless the snapshot's latest trade also passes the 10s freshness policy.
 
 Trigger-bar signed flow is `signed_quote_delta_T / total_quote_volume_T`.
 Zero total volume fails closed.
+
+## AggTrades retrieval
+
+Live `GET /fapi/v1/aggTrades` uses policy `binance-usdm-aggtrades/time-chunk-fromid/v1`:
+
+- `startTime`/`endTime` are inclusive and must span less than one hour
+- `fromId` is never combined with `startTime`/`endTime`
+- a full 1000-row page continues with `fromId` only
+- boundary trades are deduped by aggregate id
+- incomplete chunks or sequence holes fail closed
 
 ## Cursor and reconnect
 
@@ -77,7 +91,8 @@ without requiring a new market event.
 
 The live adapter:
 
-- sends GET only
+- sends GET only over HTTPS
+- allowlists host `fapi.binance.com` only (plain HTTP and unknown hosts fail closed)
 - allowlists `/fapi/v1/ping`, `/time`, `/exchangeInfo`, `/klines`, `/aggTrades`
 - never sends API keys
 - never calls order, position, or account endpoints

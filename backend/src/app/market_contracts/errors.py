@@ -65,3 +65,11 @@ class CursorRecoveryError(MarketContractError):
 
 class FallbackForbiddenError(MarketContractError):
     """Silent fallback across providers, markets, or mock substitutes is forbidden."""
+
+
+class IncompleteTradeWindowError(GapDetectedError):
+    """Live aggTrade retrieval could not prove complete coverage of the requested window."""
+
+
+class UnapprovedEvidenceHostError(WrongMarketError):
+    """Evidence host is not an approved Binance USD-M HTTPS identity."""

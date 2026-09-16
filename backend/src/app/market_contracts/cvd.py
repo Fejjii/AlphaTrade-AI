@@ -8,12 +8,21 @@ from uuid import UUID, uuid5
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from app.market_contracts.enums import DataCompleteness, GapState, MarketType, WarmUpStatus
+from app.market_contracts.cursor import TradeStreamSnapshot, require_contiguous_sequences
+from app.market_contracts.enums import (
+    DataCompleteness,
+    GapState,
+    MarketType,
+    ReconnectState,
+    WarmUpStatus,
+)
 from app.market_contracts.errors import (
+    CursorRecoveryError,
     GapDetectedError,
     IncompleteWarmUpError,
     UnknownAggressorError,
 )
+from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
 from app.market_contracts.hashing import semantic_content_hash, with_content_hash
 from app.market_contracts.identity import (
     AGGRESSOR_CONVENTION,
@@ -130,33 +139,50 @@ def require_contiguous_connection(trades: list[TradeEvent], connection_id: UUID)
             raise IncompleteWarmUpError("Cross-connection CVD windows are not supported in V1.")
 
 
+def require_cvd_stream_proof(snapshot: TradeStreamSnapshot) -> None:
+    """Derive CVD eligibility from the cursor snapshot. Caller flags are not trusted."""
+    cursor = snapshot.cursor
+    if cursor.gap_state is not GapState.NONE:
+        raise GapDetectedError(
+            f"CVD refuses a trade snapshot with gap_state={cursor.gap_state.value}."
+        )
+    if cursor.warm_up_status is not WarmUpStatus.COMPLETE:
+        raise IncompleteWarmUpError(
+            "CVD requires complete warm-up proven by the trade-stream cursor."
+        )
+    if cursor.reconnect_state not in {ReconnectState.CONTINUOUS, ReconnectState.RECOVERED}:
+        raise IncompleteWarmUpError(
+            f"CVD refuses snapshot reconnect_state={cursor.reconnect_state.value}."
+        )
+    if not snapshot.trades:
+        raise IncompleteWarmUpError("CVD requires a non-empty trade-stream snapshot.")
+    require_contiguous_sequences([trade.sequence for trade in snapshot.trades])
+    terminal = snapshot.trades[-1]
+    if cursor.last_sequence != terminal.sequence:
+        raise CursorRecoveryError(
+            "Cursor last_sequence does not match the snapshot terminal trade."
+        )
+    require_contiguous_connection(snapshot.trades, cursor.connection_identity)
+
+
 def build_cvd_window(
     *,
     identity: EvidenceMarketIdentity,
-    trades: list[TradeEvent],
+    snapshot: TradeStreamSnapshot,
     window_start: datetime,
     window_end: datetime,
     baseline: Decimal,
-    source_connection_id: UUID,
-    start_cursor_id: UUID,
-    end_cursor_id: UUID,
-    gap_status: GapState,
-    warm_up_status: WarmUpStatus,
     created_at: datetime,
     aggressor_convention: str = AGGRESSOR_CONVENTION,
 ) -> CvdWindow:
-    if gap_status is not GapState.NONE:
-        raise GapDetectedError("Unresolved trade-stream gap makes CVD unusable.")
-    if warm_up_status is not WarmUpStatus.COMPLETE:
-        raise IncompleteWarmUpError(
-            "CVD requires complete warm-up on the current connection epoch."
-        )
-
-    selected = select_trades_in_window(trades, start=window_start, end=window_end)
-    require_contiguous_connection(selected, source_connection_id)
+    require_cvd_stream_proof(snapshot)
+    selected = select_trades_in_window(snapshot.trades, start=window_start, end=window_end)
+    if not selected:
+        raise IncompleteWarmUpError("CVD window contains no trades from the proven snapshot.")
+    require_contiguous_sequences([trade.sequence for trade in selected])
+    require_contiguous_connection(selected, snapshot.cursor.connection_identity)
     signed, total = accumulate_signed_quote(selected)
-    event_time_max = selected[-1].event_timestamp if selected else None
-    receive_time_max = selected[-1].receive_timestamp if selected else None
+    cursor_id = snapshot.cursor.cursor_id
     window = CvdWindow(
         cvd_window_id=uuid5(
             _CVD_NAMESPACE,
@@ -169,21 +195,21 @@ def build_cvd_window(
         signed_quote_delta=signed,
         total_quote_volume=total,
         event_count=len(selected),
-        first_trade_id=selected[0].venue_trade_id if selected else None,
-        last_trade_id=selected[-1].venue_trade_id if selected else None,
+        first_trade_id=selected[0].venue_trade_id,
+        last_trade_id=selected[-1].venue_trade_id,
         event_set_hash=event_set_hash(selected),
         data_completeness=DataCompleteness.COMPLETE,
         gap_status=GapState.NONE,
         warm_up_complete=True,
-        source_connection_id=source_connection_id,
-        start_cursor_id=start_cursor_id,
-        end_cursor_id=end_cursor_id,
+        source_connection_id=snapshot.cursor.connection_identity,
+        start_cursor_id=cursor_id,
+        end_cursor_id=cursor_id,
         aggressor_convention=aggressor_convention,
         source_identity=identity.source.adapter_version,
         reset_policy_version=CVD_RESET_POLICY_VERSION,
         arithmetic_policy_version=CVD_ARITHMETIC_POLICY_VERSION,
-        event_time_max=event_time_max,
-        receive_time_max=receive_time_max,
+        event_time_max=selected[-1].event_timestamp,
+        receive_time_max=selected[-1].receive_timestamp,
         content_hash="0" * 64,
         created_at=created_at.astimezone(UTC),
     )
@@ -194,10 +220,7 @@ def first_slice_cvd_window(
     *,
     identity: EvidenceMarketIdentity,
     series_15m: ClosedOhlcvSeries,
-    trades: list[TradeEvent],
-    source_connection_id: UUID,
-    start_cursor_id: UUID,
-    end_cursor_id: UUID,
+    snapshot: TradeStreamSnapshot,
     created_at: datetime,
     lookback: int = FIRST_SLICE_CVD_LOOKBACK_BARS,
 ) -> CvdWindow:
@@ -208,18 +231,19 @@ def first_slice_cvd_window(
             f"Need more than {lookback} final 15m bars to fix the CVD baseline."
         )
     trigger = series_15m.bars[-1]
-    window_start = _bar_lookback_start(trigger, lookback)
-    window_end = trigger.interval_end
-    return build_cvd_window(
+    window = build_cvd_window(
         identity=identity,
-        trades=trades,
-        window_start=window_start,
-        window_end=window_end,
+        snapshot=snapshot,
+        window_start=_bar_lookback_start(trigger, lookback),
+        window_end=trigger.interval_end,
         baseline=Decimal("0"),
-        source_connection_id=source_connection_id,
-        start_cursor_id=start_cursor_id,
-        end_cursor_id=end_cursor_id,
-        gap_status=GapState.NONE,
-        warm_up_status=WarmUpStatus.COMPLETE,
         created_at=created_at,
     )
+    terminal = max(snapshot.trades, key=lambda item: item.event_timestamp)
+    evaluate_freshness(
+        source_time=terminal.event_timestamp,
+        evaluated_at=created_at,
+        policy=first_slice_freshness_policy(),
+        require_fresh=True,
+    )
+    return window

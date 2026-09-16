@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
-from app.market_contracts.cursor import TradeStreamAssembler
+from app.market_contracts.cursor import TradeStreamAssembler, TradeStreamCursor, TradeStreamSnapshot
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
     accumulate_signed_quote,
@@ -15,8 +16,10 @@ from app.market_contracts.cvd import (
     first_slice_baseline_open,
     first_slice_cvd_window,
 )
-from app.market_contracts.errors import IncompleteWarmUpError
+from app.market_contracts.enums import GapState, ReconnectState, WarmUpStatus
+from app.market_contracts.errors import GapDetectedError, IncompleteWarmUpError, StaleEvidenceError
 from app.market_contracts.flow import bar_signed_quote_flow
+from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.ohlcv import require_closed_series
 from app.market_contracts.replay_fixtures import (
     FIXTURE_CONNECTION_ID,
@@ -25,6 +28,7 @@ from app.market_contracts.replay_fixtures import (
 from app.market_contracts.trades import signed_quote_value
 from app.schemas.common import Timeframe
 from tests.support.phase5_market import (
+    CONNECTION,
     EVALUATED_AT,
     TRIGGER_OPEN,
     consecutive_bars,
@@ -110,10 +114,7 @@ def test_first_slice_cvd_baseline_is_t_minus_32_open() -> None:
     window = first_slice_cvd_window(
         identity=identity(),
         series_15m=series,
-        trades=snapshot.trades,
-        source_connection_id=FIXTURE_CONNECTION_ID,
-        start_cursor_id=snapshot.cursor.cursor_id,
-        end_cursor_id=snapshot.cursor.cursor_id,
+        snapshot=snapshot,
         created_at=EVALUATED_AT,
     )
     assert window.window_start == baseline_open
@@ -128,3 +129,101 @@ def test_first_slice_cvd_baseline_is_t_minus_32_open() -> None:
     )
     assert cvd_trigger == window.baseline + window.signed_quote_delta
     assert window.event_count == len(fixture["trades"])
+
+
+def _forged_usable_snapshot(trades: list) -> TradeStreamSnapshot:
+    last = trades[-1]
+    cursor = with_content_hash(
+        TradeStreamCursor(
+            cursor_id=uuid4(),
+            identity=identity(),
+            connection_identity=CONNECTION,
+            last_event_id=last.venue_trade_id,
+            last_sequence=last.sequence,
+            connected_at=EVALUATED_AT,
+            last_event_at=last.event_timestamp,
+            reconnect_count=0,
+            reconnect_state=ReconnectState.CONTINUOUS,
+            gap_state=GapState.NONE,
+            warm_up_status=WarmUpStatus.COMPLETE,
+            updated_at=EVALUATED_AT,
+            content_hash="0" * 64,
+        )
+    )
+    return TradeStreamSnapshot(cursor=cursor, trades=trades, usable=True)
+
+
+def _first_slice_series() -> object:
+    bars = consecutive_bars(FIRST_SLICE_CVD_LOOKBACK_BARS + 1)
+    return require_closed_series(
+        bars,
+        identity=identity(),
+        timeframe=Timeframe.M15,
+        evaluated_at=EVALUATED_AT,
+        min_bars=FIRST_SLICE_CVD_LOOKBACK_BARS + 1,
+    )
+
+
+def test_cvd_missing_sequence_fails_even_if_marked_complete() -> None:
+    start = TRIGGER_OPEN - timedelta(minutes=15 * FIRST_SLICE_CVD_LOOKBACK_BARS)
+    t1 = trade(
+        sequence=1,
+        price="100",
+        quantity="1",
+        buyer_is_maker=False,
+        event_time=start + timedelta(seconds=1),
+    )
+    t3 = trade(
+        sequence=3,
+        price="100",
+        quantity="1",
+        buyer_is_maker=True,
+        event_time=TRIGGER_OPEN + timedelta(seconds=1),
+    )
+    snapshot = _forged_usable_snapshot([t1, t3])
+    assert snapshot.usable is True
+    assert snapshot.cursor.gap_state is GapState.NONE
+    with pytest.raises(GapDetectedError, match="sequence gap"):
+        first_slice_cvd_window(
+            identity=identity(),
+            series_15m=_first_slice_series(),
+            snapshot=snapshot,
+            created_at=EVALUATED_AT,
+        )
+
+
+def test_first_slice_cvd_rejects_stale_terminal_trade() -> None:
+    start = TRIGGER_OPEN - timedelta(minutes=15 * FIRST_SLICE_CVD_LOOKBACK_BARS)
+    trades = [
+        trade(
+            sequence=index,
+            price="100",
+            quantity="1",
+            buyer_is_maker=index % 2 == 0,
+            event_time=start + timedelta(seconds=index),
+            connection=CONNECTION,
+        )
+        for index in range(1, 6)
+    ]
+    trades[-1] = trade(
+        sequence=5,
+        price="100",
+        quantity="1",
+        buyer_is_maker=True,
+        event_time=EVALUATED_AT - timedelta(seconds=11),
+        connection=CONNECTION,
+    )
+    assembler = TradeStreamAssembler(
+        identity(),
+        connected_at=EVALUATED_AT,
+        connection_identity=CONNECTION,
+        expected_contiguous_count=len(trades),
+    )
+    snapshot = assembler.ingest(trades, observed_at=EVALUATED_AT)
+    with pytest.raises(StaleEvidenceError):
+        first_slice_cvd_window(
+            identity=identity(),
+            series_15m=_first_slice_series(),
+            snapshot=snapshot,
+            created_at=EVALUATED_AT,
+        )

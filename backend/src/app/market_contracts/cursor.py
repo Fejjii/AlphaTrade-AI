@@ -102,7 +102,8 @@ def detect_sequence_gap(
     return previous_sequence + 1, next_sequence - 1
 
 
-def _assert_contiguous(sequences: list[int]) -> None:
+def require_contiguous_sequences(sequences: list[int]) -> None:
+    """Fail closed unless venue sequences are strictly increasing by one."""
     if not sequences:
         return
     previous = sequences[0]
@@ -112,6 +113,10 @@ def _assert_contiguous(sequences: list[int]) -> None:
         if current != previous + 1:
             raise GapDetectedError(f"Confirmed sequence gap {previous + 1}-{current - 1}.")
         previous = current
+
+
+def _assert_contiguous(sequences: list[int]) -> None:
+    require_contiguous_sequences(sequences)
 
 
 def _retag_connection(trade: TradeEvent, connection_id: UUID) -> TradeEvent:
