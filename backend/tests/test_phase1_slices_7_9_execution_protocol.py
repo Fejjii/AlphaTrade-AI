@@ -1063,6 +1063,107 @@ def test_linear_contract_multiplier_fill_exposure(session: Session) -> None:
     )
 
 
+def test_linear_base_quantity_ignores_contract_multiplier(session: Session) -> None:
+    rules = {
+        "contract_multiplier": "10",
+        "contract_type": "LINEAR",
+        "base_currency": "BTC",
+        "quote_currency": "USDT",
+        "settlement_currency": "USDT",
+        "tick_size": "0.10",
+        "lot_size": "1",
+        "minimum_quantity": "1",
+        "minimum_notional": "5",
+        "rules_version": "blofin-rules-2026-09-15",
+    }
+    ids, plan, authorization = prepared_authorized_plan(
+        session,
+        quantity={"value": "2.000", "unit": "BASE"},
+        quantity_unit="BASE",
+        instrument_rules=rules,
+    )
+    service = execution_service(session)
+    claimed = service.execute_paper_plan(
+        execute_request(ids, plan, authorization, key="base-mult-fill"),
+        clock=lambda: EXECUTE_AT,
+    )
+    session.commit()
+    reservation = session.scalar(
+        select(RiskReservation).where(RiskReservation.command_id == claimed.command_id)
+    )
+    accounting = session.scalar(
+        select(AccountRiskAccountingState).where(
+            AccountRiskAccountingState.account_id == claimed.receipt.account_id
+        )
+    )
+    assert reservation is not None
+    assert accounting is not None
+    assert reservation.quantity_unit == "BASE"
+    assert reservation.contract_multiplier == Decimal("10")
+    quote_exposure = Decimal("2") * Decimal("100.10")
+    expected_reserved = quote_exposure + Decimal("1") + Decimal("0.75")
+    assert quote_exposure == Decimal("200.20")
+    assert expected_reserved == Decimal("201.95")
+    assert expected_reserved != Decimal("2") * Decimal("100.10") * Decimal("10") + Decimal(
+        "1"
+    ) + Decimal("0.75")
+    assert reservation.remaining_reserved_notional == expected_reserved
+    assert accounting.reserved_notional == expected_reserved
+    assert Decimal(str((accounting.symbol_reserved or {}).get(reservation.instrument, "0"))) == (
+        expected_reserved
+    )
+    fill = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="base-fill-1",
+        occurred_at=EXECUTE_AT,
+    )
+    session.commit()
+    session.refresh(reservation)
+    session.refresh(accounting)
+    fill_notional = Decimal("1") * Decimal("100")
+    assert fill.replayed is False
+    assert fill_notional == Decimal("100")
+    assert fill_notional != Decimal("1") * Decimal("100") * Decimal("10")
+    assert reservation.remaining_reserved_notional == expected_reserved - fill_notional
+    assert accounting.actual_notional == fill_notional
+    assert accounting.reserved_notional == reservation.remaining_reserved_notional
+    assert Decimal(str((accounting.symbol_actual or {}).get(reservation.instrument, "0"))) == (
+        fill_notional
+    )
+    assert Decimal(str((accounting.symbol_reserved or {}).get(reservation.instrument, "0"))) == (
+        reservation.remaining_reserved_notional
+    )
+    remaining_before_replay = reservation.remaining_reserved_notional
+    actual_before_replay = accounting.actual_notional
+    symbol_reserved_before = Decimal(
+        str((accounting.symbol_reserved or {}).get(reservation.instrument, "0"))
+    )
+    symbol_actual_before = Decimal(
+        str((accounting.symbol_actual or {}).get(reservation.instrument, "0"))
+    )
+    replay = service.apply_paper_plan_fill(
+        command_id=claimed.command_id,
+        fill_quantity=Decimal("1"),
+        fill_price=Decimal("100"),
+        source_identity="base-fill-1",
+        occurred_at=EXECUTE_AT,
+    )
+    session.commit()
+    session.refresh(reservation)
+    session.refresh(accounting)
+    assert replay.replayed is True
+    assert reservation.remaining_reserved_notional == remaining_before_replay
+    assert accounting.actual_notional == actual_before_replay
+    assert Decimal(str((accounting.symbol_reserved or {}).get(reservation.instrument, "0"))) == (
+        symbol_reserved_before
+    )
+    assert Decimal(str((accounting.symbol_actual or {}).get(reservation.instrument, "0"))) == (
+        symbol_actual_before
+    )
+
+
 def test_inverse_contract_fails_closed_at_claim(session: Session) -> None:
     rules = {
         "contract_multiplier": "1",

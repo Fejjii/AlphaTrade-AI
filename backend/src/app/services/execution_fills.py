@@ -8,8 +8,8 @@ from decimal import Decimal
 from app.core.errors import ConflictError
 from app.db.models import AccountRiskAccountingState, RiskReservation
 from app.schemas.execution_protocol import RiskReservationReleaseReason, RiskReservationReleaseState
-from app.schemas.trade_plan import ContractType, QuantityUnit
 from app.services.canonical_serialization import canonical_sha256
+from app.services.execution_exposure import QuoteExposureError, linear_quote_exposure
 
 
 def fill_content_hash(
@@ -58,29 +58,27 @@ def fill_quote_exposure(
     fill_quantity: Decimal,
     fill_price: Decimal,
 ) -> Decimal:
-    """Quote exposure for one fill using immutable reservation instrument semantics."""
+    """Quote exposure for one fill using immutable reservation instrument semantics.
 
-    contract_type = str(reservation.contract_type)
-    quantity_unit = str(reservation.quantity_unit)
-    multiplier = reservation.contract_multiplier
-    if not isinstance(multiplier, Decimal):
-        multiplier = Decimal(str(multiplier))
-    if contract_type == ContractType.INVERSE.value:
-        raise ConflictError(
-            "Inverse contract fill conversion is not defined for Phase 1.",
-            details={"reason": "inverse_contract_fill_undefined"},
+    Does not accept caller-supplied conversion values. CONTRACTS uses
+    quantity * contract_multiplier * price. BASE uses quantity * price.
+    """
+
+    try:
+        return linear_quote_exposure(
+            quantity=fill_quantity,
+            price=fill_price,
+            quantity_unit=str(reservation.quantity_unit),
+            contract_multiplier=reservation.contract_multiplier,
+            contract_type=str(reservation.contract_type),
         )
-    if contract_type != ContractType.LINEAR.value:
-        raise ConflictError(
-            "Unknown contract type for fill conversion.",
-            details={"reason": "unsupported_contract_type", "contract_type": contract_type},
+    except QuoteExposureError as exc:
+        reason = (
+            "inverse_contract_fill_undefined"
+            if exc.reason == "inverse_contract_undefined"
+            else exc.reason
         )
-    if quantity_unit not in {QuantityUnit.CONTRACTS.value, QuantityUnit.BASE.value}:
-        raise ConflictError(
-            "Phase 1 fill conversion requires CONTRACTS or BASE quantity units.",
-            details={"reason": "unsupported_quantity_unit", "quantity_unit": quantity_unit},
-        )
-    return fill_quantity * fill_price * multiplier
+        raise ConflictError(str(exc), details={**exc.details, "reason": reason}) from exc
 
 
 def adjust_symbol_map(
@@ -109,7 +107,9 @@ def convert_reservation_for_fill(
 
     Unused remainder stays charged. Daily-loss allocation stays reserved while
     the position remains open. Trade slots convert once per reservation.
-    Linear CONTRACTS/BASE quote exposure uses the bound contract multiplier.
+    Linear CONTRACTS quote exposure is quantity * contract_multiplier * price.
+    Linear BASE quote exposure is quantity * price. The two paths share
+    :func:`app.services.execution_exposure.linear_quote_exposure`.
     """
 
     fill_notional = fill_quote_exposure(
