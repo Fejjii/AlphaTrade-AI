@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -41,6 +42,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.historical_immutability import install_historical_immutability as _install_history
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,
@@ -98,6 +100,14 @@ from app.schemas.common import (
     TradingViewSignalStatus,
     UsageStatus,
     UserRole,
+)
+from app.schemas.execution_protocol import (
+    ExecutionCommandOutcome,
+    ExecutionReceiptState,
+    ExecutionReconciliationStatus,
+    RiskReservationReleaseReason,
+    RiskReservationReleaseState,
+    VenueSubmitEffectState,
 )
 from app.schemas.trade_plan import (
     AccountMode,
@@ -247,6 +257,11 @@ class ExecutionAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "organization_id",
             "user_id",
             name="uq_execution_account_tenant_owner",
+        ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_execution_account_org_identity",
         ),
         CheckConstraint("execution_mode = 'PAPER'", name="ck_execution_account_paper"),
         CheckConstraint("account_mode = 'NET'", name="ck_execution_account_net"),
@@ -1489,6 +1504,529 @@ class ApprovalAuthorization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     authorization_content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
 
 
+class ExecutionIdempotencyBinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant-scoped opaque-key binding for EXECUTE_PAPER_PLAN (architecture §23-§24)."""
+
+    __tablename__ = "execution_idempotency_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "opaque_key",
+            name="uq_execution_idempotency_binding",
+        ),
+        CheckConstraint(
+            "length(canonical_payload_hash) = 64",
+            name="ck_execution_idempotency_payload_hash_length",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "organization_id", "user_id"],
+            [
+                "execution_accounts.id",
+                "execution_accounts.organization_id",
+                "execution_accounts.user_id",
+            ],
+            name="fk_execution_idempotency_account_tenant",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    exchange_account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    exchange_account_scope_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    operation_namespace: Mapped[str] = mapped_column(String(64), nullable=False)
+    opaque_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    canonical_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("trade_plan_revisions.id"), nullable=False
+    )
+    authorization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("approval_authorizations.id"), nullable=False
+    )
+    command_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    receipt_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    outcome: Mapped[ExecutionCommandOutcome | None] = mapped_column(
+        _enum(ExecutionCommandOutcome), nullable=True
+    )
+
+
+class ExecutionCommand(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Stable immutable EXECUTE_PAPER_PLAN command identity."""
+
+    __tablename__ = "execution_commands"
+    __table_args__ = (
+        CheckConstraint("operation = 'SUBMIT_ENTRY'", name="ck_execution_command_submit_entry"),
+        CheckConstraint(
+            "operation_namespace = 'alphatrade/submit-entry/v1'",
+            name="ck_execution_command_entry_namespace",
+        ),
+        CheckConstraint(
+            "length(canonical_payload_hash) = 64",
+            name="ck_execution_command_payload_hash_length",
+        ),
+        CheckConstraint("length(plan_content_hash) = 64", name="ck_execution_command_plan_hash"),
+        ForeignKeyConstraint(
+            ["revision_id", "plan_id", "organization_id", "user_id", "account_id"],
+            [
+                "trade_plan_revisions.id",
+                "trade_plan_revisions.plan_id",
+                "trade_plan_revisions.organization_id",
+                "trade_plan_revisions.user_id",
+                "trade_plan_revisions.account_id",
+            ],
+            name="fk_execution_command_revision_binding",
+        ),
+        Index("ix_execution_commands_org_account", "organization_id", "account_id"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    exchange_account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    operation: Mapped[PlanOperation] = mapped_column(_enum(PlanOperation), nullable=False)
+    operation_namespace: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    authorization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("approval_authorizations.id"), nullable=False
+    )
+    plan_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    opaque_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    outcome: Mapped[ExecutionCommandOutcome] = mapped_column(
+        _enum(ExecutionCommandOutcome), nullable=False
+    )
+    blocked_reason_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+@event.listens_for(ExecutionCommand, "before_update")
+@event.listens_for(ExecutionCommand, "before_delete")
+def _prevent_execution_command_mutation(
+    _mapper: object,
+    _connection: object,
+    _target: ExecutionCommand,
+) -> None:
+    raise ValueError("ExecutionCommand rows are immutable.")
+
+
+class PlanEntryExecutionClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Database-enforced one entry execution per plan revision and account."""
+
+    __tablename__ = "plan_entry_execution_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "account_id",
+            "exchange_account_scope_key",
+            "revision_id",
+            "operation",
+            name="uq_plan_entry_execution_claim",
+        ),
+        UniqueConstraint("command_id", name="uq_plan_entry_execution_claim_command"),
+        CheckConstraint("operation = 'SUBMIT_ENTRY'", name="ck_plan_entry_claim_submit_entry"),
+        ForeignKeyConstraint(
+            ["command_id"],
+            ["execution_commands.id"],
+            name="fk_plan_entry_claim_command",
+        ),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_plan_entry_claim_receipt",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    exchange_account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    exchange_account_scope_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("trade_plan_revisions.id"), nullable=False
+    )
+    operation: Mapped[PlanOperation] = mapped_column(_enum(PlanOperation), nullable=False)
+    command_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    canonical_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class AccountSafetyEpoch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Account-scoped safety epoch locked before risk accounting (architecture §24)."""
+
+    __tablename__ = "account_safety_epochs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "account_id",
+            name="uq_account_safety_epoch",
+        ),
+        CheckConstraint("epoch >= 1", name="ck_account_safety_epoch_positive"),
+        ForeignKeyConstraint(
+            ["account_id", "organization_id"],
+            ["execution_accounts.id", "execution_accounts.organization_id"],
+            name="fk_account_safety_epoch_account",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    epoch: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+    blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_reason_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+class AccountRiskAccountingState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Account-scoped serializable risk ledger locked after the safety epoch."""
+
+    __tablename__ = "account_risk_accounting_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "account_id",
+            name="uq_account_risk_accounting_state",
+        ),
+        CheckConstraint("reserved_notional >= 0", name="ck_account_risk_reserved_notional"),
+        CheckConstraint("actual_notional >= 0", name="ck_account_risk_actual_notional"),
+        CheckConstraint("reserved_trade_slots >= 0", name="ck_account_risk_reserved_slots"),
+        CheckConstraint("max_notional >= 0", name="ck_account_risk_max_notional"),
+        ForeignKeyConstraint(
+            ["account_id", "organization_id"],
+            ["execution_accounts.id", "execution_accounts.organization_id"],
+            name="fk_account_risk_accounting_account",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    reserved_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, default=Decimal("0"))
+    reserved_daily_loss: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, default=Decimal("0")
+    )
+    reserved_trade_slots: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    actual_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, default=Decimal("0"))
+    actual_daily_loss: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, default=Decimal("0"))
+    actual_trade_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    symbol_reserved: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    symbol_actual: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    max_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    max_daily_loss: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    max_trade_slots: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_symbol_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    daily_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    exposure_unit: Mapped[str] = mapped_column(String(32), nullable=False, default="USDT")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ExecutionReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Stable receipt identity. Historical truth lives in append-only transitions."""
+
+    __tablename__ = "execution_receipts"
+    __table_args__ = (
+        UniqueConstraint("command_id", name="uq_execution_receipt_command"),
+        ForeignKeyConstraint(
+            ["command_id"],
+            ["execution_commands.id"],
+            name="fk_execution_receipt_command",
+        ),
+    )
+
+    command_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    operation: Mapped[PlanOperation] = mapped_column(_enum(PlanOperation), nullable=False)
+    authorization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("approval_authorizations.id"), nullable=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+
+
+@event.listens_for(ExecutionReceipt, "before_update")
+@event.listens_for(ExecutionReceipt, "before_delete")
+def _prevent_execution_receipt_mutation(
+    _mapper: object,
+    _connection: object,
+    _target: ExecutionReceipt,
+) -> None:
+    raise ValueError("ExecutionReceipt identity rows are immutable.")
+
+
+class ExecutionTransition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Append-only receipt state transition."""
+
+    __tablename__ = "execution_transitions"
+    __table_args__ = (
+        UniqueConstraint(
+            "receipt_id",
+            "sequence",
+            name="uq_execution_transition_sequence",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_execution_transition_sequence"),
+        CheckConstraint(
+            "length(content_hash) = 64",
+            name="ck_execution_transition_hash_length",
+        ),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_execution_transition_receipt",
+        ),
+        Index("ix_execution_transitions_receipt_seq", "receipt_id", "sequence"),
+    )
+
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    prior_state: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    new_state: Mapped[ExecutionReceiptState] = mapped_column(
+        _enum(ExecutionReceiptState), nullable=False
+    )
+    source_fact: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    quantity_unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    unit_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actor: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+@event.listens_for(ExecutionTransition, "before_update")
+@event.listens_for(ExecutionTransition, "before_delete")
+def _prevent_execution_transition_mutation(
+    _mapper: object,
+    _connection: object,
+    _target: ExecutionTransition,
+) -> None:
+    raise ValueError("ExecutionTransition rows are immutable.")
+
+
+class ExecutionProjection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Rebuildable optimistic-version projection of a receipt."""
+
+    __tablename__ = "execution_projections"
+    __table_args__ = (
+        UniqueConstraint("receipt_id", name="uq_execution_projection_receipt"),
+        CheckConstraint("version >= 1", name="ck_execution_projection_version"),
+        CheckConstraint("event_watermark >= 0", name="ck_execution_projection_watermark"),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_execution_projection_receipt",
+        ),
+    )
+
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    state: Mapped[ExecutionReceiptState] = mapped_column(
+        _enum(ExecutionReceiptState), nullable=False
+    )
+    filled_quantity: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, default=Decimal("0"))
+    remaining_quantity: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    quantity_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    weighted_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    fees: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, default=Decimal("0"))
+    funding: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, default=Decimal("0"))
+    position_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    reconciliation_status: Mapped[ExecutionReconciliationStatus] = mapped_column(
+        _enum(ExecutionReconciliationStatus),
+        nullable=False,
+        default=ExecutionReconciliationStatus.NOT_REQUIRED,
+    )
+    event_watermark: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class RiskReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Conservative pending-exposure reservation charged through uncertainty."""
+
+    __tablename__ = "risk_reservations"
+    __table_args__ = (
+        UniqueConstraint("command_id", name="uq_risk_reservation_command"),
+        UniqueConstraint("receipt_id", name="uq_risk_reservation_receipt"),
+        CheckConstraint("pending_order_exposure >= 0", name="ck_risk_reservation_pending"),
+        CheckConstraint(
+            "remaining_reserved_notional >= 0",
+            name="ck_risk_reservation_remaining",
+        ),
+        CheckConstraint(
+            "converted_trade_slots >= 0",
+            name="ck_risk_reservation_converted_slots",
+        ),
+        CheckConstraint("contract_multiplier > 0", name="ck_risk_reservation_multiplier"),
+        CheckConstraint(
+            "contract_type IN ('LINEAR', 'INVERSE')",
+            name="ck_risk_reservation_contract_type",
+        ),
+        ForeignKeyConstraint(
+            ["command_id"],
+            ["execution_commands.id"],
+            name="fk_risk_reservation_command",
+        ),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_risk_reservation_receipt",
+        ),
+        ForeignKeyConstraint(
+            ["plan_revision_id"],
+            ["trade_plan_revisions.id"],
+            name="fk_risk_reservation_revision",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    plan_revision_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    command_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    instrument: Mapped[str] = mapped_column(String(120), nullable=False)
+    risk_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    risk_snapshot_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    pending_order_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    submitting_or_ambiguous_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    open_order_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    daily_trade_allocation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    daily_loss_allocation: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    total_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    symbol_exposure: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    remaining_reserved_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    converted_trade_slots: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    contract_multiplier: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    contract_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    exposure_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    safety_epoch: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    release_state: Mapped[RiskReservationReleaseState] = mapped_column(
+        _enum(RiskReservationReleaseState),
+        nullable=False,
+        default=RiskReservationReleaseState.CHARGED,
+    )
+    release_reason: Mapped[RiskReservationReleaseReason | None] = mapped_column(
+        _enum(RiskReservationReleaseReason), nullable=True
+    )
+
+
+class VenueSubmitEffect(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Durable venue-submit effect claimed before any provider POST."""
+
+    __tablename__ = "venue_submit_effects"
+    __table_args__ = (
+        UniqueConstraint("command_id", name="uq_venue_submit_effect_command"),
+        UniqueConstraint("receipt_id", name="uq_venue_submit_effect_receipt"),
+        UniqueConstraint("client_order_id", name="uq_venue_submit_effect_client_order_id"),
+        CheckConstraint("fencing_token >= 0", name="ck_venue_submit_effect_fence"),
+        CheckConstraint("attempt >= 0", name="ck_venue_submit_effect_attempt"),
+        ForeignKeyConstraint(
+            ["command_id"],
+            ["execution_commands.id"],
+            name="fk_venue_submit_effect_command",
+        ),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_venue_submit_effect_receipt",
+        ),
+    )
+
+    command_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    client_order_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[VenueSubmitEffectState] = mapped_column(
+        _enum(VenueSubmitEffectState),
+        nullable=False,
+        default=VenueSubmitEffectState.CREATED,
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dispatch_authorized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatch_safety_epoch: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    dispatch_fencing_token: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dispatch_attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    safety_epoch: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    uncertainty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reconciliation_disposition: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+class ExecutionFillFact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable unique venue fill fact. Duplicate identity replays by content hash."""
+
+    __tablename__ = "execution_fill_facts"
+    __table_args__ = (
+        UniqueConstraint(
+            "receipt_id",
+            "source_fill_identity",
+            name="uq_execution_fill_fact_source",
+        ),
+        CheckConstraint("quantity > 0", name="ck_execution_fill_fact_quantity"),
+        CheckConstraint("price > 0", name="ck_execution_fill_fact_price"),
+        CheckConstraint(
+            "length(trim(source_fill_identity)) > 0",
+            name="ck_execution_fill_fact_source_identity",
+        ),
+        CheckConstraint(
+            "length(content_hash) = 64",
+            name="ck_execution_fill_fact_hash_length",
+        ),
+        ForeignKeyConstraint(
+            ["receipt_id"],
+            ["execution_receipts.id"],
+            name="fk_execution_fill_fact_receipt",
+        ),
+        ForeignKeyConstraint(
+            ["command_id"],
+            ["execution_commands.id"],
+            name="fk_execution_fill_fact_command",
+        ),
+        Index("ix_execution_fill_facts_receipt", "receipt_id"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    command_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    venue_source: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_fill_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+@event.listens_for(ExecutionFillFact, "before_update")
+@event.listens_for(ExecutionFillFact, "before_delete")
+def _prevent_execution_fill_fact_mutation(
+    _mapper: object,
+    _connection: object,
+    _target: ExecutionFillFact,
+) -> None:
+    raise ValueError("ExecutionFillFact rows are immutable.")
+
+
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "orders"
 
@@ -2526,3 +3064,6 @@ class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     position_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     balance_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+_ = _install_history

@@ -22,6 +22,7 @@ from app.db.models import (
     Membership,
     Order,
     Organization,
+    Position,
     User,
 )
 from app.db.session import get_session
@@ -33,20 +34,18 @@ from app.providers.exchange.base import (
     ExchangeOrderRequest,
     ExchangeOrderResult,
 )
-from app.providers.exchange.client_order_id import (
-    derive_blofin_venue_client_order_id,
-    is_valid_blofin_venue_client_order_id,
-)
 from app.providers.exchange.errors import ExchangeRequestError, VenueErrorDetails
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.common import (
     ApprovalAction,
     AuditEventType,
     MembershipRole,
+    PositionStatus,
     RiskAction,
     RiskRuleId,
     RiskSeverity,
     StrategyId,
+    TradeDirection,
 )
 from app.schemas.execution import PaperOrderRequest
 from app.schemas.proposal import ExitCriteria, TakeProfitLevel, TradeProposalCreate
@@ -55,7 +54,7 @@ from app.security.passwords import hash_password
 from app.services.agent_service import AgentInvokeContext, build_agent_service
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
-from app.services.execution_service import ExecutionService
+from app.services.execution_service import LEGACY_PAPER_EXECUTION_REASON, ExecutionService
 from app.services.proposal_service import ProposalService
 
 ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000000030")
@@ -396,10 +395,14 @@ def test_paper_execution_success_and_idempotency(
             size=Decimal("0.005"),
             idempotency_key="idem-key-001",
         )
-        order1 = execution.place_paper_order(request).order
-        order2 = execution.place_paper_order(request).order
-        assert order1.id == order2.id
+        with pytest.raises(TradingPolicyError) as first_exc:
+            execution.place_paper_order(request)
+        assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        with pytest.raises(TradingPolicyError) as second_exc:
+            execution.place_paper_order(request)
+        assert second_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         session.commit()
+        assert session.query(Order).count() == 0
 
 
 def test_paper_execution_blocked_without_approval(
@@ -436,7 +439,7 @@ def test_paper_execution_blocked_without_approval(
             risk_level=proposal.risk_level,
             confidence=float(proposal.confidence),
         )
-        with pytest.raises(TradingPolicyError):
+        with pytest.raises(TradingPolicyError) as exc:
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal.id,  # type: ignore[arg-type]
@@ -448,6 +451,7 @@ def test_paper_execution_blocked_without_approval(
                     idempotency_key="idem-key-002",
                 )
             )
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_paper_execution_blocked_by_risk(
@@ -500,7 +504,7 @@ def test_paper_execution_blocked_by_risk(
             confidence=float(proposal.confidence),
         )
         approvals.decide(approval.id, ApprovalDecisionRequest(action=ApprovalAction.APPROVE))
-        with pytest.raises(TradingPolicyError):
+        with pytest.raises(TradingPolicyError) as exc:
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal.id,  # type: ignore[arg-type]
@@ -512,21 +516,30 @@ def test_paper_execution_blocked_by_risk(
                     idempotency_key="idem-key-003",
                 )
             )
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_position_list_and_close(workflow_db: tuple[sessionmaker[Session], Settings]) -> None:
     factory, settings = workflow_db
     with factory() as session:
-        proposal_id, approval_id = _seed_approved_proposal(session, settings)
-        ExecutionService(session, settings, AuditService(session)).place_paper_order(
-            PaperOrderRequest(
-                proposal_id=proposal_id,
-                approval_id=approval_id,
+        proposal_id, _approval_id = _seed_approved_proposal(session, settings)
+        from datetime import UTC, datetime
+
+        session.add(
+            Position(
+                organization_id=ORG_ID,
+                user_id=USER_ID,
+                strategy_id=StrategyId.HTF_TREND_PULLBACK,
+                linked_proposal_id=proposal_id,
                 symbol="BTCUSDT",
-                side="buy",
-                type="market",
+                direction=TradeDirection.LONG,
                 size=Decimal("0.005"),
-                idempotency_key="idem-pos-001",
+                entry_price=Decimal("60000"),
+                leverage=Decimal("3"),
+                stop_loss=Decimal("58000"),
+                take_profits=[],
+                status=PositionStatus.OPEN,
+                opened_at=datetime.now(UTC),
             )
         )
         session.commit()
@@ -725,37 +738,23 @@ def test_demo_execution_mirrors_paper_order(
             AuditService(session),
             exchange_execution=fake,
         )
-        order = execution.place_paper_order(
-            PaperOrderRequest(
-                proposal_id=proposal_id,
-                approval_id=approval_id,
-                symbol="BTCUSDT",
-                side="buy",
-                type="market",
-                size=Decimal("0.005"),
-                idempotency_key="demo-idem-001",
+        with pytest.raises(TradingPolicyError) as exc:
+            execution.place_paper_order(
+                PaperOrderRequest(
+                    proposal_id=proposal_id,
+                    approval_id=approval_id,
+                    symbol="BTCUSDT",
+                    side="buy",
+                    type="market",
+                    size=Decimal("0.005"),
+                    idempotency_key="demo-idem-001",
+                )
             )
-        ).order
-        session.commit()
-
-        assert len(fake.calls) == 1
-        assert fake.calls[0].inst_id == "BTC-USDT"
-        idem = "demo-idem-001"
-        expected_venue_id = derive_blofin_venue_client_order_id(idem)
-        assert fake.calls[0].client_order_id == expected_venue_id
-        assert is_valid_blofin_venue_client_order_id(expected_venue_id)
-        assert idem not in (fake.calls[0].client_order_id or "")
-        assert order.exchange_order_id == "demo-abc"
-
-        exchange_orders = session.query(ExchangeOrder).all()
-        assert len(exchange_orders) == 1
-        assert exchange_orders[0].exchange_mode == "paper_exchange_demo"
-        assert exchange_orders[0].status == "filled"
-        assert exchange_orders[0].venue_client_order_id == expected_venue_id
-
-        fills = session.query(ExchangeFill).all()
-        assert len(fills) == 1
-        assert fills[0].fee_currency == "USDT"
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        assert fake.calls == []
+        assert session.query(Order).count() == 0
+        assert session.query(ExchangeOrder).count() == 0
+        assert session.query(ExchangeFill).count() == 0
 
 
 def test_demo_execution_failure_does_not_break_paper_order(
@@ -773,24 +772,22 @@ def test_demo_execution_failure_does_not_break_paper_order(
             AuditService(session),
             exchange_execution=fake,
         )
-        order = execution.place_paper_order(
-            PaperOrderRequest(
-                proposal_id=proposal_id,
-                approval_id=approval_id,
-                symbol="BTCUSDT",
-                side="buy",
-                type="market",
-                size=Decimal("0.005"),
-                idempotency_key="demo-idem-002",
+        with pytest.raises(TradingPolicyError) as exc:
+            execution.place_paper_order(
+                PaperOrderRequest(
+                    proposal_id=proposal_id,
+                    approval_id=approval_id,
+                    symbol="BTCUSDT",
+                    side="buy",
+                    type="market",
+                    size=Decimal("0.005"),
+                    idempotency_key="demo-idem-002",
+                )
             )
-        ).order
-        session.commit()
-
-        # Internal paper order still succeeds (source of truth).
-        assert order.id is not None
-        failed = session.query(ExchangeOrder).all()
-        assert len(failed) == 1
-        assert failed[0].status == "failed"
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        assert fake.calls == []
+        assert session.query(Order).count() == 0
+        assert session.query(ExchangeOrder).count() == 0
 
 
 def test_demo_mirror_failure_persists_sanitized_audit_metadata(
@@ -817,42 +814,28 @@ def test_demo_mirror_failure_persists_sanitized_audit_metadata(
             AuditService(session),
             exchange_execution=fake,
         )
-        execution.place_paper_order(
-            PaperOrderRequest(
-                proposal_id=proposal_id,
-                approval_id=approval_id,
-                symbol="BTCUSDT",
-                side="buy",
-                type="limit",
-                size=Decimal("0.005"),
-                price=Decimal("60000"),
-                idempotency_key="slice66b-demo-limit-001",
+        with pytest.raises(TradingPolicyError) as exc:
+            execution.place_paper_order(
+                PaperOrderRequest(
+                    proposal_id=proposal_id,
+                    approval_id=approval_id,
+                    symbol="BTCUSDT",
+                    side="buy",
+                    type="limit",
+                    size=Decimal("0.005"),
+                    price=Decimal("60000"),
+                    idempotency_key="slice66b-demo-limit-001",
+                )
             )
-        )
-        session.commit()
-
-        audit = (
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        assert fake.calls == []
+        assert (
             session.query(AuditLog)
             .filter(AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_FAILED)
-            .one()
+            .count()
+            == 0
         )
-        metadata = audit.redacted_metadata
-        assert metadata["venue_error_code"] == "51008"
-        assert metadata["endpoint_name"] == "POST /api/v1/trade/order"
-        assert metadata["order_side"] == "buy"
-        assert metadata["order_type"] == "limit"
-        assert metadata["paper_order_id"]
-        assert "client_order_id_hash" in metadata
-        assert (
-            metadata["venue_client_order_id_prefix"]
-            == derive_blofin_venue_client_order_id("slice66b-demo-limit-001")[:8]
-        )
-        assert "slice66b-demo-limit-001" not in str(metadata)
-
-        exchange_order = session.query(ExchangeOrder).one()
-        assert exchange_order.venue_client_order_id == derive_blofin_venue_client_order_id(
-            "slice66b-demo-limit-001"
-        )
+        assert session.query(ExchangeOrder).count() == 0
 
 
 def test_demo_routing_skipped_when_real_trading_would_be_enabled(
@@ -869,20 +852,22 @@ def test_demo_routing_skipped_when_real_trading_would_be_enabled(
             AuditService(session),
             exchange_execution=fake,
         )
-        execution.place_paper_order(
-            PaperOrderRequest(
-                proposal_id=proposal_id,
-                approval_id=approval_id,
-                symbol="BTCUSDT",
-                side="buy",
-                type="market",
-                size=Decimal("0.005"),
-                idempotency_key="demo-idem-003",
+        with pytest.raises(TradingPolicyError) as exc:
+            execution.place_paper_order(
+                PaperOrderRequest(
+                    proposal_id=proposal_id,
+                    approval_id=approval_id,
+                    symbol="BTCUSDT",
+                    side="buy",
+                    type="market",
+                    size=Decimal("0.005"),
+                    idempotency_key="demo-idem-003",
+                )
             )
-        )
-        session.commit()
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         assert fake.calls == []
         assert session.query(ExchangeOrder).all() == []
+        assert session.query(Order).count() == 0
 
 
 def test_demo_mirror_idempotency_one_exchange_order(
@@ -946,14 +931,15 @@ def test_demo_mirror_idempotency_one_exchange_order(
             size=Decimal("0.005"),
             idempotency_key="demo-idem-dup-001",
         )
-        order1 = execution.place_paper_order(request).order
-        order2 = execution.place_paper_order(request).order
-        session.commit()
-
-        assert order1.id == order2.id
-        assert len(fake.calls) == 1
-        assert session.query(Order).count() == 1
-        assert session.query(ExchangeOrder).count() == 1
+        with pytest.raises(TradingPolicyError) as first_exc:
+            execution.place_paper_order(request)
+        assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        with pytest.raises(TradingPolicyError) as second_exc:
+            execution.place_paper_order(request)
+        assert second_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        assert fake.calls == []
+        assert session.query(Order).count() == 0
+        assert session.query(ExchangeOrder).count() == 0
 
 
 def test_demo_mirror_requires_risk_result(
@@ -1000,7 +986,7 @@ def test_demo_mirror_requires_risk_result(
             audit,
             exchange_execution=fake,
         )
-        with pytest.raises(TradingPolicyError, match="prior risk evaluation"):
+        with pytest.raises(TradingPolicyError) as exc:
             execution.place_paper_order(
                 PaperOrderRequest(
                     proposal_id=proposal_id,
@@ -1012,4 +998,5 @@ def test_demo_mirror_requires_risk_result(
                     idempotency_key="demo-no-risk-001",
                 )
             )
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         assert fake.calls == []

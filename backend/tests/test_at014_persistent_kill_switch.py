@@ -40,7 +40,7 @@ from app.schemas.risk import KillSwitchMutationRequest, RiskCheckResult
 from app.security.passwords import hash_password
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
-from app.services.execution_service import ExecutionService
+from app.services.execution_service import LEGACY_PAPER_EXECUTION_REASON, ExecutionService
 from app.services.proposal_service import ProposalService
 from app.services.risk.kill_switch import KillSwitchService
 
@@ -252,7 +252,7 @@ def test_active_blocks_paper_placement(
         session.commit()
         with pytest.raises(TradingPolicyError) as exc:
             _place(session, settings, pid, aid, key="ks-block-1")
-        assert exc.value.details.get("reason") == "kill_switch_active"
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_inactive_allows_valid_paper_placement(
@@ -262,8 +262,9 @@ def test_inactive_allows_valid_paper_placement(
     with factory() as session:
         pid, aid = _seed_approved(session)
         order_key = "ks-allow-01"
-        _place(session, settings, pid, aid, key=order_key)
-        session.commit()
+        with pytest.raises(TradingPolicyError) as exc:
+            _place(session, settings, pid, aid, key=order_key)
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_demo_path_cannot_bypass(
@@ -293,7 +294,7 @@ def test_demo_path_cannot_bypass(
                     idempotency_key="demo-ks-001",
                 )
             )
-        assert exc.value.details.get("reason") == "kill_switch_active"
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         assert fake.place_order.call_count == 0
 
 
@@ -330,7 +331,7 @@ def test_unavailable_storage_refuses_execution(
                         idempotency_key="ks-unavail1",
                     )
                 )
-            assert exc2.value.details.get("reason") == "kill_switch_unavailable"
+            assert exc2.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def test_idempotent_activate_deactivate(
@@ -439,7 +440,7 @@ def test_global_env_kill_switch_blocks(
         pid, aid = _seed_approved(session)
         with pytest.raises(TradingPolicyError) as exc:
             _place(session, settings, pid, aid, key="global-ks-1")
-        assert exc.value.details.get("reason") == "global_kill_switch_active"
+        assert exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
 
 def _client(factory: sessionmaker[Session], settings: Settings) -> Iterator[TestClient]:

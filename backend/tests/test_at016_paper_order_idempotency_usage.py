@@ -36,14 +36,14 @@ from app.schemas.common import (
     RiskSeverity,
     StrategyId,
 )
-from app.schemas.execution import PaperOrderPlacementResult, PaperOrderRequest
+from app.schemas.execution import PaperOrderRequest
 from app.schemas.proposal import ExitCriteria, TakeProfitLevel, TradeProposalCreate
 from app.schemas.risk import RiskCheckResult
 from app.schemas.usage import UsageEventCreate
 from app.security.passwords import hash_password
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
-from app.services.execution_service import ExecutionService
+from app.services.execution_service import LEGACY_PAPER_EXECUTION_REASON, ExecutionService
 from app.services.proposal_service import ProposalService
 from app.services.usage_service import UsageService
 
@@ -281,15 +281,13 @@ def test_service_contract_created_new_vs_replay(
             size=Decimal("0.005"),
             idempotency_key=_IDEM_KEY,
         )
-        first = svc.place_paper_order(req)
-        assert isinstance(first, PaperOrderPlacementResult)
-        assert first.created_new is True
-        assert first.idempotent_replay is False
-
-        second = svc.place_paper_order(req)
-        assert second.created_new is False
-        assert second.idempotent_replay is True
-        assert second.order.id == first.order.id
+        with pytest.raises(TradingPolicyError) as first_exc:
+            svc.place_paper_order(req)
+        assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        with pytest.raises(TradingPolicyError) as second_exc:
+            svc.place_paper_order(req)
+        assert second_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        assert _order_count(session) == 0
 
 
 def test_first_request_creates_one_order_and_one_usage_row(
@@ -301,18 +299,12 @@ def test_first_request_creates_one_order_and_one_usage_row(
         pid, aid = _seed_approved(session)
 
     response = idem_client.post("/execution/paper", json=_paper_payload(pid, aid, key=_IDEM_KEY))
-    assert response.status_code == 200
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "trading_policy_violation"
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        usage = session.scalar(
-            select(UsageEvent).where(
-                UsageEvent.feature == "paper_execution",
-                UsageEvent.request_id == _IDEM_KEY,
-            )
-        )
-        assert usage is not None
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
 
 
 def test_identical_replay_returns_same_order_id(
@@ -325,9 +317,10 @@ def test_identical_replay_returns_same_order_id(
 
     first = idem_client.post("/execution/paper", json=_paper_payload(pid, aid, key=_IDEM_KEY))
     replay = idem_client.post("/execution/paper", json=_paper_payload(pid, aid, key=_IDEM_KEY))
-    assert first.status_code == 200
-    assert replay.status_code == 200
-    assert first.json()["id"] == replay.json()["id"]
+    assert first.status_code == 403
+    assert replay.status_code == 403
+    assert first.json()["error"]["code"] == "trading_policy_violation"
+    assert replay.json()["error"]["code"] == "trading_policy_violation"
 
 
 def test_replay_leaves_usage_count_unchanged(
@@ -339,13 +332,13 @@ def test_replay_leaves_usage_count_unchanged(
         pid, aid = _seed_approved(session)
 
     payload = _paper_payload(pid, aid, key=_IDEM_KEY)
-    assert idem_client.post("/execution/paper", json=payload).status_code == 200
+    assert idem_client.post("/execution/paper", json=payload).status_code == 403
     with factory() as session:
         after_first = _usage_count(session)
 
-    assert idem_client.post("/execution/paper", json=payload).status_code == 200
+    assert idem_client.post("/execution/paper", json=payload).status_code == 403
     with factory() as session:
-        assert _usage_count(session) == after_first == 1
+        assert _usage_count(session) == after_first == 0
 
 
 def test_replay_does_not_duplicate_creation_audits(
@@ -357,11 +350,12 @@ def test_replay_does_not_duplicate_creation_audits(
         pid, aid = _seed_approved(session)
 
     payload = _paper_payload(pid, aid, key=_IDEM_KEY)
-    assert idem_client.post("/execution/paper", json=payload).status_code == 200
-    assert idem_client.post("/execution/paper", json=payload).status_code == 200
+    assert idem_client.post("/execution/paper", json=payload).status_code == 403
+    assert idem_client.post("/execution/paper", json=payload).status_code == 403
 
     with factory() as session:
-        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 1
+        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 0
+        assert _order_count(session) == 0
 
 
 def test_changed_idempotency_key_creates_new_order_and_usage(
@@ -374,15 +368,15 @@ def test_changed_idempotency_key_creates_new_order_and_usage(
         pid2, aid2 = _seed_approved(session)
 
     first_payload = _paper_payload(pid1, aid1, key=_IDEM_KEY)
-    assert idem_client.post("/execution/paper", json=first_payload).status_code == 200
+    assert idem_client.post("/execution/paper", json=first_payload).status_code == 403
     second = idem_client.post("/execution/paper", json=_paper_payload(pid2, aid2, key=_OTHER_KEY))
-    assert second.status_code == 200
+    assert second.status_code == 403
 
     with factory() as session:
-        assert _order_count(session) == 2
-        assert _usage_count(session) == 2
-        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 1
-        assert _creation_audit_count(session, request_id=_OTHER_KEY) == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 0
+        assert _creation_audit_count(session, request_id=_OTHER_KEY) == 0
 
 
 def test_failed_request_does_not_record_usage(
@@ -496,16 +490,19 @@ def test_concurrent_identical_requests_remain_safe(
     for thread in threads:
         thread.join()
 
-    assert errors == [], errors
-    assert len(results) == 4
-    assert len(set(results)) == 1
-    assert created_new_flags.count(True) == 1
-    assert created_new_flags.count(False) == 3
+    assert errors, errors
+    assert all(
+        isinstance(exc, TradingPolicyError)
+        and exc.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        for exc in errors
+    )
+    assert results == []
+    assert created_new_flags == []
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        assert _creation_audit_count(session, request_id=req.idempotency_key) == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id=req.idempotency_key) == 0
 
     engine.dispose()
 
@@ -525,27 +522,14 @@ def test_replay_does_not_flush_metered_side_effects_into_session(
         idempotency_key="at016-session-replay-key",
     )
 
-    first_order_id: uuid.UUID
     with factory() as session:
         pid, aid = _seed_approved(session)
         req = req.model_copy(update={"proposal_id": pid, "approval_id": aid})
         svc = ExecutionService(session, settings, AuditService(session))
-        usage = UsageService(session)
-        first = svc.place_paper_order(req)
-        assert first.created_new
-        first_order_id = first.order.id
-        usage.record(
-            UsageEventCreate(
-                request_id=req.idempotency_key,
-                organization_id=ORG_ID,
-                user_id=USER_ID,
-                feature="paper_execution",
-                provider="paper-engine",
-                input_tokens=0,
-                output_tokens=0,
-            )
-        )
-        session.commit()
+        with pytest.raises(TradingPolicyError) as first_exc:
+            svc.place_paper_order(req)
+        assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        session.rollback()
 
     with factory() as session:
         pending = Organization(name="Unrelated Pending Org")
@@ -554,17 +538,16 @@ def test_replay_does_not_flush_metered_side_effects_into_session(
         pending_id = pending.id
 
         svc = ExecutionService(session, settings, AuditService(session))
-        replay = svc.place_paper_order(req)
-        assert replay.idempotent_replay
-        assert replay.order.id == first_order_id
+        with pytest.raises(TradingPolicyError) as replay_exc:
+            svc.place_paper_order(req)
+        assert replay_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
-        # Route skips usage on replay; caller rollback must not persist replay metering.
         session.rollback()
 
     with factory() as verify:
         assert verify.get(Organization, pending_id) is None
-        assert _usage_count(verify) == 1
-        assert _creation_audit_count(verify, request_id=req.idempotency_key) == 1
+        assert _usage_count(verify) == 0
+        assert _creation_audit_count(verify, request_id=req.idempotency_key) == 0
 
 
 def test_rejected_service_path_raises_without_created_new(

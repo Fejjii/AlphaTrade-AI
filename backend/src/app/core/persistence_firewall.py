@@ -76,6 +76,20 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "StrategySignal": PersistenceKind.CANDIDATE,
     "TradingViewSignal": PersistenceKind.CANDIDATE,
     "PaperSignalOrchestrationDecision": PersistenceKind.CANDIDATE,
+    "TradePlanRevision": PersistenceKind.TRADE_PLAN,
+    "ApprovalAuthorization": PersistenceKind.AUTHORIZATION,
+    "ExecutionAccount": PersistenceKind.EXECUTION,
+    "ExecutionIdempotencyBinding": PersistenceKind.EXECUTION,
+    "ExecutionCommand": PersistenceKind.EXECUTION,
+    "PlanEntryExecutionClaim": PersistenceKind.EXECUTION,
+    "AccountSafetyEpoch": PersistenceKind.RISK_CONFIG,
+    "AccountRiskAccountingState": PersistenceKind.RISK_CONFIG,
+    "ExecutionReceipt": PersistenceKind.EXECUTION,
+    "ExecutionTransition": PersistenceKind.EXECUTION,
+    "ExecutionProjection": PersistenceKind.EXECUTION,
+    "RiskReservation": PersistenceKind.EXECUTION,
+    "VenueSubmitEffect": PersistenceKind.EXECUTION,
+    "ExecutionFillFact": PersistenceKind.EXECUTION,
 }
 
 

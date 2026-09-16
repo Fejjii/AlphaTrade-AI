@@ -19,12 +19,11 @@ from sqlalchemy.pool import NullPool
 
 import app.core.dependencies as dependencies
 from app.core.config import ExchangeMode, Settings
-from app.core.errors import IdempotencyConvergenceError
+from app.core.errors import TradingPolicyError
 from app.db.base import Base
 from app.db.models import (
     AuditLog,
     DailyRiskState,
-    ExchangeOrder,
     Membership,
     Order,
     Organization,
@@ -58,7 +57,7 @@ from app.schemas.usage import UsageEventCreate
 from app.security.passwords import hash_password
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
-from app.services.execution_service import ExecutionService
+from app.services.execution_service import LEGACY_PAPER_EXECUTION_REASON, ExecutionService
 from app.services.proposal_service import ProposalService
 from app.services.quota_service import QuotaService
 from app.services.usage_service import UsageService
@@ -480,34 +479,6 @@ def _http_payload(
     }
 
 
-def _assert_singleton_http_effects(
-    factory: sessionmaker[_TrackingSession],
-    *,
-    request_id: str,
-) -> None:
-    with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        assert _creation_audit_count(session, request_id=request_id) == 1
-        assert _position_count(session) == 1
-        assert _daily_risk_trade_count(session) == 1
-        assert int(session.scalar(select(func.count()).select_from(ExchangeOrder)) or 0) == 1
-        assert (
-            int(
-                session.scalar(
-                    select(func.count())
-                    .select_from(AuditLog)
-                    .where(
-                        AuditLog.request_id == request_id,
-                        AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
-                    )
-                )
-                or 0
-            )
-            == 1
-        )
-
-
 def test_two_concurrent_identical_requests_converge_sqlite(
     sqlite_file_db: tuple[sessionmaker[Session], Settings],
 ) -> None:
@@ -517,18 +488,21 @@ def test_two_concurrent_identical_requests_converge_sqlite(
     req = _paper_request(pid, aid)
 
     results, created_flags, errors = _run_concurrent_placements(factory, settings, req, workers=2)
-    assert errors == [], errors
-    assert len(results) == 2
-    assert len(set(results)) == 1
-    assert created_flags.count(True) == 1
-    assert created_flags.count(False) == 1
+    assert results == []
+    assert created_flags == []
+    assert len(errors) == 2
+    assert all(
+        isinstance(exc, TradingPolicyError)
+        and exc.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        for exc in errors
+    )
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 1
-        assert _position_count(session) == 1
-        assert _daily_risk_trade_count(session) == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 0
+        assert _position_count(session) == 0
+        assert _daily_risk_trade_count(session) == 0
 
 
 @requires_postgres
@@ -541,17 +515,20 @@ def test_two_concurrent_identical_requests_converge_postgres(
     req = _paper_request(pid, aid)
 
     results, created_flags, errors = _run_concurrent_placements(factory, settings, req, workers=2)
-    assert errors == [], errors
-    assert len(results) == 2
-    assert len(set(results)) == 1
-    assert created_flags.count(True) == 1
-    assert created_flags.count(False) == 1
+    assert results == []
+    assert created_flags == []
+    assert len(errors) == 2
+    assert all(
+        isinstance(exc, TradingPolicyError)
+        and exc.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        for exc in errors
+    )
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 1
-        assert _position_count(session) == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id=_IDEM_KEY) == 0
+        assert _position_count(session) == 0
 
 
 @requires_postgres
@@ -564,16 +541,19 @@ def test_five_concurrent_identical_requests_converge_postgres(
     req = _paper_request(pid, aid, key="at028-five-way-key")
 
     results, created_flags, errors = _run_concurrent_placements(factory, settings, req, workers=5)
-    assert errors == [], errors
-    assert len(results) == 5
-    assert len(set(results)) == 1
-    assert created_flags.count(True) == 1
-    assert created_flags.count(False) == 4
+    assert results == []
+    assert created_flags == []
+    assert len(errors) == 5
+    assert all(
+        isinstance(exc, TradingPolicyError)
+        and exc.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        for exc in errors
+    )
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        assert _creation_audit_count(session, request_id=req.idempotency_key) == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id=req.idempotency_key) == 0
 
 
 @requires_postgres
@@ -614,13 +594,14 @@ def test_two_concurrent_http_requests_converge_with_fresh_quota_postgres(
         workers=2,
     )
 
-    assert [status_code for status_code, _body in results] == [200, 200]
-    order_ids = {body["id"] for _status, body in results}
-    assert len(order_ids) == 1
-    assert all(body["idempotency_key"] == key for _status, body in results)
-    _assert_singleton_http_effects(factory, request_id=key)
-    assert len(fake_demo.calls) == 1
-    assert _TrackingSession.commit_count == 1
+    assert [status_code for status_code, _body in results] == [403, 403]
+    assert all(body["error"]["code"] == "trading_policy_violation" for _status, body in results)
+    with factory() as session:
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _position_count(session) == 0
+    assert len(fake_demo.calls) == 0
+    assert _TrackingSession.commit_count == 0
 
 
 @requires_postgres
@@ -646,29 +627,14 @@ def test_five_concurrent_http_requests_serialize_and_converge_postgres(
         workers=5,
     )
 
-    assert [status_code for status_code, _body in results] == [200] * 5
-    order_ids = {body["id"] for _status, body in results}
-    assert len(order_ids) == 1
-    required_fields = {
-        "id",
-        "organization_id",
-        "user_id",
-        "proposal_id",
-        "approval_id",
-        "mode",
-        "symbol",
-        "side",
-        "type",
-        "size",
-        "status",
-        "idempotency_key",
-        "exchange_order_id",
-        "created_at",
-    }
-    assert all(required_fields <= body.keys() for _status, body in results)
-    _assert_singleton_http_effects(factory, request_id=key)
-    assert len(fake_demo.calls) == 1
-    assert _TrackingSession.commit_count == 1
+    assert [status_code for status_code, _body in results] == [403] * 5
+    assert all(body["error"]["code"] == "trading_policy_violation" for _status, body in results)
+    with factory() as session:
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _position_count(session) == 0
+    assert len(fake_demo.calls) == 0
+    assert _TrackingSession.commit_count == 0
 
 
 @requires_postgres
@@ -698,18 +664,17 @@ def test_http_replay_skips_commit_and_different_key_creates_postgres(
         json=_http_payload(second_pid, second_aid, key="at028-http-independent"),
     )
 
-    assert first.status_code == replay.status_code == other.status_code == 200
-    assert first.json()["id"] == replay.json()["id"]
-    assert other.json()["id"] != first.json()["id"]
-    assert commits_after_first == 1
+    assert first.status_code == replay.status_code == other.status_code == 403
+    assert first.json()["error"]["code"] == "trading_policy_violation"
+    assert commits_after_first == 0
     assert commits_after_replay == commits_after_first
-    assert _TrackingSession.commit_count == 2
-    assert len(fake_demo.calls) == 2
+    assert _TrackingSession.commit_count == 0
+    assert len(fake_demo.calls) == 0
     with factory() as session:
-        assert _order_count(session) == 2
-        assert _usage_count(session) == 2
-        assert _creation_audit_count(session, request_id="at028-http-replay") == 1
-        assert _creation_audit_count(session, request_id="at028-http-independent") == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id="at028-http-replay") == 0
+        assert _creation_audit_count(session, request_id="at028-http-independent") == 0
 
 
 @requires_postgres
@@ -727,30 +692,14 @@ def test_http_convergence_exhaustion_is_sanitized_409_postgres(
         QuotaService(session).get_or_create_quota(ORG_ID)
         session.commit()
 
-    unique_error = IntegrityError(
-        "insert",
-        {},
-        Exception("uq_orders_idempotency_key"),
-    )
     _TrackingSession.commit_count = 0
-    with (
-        patch.object(
-            ExecutionService,
-            "_persist_new_paper_order",
-            side_effect=unique_error,
-        ),
-        patch(
-            "app.services.execution_service.wait_for_committed_order_by_idempotency_key",
-            return_value=None,
-        ),
-    ):
-        response = client.post(
-            "/execution/paper",
-            json=_http_payload(pid, aid, key="at028-http-exhaustion"),
-        )
+    response = client.post(
+        "/execution/paper",
+        json=_http_payload(pid, aid, key="at028-http-exhaustion"),
+    )
 
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "idempotency_convergence_exhausted"
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "trading_policy_violation"
     assert _TrackingSession.commit_count == 0
     with factory() as session:
         assert _order_count(session) == 0
@@ -784,8 +733,8 @@ def test_http_unrelated_integrity_error_remains_internal_failure_postgres(
             json=_http_payload(pid, aid, key="at028-http-unrelated"),
         )
 
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == "internal_error"
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "trading_policy_violation"
     assert _TrackingSession.commit_count == 0
     with factory() as session:
         assert _order_count(session) == 0
@@ -800,19 +749,16 @@ def test_different_idempotency_keys_create_independent_orders(
         pid1, aid1 = _seed_approved(session)
         pid2, aid2 = _seed_approved(session)
 
-    first_id, first_created = _route_place(
-        factory, settings, _paper_request(pid1, aid1, key=_IDEM_KEY)
-    )
-    second_id, second_created = _route_place(
-        factory, settings, _paper_request(pid2, aid2, key=_OTHER_KEY)
-    )
-    assert first_created is True
-    assert second_created is True
-    assert first_id != second_id
+    with pytest.raises(TradingPolicyError) as first_exc:
+        _route_place(factory, settings, _paper_request(pid1, aid1, key=_IDEM_KEY))
+    assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+    with pytest.raises(TradingPolicyError) as second_exc:
+        _route_place(factory, settings, _paper_request(pid2, aid2, key=_OTHER_KEY))
+    assert second_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
     with factory() as session:
-        assert _order_count(session) == 2
-        assert _usage_count(session) == 2
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
 
 
 def test_sequential_replay_unchanged(
@@ -823,16 +769,17 @@ def test_sequential_replay_unchanged(
         pid, aid = _seed_approved(session)
     req = _paper_request(pid, aid, key="at028-seq-replay")
 
-    first_id, first_created = _route_place(factory, settings, req)
-    replay_id, replay_created = _route_place(factory, settings, req)
-    assert first_created is True
-    assert replay_created is False
-    assert first_id == replay_id
+    with pytest.raises(TradingPolicyError) as first_exc:
+        _route_place(factory, settings, req)
+    assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+    with pytest.raises(TradingPolicyError) as replay_exc:
+        _route_place(factory, settings, req)
+    assert replay_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert _usage_count(session) == 1
-        assert _creation_audit_count(session, request_id=req.idempotency_key) == 1
+        assert _order_count(session) == 0
+        assert _usage_count(session) == 0
+        assert _creation_audit_count(session, request_id=req.idempotency_key) == 0
 
 
 def test_winning_transaction_rollback_allows_later_create(
@@ -845,21 +792,17 @@ def test_winning_transaction_rollback_allows_later_create(
 
     with factory() as session:
         svc = ExecutionService(session, settings, AuditService(session))
-        first = svc.place_paper_order(req)
-        assert first.created_new is True
+        with pytest.raises(TradingPolicyError) as first_exc:
+            svc.place_paper_order(req)
+        assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         session.rollback()
 
-    later_id, later_created = _route_place(factory, settings, req)
-    if not later_created:
-        pytest.skip(
-            "SQLite SAVEPOINT release can commit nested writes; "
-            "rollback recovery is verified on PostgreSQL."
-        )
-    assert later_created is True
+    with pytest.raises(TradingPolicyError) as later_exc:
+        _route_place(factory, settings, req)
+    assert later_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert session.scalar(select(Order.id).where(Order.id == later_id)) == later_id
+        assert _order_count(session) == 0
 
 
 @requires_postgres
@@ -873,16 +816,17 @@ def test_winning_transaction_rollback_allows_later_create_postgres(
 
     with factory() as session:
         svc = ExecutionService(session, settings, AuditService(session))
-        first = svc.place_paper_order(req)
-        assert first.created_new is True
+        with pytest.raises(TradingPolicyError) as first_exc:
+            svc.place_paper_order(req)
+        assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         session.rollback()
 
-    later_id, later_created = _route_place(factory, settings, req)
-    assert later_created is True
+    with pytest.raises(TradingPolicyError) as later_exc:
+        _route_place(factory, settings, req)
+    assert later_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
     with factory() as session:
-        assert _order_count(session) == 1
-        assert session.scalar(select(Order.id).where(Order.id == later_id)) == later_id
+        assert _order_count(session) == 0
 
 
 def test_bounded_convergence_exhaustion_returns_retryable_error(
@@ -900,22 +844,7 @@ def test_bounded_convergence_exhaustion_returns_retryable_error(
             approval=ApprovalService(session, AuditService(session)).get(aid),
             request=req,
         )
-        with (
-            patch(
-                "app.services.execution_service.wait_for_committed_order_by_idempotency_key",
-                return_value=None,
-            ),
-            patch.object(
-                svc,
-                "_persist_new_paper_order",
-                side_effect=IntegrityError("insert", {}, Exception("dup")),
-            ),
-            patch(
-                "app.services.execution_service.is_order_idempotency_unique_violation",
-                return_value=True,
-            ),
-            pytest.raises(IdempotencyConvergenceError) as exc_info,
-        ):
+        with pytest.raises(TradingPolicyError) as exc_info:
             svc._create_or_converge_paper_order(
                 request=req,
                 proposal=proposal,
@@ -923,8 +852,7 @@ def test_bounded_convergence_exhaustion_returns_retryable_error(
                 user_id=USER_ID,
                 bound=bound,
             )
-        assert exc_info.value.code == "idempotency_convergence_exhausted"
-        assert exc_info.value.status_code == 409
+        assert exc_info.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         session.rollback()
 
 
@@ -936,7 +864,9 @@ def test_loser_does_not_pollute_unrelated_pending_session_rows(
         pid, aid = _seed_approved(session)
     req = _paper_request(pid, aid, key="at028-session-pollution")
 
-    first_id, _ = _route_place(factory, settings, req)
+    with pytest.raises(TradingPolicyError) as first_exc:
+        _route_place(factory, settings, req)
+    assert first_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
 
     with factory() as session:
         pending = Organization(name="Unrelated Pending Org")
@@ -944,32 +874,38 @@ def test_loser_does_not_pollute_unrelated_pending_session_rows(
         session.flush()
         pending_id = pending.id
 
-        replay = ExecutionService(session, settings, AuditService(session)).place_paper_order(req)
-        assert replay.order.id == first_id
-        assert replay.created_new is False
+        with pytest.raises(TradingPolicyError) as replay_exc:
+            ExecutionService(session, settings, AuditService(session)).place_paper_order(req)
+        assert replay_exc.value.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
         session.rollback()
 
     with factory() as verify:
         assert verify.get(Organization, pending_id) is None
-        assert _usage_count(verify) == 1
-        assert _creation_audit_count(verify, request_id=req.idempotency_key) == 1
+        assert _usage_count(verify) == 0
+        assert _creation_audit_count(verify, request_id=req.idempotency_key) == 0
 
 
 @requires_postgres
 def test_postgres_unique_conflict_is_recovered_without_client_retry(
     postgres_db: tuple[sessionmaker[Session], Settings],
 ) -> None:
-    """Prove real PostgreSQL ``uq_orders_idempotency_key`` conflict convergence."""
+    """Legacy paper placement is fail-closed; concurrent writers cannot create orders."""
     factory, settings = postgres_db
     with factory() as session:
         pid, aid = _seed_approved(session)
     req = _paper_request(pid, aid, key="at028-pg-unique-conflict")
 
     results, created_flags, errors = _run_concurrent_placements(factory, settings, req, workers=2)
-    assert errors == [], errors
-    assert len(set(results)) == 1
-    assert created_flags.count(True) == 1
-    assert created_flags.count(False) == 1
+    assert results == []
+    assert created_flags == []
+    assert len(errors) == 2
+    assert all(
+        isinstance(exc, TradingPolicyError)
+        and exc.details.get("reason") == LEGACY_PAPER_EXECUTION_REASON
+        for exc in errors
+    )
+    with factory() as session:
+        assert _order_count(session) == 0
 
 
 def test_is_order_idempotency_unique_violation_detects_constraint_name() -> None:

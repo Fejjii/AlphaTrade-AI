@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
@@ -27,6 +27,9 @@ from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import ActorType, AuditEventType, AuditResult, AuditSeverity
 from app.schemas.risk import KillSwitchMutationRequest, KillSwitchScope, KillSwitchStatus
 from app.services.audit_service import AuditService
+
+if TYPE_CHECKING:
+    from app.services.safety_epoch import SafetyEpochService
 
 
 class ExecutionKillSwitch(Protocol):
@@ -125,6 +128,10 @@ class KillSwitchService:
             )
         self._session.expire_all()
         row = self._get_or_create_row(organization_id=organization_id)
+        self._safety_epochs().advance_for_kill_activation(
+            organization_id=organization_id,
+            at=now,
+        )
         self._audit_mutation(
             organization_id=organization_id,
             actor_user_id=actor_user_id,
@@ -182,6 +189,10 @@ class KillSwitchService:
             )
         self._session.expire_all()
         row = self._get_or_create_row(organization_id=organization_id)
+        self._safety_epochs().clear_blocking_for_kill_deactivation(
+            organization_id=organization_id,
+            at=now,
+        )
         self._audit_mutation(
             organization_id=organization_id,
             actor_user_id=actor_user_id,
@@ -360,6 +371,16 @@ class KillSwitchService:
                     "reason": (row.reason or "")[:200],
                 },
             )
+        )
+
+    def _safety_epochs(self) -> SafetyEpochService:
+        from app.services.risk.settings_service import RiskSettingsService
+        from app.services.safety_epoch import SafetyEpochService
+
+        return SafetyEpochService(
+            self._session,
+            self._settings,
+            RiskSettingsService(self._session, self._audit),
         )
 
     def _audit_trigger(

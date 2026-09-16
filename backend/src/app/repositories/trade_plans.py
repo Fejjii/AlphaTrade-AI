@@ -57,6 +57,7 @@ class TradePlanRevisionRepository(SQLAlchemyRepository[TradePlanRevision]):
         user_id: uuid.UUID,
         plan_id: uuid.UUID | None = None,
         account_id: uuid.UUID | None = None,
+        for_update: bool = False,
     ) -> TradePlanRevision | None:
         stmt = select(TradePlanRevision).where(
             TradePlanRevision.id == revision_id,
@@ -67,6 +68,8 @@ class TradePlanRevisionRepository(SQLAlchemyRepository[TradePlanRevision]):
             stmt = stmt.where(TradePlanRevision.plan_id == plan_id)
         if account_id is not None:
             stmt = stmt.where(TradePlanRevision.account_id == account_id)
+        if for_update:
+            stmt = stmt.with_for_update()
         return self._session.scalar(stmt)
 
     def list_for_plan_scoped(

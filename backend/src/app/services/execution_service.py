@@ -1,79 +1,61 @@
 """Paper execution only. Real exchange trading is blocked by default.
 
-When ``exchange_mode=paper_exchange_demo`` and a demo execution provider is wired,
-the internal paper fill is additionally mirrored to the BloFin *demo* venue. This
-mirroring is best-effort: a demo-venue failure never blocks the internal paper
-order, and there is no code path that can place a real-money order.
+Phase 1 entry execution is exclusively ``EXECUTE_PAPER_PLAN``. The legacy
+``place_paper_order`` mutation path and its demo-venue mirror are fail-closed
+and cannot create orders, positions, or venue calls. Read-only order APIs remain.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import structlog
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.errors import IdempotencyConvergenceError, NotFoundError, TradingPolicyError
+from app.core.errors import NotFoundError, TradingPolicyError
 from app.core.operation_policy import PersistenceKind, assert_write_allowed
 from app.core.paper_safety import assert_execution_capable_composition_root
-from app.db.models import ExchangeFill, ExchangeOrder, Order, Position, TradeProposal
+from app.db.models import (
+    ExchangeOrder,
+    Order,
+    TradeProposal,
+    VenueSubmitEffect,
+)
 from app.providers.exchange.base import (
     ExchangeExecutionProvider,
-    ExchangeOrderRequest,
     ExchangeOrderResult,
 )
-from app.providers.exchange.client_order_id import derive_blofin_venue_client_order_id
-from app.providers.exchange.mapping import to_blofin_inst_id
-from app.providers.exchange.venue_diagnostics import (
-    build_demo_mirror_failure_metadata,
-    client_order_id_fingerprint,
-    endpoint_label,
-    log_fields_for_mirror_failure,
-)
+from app.providers.execution.fake_venue import FakeVenueSubmitProvider
 from app.repositories.approvals import ApprovalRepository
 from app.repositories.exchange_orders import ExchangeFillRepository, ExchangeOrderRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.proposals import ProposalRepository
-from app.schemas.approval import ApprovalRequest
 from app.schemas.audit import AuditRecordCreate
-from app.schemas.common import (
-    ActorType,
-    ApprovalStatus,
-    AuditEventType,
-    ExecutionMode,
-    OrderSide,
-    OrderStatus,
-    PositionStatus,
-    TradeDirection,
-)
+from app.schemas.common import ActorType, AuditEventType
 from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOrderRequest
+from app.schemas.execution_protocol import (
+    ExecutePaperPlanRequest,
+    ExecutePaperPlanResult,
+    UniqueFillResult,
+)
 from app.services.audit_service import AuditService
+from app.services.execution_claim import ExecutionClaimHooks
 from app.services.market_data_service import MarketDataService
 from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
-from app.services.paper_order_idempotency import (
-    is_order_idempotency_unique_violation,
-    wait_for_committed_order_by_idempotency_key,
-)
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
+from app.services.venue_submit_dispatcher import VenueSubmitDispatcher
 
 logger = structlog.get_logger(__name__)
 
-_EXCHANGE_DEMO_TAG = "paper_exchange_demo"
-
-
-def _session_engine(session: Session) -> Engine:
-    bind = session.get_bind()
-    if isinstance(bind, Engine):
-        return bind
-    return bind.engine
+LEGACY_PAPER_EXECUTION_REASON = "legacy_paper_execution_disabled"
+LEGACY_DEMO_MIRROR_REASON = "legacy_demo_mirror_disabled"
 
 
 class ExecutionService:
@@ -113,96 +95,9 @@ class ExecutionService:
     def place_paper_order(self, request: PaperOrderRequest) -> PaperOrderPlacementResult:
         assert_execution_capable_composition_root(self._settings)
         assert_write_allowed(PersistenceKind.EXECUTION)
-        if self._settings.real_trading_enabled:
-            raise TradingPolicyError(
-                "Real trading is disabled in this environment.",
-                details={"execution_mode": self._settings.execution_mode.value},
-            )
-
-        proposal = self._proposals.get(request.proposal_id)
-        if proposal is None:
-            raise NotFoundError("Trade proposal not found")
-
-        approval = self._approvals.get(request.approval_id)
-        if approval is None:
-            raise NotFoundError("Approval not found")
-        if approval.proposal_id != proposal.id:
-            raise TradingPolicyError("Approval does not match proposal.")
-        if approval.status is not ApprovalStatus.APPROVED:
-            self._audit_reject(request, reason="approval_not_granted")
-            raise TradingPolicyError(
-                "Paper execution requires an approved approval record.",
-                details={"approval_status": approval.status.value},
-            )
-        if proposal.approval_required and approval.status is not ApprovalStatus.APPROVED:
-            self._audit_reject(request, reason="approval_required")
-            raise TradingPolicyError("Approval is required before paper execution.")
-
-        # Idempotent replay must short-circuit before fresh risk (open exposure already
-        # includes the prior fill for this key). Concurrent first-writers with the same
-        # key recover inside a bounded nested savepoint (AT-028).
-        existing = self._orders.get_by_idempotency_key(request.idempotency_key)
-        if existing is not None:
-            return PaperOrderPlacementResult(
-                order=self._to_schema(existing),
-                created_new=False,
-            )
-
-        organization_id = proposal.organization_id
-        user_id = proposal.user_id
-
-        # Authoritative kill switch before any new execution side effect (AT-014).
-        try:
-            self._kill_switch.assert_execution_allowed(
-                organization_id=organization_id,
-                user_id=user_id,
-            )
-        except TradingPolicyError as exc:
-            self._audit_reject(
-                request,
-                reason=str(exc.details.get("reason", "kill_switch_active")),
-            )
-            raise
-
-        approval_schema = ApprovalRequest.model_validate(approval, from_attributes=True)
-        try:
-            bound = self._risk_gate.evaluate(
-                proposal=proposal,
-                approval=approval_schema,
-                request=request,
-            )
-        except TradingPolicyError as exc:
-            reason = str(exc.details.get("reason", "risk_gate_blocked"))
-            self._audit_reject(
-                request,
-                reason=reason,
-                extra={
-                    k: str(v) for k, v in exc.details.items() if k != "reason" and v is not None
-                },
-            )
-            raise
-
-        self._assert_market_data_usable(bound.symbol, request=request)
-
-        # Re-check immediately before fill — covers mid-request activation.
-        try:
-            self._kill_switch.assert_execution_allowed(
-                organization_id=organization_id,
-                user_id=user_id,
-            )
-        except TradingPolicyError as exc:
-            self._audit_reject(
-                request,
-                reason=str(exc.details.get("reason", "kill_switch_active")),
-            )
-            raise
-
-        return self._create_or_converge_paper_order(
-            request=request,
-            proposal=proposal,
-            organization_id=organization_id,
-            user_id=user_id,
-            bound=bound,
+        raise TradingPolicyError(
+            "Phase 1 paper entry execution requires EXECUTE_PAPER_PLAN.",
+            details={"reason": LEGACY_PAPER_EXECUTION_REASON},
         )
 
     def _create_or_converge_paper_order(
@@ -214,53 +109,12 @@ class ExecutionService:
         user_id: uuid.UUID,
         bound: BoundPaperPlacement,
     ) -> PaperOrderPlacementResult:
-        """Persist a new paper order or converge after a concurrent idempotency conflict."""
-        mode_tag = _EXCHANGE_DEMO_TAG if self._demo_routing_enabled() else "paper"
-        row: Order | None = None
-        nested = self._session.begin_nested()
-        try:
-            row = self._persist_new_paper_order(
-                request=request,
-                proposal=proposal,
-                organization_id=organization_id,
-                user_id=user_id,
-                bound=bound,
-                mode_tag=mode_tag,
-            )
-            self._session.flush()
-        except IntegrityError as exc:
-            nested.rollback()
-            if not is_order_idempotency_unique_violation(exc):
-                raise
-            converged = wait_for_committed_order_by_idempotency_key(
-                _session_engine(self._session),
-                request.idempotency_key,
-            )
-            if converged is None:
-                self._session.rollback()
-                raise IdempotencyConvergenceError(
-                    "Concurrent paper order could not converge; retry the request.",
-                    details={
-                        "idempotency_key": request.idempotency_key,
-                        "reason": "idempotency_convergence_exhausted",
-                    },
-                ) from exc
-            # Loser must not commit partial winner writes or poisoned flush state.
-            self._session.rollback()
-            return PaperOrderPlacementResult(
-                order=self._to_schema(converged),
-                created_new=False,
-            )
-        else:
-            nested.commit()
+        """Unreachable Phase 1 entry path. Kept to fail closed if called."""
 
-        assert row is not None
-        if mode_tag == _EXCHANGE_DEMO_TAG:
-            self._mirror_to_demo_venue(request=request, order=row, bound=bound)
-
-        return PaperOrderPlacementResult(
-            order=self._to_schema(row),
-            created_new=True,
+        del request, proposal, organization_id, user_id, bound
+        raise TradingPolicyError(
+            "Phase 1 paper entry execution requires EXECUTE_PAPER_PLAN.",
+            details={"reason": LEGACY_PAPER_EXECUTION_REASON},
         )
 
     def _persist_new_paper_order(
@@ -273,61 +127,13 @@ class ExecutionService:
         bound: BoundPaperPlacement,
         mode_tag: str,
     ) -> Order:
-        """Winner-only writes isolated inside the nested savepoint (AT-028)."""
-        proposal.risk_result = bound.risk_result.model_dump(mode="json")
-        self._proposals.add(proposal)
+        """Unreachable Phase 1 mutation. Kept to fail closed if called."""
 
-        row = Order(
-            organization_id=organization_id,
-            user_id=user_id,
-            strategy_id=proposal.strategy_id,
-            proposal_id=request.proposal_id,
-            approval_id=request.approval_id,
-            mode=ExecutionMode.PAPER,
-            symbol=bound.symbol,
-            side=OrderSide(bound.side),
-            order_type=request.type,
-            size=bound.size,
-            price=bound.price,
-            status=OrderStatus.FILLED,
-            reduce_only=request.reduce_only,
-            idempotency_key=request.idempotency_key,
-            exchange_order_id=f"paper-{uuid.uuid4().hex[:12]}",
+        del request, proposal, organization_id, user_id, bound, mode_tag
+        raise TradingPolicyError(
+            "Phase 1 paper entry execution requires EXECUTE_PAPER_PLAN.",
+            details={"reason": LEGACY_PAPER_EXECUTION_REASON},
         )
-        self._orders.add(row)
-        self._session.flush()
-        self._create_or_update_position(proposal=proposal, order=row, bound=bound)
-        post_fill = self._daily_risk.record_after_paper_fill(
-            organization_id=organization_id,
-            user_id=user_id,
-        )
-        self._audit.record(
-            AuditRecordCreate(
-                request_id=request.idempotency_key,
-                trace_id=request.idempotency_key,
-                event_type=AuditEventType.PAPER_ORDER_CREATED,
-                resource_type="paper_order",
-                resource_id=str(row.id),
-                organization_id=organization_id,
-                user_id=user_id,
-                actor_type=ActorType.USER,
-                metadata={
-                    "symbol": bound.symbol,
-                    "side": bound.side,
-                    "mode": mode_tag,
-                    "bound_size": str(bound.size),
-                    "bound_price": str(bound.price) if bound.price is not None else None,
-                    "bound_stop_loss": str(bound.stop_loss),
-                    "risk_action": bound.risk_result.action.value,
-                    "account_equity": str(bound.account_equity),
-                    "open_exposure_before": str(bound.open_exposure_notional),
-                    "realized_pnl_today": str(bound.realized_pnl_today),
-                    "trade_count_today": str(post_fill.trade_count),
-                    "open_exposure_after": str(post_fill.open_exposure_notional),
-                },
-            )
-        )
-        return row
 
     def get_order(self, order_id: uuid.UUID) -> PaperOrder:
         row = self._orders.get(order_id)
@@ -352,16 +158,9 @@ class ExecutionService:
         return [self._to_schema(row) for row in rows], total
 
     def _demo_routing_enabled(self) -> bool:
-        """Demo mirroring is only active in demo mode with a wired provider.
+        """Phase 1 never routes the legacy paper path to a demo venue."""
 
-        Real trading being disabled is an invariant guaranteed earlier in
-        :meth:`place_paper_order`; we re-check defensively here.
-        """
-        return (
-            not self._settings.real_trading_enabled
-            and self._settings.exchange_demo_active
-            and self._exchange_execution is not None
-        )
+        return False
 
     def _assert_market_data_usable(self, symbol: str, *, request: PaperOrderRequest) -> None:
         """Fail closed on stale/degraded market data when live data is expected.
@@ -413,123 +212,22 @@ class ExecutionService:
         order: Order,
         bound: BoundPaperPlacement,
     ) -> None:
-        """Best-effort mirror of the paper fill onto the BloFin demo venue.
+        """Legacy demo mirror is not an alternate Phase 1 venue path."""
 
-        Failures are audited and swallowed: the internal paper order remains the
-        source of truth, and a demo-venue outage must not break paper trading.
-        """
-        assert self._exchange_execution is not None  # guarded by caller
-
-        inst_id = to_blofin_inst_id(bound.symbol)
-        venue_client_order_id = derive_blofin_venue_client_order_id(request.idempotency_key)
-        bound_side = OrderSide(bound.side)
-        exchange_order = ExchangeOrder(
-            internal_order_id=order.id,
-            organization_id=order.organization_id,
-            exchange="blofin-demo",
-            exchange_mode=_EXCHANGE_DEMO_TAG,
-            inst_id=inst_id,
-            symbol=bound.symbol,
-            side=bound.side,
-            order_type=request.type.value,
-            size=bound.size,
-            price=bound.price,
-            venue_client_order_id=venue_client_order_id,
-            status="submitted",
-        )
-        try:
-            result = self._exchange_execution.place_order(
-                ExchangeOrderRequest(
-                    symbol=bound.symbol,
-                    inst_id=inst_id,
-                    side=bound_side,
-                    order_type=request.type,
-                    size=bound.size,
-                    price=bound.price,
-                    reduce_only=request.reduce_only,
-                    client_order_id=venue_client_order_id,
-                )
-            )
-        except Exception as exc:  # demo mirror is best-effort; never break paper
-            failure_meta = build_demo_mirror_failure_metadata(
-                exc=exc,
-                request=request,
-                paper_order_id=str(order.id),
-                inst_id=inst_id,
-                exchange_mode=_EXCHANGE_DEMO_TAG,
-                endpoint_name=endpoint_label("POST", "/api/v1/trade/order"),
-                venue_client_order_id=venue_client_order_id,
-            )
-            logger.warning(
-                "exchange_demo_order_failed",
-                **log_fields_for_mirror_failure(
-                    exc=exc,
-                    inst_id=inst_id,
-                    request=request,
-                    paper_order_id=str(order.id),
-                    venue_client_order_id=venue_client_order_id,
-                ),
-            )
-            exchange_order.status = "failed"
-            self._exchange_orders.add(exchange_order)
-            self._audit.record(
-                AuditRecordCreate(
-                    request_id=request.idempotency_key,
-                    trace_id=request.idempotency_key,
-                    event_type=AuditEventType.EXCHANGE_DEMO_ORDER_FAILED,
-                    resource_type="exchange_order",
-                    resource_id=str(exchange_order.id),
-                    organization_id=order.organization_id,
-                    user_id=order.user_id,
-                    actor_type=ActorType.SYSTEM,
-                    metadata=failure_meta,
-                )
-            )
-            return
-
-        self._persist_demo_result(exchange_order=exchange_order, result=result)
-        order.exchange_order_id = result.exchange_order_id or order.exchange_order_id
-        self._audit.record(
-            AuditRecordCreate(
-                request_id=request.idempotency_key,
-                trace_id=request.idempotency_key,
-                event_type=AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
-                resource_type="exchange_order",
-                resource_id=str(exchange_order.id),
-                organization_id=order.organization_id,
-                user_id=order.user_id,
-                actor_type=ActorType.SYSTEM,
-                metadata={
-                    "inst_id": inst_id,
-                    "mode": _EXCHANGE_DEMO_TAG,
-                    "exchange_order_id": result.exchange_order_id,
-                    "venue_client_order_id_prefix": venue_client_order_id[:8],
-                    "client_order_id_hash": client_order_id_fingerprint(request.idempotency_key),
-                    "position_mode": result.position_mode,
-                    "position_side": result.position_side,
-                },
-            )
+        del request, order, bound
+        raise TradingPolicyError(
+            "Phase 1 forbids the legacy demo-venue mirror path.",
+            details={"reason": LEGACY_DEMO_MIRROR_REASON},
         )
 
     def _persist_demo_result(
         self, *, exchange_order: ExchangeOrder, result: ExchangeOrderResult
     ) -> None:
-        exchange_order.exchange_order_id = result.exchange_order_id or None
-        exchange_order.status = result.status
-        exchange_order.filled_size = result.filled_size or Decimal("0")
-        exchange_order.average_price = result.average_price
-        self._exchange_orders.add(exchange_order)
-        for fill in result.fills:
-            self._exchange_fills.add(
-                ExchangeFill(
-                    exchange_order_id=exchange_order.id,
-                    fill_id=fill.fill_id or None,
-                    price=fill.price,
-                    size=fill.size,
-                    fee=fill.fee,
-                    fee_currency=fill.fee_currency,
-                )
-            )
+        del exchange_order, result
+        raise TradingPolicyError(
+            "Phase 1 forbids the legacy demo-venue mirror path.",
+            details={"reason": LEGACY_DEMO_MIRROR_REASON},
+        )
 
     def _create_or_update_position(
         self,
@@ -538,31 +236,97 @@ class ExecutionService:
         order: Order,
         bound: BoundPaperPlacement,
     ) -> None:
-        direction = TradeDirection.LONG if order.side.value == "buy" else TradeDirection.SHORT
-        position = Position(
-            organization_id=order.organization_id,
-            user_id=order.user_id,
-            strategy_id=proposal.strategy_id,
-            linked_proposal_id=proposal.id,
-            symbol=str(order.symbol),
-            direction=direction,
-            size=bound.size,
-            entry_price=bound.price or bound.entry_price,
-            leverage=proposal.leverage,
-            stop_loss=bound.stop_loss,
-            take_profits=proposal.take_profits or [],
-            risk_state={
-                "source": "paper_execution",
-                "proposal_id": str(proposal.id),
-                "setup_type": proposal.strategy_id.value,
-                "risk_action": bound.risk_result.action.value,
-                "account_equity": str(bound.account_equity),
-            },
-            status=PositionStatus.OPEN,
-            opened_at=datetime.now(UTC),
+        del proposal, order, bound
+        raise TradingPolicyError(
+            "Phase 1 paper entry execution requires EXECUTE_PAPER_PLAN.",
+            details={"reason": LEGACY_PAPER_EXECUTION_REASON},
         )
-        self._session.add(position)
-        self._session.flush()
+
+    def execute_paper_plan(
+        self,
+        request: ExecutePaperPlanRequest,
+        *,
+        hooks: ExecutionClaimHooks | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> ExecutePaperPlanResult:
+        """Claim-time EXECUTE_PAPER_PLAN entry. Does not call any venue network."""
+
+        from app.services.execution_claim import PaperPlanClaimService
+        from app.services.safety_epoch import SafetyEpochService
+
+        safety = SafetyEpochService(self._session, self._settings, self._risk_settings)
+        return PaperPlanClaimService(
+            self._session,
+            self._settings,
+            safety,
+            clock=clock or (lambda: datetime.now(UTC)),
+            hooks=hooks,
+        ).claim(request)
+
+    def lease_paper_plan_effect(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        lease_seconds: int = 30,
+    ) -> VenueSubmitEffect:
+        return self._dispatcher().lease_effect(
+            command_id=command_id, owner=owner, lease_seconds=lease_seconds
+        )
+
+    def authorize_paper_plan_dispatch(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+    ) -> VenueSubmitEffect:
+        return self._dispatcher().authorize_dispatch(
+            command_id=command_id, owner=owner, fencing_token=fencing_token
+        )
+
+    def attempt_fake_paper_plan_send(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+        provider: FakeVenueSubmitProvider,
+    ) -> VenueSubmitEffect:
+        return self._dispatcher().attempt_fake_send(
+            command_id=command_id,
+            owner=owner,
+            fencing_token=fencing_token,
+            provider=provider,
+        )
+
+    def recover_paper_plan_effect(self, *, command_id: uuid.UUID, owner: str) -> VenueSubmitEffect:
+        return self._dispatcher().recover_after_crash(command_id=command_id, owner=owner)
+
+    def apply_paper_plan_fill(
+        self,
+        *,
+        command_id: uuid.UUID,
+        fill_quantity: Decimal,
+        fill_price: Decimal,
+        source_identity: str,
+        occurred_at: datetime,
+        venue_source: str = "phase1-fake-venue",
+    ) -> UniqueFillResult:
+        return self._dispatcher().apply_unique_fill(
+            command_id=command_id,
+            fill_quantity=fill_quantity,
+            fill_price=fill_price,
+            source_identity=source_identity,
+            venue_source=venue_source,
+            occurred_at=occurred_at,
+        )
+
+    def _dispatcher(self) -> VenueSubmitDispatcher:
+        from app.services.safety_epoch import SafetyEpochService
+
+        safety = SafetyEpochService(self._session, self._settings, self._risk_settings)
+        return VenueSubmitDispatcher(self._session, safety)
 
     def _audit_reject(
         self,

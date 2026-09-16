@@ -43,8 +43,20 @@ class CanonicalExecutionPayloadSerializerV1:
         at: datetime | None = None,
     ) -> CanonicalExecutionSerializationV1:
         now = cls._aware(at or datetime.now(UTC))
-        cls._validate_plan_and_authorization(plan, authorization, at=now)
-        payload = CanonicalExecutionPayloadV1(
+        payload = cls.build_from_plan(plan, authorization)
+        cls._validate_lifecycle(plan, authorization, at=now)
+        return cls.serialize(payload)
+
+    @classmethod
+    def build_from_plan(
+        cls,
+        plan: TradePlanRevision,
+        authorization: ApprovalAuthorization,
+    ) -> CanonicalExecutionPayloadV1:
+        """Derive V1 from immutable plan/authorization identity without lifecycle gates."""
+
+        cls._validate_plan_and_authorization_identity(plan, authorization)
+        return CanonicalExecutionPayloadV1(
             organization_id=plan.organization_id,
             principal=CanonicalExecutionPrincipalV1(
                 user_id=plan.user_id,
@@ -77,7 +89,6 @@ class CanonicalExecutionPayloadSerializerV1:
             instrument_rule_version=plan.instrument_rules.rules_version,
             execution_policy_version=plan.execution_policy_version,
         )
-        return cls.serialize(payload)
 
     @staticmethod
     def serialize(payload: CanonicalExecutionPayloadV1) -> CanonicalExecutionSerializationV1:
@@ -105,7 +116,7 @@ class CanonicalExecutionPayloadSerializerV1:
         return payload
 
     @classmethod
-    def _validate_plan_and_authorization(
+    def _validate_lifecycle(
         cls,
         plan: TradePlanRevision,
         authorization: ApprovalAuthorization,
@@ -119,6 +130,12 @@ class CanonicalExecutionPayloadSerializerV1:
         if cls._aware(plan.valid_from) > at or cls._aware(plan.valid_until) <= at:
             raise ValidationAppError("Trade plan revision is outside its validity window.")
 
+    @classmethod
+    def _validate_plan_and_authorization_identity(
+        cls,
+        plan: TradePlanRevision,
+        authorization: ApprovalAuthorization,
+    ) -> None:
         semantic_values = {
             name: getattr(plan, name) for name in TradePlanRevisionSemantic.model_fields
         }
