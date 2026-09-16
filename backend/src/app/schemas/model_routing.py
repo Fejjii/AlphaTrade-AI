@@ -60,6 +60,14 @@ class ModelResourceType(StrEnum):
     GENERIC = "generic"
 
 
+class ModelCallerScope(StrEnum):
+    """Typed caller authority. Only ORGANIZATION and TRUSTED_SYSTEM may omit user binding."""
+
+    USER = "user"
+    ORGANIZATION = "organization"
+    TRUSTED_SYSTEM = "trusted_system"
+
+
 class ModelFailureCategory(StrEnum):
     NONE = "none"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
@@ -114,6 +122,7 @@ class ModelTaskRequest(StrictModel):
     correlation_id: str = Field(min_length=1, max_length=128)
     caller_organization_id: UUID | None = None
     caller_user_id: UUID | None = None
+    caller_scope: ModelCallerScope = ModelCallerScope.USER
     caller_account_id: UUID | None = None
     caller_resource_type: ModelResourceType | None = None
     caller_resource_id: UUID | None = None

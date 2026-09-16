@@ -34,6 +34,7 @@ from app.schemas.agent import Intent, IntentDecision, OperationClass, PrincipalR
 from app.schemas.common import (
     JournalLifecycleEventType,
     JournalObservationCategory,
+    JournalReconciliationPosition,
     JournalTradeSource,
     JournalTradeStatus,
     MembershipRole,
@@ -935,3 +936,144 @@ def test_close_then_stale_fill_does_not_regress(factory: sessionmaker[Session]) 
         assert trade.status is JournalTradeStatus.CLOSED
         assert trade.entry_price == Decimal("64000")
         assert trade.exit_price == Decimal("63000")
+
+
+def test_reconcile_position_open_then_stale_close_stays_open(
+    factory: sessionmaker[Session],
+) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.RECONCILE,
+                source_event_id="recon-open",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(
+                    reconciliation_position=JournalReconciliationPosition.POSITION_OPEN.value,
+                    entry_price="64000",
+                ),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.CLOSE,
+                source_event_id="stale-close-open",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(exit_price="63000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.status is JournalTradeStatus.OPEN
+        assert trade.projector_watermark_rank == 40
+
+
+def test_reconcile_closed_then_stale_close_stays_closed(
+    factory: sessionmaker[Session],
+) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.RECONCILE,
+                source_event_id="recon-closed",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(
+                    reconciliation_position=JournalReconciliationPosition.CLOSED.value,
+                    exit_price="63100",
+                ),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.CLOSE,
+                source_event_id="stale-close-closed",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(exit_price="1"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.status is JournalTradeStatus.CLOSED
+        assert trade.exit_price == Decimal("63100")
+        assert trade.projector_watermark_rank == 40
+
+
+def test_close_then_newer_reconcile_position_open_reopens(
+    factory: sessionmaker[Session],
+) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.CLOSE,
+                source_event_id="close-then-open",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(exit_price="63000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.RECONCILE,
+                source_event_id="recon-reopen",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(
+                    reconciliation_position=JournalReconciliationPosition.POSITION_OPEN.value
+                ),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.status is JournalTradeStatus.OPEN
+        assert trade.projector_watermark_rank == 40
+
+
+def test_close_then_newer_reconcile_closed_stays_closed(
+    factory: sessionmaker[Session],
+) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.CLOSE,
+                source_event_id="close-then-closed",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(exit_price="63000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.RECONCILE,
+                source_event_id="recon-keep-closed",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(
+                    reconciliation_position=JournalReconciliationPosition.CLOSED.value,
+                    fees="2.5",
+                ),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.status is JournalTradeStatus.CLOSED
+        assert trade.fees == Decimal("2.5")
+        assert trade.projector_watermark_rank == 40

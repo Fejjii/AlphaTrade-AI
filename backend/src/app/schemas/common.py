@@ -541,6 +541,13 @@ class JournalLifecycleEventType(StrEnum):
     RECONCILE = "reconcile"
 
 
+class JournalReconciliationPosition(StrEnum):
+    """Authoritative venue position asserted by a RECONCILE event."""
+
+    POSITION_OPEN = "POSITION_OPEN"
+    CLOSED = "CLOSED"
+
+
 class StrategyValidationStatus(StrEnum):
     """Validation lifecycle for a user strategy card."""
 

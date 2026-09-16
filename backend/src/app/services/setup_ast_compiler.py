@@ -44,8 +44,14 @@ from app.schemas.setup_ast import (
 )
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.strategy_pattern_spec import (
+    FIRST_SLICE_ATR_PERIOD,
+    FIRST_SLICE_CONTEXT_TF,
+    FIRST_SLICE_DIRECTION,
     FIRST_SLICE_KIND,
     FIRST_SLICE_NAME,
+    FIRST_SLICE_REQUIRED_SEQUENCE,
+    FIRST_SLICE_SYMBOL,
+    FIRST_SLICE_TRIGGER_TF,
     FirstSliceAuthoredPatternSpec,
     PatternInvalidationSemantics,
     PatternResetSemantics,
@@ -54,9 +60,7 @@ from app.schemas.strategy_pattern_spec import (
 from app.schemas.structured_rules import StructuredRules
 from app.services.canonical_serialization import canonical_sha256
 
-# Re-exported for callers/tests that imported these names from the compiler.
-FIRST_SLICE_TRIGGER_TF = "15m"
-FIRST_SLICE_CONTEXT_TF = "4h"
+# FIRST_SLICE_TRIGGER_TF / FIRST_SLICE_CONTEXT_TF are re-exported from the spec.
 
 
 class SetupAstCompileError(ValidationAppError):
@@ -314,6 +318,38 @@ def _spec_completeness_failures(spec: FirstSliceAuthoredPatternSpec) -> list[Com
                 "name",
             )
         )
+    if spec.symbol != FIRST_SLICE_SYMBOL:
+        failures.append(
+            _fail(
+                "wrong_symbol",
+                "First slice identity requires symbol BTCUSDT.",
+                "symbol",
+            )
+        )
+    if spec.trigger_timeframe != FIRST_SLICE_TRIGGER_TF:
+        failures.append(
+            _fail(
+                "wrong_trigger_timeframe",
+                "First slice identity requires trigger timeframe 15m.",
+                "trigger_timeframe",
+            )
+        )
+    if spec.context_timeframe != FIRST_SLICE_CONTEXT_TF:
+        failures.append(
+            _fail(
+                "wrong_context_timeframe",
+                "First slice identity requires context timeframe 4h.",
+                "context_timeframe",
+            )
+        )
+    if spec.direction is not FIRST_SLICE_DIRECTION:
+        failures.append(
+            _fail(
+                "wrong_direction",
+                "First slice identity requires direction SHORT.",
+                "direction",
+            )
+        )
     if not spec.requires_manual_4h_resistance:
         failures.append(
             _fail(
@@ -378,6 +414,49 @@ def _spec_completeness_failures(spec: FirstSliceAuthoredPatternSpec) -> list[Com
         failures.append(
             _fail("missing_feature", "Context ATR role must be context.", "context_atr.role")
         )
+    if spec.trigger_atr.feature_version != WILDER_ATR_FEATURE_VERSION:
+        failures.append(
+            _fail(
+                "missing_feature",
+                "Trigger ATR feature version is not Wilder ATR V1.",
+                "trigger_atr.feature_version",
+            )
+        )
+    if spec.context_atr.feature_version != WILDER_ATR_FEATURE_VERSION:
+        failures.append(
+            _fail(
+                "missing_feature",
+                "Context ATR feature version is not Wilder ATR V1.",
+                "context_atr.feature_version",
+            )
+        )
+    if (
+        spec.trigger_atr.period != FIRST_SLICE_ATR_PERIOD
+        or spec.context_atr.period != FIRST_SLICE_ATR_PERIOD
+    ):
+        failures.append(
+            _fail(
+                "wrong_atr_period",
+                "First slice identity requires Wilder ATR period 14.",
+                "atr.period",
+            )
+        )
+    if spec.trigger_atr.timeframe != FIRST_SLICE_TRIGGER_TF:
+        failures.append(
+            _fail(
+                "wrong_atr_timeframe",
+                "Trigger Wilder ATR must be computed on the 15m timeframe.",
+                "trigger_atr.timeframe",
+            )
+        )
+    if spec.context_atr.timeframe != FIRST_SLICE_CONTEXT_TF:
+        failures.append(
+            _fail(
+                "wrong_atr_timeframe",
+                "Context Wilder ATR must be computed on the 4h timeframe.",
+                "context_atr.timeframe",
+            )
+        )
     if not spec.sequence:
         failures.append(
             _fail(
@@ -386,7 +465,49 @@ def _spec_completeness_failures(spec: FirstSliceAuthoredPatternSpec) -> list[Com
                 "sequence",
             )
         )
+    failures.extend(_sequence_identity_failures(spec))
     return failures
+
+
+def _sequence_identity_failures(spec: FirstSliceAuthoredPatternSpec) -> list[CompileFailure]:
+    """Fail closed unless the required first-slice step identities match exactly."""
+
+    ids = tuple(step.step_id for step in spec.sequence)
+    required = FIRST_SLICE_REQUIRED_SEQUENCE
+    if ids == required:
+        return []
+    required_set = set(required)
+    seen: set[str] = set()
+    duplicate = False
+    for step_id in ids:
+        if step_id in required_set and step_id in seen:
+            duplicate = True
+        if step_id in required_set:
+            seen.add(step_id)
+    missing = [step_id for step_id in required if step_id not in seen]
+    if duplicate:
+        return [
+            _fail(
+                "duplicate_sequence_step",
+                "Required first-slice sequence steps must not be duplicated.",
+                "sequence",
+            )
+        ]
+    if missing:
+        return [
+            _fail(
+                "missing_required_sequence_step",
+                "Required first-slice sequence steps are missing.",
+                "sequence",
+            )
+        ]
+    return [
+        _fail(
+            "wrong_sequence_order",
+            "Required first-slice sequence steps must appear in authored order.",
+            "sequence",
+        )
+    ]
 
 
 def compile_from_spec(spec: FirstSliceAuthoredPatternSpec) -> CompileResult:

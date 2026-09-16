@@ -23,6 +23,7 @@ from app.schemas.model_routing import (
     TIER_A_PURPOSES,
     TIER_B_PURPOSES,
     ModelCallAttempt,
+    ModelCallerScope,
     ModelFailureCategory,
     ModelFallbackPolicy,
     ModelResourceType,
@@ -537,6 +538,10 @@ class ModelRouter:
         ctx = request.context
         generic_ok = ctx.resource_type is ModelResourceType.GENERIC and ctx.resource_id is None
         public_ok = request.purpose is ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS and generic_ok
+        privileged_scope = request.caller_scope in {
+            ModelCallerScope.ORGANIZATION,
+            ModelCallerScope.TRUSTED_SYSTEM,
+        }
         if (
             request.caller_organization_id is not None
             and ctx.organization_id is not None
@@ -550,11 +555,19 @@ class ModelRouter:
             request.caller_user_id is not None
             and ctx.user_id is not None
             and request.caller_user_id != ctx.user_id
-            and request.caller_organization_id is None
         ):
             raise CrossTenantModelContextError(
                 "Models must not receive cross-principal context.",
                 details={"resource_type": ctx.resource_type.value, "reason": "wrong_user"},
+            )
+        if (
+            not privileged_scope
+            and not public_ok
+            and (request.caller_user_id is None or ctx.user_id is None)
+        ):
+            raise CrossTenantModelContextError(
+                "Private model context requires user binding.",
+                details={"resource_type": ctx.resource_type.value, "reason": "missing_user"},
             )
         if (
             ctx.organization_id is None

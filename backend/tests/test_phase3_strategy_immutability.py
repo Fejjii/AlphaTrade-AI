@@ -58,6 +58,7 @@ from app.schemas.setup_ast import (
     AstExpr,
     AstNodeKind,
     AstUnit,
+    CompileResult,
     fld,
     lit_decimal,
 )
@@ -766,6 +767,71 @@ def test_compiler_does_not_restore_canonical_default_thresholds() -> None:
     assert "0.33" in dumped
     assert "0.50" not in dumped
     assert "0.25" not in dumped
+
+
+def _compile_identity_variant(**updates: object) -> CompileResult:
+    spec = canonical_first_slice_authored_spec()
+    nested: dict[str, object] = dict(updates)
+    trigger_update = nested.get("trigger_atr")
+    if isinstance(trigger_update, dict):
+        nested["trigger_atr"] = spec.trigger_atr.model_copy(update=trigger_update)
+    context_update = nested.get("context_atr")
+    if isinstance(context_update, dict):
+        nested["context_atr"] = spec.context_atr.model_copy(update=context_update)
+    return compile_from_spec(spec.model_copy(update=nested))
+
+
+def _assert_identity_code(code: str, **updates: object) -> None:
+    result = _compile_identity_variant(**updates)
+    assert result.document is None
+    assert any(item.code == code for item in result.failures)
+
+
+def test_wrong_symbol_does_not_compile() -> None:
+    _assert_identity_code("wrong_symbol", symbol="ETHUSDT")
+
+
+def test_wrong_trigger_timeframe_does_not_compile() -> None:
+    _assert_identity_code("wrong_trigger_timeframe", trigger_timeframe="5m")
+
+
+def test_wrong_context_timeframe_does_not_compile() -> None:
+    _assert_identity_code("wrong_context_timeframe", context_timeframe="1h")
+
+
+def test_wrong_direction_does_not_compile() -> None:
+    _assert_identity_code("wrong_direction", direction=TradeDirection.LONG)
+
+
+def test_wrong_atr_period_does_not_compile() -> None:
+    _assert_identity_code("wrong_atr_period", trigger_atr={"period": 21})
+
+
+def test_wrong_atr_timeframe_does_not_compile() -> None:
+    _assert_identity_code("wrong_atr_timeframe", trigger_atr={"timeframe": "1h"})
+
+
+def test_missing_required_sequence_step_does_not_compile() -> None:
+    spec = canonical_first_slice_authored_spec()
+    result = compile_from_spec(spec.model_copy(update={"sequence": [spec.sequence[0]]}))
+    assert result.document is None
+    assert any(item.code == "missing_required_sequence_step" for item in result.failures)
+
+
+def test_duplicate_sequence_step_does_not_compile() -> None:
+    spec = canonical_first_slice_authored_spec()
+    result = compile_from_spec(
+        spec.model_copy(update={"sequence": [spec.sequence[0], spec.sequence[0]]})
+    )
+    assert result.document is None
+    assert any(item.code == "duplicate_sequence_step" for item in result.failures)
+
+
+def test_wrong_sequence_order_does_not_compile() -> None:
+    spec = canonical_first_slice_authored_spec()
+    result = compile_from_spec(spec.model_copy(update={"sequence": list(reversed(spec.sequence))}))
+    assert result.document is None
+    assert any(item.code == "wrong_sequence_order" for item in result.failures)
 
 
 def test_wilder_atr_exact_15m_continuity() -> None:

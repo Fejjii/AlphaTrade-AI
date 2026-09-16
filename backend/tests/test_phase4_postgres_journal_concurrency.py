@@ -26,6 +26,7 @@ from app.db.models import (
 )
 from app.schemas.common import (
     JournalLifecycleEventType,
+    JournalReconciliationPosition,
     JournalTradeStatus,
     MembershipRole,
     TradeDirection,
@@ -283,7 +284,11 @@ def test_simultaneous_close_and_reconcile() -> None:
                 JournalLifecycleEventType.RECONCILE,
                 source_event_id="recon-3",
                 execution_lifecycle_id=lifecycle_id,
-                payload=_payload(fees="2.5", net_pnl="100"),
+                payload=_payload(
+                    fees="2.5",
+                    net_pnl="100",
+                    reconciliation_position=JournalReconciliationPosition.CLOSED.value,
+                ),
             ),
         ],
     )
@@ -546,3 +551,154 @@ def test_same_org_different_accounts_do_not_collide() -> None:
         assert len(trades) == 2
         assert {trade.account_id for trade in trades} == {ACCOUNT, ACCOUNT_B}
         assert session.scalar(select(func.count()).select_from(JournalLifecycleEvent)) == 2
+
+
+def _project_two(
+    factory: sessionmaker[Session],
+    first: JournalLifecycleEventInput,
+    second: JournalLifecycleEventInput,
+) -> JournalTrade:
+    with factory() as session:
+        _project(session, first)
+        _project(session, second)
+        session.commit()
+        return session.scalars(select(JournalTrade)).one()
+
+
+@requires_postgres
+def test_reconcile_position_open_then_stale_close() -> None:
+    factory = _factory()
+    lifecycle_id = uuid.uuid4()
+    trade = _project_two(
+        factory,
+        _event(
+            JournalLifecycleEventType.RECONCILE,
+            source_event_id="recon-open-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(
+                reconciliation_position=JournalReconciliationPosition.POSITION_OPEN.value,
+                entry_price="64000",
+            ),
+        ),
+        _event(
+            JournalLifecycleEventType.CLOSE,
+            source_event_id="stale-close-open-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(exit_price="63000"),
+        ),
+    )
+    assert trade.status is JournalTradeStatus.OPEN
+    assert trade.entry_price == Decimal("64000")
+    assert trade.projector_watermark_rank == 40
+
+
+@requires_postgres
+def test_reconcile_closed_then_stale_close() -> None:
+    factory = _factory()
+    lifecycle_id = uuid.uuid4()
+    trade = _project_two(
+        factory,
+        _event(
+            JournalLifecycleEventType.RECONCILE,
+            source_event_id="recon-closed-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(
+                reconciliation_position=JournalReconciliationPosition.CLOSED.value,
+                exit_price="63100",
+            ),
+        ),
+        _event(
+            JournalLifecycleEventType.CLOSE,
+            source_event_id="stale-close-closed-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(exit_price="1"),
+        ),
+    )
+    assert trade.status is JournalTradeStatus.CLOSED
+    assert trade.exit_price == Decimal("63100")
+    assert trade.projector_watermark_rank == 40
+
+
+@requires_postgres
+def test_close_then_newer_reconcile_position_open() -> None:
+    factory = _factory()
+    lifecycle_id = uuid.uuid4()
+    trade = _project_two(
+        factory,
+        _event(
+            JournalLifecycleEventType.CLOSE,
+            source_event_id="close-then-open-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(exit_price="63000"),
+        ),
+        _event(
+            JournalLifecycleEventType.RECONCILE,
+            source_event_id="recon-reopen-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(
+                reconciliation_position=JournalReconciliationPosition.POSITION_OPEN.value
+            ),
+        ),
+    )
+    assert trade.status is JournalTradeStatus.OPEN
+    assert trade.projector_watermark_rank == 40
+
+
+@requires_postgres
+def test_close_then_newer_reconcile_closed() -> None:
+    factory = _factory()
+    lifecycle_id = uuid.uuid4()
+    trade = _project_two(
+        factory,
+        _event(
+            JournalLifecycleEventType.CLOSE,
+            source_event_id="close-then-closed-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(exit_price="63000"),
+        ),
+        _event(
+            JournalLifecycleEventType.RECONCILE,
+            source_event_id="recon-keep-closed-pg",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_payload(
+                reconciliation_position=JournalReconciliationPosition.CLOSED.value,
+                fees="3.25",
+            ),
+        ),
+    )
+    assert trade.status is JournalTradeStatus.CLOSED
+    assert trade.fees == Decimal("3.25")
+    assert trade.projector_watermark_rank == 40
+
+
+@requires_postgres
+def test_concurrent_close_and_reconcile_position_open() -> None:
+    factory = _factory()
+    lifecycle_id = uuid.uuid4()
+    results, errors = _run_concurrent(
+        factory,
+        [
+            _event(
+                JournalLifecycleEventType.CLOSE,
+                source_event_id="close-conc-open",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_payload(exit_price="63000"),
+            ),
+            _event(
+                JournalLifecycleEventType.RECONCILE,
+                source_event_id="recon-conc-open",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_payload(
+                    fees="2.5",
+                    reconciliation_position=JournalReconciliationPosition.POSITION_OPEN.value,
+                ),
+            ),
+        ],
+    )
+    assert errors == []
+    with factory() as session:
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.status is JournalTradeStatus.OPEN
+        assert trade.fees == Decimal("2.5")
+        assert trade.projector_watermark_rank == 40
+        assert len(results) == 2

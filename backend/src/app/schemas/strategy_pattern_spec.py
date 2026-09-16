@@ -30,6 +30,11 @@ FIRST_SLICE_NAME = (
 FIRST_SLICE_SYMBOL = "BTCUSDT"
 FIRST_SLICE_TRIGGER_TF = "15m"
 FIRST_SLICE_CONTEXT_TF = "4h"
+FIRST_SLICE_DIRECTION = TradeDirection.SHORT
+FIRST_SLICE_ATR_PERIOD = 14
+FIRST_SLICE_HTF_STEP = "htf_resistance_context"
+FIRST_SLICE_LTF_STEP = "ltf_liquidity_sweep"
+FIRST_SLICE_REQUIRED_SEQUENCE = (FIRST_SLICE_HTF_STEP, FIRST_SLICE_LTF_STEP)
 
 
 class PatternResetSemantics(StrEnum):
@@ -112,21 +117,21 @@ def canonical_first_slice_authored_spec() -> FirstSliceAuthoredPatternSpec:
         symbol=FIRST_SLICE_SYMBOL,
         trigger_timeframe=FIRST_SLICE_TRIGGER_TF,
         context_timeframe=FIRST_SLICE_CONTEXT_TF,
-        direction=TradeDirection.SHORT,
+        direction=FIRST_SLICE_DIRECTION,
         requires_manual_4h_resistance=True,
         requires_confirmed_swing=True,
         trigger_atr=AuthoredFeatureSpec(
             feature_type=WILDER_ATR_FEATURE_TYPE,
             feature_version=WILDER_ATR_FEATURE_VERSION,
             role=FeatureRole.TRIGGER,
-            period=14,
+            period=FIRST_SLICE_ATR_PERIOD,
             timeframe=FIRST_SLICE_TRIGGER_TF,
         ),
         context_atr=AuthoredFeatureSpec(
             feature_type=WILDER_ATR_FEATURE_TYPE,
             feature_version=WILDER_ATR_FEATURE_VERSION,
             role=FeatureRole.CONTEXT,
-            period=14,
+            period=FIRST_SLICE_ATR_PERIOD,
             timeframe=FIRST_SLICE_CONTEXT_TF,
         ),
         resistance_distance_atr_threshold=Decimal("0.50"),
@@ -147,7 +152,7 @@ def canonical_first_slice_authored_spec() -> FirstSliceAuthoredPatternSpec:
         expiry_final_bars=2,
         sequence=[
             AuthoredSequenceStep(
-                step_id="htf_resistance_context",
+                step_id=FIRST_SLICE_HTF_STEP,
                 min_offset=0,
                 max_offset=0,
                 finality_requirement=FinalityRequirement.FINAL_ONLY,
@@ -156,7 +161,7 @@ def canonical_first_slice_authored_spec() -> FirstSliceAuthoredPatternSpec:
                 invalidation_semantics=PatternInvalidationSemantics.NONE,
             ),
             AuthoredSequenceStep(
-                step_id="ltf_liquidity_sweep",
+                step_id=FIRST_SLICE_LTF_STEP,
                 min_offset=0,
                 max_offset=2,
                 finality_requirement=FinalityRequirement.FINAL_ONLY,

@@ -25,6 +25,7 @@ from app.schemas.model_routing import (
     ModelCallAttempt as RoutedAttempt,
 )
 from app.schemas.model_routing import (
+    ModelCallerScope,
     ModelContextScope,
     ModelFailureCategory,
     ModelFallbackPolicy,
@@ -172,6 +173,7 @@ def _request(
     resource_id: uuid.UUID | None = None,
     caller_resource_type: ModelResourceType | None = None,
     caller_resource_id: uuid.UUID | None = None,
+    caller_scope: ModelCallerScope = ModelCallerScope.USER,
     correlation_id: str = "corr-1",
 ) -> ModelTaskRequest:
     return ModelTaskRequest(
@@ -187,6 +189,7 @@ def _request(
         correlation_id=correlation_id,
         caller_organization_id=caller_org,
         caller_user_id=caller_user,
+        caller_scope=caller_scope,
         caller_account_id=caller_account,
         caller_resource_type=caller_resource_type,
         caller_resource_id=caller_resource_id,
@@ -807,3 +810,111 @@ def test_generic_public_context_allowed() -> None:
         )
     )
     assert decision.resource_type is ModelResourceType.GENERIC
+
+
+def test_same_organization_wrong_user_rejected() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-principal") as exc_info:
+        router.decide(
+            _request(
+                ModelRoutingPurpose.STRATEGY_REVIEW,
+                org=ORG_A,
+                caller_org=ORG_A,
+                user=USER_B,
+                caller_user=USER_A,
+            )
+        )
+    assert exc_info.value.details["reason"] == "wrong_user"
+
+
+def test_same_organization_correct_user_allowed() -> None:
+    router = _router()
+    decision = router.decide(
+        _request(
+            ModelRoutingPurpose.STRATEGY_REVIEW,
+            org=ORG_A,
+            caller_org=ORG_A,
+            user=USER_A,
+            caller_user=USER_A,
+        )
+    )
+    assert decision.organization_id == ORG_A
+    assert decision.user_id == USER_A
+
+
+def test_cross_organization_rejected() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-tenant") as exc_info:
+        router.decide(
+            _request(
+                ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
+                org=ORG_B,
+                caller_org=ORG_A,
+                user=USER_A,
+                caller_user=USER_A,
+            )
+        )
+    assert exc_info.value.details["reason"] == "wrong_organization"
+
+
+def test_organization_scope_does_not_bypass_user_mismatch() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-principal") as exc_info:
+        router.decide(
+            _request(
+                ModelRoutingPurpose.STRATEGY_REVIEW,
+                org=ORG_A,
+                caller_org=ORG_A,
+                user=USER_B,
+                caller_user=USER_A,
+                caller_scope=ModelCallerScope.ORGANIZATION,
+            )
+        )
+    assert exc_info.value.details["reason"] == "wrong_user"
+
+
+def test_user_scope_cannot_omit_user_binding() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="user binding") as exc_info:
+        router.decide(
+            _request(
+                ModelRoutingPurpose.STRATEGY_REVIEW,
+                org=ORG_A,
+                caller_org=ORG_A,
+                user=None,
+                caller_user=None,
+            )
+        )
+    assert exc_info.value.details["reason"] == "missing_user"
+
+
+def test_trusted_system_scope_may_omit_user_binding() -> None:
+    router = _router()
+    decision = router.decide(
+        _request(
+            ModelRoutingPurpose.STRATEGY_REVIEW,
+            org=ORG_A,
+            caller_org=ORG_A,
+            user=None,
+            caller_user=None,
+            caller_scope=ModelCallerScope.TRUSTED_SYSTEM,
+        )
+    )
+    assert decision.organization_id == ORG_A
+    assert decision.user_id is None
+
+
+def test_organization_scope_may_omit_user_binding() -> None:
+    router = _router()
+    decision = router.decide(
+        _request(
+            ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
+            org=ORG_A,
+            caller_org=ORG_A,
+            user=None,
+            caller_user=None,
+            caller_scope=ModelCallerScope.ORGANIZATION,
+        )
+    )
+    assert decision.organization_id == ORG_A
+    assert decision.user_id is None

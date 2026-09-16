@@ -33,6 +33,7 @@ from app.schemas.common import (
     AuditEventType,
     JournalEntryMethod,
     JournalLifecycleEventType,
+    JournalReconciliationPosition,
     JournalTradeSource,
     JournalTradeStatus,
     TradeDirection,
@@ -559,11 +560,12 @@ class JournalLifecycleProjector:
             if row.result is TradeResult.OPEN:
                 row.result = TradeResult.OPEN
         elif event.event_type is JournalLifecycleEventType.CLOSE:
-            # Later RECONCILE facts must not be overwritten by a stale CLOSE.
+            # Stale CLOSE after a higher-rank RECONCILE must not regress status.
             self._apply_venue_fields(row, event.payload, fill_nulls_only=stale)
-            self._promote_status(row, JournalTradeStatus.CLOSED, stale=False)
+            self._promote_status(row, JournalTradeStatus.CLOSED, stale=stale)
         elif event.event_type is JournalLifecycleEventType.RECONCILE:
             self._apply_venue_fields(row, event.payload, fill_nulls_only=stale)
+            self._apply_reconcile_status(row, event.payload, stale=stale)
         if incoming_rank >= int(row.projector_watermark_rank or 0):
             row.projector_watermark_rank = incoming_rank
         row.projector_lock_version = int(row.projector_lock_version or 0) + 1
@@ -577,6 +579,16 @@ class JournalLifecycleProjector:
         target = _STATUS_RANK.get(desired, 0)
         if target >= current:
             row.status = desired
+
+    def _apply_reconcile_status(
+        self, row: JournalTrade, payload: dict[str, object], *, stale: bool
+    ) -> None:
+        if stale:
+            return
+        desired = _authoritative_reconcile_status(payload)
+        if desired is None:
+            return
+        row.status = desired
 
     def _apply_venue_fields(
         self,
@@ -603,9 +615,35 @@ def _coerce_field(key: str, value: object) -> Any:
     if key == "direction":
         return value if isinstance(value, TradeDirection) else TradeDirection(str(value))
     if key == "status":
+        mapped = _authoritative_reconcile_status({"status": value})
+        if mapped is not None:
+            return mapped
         return value if isinstance(value, JournalTradeStatus) else JournalTradeStatus(str(value))
     if key == "result":
         return value if isinstance(value, TradeResult) else TradeResult(str(value))
     if key in {"entry_time", "exit_time"} and isinstance(value, str):
         return datetime.fromisoformat(value)
     return value
+
+
+def _authoritative_reconcile_status(payload: dict[str, object]) -> JournalTradeStatus | None:
+    raw = payload.get("reconciliation_position")
+    if raw is None:
+        raw = payload.get("status")
+    if raw is None:
+        return None
+    token = raw.value if isinstance(raw, JournalReconciliationPosition) else str(raw)
+    normalized = token.strip()
+    if normalized in {
+        JournalReconciliationPosition.POSITION_OPEN.value,
+        JournalTradeStatus.OPEN.value,
+        "OPEN",
+    }:
+        return JournalTradeStatus.OPEN
+    if normalized in {
+        JournalReconciliationPosition.CLOSED.value,
+        JournalTradeStatus.CLOSED.value,
+        "CLOSED",
+    }:
+        return JournalTradeStatus.CLOSED
+    return None
