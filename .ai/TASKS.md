@@ -701,6 +701,21 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   audit follows Analytics PR 4 and final polish (see blueprint §8 PR 4 and
   `docs/product/at040_final_polish_and_readiness_audit.md` when merged).
 
+### AT-041 — Watcher orchestration foundation (Phase 7 worker; isolated)
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: agentic redesign Phase 7
+  contracts; Agent 1 source freshness later · Risk: Medium
+- Safety classification: Paper-safe; watcher remains disabled; no execution,
+  journal, Telegram, candidates, or ORM/migrations
+- Goal: Isolated worker architecture — scan request / watchlist policy contracts,
+  leases, fencing, retry, scan lineage, dedupe, idempotent scheduling, manual
+  and worker evaluation-boundary parity, health, failure reporting, observability,
+  and deterministic test repositories.
+- Branch: `cursor/watcher-orchestration-foundation-4364`
+- Validation: Targeted foundation tests plus full backend, ruff, mypy, GitHub CI.
+  `WATCHER_ORCHESTRATION_ENABLED` default false; no Alembic migrations.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-021
+
 ---
 
 ## Live-trading program (design → gated implementation; do NOT start before paper Criticals)
