@@ -21,6 +21,7 @@ from app.market_contracts.errors import (
     SpotFallbackRejectedError,
     WrongInstrumentError,
     WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.freshness import first_slice_freshness_policy
@@ -255,9 +256,18 @@ class BinanceUsdmPerpetualSource:
             raise WrongMarketError("Binance USD-M adapter cannot serve a non-USD-M product.")
         if identity.instrument.market_type is not MarketType.PERPETUAL:
             raise WrongMarketError("Binance USD-M adapter cannot serve non-perpetual markets.")
-        if identity.source.family is SourceFamily.REPLAY_FIXTURE:
-            raise FallbackForbiddenError(
-                "Live USD-M adapter cannot be labelled as a replay source."
+        source = identity.source
+        provenance = identity.provenance
+        if (
+            source.family is not SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
+            or source.provider_name != self.name
+            or provenance.source_family is not SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
+            or provenance.provider_name != self.name
+            or not provenance.is_live
+            or provenance.is_mock
+        ):
+            raise WrongSourceError(
+                "Live USD-M evidence identity must exactly identify the live Binance provider."
             )
         if identity.provenance.fallback_used:
             raise FallbackForbiddenError("Live USD-M evidence cannot record fallback_used=true.")

@@ -22,6 +22,7 @@ from app.market_contracts.errors import (
     UnapprovedEvidenceHostError,
     WrongInstrumentError,
     WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.first_slice import (
     FIRST_SLICE_MIN_FINAL_4H,
@@ -193,6 +194,23 @@ def test_replay_boundary_rejects_trade_from_wrong_market() -> None:
     with pytest.raises(WrongMarketError):
         source.fetch_ordered_trades(
             identity=identity(),
+            instrument=binance_usdm_btcusdt(),
+            start=TRIGGER_OPEN,
+            end=TRIGGER_OPEN + timedelta(minutes=15),
+            source_connection_id=CONNECTION,
+            receive_at=EVALUATED_AT,
+        )
+
+
+def test_replay_boundary_rejects_live_provider_source_identity() -> None:
+    source = ReplayPerpetualSource()
+    with pytest.raises(WrongSourceError):
+        source.fetch_ordered_trades(
+            identity=first_slice_identity(
+                timeframe=Timeframe.M15,
+                replay=False,
+                is_live=True,
+            ),
             instrument=binance_usdm_btcusdt(),
             start=TRIGGER_OPEN,
             end=TRIGGER_OPEN + timedelta(minutes=15),
