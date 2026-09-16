@@ -60,6 +60,10 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   (redaction-safe; booleans only for secrets).
 - `core/exchange_safety.py`: exchange-mode gating; `trade_live` refuses startup.
 - `core/config.py`: trading-mode validators (`execution_mode=trade` requires explicit enable).
+  `telegram_interaction_enabled` defaults false (AT-041; inbound Telegram protocol not wired).
+- `telegram_security/`: isolated enrollment/nonce/receipt/outbox protocol. No execution path.
+  Persistence interfaces + in-memory test store; no Alembic. See
+  `docs/telegram_security_protocol.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

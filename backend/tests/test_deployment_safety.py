@@ -202,6 +202,8 @@ def test_deployment_posture_reports_at018_hardening() -> None:
     assert posture["access_token_denylist_enabled"] is True
     assert posture["access_token_denylist_fail_closed"] is True
     assert posture["trusted_proxy_hops"] == 1
+    assert posture["telegram_interaction_enabled"] is False
+    assert posture["telegram_alerts_enabled"] is False
 
 
 def test_validate_deployment_skips_local() -> None:

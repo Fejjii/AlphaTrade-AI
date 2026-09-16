@@ -628,3 +628,40 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `docs/paper_signal_orchestration.md`; tests in
   `test_at038_paper_signal_orchestration.py` + frontend page tests.
 - **Validation:** Targeted backend + frontend tests on feature branch; no deploy.
+
+## AT-ADR-021 — Isolated Telegram security protocol; APPROVE never executes (AT-041)
+- **Date:** 2026-09-16
+- **Status:** Accepted
+- **Context:** Agentic redesign §10 requires verified private-chat enrollment,
+  opaque action nonces, receipts, replay protection, and a RemoteActionGateway
+  that is not a second mutation stack. Agent 3 owns the isolated security
+  foundation only. Telegram must remain disabled and must not connect to
+  execution. CLOSE stays unavailable. EXECUTE_PAPER_PLAN is out of scope.
+- **Decision:**
+  1. **Isolated package.** `app.telegram_security` holds enrollment, binding,
+     message/callback identity, nonce, receipt, rate-limit, outbox, delivery
+     acknowledgement, transport, and the action authorization boundary.
+  2. **Persistence interfaces only.** `TelegramSecurityStore` + deterministic
+     `InMemoryTelegramSecurityStore`. No shared ORM models, no Alembic.
+  3. **Disabled by default.** `telegram_interaction_enabled=false`. No FastAPI
+     webhook. Fake transport for tests; no live Telegram API calls.
+  4. **Private chat only.** Group/channel chats and chat-id-only enrollment fail.
+  5. **Opaque one-time nonces** bind org, user, account, Telegram identity, resource,
+     revision/content hash, one action, expiry, and single-use state.
+  6. **APPROVE** records a protocol-level authorization intent (`executes=false`).
+     It never calls ExecutionService. EXECUTE_PAPER_PLAN is not in the Telegram
+     vocabulary.
+  7. **CLOSE** is a known name but unavailable (issue and apply both fail).
+  8. Duplicate `update_id` / `callback_query_id` / outbox idempotency keys converge.
+     Delivery is at-least-once via durable claim.
+- **Alternatives considered:** Wire inbound webhook now (rejected: later
+  integration); persist via Alembic in this slice (rejected: later PostgreSQL
+  binding); allow APPROVE to call execution (rejected: CRITICAL-03).
+- **Safety impact:** Telegram stays off. Live trading stays disabled. Approval
+  cannot execute. CLOSE cannot close.
+- **Consequences:** Docs in `docs/telegram_security_protocol.md`. Tests in
+  `backend/tests/test_telegram_security_protocol.py`.
+- **Validation:** Targeted protocol tests, full backend pytest, ruff, mypy on
+  `app.telegram_security`, GitHub CI. No merge in the implementing PR's agent
+  instructions.
+

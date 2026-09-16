@@ -163,4 +163,6 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "qdrant_api_key_configured": bool(settings.qdrant_api_key.strip()),
         "embeddings_model": settings.embeddings_model,
         "embeddings_dimensions": settings.embeddings_dimensions,
+        "telegram_alerts_enabled": settings.telegram_alerts_enabled,
+        "telegram_interaction_enabled": settings.telegram_interaction_enabled,
     }
