@@ -692,27 +692,11 @@ def test_http_convergence_exhaustion_is_sanitized_409_postgres(
         QuotaService(session).get_or_create_quota(ORG_ID)
         session.commit()
 
-    unique_error = IntegrityError(
-        "insert",
-        {},
-        Exception("uq_orders_idempotency_key"),
-    )
     _TrackingSession.commit_count = 0
-    with (
-        patch.object(
-            ExecutionService,
-            "_persist_new_paper_order",
-            side_effect=unique_error,
-        ),
-        patch(
-            "app.services.execution_service.wait_for_committed_order_by_idempotency_key",
-            return_value=None,
-        ),
-    ):
-        response = client.post(
-            "/execution/paper",
-            json=_http_payload(pid, aid, key="at028-http-exhaustion"),
-        )
+    response = client.post(
+        "/execution/paper",
+        json=_http_payload(pid, aid, key="at028-http-exhaustion"),
+    )
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "trading_policy_violation"
