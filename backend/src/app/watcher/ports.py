@@ -61,7 +61,7 @@ class WatcherStore(Protocol):
 
     def insert_schedule(self, row: ScheduledScan) -> ScheduledScan: ...
 
-    def get_lineage(self, lineage_id: UUID) -> ScanLineage | None: ...
+    def get_lineage(self, lineage_id: UUID, organization_id: UUID) -> ScanLineage | None: ...
 
     def insert_lineage(self, row: ScanLineage) -> ScanLineage: ...
 
@@ -70,6 +70,7 @@ class WatcherStore(Protocol):
         lineage_id: UUID,
         attempt_id: UUID,
         status: str,
+        organization_id: UUID,
     ) -> ScanLineage: ...
 
     def list_attempts(self, lineage_id: UUID) -> tuple[ScanAttempt, ...]: ...
@@ -95,8 +96,8 @@ class WatcherStore(Protocol):
     def claim_lease(
         self,
         *,
-        scan_scope: str,
         organization_id: UUID,
+        scan_scope: str,
         owner_id: str,
         ttl_seconds: int,
         now: datetime,
@@ -105,6 +106,7 @@ class WatcherStore(Protocol):
     def renew_lease(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         fencing_token: int,
@@ -112,11 +114,12 @@ class WatcherStore(Protocol):
         now: datetime,
     ) -> bool: ...
 
-    def get_lease(self, scan_scope: str) -> WorkerLease | None: ...
+    def get_lease(self, organization_id: UUID, scan_scope: str) -> WorkerLease | None: ...
 
     def fence_is_active(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         fencing_token: int,
@@ -126,6 +129,7 @@ class WatcherStore(Protocol):
     def record_heartbeat(
         self,
         *,
+        organization_id: UUID,
         scan_scope: str,
         owner_id: str,
         lease_epoch: int,
@@ -134,7 +138,7 @@ class WatcherStore(Protocol):
         detail: str | None = None,
     ) -> WatcherHeartbeat: ...
 
-    def get_heartbeat(self, scan_scope: str) -> WatcherHeartbeat | None: ...
+    def get_heartbeat(self, organization_id: UUID, scan_scope: str) -> WatcherHeartbeat | None: ...
 
     def put_policy_version(self, version: WatcherPolicyVersion) -> WatcherPolicyVersion: ...
 
@@ -142,9 +146,13 @@ class WatcherStore(Protocol):
 
     def remember_health(self, snapshot: WatcherHealthSnapshot) -> None: ...
 
-    def latest_health(self, scan_scope: str) -> WatcherHealthSnapshot | None: ...
+    def latest_health(
+        self, organization_id: UUID, scan_scope: str
+    ) -> WatcherHealthSnapshot | None: ...
 
-    def latest_attempt_for_scope(self, scan_scope: str) -> ScanAttempt | None: ...
+    def latest_attempt_for_scope(
+        self, organization_id: UUID, scan_scope: str
+    ) -> ScanAttempt | None: ...
 
     def append_event(self, event: WatcherObservabilityEvent) -> None: ...
 

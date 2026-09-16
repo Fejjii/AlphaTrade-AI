@@ -287,6 +287,7 @@ class LeaseClaimResult(FrozenModel):
 
 
 class WatcherHeartbeat(FrozenModel):
+    organization_id: UUID
     scan_scope: str
     owner_id: str | None
     lease_epoch: int
@@ -297,6 +298,7 @@ class WatcherHeartbeat(FrozenModel):
 
 class WatcherHealthSnapshot(FrozenModel):
     state: WatcherHealthState
+    organization_id: UUID
     scan_scope: str
     enabled: bool
     lease_owner: str | None
@@ -316,6 +318,7 @@ class WatcherObservabilityEvent(FrozenModel):
     at: datetime
     lineage_id: UUID | None = None
     attempt_id: UUID | None = None
+    organization_id: UUID | None = None
     scan_scope: str | None = None
     fencing_token: int | None = None
     fields: dict[str, str | int | bool | None] = Field(default_factory=dict)

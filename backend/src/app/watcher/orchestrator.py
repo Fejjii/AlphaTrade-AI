@@ -86,15 +86,16 @@ class WatcherOrchestrator:
     def evaluator(self) -> WatcherEvaluationBoundary:
         return self._evaluator
 
-    def health(self, scan_scope: str) -> WatcherHealthSnapshot:
+    def health(self, organization_id: UUID, scan_scope: str) -> WatcherHealthSnapshot:
         now = self._clock.now()
         snapshot = project_health(
+            organization_id=organization_id,
             scan_scope=scan_scope,
             config=self._config,
             now=now,
-            lease=self._store.get_lease(scan_scope),
-            heartbeat=self._store.get_heartbeat(scan_scope),
-            latest_attempt=self._store.latest_attempt_for_scope(scan_scope),
+            lease=self._store.get_lease(organization_id, scan_scope),
+            heartbeat=self._store.get_heartbeat(organization_id, scan_scope),
+            latest_attempt=self._store.latest_attempt_for_scope(organization_id, scan_scope),
         )
         self._store.remember_health(snapshot)
         return snapshot
@@ -106,6 +107,7 @@ class WatcherOrchestrator:
                 self._store,
                 name="watcher_schedule_blocked",
                 at=self._clock.now(),
+                organization_id=request.organization_id,
                 scan_scope=request.scan_scope,
                 reason_code="watcher_disabled",
             )
@@ -135,6 +137,7 @@ class WatcherOrchestrator:
                 name="watcher_schedule_replayed",
                 at=self._clock.now(),
                 lineage_id=existing.lineage_id,
+                organization_id=request.organization_id,
                 scan_scope=request.scan_scope,
                 reason_code="duplicate_scheduled_scan",
             )
@@ -180,6 +183,7 @@ class WatcherOrchestrator:
             name="watcher_scan_scheduled",
             at=now,
             lineage_id=stored.lineage_id,
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             reason_code="accepted",
         )
@@ -226,6 +230,7 @@ class WatcherOrchestrator:
                 self._store,
                 name="watcher_notify_blocked",
                 at=self._clock.now(),
+                organization_id=request.organization_id,
                 scan_scope=request.scan_scope,
                 reason_code="notify_disabled",
             )
@@ -262,7 +267,7 @@ class WatcherOrchestrator:
                 evaluation_input_hash=input_hash,
                 reason_code=scheduled.reason_code,
             )
-        lineage = self._store.get_lineage(scheduled.lineage_id)
+        lineage = self._store.get_lineage(scheduled.lineage_id, request.organization_id)
         assert lineage is not None
         replay = self._replay_if_succeeded(lineage)
         if replay is not None:
@@ -305,11 +310,12 @@ class WatcherOrchestrator:
     def run_worker(self, request: ScanRequest, *, worker_id: str) -> WorkerCycleResult:
         now = self._clock.now()
         if not self._config.enabled:
-            health = self.health(request.scan_scope)
+            health = self.health(request.organization_id, request.scan_scope)
             emit(
                 self._store,
                 name="watcher_worker_blocked",
                 at=now,
+                organization_id=request.organization_id,
                 scan_scope=request.scan_scope,
                 reason_code="watcher_disabled",
             )
@@ -341,12 +347,13 @@ class WatcherOrchestrator:
                 self._store,
                 name="watcher_lease_rejected",
                 at=self._clock.now(),
+                organization_id=request.organization_id,
                 scan_scope=request.scan_scope,
                 fencing_token=lease.fencing_token,
                 reason_code=claim_reason,
                 lease_owner=lease.owner_id,
             )
-            health = self.health(request.scan_scope)
+            health = self.health(request.organization_id, request.scan_scope)
             return WorkerCycleResult(
                 status=WorkerCycleStatus.SKIPPED,
                 replayed=False,
@@ -365,6 +372,7 @@ class WatcherOrchestrator:
             self._store,
             name="watcher_lease_claimed",
             at=self._clock.now(),
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             fencing_token=lease.fencing_token,
             reason_code=claim_reason,
@@ -372,6 +380,7 @@ class WatcherOrchestrator:
             worker_id=worker_id,
         )
         self._store.record_heartbeat(
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             owner_id=worker_id,
             lease_epoch=lease.lease_epoch,
@@ -382,11 +391,11 @@ class WatcherOrchestrator:
         self._crash.checkpoint("after_lease_claim")
 
         assert scheduled.lineage_id is not None
-        lineage = self._store.get_lineage(scheduled.lineage_id)
+        lineage = self._store.get_lineage(scheduled.lineage_id, request.organization_id)
         assert lineage is not None
         replay = self._replay_if_succeeded(lineage)
         if replay is not None:
-            health = self.health(request.scan_scope)
+            health = self.health(request.organization_id, request.scan_scope)
             return WorkerCycleResult(
                 status=WorkerCycleStatus.SUCCEEDED,
                 replayed=True,
@@ -415,6 +424,7 @@ class WatcherOrchestrator:
             at=self._clock.now(),
             lineage_id=lineage.lineage_id,
             attempt_id=attempt.attempt_id,
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             fencing_token=lease.fencing_token,
             attempt_number=attempt.attempt_number,
@@ -451,6 +461,7 @@ class WatcherOrchestrator:
         self._crash.checkpoint("after_evaluation")
 
         if not self._store.renew_lease(
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             owner_id=worker_id,
             fencing_token=lease.fencing_token,
@@ -467,6 +478,7 @@ class WatcherOrchestrator:
             )
 
         if not self._store.fence_is_active(
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             owner_id=worker_id,
             fencing_token=lease.fencing_token,
@@ -485,6 +497,7 @@ class WatcherOrchestrator:
         self._crash.checkpoint("after_child_attempts")
 
         if not self._store.fence_is_active(
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             owner_id=worker_id,
             fencing_token=lease.fencing_token,
@@ -510,6 +523,7 @@ class WatcherOrchestrator:
         )
         self._crash.checkpoint("after_publish")
         self._store.record_heartbeat(
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             owner_id=worker_id,
             lease_epoch=lease.lease_epoch,
@@ -517,7 +531,7 @@ class WatcherOrchestrator:
             now=self._clock.now(),
             detail=final_outcome.status.value,
         )
-        health = self.health(request.scan_scope)
+        health = self.health(request.organization_id, request.scan_scope)
         status = _cycle_status(final_outcome.status, published)
         emit(
             self._store,
@@ -525,6 +539,7 @@ class WatcherOrchestrator:
             at=self._clock.now(),
             lineage_id=lineage.lineage_id,
             attempt_id=attempt.attempt_id,
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             fencing_token=lease.fencing_token,
             reason_code=final_outcome.reason_code,
@@ -587,6 +602,7 @@ class WatcherOrchestrator:
             at=self._clock.now(),
             lineage_id=lineage.lineage_id,
             attempt_id=attempt.attempt_id,
+            organization_id=lineage.organization_id,
             scan_scope=lineage.scan_scope,
             reason_code="replay",
         )
@@ -718,6 +734,7 @@ class WatcherOrchestrator:
             assert owner_id is not None
             assert fencing_token is not None
             if not self._store.fence_is_active(
+                organization_id=lineage.organization_id,
                 scan_scope=scan_scope,
                 owner_id=owner_id,
                 fencing_token=fencing_token,
@@ -736,6 +753,7 @@ class WatcherOrchestrator:
                     at=self._clock.now(),
                     lineage_id=lineage.lineage_id,
                     attempt_id=rejected.attempt_id,
+                    organization_id=lineage.organization_id,
                     scan_scope=scan_scope,
                     fencing_token=fencing_token,
                     reason_code="stale_fence",
@@ -750,7 +768,7 @@ class WatcherOrchestrator:
                 return False, blocked
 
         attempt_status = _attempt_status_for(outcome.status)
-        current = self._store.get_lineage(lineage.lineage_id)
+        current = self._store.get_lineage(lineage.lineage_id, lineage.organization_id)
         assert current is not None
         if current.terminal_status is _TERMINAL_SUCCESS and current.terminal_attempt_id is not None:
             converged = self._mark_attempt(
@@ -770,7 +788,10 @@ class WatcherOrchestrator:
             return False, replay_outcome
 
         cas = self._store.cas_lineage_terminal(
-            lineage.lineage_id, attempt.attempt_id, attempt_status.value
+            lineage.lineage_id,
+            attempt.attempt_id,
+            attempt_status.value,
+            lineage.organization_id,
         )
         if cas.terminal_attempt_id != attempt.attempt_id:
             converged = self._mark_attempt(
@@ -822,12 +843,13 @@ class WatcherOrchestrator:
             at=self._clock.now(),
             lineage_id=lineage.lineage_id,
             attempt_id=rejected.attempt_id,
+            organization_id=request.organization_id,
             scan_scope=request.scan_scope,
             fencing_token=fencing_token,
             reason_code=reason_code,
             worker_id=worker_id,
         )
-        health = self.health(request.scan_scope)
+        health = self.health(request.organization_id, request.scan_scope)
         return WorkerCycleResult(
             status=WorkerCycleStatus.REJECTED_STALE_FENCE,
             replayed=False,

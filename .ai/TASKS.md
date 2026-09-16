@@ -712,7 +712,9 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   and deterministic test repositories.
 - Branch: `cursor/watcher-orchestration-foundation-4364`
 - Validation: Targeted foundation tests plus full backend, ruff, mypy, GitHub CI.
-  `WATCHER_ORCHESTRATION_ENABLED` default false; no Alembic migrations.
+  Tenant isolation: two organizations with identical `scan_scope` acquire independent
+  leases/fences/heartbeats/health/lineage. `WATCHER_ORCHESTRATION_ENABLED` default
+  false; no Alembic migrations.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-021
 
