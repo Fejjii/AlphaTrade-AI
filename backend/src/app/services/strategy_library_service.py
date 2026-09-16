@@ -11,7 +11,12 @@ from app.core.errors import NotFoundError, ValidationAppError
 from app.db.models import UserStrategy as UserStrategyModel
 from app.db.models import UserStrategyVersion as UserStrategyVersionModel
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
-from app.schemas.common import DocumentSourceType, StrategyValidationStatus
+from app.schemas.common import (
+    DocumentSourceType,
+    StrategyChangeSource,
+    StrategyLifecycleState,
+    StrategyValidationStatus,
+)
 from app.schemas.paper_eligibility import LessonSourceMetadata
 from app.schemas.rag import IngestDocumentRequest
 from app.schemas.strategy_library import (
@@ -23,6 +28,7 @@ from app.schemas.strategy_library import (
     UserStrategyVersionCreate,
 )
 from app.services.rag_service import RagService
+from app.services.strategy_versioning import StrategyVersioningService
 
 
 def _card_to_text(card: StrategyCard) -> str:
@@ -50,6 +56,7 @@ class StrategyLibraryService:
         self._session = session
         self._repo = UserStrategyRepository(session)
         self._versions = UserStrategyVersionRepository(session)
+        self._versioning = StrategyVersioningService(session)
         self._rag = rag_service
 
     def create(self, payload: UserStrategyCreate) -> UserStrategy:
@@ -66,13 +73,25 @@ class StrategyLibraryService:
             notes=payload.notes,
         )
         self._repo.add(entity)
+        card_dump = card.model_dump(mode="json")
         version = UserStrategyVersionModel(
             strategy_id=entity.id,
             version=1,
-            card=card.model_dump(mode="json"),
+            card=card_dump,
             validation_status=card.validation_status,
+            change_source=StrategyChangeSource.CREATE,
+            actor_user_id=payload.user_id,
+            change_reason="create",
         )
         self._versions.add(version)
+        self._versioning.append_lifecycle(
+            organization_id=entity.organization_id,
+            strategy_id=entity.id,
+            strategy_version_id=version.id,
+            new_state=StrategyLifecycleState.DRAFT,
+            actor_user_id=payload.user_id,
+            reason="create",
+        )
         self._sync_rag(entity, version, card)
         return self._to_schema(entity, version)
 
@@ -96,7 +115,7 @@ class StrategyLibraryService:
         self, strategy_id: uuid.UUID, *, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> UserStrategy:
         row = self._require(strategy_id, organization_id=organization_id, user_id=user_id)
-        version = self._versions.latest(row.id)
+        version = self._versioning.selected_version(row)
         return self._to_schema(row, version)
 
     def update(
@@ -116,16 +135,21 @@ class StrategyLibraryService:
             row.enabled = payload.enabled
         if payload.notes is not None:
             row.notes = payload.notes
-        version = self._versions.latest(row.id)
+        version = self._versioning.selected_version(row)
         if payload.card is not None:
-            row.current_version += 1
-            version = UserStrategyVersionModel(
-                strategy_id=row.id,
-                version=row.current_version,
+            if version is None:
+                raise NotFoundError("Strategy version not found.")
+            version = self._versioning.fork_semantic_update(
+                row,
+                parent=version,
                 card=payload.card.model_dump(mode="json"),
+                structured_rules=version.structured_rules,
+                lesson_source_metadata=version.lesson_source_metadata,
+                actor_user_id=user_id,
+                source=StrategyChangeSource.CARD_UPDATE,
+                reason="card_update",
                 validation_status=payload.card.validation_status,
             )
-            self._versions.add(version)
             self._sync_rag(row, version, payload.card)
         return self._to_schema(row, version)
 
@@ -138,15 +162,21 @@ class StrategyLibraryService:
         user_id: uuid.UUID,
     ) -> UserStrategyVersion:
         row = self._require(strategy_id, organization_id=organization_id, user_id=user_id)
-        row.current_version += 1
+        parent = self._versioning.selected_version(row)
+        if parent is None:
+            raise NotFoundError("Strategy version not found.")
         status = payload.validation_status or payload.card.validation_status
-        version = UserStrategyVersionModel(
-            strategy_id=row.id,
-            version=row.current_version,
+        version = self._versioning.fork_semantic_update(
+            row,
+            parent=parent,
             card=payload.card.model_dump(mode="json"),
+            structured_rules=parent.structured_rules,
+            lesson_source_metadata=parent.lesson_source_metadata,
+            actor_user_id=user_id,
+            source=StrategyChangeSource.CARD_UPDATE,
+            reason="create_version",
             validation_status=status,
         )
-        self._versions.add(version)
         self._sync_rag(row, version, payload.card)
         return self._version_to_schema(version)
 
@@ -190,7 +220,7 @@ class StrategyLibraryService:
         row: UserStrategyModel,
         version: UserStrategyVersionModel | None = None,
     ) -> UserStrategy:
-        version = version or self._versions.latest(row.id)
+        version = version or self._versioning.selected_version(row)
         card = StrategyCard.model_validate(version.card) if version else None
         return UserStrategy(
             id=row.id,

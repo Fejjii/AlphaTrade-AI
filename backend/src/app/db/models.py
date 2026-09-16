@@ -43,6 +43,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.historical_immutability import install_historical_immutability as _install_history
+from app.db.strategy_immutability import (
+    register_strategy_immutability as _register_strategy_immutability,
+)
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,
@@ -93,7 +96,10 @@ from app.schemas.common import (
     RiskSeverity,
     RuleComplianceStatus,
     SetupCategory,
+    SetupCompileStatus,
+    StrategyChangeSource,
     StrategyId,
+    StrategyLifecycleState,
     StrategyValidationStatus,
     TradeDirection,
     TradeResult,
@@ -343,6 +349,26 @@ class SetupDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     filters: Mapped[list] = mapped_column(JSON, default=list)
 
 
+class GlobalSetupTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Compatibility alias over a legacy global SetupDefinition. Never tenant-owned."""
+
+    __tablename__ = "global_setup_templates"
+    __table_args__ = (
+        UniqueConstraint("setup_definition_id", name="uq_global_setup_template_source"),
+        CheckConstraint("organization_id IS NULL", name="ck_global_setup_template_no_org"),
+    )
+
+    setup_definition_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("setup_definitions.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    strategy_id: Mapped[StrategyId] = mapped_column(_enum(StrategyId), nullable=False)
+    is_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    collision_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
 class SetupPerformance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "setup_performance"
 
@@ -497,6 +523,90 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     structured_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     lesson_source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    parent_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    change_source: Mapped[StrategyChangeSource] = mapped_column(
+        _enum(StrategyChangeSource), default=StrategyChangeSource.CREATE, nullable=False
+    )
+    content_diff: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CompiledSetupDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant-owned immutable compiler artifact for exactly one strategy version."""
+
+    __tablename__ = "compiled_setup_definitions"
+    __table_args__ = (
+        UniqueConstraint("strategy_version_id", name="uq_compiled_setup_strategy_version"),
+        CheckConstraint("length(content_hash) = 64", name="ck_compiled_setup_hash_length"),
+        CheckConstraint("length(compiler_version) > 0", name="ck_compiled_setup_compiler"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=False
+    )
+    compiler_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    grammar_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    compiled_ast: Mapped[dict] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    compile_status: Mapped[SetupCompileStatus] = mapped_column(
+        _enum(SetupCompileStatus), default=SetupCompileStatus.EXECUTABLE, nullable=False
+    )
+
+
+class StrategyLifecycleEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Append-only lifecycle history. Policy identity stays on the strategy version."""
+
+    __tablename__ = "strategy_lifecycle_events"
+    __table_args__ = (
+        CheckConstraint("length(event_hash) = 64", name="ck_strategy_lifecycle_hash"),
+        Index(
+            "ix_strategy_lifecycle_org_strategy",
+            "organization_id",
+            "strategy_id",
+            "occurred_at",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=False
+    )
+    prior_state: Mapped[StrategyLifecycleState | None] = mapped_column(
+        _enum(StrategyLifecycleState), nullable=True
+    )
+    new_state: Mapped[StrategyLifecycleState] = mapped_column(
+        _enum(StrategyLifecycleState), nullable=False
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class SetupMigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Dry-run or apply report for global-template / compiled-setup migration."""
+
+    __tablename__ = "setup_migration_runs"
+
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    report: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class LessonCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1278,6 +1388,38 @@ class ManualChartLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     label: Mapped[str | None] = mapped_column(String(120), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ManualLevelRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable manual resistance/support revision. Later edits cannot rewrite history."""
+
+    __tablename__ = "manual_level_revisions"
+    __table_args__ = (
+        UniqueConstraint("level_id", "revision_number", name="uq_manual_level_revision"),
+        CheckConstraint("length(content_hash) = 64", name="ck_manual_level_revision_hash"),
+        Index("ix_manual_level_revision_org_level", "organization_id", "level_id"),
+    )
+
+    level_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    instrument: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    level_type: Mapped[ManualLevelType] = mapped_column(_enum(ManualLevelType), nullable=False)
+    value: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    price_low: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    price_high: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    valid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    supersedes_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("manual_level_revisions.id"), nullable=True
+    )
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class WatchlistItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -3138,3 +3280,4 @@ class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 _ = _install_history
+_register_strategy_immutability()

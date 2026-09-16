@@ -17,6 +17,9 @@ IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
     "execution_receipts",
     "execution_transitions",
     "execution_fill_facts",
+    "compiled_setup_definitions",
+    "strategy_lifecycle_events",
+    "manual_level_revisions",
 )
 
 _FUNCTION_NAME = "alphatrade_forbid_historical_mutation"

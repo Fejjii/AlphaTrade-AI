@@ -24,6 +24,7 @@ from app.schemas.common import (
     LessonCandidateStatus,
     LessonSeverity,
     LessonSourceType,
+    StrategyChangeSource,
 )
 from app.schemas.lesson import (
     AcceptedLesson,
@@ -39,6 +40,7 @@ from app.schemas.rag import IngestDocumentRequest
 from app.services.audit_service import AuditService
 from app.services.journal_rag_sync_service import sanitize_journal_text
 from app.services.rag_service import RagService
+from app.services.strategy_versioning import StrategyVersioningService
 
 logger = structlog.get_logger(__name__)
 
@@ -65,6 +67,7 @@ class LessonCandidateService:
         self._repo = LessonCandidateRepository(session)
         self._strategies = UserStrategyRepository(session)
         self._versions = UserStrategyVersionRepository(session)
+        self._versioning = StrategyVersioningService(session)
         self._audit = audit_service or AuditService(session)
         self._rag = rag_service
         self._settings = settings or get_settings()
@@ -133,7 +136,7 @@ class LessonCandidateService:
         severity: LessonSeverity = LessonSeverity.MEDIUM,
         confidence: Decimal | None = Decimal("0.6"),
         proposed_rule_update: ProposedRuleUpdate | None = None,
-        analysis_metadata: dict | None = None,
+        analysis_metadata: dict[str, object] | None = None,
     ) -> uuid.UUID:
         """Backward-compatible helper used by discipline analyzers (Slice 36)."""
         payload = LessonCandidateCreate(
@@ -436,10 +439,19 @@ class LessonCandidateService:
         )
         if strategy is None:
             raise NotFoundError("Related strategy not found.")
-        version = self._versions.latest(strategy_id)
+        version = self._versioning.selected_version(strategy)
         if version is None:
             raise NotFoundError("Strategy version not found.")
-        version.structured_rules = rule_update.structured_rules_patch.model_dump(mode="json")
+        self._versioning.fork_semantic_update(
+            strategy,
+            parent=version,
+            card=dict(version.card),
+            structured_rules=rule_update.structured_rules_patch.model_dump(mode="json"),
+            lesson_source_metadata=version.lesson_source_metadata,
+            actor_user_id=user_id,
+            source=StrategyChangeSource.LESSON_ATTACHMENT,
+            reason="accepted_lesson_advisory_draft",
+        )
 
     def _create_strategy_version_with_rules(
         self,
@@ -457,17 +469,14 @@ class LessonCandidateService:
         )
         if strategy is None:
             raise NotFoundError("Related strategy not found.")
-        version = self._versions.latest(strategy_id)
+        version = self._versioning.selected_version(strategy)
         if version is None:
             raise NotFoundError("Strategy version not found.")
-        strategy.current_version += 1
         card = dict(version.card)
         if rule_update.summary:
             runner_plan = list(card.get("runner_plan") or [])
             runner_plan.append(rule_update.summary)
             card["runner_plan"] = runner_plan
-        from app.db.models import UserStrategyVersion as UserStrategyVersionModel
-
         source_metadata = LessonSourceMetadata(
             lesson_id=lesson_row.id,
             mistake_type=lesson_row.mistake_type,
@@ -476,19 +485,20 @@ class LessonCandidateService:
             reviewer_notes=lesson_row.reviewer_notes,
             created_at=datetime.now(UTC),
         )
-        new_version = UserStrategyVersionModel(
-            strategy_id=strategy_id,
-            version=strategy.current_version,
+        self._versioning.fork_semantic_update(
+            strategy,
+            parent=version,
             card=card,
-            validation_status=version.validation_status,
             structured_rules=(
                 rule_update.structured_rules_patch.model_dump(mode="json")
                 if rule_update.structured_rules_patch
                 else version.structured_rules
             ),
             lesson_source_metadata=source_metadata.model_dump(mode="json"),
+            actor_user_id=user_id,
+            source=StrategyChangeSource.LESSON_ATTACHMENT,
+            reason="accepted_lesson_new_draft",
         )
-        self._versions.add(new_version)
 
     def _require(
         self,

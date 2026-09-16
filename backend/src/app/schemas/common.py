@@ -1054,3 +1054,41 @@ class AnalysisConfidence(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class StrategyChangeSource(StrEnum):
+    """Provenance for an immutable strategy-version fork (Phase 3)."""
+
+    CREATE = "create"
+    CARD_UPDATE = "card_update"
+    STRUCTURED_RULES = "structured_rules"
+    LESSON_ATTACHMENT = "lesson_attachment"
+    ROLLBACK_SELECT = "rollback_select"
+    MIGRATION = "migration"
+    LEGACY = "legacy"
+
+
+class StrategyLifecycleState(StrEnum):
+    """Append-only lifecycle projection. Not Pattern Card content."""
+
+    DRAFT = "draft"
+    STRUCTURED = "structured"
+    HISTORICALLY_VALIDATED = "historically_validated"
+    PAPER_VALIDATING = "paper_validating"
+    REVIEW_REQUIRED = "review_required"
+    APPROVED = "approved"
+    ACTIVE = "active"
+    RETIRED = "retired"
+
+
+class SetupCompileStatus(StrEnum):
+    """Compiler outcome. Ambiguous legacy mappings fail closed."""
+
+    EXECUTABLE = "executable"
+    NON_EXECUTABLE = "non_executable"
+    COMPATIBILITY_ONLY = "compatibility_only"
+
+
+class SetupMigrationMode(StrEnum):
+    DRY_RUN = "dry_run"
+    APPLY = "apply"
