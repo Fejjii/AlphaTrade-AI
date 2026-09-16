@@ -145,8 +145,12 @@ def test_no_real_execution_path() -> None:
 def test_usage_metadata_added() -> None:
     response = _service().run("analyze eth trend", _context())
     assert response.usage is not None
-    assert response.usage.feature == "agent_chat"
+    # No ModelRouter call in this graph path: envelope is a labelled estimate only.
+    assert response.usage.feature == "capacity_estimate"
+    assert response.usage.provider == "none"
+    assert response.usage.model == "none"
     assert response.usage.input_tokens > 0
+    assert response.usage.cost_source.value == "unavailable"
 
 
 def test_final_response_structure() -> None:
