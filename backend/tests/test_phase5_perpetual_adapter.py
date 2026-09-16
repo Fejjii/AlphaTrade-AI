@@ -18,6 +18,7 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
     StaleEvidenceError,
+    UnapprovedEvidenceHostError,
     WrongInstrumentError,
     WrongMarketError,
 )
@@ -184,6 +185,13 @@ def test_no_spot_fallback_on_spot_path() -> None:
     with pytest.raises(SpotFallbackRejectedError):
         client.request_json("GET", "/api/v3/klines")
     client.close()
+
+
+def test_unapproved_host_and_plain_http_rejected() -> None:
+    with pytest.raises(UnapprovedEvidenceHostError):
+        ReadOnlyHttpGetClient(base_url="https://not-binance.example", timeout_seconds=5.0)
+    with pytest.raises(UnapprovedEvidenceHostError, match="HTTPS"):
+        ReadOnlyHttpGetClient(base_url="http://fapi.binance.com", timeout_seconds=5.0)
 
 
 def test_regional_provider_failure() -> None:

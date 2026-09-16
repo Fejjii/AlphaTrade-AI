@@ -658,6 +658,15 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   7. **Default runtime source is replay fixtures** (`PERPETUAL_EVIDENCE_SOURCE=replay`)
      so local/CI never require Binance reachability. Replay is explicitly mock, not a
      silent live fallback.
+  8. **AggTrades retrieval** chunks `startTime`/`endTime` to < 1 hour and paginates
+     further pages with `fromId` only. Mixed time+fromId queries are forbidden.
+     Incomplete pages or sequence holes fail closed.
+  9. **CVD completeness** is derived from a `TradeStreamSnapshot` cursor proof
+     (contiguous sequences, no caller-supplied NONE/COMPLETE shortcut). First-slice
+     action eligibility also requires the snapshot terminal trade to pass the 10s
+     freshness policy.
+  10. **Live evidence hosts** are explicit approved USD-M HTTPS identities
+      (`fapi.binance.com`). Arbitrary hosts and `http://` are rejected.
 - **Alternatives considered:** Relabel the existing spot kline adapter as perpetual
   (rejected: incompatible market); fall back to spot or mock when USD-M is blocked
   (rejected: false evidence); persist observations in this phase (rejected: no migration

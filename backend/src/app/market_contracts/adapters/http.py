@@ -1,7 +1,8 @@
 """GET-only HTTP client for public perpetual market data.
 
 POST/PUT/PATCH/DELETE and any order, position, or account path are rejected.
-Spot and Coin-M hosts cannot be used as a silent substitute for USD-M.
+Only approved Binance USD-M HTTPS hosts may be used. Spot, Coin-M, arbitrary
+hosts, and plain HTTP cannot be labelled as USD-M perpetual evidence.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from app.market_contracts.errors import (
     NetworkMutationForbiddenError,
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
+    UnapprovedEvidenceHostError,
     WrongMarketError,
 )
 
@@ -28,6 +30,7 @@ ALLOWED_PATHS = frozenset(
         "/fapi/v1/aggTrades",
     }
 )
+APPROVED_BINANCE_USDM_REST_HOSTS = frozenset({"fapi.binance.com"})
 SPOT_HOST_MARKERS = (
     "api.binance.com",
     "api1.binance.com",
@@ -52,8 +55,11 @@ class ReadOnlyHttpGetClient:
         timeout_seconds: float,
         transport: httpx.BaseTransport | None = None,
         client: httpx.Client | None = None,
+        allowed_hosts: frozenset[str] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._allowed_hosts = allowed_hosts or APPROVED_BINANCE_USDM_REST_HOSTS
+        self._assert_base_url()
         self._owns_client = client is None
         self._client = client or httpx.Client(
             base_url=self._base_url,
@@ -62,7 +68,6 @@ class ReadOnlyHttpGetClient:
             follow_redirects=False,
             headers={"User-Agent": "AlphaTradeAI-perpetual-evidence/read-only"},
         )
-        self._assert_base_url()
 
     def close(self) -> None:
         if self._owns_client:
@@ -127,13 +132,14 @@ class ReadOnlyHttpGetClient:
         host = (parsed.hostname or "").lower()
         if not host:
             raise WrongMarketError("Perpetual evidence base URL is missing a host.")
+        self._assert_scheme(parsed.scheme)
         self._assert_host(host)
-        if parsed.scheme not in {"https", "http"}:
-            raise WrongMarketError("Perpetual evidence URL scheme is not supported.")
 
     def _assert_url(self, url: str) -> None:
         parsed = urlsplit(url)
         host = (parsed.hostname or "").lower()
+        if parsed.scheme:
+            self._assert_scheme(parsed.scheme)
         self._assert_host(host)
         path = parsed.path or "/"
         for prefix in SPOT_PATH_PREFIXES:
@@ -142,6 +148,12 @@ class ReadOnlyHttpGetClient:
                     "Spot REST paths cannot satisfy perpetual evidence."
                 )
 
+    def _assert_scheme(self, scheme: str) -> None:
+        if scheme.lower() != "https":
+            raise UnapprovedEvidenceHostError(
+                "Binance USD-M perpetual evidence requires HTTPS; plain HTTP is forbidden."
+            )
+
     def _assert_host(self, host: str) -> None:
         if any(host == marker or host.endswith("." + marker) for marker in SPOT_HOST_MARKERS):
             raise SpotFallbackRejectedError(
@@ -149,3 +161,7 @@ class ReadOnlyHttpGetClient:
             )
         if any(host == marker or host.endswith("." + marker) for marker in COINM_HOST_MARKERS):
             raise WrongMarketError("Coin-M host cannot substitute for USD-M perpetual evidence.")
+        if host not in self._allowed_hosts:
+            raise UnapprovedEvidenceHostError(
+                f"Host {host} is not an approved Binance USD-M HTTPS evidence identity."
+            )

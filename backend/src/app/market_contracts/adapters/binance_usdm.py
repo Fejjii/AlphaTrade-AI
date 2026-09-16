@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -9,6 +10,7 @@ from uuid import UUID
 
 import httpx
 
+from app.market_contracts.adapters.aggtrades import fetch_complete_agg_trade_rows
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
@@ -140,39 +142,21 @@ class BinanceUsdmPerpetualSource:
         self._assert_request(identity, instrument, identity.timeframe)
         if end <= start:
             raise WrongMarketError("Trade window end must be after start.")
-        start_ms = int(start.astimezone(UTC).timestamp() * 1000)
-        end_ms = int(end.astimezone(UTC).timestamp() * 1000)
-        raw_trades: list[TradeEvent] = []
-        from_id: int | None = None
-        while True:
-            params: dict[str, str | int] = {
-                "symbol": instrument.provider_symbol,
-                "startTime": start_ms,
-                "endTime": end_ms,
-                "limit": 1000,
-            }
-            if from_id is not None:
-                params["fromId"] = from_id
-            payload = self._get("/fapi/v1/aggTrades", params)
-            if not isinstance(payload, list):
-                raise WrongMarketError("USD-M aggTrades payload is not a list.")
-            if not payload:
-                break
-            for row in payload:
-                raw_trades.append(
-                    self._parse_agg_trade(
-                        row,
-                        instrument=instrument,
-                        source_connection_id=source_connection_id,
-                        receive_at=receive_at,
-                    )
-                )
-            last_id = int(payload[-1]["a"])
-            if len(payload) < 1000:
-                break
-            from_id = last_id + 1
-            if from_id > 10_000_000_000:
-                break
+        rows = fetch_complete_agg_trade_rows(
+            get_json=self._get,
+            symbol=instrument.provider_symbol,
+            start=start,
+            end=end,
+        )
+        raw_trades = [
+            self._parse_agg_trade(
+                row,
+                instrument=instrument,
+                source_connection_id=source_connection_id,
+                receive_at=receive_at,
+            )
+            for row in rows
+        ]
         ordered = order_trades(raw_trades)
         batch = OrderedTradeBatch(
             identity=identity,
@@ -329,7 +313,7 @@ class BinanceUsdmPerpetualSource:
             adapter_version=ADAPTER_VERSION,
         )
 
-    def _get(self, path: str, params: dict[str, str | int] | None) -> Any:
+    def _get(self, path: str, params: Mapping[str, str | int] | None) -> Any:
         try:
             payload = self._http.get_json(path, params)
         except RegionalProviderFailureError:
