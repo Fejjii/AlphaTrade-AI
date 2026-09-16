@@ -490,7 +490,9 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Deliverables: `app.telegram_security`; in-memory store; fake transport;
   `docs/telegram_security_protocol.md`; tests
   `test_telegram_security_protocol.py`; `TELEGRAM_INTERACTION_ENABLED=false`.
-  Final hardening (PR 79): exact-replay fingerprint + `TelegramInboundUpdate.body_size`.
+  Final hardening (PR 79): exact-replay fingerprint +
+  `TelegramInboundUpdate.body_size`; closure binds full transport identity and
+  resolves exact/conflicting replay before rate-limit charging.
 - Validation: targeted protocol tests + full backend pytest + ruff + mypy on
   the new package + GitHub CI. No merge in this task.
 - Recommended model: Cursor Grok 4.6

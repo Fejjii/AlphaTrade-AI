@@ -97,8 +97,12 @@ class TelegramInboundUpdate(FrozenContract):
 class InboundReplayFingerprint(FrozenContract):
     """Immutable semantic content bound to one Telegram transport identity."""
 
+    update_id: int = Field(ge=0)
+    message_id: str | None = Field(default=None, min_length=1, max_length=64)
+    callback_query_id: str | None = Field(default=None, min_length=1, max_length=128)
     telegram_user_id: str = Field(min_length=1, max_length=64)
     chat_id: str = Field(min_length=1, max_length=64)
+    chat_type: ChatType
     bot_id: str = Field(min_length=1, max_length=64)
     secret_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     action: str | None = None

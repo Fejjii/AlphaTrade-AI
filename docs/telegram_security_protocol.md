@@ -66,11 +66,17 @@ does not create an execution command.
 - Expired and already-used nonces are rejected.
 - Exact replay: duplicate Telegram `update_id` / `callback_query_id`
   deliveries return the original receipt only when the inbound semantic
-  fingerprint is identical. The fingerprint binds Telegram user, chat, bot,
-  nonce or enrollment-token hash, action, organization, AlphaTrade user,
-  account, resource type, resource ID, revision ID, content hash, and payload
-  hash. Same transport identity with changed semantic content fails closed as
-  `REPLAY_CONFLICT`.
+  fingerprint is identical. Enrollment binds bot, update, message, Telegram
+  user, chat, chat type, and enrollment-token hash. Callback binds bot, update,
+  callback query, Telegram user, chat, chat type, nonce hash, and exact action
+  payload identity. Organization, AlphaTrade user, account, resource type,
+  resource ID, revision ID, content hash, and payload hash remain bound.
+  Same transport lookup identity with any changed transport or semantic content
+  fails closed as `REPLAY_CONFLICT`.
+- Replay ordering: inbound type and size are validated first, then persisted
+  receipt identity is resolved. Exact replays return the original result, and
+  conflicting replays fail closed, before rate-limit charging. Only genuinely
+  new semantic inbound actions consume callback/user/chat rate-limit budget.
 - Inbound size: `MAX_INBOUND_UPDATE_BYTES` applies to
   `TelegramInboundUpdate.body_size` (raw Telegram request payload). It is never
   derived from nonce or enrollment-token length. Webhook wiring is out of

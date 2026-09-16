@@ -654,14 +654,17 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   7. **CLOSE** is a known name but unavailable (issue and apply both fail).
   8. Duplicate `update_id` / `callback_query_id` / outbox idempotency keys
      converge only when the inbound semantic fingerprint is identical. Same
-     transport identity with changed Telegram user, chat, bot, nonce or
-     enrollment-token hash, action, organization, AlphaTrade user, account,
-     resource, revision, content hash, or payload hash fails closed as
-     `REPLAY_CONFLICT`.
-  9. `MAX_INBOUND_UPDATE_BYTES` is enforced against
+     transport lookup identity with changed update/message/callback identity,
+     Telegram user, chat, chat type, bot, nonce or enrollment-token hash,
+     action, organization, AlphaTrade user, account, resource, revision,
+     content hash, or payload hash fails closed as `REPLAY_CONFLICT`.
+  9. Inbound type and size validation precede receipt lookup. Exact persisted
+     replay convergence and conflicting replay rejection precede rate-limit
+     charging; only genuinely new semantic inbound actions consume budget.
+  10. `MAX_INBOUND_UPDATE_BYTES` is enforced against
      `TelegramInboundUpdate.body_size` (raw Telegram request payload), never
      nonce or enrollment-token length. Webhook wiring remains out of scope.
-  10. Delivery is at-least-once via durable claim.
+  11. Delivery is at-least-once via durable claim.
 - **Alternatives considered:** Wire inbound webhook now (rejected: later
   integration); persist via Alembic in this slice (rejected: later PostgreSQL
   binding); allow APPROVE to call execution (rejected: CRITICAL-03).

@@ -201,11 +201,6 @@ class TelegramSecurityProtocol:
         self._require_enabled()
         self.assert_inbound_update_allowed(inbound=inbound)
         self._require_inbound_type(inbound, expected="message")
-        self._rate.check_callback(
-            bot_id=identity.bot_id,
-            telegram_user_id=identity.telegram_user_id,
-            chat_id=identity.chat_id,
-        )
         now = self._clock.now()
         presented = token.strip()
         with self._store.transaction():
@@ -218,6 +213,11 @@ class TelegramSecurityProtocol:
             if existing_receipt is not None:
                 self._require_identical_replay(existing_receipt, replay_fingerprint)
                 return self._replay_enrollment(existing_receipt)
+            self._rate.check_callback(
+                bot_id=identity.bot_id,
+                telegram_user_id=identity.telegram_user_id,
+                chat_id=identity.chat_id,
+            )
             if identity.chat_type is not ChatType.PRIVATE:
                 self._record_enrollment_rejection(
                     identity,
@@ -479,11 +479,6 @@ class TelegramSecurityProtocol:
         self._require_enabled()
         self.assert_inbound_update_allowed(inbound=inbound)
         self._require_inbound_type(inbound, expected="callback_query")
-        self._rate.check_callback(
-            bot_id=identity.bot_id,
-            telegram_user_id=identity.telegram_user_id,
-            chat_id=identity.chat_id,
-        )
         now = self._clock.now()
         with self._store.transaction():
             replay_fingerprint = inbound_fingerprint_digest(
@@ -503,6 +498,11 @@ class TelegramSecurityProtocol:
             if existing is not None:
                 self._require_identical_replay(existing, replay_fingerprint)
                 return self._replay_action(existing)
+            self._rate.check_callback(
+                bot_id=identity.bot_id,
+                telegram_user_id=identity.telegram_user_id,
+                chat_id=identity.chat_id,
+            )
             receipt = self._new_receipt(
                 bot_id=identity.bot_id,
                 update_id=identity.update_id,
@@ -785,8 +785,12 @@ class TelegramSecurityProtocol:
     ) -> InboundReplayFingerprint:
         challenge = self._store.get_challenge_by_hash(hash_secret(presented))
         return InboundReplayFingerprint(
+            update_id=identity.update_id,
+            message_id=identity.message_id,
+            callback_query_id=None,
             telegram_user_id=identity.telegram_user_id,
             chat_id=identity.chat_id,
+            chat_type=identity.chat_type,
             bot_id=identity.bot_id,
             secret_hash=hash_secret(presented),
             action=None,
@@ -808,8 +812,12 @@ class TelegramSecurityProtocol:
         presented: ActionPayload,
     ) -> InboundReplayFingerprint:
         return InboundReplayFingerprint(
+            update_id=identity.update_id,
+            message_id=None,
+            callback_query_id=identity.callback_query_id,
             telegram_user_id=identity.telegram_user_id,
             chat_id=identity.chat_id,
+            chat_type=identity.chat_type,
             bot_id=identity.bot_id,
             secret_hash=hash_secret(nonce_token.strip()),
             action=presented.action.value,

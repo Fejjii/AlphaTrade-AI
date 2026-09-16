@@ -207,6 +207,31 @@ def test_duplicate_enrollment_delivery_converges() -> None:
     assert second.challenge.challenge_id == first.challenge.challenge_id
 
 
+def test_exact_enrollment_replays_bypass_rate_limit() -> None:
+    protocol = enabled_protocol(
+        rate_limit_policy=RateLimitPolicy(
+            callback_per_user=1,
+            callback_per_chat=1,
+        )
+    )
+    started = protocol.start_enrollment(organization_id=ORG, user_id=USER, bot_id=BOT)
+    identity = message_identity(update_id=6, message_id="msg-rate-replay")
+    first = protocol.complete_enrollment(
+        token=started.token,
+        identity=identity,
+        inbound=inbound_message(),
+    )
+
+    for _ in range(5):
+        replay = protocol.complete_enrollment(
+            token=started.token,
+            identity=identity,
+            inbound=inbound_message(),
+        )
+        assert replay.binding.binding_id == first.binding.binding_id
+        assert replay.challenge.challenge_id == first.challenge.challenge_id
+
+
 def test_wrong_user_callback_rejected() -> None:
     protocol = enabled_protocol()
     _, binding_id = enroll(protocol)
@@ -332,7 +357,7 @@ def test_duplicate_callback_returns_original_receipt() -> None:
     assert second.authorization_intent.intent_id == first.authorization_intent.intent_id
 
 
-def test_duplicate_delivery_of_same_update_converges() -> None:
+def test_same_update_id_changed_callback_id_is_replay_conflict() -> None:
     protocol = enabled_protocol()
     _, binding_id = enroll(protocol)
     issued = protocol.issue_action_nonce(
@@ -344,15 +369,15 @@ def test_duplicate_delivery_of_same_update_converges() -> None:
         presented_payload=payload(action=TelegramRemoteAction.STATUS),
         inbound=inbound_callback(),
     )
-    # Same update_id, different callback id still converges when semantics match.
-    second = protocol.receive_callback(
-        identity=callback_identity(update_id=44, callback_query_id="cb-other"),
-        nonce_token=issued.token,
-        presented_payload=payload(action=TelegramRemoteAction.STATUS),
-        inbound=inbound_callback(),
-    )
-    assert second.replayed is True
-    assert second.receipt.receipt_id == first.receipt.receipt_id
+    assert first.replayed is False
+    with pytest.raises(TelegramSecurityError) as exc:
+        protocol.receive_callback(
+            identity=callback_identity(update_id=44, callback_query_id="cb-other"),
+            nonce_token=issued.token,
+            presented_payload=payload(action=TelegramRemoteAction.STATUS),
+            inbound=inbound_callback(),
+        )
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
 
 
 def test_same_callback_id_identical_replay_converges() -> None:
@@ -376,6 +401,60 @@ def test_same_callback_id_identical_replay_converges() -> None:
     assert replay.receipt.receipt_id == first.receipt.receipt_id
     assert replay.receipt.replay_fingerprint == first.receipt.replay_fingerprint
     assert len(replay.receipt.replay_fingerprint) == 64
+
+
+def test_exact_callback_replays_bypass_rate_limit() -> None:
+    protocol = enabled_protocol(
+        rate_limit_policy=RateLimitPolicy(
+            callback_per_user=2,
+            callback_per_chat=2,
+        )
+    )
+    _, binding_id = enroll(protocol)
+    issued = protocol.issue_action_nonce(binding_id=binding_id, payload=payload())
+    identity = callback_identity(update_id=45, callback_query_id="cb-rate-replay")
+    first = protocol.receive_callback(
+        identity=identity,
+        nonce_token=issued.token,
+        presented_payload=payload(),
+        inbound=inbound_callback(),
+    )
+
+    for _ in range(5):
+        replay = protocol.receive_callback(
+            identity=identity,
+            nonce_token=issued.token,
+            presented_payload=payload(),
+            inbound=inbound_callback(),
+        )
+        assert replay.replayed is True
+        assert replay.receipt.receipt_id == first.receipt.receipt_id
+
+
+def test_same_callback_id_changed_update_id_is_replay_conflict() -> None:
+    protocol = enabled_protocol()
+    _, binding_id = enroll(protocol)
+    issued = protocol.issue_action_nonce(
+        binding_id=binding_id,
+        payload=payload(action=TelegramRemoteAction.STATUS),
+    )
+    first_identity = callback_identity(update_id=46, callback_query_id="cb-update-conflict")
+    first = protocol.receive_callback(
+        identity=first_identity,
+        nonce_token=issued.token,
+        presented_payload=payload(action=TelegramRemoteAction.STATUS),
+        inbound=inbound_callback(),
+    )
+    assert first.replayed is False
+
+    with pytest.raises(TelegramSecurityError) as exc:
+        protocol.receive_callback(
+            identity=first_identity.model_copy(update={"update_id": 47}),
+            nonce_token=issued.token,
+            presented_payload=payload(action=TelegramRemoteAction.STATUS),
+            inbound=inbound_callback(),
+        )
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
 
 
 def test_same_callback_id_changed_nonce_is_replay_conflict() -> None:
@@ -515,6 +594,72 @@ def test_same_enrollment_update_id_changed_telegram_user_is_replay_conflict() ->
             token=started.token,
             identity=message_identity(update_id=12, telegram_user_id=OTHER_TG_USER),
             inbound=inbound_message(),
+        )
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
+
+
+def test_same_enrollment_update_id_changed_message_id_is_replay_conflict() -> None:
+    protocol = enabled_protocol()
+    started = protocol.start_enrollment(organization_id=ORG, user_id=USER, bot_id=BOT)
+    identity = message_identity(update_id=13, message_id="msg-original")
+    first = protocol.complete_enrollment(
+        token=started.token,
+        identity=identity,
+        inbound=inbound_message(),
+    )
+    assert first.binding.state is BindingState.VERIFIED
+
+    with pytest.raises(TelegramSecurityError) as exc:
+        protocol.complete_enrollment(
+            token=started.token,
+            identity=identity.model_copy(update={"message_id": "msg-changed"}),
+            inbound=inbound_message(),
+        )
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
+
+
+def test_same_enrollment_update_id_changed_chat_type_is_replay_conflict() -> None:
+    protocol = enabled_protocol()
+    started = protocol.start_enrollment(organization_id=ORG, user_id=USER, bot_id=BOT)
+    identity = message_identity(update_id=14)
+    first = protocol.complete_enrollment(
+        token=started.token,
+        identity=identity,
+        inbound=inbound_message(),
+    )
+    assert first.binding.state is BindingState.VERIFIED
+
+    with pytest.raises(TelegramSecurityError) as exc:
+        protocol.complete_enrollment(
+            token=started.token,
+            identity=identity.model_copy(update={"chat_type": ChatType.GROUP}),
+            inbound=inbound_message(),
+        )
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
+
+
+def test_same_callback_id_changed_chat_type_is_replay_conflict() -> None:
+    protocol = enabled_protocol()
+    _, binding_id = enroll(protocol)
+    issued = protocol.issue_action_nonce(
+        binding_id=binding_id,
+        payload=payload(action=TelegramRemoteAction.EXPLAIN),
+    )
+    identity = callback_identity(update_id=48, callback_query_id="cb-chat-type-conflict")
+    first = protocol.receive_callback(
+        identity=identity,
+        nonce_token=issued.token,
+        presented_payload=payload(action=TelegramRemoteAction.EXPLAIN),
+        inbound=inbound_callback(),
+    )
+    assert first.replayed is False
+
+    with pytest.raises(TelegramSecurityError) as exc:
+        protocol.receive_callback(
+            identity=identity.model_copy(update={"chat_type": ChatType.GROUP}),
+            nonce_token=issued.token,
+            presented_payload=payload(action=TelegramRemoteAction.EXPLAIN),
+            inbound=inbound_callback(),
         )
     assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
 
