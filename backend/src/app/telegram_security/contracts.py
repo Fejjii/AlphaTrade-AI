@@ -81,6 +81,37 @@ class CallbackIdentity(TelegramActorIdentity):
     callback_query_id: str = Field(min_length=1, max_length=128)
 
 
+class TelegramInboundUpdate(FrozenContract):
+    """Authoritative inbound Telegram update envelope.
+
+    ``body_size`` is the actual Telegram request payload size in bytes (raw
+    update / request body). It is never derived from nonce or enrollment-token
+    length. Webhook wiring is out of scope; a later adapter MUST pass the raw
+    body length here.
+    """
+
+    update_type: str = Field(min_length=1, max_length=64)
+    body_size: int = Field(ge=0)
+
+
+class InboundReplayFingerprint(FrozenContract):
+    """Immutable semantic content bound to one Telegram transport identity."""
+
+    telegram_user_id: str = Field(min_length=1, max_length=64)
+    chat_id: str = Field(min_length=1, max_length=64)
+    bot_id: str = Field(min_length=1, max_length=64)
+    secret_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    action: str | None = None
+    organization_id: str | None = None
+    user_id: str | None = None
+    account_id: str | None = None
+    resource_type: str | None = None
+    resource_id: str | None = None
+    revision_id: str | None = None
+    content_hash: str | None = None
+    payload_hash: str | None = None
+
+
 class ActionPayload(FrozenContract):
     """Exact payload bound to one nonce. Callback data carries only the nonce."""
 
@@ -166,6 +197,7 @@ class ActionReceipt(FrozenContract):
     nonce_hash: str | None = None
     action: TelegramRemoteAction | None = None
     payload_hash: str | None = None
+    replay_fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     state: ActionReceiptState
     reason_code: str | None = None
     authorization_intent_id: UUID | None = None

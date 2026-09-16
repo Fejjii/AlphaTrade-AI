@@ -11,6 +11,7 @@ from app.telegram_security.contracts import (
     CallbackIdentity,
     ChatType,
     MessageIdentity,
+    TelegramInboundUpdate,
 )
 from app.telegram_security.protocol import TelegramSecurityProtocol
 from app.telegram_security.rate_limit import RateLimitPolicy
@@ -29,6 +30,8 @@ BOT = "bot-100"
 TG_USER = "tg-user-1"
 OTHER_TG_USER = "tg-user-2"
 CHAT = "tg-chat-1"
+OTHER_CHAT = "tg-chat-2"
+DEFAULT_INBOUND_BODY_SIZE = 1024
 
 
 class TokenSeq:
@@ -114,6 +117,16 @@ def payload(
     )
 
 
+def inbound_message(*, body_size: int = DEFAULT_INBOUND_BODY_SIZE) -> TelegramInboundUpdate:
+    """Authoritative message-update envelope. ``body_size`` is raw inbound bytes."""
+    return TelegramInboundUpdate(update_type="message", body_size=body_size)
+
+
+def inbound_callback(*, body_size: int = DEFAULT_INBOUND_BODY_SIZE) -> TelegramInboundUpdate:
+    """Authoritative callback-update envelope. ``body_size`` is raw inbound bytes."""
+    return TelegramInboundUpdate(update_type="callback_query", body_size=body_size)
+
+
 def enroll(
     protocol: TelegramSecurityProtocol,
     *,
@@ -127,5 +140,6 @@ def enroll(
     completed = protocol.complete_enrollment(
         token=started.token,
         identity=identity or message_identity(),
+        inbound=inbound_message(),
     )
     return started.token, completed.binding.binding_id

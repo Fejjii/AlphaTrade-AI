@@ -35,6 +35,7 @@ class TelegramSecurityReason(StrEnum):
     OUTBOX_CONFLICT = "OUTBOX_CONFLICT"
     OUTBOX_NOT_FOUND = "OUTBOX_NOT_FOUND"
     ACK_STATE_INVALID = "ACK_STATE_INVALID"
+    REPLAY_CONFLICT = "REPLAY_CONFLICT"
 
 
 class TelegramSecurityError(Exception):

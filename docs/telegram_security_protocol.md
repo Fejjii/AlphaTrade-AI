@@ -63,8 +63,18 @@ does not create an execution command.
 - Exact action payload binding: a mutated payload hash is rejected.
 - Cross-user, cross-organization, and cross-account presented identities are
   rejected without consuming the nonce.
-- Expired and already-used nonces are rejected. Duplicate Telegram
-  `update_id` / `callback_query_id` deliveries return the original receipt.
+- Expired and already-used nonces are rejected.
+- Exact replay: duplicate Telegram `update_id` / `callback_query_id`
+  deliveries return the original receipt only when the inbound semantic
+  fingerprint is identical. The fingerprint binds Telegram user, chat, bot,
+  nonce or enrollment-token hash, action, organization, AlphaTrade user,
+  account, resource type, resource ID, revision ID, content hash, and payload
+  hash. Same transport identity with changed semantic content fails closed as
+  `REPLAY_CONFLICT`.
+- Inbound size: `MAX_INBOUND_UPDATE_BYTES` applies to
+  `TelegramInboundUpdate.body_size` (raw Telegram request payload). It is never
+  derived from nonce or enrollment-token length. Webhook wiring is out of
+  scope; a later adapter must pass the raw body length.
 - Compare-and-set receipt states: `RECEIVED → CLAIMED → APPLIED | REJECTED`.
 - Enrollment-aware rate limits apply per AlphaTrade user (challenge start) and per
   Telegram user/chat (inbound complete/callback).

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from app.services.canonical_serialization import canonical_sha256
+from app.telegram_security.contracts import InboundReplayFingerprint
 
 TokenFactory = Callable[[], str]
 
@@ -34,3 +35,8 @@ def secrets_equal(left: str, right: str) -> bool:
 def payload_binding_hash(payload: BaseModel) -> str:
     """Canonical SHA-256 of the exact action payload bound to a nonce."""
     return canonical_sha256(payload)
+
+
+def inbound_fingerprint_digest(fingerprint: InboundReplayFingerprint) -> str:
+    """Canonical SHA-256 of the exact inbound replay fingerprint."""
+    return canonical_sha256(fingerprint)

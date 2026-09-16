@@ -36,6 +36,7 @@ from app.telegram_security.contracts import (
     EnrollmentChallengeState,
     EnrollmentCompleteResult,
     EnrollmentStartResult,
+    InboundReplayFingerprint,
     IssueNonceResult,
     MessageIdentity,
     NonceState,
@@ -45,6 +46,7 @@ from app.telegram_security.contracts import (
     ProtocolAuditEvent,
     ReceiptTransition,
     TelegramBinding,
+    TelegramInboundUpdate,
 )
 from app.telegram_security.errors import (
     TelegramInteractionDisabledError,
@@ -55,7 +57,9 @@ from app.telegram_security.hashing import (
     TokenFactory,
     generate_opaque_token,
     hash_secret,
+    inbound_fingerprint_digest,
     payload_binding_hash,
+    secrets_equal,
 )
 from app.telegram_security.memory import InMemoryTelegramSecurityStore
 from app.telegram_security.persistence import TelegramSecurityStore
@@ -129,18 +133,24 @@ class TelegramSecurityProtocol:
         """Always zero: this protocol has no execution path."""
         return 0
 
-    def assert_inbound_update_allowed(self, *, update_type: str, body_size: int) -> None:
+    def assert_inbound_update_allowed(self, *, inbound: TelegramInboundUpdate) -> None:
+        """Reject disallowed update types and oversized inbound Telegram payloads.
+
+        ``inbound.body_size`` is the authoritative raw Telegram request size.
+        Callers must not substitute nonce or enrollment-token length.
+        """
         self._require_enabled()
-        if update_type not in ALLOWED_TELEGRAM_UPDATE_TYPES:
+        if inbound.update_type not in ALLOWED_TELEGRAM_UPDATE_TYPES:
             raise TelegramSecurityError(
                 "Telegram update type is not allowed.",
                 reason=TelegramSecurityReason.UPDATE_TYPE_REJECTED,
-                details={"update_type": update_type},
+                details={"update_type": inbound.update_type},
             )
-        if body_size > MAX_INBOUND_UPDATE_BYTES:
+        if inbound.body_size > MAX_INBOUND_UPDATE_BYTES:
             raise TelegramSecurityError(
                 "Telegram update exceeds bounded request size.",
                 reason=TelegramSecurityReason.UPDATE_TOO_LARGE,
+                details={"body_size": str(inbound.body_size)},
             )
 
     def start_enrollment(
@@ -182,12 +192,15 @@ class TelegramSecurityProtocol:
         return EnrollmentStartResult(challenge=challenge, token=token)
 
     def complete_enrollment(
-        self, *, token: str, identity: MessageIdentity
+        self,
+        *,
+        token: str,
+        identity: MessageIdentity,
+        inbound: TelegramInboundUpdate,
     ) -> EnrollmentCompleteResult:
         self._require_enabled()
-        self.assert_inbound_update_allowed(
-            update_type="message", body_size=len(token.encode("utf-8"))
-        )
+        self.assert_inbound_update_allowed(inbound=inbound)
+        self._require_inbound_type(inbound, expected="message")
         self._rate.check_callback(
             bot_id=identity.bot_id,
             telegram_user_id=identity.telegram_user_id,
@@ -196,14 +209,21 @@ class TelegramSecurityProtocol:
         now = self._clock.now()
         presented = token.strip()
         with self._store.transaction():
+            replay_fingerprint = inbound_fingerprint_digest(
+                self._enrollment_replay_fingerprint(identity=identity, presented=presented)
+            )
             existing_receipt = self._store.get_update_receipt(
                 bot_id=identity.bot_id, update_id=identity.update_id
             )
             if existing_receipt is not None:
+                self._require_identical_replay(existing_receipt, replay_fingerprint)
                 return self._replay_enrollment(existing_receipt)
             if identity.chat_type is not ChatType.PRIVATE:
                 self._record_enrollment_rejection(
-                    identity, reason=TelegramSecurityReason.CHAT_NOT_PRIVATE, now=now
+                    identity,
+                    reason=TelegramSecurityReason.CHAT_NOT_PRIVATE,
+                    now=now,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Telegram enrollment requires a private chat.",
@@ -214,6 +234,7 @@ class TelegramSecurityProtocol:
                     identity,
                     reason=TelegramSecurityReason.ENROLLMENT_CHAT_ID_ONLY,
                     now=now,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "A Telegram chat id is not enrollment.",
@@ -222,7 +243,10 @@ class TelegramSecurityProtocol:
             challenge = self._store.get_challenge_by_hash(hash_secret(presented))
             if challenge is None:
                 self._record_enrollment_rejection(
-                    identity, reason=TelegramSecurityReason.ENROLLMENT_NOT_FOUND, now=now
+                    identity,
+                    reason=TelegramSecurityReason.ENROLLMENT_NOT_FOUND,
+                    now=now,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Enrollment challenge was not found.",
@@ -235,6 +259,7 @@ class TelegramSecurityProtocol:
                     now=now,
                     organization_id=challenge.organization_id,
                     user_id=challenge.user_id,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Enrollment challenge belongs to a different bot.",
@@ -247,6 +272,7 @@ class TelegramSecurityProtocol:
                     now=now,
                     organization_id=challenge.organization_id,
                     user_id=challenge.user_id,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Enrollment challenge has already been used.",
@@ -259,6 +285,7 @@ class TelegramSecurityProtocol:
                     now=now,
                     organization_id=challenge.organization_id,
                     user_id=challenge.user_id,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Enrollment challenge is not pending.",
@@ -275,6 +302,7 @@ class TelegramSecurityProtocol:
                     now=now,
                     organization_id=challenge.organization_id,
                     user_id=challenge.user_id,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Enrollment challenge has expired.",
@@ -293,6 +321,7 @@ class TelegramSecurityProtocol:
                     now=now,
                     organization_id=challenge.organization_id,
                     user_id=challenge.user_id,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Telegram user is already bound to another AlphaTrade user.",
@@ -311,6 +340,7 @@ class TelegramSecurityProtocol:
                     now=now,
                     organization_id=challenge.organization_id,
                     user_id=challenge.user_id,
+                    replay_fingerprint=replay_fingerprint,
                 )
                 raise TelegramSecurityError(
                     "Telegram chat is already bound to another AlphaTrade user.",
@@ -362,6 +392,7 @@ class TelegramSecurityProtocol:
                 user_id=binding.user_id,
                 binding_id=binding.binding_id,
                 state=ActionReceiptState.APPLIED,
+                replay_fingerprint=replay_fingerprint,
             )
             self._store.save_receipt(receipt)
             self._audit(
@@ -443,11 +474,11 @@ class TelegramSecurityProtocol:
         identity: CallbackIdentity,
         nonce_token: str,
         presented_payload: ActionPayload,
+        inbound: TelegramInboundUpdate,
     ) -> ActionOutcome:
         self._require_enabled()
-        self.assert_inbound_update_allowed(
-            update_type="callback_query", body_size=len(nonce_token.encode("utf-8"))
-        )
+        self.assert_inbound_update_allowed(inbound=inbound)
+        self._require_inbound_type(inbound, expected="callback_query")
         self._rate.check_callback(
             bot_id=identity.bot_id,
             telegram_user_id=identity.telegram_user_id,
@@ -455,6 +486,13 @@ class TelegramSecurityProtocol:
         )
         now = self._clock.now()
         with self._store.transaction():
+            replay_fingerprint = inbound_fingerprint_digest(
+                self._callback_replay_fingerprint(
+                    identity=identity,
+                    nonce_token=nonce_token,
+                    presented=presented_payload,
+                )
+            )
             existing = self._store.get_callback_receipt(
                 bot_id=identity.bot_id, callback_query_id=identity.callback_query_id
             )
@@ -463,6 +501,7 @@ class TelegramSecurityProtocol:
                     bot_id=identity.bot_id, update_id=identity.update_id
                 )
             if existing is not None:
+                self._require_identical_replay(existing, replay_fingerprint)
                 return self._replay_action(existing)
             receipt = self._new_receipt(
                 bot_id=identity.bot_id,
@@ -476,6 +515,7 @@ class TelegramSecurityProtocol:
                 account_id=presented_payload.account_id,
                 action=presented_payload.action,
                 payload_hash=payload_binding_hash(presented_payload),
+                replay_fingerprint=replay_fingerprint,
             )
             claimed = self._transition(receipt, to=ActionReceiptState.CLAIMED, now=now)
             self._store.save_receipt(claimed)
@@ -709,6 +749,80 @@ class TelegramSecurityProtocol:
         if not self._enabled:
             raise TelegramInteractionDisabledError()
 
+    def _require_inbound_type(self, inbound: TelegramInboundUpdate, *, expected: str) -> None:
+        if inbound.update_type != expected:
+            raise TelegramSecurityError(
+                "Telegram inbound update type does not match this protocol entry.",
+                reason=TelegramSecurityReason.UPDATE_TYPE_REJECTED,
+                details={"update_type": inbound.update_type, "expected": expected},
+            )
+
+    def _require_identical_replay(self, receipt: ActionReceipt, incoming_digest: str) -> None:
+        if secrets_equal(receipt.replay_fingerprint, incoming_digest):
+            return
+        self._audit(
+            "replay_conflict",
+            organization_id=receipt.organization_id,
+            user_id=receipt.user_id,
+            reason=TelegramSecurityReason.REPLAY_CONFLICT,
+            details=(
+                ("bot_id", receipt.bot_id),
+                ("update_id", str(receipt.update_id)),
+                ("receipt_id", str(receipt.receipt_id)),
+            ),
+        )
+        raise TelegramSecurityError(
+            "Inbound Telegram replay conflicts with the original fingerprint.",
+            reason=TelegramSecurityReason.REPLAY_CONFLICT,
+            details={
+                "bot_id": receipt.bot_id,
+                "update_id": str(receipt.update_id),
+            },
+        )
+
+    def _enrollment_replay_fingerprint(
+        self, *, identity: MessageIdentity, presented: str
+    ) -> InboundReplayFingerprint:
+        challenge = self._store.get_challenge_by_hash(hash_secret(presented))
+        return InboundReplayFingerprint(
+            telegram_user_id=identity.telegram_user_id,
+            chat_id=identity.chat_id,
+            bot_id=identity.bot_id,
+            secret_hash=hash_secret(presented),
+            action=None,
+            organization_id=None if challenge is None else str(challenge.organization_id),
+            user_id=None if challenge is None else str(challenge.user_id),
+            account_id=None,
+            resource_type=None,
+            resource_id=None,
+            revision_id=None,
+            content_hash=None,
+            payload_hash=None,
+        )
+
+    def _callback_replay_fingerprint(
+        self,
+        *,
+        identity: CallbackIdentity,
+        nonce_token: str,
+        presented: ActionPayload,
+    ) -> InboundReplayFingerprint:
+        return InboundReplayFingerprint(
+            telegram_user_id=identity.telegram_user_id,
+            chat_id=identity.chat_id,
+            bot_id=identity.bot_id,
+            secret_hash=hash_secret(nonce_token.strip()),
+            action=presented.action.value,
+            organization_id=str(presented.organization_id),
+            user_id=str(presented.user_id),
+            account_id=str(presented.account_id),
+            resource_type=presented.resource_type,
+            resource_id=str(presented.resource_id),
+            revision_id=None if presented.revision_id is None else str(presented.revision_id),
+            content_hash=presented.content_hash,
+            payload_hash=payload_binding_hash(presented),
+        )
+
     def _require_active_binding(self, binding_id: UUID) -> TelegramBinding:
         binding = self._store.get_binding(binding_id)
         if binding is None:
@@ -853,6 +967,7 @@ class TelegramSecurityProtocol:
         *,
         reason: TelegramSecurityReason,
         now: datetime,
+        replay_fingerprint: str,
         organization_id: UUID | None = None,
         user_id: UUID | None = None,
     ) -> None:
@@ -867,6 +982,7 @@ class TelegramSecurityProtocol:
             user_id=user_id,
             state=ActionReceiptState.REJECTED,
             reason_code=reason.value,
+            replay_fingerprint=replay_fingerprint,
         )
         self._store.save_receipt(receipt)
         self._audit(
@@ -934,6 +1050,7 @@ class TelegramSecurityProtocol:
         binding_id: UUID | None = None,
         state: ActionReceiptState = ActionReceiptState.RECEIVED,
         reason_code: str | None = None,
+        replay_fingerprint: str,
     ) -> ActionReceipt:
         transition = ReceiptTransition(
             sequence=1,
@@ -955,6 +1072,7 @@ class TelegramSecurityProtocol:
             account_id=account_id,
             action=action,
             payload_hash=payload_hash,
+            replay_fingerprint=replay_fingerprint,
             binding_id=binding_id,
             state=state,
             reason_code=reason_code,
