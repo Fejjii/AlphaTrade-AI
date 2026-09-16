@@ -17,6 +17,7 @@ from app.market_contracts.adapters.aggtrades import (
     iter_aggtrade_time_chunks,
 )
 from app.market_contracts.adapters.binance_usdm import BinanceUsdmPerpetualSource
+from app.market_contracts.enums import DataCompleteness, GapState
 from app.market_contracts.errors import (
     IncompleteTradeWindowError,
     UnapprovedEvidenceHostError,
@@ -127,6 +128,13 @@ def test_live_aggtrades_paginates_more_than_one_hour_and_1000_records() -> None:
         receive_at=EVALUATED_AT,
     )
     assert len(batch.trades) == 1007
+    assert batch.coverage.completeness is DataCompleteness.COMPLETE
+    assert batch.coverage.gap_state is GapState.NONE
+    assert batch.coverage.requested_start == window_start
+    assert batch.coverage.requested_end == window_end
+    assert batch.coverage.actual_covered_start == window_start
+    assert batch.coverage.actual_covered_end == window_end
+    assert batch.coverage.lineage_id == CONNECTION
     assert [trade.sequence for trade in batch.trades[:3]] == [1, 2, 3]
     assert batch.trades[-1].sequence == 1007
     assert any("fromId" in params and "startTime" not in params for params in book.requests)

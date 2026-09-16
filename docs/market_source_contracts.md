@@ -55,13 +55,19 @@ For linear USD-M:
 
 First-slice CVD window is half-open
 `[open(T-32 15m), end(T))` with baseline `0` at the window start.
-CVD completeness is derived from a `TradeStreamSnapshot` cursor proof
-(contiguous sequences, `gap_state=none`, warm-up complete). Caller-supplied
-COMPLETE/NONE flags are not accepted. First-slice CVD is not action-eligible
-unless the snapshot's latest trade also passes the 10s freshness policy.
+CVD completeness is derived from a `TradeStreamSnapshot` containing an immutable
+`TradeWindowCoverageProof`. The proof binds the exact market/source identity,
+retrieval or connection lineage, requested and actual half-open bounds, gap and
+completeness state, first/last trade identities, ordered trade-set hash, and its
+own canonical content hash. Caller-supplied COMPLETE/NONE flags and event counts
+cannot establish coverage. The proof's actual bounds must cover the entire CVD
+window, including quiet prefixes and suffixes.
 
 Trigger-bar signed flow is `signed_quote_delta_T / total_quote_volume_T`.
-Zero total volume fails closed.
+It consumes the same proven snapshot and requires complete trigger-bar coverage,
+exact identity and lineage, no gap, the versioned aggressor convention, and a
+terminal trade no older than 10 seconds. Missing prefixes/suffixes, zero total
+volume, stale evidence, and mismatched markets fail closed.
 
 ## AggTrades retrieval
 
@@ -79,7 +85,9 @@ States: `INITIAL -> CONTINUOUS -> RECONNECTING -> RECOVERED`.
 Every reconnect starts a new connection epoch. Current CVD is unusable until
 contiguous backfill proves coverage from the pre-disconnect watermark and warm-up
 completes. An unresolved gap is `UNRECOVERABLE` and fails closed. Cross-connection
-CVD windows are not supported in V1.
+CVD windows are not supported in V1. Raw stream ingestion produces only PARTIAL
+coverage; COMPLETE coverage enters through a verified retrieval-bound
+`OrderedTradeBatch`.
 
 ## Freshness
 

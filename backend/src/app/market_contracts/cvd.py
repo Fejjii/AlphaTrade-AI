@@ -8,6 +8,7 @@ from uuid import UUID, uuid5
 
 from pydantic import AwareDatetime, Field, model_validator
 
+from app.market_contracts.coverage import require_complete_window_coverage
 from app.market_contracts.cursor import TradeStreamSnapshot, require_contiguous_sequences
 from app.market_contracts.enums import (
     DataCompleteness,
@@ -21,11 +22,11 @@ from app.market_contracts.errors import (
     GapDetectedError,
     IncompleteWarmUpError,
     UnknownAggressorError,
+    WrongMarketError,
 )
 from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
 from app.market_contracts.hashing import semantic_content_hash, with_content_hash
 from app.market_contracts.identity import (
-    AGGRESSOR_CONVENTION,
     EvidenceMarketIdentity,
     interval_timedelta,
     require_perpetual,
@@ -57,6 +58,8 @@ class CvdWindow(CanonicalModel):
     gap_status: GapState
     warm_up_complete: bool
     source_connection_id: UUID
+    coverage_proof_id: UUID
+    coverage_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     start_cursor_id: UUID
     end_cursor_id: UUID
     aggressor_convention: str = Field(min_length=3, max_length=120)
@@ -156,6 +159,10 @@ def require_cvd_stream_proof(snapshot: TradeStreamSnapshot) -> None:
         )
     if not snapshot.trades:
         raise IncompleteWarmUpError("CVD requires a non-empty trade-stream snapshot.")
+    if not snapshot.usable:
+        raise IncompleteWarmUpError(
+            "CVD requires an authoritative complete trade-window coverage proof."
+        )
     require_contiguous_sequences([trade.sequence for trade in snapshot.trades])
     terminal = snapshot.trades[-1]
     if cursor.last_sequence != terminal.sequence:
@@ -173,9 +180,20 @@ def build_cvd_window(
     window_end: datetime,
     baseline: Decimal,
     created_at: datetime,
-    aggressor_convention: str = AGGRESSOR_CONVENTION,
 ) -> CvdWindow:
+    if identity != snapshot.cursor.identity:
+        raise WrongMarketError(
+            "CVD identity does not exactly match the authoritative trade snapshot identity."
+        )
     require_cvd_stream_proof(snapshot)
+    require_complete_window_coverage(
+        snapshot.coverage,
+        identity=identity,
+        lineage_id=snapshot.cursor.connection_identity,
+        trades=snapshot.trades,
+        required_start=window_start,
+        required_end=window_end,
+    )
     selected = select_trades_in_window(snapshot.trades, start=window_start, end=window_end)
     if not selected:
         raise IncompleteWarmUpError("CVD window contains no trades from the proven snapshot.")
@@ -202,9 +220,11 @@ def build_cvd_window(
         gap_status=GapState.NONE,
         warm_up_complete=True,
         source_connection_id=snapshot.cursor.connection_identity,
+        coverage_proof_id=snapshot.coverage.coverage_proof_id,
+        coverage_content_hash=snapshot.coverage.content_hash,
         start_cursor_id=cursor_id,
         end_cursor_id=cursor_id,
-        aggressor_convention=aggressor_convention,
+        aggressor_convention=identity.source.aggressor_convention,
         source_identity=identity.source.adapter_version,
         reset_policy_version=CVD_RESET_POLICY_VERSION,
         arithmetic_policy_version=CVD_ARITHMETIC_POLICY_VERSION,
@@ -224,6 +244,10 @@ def first_slice_cvd_window(
     created_at: datetime,
     lookback: int = FIRST_SLICE_CVD_LOOKBACK_BARS,
 ) -> CvdWindow:
+    if identity != series_15m.identity:
+        raise WrongMarketError(
+            "First-slice CVD identity does not exactly match the closed OHLCV identity."
+        )
     if series_15m.timeframe is not Timeframe.M15:
         raise ValueError("First-slice CVD is defined on the 15m closed series.")
     if len(series_15m.bars) <= lookback:
@@ -239,9 +263,11 @@ def first_slice_cvd_window(
         baseline=Decimal("0"),
         created_at=created_at,
     )
-    terminal = max(snapshot.trades, key=lambda item: item.event_timestamp)
+    terminal_time = window.event_time_max
+    if terminal_time is None:
+        raise IncompleteWarmUpError("First-slice CVD has no terminal trade evidence.")
     evaluate_freshness(
-        source_time=terminal.event_timestamp,
+        source_time=terminal_time,
         evaluated_at=created_at,
         policy=first_slice_freshness_policy(),
         require_fresh=True,

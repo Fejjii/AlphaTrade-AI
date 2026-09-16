@@ -13,6 +13,7 @@ from app.market_contracts.adapters.binance_usdm import BinanceUsdmPerpetualSourc
 from app.market_contracts.adapters.factory import resolve_perpetual_evidence_source
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
+from app.market_contracts.enums import MarketType
 from app.market_contracts.errors import (
     FormingCandleError,
     RegionalProviderFailureError,
@@ -28,6 +29,7 @@ from app.market_contracts.first_slice import (
     first_slice_identity,
 )
 from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
+from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import binance_usdm_btcusdt, interval_timedelta
 from app.market_contracts.replay_fixtures import canonical_first_slice_fixture
 from app.providers.base import ProviderHealth
@@ -40,6 +42,7 @@ from tests.support.phase5_market import (
     eth_instrument,
     identity,
     spot_identity,
+    trade,
 )
 
 
@@ -135,6 +138,9 @@ def test_replay_determinism() -> None:
         receive_at=EVALUATED_AT,
     )
     assert trades_a.content_hash == trades_b.content_hash
+    assert trades_a.coverage.content_hash == trades_b.coverage.content_hash
+    assert trades_a.coverage.requested_start == series_a.bars[0].interval_start
+    assert trades_a.coverage.requested_end == series_a.bars[-1].interval_end
     assert trades_a.trades
     assert trades_a.trades[0].content_hash == trades_b.trades[0].content_hash
 
@@ -148,6 +154,50 @@ def test_replay_rejects_wrong_instrument() -> None:
             timeframe=Timeframe.M15,
             min_final_bars=1,
             evaluated_at=EVALUATED_AT,
+        )
+
+
+def test_replay_boundary_rejects_trade_from_wrong_instrument() -> None:
+    wrong_trade = trade(
+        sequence=1,
+        price="100",
+        quantity="1",
+        buyer_is_maker=False,
+        event_time=TRIGGER_OPEN + timedelta(seconds=1),
+        instrument=eth_instrument(),
+    )
+    source = ReplayPerpetualSource(trades=[wrong_trade])
+    with pytest.raises(WrongInstrumentError):
+        source.fetch_ordered_trades(
+            identity=identity(),
+            instrument=binance_usdm_btcusdt(),
+            start=TRIGGER_OPEN,
+            end=TRIGGER_OPEN + timedelta(minutes=15),
+            source_connection_id=CONNECTION,
+            receive_at=EVALUATED_AT,
+        )
+
+
+def test_replay_boundary_rejects_trade_from_wrong_market() -> None:
+    perpetual_trade = trade(
+        sequence=1,
+        price="100",
+        quantity="1",
+        buyer_is_maker=False,
+        event_time=TRIGGER_OPEN + timedelta(seconds=1),
+    )
+    wrong_market_trade = with_content_hash(
+        perpetual_trade.model_copy(update={"market_type": MarketType.SPOT})
+    )
+    source = ReplayPerpetualSource(trades=[wrong_market_trade])
+    with pytest.raises(WrongMarketError):
+        source.fetch_ordered_trades(
+            identity=identity(),
+            instrument=binance_usdm_btcusdt(),
+            start=TRIGGER_OPEN,
+            end=TRIGGER_OPEN + timedelta(minutes=15),
+            source_connection_id=CONNECTION,
+            receive_at=EVALUATED_AT,
         )
 
 

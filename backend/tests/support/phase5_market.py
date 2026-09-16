@@ -6,9 +6,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from app.market_contracts.coverage import build_complete_trade_window_coverage
+from app.market_contracts.cursor import TradeStreamAssembler, TradeStreamSnapshot
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.freshness import first_slice_freshness_policy
+from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import (
     ADAPTER_VERSION,
     EvidenceMarketIdentity,
@@ -20,7 +23,7 @@ from app.market_contracts.identity import (
     interval_timedelta,
 )
 from app.market_contracts.ohlcv import OhlcvBar, build_ohlcv_bar
-from app.market_contracts.trades import TradeEvent, build_trade_event
+from app.market_contracts.trades import OrderedTradeBatch, TradeEvent, build_trade_event
 from app.schemas.common import Timeframe
 
 EVALUATED_AT = datetime(2026, 1, 15, 16, 15, 5, tzinfo=UTC)
@@ -167,3 +170,39 @@ def eth_instrument() -> InstrumentIdentity:
 
 def new_connection() -> UUID:
     return uuid4()
+
+
+def proven_snapshot(
+    trades: list[TradeEvent],
+    *,
+    start: datetime,
+    end: datetime,
+    evidence_identity: EvidenceMarketIdentity | None = None,
+    connection: UUID = CONNECTION,
+    observed_at: datetime = EVALUATED_AT,
+) -> TradeStreamSnapshot:
+    """Build a retrieval-bound authoritative snapshot for behavior tests."""
+    market_identity = evidence_identity or identity()
+    coverage = build_complete_trade_window_coverage(
+        identity=market_identity,
+        lineage_id=connection,
+        requested_start=start,
+        requested_end=end,
+        trades=trades,
+    )
+    batch = with_content_hash(
+        OrderedTradeBatch(
+            identity=market_identity,
+            trades=trades,
+            source_connection_id=connection,
+            coverage=coverage,
+            content_hash="0" * 64,
+        )
+    )
+    assembler = TradeStreamAssembler(
+        market_identity,
+        connected_at=observed_at,
+        connection_identity=connection,
+        expected_contiguous_count=len(trades),
+    )
+    return assembler.ingest_batch(batch, observed_at=observed_at)

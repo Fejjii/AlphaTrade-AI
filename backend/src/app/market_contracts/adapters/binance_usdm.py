@@ -12,6 +12,7 @@ import httpx
 
 from app.market_contracts.adapters.aggtrades import fetch_complete_agg_trade_rows
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
+from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
     FallbackForbiddenError,
@@ -158,10 +159,18 @@ class BinanceUsdmPerpetualSource:
             for row in rows
         ]
         ordered = order_trades(raw_trades)
+        coverage = build_complete_trade_window_coverage(
+            identity=identity,
+            lineage_id=source_connection_id,
+            requested_start=start,
+            requested_end=end,
+            trades=ordered,
+        )
         batch = OrderedTradeBatch(
             identity=identity,
             trades=ordered,
             source_connection_id=source_connection_id,
+            coverage=coverage,
             content_hash="0" * 64,
         )
         return with_content_hash(batch)

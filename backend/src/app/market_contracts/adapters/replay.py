@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.cvd import select_trades_in_window
 from app.market_contracts.errors import (
     FormingCandleError,
@@ -91,10 +92,18 @@ class ReplayPerpetualSource:
                 with_content_hash(updated, extra_exclude=frozenset({"source_connection_id"}))
             )
         ordered = order_trades(retagged)
+        coverage = build_complete_trade_window_coverage(
+            identity=identity,
+            lineage_id=source_connection_id,
+            requested_start=start,
+            requested_end=end,
+            trades=ordered,
+        )
         batch = OrderedTradeBatch(
             identity=identity,
             trades=ordered,
             source_connection_id=source_connection_id,
+            coverage=coverage,
             content_hash="0" * 64,
         )
         return with_content_hash(batch)

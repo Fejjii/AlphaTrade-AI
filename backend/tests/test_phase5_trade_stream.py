@@ -8,7 +8,14 @@ import pytest
 
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
 from app.market_contracts.cursor import TradeStreamAssembler, detect_sequence_gap
-from app.market_contracts.enums import AggressorSide, GapState, ReconnectState, WarmUpStatus
+from app.market_contracts.enums import (
+    AggressorSide,
+    DataCompleteness,
+    GapState,
+    MarketType,
+    ReconnectState,
+    WarmUpStatus,
+)
 from app.market_contracts.errors import (
     DuplicateDataError,
     GapDetectedError,
@@ -16,13 +23,18 @@ from app.market_contracts.errors import (
     OutOfOrderTradesError,
     UnknownAggressorError,
     UnrecoverableGapError,
+    WrongInstrumentError,
+    WrongMarketError,
+    WrongSourceError,
 )
+from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import binance_usdm_btcusdt
 from app.market_contracts.trades import aggressor_from_buyer_is_maker, build_trade_event
 from tests.support.phase5_market import (
     CONNECTION,
     EVALUATED_AT,
     TRIGGER_OPEN,
+    eth_instrument,
     identity,
     trade,
 )
@@ -166,6 +178,61 @@ def test_out_of_order_trades() -> None:
         assembler.ingest([earlier], observed_at=EVALUATED_AT)
 
 
+def test_stream_ingestion_rejects_wrong_instrument() -> None:
+    wrong = trade(
+        sequence=1,
+        price="100",
+        quantity="1",
+        buyer_is_maker=False,
+        event_time=TRIGGER_OPEN,
+        instrument=eth_instrument(),
+    )
+    with pytest.raises(WrongInstrumentError):
+        _assembler().ingest([wrong], observed_at=EVALUATED_AT)
+
+
+def test_stream_ingestion_rejects_wrong_market() -> None:
+    valid = trade(
+        sequence=1,
+        price="100",
+        quantity="1",
+        buyer_is_maker=False,
+        event_time=TRIGGER_OPEN,
+    )
+    wrong = with_content_hash(valid.model_copy(update={"market_type": MarketType.SPOT}))
+    with pytest.raises(WrongMarketError):
+        _assembler().ingest([wrong], observed_at=EVALUATED_AT)
+
+
+def test_stream_ingestion_rejects_wrong_source_identity() -> None:
+    wrong = build_trade_event(
+        instrument=binance_usdm_btcusdt(),
+        venue_trade_id="1",
+        sequence=1,
+        price=trade(
+            sequence=1,
+            price="100",
+            quantity="1",
+            buyer_is_maker=False,
+            event_time=TRIGGER_OPEN,
+        ).price,
+        quantity=trade(
+            sequence=1,
+            price="100",
+            quantity="1",
+            buyer_is_maker=False,
+            event_time=TRIGGER_OPEN,
+        ).quantity,
+        buyer_is_maker=False,
+        event_timestamp=TRIGGER_OPEN,
+        receive_timestamp=EVALUATED_AT,
+        source_connection_id=CONNECTION,
+        adapter_version="unapproved-source/v1",
+    )
+    with pytest.raises(WrongSourceError):
+        _assembler().ingest([wrong], observed_at=EVALUATED_AT)
+
+
 def test_cursor_recovery_contiguous_backfill() -> None:
     assembler = _assembler(expected=3)
     t1 = trade(sequence=1, price="100", quantity="1", buyer_is_maker=False, event_time=TRIGGER_OPEN)
@@ -193,7 +260,8 @@ def test_cursor_recovery_contiguous_backfill() -> None:
     )
     assert snapshot.cursor.gap_state is GapState.NONE
     assert snapshot.cursor.warm_up_status is WarmUpStatus.COMPLETE
-    assert snapshot.usable is True
+    assert snapshot.coverage.completeness is DataCompleteness.PARTIAL
+    assert snapshot.usable is False
     assert [item.sequence for item in snapshot.trades] == [1, 2, 3]
 
 

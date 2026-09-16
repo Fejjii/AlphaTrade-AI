@@ -19,6 +19,10 @@ class WrongInstrumentError(MarketContractError):
     """Instrument identity does not match the requested canonical instrument."""
 
 
+class WrongSourceError(MarketContractError):
+    """Trade provider/source or retrieval lineage does not match its evidence identity."""
+
+
 class GapDetectedError(MarketContractError):
     """A sequence or interval gap was detected in the selected evidence."""
 

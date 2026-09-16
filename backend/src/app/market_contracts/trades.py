@@ -8,12 +8,16 @@ from uuid import UUID, uuid4, uuid5
 
 from pydantic import AwareDatetime, Field, model_validator
 
+from app.market_contracts.coverage import (
+    TradeWindowCoverageProof,
+    require_trade_matches_identity,
+    verify_trade_window_coverage,
+)
 from app.market_contracts.enums import AggressorSide, MarketType
 from app.market_contracts.errors import (
     DuplicateDataError,
     OutOfOrderTradesError,
     UnknownAggressorError,
-    WrongInstrumentError,
     WrongMarketError,
 )
 from app.market_contracts.hashing import with_content_hash
@@ -62,6 +66,7 @@ class OrderedTradeBatch(CanonicalModel):
     identity: EvidenceMarketIdentity
     trades: list[TradeEvent]
     source_connection_id: UUID
+    coverage: TradeWindowCoverageProof
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
@@ -72,10 +77,7 @@ class OrderedTradeBatch(CanonicalModel):
         previous_seq: int | None = None
         previous_ts: datetime | None = None
         for trade in self.trades:
-            if trade.instrument.instrument_id != self.identity.instrument.instrument_id:
-                raise WrongInstrumentError("Trade instrument does not match batch identity.")
-            if trade.market_type is not MarketType.PERPETUAL:
-                raise WrongMarketError("Spot or non-perpetual trades cannot enter this batch.")
+            require_trade_matches_identity(trade, self.identity)
             if trade.source_connection_id != self.source_connection_id:
                 raise ValueError("Mixed source_connection_id values are not allowed in one batch.")
             prior_hash = seen.get(trade.venue_trade_id)
@@ -98,6 +100,12 @@ class OrderedTradeBatch(CanonicalModel):
                 )
             previous_seq = trade.sequence
             previous_ts = trade.event_timestamp
+        verify_trade_window_coverage(
+            self.coverage,
+            identity=self.identity,
+            lineage_id=self.source_connection_id,
+            trades=self.trades,
+        )
         return self
 
 
