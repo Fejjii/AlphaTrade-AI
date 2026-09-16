@@ -12,12 +12,15 @@ from sqlalchemy.engine import Connection
 
 from app.db.base import Base
 
-# Frozen for Phase 1/3 Alembic: those migrations run before Phase 4 tables exist.
-CORE_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
+# Phase 1 Alembic (`5c8e4a71b9d2`) runs before later history tables exist.
+PHASE1_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
     "execution_commands",
     "execution_receipts",
     "execution_transitions",
     "execution_fill_facts",
+)
+
+PHASE3_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
     "compiled_setup_definitions",
     "strategy_lifecycle_events",
     "manual_level_revisions",
@@ -30,7 +33,9 @@ PHASE4_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
 )
 
 IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
-    CORE_IMMUTABLE_HISTORY_TABLES + PHASE4_IMMUTABLE_HISTORY_TABLES
+    PHASE1_IMMUTABLE_HISTORY_TABLES
+    + PHASE3_IMMUTABLE_HISTORY_TABLES
+    + PHASE4_IMMUTABLE_HISTORY_TABLES
 )
 
 _FUNCTION_NAME = "alphatrade_forbid_historical_mutation"
@@ -69,8 +74,13 @@ def _install_statements_for(tables: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def historical_immutability_install_statements() -> tuple[str, ...]:
-    """Core tables only. Phase 1/3 Alembic calls this before Phase 4 tables exist."""
-    return _install_statements_for(CORE_IMMUTABLE_HISTORY_TABLES)
+    """Phase 1 execution-history tables. Used by migration 5c8e4a71b9d2."""
+    return _install_statements_for(PHASE1_IMMUTABLE_HISTORY_TABLES)
+
+
+def historical_immutability_phase3_install_statements() -> tuple[str, ...]:
+    """Phase 3 strategy/setup/level history tables."""
+    return _install_statements_for(PHASE3_IMMUTABLE_HISTORY_TABLES)
 
 
 def historical_immutability_phase4_install_statements() -> tuple[str, ...]:

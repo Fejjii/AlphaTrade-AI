@@ -12,7 +12,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-from app.db.historical_immutability import historical_immutability_install_statements
+from app.db.historical_immutability import historical_immutability_phase3_install_statements
 
 revision: str = "8a9b0c1d2e3f"
 down_revision: str | None = "7e8f1a2b3c4d"
@@ -54,7 +54,7 @@ def upgrade() -> None:
         sa.Column("content_hash", sa.String(length=64), nullable=True),
     )
     op.create_foreign_key(
-        "fk_user_strategy_versions_parent_version_id_user_strategy_versions",
+        "fk_usv_parent_version_id",
         "user_strategy_versions",
         "user_strategy_versions",
         ["parent_version_id"],
@@ -199,7 +199,7 @@ def upgrade() -> None:
 
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        for statement in historical_immutability_install_statements():
+        for statement in historical_immutability_phase3_install_statements():
             op.execute(statement)
 
 
@@ -222,7 +222,7 @@ def downgrade() -> None:
         type_="foreignkey",
     )
     op.drop_constraint(
-        "fk_user_strategy_versions_parent_version_id_user_strategy_versions",
+        "fk_usv_parent_version_id",
         "user_strategy_versions",
         type_="foreignkey",
     )
