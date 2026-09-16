@@ -1552,14 +1552,12 @@ def usage_tracking(state: dict, runtime: AgentRuntime) -> dict:
     envelope is a labelled deterministic estimate (not provider usage).
     """
     agent = parse_state(state)
-    llm = runtime.llm_provider
-    provider_name = llm.name if llm is not None else "mock-llm"
     attempts = (
         runtime.model_router.attempts_for(agent.request_id)
         if runtime.model_router is not None
         else []
     )
-    actual = [row for row in attempts if row.success]
+    actual = [row for row in attempts if row.telemetry_durable]
     if actual:
         input_tokens = sum(row.input_tokens for row in actual)
         output_tokens = sum(row.output_tokens for row in actual)
@@ -1570,28 +1568,23 @@ def usage_tracking(state: dict, runtime: AgentRuntime) -> dict:
         model = actual[-1].resolved_model
         cost_source = actual[-1].cost_source
         provider_name = actual[-1].provider
+        feature = "agent_chat"
     else:
+        # Labelled capacity estimate only. Never persist as provider usage.
         input_tokens = max(len(agent.message) // 4, 1)
         output_tokens = 0
         fallback_used = any(o.used_fallback for o in agent.tool_outputs)
         latency_ms = sum(o.latency_ms or 0 for o in agent.tool_outputs) or None
-        model = runtime.settings.llm_model
+        model = "none"
+        provider_name = "none"
         cost_source = CostSource.UNAVAILABLE
+        feature = "capacity_estimate"
 
-    runtime.observability.persist_usage(
-        agent,
-        model=model,
-        provider=provider_name,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        fallback_used=fallback_used,
-        latency_ms=latency_ms,
-    )
     usage = UsageEvent(
         organization_id=agent.organization_id,
         user_id=agent.user_id,
         request_id=agent.request_id,
-        feature="agent_chat",
+        feature=feature,
         model=model,
         provider=provider_name,
         input_tokens=input_tokens,

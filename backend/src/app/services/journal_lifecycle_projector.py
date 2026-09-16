@@ -10,16 +10,17 @@ execution. Callers invoke it explicitly. Automatic projection is Phase 10.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.errors import ValidationAppError
+from app.core.errors import JournalProjectionConflictError, ValidationAppError
 from app.db.models import (
     JournalLifecycleEvent,
     JournalProjectionReceipt,
@@ -131,6 +132,18 @@ _VENUE_APPLY_FIELDS = frozenset(
         "linked_paper_trade_id",
     }
 )
+_EVENT_RANK = {
+    JournalLifecycleEventType.APPROVED_PLAN: 10,
+    JournalLifecycleEventType.FILL: 20,
+    JournalLifecycleEventType.CLOSE: 30,
+    JournalLifecycleEventType.RECONCILE: 40,
+}
+_STATUS_RANK = {
+    JournalTradeStatus.PLANNED: 10,
+    JournalTradeStatus.OPEN: 20,
+    JournalTradeStatus.CLOSED: 30,
+    JournalTradeStatus.CANCELLED: 30,
+}
 
 
 class JournalLifecycleProjector:
@@ -150,14 +163,28 @@ class JournalLifecycleProjector:
         actor_user_id: uuid.UUID | None = None,
     ) -> JournalProjectionResult:
         self._require_provenance(event)
+        content_hash = self._event_hash(organization_id, event)
+        self._lock_lifecycle(organization_id, event.execution_lifecycle_id)
+
         existing_receipt = self._find_receipt(organization_id, event)
         if existing_receipt is not None:
+            self._assert_same_content(existing_receipt.content_hash, content_hash, event)
             return JournalProjectionResult(
                 event_type=event.event_type,
                 journal_trade_id=existing_receipt.journal_trade_id,
                 created_journal_trade=False,
                 replayed=True,
                 skipped_reason=existing_receipt.skipped_reason,
+            )
+        existing_event = self._find_lifecycle_event(organization_id, event)
+        if existing_event is not None:
+            self._assert_same_content(existing_event.content_hash, content_hash, event)
+            return JournalProjectionResult(
+                event_type=event.event_type,
+                journal_trade_id=existing_event.journal_trade_id,
+                created_journal_trade=False,
+                replayed=True,
+                skipped_reason=None,
             )
 
         skipped_reason: str | None = None
@@ -177,9 +204,9 @@ class JournalLifecycleProjector:
                 user_id=user_id,
             )
             if trade is not None:
+                self._assert_account_scope(trade, event)
                 self._apply_event(trade, event)
 
-        content_hash = self._event_hash(organization_id, event)
         lifecycle_event = self._insert_lifecycle_event(
             event,
             organization_id=organization_id,
@@ -223,6 +250,7 @@ class JournalLifecycleProjector:
                     "created_journal_trade": created,
                     "skipped_reason": skipped_reason,
                     "replayed": False,
+                    "account_id": str(event.account_id),
                 },
             )
         )
@@ -239,6 +267,11 @@ class JournalLifecycleProjector:
             raise ValidationAppError(
                 "Journal projection requires source_system, source_aggregate, and source_event_id.",
                 details={"reason": "missing_provenance"},
+            )
+        if event.account_id is None:
+            raise ValidationAppError(
+                "Journal projection requires an explicit account scope.",
+                details={"reason": "missing_account_scope"},
             )
 
     def _close_blocked(self, event: JournalLifecycleEventInput) -> bool:
@@ -259,6 +292,7 @@ class JournalLifecycleProjector:
     ) -> JournalProjectionReceipt | None:
         stmt = select(JournalProjectionReceipt).where(
             JournalProjectionReceipt.organization_id == organization_id,
+            JournalProjectionReceipt.account_id == event.account_id,
             JournalProjectionReceipt.source_system == event.source_system,
             JournalProjectionReceipt.source_aggregate == event.source_aggregate,
             JournalProjectionReceipt.event_type == event.event_type,
@@ -268,10 +302,84 @@ class JournalLifecycleProjector:
         )
         return self._session.scalar(stmt)
 
+    def _find_lifecycle_event(
+        self,
+        organization_id: uuid.UUID,
+        event: JournalLifecycleEventInput,
+    ) -> JournalLifecycleEvent | None:
+        stmt = select(JournalLifecycleEvent).where(
+            JournalLifecycleEvent.organization_id == organization_id,
+            JournalLifecycleEvent.account_id == event.account_id,
+            JournalLifecycleEvent.source_system == event.source_system,
+            JournalLifecycleEvent.source_aggregate == event.source_aggregate,
+            JournalLifecycleEvent.event_type == event.event_type,
+            JournalLifecycleEvent.source_event_id == event.source_event_id,
+            JournalLifecycleEvent.source_event_version == event.source_event_version,
+            JournalLifecycleEvent.supersession == event.supersession,
+        )
+        return self._session.scalar(stmt)
+
+    def _assert_same_content(
+        self,
+        stored_hash: str,
+        incoming_hash: str,
+        event: JournalLifecycleEventInput,
+    ) -> None:
+        if stored_hash == incoming_hash:
+            return
+        raise JournalProjectionConflictError(
+            "Journal source identity replayed with conflicting semantic content.",
+            details={
+                "source_system": event.source_system,
+                "source_aggregate": event.source_aggregate,
+                "source_event_id": event.source_event_id,
+                "source_event_version": event.source_event_version,
+                "supersession": event.supersession,
+                "account_id": str(event.account_id),
+            },
+        )
+
+    def _assert_account_scope(self, trade: JournalTrade, event: JournalLifecycleEventInput) -> None:
+        if trade.account_id is not None and trade.account_id != event.account_id:
+            raise JournalProjectionConflictError(
+                "Journal lifecycle belongs to a different account.",
+                details={
+                    "account_id": str(event.account_id),
+                    "execution_lifecycle_id": str(event.execution_lifecycle_id),
+                },
+            )
+
+    def _lock_lifecycle(
+        self,
+        organization_id: uuid.UUID,
+        execution_lifecycle_id: uuid.UUID | None,
+    ) -> None:
+        if execution_lifecycle_id is None:
+            return
+        bind = self._session.get_bind()
+        if bind is None or bind.dialect.name != "postgresql":
+            return
+        digest = hashlib.sha256(f"{organization_id}:{execution_lifecycle_id}".encode()).digest()
+        key1 = int.from_bytes(digest[:4], "big") % 2147483647
+        key2 = int.from_bytes(digest[4:8], "big") % 2147483647
+        self._session.execute(
+            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
+            {"k1": key1, "k2": key2},
+        )
+        self._session.execute(
+            select(JournalTrade)
+            .where(
+                JournalTrade.organization_id == organization_id,
+                JournalTrade.execution_lifecycle_id == execution_lifecycle_id,
+            )
+            .with_for_update()
+        )
+
     def _event_hash(self, organization_id: uuid.UUID, event: JournalLifecycleEventInput) -> str:
         return canonical_sha256(
             {
                 "organization_id": str(organization_id),
+                "account_id": str(event.account_id),
                 "event_type": event.event_type.value,
                 "execution_lifecycle_id": (
                     str(event.execution_lifecycle_id) if event.execution_lifecycle_id else None
@@ -320,17 +428,11 @@ class JournalLifecycleProjector:
         except IntegrityError as exc:
             if not is_journal_lifecycle_event_unique_violation(exc):
                 raise
-            return self._session.scalar(
-                select(JournalLifecycleEvent).where(
-                    JournalLifecycleEvent.organization_id == organization_id,
-                    JournalLifecycleEvent.source_system == event.source_system,
-                    JournalLifecycleEvent.source_aggregate == event.source_aggregate,
-                    JournalLifecycleEvent.event_type == event.event_type,
-                    JournalLifecycleEvent.source_event_id == event.source_event_id,
-                    JournalLifecycleEvent.source_event_version == event.source_event_version,
-                    JournalLifecycleEvent.supersession == event.supersession,
-                )
-            )
+            existing = self._find_lifecycle_event(organization_id, event)
+            if existing is None:
+                raise
+            self._assert_same_content(existing.content_hash, content_hash, event)
+            return existing
 
     def _insert_receipt(
         self,
@@ -368,7 +470,11 @@ class JournalLifecycleProjector:
         except IntegrityError as exc:
             if not is_journal_receipt_unique_violation(exc):
                 raise
-            return self._find_receipt(organization_id, event)
+            existing = self._find_receipt(organization_id, event)
+            if existing is None:
+                raise
+            self._assert_same_content(existing.content_hash, content_hash, event)
+            return existing
 
     def _resolve_lifecycle_trade(
         self,
@@ -388,6 +494,7 @@ class JournalLifecycleProjector:
                     "Execution lifecycle belongs to another organization.",
                     details={"reason": "cross_tenant_lifecycle"},
                 )
+            self._assert_account_scope(existing, event)
             return existing, False
 
         symbol = event.payload.get("symbol")
@@ -413,6 +520,9 @@ class JournalLifecycleProjector:
             timeframe=timeframe,
             direction=direction,
             execution_lifecycle_id=event.execution_lifecycle_id,
+            account_id=event.account_id,
+            projector_watermark_rank=0,
+            projector_lock_version=0,
             tags=[],
             planned_targets=[],
         )
@@ -439,28 +549,46 @@ class JournalLifecycleProjector:
             setattr(row, key, _coerce_field(key, payload[key]))
 
     def _apply_event(self, row: JournalTrade, event: JournalLifecycleEventInput) -> None:
+        incoming_rank = _EVENT_RANK.get(event.event_type, 0)
+        stale = incoming_rank < int(row.projector_watermark_rank or 0)
         if event.event_type is JournalLifecycleEventType.APPROVED_PLAN:
             self._apply_create_fields(row, event.payload)
-            if row.status is JournalTradeStatus.PLANNED:
-                row.status = JournalTradeStatus.PLANNED
-            return
-        if event.event_type is JournalLifecycleEventType.FILL:
-            self._apply_venue_fields(row, event.payload)
-            if row.status is JournalTradeStatus.PLANNED:
-                row.status = JournalTradeStatus.OPEN
+        elif event.event_type is JournalLifecycleEventType.FILL:
+            self._apply_venue_fields(row, event.payload, fill_nulls_only=stale)
+            self._promote_status(row, JournalTradeStatus.OPEN, stale=stale)
             if row.result is TradeResult.OPEN:
                 row.result = TradeResult.OPEN
-            return
-        if event.event_type is JournalLifecycleEventType.CLOSE:
-            self._apply_venue_fields(row, event.payload)
-            row.status = JournalTradeStatus.CLOSED
-            return
-        if event.event_type is JournalLifecycleEventType.RECONCILE:
-            self._apply_venue_fields(row, event.payload)
+        elif event.event_type is JournalLifecycleEventType.CLOSE:
+            # Later RECONCILE facts must not be overwritten by a stale CLOSE.
+            self._apply_venue_fields(row, event.payload, fill_nulls_only=stale)
+            self._promote_status(row, JournalTradeStatus.CLOSED, stale=False)
+        elif event.event_type is JournalLifecycleEventType.RECONCILE:
+            self._apply_venue_fields(row, event.payload, fill_nulls_only=stale)
+        if incoming_rank >= int(row.projector_watermark_rank or 0):
+            row.projector_watermark_rank = incoming_rank
+        row.projector_lock_version = int(row.projector_lock_version or 0) + 1
 
-    def _apply_venue_fields(self, row: JournalTrade, payload: dict[str, object]) -> None:
+    def _promote_status(
+        self, row: JournalTrade, desired: JournalTradeStatus, *, stale: bool
+    ) -> None:
+        if stale:
+            return
+        current = _STATUS_RANK.get(row.status, 0)
+        target = _STATUS_RANK.get(desired, 0)
+        if target >= current:
+            row.status = desired
+
+    def _apply_venue_fields(
+        self,
+        row: JournalTrade,
+        payload: dict[str, object],
+        *,
+        fill_nulls_only: bool,
+    ) -> None:
         for key in _VENUE_APPLY_FIELDS:
             if key not in payload:
+                continue
+            if fill_nulls_only and getattr(row, key, None) is not None:
                 continue
             setattr(row, key, _coerce_field(key, payload[key]))
 

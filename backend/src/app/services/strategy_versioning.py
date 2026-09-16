@@ -23,6 +23,8 @@ from app.schemas.strategy_library import StrategyCard
 from app.services.canonical_serialization import canonical_sha256
 from app.services.setup_ast_compiler import assert_canonical_alias
 
+_KEEP = object()
+
 
 class CrossTenantStrategyError(ForbiddenError):
     code = "strategy_cross_tenant_rejected"
@@ -34,6 +36,7 @@ def _diff_fields(
     card: dict[str, Any],
     structured_rules: dict[str, Any] | None,
     lesson_source_metadata: dict[str, Any] | None,
+    pattern_spec: dict[str, Any] | None,
 ) -> list[str]:
     changed: list[str] = []
     if parent.card != card:
@@ -42,6 +45,8 @@ def _diff_fields(
         changed.append("structured_rules")
     if parent.lesson_source_metadata != lesson_source_metadata:
         changed.append("lesson_source_metadata")
+    if parent.pattern_spec != pattern_spec:
+        changed.append("pattern_spec")
     return changed
 
 
@@ -138,12 +143,18 @@ class StrategyVersioningService:
         source: StrategyChangeSource,
         reason: str | None,
         validation_status: Any | None = None,
+        pattern_spec: dict[str, Any] | None | object = _KEEP,
     ) -> UserStrategyVersion:
+        resolved_spec = parent.pattern_spec if pattern_spec is _KEEP else pattern_spec
+        if resolved_spec is not None and not isinstance(resolved_spec, dict):
+            raise ValidationAppError("pattern_spec must be a JSON object.")
+        spec_payload = resolved_spec if isinstance(resolved_spec, dict) else None
         changed = _diff_fields(
             parent,
             card=card,
             structured_rules=structured_rules,
             lesson_source_metadata=lesson_source_metadata,
+            pattern_spec=spec_payload,
         )
         if not changed:
             return parent
@@ -152,6 +163,7 @@ class StrategyVersioningService:
             card=card,
             structured_rules=structured_rules,
             lesson_source_metadata=lesson_source_metadata,
+            pattern_spec=spec_payload,
         )
         version = UserStrategyVersion(
             strategy_id=strategy.id,
@@ -162,6 +174,7 @@ class StrategyVersioningService:
             paper_validation_status=parent.paper_validation_status,
             structured_rules=structured_rules,
             lesson_source_metadata=lesson_source_metadata,
+            pattern_spec=spec_payload,
             parent_version_id=parent.id,
             actor_user_id=actor_user_id,
             change_reason=reason,

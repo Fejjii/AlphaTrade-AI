@@ -21,6 +21,7 @@ class UsageEventCreate(StrictModel):
 
     request_id: str
     feature: str
+    usage_event_id: UUID | None = None
     user_id: UUID | None = None
     organization_id: UUID | None = None
     provider: str | None = None

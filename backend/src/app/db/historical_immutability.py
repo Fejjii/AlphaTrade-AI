@@ -110,6 +110,11 @@ def install_historical_immutability(connection: Connection) -> None:
     existing = tuple(table for table in IMMUTABLE_HISTORY_TABLES if inspector.has_table(table))
     for statement in _install_statements_for(existing):
         _run_sql(connection, statement)
+    if inspector.has_table("user_strategy_versions"):
+        from app.db.strategy_immutability import strategy_version_pg_immutability_install_statements
+
+        for statement in strategy_version_pg_immutability_install_statements():
+            _run_sql(connection, statement)
 
 
 def uninstall_historical_immutability(connection: Connection) -> None:
@@ -118,6 +123,10 @@ def uninstall_historical_immutability(connection: Connection) -> None:
     if connection.dialect.name != "postgresql":
         return
     for statement in historical_immutability_uninstall_statements():
+        _run_sql(connection, statement)
+    from app.db.strategy_immutability import strategy_version_pg_immutability_uninstall_statements
+
+    for statement in strategy_version_pg_immutability_uninstall_statements():
         _run_sql(connection, statement)
 
 

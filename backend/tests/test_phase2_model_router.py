@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -21,8 +22,12 @@ from app.repositories.base import SQLAlchemyRepository
 from app.schemas.agent import Intent, IntentDecision, OperationClass, PrincipalRef, RequestedAction
 from app.schemas.common import CostSource, JournalTradeSource, TradeDirection, UsageStatus
 from app.schemas.model_routing import (
+    ModelCallAttempt as RoutedAttempt,
+)
+from app.schemas.model_routing import (
     ModelContextScope,
     ModelFailureCategory,
+    ModelFallbackPolicy,
     ModelResourceType,
     ModelRetentionCategory,
     ModelRoutingPurpose,
@@ -41,6 +46,12 @@ ORG_A = uuid.UUID("00000000-0000-0000-0000-00000000a001")
 ORG_B = uuid.UUID("00000000-0000-0000-0000-00000000b001")
 USER_A = uuid.UUID("00000000-0000-0000-0000-00000000a002")
 USER_B = uuid.UUID("00000000-0000-0000-0000-00000000b002")
+ACCOUNT_A = uuid.UUID("00000000-0000-0000-0000-00000000a003")
+ACCOUNT_B = uuid.UUID("00000000-0000-0000-0000-00000000a004")
+STRATEGY_A = uuid.UUID("00000000-0000-0000-0000-00000000a005")
+STRATEGY_B = uuid.UUID("00000000-0000-0000-0000-00000000a006")
+JOURNAL_A = uuid.UUID("00000000-0000-0000-0000-00000000a007")
+JOURNAL_B = uuid.UUID("00000000-0000-0000-0000-00000000a008")
 
 
 class _FailingLLM:
@@ -132,12 +143,17 @@ def _scope(
     *,
     org: uuid.UUID | None = ORG_A,
     user: uuid.UUID | None = USER_A,
+    account: uuid.UUID | None = None,
+    resource_type: ModelResourceType = ModelResourceType.CONVERSATION,
+    resource_id: uuid.UUID | None = None,
 ) -> ModelContextScope:
     return ModelContextScope(
         organization_id=org,
         user_id=user,
+        account_id=account,
         purpose=purpose,
-        resource_type=ModelResourceType.CONVERSATION,
+        resource_type=resource_type,
+        resource_id=resource_id,
         retention_category=ModelRetentionCategory.STANDARD,
     )
 
@@ -150,14 +166,30 @@ def _request(
     caller_org: uuid.UUID | None = ORG_A,
     user: uuid.UUID | None = USER_A,
     caller_user: uuid.UUID | None = USER_A,
+    account: uuid.UUID | None = None,
+    caller_account: uuid.UUID | None = None,
+    resource_type: ModelResourceType = ModelResourceType.CONVERSATION,
+    resource_id: uuid.UUID | None = None,
+    caller_resource_type: ModelResourceType | None = None,
+    caller_resource_id: uuid.UUID | None = None,
     correlation_id: str = "corr-1",
 ) -> ModelTaskRequest:
     return ModelTaskRequest(
         purpose=purpose,
-        context=_scope(purpose, org=org, user=user),
+        context=_scope(
+            purpose,
+            org=org,
+            user=user,
+            account=account,
+            resource_type=resource_type,
+            resource_id=resource_id,
+        ),
         correlation_id=correlation_id,
         caller_organization_id=caller_org,
         caller_user_id=caller_user,
+        caller_account_id=caller_account,
+        caller_resource_type=caller_resource_type,
+        caller_resource_id=caller_resource_id,
         model_override=override,
     )
 
@@ -424,6 +456,354 @@ def test_usage_tracking_does_not_call_llm() -> None:
     out = usage_tracking(state, runtime)
     assert provider.calls == []
     meta = out["usage_metadata"]
-    assert meta["feature"] == "agent_chat"
+    assert meta["feature"] == "capacity_estimate"
+    assert meta["provider"] == "none"
+    assert meta["model"] == "none"
     assert meta["input_tokens"] > 0
     assert meta["cost_source"] == CostSource.UNAVAILABLE.value
+
+
+def test_fallback_attempts_record_actual_tiers() -> None:
+    provider = _SelectiveFailLLM(fail_model="gpt-4o")
+    result = _router(provider).complete(_request(ModelRoutingPurpose.STRATEGY_REVIEW), _messages())
+    assert [row.tier for row in result.attempts] == [
+        ModelRoutingTier.TIER_A,
+        ModelRoutingTier.TIER_B,
+    ]
+    assert [row.requested_model for row in result.attempts] == ["gpt-4o", "gpt-4o-mini"]
+    assert result.attempts[0].success is False
+    assert result.attempts[1].success is True
+    assert result.decision.selected_tier is ModelRoutingTier.TIER_A
+
+
+def test_one_successful_call_is_one_usage_event(session: Session) -> None:
+    usage = UsageService(session)
+    telemetry = ModelCallTelemetryService(session, usage)
+    router = _router(telemetry=telemetry)
+    result = router.complete(
+        _request(ModelRoutingPurpose.NARRATIVE_SYNTHESIS, correlation_id="once-1"),
+        _messages(),
+    )
+    session.commit()
+    assert result.telemetry_persisted is True
+    assert session.scalar(select(func.count()).select_from(ModelCallAttempt)) == 1
+    assert session.scalar(select(func.count()).select_from(UsageEvent)) == 1
+
+
+def test_tier_a_fail_plus_tier_b_fallback_is_two_attempts(session: Session) -> None:
+    usage = UsageService(session)
+    telemetry = ModelCallTelemetryService(session, usage)
+    router = _router(_SelectiveFailLLM(fail_model="gpt-4o"), telemetry=telemetry)
+    result = router.complete(
+        _request(ModelRoutingPurpose.STRATEGY_REVIEW, correlation_id="fb-2"),
+        _messages(),
+    )
+    session.commit()
+    attempts = list(session.scalars(select(ModelCallAttempt)).all())
+    events = list(session.scalars(select(UsageEvent)).all())
+    assert len(attempts) == 2
+    assert len(events) == 2
+    assert {row.tier.value for row in attempts} == {"tier_a", "tier_b"}
+    assert sum(row.input_tokens for row in attempts) == sum(event.input_tokens for event in events)
+    assert result.telemetry_persisted is True
+
+
+def test_usage_tracking_replay_does_not_duplicate(session: Session) -> None:
+    from app.agents.nodes import usage_tracking
+    from app.agents.runtime import AgentRuntime
+    from app.core.config import Settings
+    from app.services.risk_service import RiskService
+    from app.services.strategy_service import StrategyService
+    from app.strategies.registry import build_default_registry
+    from app.tools.registry import build_default_registry as build_tools
+
+    usage = UsageService(session)
+    telemetry = ModelCallTelemetryService(session, usage)
+    router = _router(telemetry=telemetry)
+    result = router.complete(
+        _request(ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS, correlation_id="replay-usage"),
+        _messages(),
+    )
+    session.commit()
+    settings = Settings(log_json=False, provider_mode="mock")
+    runtime = AgentRuntime(
+        settings=settings,
+        risk_service=RiskService(),
+        strategy_service=StrategyService(registry=build_default_registry()),
+        tool_registry=build_tools(settings),
+        llm_provider=MockLLMProvider(),
+        model_router=router,
+    )
+    state = {
+        "message": "analyze eth trend",
+        "request_id": "replay-usage",
+        "organization_id": str(ORG_A),
+        "user_id": str(USER_A),
+        "tool_outputs": [],
+        "tool_calls": [],
+        "audit_events": [],
+        "citations": [],
+    }
+    usage_tracking(state, runtime)
+    usage_tracking(state, runtime)
+    session.commit()
+    assert result.telemetry_persisted is True
+    assert session.scalar(select(func.count()).select_from(UsageEvent)) == 1
+    assert session.scalar(select(func.count()).select_from(ModelCallAttempt)) == 1
+
+
+def test_no_model_call_writes_zero_provider_usage(session: Session) -> None:
+    from app.agents.nodes import usage_tracking
+    from app.agents.runtime import AgentRuntime
+    from app.core.config import Settings
+    from app.services.risk_service import RiskService
+    from app.services.strategy_service import StrategyService
+    from app.strategies.registry import build_default_registry
+    from app.tools.registry import build_default_registry as build_tools
+
+    settings = Settings(log_json=False, provider_mode="mock")
+    runtime = AgentRuntime(
+        settings=settings,
+        risk_service=RiskService(),
+        strategy_service=StrategyService(registry=build_default_registry()),
+        tool_registry=build_tools(settings),
+        llm_provider=MockLLMProvider(),
+    )
+    state = {
+        "message": "analyze eth trend",
+        "request_id": "capacity-only",
+        "organization_id": str(ORG_A),
+        "user_id": str(USER_A),
+        "tool_outputs": [],
+        "tool_calls": [],
+        "audit_events": [],
+        "citations": [],
+    }
+    out = usage_tracking(state, runtime)
+    session.commit()
+    assert out["usage_metadata"]["feature"] == "capacity_estimate"
+    assert session.scalar(select(func.count()).select_from(UsageEvent)) == 0
+    assert session.scalar(select(func.count()).select_from(ModelCallAttempt)) == 0
+
+
+def test_openai_routed_calls_do_not_hide_upstream_failure() -> None:
+    from app.core.errors import ServiceUnavailableError
+    from app.providers.llm import LLMCompletionRequest, OpenAILLMProvider
+
+    provider = OpenAILLMProvider(api_key="", base_url="https://example.invalid", model="gpt-4o")
+    with pytest.raises(ServiceUnavailableError):
+        provider.complete(
+            LLMCompletionRequest(
+                messages=_messages(),
+                model="gpt-4o",
+                allow_internal_fallback=False,
+            )
+        )
+    fallback = provider.complete(
+        LLMCompletionRequest(
+            messages=_messages(),
+            model="gpt-4o",
+            allow_internal_fallback=True,
+        )
+    )
+    assert fallback.fallback_used is True
+
+
+def test_telemetry_persistence_failure_is_surfaced(session: Session) -> None:
+    from app.services.model_call_telemetry import ModelTelemetryPersistenceError
+
+    class _BoomTelemetry(ModelCallTelemetryService):
+        def record(self, attempt: RoutedAttempt, *, feature: str) -> RoutedAttempt:
+            raise ModelTelemetryPersistenceError("injected failure", attempt=attempt)
+
+    router = _router(telemetry=_BoomTelemetry(session))
+    result = router.complete(
+        _request(ModelRoutingPurpose.NARRATIVE_SYNTHESIS, correlation_id="boom"),
+        _messages(),
+    )
+    assert result.failure_category is ModelFailureCategory.TELEMETRY_PERSISTENCE_FAILED
+    assert result.telemetry_persisted is False
+    assert result.content
+    assert result.deterministic_facts is not None
+    assert result.deterministic_facts["provider_io_occurred"] is True
+    assert session.scalars(select(ModelCallAttempt)).all() == []
+
+
+def test_isolated_telemetry_survives_outer_rollback(session: Session) -> None:
+    usage = UsageService(session)
+    telemetry = ModelCallTelemetryService(session, usage, isolated=True)
+    router = _router(telemetry=telemetry)
+    result = router.complete(
+        _request(ModelRoutingPurpose.NARRATIVE_SYNTHESIS, correlation_id="outer-rb"),
+        _messages(),
+    )
+    assert result.telemetry_persisted is True
+    session.rollback()
+    rows = list(session.scalars(select(ModelCallAttempt)).all())
+    events = list(session.scalars(select(UsageEvent)).all())
+    assert len(rows) == 1
+    assert len(events) == 1
+
+
+def test_retry_same_attempt_id_is_exactly_once(session: Session) -> None:
+    usage = UsageService(session)
+    telemetry = ModelCallTelemetryService(session, usage, isolated=False)
+    attempt = RoutedAttempt(
+        attempt_id=uuid.UUID("00000000-0000-0000-0000-00000000aa01"),
+        task_request_id=uuid.uuid4(),
+        correlation_id="exact-once",
+        purpose=ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
+        tier=ModelRoutingTier.TIER_B,
+        provider="mock-llm",
+        requested_model="gpt-4o-mini",
+        resolved_model="gpt-4o-mini",
+        policy_version="model-router/v1",
+        fallback_policy=ModelFallbackPolicy.DETERMINISTIC_FACTS,
+        success=True,
+        organization_id=ORG_A,
+        user_id=USER_A,
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+        input_tokens=8,
+        output_tokens=2,
+    )
+    first = telemetry.record(attempt, feature="agent_narrative")
+    second = telemetry.record(attempt, feature="agent_narrative")
+    session.commit()
+    assert first.usage_event_id == second.usage_event_id
+    assert session.scalar(select(func.count()).select_from(ModelCallAttempt)) == 1
+    assert session.scalar(select(func.count()).select_from(UsageEvent)) == 1
+
+
+def test_usage_event_write_failure_is_surfaced(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.usage_service import UsagePersistenceError, UsageService
+
+    def _boom(self: UsageService, data: object) -> object:
+        del self, data
+        raise UsagePersistenceError("injected usage write failure")
+
+    monkeypatch.setattr(UsageService, "record", _boom)
+    telemetry = ModelCallTelemetryService(session, UsageService(session), isolated=False)
+    router = _router(telemetry=telemetry)
+    result = router.complete(
+        _request(ModelRoutingPurpose.NARRATIVE_SYNTHESIS, correlation_id="usage-boom"),
+        _messages(),
+    )
+    assert result.failure_category is ModelFailureCategory.TELEMETRY_PERSISTENCE_FAILED
+    assert result.deterministic_facts is not None
+    assert result.deterministic_facts["provider_io_occurred"] is True
+    assert session.scalars(select(ModelCallAttempt)).all() == []
+    assert session.scalars(select(UsageEvent)).all() == []
+
+
+def test_attempt_row_write_failure_is_surfaced(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.orm import Session as OrmSession
+
+    from app.db.models import ModelCallAttempt as ModelCallAttemptRow
+
+    original_add = OrmSession.add
+
+    def _add(self: OrmSession, instance: object, **kwargs: object) -> None:
+        if isinstance(instance, ModelCallAttemptRow):
+            raise RuntimeError("injected attempt write failure")
+        original_add(self, instance, **kwargs)
+
+    monkeypatch.setattr(OrmSession, "add", _add)
+    telemetry = ModelCallTelemetryService(session, UsageService(session), isolated=False)
+    router = _router(telemetry=telemetry)
+    result = router.complete(
+        _request(ModelRoutingPurpose.NARRATIVE_SYNTHESIS, correlation_id="attempt-boom"),
+        _messages(),
+    )
+    assert result.failure_category is ModelFailureCategory.TELEMETRY_PERSISTENCE_FAILED
+    assert result.deterministic_facts is not None
+    assert result.deterministic_facts["provider_io_occurred"] is True
+
+
+def test_same_org_wrong_account_rejected() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-account"):
+        router.decide(
+            _request(
+                ModelRoutingPurpose.STRATEGY_REVIEW,
+                account=ACCOUNT_B,
+                caller_account=ACCOUNT_A,
+            )
+        )
+
+
+def test_same_user_wrong_account_rejected() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-account"):
+        router.decide(
+            _request(
+                ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
+                user=USER_A,
+                caller_user=USER_A,
+                account=ACCOUNT_B,
+                caller_account=ACCOUNT_A,
+            )
+        )
+
+
+def test_wrong_strategy_resource_rejected() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-resource"):
+        router.decide(
+            _request(
+                ModelRoutingPurpose.STRATEGY_REVIEW,
+                resource_type=ModelResourceType.STRATEGY,
+                resource_id=STRATEGY_B,
+                caller_resource_type=ModelResourceType.STRATEGY,
+                caller_resource_id=STRATEGY_A,
+            )
+        )
+
+
+def test_wrong_journal_resource_rejected() -> None:
+    router = _router()
+    with pytest.raises(CrossTenantModelContextError, match="cross-resource"):
+        router.decide(
+            _request(
+                ModelRoutingPurpose.EVIDENCE_EXPLANATION,
+                resource_type=ModelResourceType.JOURNAL_TRADE,
+                resource_id=JOURNAL_B,
+                caller_resource_type=ModelResourceType.JOURNAL_TRADE,
+                caller_resource_id=JOURNAL_A,
+            )
+        )
+
+
+def test_correct_strategy_resource_allowed() -> None:
+    router = _router()
+    decision = router.decide(
+        _request(
+            ModelRoutingPurpose.STRATEGY_REVIEW,
+            resource_type=ModelResourceType.STRATEGY,
+            resource_id=STRATEGY_A,
+            caller_resource_type=ModelResourceType.STRATEGY,
+            caller_resource_id=STRATEGY_A,
+            account=ACCOUNT_A,
+            caller_account=ACCOUNT_A,
+        )
+    )
+    assert decision.resource_id == STRATEGY_A
+    assert decision.account_id == ACCOUNT_A
+
+
+def test_generic_public_context_allowed() -> None:
+    router = _router()
+    decision = router.decide(
+        _request(
+            ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS,
+            org=None,
+            caller_org=ORG_A,
+            resource_type=ModelResourceType.GENERIC,
+            resource_id=None,
+        )
+    )
+    assert decision.resource_type is ModelResourceType.GENERIC

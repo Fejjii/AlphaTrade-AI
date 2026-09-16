@@ -39,10 +39,15 @@ def _level_value(
 def _revision_hash(
     *,
     level_id: uuid.UUID,
+    revision_id: uuid.UUID,
     revision_number: int,
     organization_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
     instrument: str,
     exchange: str,
+    venue: str,
+    market_type: str,
+    price_unit: str,
     timeframe: str | None,
     level_type: str,
     value: Decimal | None,
@@ -50,15 +55,21 @@ def _revision_hash(
     price_high: Decimal | None,
     valid: bool,
     effective_at: datetime,
+    created_at: datetime,
     supersedes_revision_id: uuid.UUID | None,
 ) -> str:
     return canonical_sha256(
         {
             "level_id": str(level_id),
+            "revision_id": str(revision_id),
             "revision_number": revision_number,
             "organization_id": str(organization_id),
+            "actor_user_id": str(actor_user_id) if actor_user_id else None,
             "instrument": instrument,
             "exchange": exchange,
+            "venue": venue,
+            "market_type": market_type,
+            "price_unit": price_unit,
             "timeframe": timeframe,
             "level_type": level_type,
             "value": value,
@@ -66,11 +77,15 @@ def _revision_hash(
             "price_high": price_high,
             "valid": valid,
             "effective_at": effective_at,
+            "created_at": created_at,
             "supersedes_revision_id": str(supersedes_revision_id)
             if supersedes_revision_id
             else None,
         }
     )
+
+
+manual_level_revision_content_hash = _revision_hash
 
 
 class ManualLevelService:
@@ -228,14 +243,24 @@ class ManualLevelService:
         supersedes: uuid.UUID | None,
     ) -> ManualLevelRevision:
         revision_number = self._next_revision_number(level.id)
-        effective_at = datetime.now(UTC)
+        created_at = datetime.now(UTC)
+        effective_at = created_at
         value = _level_value(level.price, level.price_low, level.price_high)
+        revision_id = uuid.uuid4()
+        venue = level.exchange
+        market_type = "unspecified"
+        price_unit = "quote"
         content_hash = _revision_hash(
             level_id=level.id,
+            revision_id=revision_id,
             revision_number=revision_number,
             organization_id=level.organization_id,
+            actor_user_id=actor_user_id,
             instrument=level.symbol,
             exchange=level.exchange,
+            venue=venue,
+            market_type=market_type,
+            price_unit=price_unit,
             timeframe=level.timeframe,
             level_type=level.level_type.value,
             value=value,
@@ -243,9 +268,11 @@ class ManualLevelService:
             price_high=level.price_high,
             valid=bool(level.enabled),
             effective_at=effective_at,
+            created_at=created_at,
             supersedes_revision_id=supersedes,
         )
         row = ManualLevelRevision(
+            id=revision_id,
             level_id=level.id,
             revision_number=revision_number,
             organization_id=level.organization_id,
@@ -259,9 +286,13 @@ class ManualLevelService:
             price_high=level.price_high,
             valid=bool(level.enabled),
             actor_user_id=actor_user_id,
+            venue=venue,
+            market_type=market_type,
+            price_unit=price_unit,
             content_hash=content_hash,
             supersedes_revision_id=supersedes,
             effective_at=effective_at,
+            created_at=created_at,
         )
         self._session.add(row)
         self._session.flush()

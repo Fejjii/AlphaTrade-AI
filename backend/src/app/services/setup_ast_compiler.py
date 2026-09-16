@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.errors import ValidationAppError
-from app.schemas.common import EntryTriggerType, SetupCompileStatus, Timeframe, TradeDirection
+from app.schemas.common import SetupCompileStatus
 from app.schemas.setup_ast import (
     ALLOWED_ARITHMETIC_OPS,
     ALLOWED_BOOLEAN_OPS,
@@ -26,8 +26,6 @@ from app.schemas.setup_ast import (
     CompileResult,
     FeatureRef,
     FeatureRole,
-    FinalityRequirement,
-    OverlapPolicy,
     PatternAst,
     PatternStep,
     UnaryOp,
@@ -45,13 +43,20 @@ from app.schemas.setup_ast import (
     window,
 )
 from app.schemas.strategy_library import StrategyCard
+from app.schemas.strategy_pattern_spec import (
+    FIRST_SLICE_KIND,
+    FIRST_SLICE_NAME,
+    FirstSliceAuthoredPatternSpec,
+    PatternInvalidationSemantics,
+    PatternResetSemantics,
+    canonical_first_slice_authored_spec,
+)
 from app.schemas.structured_rules import StructuredRules
 from app.services.canonical_serialization import canonical_sha256
 
-FIRST_SLICE_SYMBOL = "BTCUSDT"
-FIRST_SLICE_TRIGGER_TF = Timeframe.M15.value
-FIRST_SLICE_CONTEXT_TF = Timeframe.H4.value
-FIRST_SLICE_NAME = "Bearish Liquidity Sweep Exhaustion at 4h Resistance"
+# Re-exported for callers/tests that imported these names from the compiler.
+FIRST_SLICE_TRIGGER_TF = "15m"
+FIRST_SLICE_CONTEXT_TF = "4h"
 
 
 class SetupAstCompileError(ValidationAppError):
@@ -291,8 +296,105 @@ def compile_pattern(pattern: PatternAst) -> CompileResult:
     return CompileResult(status=SetupCompileStatus.EXECUTABLE.value, document=document)
 
 
-def first_slice_bearish_sweep_pattern() -> PatternAst:
-    """AST for the first vertical slice. Market evaluation is not wired."""
+def _decimal_literal(value: object, unit: AstUnit) -> AstExpr:
+    return lit_decimal(format(value, "f"), unit)
+
+
+def _spec_completeness_failures(spec: FirstSliceAuthoredPatternSpec) -> list[CompileFailure]:
+    failures: list[CompileFailure] = []
+    if spec.kind != FIRST_SLICE_KIND:
+        failures.append(
+            _fail("unsupported_pattern_kind", "Pattern kind is not a V1 compiler target.", "kind")
+        )
+    if spec.name != FIRST_SLICE_NAME:
+        failures.append(
+            _fail(
+                "first_slice_name_mismatch",
+                "Authored name is not the canonical first-slice Pattern Card name.",
+                "name",
+            )
+        )
+    if not spec.requires_manual_4h_resistance:
+        failures.append(
+            _fail(
+                "missing_resistance_rule",
+                "First slice requires an explicit 4h resistance rule.",
+                "requires_manual_4h_resistance",
+            )
+        )
+    if not spec.requires_confirmed_swing:
+        failures.append(
+            _fail(
+                "missing_confirmed_swing",
+                "First slice requires a confirmed swing.",
+                "requires_confirmed_swing",
+            )
+        )
+    if not spec.requires_cvd_divergence:
+        failures.append(
+            _fail(
+                "missing_cvd_requirement",
+                "First slice requires explicit CVD divergence.",
+                "requires_cvd_divergence",
+            )
+        )
+    if not spec.close_below_swing or not spec.bearish_candle_close_below_open:
+        failures.append(
+            _fail(
+                "missing_close_semantics",
+                "First slice requires close-below-S and bearish candle close.",
+                "close",
+            )
+        )
+    if not spec.required_finality or not spec.required_freshness or not spec.required_no_gap:
+        failures.append(
+            _fail(
+                "missing_finality_freshness_gap",
+                "First slice requires finality, freshness, and no-gap.",
+                "predicates",
+            )
+        )
+    if spec.trigger_atr.feature_type != WILDER_ATR_FEATURE_TYPE:
+        failures.append(
+            _fail(
+                "missing_feature",
+                "Trigger ATR feature type is not Wilder ATR V1.",
+                "trigger_atr",
+            )
+        )
+    if spec.context_atr.feature_type != WILDER_ATR_FEATURE_TYPE:
+        failures.append(
+            _fail(
+                "missing_feature",
+                "Context ATR feature type is not Wilder ATR V1.",
+                "context_atr",
+            )
+        )
+    if spec.trigger_atr.role is not FeatureRole.TRIGGER:
+        failures.append(
+            _fail("missing_feature", "Trigger ATR role must be trigger.", "trigger_atr.role")
+        )
+    if spec.context_atr.role is not FeatureRole.CONTEXT:
+        failures.append(
+            _fail("missing_feature", "Context ATR role must be context.", "context_atr.role")
+        )
+    if not spec.sequence:
+        failures.append(
+            _fail(
+                "missing_sequence_semantics",
+                "Ordered sequence semantics are required.",
+                "sequence",
+            )
+        )
+    return failures
+
+
+def compile_from_spec(spec: FirstSliceAuthoredPatternSpec) -> CompileResult:
+    """Compile AST solely from authored Pattern values. No canonical defaults."""
+
+    completeness = _spec_completeness_failures(spec)
+    if completeness:
+        return CompileResult(status=SetupCompileStatus.NON_EXECUTABLE.value, failures=completeness)
 
     atr = fld("feature.wilder_atr_v1.value")
     atr_htf = fld("feature.wilder_atr_v1.context.value")
@@ -316,15 +418,19 @@ def first_slice_bearish_sweep_pattern() -> PatternAst:
     )
     data_quality = boolean(
         "and",
-        cmp(CompareOp.EQ, fld("predicate.finality"), lit_bool(True)),
-        cmp(CompareOp.EQ, fld("predicate.freshness"), lit_bool(True)),
-        cmp(CompareOp.EQ, fld("predicate.gap"), lit_bool(False)),
+        cmp(CompareOp.EQ, fld("predicate.finality"), lit_bool(spec.required_finality)),
+        cmp(CompareOp.EQ, fld("predicate.freshness"), lit_bool(spec.required_freshness)),
+        cmp(CompareOp.EQ, fld("predicate.gap"), lit_bool(not spec.required_no_gap)),
         atr_present,
     )
     near_resistance = cmp(
         CompareOp.LTE,
         abs_expr(arith(ArithmeticOp.SUBTRACT, swing, resistance)),
-        arith(ArithmeticOp.MULTIPLY, lit_decimal("0.50", AstUnit.RATIO), atr_htf),
+        arith(
+            ArithmeticOp.MULTIPLY,
+            _decimal_literal(spec.resistance_distance_atr_threshold, AstUnit.RATIO),
+            atr_htf,
+        ),
     )
     sweep = cmp(
         CompareOp.GTE,
@@ -332,18 +438,27 @@ def first_slice_bearish_sweep_pattern() -> PatternAst:
         arith(
             ArithmeticOp.ADD,
             swing,
-            arith(ArithmeticOp.MULTIPLY, lit_decimal("0.25", AstUnit.RATIO), atr),
+            arith(
+                ArithmeticOp.MULTIPLY,
+                _decimal_literal(spec.sweep_threshold_atr, AstUnit.RATIO),
+                atr,
+            ),
         ),
     )
-    close_back = boolean(
-        "and",
-        cmp(CompareOp.LT, close, swing),
-        cmp(CompareOp.LT, close, open_px),
-    )
+    close_parts: list[AstExpr] = []
+    if spec.close_below_swing:
+        close_parts.append(cmp(CompareOp.LT, close, swing))
+    if spec.bearish_candle_close_below_open:
+        close_parts.append(cmp(CompareOp.LT, close, open_px))
+    close_back = boolean("and", *close_parts) if len(close_parts) > 1 else close_parts[0]
     volume_spike = cmp(
         CompareOp.GTE,
-        arith(ArithmeticOp.DIVIDE, volume, window(WindowAggOp.MEAN, volume, bars=20)),
-        lit_decimal("1.50", AstUnit.RATIO),
+        arith(
+            ArithmeticOp.DIVIDE,
+            volume,
+            window(WindowAggOp.MEAN, volume, bars=spec.volume_lookback_bars),
+        ),
+        _decimal_literal(spec.volume_ratio_threshold, AstUnit.RATIO),
     )
     cvd_bearish = boolean(
         "and",
@@ -353,9 +468,8 @@ def first_slice_bearish_sweep_pattern() -> PatternAst:
     sell_imbalance = cmp(
         CompareOp.LTE,
         arith(ArithmeticOp.DIVIDE, signed_flow, total_flow),
-        lit_decimal("-0.10", AstUnit.RATIO),
+        _decimal_literal(spec.aggressive_sell_imbalance_threshold, AstUnit.RATIO),
     )
-
     trigger = boolean(
         "and",
         near_resistance,
@@ -367,91 +481,120 @@ def first_slice_bearish_sweep_pattern() -> PatternAst:
     )
     invalidation_buffer = arith(
         ArithmeticOp.MAX,
-        arith(ArithmeticOp.MULTIPLY, lit_decimal("0.10", AstUnit.RATIO), atr),
-        arith(ArithmeticOp.MULTIPLY, lit_decimal("2", AstUnit.RATIO), tick),
+        arith(
+            ArithmeticOp.MULTIPLY,
+            _decimal_literal(spec.invalidation.atr_multiple, AstUnit.RATIO),
+            atr,
+        ),
+        arith(
+            ArithmeticOp.MULTIPLY,
+            _decimal_literal(spec.invalidation.tick_multiple, AstUnit.RATIO),
+            tick,
+        ),
     )
     invalidation = cmp(
         CompareOp.GT,
         high,
         arith(ArithmeticOp.ADD, trigger_high, invalidation_buffer),
     )
-    return PatternAst(
-        symbols=[FIRST_SLICE_SYMBOL],
-        trigger_timeframe=FIRST_SLICE_TRIGGER_TF,
-        context_timeframe=FIRST_SLICE_CONTEXT_TF,
-        direction=TradeDirection.SHORT,
+
+    predicates = {
+        "htf_resistance_context": near_resistance,
+        "ltf_liquidity_sweep": boolean("and", sweep, close_back),
+    }
+    steps: list[PatternStep] = []
+    for authored in spec.sequence:
+        predicate = predicates.get(authored.step_id)
+        if predicate is None:
+            return CompileResult(
+                status=SetupCompileStatus.NON_EXECUTABLE.value,
+                failures=[
+                    _fail(
+                        "missing_sequence_semantics",
+                        f"Sequence step {authored.step_id!r} has no compiled predicate.",
+                        "sequence",
+                    )
+                ],
+            )
+        reset_on = (
+            lit_bool(True)
+            if authored.reset_semantics is PatternResetSemantics.RETURN_TO_STEP_ZERO
+            else None
+        )
+        invalidate_on = (
+            invalidation
+            if authored.invalidation_semantics is PatternInvalidationSemantics.TERMINATE_OCCURRENCE
+            else None
+        )
+        steps.append(
+            PatternStep(
+                step_id=authored.step_id,
+                predicate=predicate,
+                min_offset=authored.min_offset,
+                max_offset=authored.max_offset,
+                finality_requirement=authored.finality_requirement,
+                reset_on=reset_on,
+                invalidate_on=invalidate_on,
+                overlap_policy=authored.overlap_policy,
+            )
+        )
+
+    pattern = PatternAst(
+        symbols=[spec.symbol],
+        trigger_timeframe=spec.trigger_timeframe,
+        context_timeframe=spec.context_timeframe,
+        direction=spec.direction,
         features=[
             FeatureRef(
-                feature_type=WILDER_ATR_FEATURE_TYPE,
-                feature_version=WILDER_ATR_FEATURE_VERSION,
-                role=FeatureRole.TRIGGER,
-                period=14,
-                timeframe=FIRST_SLICE_TRIGGER_TF,
+                feature_type=spec.trigger_atr.feature_type,
+                feature_version=spec.trigger_atr.feature_version,
+                role=spec.trigger_atr.role,
+                period=spec.trigger_atr.period,
+                timeframe=spec.trigger_atr.timeframe,
             ),
             FeatureRef(
-                feature_type=WILDER_ATR_FEATURE_TYPE,
-                feature_version=WILDER_ATR_FEATURE_VERSION,
-                role=FeatureRole.CONTEXT,
-                period=14,
-                timeframe=FIRST_SLICE_CONTEXT_TF,
+                feature_type=spec.context_atr.feature_type,
+                feature_version=spec.context_atr.feature_version,
+                role=spec.context_atr.role,
+                period=spec.context_atr.period,
+                timeframe=spec.context_atr.timeframe,
             ),
         ],
         preconditions=data_quality,
-        sequence=[
-            PatternStep(
-                step_id="htf_resistance_context",
-                predicate=near_resistance,
-                min_offset=0,
-                max_offset=0,
-                finality_requirement=FinalityRequirement.FINAL_ONLY,
-                overlap_policy=OverlapPolicy.DISALLOW,
-            ),
-            PatternStep(
-                step_id="ltf_liquidity_sweep",
-                predicate=boolean("and", sweep, close_back),
-                min_offset=0,
-                max_offset=2,
-                finality_requirement=FinalityRequirement.FINAL_ONLY,
-                overlap_policy=OverlapPolicy.DISALLOW,
-            ),
-        ],
+        sequence=steps,
         trigger=trigger,
         invalidation=[invalidation],
-        expiration_final_bars=2,
+        expiration_final_bars=spec.expiry_final_bars,
     )
+    return compile_pattern(pattern)
 
 
-def _timeframe_values(card: StrategyCard) -> set[str]:
-    return {item.value for item in card.timeframes}
+def first_slice_bearish_sweep_pattern() -> PatternAst:
+    """Golden AST for the canonical first-slice authored spec."""
 
-
-def _assets(card: StrategyCard) -> set[str]:
-    return {item.upper() for item in card.asset_universe}
+    result = compile_from_spec(canonical_first_slice_authored_spec())
+    if result.document is None:
+        raise SetupAstCompileError("Canonical first-slice spec failed to compile.")
+    return result.document.pattern
 
 
 def first_slice_mapping_possible(card: StrategyCard, rules: StructuredRules | None) -> bool:
-    if rules is None or not rules.entry_rules:
-        return False
-    assets = _assets(card)
-    timeframes = _timeframe_values(card)
-    if FIRST_SLICE_SYMBOL not in assets:
-        return False
-    if FIRST_SLICE_TRIGGER_TF not in timeframes or FIRST_SLICE_CONTEXT_TF not in timeframes:
-        return False
-    entry = rules.entry_rules[0]
-    if entry.trigger_type is not EntryTriggerType.LIQUIDITY_SWEEP:
-        return False
-    return entry.direction is TradeDirection.SHORT
+    """Legacy mapping is never sufficient. Kept as an explicit always-false adapter."""
+
+    del card, rules
+    return False
 
 
 def compile_from_authored(
     *,
     card: StrategyCard,
     rules: StructuredRules | None,
+    pattern_spec: FirstSliceAuthoredPatternSpec | dict[str, Any] | None = None,
     strategy_version_id: Any | None = None,
     organization_id: Any | None = None,
     alias: str | None = None,
 ) -> CompileResult:
+    del rules
     if alias is not None:
         allowed = {card.strategy_name, FIRST_SLICE_NAME}
         if alias not in allowed:
@@ -467,20 +610,53 @@ def compile_from_authored(
                 strategy_version_id=strategy_version_id,
                 organization_id=organization_id,
             )
-    if not first_slice_mapping_possible(card, rules):
+    if pattern_spec is None:
         return CompileResult(
             status=SetupCompileStatus.NON_EXECUTABLE.value,
             failures=[
                 _fail(
-                    "ambiguous_mapping",
-                    "Legacy structured rules do not map deterministically to AST V1.",
-                    "structured_rules",
+                    "missing_pattern_spec",
+                    "Executable compilation requires an exact typed authored Pattern spec.",
+                    "pattern_spec",
                 )
             ],
             strategy_version_id=strategy_version_id,
             organization_id=organization_id,
         )
-    result = compile_pattern(first_slice_bearish_sweep_pattern())
+    if isinstance(pattern_spec, FirstSliceAuthoredPatternSpec):
+        spec = pattern_spec
+    else:
+        try:
+            spec = FirstSliceAuthoredPatternSpec.model_validate(pattern_spec)
+        except Exception as exc:
+            loc = ""
+            errors = getattr(exc, "errors", None)
+            if callable(errors):
+                first = errors()[0] if errors() else {}
+                loc_parts = first.get("loc") if isinstance(first, dict) else None
+                loc = ".".join(str(part) for part in loc_parts) if loc_parts else ""
+            code = "invalid_pattern_spec"
+            if "volume_ratio_threshold" in loc:
+                code = "missing_volume_threshold"
+            elif "sequence" in loc:
+                code = "missing_sequence_semantics"
+            elif "requires_cvd_divergence" in loc:
+                code = "missing_cvd_requirement"
+            elif "requires_manual_4h_resistance" in loc:
+                code = "missing_resistance_rule"
+            return CompileResult(
+                status=SetupCompileStatus.NON_EXECUTABLE.value,
+                failures=[
+                    _fail(
+                        code,
+                        "Authored Pattern specification is incomplete.",
+                        loc or "pattern_spec",
+                    )
+                ],
+                strategy_version_id=strategy_version_id,
+                organization_id=organization_id,
+            )
+    result = compile_from_spec(spec)
     return result.model_copy(
         update={
             "strategy_version_id": strategy_version_id,

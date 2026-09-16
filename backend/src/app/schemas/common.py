@@ -1079,6 +1079,7 @@ class StrategyChangeSource(StrEnum):
     CREATE = "create"
     CARD_UPDATE = "card_update"
     STRUCTURED_RULES = "structured_rules"
+    PATTERN_SPEC = "pattern_spec"
     LESSON_ATTACHMENT = "lesson_attachment"
     ROLLBACK_SELECT = "rollback_select"
     MIGRATION = "migration"

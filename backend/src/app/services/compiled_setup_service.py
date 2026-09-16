@@ -47,6 +47,7 @@ class CompiledSetupService:
         result = compile_from_authored(
             card=card,
             rules=rules,
+            pattern_spec=version.pattern_spec,
             strategy_version_id=version.id,
             organization_id=organization_id,
             alias=alias,

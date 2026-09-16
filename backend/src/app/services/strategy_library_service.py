@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError, ValidationAppError
 from app.db.models import UserStrategy as UserStrategyModel
 from app.db.models import UserStrategyVersion as UserStrategyVersionModel
+from app.db.strategy_immutability import strategy_version_content_hash
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
 from app.schemas.common import (
     DocumentSourceType,
@@ -82,6 +83,12 @@ class StrategyLibraryService:
             change_source=StrategyChangeSource.CREATE,
             actor_user_id=payload.user_id,
             change_reason="create",
+            content_hash=strategy_version_content_hash(
+                card=card_dump,
+                structured_rules=None,
+                lesson_source_metadata=None,
+                pattern_spec=None,
+            ),
         )
         self._versions.add(version)
         self._versioning.append_lifecycle(
@@ -166,6 +173,11 @@ class StrategyLibraryService:
         if parent is None:
             raise NotFoundError("Strategy version not found.")
         status = payload.validation_status or payload.card.validation_status
+        source = (
+            StrategyChangeSource.PATTERN_SPEC
+            if payload.pattern_spec is not None
+            else StrategyChangeSource.CARD_UPDATE
+        )
         version = self._versioning.fork_semantic_update(
             row,
             parent=parent,
@@ -173,9 +185,12 @@ class StrategyLibraryService:
             structured_rules=parent.structured_rules,
             lesson_source_metadata=parent.lesson_source_metadata,
             actor_user_id=user_id,
-            source=StrategyChangeSource.CARD_UPDATE,
+            source=source,
             reason="create_version",
             validation_status=status,
+            pattern_spec=payload.pattern_spec
+            if payload.pattern_spec is not None
+            else parent.pattern_spec,
         )
         self._sync_rag(row, version, payload.card)
         return self._version_to_schema(version)
@@ -255,6 +270,9 @@ class StrategyLibraryService:
             backtest_status=row.backtest_status,
             paper_validation_status=row.paper_validation_status,
             lesson_source_metadata=lesson_source,
+            structured_rules=row.structured_rules,
+            pattern_spec=row.pattern_spec,
+            content_hash=row.content_hash,
             created_at=row.created_at,
         )
 

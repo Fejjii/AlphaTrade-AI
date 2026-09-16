@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -36,6 +36,8 @@ from app.db.models import (
 from app.db.strategy_immutability import (
     ImmutableHistoryError,
     StrategyVersionImmutabilityError,
+    backfill_strategy_version_content_hashes,
+    strategy_version_content_hash,
 )
 from app.schemas.agent import Intent, IntentDecision, OperationClass, PrincipalRef, RequestedAction
 from app.schemas.common import (
@@ -45,6 +47,7 @@ from app.schemas.common import (
     MembershipRole,
     SetupCategory,
     SetupCompileStatus,
+    StrategyChangeSource,
     StrategyId,
     Timeframe,
     TradeDirection,
@@ -59,6 +62,10 @@ from app.schemas.setup_ast import (
     lit_decimal,
 )
 from app.schemas.strategy_library import StrategyCard, UserStrategyCreate, UserStrategyUpdate
+from app.schemas.strategy_pattern_spec import (
+    FIRST_SLICE_NAME,
+    canonical_first_slice_authored_spec,
+)
 from app.schemas.structured_rules import (
     EntryRuleBlock,
     ExitRuleBlock,
@@ -71,7 +78,9 @@ from app.services.manual_level_service import ManualLevelService
 from app.services.setup_ast_compiler import (
     SetupAstCompileError,
     compile_from_authored,
+    compile_from_spec,
     compile_pattern,
+    first_slice_mapping_possible,
 )
 from app.services.setup_ast_compiler import (
     first_slice_bearish_sweep_pattern as compiler_first_slice,
@@ -146,7 +155,7 @@ def session() -> Iterator[Session]:
 
 def _card(**overrides: object) -> StrategyCard:
     payload: dict[str, object] = {
-        "strategy_name": "Bearish Liquidity Sweep Exhaustion at 4h Resistance",
+        "strategy_name": FIRST_SLICE_NAME,
         "market_type": "crypto_perp",
         "asset_universe": ["BTCUSDT"],
         "timeframes": ["15m", "4h"],
@@ -180,6 +189,25 @@ def _first_slice_rules() -> StructuredRules:
             ExitRuleBlock(rule_type=ExitRuleType.FIXED_STOP, value=Decimal("1")),
             ExitRuleBlock(rule_type=ExitRuleType.TP_MULTIPLE, r_multiple=Decimal("1")),
         ],
+    )
+
+
+def _attach_canonical_spec(session: Session, strategy_id: uuid.UUID) -> UserStrategyVersion:
+    strategy = session.get(UserStrategy, strategy_id)
+    assert strategy is not None
+    versioning = StrategyVersioningService(session)
+    parent = versioning.selected_version(strategy)
+    assert parent is not None
+    return versioning.fork_semantic_update(
+        strategy,
+        parent=parent,
+        card=parent.card,
+        structured_rules=parent.structured_rules,
+        lesson_source_metadata=parent.lesson_source_metadata,
+        actor_user_id=USER_A,
+        source=StrategyChangeSource.PATTERN_SPEC,
+        reason="attach canonical first-slice pattern spec",
+        pattern_spec=canonical_first_slice_authored_spec().model_dump(mode="json"),
     )
 
 
@@ -288,10 +316,7 @@ def test_one_canonical_persisted_identity(session: Session) -> None:
         user_id=USER_A,
     )
     session.flush()
-    selected = StrategyVersioningService(session).selected_version(
-        session.get(UserStrategy, created.id)  # type: ignore[arg-type]
-    )
-    assert selected is not None
+    selected = _attach_canonical_spec(session, created.id)
     first = compiler.compile_version(selected.id, organization_id=ORG_A, user_id=USER_A)
     second = compiler.compile_version(selected.id, organization_id=ORG_A, user_id=USER_A)
     assert first.status is SetupCompileStatus.EXECUTABLE
@@ -334,10 +359,7 @@ def test_tenant_compiled_definition_is_tenant_scoped(session: Session) -> None:
         user_id=USER_A,
     )
     session.flush()
-    selected = StrategyVersioningService(session).selected_version(
-        session.get(UserStrategy, created.id)  # type: ignore[arg-type]
-    )
-    assert selected is not None
+    selected = _attach_canonical_spec(session, created.id)
     outcome = CompiledSetupService(session).compile_version(
         selected.id, organization_id=ORG_A, user_id=USER_A
     )
@@ -404,7 +426,8 @@ def test_ambiguous_legacy_mapping_fail_closed() -> None:
     )
     result = compile_from_authored(card=card, rules=rules)
     assert result.status == SetupCompileStatus.NON_EXECUTABLE.value
-    assert any(item.code == "ambiguous_mapping" for item in result.failures)
+    assert any(item.code == "missing_pattern_spec" for item in result.failures)
+    assert first_slice_mapping_possible(card, rules) is False
 
 
 def _atr_bar(
@@ -417,13 +440,16 @@ def _atr_bar(
     revision: uuid.UUID | None = None,
     instrument: str = "BTCUSDT",
     timeframe: str = "15m",
+    minutes: int = 15,
+    open_time: datetime | None = None,
+    close_time: datetime | None = None,
 ) -> FinalOhlcvBar:
-    open_time = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=15 * index)
-    close_time = open_time + timedelta(minutes=15)
+    start = open_time or datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=minutes * index)
+    end = close_time or (start + timedelta(minutes=minutes))
     payload = {
         "instrument": instrument,
         "timeframe": timeframe,
-        "open_time": open_time,
+        "open_time": start,
         "high": Decimal(high),
         "low": Decimal(low),
         "close": Decimal(close),
@@ -436,8 +462,8 @@ def _atr_bar(
         market="usdm_perp",
         instrument=instrument,
         timeframe=timeframe,
-        open_time=open_time,
-        close_time=close_time,
+        open_time=start,
+        close_time=end,
         open=Decimal(close),
         high=Decimal(high),
         low=Decimal(low),
@@ -558,6 +584,7 @@ def test_migration_dry_run_apply_idempotency_and_rollback(session: Session) -> N
         user_id=USER_A,
     )
     session.flush()
+    _attach_canonical_spec(session, created.id)
     migrator = SetupMigrationService(session)
     dry = migrator.run(dry_run=True, organization_id=ORG_A)
     assert dry.templates_created == 1
@@ -624,7 +651,7 @@ def test_card_update_does_not_rewrite_parent(session: Session) -> None:
     session.flush()
     old = session.get(UserStrategyVersion, parent_id)
     assert old is not None
-    assert old.card["strategy_name"] == "Bearish Liquidity Sweep Exhaustion at 4h Resistance"
+    assert old.card["strategy_name"] == FIRST_SLICE_NAME
 
 
 def test_allowlist_contains_first_slice_fields() -> None:
@@ -643,3 +670,286 @@ def test_allowlist_contains_first_slice_fields() -> None:
         "evidence.tick_size",
     }
     assert required.issubset(ALLOWED_FIELD_SPECS)
+
+
+def test_generic_short_liquidity_sweep_does_not_compile() -> None:
+    result = compile_from_authored(card=_card(), rules=_first_slice_rules())
+    assert result.status == SetupCompileStatus.NON_EXECUTABLE.value
+    assert result.document is None
+    assert any(item.code == "missing_pattern_spec" for item in result.failures)
+
+
+def test_symbol_and_timeframes_alone_do_not_compile() -> None:
+    card = _card(asset_universe=["BTCUSDT"], timeframes=["15m", "4h"])
+    result = compile_from_authored(card=card, rules=_first_slice_rules())
+    assert result.document is None
+    assert any(item.code == "missing_pattern_spec" for item in result.failures)
+
+
+def test_missing_cvd_requirement_does_not_compile() -> None:
+    spec = canonical_first_slice_authored_spec().model_copy(
+        update={"requires_cvd_divergence": False}
+    )
+    result = compile_from_spec(spec)
+    assert result.document is None
+    assert any(item.code == "missing_cvd_requirement" for item in result.failures)
+
+
+def test_missing_volume_threshold_does_not_compile() -> None:
+    payload = canonical_first_slice_authored_spec().model_dump(mode="python")
+    del payload["volume_ratio_threshold"]
+    result = compile_from_authored(card=_card(), rules=_first_slice_rules(), pattern_spec=payload)
+    assert result.document is None
+    assert any(item.code == "missing_volume_threshold" for item in result.failures)
+
+
+def test_missing_resistance_rule_does_not_compile() -> None:
+    spec = canonical_first_slice_authored_spec().model_copy(
+        update={"requires_manual_4h_resistance": False}
+    )
+    result = compile_from_spec(spec)
+    assert result.document is None
+    assert any(item.code == "missing_resistance_rule" for item in result.failures)
+
+
+def test_missing_sequence_semantics_does_not_compile() -> None:
+    payload = canonical_first_slice_authored_spec().model_dump(mode="python")
+    payload["sequence"] = []
+    result = compile_from_authored(card=_card(), rules=_first_slice_rules(), pattern_spec=payload)
+    assert result.document is None
+    assert any(item.code == "missing_sequence_semantics" for item in result.failures)
+
+
+def test_exact_typed_first_slice_spec_compiles_from_authored_values() -> None:
+    spec = canonical_first_slice_authored_spec()
+    result = compile_from_spec(spec)
+    assert result.status == SetupCompileStatus.EXECUTABLE.value
+    assert result.document is not None
+    dumped = result.document.pattern.model_dump(mode="json")
+    assert dumped["symbols"] == ["BTCUSDT"]
+    assert dumped["trigger_timeframe"] == "15m"
+    assert dumped["context_timeframe"] == "4h"
+    text = str(dumped)
+    assert "1.50" in text or "1.5" in text
+    assert "0.50" in text or "0.5" in text
+    assert "-0.10" in text or "-0.1" in text
+    assert "exhaustion" not in FIRST_SLICE_NAME.lower()
+    assert "CVD Divergence" in FIRST_SLICE_NAME
+    assert "Aggressive Sell Imbalance" in FIRST_SLICE_NAME
+
+
+def test_changing_authored_threshold_changes_ast_hash() -> None:
+    base = compile_from_spec(canonical_first_slice_authored_spec())
+    changed = compile_from_spec(
+        canonical_first_slice_authored_spec().model_copy(
+            update={"volume_ratio_threshold": Decimal("9.99")}
+        )
+    )
+    assert base.document is not None
+    assert changed.document is not None
+    assert base.document.content_hash != changed.document.content_hash
+    assert "9.99" in str(changed.document.pattern.model_dump(mode="json"))
+    assert "1.50" not in str(changed.document.pattern.model_dump(mode="json"))
+
+
+def test_compiler_does_not_restore_canonical_default_thresholds() -> None:
+    spec = canonical_first_slice_authored_spec().model_copy(
+        update={
+            "resistance_distance_atr_threshold": Decimal("0.77"),
+            "sweep_threshold_atr": Decimal("0.33"),
+        }
+    )
+    result = compile_from_spec(spec)
+    assert result.document is not None
+    dumped = str(result.document.pattern.model_dump(mode="json"))
+    assert "0.77" in dumped
+    assert "0.33" in dumped
+    assert "0.50" not in dumped
+    assert "0.25" not in dumped
+
+
+def test_wilder_atr_exact_15m_continuity() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(14)]
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.VALUE
+    assert feature.missing_reason is None
+
+
+def test_wilder_atr_one_missing_15m_candle() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(15)]
+    del bars[7]
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.MISSING
+    assert feature.missing_reason == "positive_gap"
+
+
+def test_wilder_atr_large_gap() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(13)]
+    bars.append(_atr_bar(40, high="2", low="0", close="1"))
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.MISSING
+    assert feature.missing_reason == "positive_gap"
+
+
+def test_wilder_atr_overlap() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(13)]
+    previous = bars[-1]
+    bars.append(
+        _atr_bar(
+            13,
+            high="2",
+            low="0",
+            close="1",
+            open_time=previous.open_time + timedelta(minutes=5),
+            close_time=previous.close_time + timedelta(minutes=15),
+        )
+    )
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.MISSING
+    assert feature.missing_reason == "overlap"
+
+
+def test_wilder_atr_duplicate_interval() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(13)]
+    duplicate = _atr_bar(12, high="3", low="0", close="1")
+    bars.append(duplicate)
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.MISSING
+    assert feature.missing_reason == "duplicate_interval"
+
+
+def test_wilder_atr_unordered_sequence() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(13)]
+    bars.append(
+        _atr_bar(
+            13,
+            high="2",
+            low="0",
+            close="1",
+            open_time=datetime(2025, 12, 31, tzinfo=UTC),
+            close_time=datetime(2025, 12, 31, tzinfo=UTC) + timedelta(minutes=15),
+        )
+    )
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.MISSING
+    assert feature.missing_reason == "unordered_interval"
+
+
+def test_wilder_atr_4h_continuity() -> None:
+    bars = [
+        _atr_bar(i, high="2", low="0", close="1", timeframe="4h", minutes=240) for i in range(14)
+    ]
+    feature = compute_wilder_atr_v1(bars)
+    assert feature.status is WilderAtrStatus.VALUE
+    assert feature.timeframe == "4h"
+
+
+def test_wilder_atr_correction_replaces_revision_without_gap() -> None:
+    bars = [_atr_bar(i, high="2", low="0", close="1") for i in range(14)]
+    first = compute_wilder_atr_v1(bars)
+    corrected = list(bars)
+    last = bars[-1]
+    corrected[-1] = _atr_bar(
+        13,
+        high="4",
+        low="0",
+        close="2",
+        open_time=last.open_time,
+        close_time=last.close_time,
+    )
+    changed = compute_wilder_atr_v1(corrected)
+    assert first.status is WilderAtrStatus.VALUE
+    assert changed.status is WilderAtrStatus.VALUE
+    assert changed.missing_reason is None
+    assert changed.content_hash != first.content_hash
+
+
+def test_manual_level_revision_hash_binds_created_at_and_venue(session: Session) -> None:
+    from app.services.manual_level_service import manual_level_revision_content_hash
+
+    service = ManualLevelService(session)
+    created = service.create(
+        ManualChartLevelCreate(
+            organization_id=ORG_A,
+            user_id=USER_A,
+            symbol="BTCUSDT",
+            exchange="binance",
+            timeframe=Timeframe.H4,
+            level_type=ManualLevelType.RESISTANCE,
+            price=Decimal("68000"),
+        )
+    )
+    revision = service.current_revision(created.id, organization_id=ORG_A)
+    assert revision is not None
+    expected = manual_level_revision_content_hash(
+        level_id=revision.level_id,
+        revision_id=revision.id,
+        revision_number=revision.revision_number,
+        organization_id=revision.organization_id,
+        actor_user_id=revision.actor_user_id,
+        instrument=revision.instrument,
+        exchange=revision.exchange,
+        venue=revision.venue,
+        market_type=revision.market_type,
+        price_unit=revision.price_unit,
+        timeframe=revision.timeframe,
+        level_type=revision.level_type.value,
+        value=revision.value,
+        price_low=revision.price_low,
+        price_high=revision.price_high,
+        valid=revision.valid,
+        effective_at=revision.effective_at,
+        created_at=revision.created_at,
+        supersedes_revision_id=revision.supersedes_revision_id,
+    )
+    assert revision.content_hash == expected
+    assert revision.venue == "binance"
+    assert revision.created_at is not None
+    other = manual_level_revision_content_hash(
+        level_id=revision.level_id,
+        revision_id=revision.id,
+        revision_number=revision.revision_number,
+        organization_id=revision.organization_id,
+        actor_user_id=revision.actor_user_id,
+        instrument=revision.instrument,
+        exchange=revision.exchange,
+        venue=revision.venue,
+        market_type=revision.market_type,
+        price_unit=revision.price_unit,
+        timeframe=revision.timeframe,
+        level_type=revision.level_type.value,
+        value=revision.value,
+        price_low=revision.price_low,
+        price_high=revision.price_high,
+        valid=revision.valid,
+        effective_at=revision.effective_at,
+        created_at=revision.created_at + timedelta(seconds=1),
+        supersedes_revision_id=revision.supersedes_revision_id,
+    )
+    assert other != revision.content_hash
+
+
+def test_content_hash_backfill_is_deterministic(session: Session) -> None:
+    _create_strategy(session)
+    session.commit()
+    version = session.scalars(select(UserStrategyVersion)).one()
+    expected = strategy_version_content_hash(
+        card=version.card,
+        structured_rules=version.structured_rules,
+        lesson_source_metadata=version.lesson_source_metadata,
+        pattern_spec=version.pattern_spec,
+    )
+    assert version.content_hash == expected
+    session.execute(
+        text("UPDATE user_strategy_versions SET content_hash = :digest"),
+        {"digest": "0" * 64},
+    )
+    session.commit()
+    updated = backfill_strategy_version_content_hashes(session.connection())
+    session.commit()
+    session.expire_all()
+    restored = session.scalars(select(UserStrategyVersion)).one()
+    assert updated == 1
+    assert restored.content_hash == expected
+    again = backfill_strategy_version_content_hashes(session.connection())
+    assert again == 0

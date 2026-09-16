@@ -83,6 +83,9 @@ class ManualLevelRevisionRecord(ORMModel):
     price_high: Decimal | None = None
     valid: bool = True
     actor_user_id: UUID | None = None
+    venue: str
+    market_type: str
+    price_unit: str
     content_hash: str
     supersedes_revision_id: UUID | None = None
     created_at: datetime

@@ -75,6 +75,12 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class JournalProjectionConflictError(ConflictError):
+    """Same journal source identity with a different semantic content hash."""
+
+    code = "journal_projection_conflict"
+
+
 class IdempotencyConvergenceError(ConflictError):
     """Raised when concurrent idempotent writers could not converge within bounded retries."""
 

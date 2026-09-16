@@ -79,7 +79,7 @@ class UsageService:
         )
 
         event = UsageEvent(
-            usage_event_id=uuid.uuid4(),
+            usage_event_id=data.usage_event_id or uuid.uuid4(),
             request_id=data.request_id,
             organization_id=data.organization_id,
             user_id=data.user_id,

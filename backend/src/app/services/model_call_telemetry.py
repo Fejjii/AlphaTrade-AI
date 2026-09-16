@@ -1,8 +1,9 @@
 """Persist actual model-call telemetry without creating a second usage system.
 
-Each actual LLM call records one :class:`ModelCallAttempt` and, when a usage
-service is available, one :class:`UsageEvent` with the same tokens and cost.
-Cost is never fabricated: unknown prices are recorded as ``unavailable``.
+Each actual LLM call records one :class:`ModelCallAttempt` and, when durable
+storage is available, exactly one :class:`UsageEvent` linked one-to-one.
+Cost is never fabricated. Persistence uses an isolated transaction so an outer
+domain rollback cannot erase the fact that provider I/O occurred.
 """
 
 from __future__ import annotations
@@ -13,7 +14,10 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
+from app.core.errors import AppError
 from app.schemas.common import CostSource
 from app.schemas.model_routing import ModelCallAttempt
 from app.schemas.usage import UsageEventCreate
@@ -23,13 +27,19 @@ from app.services.usage_cost import build_provider_metadata
 logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
     from app.services.usage_service import UsageService
 
-# Models with published placeholder rates in cost_estimator. Anything else is
-# recorded as unavailable rather than a silent default rate.
 _KNOWN_RATE_MODELS = frozenset({"gpt-4o-mini", "gpt-4o"})
+
+
+class ModelTelemetryPersistenceError(AppError):
+    """Raised when provider I/O occurred but attempt telemetry could not be persisted."""
+
+    code = "model_telemetry_persist_failed"
+
+    def __init__(self, message: str, *, attempt: ModelCallAttempt) -> None:
+        super().__init__(message, details={"attempt_id": str(attempt.attempt_id)})
+        self.attempt = attempt
 
 
 @dataclass(frozen=True)
@@ -59,19 +69,83 @@ def resolve_model_call_cost(
 
 
 class ModelCallTelemetryService:
-    """Record ModelCallAttempt rows and matching UsageEvent rows."""
+    """Record ModelCallAttempt rows and matching UsageEvent rows exactly once."""
 
     def __init__(
         self,
         session: Session | None = None,
         usage_service: UsageService | None = None,
+        *,
+        isolated: bool = True,
     ) -> None:
         self._session = session
         self._usage = usage_service
+        self._isolated = isolated
 
     def record(self, attempt: ModelCallAttempt, *, feature: str) -> ModelCallAttempt:
-        usage_event_id = None
-        if self._usage is not None:
+        if self._session is None:
+            return attempt.model_copy(update={"persisted": False, "telemetry_durable": False})
+
+        bind = self._session.get_bind()
+        if bind is None:
+            raise ModelTelemetryPersistenceError(
+                "Model telemetry session has no bind.",
+                attempt=attempt,
+            )
+        persist_session = Session(bind=bind) if self._isolated else self._session
+        try:
+            stored = self._persist(persist_session, attempt, feature=feature)
+            if self._isolated:
+                persist_session.commit()
+            else:
+                persist_session.flush()
+            return stored
+        except ModelTelemetryPersistenceError:
+            if self._isolated:
+                persist_session.rollback()
+            raise
+        except Exception as exc:
+            if self._isolated:
+                persist_session.rollback()
+            logger.warning("model_call_attempt_persist_failed", error_type=type(exc).__name__)
+            raise ModelTelemetryPersistenceError(
+                "Model call telemetry could not be persisted.",
+                attempt=attempt.model_copy(update={"persisted": False, "telemetry_durable": False}),
+            ) from exc
+        finally:
+            if self._isolated:
+                persist_session.close()
+
+    def _persist(
+        self,
+        session: Session,
+        attempt: ModelCallAttempt,
+        *,
+        feature: str,
+    ) -> ModelCallAttempt:
+        from app.core.persistence_firewall import (
+            assert_entity_write_allowed,
+            install_persistence_firewall,
+        )
+        from app.db.models import ModelCallAttempt as ModelCallAttemptRow
+        from app.db.models import UsageEvent as UsageEventRow
+        from app.services.usage_service import UsagePersistenceError, UsageService
+
+        install_persistence_firewall()
+        existing_attempt = session.get(ModelCallAttemptRow, attempt.attempt_id)
+        if existing_attempt is not None:
+            return attempt.model_copy(
+                update={
+                    "usage_event_id": existing_attempt.usage_event_id,
+                    "persisted": True,
+                    "telemetry_durable": True,
+                }
+            )
+
+        usage_event_id = attempt.usage_event_id or attempt.attempt_id
+        existing_usage = session.get(UsageEventRow, usage_event_id)
+        if existing_usage is None:
+            usage = UsageService(session, strict_mode=True)
             meta = build_provider_metadata(
                 input_tokens=attempt.input_tokens,
                 output_tokens=attempt.output_tokens,
@@ -83,36 +157,48 @@ class ModelCallTelemetryService:
                 resolved_model=attempt.resolved_model,
                 correlation_id=attempt.correlation_id,
                 failure_category=attempt.failure_category.value,
+                usage_category="actual_provider_attempt",
             )
-            event = self._usage.record(
-                UsageEventCreate(
-                    request_id=attempt.correlation_id,
-                    feature=feature,
-                    user_id=attempt.user_id,
-                    organization_id=attempt.organization_id,
-                    provider=attempt.provider,
-                    model=attempt.resolved_model,
-                    input_tokens=attempt.input_tokens,
-                    output_tokens=attempt.output_tokens,
-                    fallback_used=attempt.fallback_used,
-                    latency_ms=attempt.latency_ms,
-                    status=attempt.status,
-                    timestamp=attempt.completed_at,
-                    provider_metadata=meta,
-                )
-            )
-            if (
-                self._session is not None
-                and getattr(self._usage, "_session", None) is self._session
-            ):
-                usage_event_id = event.usage_event_id
+            try:
+                with session.begin_nested():
+                    event = usage.record(
+                        UsageEventCreate(
+                            usage_event_id=usage_event_id,
+                            request_id=attempt.correlation_id,
+                            feature=feature,
+                            user_id=attempt.user_id,
+                            organization_id=attempt.organization_id,
+                            provider=attempt.provider,
+                            model=attempt.resolved_model,
+                            input_tokens=attempt.input_tokens,
+                            output_tokens=attempt.output_tokens,
+                            fallback_used=attempt.fallback_used,
+                            latency_ms=attempt.latency_ms,
+                            status=attempt.status,
+                            timestamp=attempt.completed_at,
+                            provider_metadata=meta,
+                        )
+                    )
+                    usage_event_id = event.usage_event_id or usage_event_id
+            except IntegrityError:
+                recovered = session.get(UsageEventRow, usage_event_id)
+                if recovered is None:
+                    raise
+            except UsagePersistenceError as exc:
+                raise ModelTelemetryPersistenceError(
+                    "Usage event for model attempt could not be persisted.",
+                    attempt=attempt.model_copy(
+                        update={"persisted": False, "telemetry_durable": False}
+                    ),
+                ) from exc
 
-        stored = attempt.model_copy(update={"usage_event_id": usage_event_id})
-        if self._session is None:
-            return stored
-
-        from app.db.models import ModelCallAttempt as ModelCallAttemptRow
-
+        stored = attempt.model_copy(
+            update={
+                "usage_event_id": usage_event_id,
+                "persisted": True,
+                "telemetry_durable": True,
+            }
+        )
         row = ModelCallAttemptRow(
             id=stored.attempt_id,
             organization_id=stored.organization_id,
@@ -144,17 +230,14 @@ class ModelCallTelemetryService:
             completed_at=stored.completed_at,
             event_at=stored.completed_at or datetime.now(UTC),
         )
-        from app.core.persistence_firewall import (
-            assert_entity_write_allowed,
-            install_persistence_firewall,
-        )
-
+        assert_entity_write_allowed(row)
         try:
-            install_persistence_firewall()
-            assert_entity_write_allowed(row)
-            self._session.add(row)
-            self._session.flush()
-        except Exception as exc:
-            logger.warning("model_call_attempt_persist_failed", error_type=type(exc).__name__)
-            return stored
+            with session.begin_nested():
+                session.add(row)
+                session.flush()
+        except IntegrityError:
+            existing = session.get(ModelCallAttemptRow, stored.attempt_id)
+            if existing is None:
+                raise
+            return stored.model_copy(update={"usage_event_id": existing.usage_event_id})
         return stored

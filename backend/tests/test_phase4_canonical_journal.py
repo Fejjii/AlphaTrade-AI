@@ -12,12 +12,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.errors import PersistencePolicyError
+from app.core.errors import JournalProjectionConflictError, PersistencePolicyError
 from app.core.operation_policy import operation_scope
 from app.core.persistence_firewall import install_persistence_firewall
 from app.db.base import Base
 from app.db.journal_immutability import JournalHistoryImmutabilityError
 from app.db.models import (
+    ExecutionAccount,
     JournalLifecycleEvent,
     JournalProjectionReceipt,
     JournalTrade,
@@ -43,6 +44,7 @@ from app.schemas.common import (
 from app.schemas.journal_lifecycle import JournalLifecycleEventInput
 from app.schemas.journal_trades import JournalTradeUpdate
 from app.schemas.rag import IngestDocumentRequest, IngestDocumentResponse
+from app.schemas.trade_plan import AccountMode, ExecutionMode
 from app.services.audit_service import AuditService
 from app.services.human_vs_system_service import HumanVsSystemService
 from app.services.journal_backfill_service import JournalBackfillService
@@ -54,6 +56,8 @@ ORG_A = uuid.UUID("00000000-0000-0000-0000-00000000d001")
 ORG_B = uuid.UUID("00000000-0000-0000-0000-00000000d002")
 USER_A = uuid.UUID("00000000-0000-0000-0000-00000000d011")
 USER_B = uuid.UUID("00000000-0000-0000-0000-00000000d012")
+ACCOUNT_A = uuid.UUID("00000000-0000-0000-0000-00000000d021")
+ACCOUNT_B = uuid.UUID("00000000-0000-0000-0000-00000000d022")
 
 
 class _FakeRag:
@@ -110,6 +114,22 @@ def factory() -> Iterator[sessionmaker[Session]]:
             [
                 Membership(organization_id=ORG_A, user_id=USER_A, role=MembershipRole.TRADER),
                 Membership(organization_id=ORG_B, user_id=USER_B, role=MembershipRole.TRADER),
+                ExecutionAccount(
+                    id=ACCOUNT_A,
+                    organization_id=ORG_A,
+                    user_id=USER_A,
+                    name="Org A paper account A",
+                    execution_mode=ExecutionMode.PAPER,
+                    account_mode=AccountMode.NET,
+                ),
+                ExecutionAccount(
+                    id=ACCOUNT_B,
+                    organization_id=ORG_A,
+                    user_id=USER_A,
+                    name="Org A paper account B",
+                    execution_mode=ExecutionMode.PAPER,
+                    account_mode=AccountMode.NET,
+                ),
             ]
         )
         session.commit()
@@ -129,8 +149,11 @@ def _event(
     *,
     source_event_id: str,
     execution_lifecycle_id: uuid.UUID | None = None,
-    source_aggregate: str = "account-a",
+    source_aggregate: str = "execution-lifecycle",
+    account_id: uuid.UUID = ACCOUNT_A,
     payload: dict[str, object] | None = None,
+    source_event_version: int = 1,
+    supersession: int = 0,
 ) -> JournalLifecycleEventInput:
     return JournalLifecycleEventInput(
         event_type=event_type,
@@ -138,7 +161,9 @@ def _event(
         source_system="paper_internal",
         source_aggregate=source_aggregate,
         source_event_id=source_event_id,
-        source_event_version=1,
+        source_event_version=source_event_version,
+        supersession=supersession,
+        account_id=account_id,
         payload=payload or {},
     )
 
@@ -257,7 +282,7 @@ def test_same_source_identity_isolated_across_accounts(factory: sessionmaker[Ses
                 JournalLifecycleEventType.APPROVED_PLAN,
                 source_event_id="shared-event",
                 execution_lifecycle_id=lifecycle_a,
-                source_aggregate="account-a",
+                account_id=ACCOUNT_A,
                 payload=_instrument_payload(),
             ),
             organization_id=ORG_A,
@@ -268,15 +293,17 @@ def test_same_source_identity_isolated_across_accounts(factory: sessionmaker[Ses
                 JournalLifecycleEventType.APPROVED_PLAN,
                 source_event_id="shared-event",
                 execution_lifecycle_id=lifecycle_b,
-                source_aggregate="account-b",
+                account_id=ACCOUNT_B,
                 payload=_instrument_payload(),
             ),
-            organization_id=ORG_B,
-            user_id=USER_B,
+            organization_id=ORG_A,
+            user_id=USER_A,
         )
         session.commit()
         assert a.journal_trade_id != b.journal_trade_id
         assert session.scalar(select(func.count()).select_from(JournalTrade)) == 2
+        trades = list(session.scalars(select(JournalTrade)).all())
+        assert {trade.account_id for trade in trades} == {ACCOUNT_A, ACCOUNT_B}
 
 
 def test_database_uniqueness_on_execution_lifecycle(factory: sessionmaker[Session]) -> None:
@@ -467,7 +494,7 @@ def test_legacy_migration_dry_run_and_apply(factory: sessionmaker[Session]) -> N
             timeframe="15m",
             direction=TradeDirection.SHORT,
             strategy_id=StrategyId.HTF_TREND_PULLBACK,
-            entry_rationale="Sweep exhaustion",
+            entry_rationale="Bearish liquidity sweep at 4h resistance",
             exit_rationale="Target hit",
             emotions=["calm"],
             mistakes=["late entry"],
@@ -657,3 +684,254 @@ def test_unresolved_reconciliation_does_not_finalize(factory: sessionmaker[Sessi
         trade = session.scalars(select(JournalTrade)).one()
         assert trade.status is JournalTradeStatus.PLANNED
         assert trade.exit_price is None
+
+
+def test_identical_replay_is_idempotent(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    event = _event(
+        JournalLifecycleEventType.APPROVED_PLAN,
+        source_event_id="plan-identical",
+        execution_lifecycle_id=lifecycle_id,
+        payload=_instrument_payload(),
+    )
+    with factory() as session:
+        projector = _projector(session)
+        first = projector.project(event, organization_id=ORG_A, user_id=USER_A)
+        replay = projector.project(event, organization_id=ORG_A, user_id=USER_A)
+        session.commit()
+        assert replay.replayed is True
+        assert replay.journal_trade_id == first.journal_trade_id
+        assert session.scalar(select(func.count()).select_from(JournalTrade)) == 1
+
+
+def test_payload_conflict_fails_closed(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.APPROVED_PLAN,
+                source_event_id="plan-conflict",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(planned_entry_price="64000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        conflicting = _event(
+            JournalLifecycleEventType.APPROVED_PLAN,
+            source_event_id="plan-conflict",
+            execution_lifecycle_id=lifecycle_id,
+            payload=_instrument_payload(planned_entry_price="1"),
+        )
+        with pytest.raises(JournalProjectionConflictError):
+            projector.project(conflicting, organization_id=ORG_A, user_id=USER_A)
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.planned_entry_price == Decimal("64000")
+
+
+def test_execution_lifecycle_conflict_fails_closed(factory: sessionmaker[Session]) -> None:
+    first_lifecycle = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.FILL,
+                source_event_id="fill-conflict",
+                execution_lifecycle_id=first_lifecycle,
+                payload=_instrument_payload(entry_price="64000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        with pytest.raises(JournalProjectionConflictError):
+            projector.project(
+                _event(
+                    JournalLifecycleEventType.FILL,
+                    source_event_id="fill-conflict",
+                    execution_lifecycle_id=uuid.uuid4(),
+                    payload=_instrument_payload(entry_price="64000"),
+                ),
+                organization_id=ORG_A,
+                user_id=USER_A,
+            )
+
+
+def test_account_conflict_fails_closed(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.APPROVED_PLAN,
+                source_event_id="acct-conflict",
+                execution_lifecycle_id=lifecycle_id,
+                account_id=ACCOUNT_A,
+                payload=_instrument_payload(),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        with pytest.raises(JournalProjectionConflictError):
+            projector.project(
+                _event(
+                    JournalLifecycleEventType.FILL,
+                    source_event_id="fill-other-account",
+                    execution_lifecycle_id=lifecycle_id,
+                    account_id=ACCOUNT_B,
+                    payload=_instrument_payload(entry_price="64000"),
+                ),
+                organization_id=ORG_A,
+                user_id=USER_A,
+            )
+
+
+def test_source_aggregate_is_part_of_identity(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        first = projector.project(
+            _event(
+                JournalLifecycleEventType.APPROVED_PLAN,
+                source_event_id="agg-shared",
+                execution_lifecycle_id=lifecycle_id,
+                source_aggregate="lifecycle-one",
+                payload=_instrument_payload(),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        second = projector.project(
+            _event(
+                JournalLifecycleEventType.APPROVED_PLAN,
+                source_event_id="agg-shared",
+                execution_lifecycle_id=lifecycle_id,
+                source_aggregate="lifecycle-two",
+                payload=_instrument_payload(),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        assert first.replayed is False
+        assert second.replayed is False
+        assert session.scalar(select(func.count()).select_from(JournalTrade)) == 1
+        assert session.scalar(select(func.count()).select_from(JournalLifecycleEvent)) == 2
+        with pytest.raises(JournalProjectionConflictError):
+            projector.project(
+                _event(
+                    JournalLifecycleEventType.APPROVED_PLAN,
+                    source_event_id="agg-shared",
+                    execution_lifecycle_id=lifecycle_id,
+                    source_aggregate="lifecycle-one",
+                    payload=_instrument_payload(thesis="tampered"),
+                ),
+                organization_id=ORG_A,
+                user_id=USER_A,
+            )
+
+
+def test_event_version_change_is_new_identity(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.FILL,
+                source_event_id="fill-version",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(entry_price="64000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.FILL,
+                source_event_id="fill-version",
+                execution_lifecycle_id=lifecycle_id,
+                source_event_version=2,
+                payload=_instrument_payload(entry_price="63950", size="0.2"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.entry_price == Decimal("63950")
+        assert session.scalar(select(func.count()).select_from(JournalLifecycleEvent)) == 2
+
+
+def test_supersession_change_is_new_identity(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.FILL,
+                source_event_id="fill-super",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(entry_price="64000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.FILL,
+                source_event_id="fill-super",
+                execution_lifecycle_id=lifecycle_id,
+                supersession=1,
+                payload=_instrument_payload(entry_price="63800"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.entry_price == Decimal("63800")
+        assert session.scalar(select(func.count()).select_from(JournalLifecycleEvent)) == 2
+
+
+def test_close_then_stale_fill_does_not_regress(factory: sessionmaker[Session]) -> None:
+    lifecycle_id = uuid.uuid4()
+    with factory() as session:
+        projector = _projector(session)
+        projector.project(
+            _event(
+                JournalLifecycleEventType.APPROVED_PLAN,
+                source_event_id="plan-stale",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.CLOSE,
+                source_event_id="close-first",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(exit_price="63000", result=TradeResult.WIN.value),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        projector.project(
+            _event(
+                JournalLifecycleEventType.FILL,
+                source_event_id="stale-fill",
+                execution_lifecycle_id=lifecycle_id,
+                payload=_instrument_payload(entry_price="64000"),
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.status is JournalTradeStatus.CLOSED
+        assert trade.entry_price == Decimal("64000")
+        assert trade.exit_price == Decimal("63000")

@@ -24,7 +24,7 @@ class JournalLifecycleEventInput(StrictModel):
     source_event_id: str = Field(min_length=1, max_length=160)
     source_event_version: int = Field(ge=1)
     supersession: int = Field(default=0, ge=0)
-    account_id: UUID | None = None
+    account_id: UUID
     payload: dict[str, object] = Field(default_factory=dict)
     correlation_id: str | None = Field(default=None, max_length=128)
 

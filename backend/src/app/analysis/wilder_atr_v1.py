@@ -100,13 +100,23 @@ def _identity_ok(bars: list[FinalOhlcvBar]) -> str | None:
     return None
 
 
-def _contiguous(bars: list[FinalOhlcvBar]) -> bool:
+def _contiguity_reason(bars: list[FinalOhlcvBar]) -> str | None:
+    """Exact contiguous selected final bars: current.open_time == previous.close_time."""
+
+    intervals: list[tuple[datetime, datetime]] = []
+    for bar in bars:
+        interval = (bar.open_time, bar.close_time)
+        if interval in intervals:
+            return "duplicate_interval"
+        intervals.append(interval)
     for previous, current in pairwise(bars):
-        if current.open_time <= previous.open_time:
-            return False
+        if current.open_time < previous.open_time:
+            return "unordered_interval"
         if current.open_time < previous.close_time:
-            return False
-    return True
+            return "overlap"
+        if current.open_time > previous.close_time:
+            return "positive_gap"
+    return None
 
 
 def _missing_feature(
@@ -192,11 +202,12 @@ def compute_wilder_atr_v1(
             instrument=identity_instrument,
             timeframe=identity_timeframe,
         )
-    if not _contiguous(bars):
+    contiguity = _contiguity_reason(bars)
+    if contiguity is not None:
         return _missing_feature(
             bars=bars,
             period=period,
-            reason="gap_or_unordered",
+            reason=contiguity,
             venue=identity_venue,
             market=identity_market,
             instrument=identity_instrument,

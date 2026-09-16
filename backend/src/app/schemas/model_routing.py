@@ -69,6 +69,7 @@ class ModelFailureCategory(StrEnum):
     SECRET_IN_CONTEXT = "secret_in_context"
     VALIDATION_FAILED = "validation_failed"
     QUOTA = "quota"
+    TELEMETRY_PERSISTENCE_FAILED = "telemetry_persistence_failed"
     UNKNOWN = "unknown"
 
 
@@ -113,6 +114,9 @@ class ModelTaskRequest(StrictModel):
     correlation_id: str = Field(min_length=1, max_length=128)
     caller_organization_id: UUID | None = None
     caller_user_id: UUID | None = None
+    caller_account_id: UUID | None = None
+    caller_resource_type: ModelResourceType | None = None
+    caller_resource_id: UUID | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     response_format: dict[str, object] | None = None
     # Optional override is accepted only when it matches the policy model or an
@@ -154,6 +158,8 @@ class ModelCallAttempt(StrictModel):
     started_at: datetime
     completed_at: datetime
     mutation_allowed: bool = False
+    persisted: bool = False
+    telemetry_durable: bool = False
 
 
 class ModelTaskResult(StrictModel):
@@ -177,6 +183,7 @@ class ModelTaskResult(StrictModel):
     deterministic_facts: dict[str, object] | None = None
     failure_category: ModelFailureCategory = ModelFailureCategory.NONE
     mutation_allowed: bool = False
+    telemetry_persisted: bool = False
     completed_at: datetime
 
 

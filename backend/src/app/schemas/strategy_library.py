@@ -60,6 +60,9 @@ class UserStrategyVersion(ORMModel):
     backtest_status: BacktestStatus
     paper_validation_status: PaperValidationStatus
     lesson_source_metadata: LessonSourceMetadata | None = None
+    structured_rules: dict[str, object] | None = None
+    pattern_spec: dict[str, object] | None = None
+    content_hash: str | None = None
     created_at: datetime
 
 
@@ -110,6 +113,7 @@ class UserStrategyUpdate(StrictModel):
 class UserStrategyVersionCreate(StrictModel):
     card: StrategyCard
     validation_status: StrategyValidationStatus | None = None
+    pattern_spec: dict[str, object] | None = None
 
 
 class PaginatedUserStrategies(StrictModel):

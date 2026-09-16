@@ -511,6 +511,7 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "version",
             name="uq_user_strategy_version",
         ),
+        CheckConstraint("length(content_hash) = 64", name="ck_user_strategy_version_hash"),
     )
 
     strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
@@ -536,7 +537,8 @@ class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         _enum(StrategyChangeSource), default=StrategyChangeSource.CREATE, nullable=False
     )
     content_diff: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    pattern_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class CompiledSetupDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1419,6 +1421,9 @@ class ManualLevelRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     price_high: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     valid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    venue: Mapped[str] = mapped_column(String(40), nullable=False, default="unknown")
+    market_type: Mapped[str] = mapped_column(String(40), nullable=False, default="unspecified")
+    price_unit: Mapped[str] = mapped_column(String(20), nullable=False, default="quote")
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     supersedes_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("manual_level_revisions.id"), nullable=True
@@ -2538,6 +2543,9 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Phase 4: projector-owned execution lifecycle identity (claim id). NULL for
     # manual/imported rows that are not bound to an execution lifecycle.
     execution_lifecycle_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
+    projector_watermark_rank: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    projector_lock_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class JournalTradeEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -2659,6 +2667,7 @@ class JournalLifecycleEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint(
             "organization_id",
+            "account_id",
             "source_system",
             "source_aggregate",
             "event_type",
@@ -2675,7 +2684,7 @@ class JournalLifecycleEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id"), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     event_type: Mapped[JournalLifecycleEventType] = mapped_column(
         _enum(JournalLifecycleEventType), nullable=False
     )
@@ -2701,6 +2710,7 @@ class JournalProjectionReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint(
             "organization_id",
+            "account_id",
             "source_system",
             "source_aggregate",
             "event_type",
@@ -2716,7 +2726,7 @@ class JournalProjectionReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id"), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     event_type: Mapped[JournalLifecycleEventType] = mapped_column(
         _enum(JournalLifecycleEventType), nullable=False
     )
