@@ -812,17 +812,21 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 ## Agentic redesign — market evidence
 
 ### AT-041 — Phase 5 market source contracts and evidence foundations
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: Phases 1–4 on `main` · Risk: Medium
+- Priority: P0 · Status: DONE · Dependencies: Phases 1–4 on `main` · Risk: Medium
 - Safety classification: Paper-safe / read-only market evidence; no execution path
 - Goal: Contract-test Binance USD-M perpetual OHLCV and aggregate trades for the first
   BTCUSDT 15m/4h slice; freeze identity, finality, freshness, cursor/gap, CVD, signed
   quote flow, provenance, and replay fixtures. No watcher, Telegram, candidates,
   execution, or frontend.
 - Branch: `cursor/phase5-market-contracts-852a`
-- Validation: closed/forming candle tests; wrong market/instrument; gap/duplicate/
-  out-of-order/cursor recovery; freshness/stale; CVD exact arithmetic; signed quote
-  delta; aggressor semantics; content-hash stability; replay determinism; provider
-  provenance; regional failure; no spot fallback; ruff; scoped mypy; full backend
-  pytest; GitHub CI. Paper posture unchanged.
+- PR: https://github.com/Fejjii/AlphaTrade-AI/pull/80 (draft; do not merge)
+- Validation: 35 Phase 5 tests covering closed/forming candles, wrong market/instrument,
+  gap/duplicate/out-of-order/cursor recovery, freshness/stale, CVD exact arithmetic,
+  signed quote delta, aggressor semantics, content-hash stability, replay determinism,
+  provider provenance, regional failure, no spot fallback. Local ruff clean; mypy
+  `--strict` on `src/app/market_contracts` Success (21 files); full backend pytest
+  1697 passed; evaluations 16/16 + 5/5 + 7/7; GitHub CI run 35124970846 success
+  (backend, frontend, deployment-safety, docker-build, evaluation, e2e-smoke).
+  Paper posture unchanged. Commit `8e48ff47e4c7d9c6f602dd2d45a7266024ae0009`.
 - Recommended model: Grok 4.6
 - ADR: AT-ADR-021 · Docs: `docs/market_source_contracts.md`

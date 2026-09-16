@@ -631,7 +631,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-021 — Phase 5 Binance USD-M perpetual evidence contracts (no spot fallback)
 - **Date:** 2026-09-16
-- **Status:** Accepted (implementation in this PR)
+- **Status:** Accepted (implemented on PR #80, draft; do not merge pending independent review)
 - **Context:** The first BTCUSDT vertical slice requires closed perpetual 15m/4h OHLCV,
   ordered USD-M aggregate trades, quote-volume CVD, and signed quote flow. The existing
   `binance-public` adapter uses spot `/api/v3/klines` and may silently fall back to mock
