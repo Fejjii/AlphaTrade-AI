@@ -43,6 +43,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.historical_immutability import install_historical_immutability as _install_history
+from app.db.journal_immutability import (
+    register_journal_immutability as _register_journal_immutability,
+)
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )
@@ -65,6 +68,7 @@ from app.schemas.common import (
     JournalEntryMethod,
     JournalEvidenceKind,
     JournalImportBatchStatus,
+    JournalLifecycleEventType,
     JournalObservationCategory,
     JournalTradeSource,
     JournalTradeStatus,
@@ -2412,6 +2416,15 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("external_ref IS NOT NULL"),
             sqlite_where=text("external_ref IS NOT NULL"),
         ),
+        # Phase 4: one canonical JournalTrade per execution lifecycle in an org.
+        Index(
+            "uq_journal_trades_org_lifecycle",
+            "organization_id",
+            "execution_lifecycle_id",
+            unique=True,
+            postgresql_where=text("execution_lifecycle_id IS NOT NULL"),
+            sqlite_where=text("execution_lifecycle_id IS NOT NULL"),
+        ),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -2522,6 +2535,9 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("paper_validation_runs.id"), nullable=True
     )
     external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Phase 4: projector-owned execution lifecycle identity (claim id). NULL for
+    # manual/imported rows that are not bound to an execution lifecycle.
+    execution_lifecycle_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
 
 
 class JournalTradeEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -2634,6 +2650,116 @@ class JournalTradeAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     storage_backend: Mapped[str] = mapped_column(String(20), nullable=False, default="db")
     content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     caption: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class JournalLifecycleEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Append-only journal lifecycle event. Candidate/reject/skip never create trades."""
+
+    __tablename__ = "journal_lifecycle_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "source_system",
+            "source_aggregate",
+            "event_type",
+            "source_event_id",
+            "source_event_version",
+            "supersession",
+            name="uq_journal_lifecycle_event_source",
+        ),
+        Index("ix_journal_lifecycle_org_lifecycle", "organization_id", "execution_lifecycle_id"),
+        CheckConstraint("length(content_hash) = 64", name="ck_journal_lifecycle_event_hash"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    event_type: Mapped[JournalLifecycleEventType] = mapped_column(
+        _enum(JournalLifecycleEventType), nullable=False
+    )
+    execution_lifecycle_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    source_system: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_aggregate: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_event_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_event_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersession: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, default=dict, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    journal_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=True
+    )
+
+
+class JournalProjectionReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Idempotent projector receipt. One source event maps to at most one apply."""
+
+    __tablename__ = "journal_projection_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "source_system",
+            "source_aggregate",
+            "event_type",
+            "source_event_id",
+            "source_event_version",
+            "supersession",
+            name="uq_journal_projection_receipt_source",
+        ),
+        CheckConstraint("length(content_hash) = 64", name="ck_journal_projection_receipt_hash"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    event_type: Mapped[JournalLifecycleEventType] = mapped_column(
+        _enum(JournalLifecycleEventType), nullable=False
+    )
+    execution_lifecycle_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    source_system: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_aggregate: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_event_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_event_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersession: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    journal_trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=True
+    )
+    created_journal_trade: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    skipped_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class JournalTradeVenueCorrection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Append-only correction of projector-owned venue facts."""
+
+    __tablename__ = "journal_trade_venue_corrections"
+    __table_args__ = (
+        CheckConstraint("length(content_hash) = 64", name="ck_journal_venue_correction_hash"),
+        Index(
+            "ix_journal_venue_correction_trade",
+            "organization_id",
+            "journal_trade_id",
+        ),
+    )
+
+    journal_trade_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journal_trades.id"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    field_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    previous_value: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -3281,3 +3407,4 @@ class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 _ = _install_history
 _register_strategy_immutability()
+_register_journal_immutability()

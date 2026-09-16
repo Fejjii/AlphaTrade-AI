@@ -27,6 +27,7 @@ from app.db.models import (
     JournalTradeEvidence,
     JournalTradeObservation,
     JournalTradeRuleCheck,
+    JournalTradeVenueCorrection,
     Order,
     PaperTrade,
     PaperValidationRun,
@@ -65,8 +66,37 @@ from app.schemas.journal_trades import (
     JournalTradeUpdate,
 )
 from app.services.audit_service import AuditService
+from app.services.canonical_serialization import canonical_sha256
 
 _REQUEST_TAG = "journal-trades-api"
+
+VENUE_FACT_FIELDS = frozenset(
+    {
+        "entry_price",
+        "entry_time",
+        "exit_price",
+        "exit_time",
+        "exit_reason",
+        "size",
+        "leverage",
+        "fees",
+        "funding",
+        "slippage",
+        "gross_pnl",
+        "net_pnl",
+        "result",
+        "status",
+        "linked_order_id",
+        "linked_position_id",
+        "linked_paper_trade_id",
+    }
+)
+
+
+class VenueFactImmutableError(ValidationAppError):
+    """Raised when a reflective edit tries to overwrite projector-owned facts."""
+
+    code = "venue_fact_immutable"
 
 
 class JournalTradeService:
@@ -362,6 +392,13 @@ class JournalTradeService:
     ) -> JournalTradeRead:
         row = self._get_row(trade_id, organization_id=organization_id)
         updates = data.model_dump(exclude_unset=True)
+        if row.execution_lifecycle_id is not None:
+            blocked = sorted(key for key in updates if key in VENUE_FACT_FIELDS)
+            if blocked:
+                raise VenueFactImmutableError(
+                    "Venue-derived facts are projector-owned and cannot be edited in place.",
+                    details={"fields": blocked, "trade_id": str(row.id)},
+                )
         if any(k in updates for k in ("setup_id", "user_strategy_id", "strategy_version_id")):
             self._validate_strategy_links(
                 organization_id=organization_id,
@@ -376,6 +413,62 @@ class JournalTradeService:
         _derive_realized_vs_available(row, explicit="realized_vs_available_pct" in updates)
         self._trades.add(row)
         self._record_audit(row, AuditEventType.JOURNAL_TRADE_UPDATED, action="update")
+        return JournalTradeRead.model_validate(row)
+
+    def correct_venue_facts(
+        self,
+        trade_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        reason: str,
+        fields: dict[str, object],
+    ) -> JournalTradeRead:
+        """Append-only correction of projector-owned facts. Never a silent overwrite."""
+        if not reason.strip():
+            raise ValidationAppError(
+                "Venue corrections require an explicit reason.",
+                details={"reason": "missing_correction_reason"},
+            )
+        unknown = sorted(key for key in fields if key not in VENUE_FACT_FIELDS)
+        if unknown:
+            raise ValidationAppError(
+                "Correction includes fields that are not venue facts.",
+                details={"fields": unknown},
+            )
+        if not fields:
+            raise ValidationAppError("Venue correction requires at least one field.")
+        row = self._get_row(trade_id, organization_id=organization_id)
+        for field_name, new_value in fields.items():
+            previous = getattr(row, field_name)
+            correction = JournalTradeVenueCorrection(
+                journal_trade_id=row.id,
+                organization_id=organization_id,
+                field_name=field_name,
+                previous_value=_jsonable(previous),
+                new_value=_jsonable(new_value),
+                reason=reason.strip(),
+                actor_user_id=actor_user_id,
+                content_hash=canonical_sha256(
+                    {
+                        "journal_trade_id": str(row.id),
+                        "field_name": field_name,
+                        "previous_value": _jsonable(previous),
+                        "new_value": _jsonable(new_value),
+                        "reason": reason.strip(),
+                        "actor_user_id": str(actor_user_id),
+                    }
+                ),
+            )
+            self._session.add(correction)
+            setattr(row, field_name, _coerce_venue_value(field_name, new_value))
+        self._trades.add(row)
+        self._record_audit(
+            row,
+            AuditEventType.JOURNAL_TRADE_VENUE_CORRECTED,
+            action="correct_venue_facts",
+            extra={"reason": reason.strip()[:120]},
+        )
         return JournalTradeRead.model_validate(row)
 
     def delete(self, trade_id: uuid.UUID, *, organization_id: uuid.UUID) -> None:
@@ -630,3 +723,41 @@ def _derive_realized_vs_available(row: JournalTrade, *, explicit: bool) -> None:
     if row.available_profit == 0:
         return
     row.realized_vs_available_pct = float(row.net_pnl / row.available_profit * Decimal("100"))
+
+
+def _jsonable(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, Decimal | uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if hasattr(value, "value"):
+        return str(value.value)
+    return value
+
+
+def _coerce_venue_value(field_name: str, value: object) -> object:
+    if value is None:
+        return None
+    if field_name in {
+        "entry_price",
+        "exit_price",
+        "size",
+        "leverage",
+        "fees",
+        "funding",
+        "slippage",
+        "gross_pnl",
+        "net_pnl",
+    }:
+        return Decimal(str(value))
+    if field_name in {"linked_order_id", "linked_position_id", "linked_paper_trade_id"}:
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+    if field_name == "status":
+        return value if isinstance(value, JournalTradeStatus) else JournalTradeStatus(str(value))
+    if field_name == "result":
+        return value if isinstance(value, TradeResult) else TradeResult(str(value))
+    if field_name in {"entry_time", "exit_time"} and isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return value

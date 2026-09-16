@@ -1,18 +1,39 @@
-"""Human versus system comparison service v3 (Slice 33-36)."""
+"""Human versus system comparison service v3 (Slice 33-36 / Phase 4).
+
+JournalTrade is the canonical source. Legacy TradeJournal resolution remains a
+marked compatibility fallback during migration.
+"""
 
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.models import BacktestRun, Position, TradeJournal, TradeProposal
+from app.db.models import (
+    BacktestRun,
+    JournalTrade,
+    JournalTradeObservation,
+    LessonCandidate,
+    Position,
+    TradeJournal,
+    TradeProposal,
+)
 from app.repositories.journal import JournalRepository
+from app.repositories.journal_trades import JournalTradeRepository
 from app.repositories.proposals import ProposalRepository
-from app.schemas.common import LessonSeverity, LessonSourceType, Timeframe
+from app.schemas.common import (
+    JournalObservationCategory,
+    LessonSeverity,
+    LessonSourceType,
+    Timeframe,
+    TradeDirection,
+)
 from app.schemas.human_vs_system import (
     DisciplineAnalysis,
     HumanVsSystemComparison,
@@ -33,6 +54,28 @@ from app.services.stop_loss_refusal_analyzer import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class JournalCompareView:
+    """Normalized journal facts for human-vs-system comparison."""
+
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    user_id: uuid.UUID
+    symbol: str
+    timeframe: str
+    direction: TradeDirection | None
+    linked_proposal_id: uuid.UUID | None
+    linked_position_id: uuid.UUID | None
+    exit_rationale: str | None
+    emotions: list[str]
+    mistakes: list[str]
+    lessons: str | None
+    pnl: Decimal | None
+    compatibility_fallback: bool
+    canonical_journal_trade_id: uuid.UUID | None
+    linked_journal_entry_id: uuid.UUID | None
+
+
 class HumanVsSystemService:
     """Compare actual trade behavior to system plan, backtest, and analyzers."""
 
@@ -44,6 +87,7 @@ class HumanVsSystemService:
     ) -> None:
         self._proposals = ProposalRepository(session)
         self._journal = JournalRepository(session)
+        self._journal_trades = JournalTradeRepository(session)
         self._session = session
         self._runner = RunnerAndMissedProfitAnalyzer()
         self._stop = StopLossRefusalAnalyzer()
@@ -273,6 +317,10 @@ class HumanVsSystemService:
             emotion_free_baseline="Follow system plan without emotion tags.",
             notes=notes or ["Comparison uses proposal/journal linkage when available."],
             limitations=limitations + runner_analysis.limitations + stop_analysis.limitations,
+            compatibility_fallback=journal.compatibility_fallback if journal is not None else False,
+            canonical_journal_trade_id=(
+                journal.canonical_journal_trade_id if journal is not None else None
+            ),
         )
 
     def analyze_discipline(
@@ -317,7 +365,7 @@ class HumanVsSystemService:
         existing = self._lessons.list_for_journal(
             journal_entry_id, organization_id=organization_id, user_id=user_id
         )
-        candidate_ids = [row.id for row in existing]
+        candidate_ids = list(existing)
         return DisciplineAnalysis(
             journal_entry_id=journal_entry_id,
             comparison=comparison,
@@ -348,19 +396,29 @@ class HumanVsSystemService:
             raise ValidationAppError(
                 f"No lesson candidate suggestion for category '{category}' on this entry."
             )
-        existing = self._lessons.list_for_journal(
+        existing_ids = self._lessons.list_for_journal(
             journal_entry_id, organization_id=organization_id, user_id=user_id
         )
-        for row in existing:
-            if row.mistake_type == category:
-                return row.id
-        _journal, proposal = self._resolve_trade(
+        if existing_ids:
+            rows = list(
+                self._session.scalars(
+                    select(LessonCandidate).where(
+                        LessonCandidate.id.in_(existing_ids),
+                        LessonCandidate.organization_id == organization_id,
+                        LessonCandidate.user_id == user_id,
+                    )
+                ).all()
+            )
+            for row in rows:
+                if row.mistake_type == category:
+                    return row.id
+        journal, proposal = self._resolve_trade(
             journal_entry_id, organization_id=organization_id, user_id=user_id
         )
         strategy_id = proposal.user_strategy_id if proposal else None
         source_type = LessonSourceType(match.source_type)
         severity = LessonSeverity(match.severity)
-        metadata: dict | None = None
+        metadata: dict[str, object] | None = None
         if category == "early_exit" and analysis.comparison.missed_runner:
             metadata = {
                 "limitations": analysis.comparison.missed_runner.limitations,
@@ -371,8 +429,12 @@ class HumanVsSystemService:
         return self._lessons.create_candidate(
             organization_id=organization_id,
             user_id=user_id,
-            journal_entry_id=journal_entry_id,
-            trade_id=journal_entry_id,
+            journal_entry_id=(
+                journal.linked_journal_entry_id if journal is not None else journal_entry_id
+            ),
+            trade_id=(
+                journal.canonical_journal_trade_id if journal is not None else journal_entry_id
+            ),
             category=category,
             summary=match.summary,
             source_type=source_type,
@@ -432,25 +494,145 @@ class HumanVsSystemService:
         trade_id: uuid.UUID,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
-    ) -> tuple[TradeJournal | None, TradeProposal | None]:
-        journal = self._journal.get_scoped(
+    ) -> tuple[JournalCompareView | None, TradeProposal | None]:
+        canonical = self._load_canonical_trade(trade_id, organization_id, user_id)
+        if canonical is not None:
+            proposal = None
+            if canonical.linked_proposal_id:
+                proposal = self._proposals.get_scoped(
+                    canonical.linked_proposal_id,
+                    organization_id=organization_id,
+                )
+            return canonical, proposal
+
+        legacy = self._journal.get_scoped(
             trade_id, organization_id=organization_id, user_id=user_id
         )
-        proposal: TradeProposal | None = None
-        if journal is not None and journal.linked_proposal_id:
-            proposal = self._proposals.get_scoped(
-                journal.linked_proposal_id,
+        if legacy is not None:
+            linked = self._journal_trades.find_by_linked_journal_entry(
                 organization_id=organization_id,
+                linked_journal_entry_id=legacy.id,
             )
-        if journal is None:
-            proposal = self._proposals.get_scoped(trade_id, organization_id=organization_id)
-            if proposal is not None:
-                journal = self._find_journal_for_proposal(trade_id, organization_id, user_id)
-        return journal, proposal
+            if linked is not None and linked.user_id == user_id:
+                view = self._view_from_journal_trade(linked, requested_id=trade_id)
+                proposal = None
+                if view.linked_proposal_id:
+                    proposal = self._proposals.get_scoped(
+                        view.linked_proposal_id,
+                        organization_id=organization_id,
+                    )
+                return view, proposal
+            proposal = None
+            if legacy.linked_proposal_id:
+                proposal = self._proposals.get_scoped(
+                    legacy.linked_proposal_id,
+                    organization_id=organization_id,
+                )
+            return self._view_from_legacy(legacy), proposal
+
+        proposal = self._proposals.get_scoped(trade_id, organization_id=organization_id)
+        if proposal is not None:
+            linked_legacy = self._find_journal_for_proposal(trade_id, organization_id, user_id)
+            if linked_legacy is not None:
+                return self._view_from_legacy(linked_legacy), proposal
+            linked_trade = self._session.scalar(
+                select(JournalTrade).where(
+                    JournalTrade.linked_proposal_id == trade_id,
+                    JournalTrade.organization_id == organization_id,
+                    JournalTrade.user_id == user_id,
+                )
+            )
+            if linked_trade is not None:
+                return self._view_from_journal_trade(linked_trade), proposal
+            return None, proposal
+        return None, None
+
+    def _load_canonical_trade(
+        self,
+        trade_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> JournalCompareView | None:
+        row = self._session.scalar(
+            select(JournalTrade).where(
+                JournalTrade.id == trade_id,
+                JournalTrade.organization_id == organization_id,
+                JournalTrade.user_id == user_id,
+            )
+        )
+        if row is None:
+            return None
+        return self._view_from_journal_trade(row)
+
+    def _view_from_journal_trade(
+        self,
+        row: JournalTrade,
+        *,
+        requested_id: uuid.UUID | None = None,
+    ) -> JournalCompareView:
+        observations = list(
+            self._session.scalars(
+                select(JournalTradeObservation).where(
+                    JournalTradeObservation.journal_trade_id == row.id,
+                    JournalTradeObservation.organization_id == row.organization_id,
+                )
+            ).all()
+        )
+        emotions: list[str] = []
+        mistakes: list[str] = []
+        lessons: list[str] = []
+        for obs in observations:
+            if obs.category is JournalObservationCategory.EMOTIONAL:
+                emotions.extend(obs.emotion_tags or [obs.observation])
+            elif obs.category is JournalObservationCategory.MISTAKE:
+                mistakes.append(obs.observation)
+            elif obs.category is JournalObservationCategory.LESSON:
+                lessons.append(obs.observation)
+        exit_rationale = row.exit_reason
+        if exit_rationale is None and row.notes and row.notes.startswith("Exit rationale:"):
+            exit_rationale = row.notes.split("\n", 1)[0].removeprefix("Exit rationale:").strip()
+        return JournalCompareView(
+            id=requested_id or row.id,
+            organization_id=row.organization_id,
+            user_id=row.user_id,
+            symbol=row.symbol,
+            timeframe=row.timeframe,
+            direction=row.direction,
+            linked_proposal_id=row.linked_proposal_id,
+            linked_position_id=row.linked_position_id,
+            exit_rationale=exit_rationale,
+            emotions=emotions,
+            mistakes=mistakes,
+            lessons="\n".join(lessons) if lessons else None,
+            pnl=row.net_pnl,
+            compatibility_fallback=False,
+            canonical_journal_trade_id=row.id,
+            linked_journal_entry_id=row.linked_journal_entry_id,
+        )
+
+    def _view_from_legacy(self, entry: TradeJournal) -> JournalCompareView:
+        return JournalCompareView(
+            id=entry.id,
+            organization_id=entry.organization_id,
+            user_id=entry.user_id,
+            symbol=entry.symbol,
+            timeframe=entry.timeframe,
+            direction=entry.direction,
+            linked_proposal_id=entry.linked_proposal_id,
+            linked_position_id=entry.linked_position_id,
+            exit_rationale=entry.exit_rationale,
+            emotions=list(entry.emotions or []),
+            mistakes=list(entry.mistakes or []),
+            lessons=entry.lessons,
+            pnl=entry.pnl,
+            compatibility_fallback=True,
+            canonical_journal_trade_id=None,
+            linked_journal_entry_id=entry.id,
+        )
 
     def _load_position(
         self,
-        journal: TradeJournal | None,
+        journal: JournalCompareView | None,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> Position | None:
@@ -521,7 +703,7 @@ class HumanVsSystemService:
 
     def _resolve_exit_price(
         self,
-        journal: TradeJournal | None,
+        journal: JournalCompareView | None,
         position: Position | None,
         plan: TradeProposalSchema | None,
     ) -> Decimal | None:
@@ -540,16 +722,14 @@ class HumanVsSystemService:
         *,
         symbol: str | None,
         timeframe: str | None,
-        exit_time: object | None,
-    ) -> list[tuple[object, Decimal, Decimal, Decimal, Decimal]] | None:
+        exit_time: datetime | None,
+    ) -> list[tuple[datetime, Decimal, Decimal, Decimal, Decimal]] | None:
         if self._candles is None or symbol is None or timeframe is None or exit_time is None:
             return None
         try:
             tf = Timeframe(timeframe)
         except ValueError:
             return None
-        from datetime import datetime
-
         if not isinstance(exit_time, datetime):
             return None
         result = self._candles.get_candles(

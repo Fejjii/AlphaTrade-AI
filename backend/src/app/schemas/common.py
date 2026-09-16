@@ -357,6 +357,8 @@ class AuditEventType(StrEnum):
     JOURNAL_TRADE_EXCURSION_REPLAYED = "journal_trade_excursion_replayed"
     JOURNAL_IMPORT_COMPLETED = "journal_import_completed"
     JOURNAL_BACKFILL_COMPLETED = "journal_backfill_completed"
+    JOURNAL_TRADE_VENUE_CORRECTED = "journal_trade_venue_corrected"
+    JOURNAL_LIFECYCLE_PROJECTED = "journal_lifecycle_projected"
     JOURNAL_ATTACHMENT_ADDED = "journal_attachment_added"
     JOURNAL_ATTACHMENT_DELETED = "journal_attachment_deleted"
     BACKTEST_RUN_CREATED = "backtest_run_created"
@@ -522,6 +524,21 @@ class JournalObservationCategory(StrEnum):
     MARKET = "market"
     RISK = "risk"
     PROCESS = "process"
+    MISTAKE = "mistake"
+    DISCIPLINE = "discipline"
+    LESSON = "lesson"
+
+
+class JournalLifecycleEventType(StrEnum):
+    """Projector event types. Candidate/reject/skip never create JournalTrade."""
+
+    CANDIDATE_CONFIRMED = "candidate_confirmed"
+    REJECT = "reject"
+    SKIP = "skip"
+    APPROVED_PLAN = "approved_plan"
+    FILL = "fill"
+    CLOSE = "close"
+    RECONCILE = "reconcile"
 
 
 class StrategyValidationStatus(StrEnum):

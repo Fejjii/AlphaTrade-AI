@@ -12,8 +12,8 @@ import uuid
 import structlog
 
 from app.core.config import Settings
-from app.db.models import TradeJournal
-from app.schemas.common import DocumentSourceType
+from app.db.models import JournalTrade, JournalTradeObservation, TradeJournal
+from app.schemas.common import DocumentSourceType, JournalObservationCategory
 from app.schemas.journal import JournalEntry
 from app.schemas.rag import IngestDocumentRequest
 from app.services.rag_service import RagService
@@ -115,5 +115,110 @@ class JournalRagSyncService:
             journal_entry_id=str(entry.id),
             document_id=str(result.document_id),
             duplicate=result.duplicate,
+            compatibility_fallback=True,
         )
         return result.document_id
+
+    def sync_journal_trade(
+        self,
+        trade: JournalTrade,
+        *,
+        observations: list[JournalTradeObservation] | None = None,
+    ) -> list[uuid.UUID]:
+        """Ingest JournalTrade as the canonical RAG source.
+
+        When the trade is linked to a legacy journal entry, also upsert
+        ``journal://{legacy_id}`` so existing lineage remains resolvable.
+        """
+        if not self.enabled:
+            return []
+        text = build_journal_trade_document_text(trade, observations=observations or [])
+        if not text:
+            return []
+        ids: list[uuid.UUID] = []
+        title = f"Journal: {trade.symbol} ({trade.timeframe})"
+        canonical = self._rag.upsert_linked_document(
+            IngestDocumentRequest(
+                organization_id=trade.organization_id,
+                user_id=trade.user_id,
+                source_type=DocumentSourceType.TRADE_JOURNAL,
+                title=title,
+                text=text,
+                source_uri=f"journal-trade://{trade.id}",
+                strategy_tag=trade.strategy_label,
+                symbol_tag=str(trade.symbol),
+                timeframe_tag=trade.timeframe,
+                risk_tag=trade.result.value if trade.result else None,
+            )
+        )
+        ids.append(canonical.document_id)
+        logger.info(
+            "journal_rag_sync",
+            journal_trade_id=str(trade.id),
+            document_id=str(canonical.document_id),
+            duplicate=canonical.duplicate,
+            compatibility_fallback=False,
+        )
+        if trade.linked_journal_entry_id is not None:
+            legacy = self._rag.upsert_linked_document(
+                IngestDocumentRequest(
+                    organization_id=trade.organization_id,
+                    user_id=trade.user_id,
+                    source_type=DocumentSourceType.TRADE_JOURNAL,
+                    title=title,
+                    text=text,
+                    source_uri=f"journal://{trade.linked_journal_entry_id}",
+                    strategy_tag=trade.strategy_label,
+                    symbol_tag=str(trade.symbol),
+                    timeframe_tag=trade.timeframe,
+                    risk_tag=trade.result.value if trade.result else None,
+                )
+            )
+            ids.append(legacy.document_id)
+        return ids
+
+
+def build_journal_trade_document_text(
+    trade: JournalTrade,
+    *,
+    observations: list[JournalTradeObservation],
+) -> str:
+    """Render a canonical journal trade as plain text for chunking."""
+    direction = trade.direction.value if hasattr(trade.direction, "value") else str(trade.direction)
+    result = trade.result.value if hasattr(trade.result, "value") else str(trade.result)
+    emotions = [
+        obs.observation
+        for obs in observations
+        if obs.category is JournalObservationCategory.EMOTIONAL
+    ]
+    mistakes = [
+        obs.observation
+        for obs in observations
+        if obs.category is JournalObservationCategory.MISTAKE
+    ]
+    lessons = [
+        obs.observation for obs in observations if obs.category is JournalObservationCategory.LESSON
+    ]
+    lines = [
+        "[PENDING_OBSERVATION — not a permanent trading rule until accepted in Lessons]",
+        f"Symbol: {trade.symbol}",
+        f"Timeframe: {trade.timeframe}",
+        f"Direction: {direction}",
+    ]
+    if trade.strategy_label:
+        lines.append(f"Setup type: {trade.strategy_label}")
+    if result:
+        lines.append(f"Result: {result}")
+    if trade.thesis:
+        lines.append(f"Entry rationale: {trade.thesis}")
+    if trade.exit_reason:
+        lines.append(f"Exit rationale: {trade.exit_reason}")
+    if emotions:
+        lines.append(f"Emotion tags: {', '.join(emotions)}")
+    if mistakes:
+        lines.append(f"Mistake tags: {', '.join(mistakes)}")
+    if lessons:
+        lines.append(f"Draft lessons (pending review): {'; '.join(lessons)}")
+    if trade.tags:
+        lines.append(f"Tags: {', '.join(trade.tags)}")
+    return sanitize_journal_text("\n".join(lines))

@@ -1,13 +1,12 @@
-"""Legacy TradeJournal → journal_trades backfill (AT-033 — Journal Completion).
+"""Legacy TradeJournal → journal_trades backfill (AT-033 / Phase 4).
 
 Copies legacy reflection entries (table ``journals``) into canonical
 ``journal_trades`` rows with ``source=imported`` / ``entry_method=backfill``.
 Legacy rows are never modified or deleted — the canonical row links back via
-``linked_journal_entry_id`` and carries ``external_ref='legacy-journal:<id>'``,
-which makes the backfill idempotent (and DB-enforced by the partial unique
-index). Screenshot refs are preserved as evidence records.
+``linked_journal_entry_id`` and carries ``external_ref='legacy-journal:<id>'``.
 
-Used by ``backend/scripts/backfill_journal_entries.py``; dry-run by default.
+Phase 4 maps emotions, mistakes, behavioral tags, lessons, improvement rules
+and screenshots to typed observations/evidence. Lessons remain advisory.
 """
 
 from __future__ import annotations
@@ -18,7 +17,12 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import JournalTrade, JournalTradeEvidence, TradeJournal
+from app.db.models import (
+    JournalTrade,
+    JournalTradeEvidence,
+    JournalTradeObservation,
+    TradeJournal,
+)
 from app.repositories.journal_trades import JournalTradeRepository
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
@@ -26,10 +30,12 @@ from app.schemas.common import (
     AuditEventType,
     JournalEntryMethod,
     JournalEvidenceKind,
+    JournalObservationCategory,
     JournalTradeSource,
     JournalTradeStatus,
     TradeResult,
 )
+from app.schemas.journal_lifecycle import JournalMigrationParityReport
 from app.services.audit_service import AuditService
 
 _REQUEST_TAG = "journal-backfill-cli"
@@ -45,6 +51,13 @@ class BackfillSummary:
     created: int
     skipped_existing: int
     organizations: int
+    emotion_observations: int = 0
+    mistake_observations: int = 0
+    behavioral_observations: int = 0
+    lesson_observations: int = 0
+    evidence_created: int = 0
+    linked_proposals: int = 0
+    linked_positions: int = 0
 
 
 class JournalBackfillService:
@@ -73,11 +86,28 @@ class JournalBackfillService:
 
         created_by_org: dict[uuid.UUID, int] = {}
         skipped = 0
+        emotion_observations = 0
+        mistake_observations = 0
+        behavioral_observations = 0
+        lesson_observations = 0
+        evidence_created = 0
+        linked_proposals = 0
+        linked_positions = 0
         for entry in legacy_rows:
             ref = f"{_LEGACY_REF_PREFIX}{entry.id}"
             if self._already_backfilled(entry, ref):
                 skipped += 1
                 continue
+            counts = _observation_counts(entry)
+            emotion_observations += counts["emotion"]
+            mistake_observations += counts["mistake"]
+            behavioral_observations += counts["behavioral"]
+            lesson_observations += counts["lesson"]
+            evidence_created += len(entry.screenshot_refs or [])
+            if entry.linked_proposal_id is not None:
+                linked_proposals += 1
+            if entry.linked_position_id is not None:
+                linked_positions += 1
             if not dry_run:
                 self._create_canonical(entry, ref)
             created_by_org[entry.organization_id] = created_by_org.get(entry.organization_id, 0) + 1
@@ -92,11 +122,96 @@ class JournalBackfillService:
             created=sum(created_by_org.values()),
             skipped_existing=skipped,
             organizations=len({row.organization_id for row in legacy_rows}),
+            emotion_observations=emotion_observations,
+            mistake_observations=mistake_observations,
+            behavioral_observations=behavioral_observations,
+            lesson_observations=lesson_observations,
+            evidence_created=evidence_created,
+            linked_proposals=linked_proposals,
+            linked_positions=linked_positions,
         )
 
-    # ------------------------------------------------------------------ #
-    # Internals
-    # ------------------------------------------------------------------ #
+    def parity_report(
+        self, *, organization_id: uuid.UUID | None = None
+    ) -> JournalMigrationParityReport:
+        """Compare legacy rows to canonical backfill rows without writing."""
+        stmt = select(TradeJournal)
+        trade_stmt = select(JournalTrade).where(
+            JournalTrade.entry_method == JournalEntryMethod.BACKFILL
+        )
+        if organization_id is not None:
+            stmt = stmt.where(TradeJournal.organization_id == organization_id)
+            trade_stmt = trade_stmt.where(JournalTrade.organization_id == organization_id)
+        legacy_rows = list(self._session.scalars(stmt).all())
+        trades = list(self._session.scalars(trade_stmt).all())
+        by_legacy = {
+            row.linked_journal_entry_id: row
+            for row in trades
+            if row.linked_journal_entry_id is not None
+        }
+        unmatched: list[uuid.UUID] = []
+        emotion_ok = True
+        mistake_ok = True
+        attachment_ok = True
+        linked_proposal_canonical = 0
+        linked_position_canonical = 0
+        for entry in legacy_rows:
+            trade = by_legacy.get(entry.id)
+            if trade is None:
+                unmatched.append(entry.id)
+                continue
+            if trade.linked_proposal_id is not None:
+                linked_proposal_canonical += 1
+            if trade.linked_position_id is not None:
+                linked_position_canonical += 1
+            observations = list(
+                self._session.scalars(
+                    select(JournalTradeObservation).where(
+                        JournalTradeObservation.journal_trade_id == trade.id
+                    )
+                ).all()
+            )
+            emotions = {
+                obs.observation
+                for obs in observations
+                if obs.category is JournalObservationCategory.EMOTIONAL
+            }
+            mistakes = {
+                obs.observation
+                for obs in observations
+                if obs.category is JournalObservationCategory.MISTAKE
+            }
+            if {str(item) for item in (entry.emotions or [])} != emotions:
+                emotion_ok = False
+            if {str(item) for item in (entry.mistakes or [])} != mistakes:
+                mistake_ok = False
+            evidence = list(
+                self._session.scalars(
+                    select(JournalTradeEvidence).where(
+                        JournalTradeEvidence.journal_trade_id == trade.id
+                    )
+                ).all()
+            )
+            if len(evidence) != len(entry.screenshot_refs or []):
+                attachment_ok = False
+        return JournalMigrationParityReport(
+            organization_id=organization_id,
+            legacy_count=len(legacy_rows),
+            canonical_count=len(trades),
+            row_count_parity=len(legacy_rows) == len(trades) and not unmatched,
+            linked_proposal_legacy=sum(
+                1 for row in legacy_rows if row.linked_proposal_id is not None
+            ),
+            linked_proposal_canonical=linked_proposal_canonical,
+            linked_position_legacy=sum(
+                1 for row in legacy_rows if row.linked_position_id is not None
+            ),
+            linked_position_canonical=linked_position_canonical,
+            emotion_parity=emotion_ok and not unmatched,
+            mistake_parity=mistake_ok and not unmatched,
+            attachment_parity=attachment_ok and not unmatched,
+            unmatched_legacy_ids=unmatched,
+        )
 
     def _already_backfilled(self, entry: TradeJournal, ref: str) -> bool:
         if (
@@ -106,7 +221,6 @@ class JournalBackfillService:
             is not None
         ):
             return True
-        # Also respect manual links created before AT-033.
         linked = self._session.scalar(
             select(JournalTrade.id).where(
                 JournalTrade.organization_id == entry.organization_id,
@@ -149,7 +263,83 @@ class JournalBackfillService:
                     recorded_by=entry.user_id,
                 )
             )
+        self._add_typed_observations(row, entry)
         self._session.flush()
+
+    def _add_typed_observations(self, row: JournalTrade, entry: TradeJournal) -> None:
+        observed_at = entry.created_at
+        for emotion in entry.emotions or []:
+            self._session.add(
+                JournalTradeObservation(
+                    journal_trade_id=row.id,
+                    organization_id=entry.organization_id,
+                    category=JournalObservationCategory.EMOTIONAL,
+                    observation=str(emotion),
+                    emotion_tags=[str(emotion)],
+                    recorded_by=entry.user_id,
+                    observed_at=observed_at,
+                )
+            )
+        for mistake in entry.mistakes or []:
+            self._session.add(
+                JournalTradeObservation(
+                    journal_trade_id=row.id,
+                    organization_id=entry.organization_id,
+                    category=JournalObservationCategory.MISTAKE,
+                    observation=str(mistake),
+                    emotion_tags=[],
+                    recorded_by=entry.user_id,
+                    observed_at=observed_at,
+                )
+            )
+        for tag in entry.tags or []:
+            self._session.add(
+                JournalTradeObservation(
+                    journal_trade_id=row.id,
+                    organization_id=entry.organization_id,
+                    category=JournalObservationCategory.BEHAVIORAL,
+                    observation=str(tag),
+                    emotion_tags=[],
+                    recorded_by=entry.user_id,
+                    observed_at=observed_at,
+                )
+            )
+        if entry.improvement_rule:
+            self._session.add(
+                JournalTradeObservation(
+                    journal_trade_id=row.id,
+                    organization_id=entry.organization_id,
+                    category=JournalObservationCategory.PROCESS,
+                    observation=entry.improvement_rule,
+                    emotion_tags=[],
+                    recorded_by=entry.user_id,
+                    observed_at=observed_at,
+                )
+            )
+        if entry.lessons:
+            self._session.add(
+                JournalTradeObservation(
+                    journal_trade_id=row.id,
+                    organization_id=entry.organization_id,
+                    category=JournalObservationCategory.LESSON,
+                    observation=entry.lessons,
+                    emotion_tags=[],
+                    recorded_by=entry.user_id,
+                    observed_at=observed_at,
+                )
+            )
+        if entry.stress_score is not None:
+            self._session.add(
+                JournalTradeObservation(
+                    journal_trade_id=row.id,
+                    organization_id=entry.organization_id,
+                    category=JournalObservationCategory.DISCIPLINE,
+                    observation=f"stress_score={entry.stress_score}",
+                    emotion_tags=[],
+                    recorded_by=entry.user_id,
+                    observed_at=observed_at,
+                )
+            )
 
     def _record_backfill_audit(
         self, organization_id: uuid.UUID, *, created: int, skipped: int
@@ -165,6 +355,15 @@ class JournalBackfillService:
                 metadata={"created_count": created, "skipped_existing": skipped},
             )
         )
+
+
+def _observation_counts(entry: TradeJournal) -> dict[str, int]:
+    return {
+        "emotion": len(entry.emotions or []),
+        "mistake": len(entry.mistakes or []),
+        "behavioral": len(entry.tags or []),
+        "lesson": 1 if entry.lessons else 0,
+    }
 
 
 def _compose_notes(entry: TradeJournal) -> str | None:
