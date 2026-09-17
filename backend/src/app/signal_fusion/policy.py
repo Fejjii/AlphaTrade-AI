@@ -9,14 +9,16 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from app.market_contracts.models import CanonicalDecimal, CanonicalModel
-from app.signal_fusion.enums import EvidenceRole
+from app.schemas.common import Timeframe
+from app.signal_fusion.enums import EvidenceRole, TenantAssertionRole
 from app.signal_fusion.types import (
     SCHEMA_VERSION_1_0,
     ExecutableSetupRef,
     PolicyVersion,
+    RoleTimeframeBinding,
     RuleWeight,
     Sha256Hex,
     hashed_model,
@@ -25,6 +27,15 @@ from app.signal_fusion.types import (
 FUSION_POLICY_SCHEMA = "FusionPolicy/v1"
 DEFAULT_FUSION_POLICY_VERSION = "first-slice-fusion/v1"
 DEFAULT_CORRECTION_SELECTION_POLICY = "selected-final-revision/v1"
+
+
+def first_slice_role_timeframes() -> tuple[RoleTimeframeBinding, ...]:
+    """First-slice trigger (M15) vs context (H4) role-timeframe bindings."""
+    return (
+        RoleTimeframeBinding(role=EvidenceRole.TRIGGER_OHLCV, timeframe=Timeframe.M15),
+        RoleTimeframeBinding(role=EvidenceRole.CONTEXT_OHLCV, timeframe=Timeframe.H4),
+        RoleTimeframeBinding(role=EvidenceRole.CVD_WINDOW, timeframe=Timeframe.M15),
+    )
 
 
 class FusionThresholds(CanonicalModel):
@@ -43,6 +54,11 @@ class FusionPolicy(CanonicalModel):
     required_roles: tuple[EvidenceRole, ...]
     optional_roles: tuple[EvidenceRole, ...] = ()
     disqualifying_roles: tuple[EvidenceRole, ...] = ()
+    role_timeframes: tuple[RoleTimeframeBinding, ...] = Field(
+        default_factory=first_slice_role_timeframes
+    )
+    required_assertion_roles: tuple[TenantAssertionRole, ...] = ()
+    identity_assertion_roles: tuple[TenantAssertionRole, ...] = ()
     thresholds: FusionThresholds
     freshness_policy_version: PolicyVersion
     finality_policy_version: PolicyVersion
@@ -60,6 +76,22 @@ class FusionPolicy(CanonicalModel):
             raise ValueError("Required and disqualifying evidence roles must be disjoint.")
         if not self.required_roles:
             raise ValueError("FusionPolicy must declare at least one required evidence role.")
+        bound_roles = [binding.role for binding in self.role_timeframes]
+        if len(bound_roles) != len(set(bound_roles)):
+            raise ValueError("role_timeframes must bind each evidence role at most once.")
+        if TenantAssertionRole.PRESENTATION in self.required_assertion_roles:
+            raise ValueError("PRESENTATION assertions cannot be required for identity.")
+        if TenantAssertionRole.PRESENTATION in self.identity_assertion_roles:
+            raise ValueError("PRESENTATION assertions cannot be identity-forming.")
+        if len(self.required_assertion_roles) != len(set(self.required_assertion_roles)):
+            raise ValueError("required_assertion_roles must be unique.")
+        if len(self.identity_assertion_roles) != len(set(self.identity_assertion_roles)):
+            raise ValueError("identity_assertion_roles must be unique.")
+        identity_set = set(self.identity_assertion_roles)
+        if identity_set and not set(self.required_assertion_roles) <= identity_set:
+            raise ValueError(
+                "Required assertion roles must be a subset of identity assertion roles."
+            )
         return self
 
 
@@ -76,6 +108,9 @@ def build_fusion_policy(
     optional_roles: tuple[EvidenceRole, ...] = (),
     disqualifying_roles: tuple[EvidenceRole, ...] = (),
     correction_selection_policy: str = DEFAULT_CORRECTION_SELECTION_POLICY,
+    role_timeframes: tuple[RoleTimeframeBinding, ...] | None = None,
+    required_assertion_roles: tuple[TenantAssertionRole, ...] = (),
+    identity_assertion_roles: tuple[TenantAssertionRole, ...] = (),
 ) -> FusionPolicy:
     draft = FusionPolicy(
         schema_version=FUSION_POLICY_SCHEMA,
@@ -86,6 +121,11 @@ def build_fusion_policy(
         required_roles=required_roles,
         optional_roles=optional_roles,
         disqualifying_roles=disqualifying_roles,
+        role_timeframes=(
+            first_slice_role_timeframes() if role_timeframes is None else role_timeframes
+        ),
+        required_assertion_roles=required_assertion_roles,
+        identity_assertion_roles=identity_assertion_roles,
         thresholds=thresholds,
         freshness_policy_version=freshness_policy_version,
         finality_policy_version=finality_policy_version,
@@ -103,4 +143,5 @@ __all__ = [
     "FusionPolicy",
     "FusionThresholds",
     "build_fusion_policy",
+    "first_slice_role_timeframes",
 ]

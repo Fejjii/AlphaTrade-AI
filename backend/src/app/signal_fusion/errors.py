@@ -33,3 +33,15 @@ class IllegalCandidateTransitionError(SignalFusionContractError):
 
 class EvidenceWindowContractError(SignalFusionContractError):
     """CanonicalEvidenceWindowV1 preimage is incomplete or non-canonical."""
+
+
+class EvidenceIdentityMismatchError(SignalFusionContractError):
+    """Selected public observation does not match authoritative evidence identity."""
+
+
+class TenantAssertionSelectionError(SignalFusionContractError):
+    """Tenant assertion is missing, presentation-only, or not policy-selected."""
+
+
+class ConflictingSemanticInputError(EvidenceWindowContractError):
+    """Duplicate semantic inputs conflict or cannot be canonicalized."""

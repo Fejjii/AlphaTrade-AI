@@ -82,6 +82,20 @@ class AssertionSource(StrEnum):
     PROPRIETARY_ALERT = "proprietary_alert"
 
 
+class TenantAssertionRole(StrEnum):
+    """Role-bound tenant assertion selection for CanonicalEvidenceWindowV1.
+
+    ``PRESENTATION`` is never identity-forming. Only roles required or
+    explicitly selected by FusionPolicy may enter the evidence-window hash.
+    """
+
+    TRADINGVIEW_ALERT = "tradingview_alert"
+    MANUAL_LEVEL = "manual_level"
+    USER_ASSERTION = "user_assertion"
+    PROPRIETARY_ALERT = "proprietary_alert"
+    PRESENTATION = "presentation"
+
+
 class AssertionPrivacyClass(StrEnum):
     TENANT_CONFIDENTIAL = "tenant_confidential"
 

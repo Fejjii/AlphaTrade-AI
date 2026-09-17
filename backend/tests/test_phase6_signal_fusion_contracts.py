@@ -36,6 +36,7 @@ from app.signal_fusion.enums import (
     EvidenceRole,
     SetupAssessmentState,
     SetupIdentityKind,
+    TenantAssertionRole,
 )
 from app.signal_fusion.errors import (
     FormingObservationMutationError,
@@ -58,7 +59,8 @@ from app.signal_fusion.types import (
     PresentationEvidenceRef,
     RuleResult,
     SelectedPublicObservation,
-    TenantAssertionRef,
+    SelectedTenantAssertion,
+    selected_observation_from_public,
 )
 from tests.support.phase5_market import EVALUATED_AT, TRIGGER_OPEN, eth_instrument
 from tests.support.phase6_fusion import (
@@ -78,6 +80,7 @@ from tests.support.phase6_fusion import (
     VALID_UNTIL,
     VENUE_STATE_ID,
     assessment_command,
+    eth_evidence_identity,
     executable_setup,
     fusion_policy,
     interval,
@@ -136,6 +139,10 @@ def test_forming_observation_cannot_occupy_executable_role() -> None:
             role=EvidenceRole.TRIGGER_OHLCV,
             content_hash=forming.content_hash,
             finality=forming.finality,
+            venue=forming.identity.venue,
+            market_type=forming.identity.market_type,
+            instrument_id=forming.identity.instrument.instrument_id,
+            timeframe=forming.identity.timeframe,
             observation_id=forming.observation_id,
         )
 
@@ -433,12 +440,7 @@ def test_required_observation_content_change_changes_hash() -> None:
     baseline = _build_window()
     trigger = public_observation(index=9)
     replaced = tuple(
-        SelectedPublicObservation(
-            role=EvidenceRole.TRIGGER_OHLCV,
-            content_hash=trigger.content_hash,
-            finality=Finality.FINAL,
-            observation_id=trigger.observation_id,
-        )
+        selected_observation_from_public(trigger, role=EvidenceRole.TRIGGER_OHLCV)
         if item.role is EvidenceRole.TRIGGER_OHLCV
         else item
         for item in baseline.selected_public_observations
@@ -477,13 +479,28 @@ def test_policy_version_change_changes_hash(field: str) -> None:
 
 def test_venue_or_instrument_change_changes_hash() -> None:
     baseline = _build_window()
+    eth_trigger = eth_evidence_identity(Timeframe.M15)
+    eth_context = eth_evidence_identity(Timeframe.H4)
     mutated_identity = first_slice_identity(timeframe=Timeframe.M15, replay=True).model_copy(
-        update={
-            "instrument": eth_instrument(),
-            "venue": VenueId.BINANCE,
-        }
+        update={"instrument": eth_instrument()}
     )
-    changed = _build_window(evidence_identity=mutated_identity)
+    changed = _build_window(
+        evidence_identity=mutated_identity,
+        selected_public_observations=(
+            selected_observation_from_public(
+                public_observation(index=0, market_identity=eth_trigger),
+                role=EvidenceRole.TRIGGER_OHLCV,
+            ),
+            selected_observation_from_public(
+                public_observation(index=1, timeframe=Timeframe.H4, market_identity=eth_context),
+                role=EvidenceRole.CONTEXT_OHLCV,
+            ),
+            selected_observation_from_public(
+                public_observation(index=2, market_identity=eth_trigger),
+                role=EvidenceRole.CVD_WINDOW,
+            ),
+        ),
+    )
     assert changed.content_hash != baseline.content_hash
     assert changed.evidence_instrument != baseline.evidence_instrument
 
@@ -542,10 +559,12 @@ def test_required_tenant_assertion_changes_window_hash() -> None:
     assertion = tenant_assertion()
     changed = _build_window(
         tenant_assertions=(
-            TenantAssertionRef(
+            SelectedTenantAssertion(
+                role=TenantAssertionRole.TRADINGVIEW_ALERT,
                 assertion_id=assertion.assertion_id,
                 content_hash=assertion.content_hash,
             ),
-        )
+        ),
+        required_assertion_roles=(TenantAssertionRole.TRADINGVIEW_ALERT,),
     )
     assert changed.content_hash != baseline.content_hash

@@ -123,9 +123,8 @@ def require_distinct_observation_for_finality_change(
     following: PublicMarketObservation,
 ) -> None:
     """FORMING never becomes executable FINAL by mutating the same observation_id."""
-    if (
-        previous.observation_id == following.observation_id
-        and previous.finality is not following.finality
+    if previous.observation_id == following.observation_id and (
+        previous.finality is not following.finality or previous.revision != following.revision
     ):
         raise FormingObservationMutationError(
             "FORMING observations cannot mutate into FINAL; append a new observation."

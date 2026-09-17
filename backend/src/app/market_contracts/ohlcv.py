@@ -198,8 +198,29 @@ def build_ohlcv_bar(
     return with_content_hash(bar)
 
 
-def observation_id_for(source_event_id: str) -> UUID:
-    return uuid5(_OBSERVATION_NAMESPACE, source_event_id)
+def observation_id_for(
+    source_event_id: str,
+    *,
+    finality: Finality | None = None,
+    revision: int = 1,
+) -> UUID:
+    """Deterministic immutable-append identity for a public observation.
+
+    Phase 6 requires FORMING, FINAL, and corrected revisions of the same
+    natural event to be distinct observations. The identity key is
+    ``source_event_id|finality|revision``.
+
+    Callers that omit ``finality`` receive the legacy natural-event UUID
+    (``uuid5(namespace, source_event_id)``) used before revision-aware
+    append identity. ``observation_from_ohlcv`` always passes finality and
+    revision. Exact replay of the same revision is stable. Old observations
+    are never mutated.
+    """
+    if revision < 1:
+        raise ValueError("revision must be >= 1")
+    if finality is None:
+        return uuid5(_OBSERVATION_NAMESPACE, source_event_id)
+    return uuid5(_OBSERVATION_NAMESPACE, f"{source_event_id}|{finality.value}|{revision}")
 
 
 def require_closed_series(

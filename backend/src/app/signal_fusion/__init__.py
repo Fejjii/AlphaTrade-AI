@@ -45,20 +45,25 @@ from app.signal_fusion.enums import (
     EvidenceRole,
     SetupAssessmentState,
     SetupIdentityKind,
+    TenantAssertionRole,
 )
 from app.signal_fusion.errors import (
+    ConflictingSemanticInputError,
+    EvidenceIdentityMismatchError,
     FormingObservationMutationError,
     FormingObservationNotExecutableError,
     IllegalAssessmentTransitionError,
     IllegalCandidateTransitionError,
     IllegalSetupIdentityError,
     TenantAssertionNotPublicError,
+    TenantAssertionSelectionError,
 )
 from app.signal_fusion.evidence_window import (
     CanonicalEvidenceWindowV1,
     build_canonical_evidence_window_v1,
     evidence_window_preimage,
     hash_canonical_evidence_window,
+    select_identity_forming_tenant_assertions,
 )
 from app.signal_fusion.observation import (
     TenantExternalAssertion,
@@ -66,8 +71,17 @@ from app.signal_fusion.observation import (
     refuse_tenant_assertion_as_public_observation,
     require_distinct_observation_for_finality_change,
 )
-from app.signal_fusion.policy import FusionPolicy, FusionThresholds, build_fusion_policy
-from app.signal_fusion.types import ExecutableSetupRef
+from app.signal_fusion.policy import (
+    FusionPolicy,
+    FusionThresholds,
+    build_fusion_policy,
+    first_slice_role_timeframes,
+)
+from app.signal_fusion.types import (
+    ExecutableSetupRef,
+    RoleTimeframeBinding,
+    SelectedTenantAssertion,
+)
 
 __all__ = [
     "ALLOWED_ASSESSMENT_TRANSITIONS",
@@ -83,9 +97,11 @@ __all__ = [
     "CandidateTransition",
     "CandidateUniquenessTuple",
     "CanonicalEvidenceWindowV1",
+    "ConflictingSemanticInputError",
     "DownstreamPaperValidationCandidateRef",
     "EligibilityReasonCode",
     "EvidenceAdapterKind",
+    "EvidenceIdentityMismatchError",
     "EvidenceRole",
     "ExecutableSetupRef",
     "FormingObservationMutationError",
@@ -96,11 +112,15 @@ __all__ = [
     "IllegalCandidateTransitionError",
     "IllegalSetupIdentityError",
     "PublicMarketObservation",
+    "RoleTimeframeBinding",
+    "SelectedTenantAssertion",
     "SetupAssessment",
     "SetupAssessmentState",
     "SetupAssessmentTransition",
     "SetupIdentityKind",
     "TenantAssertionNotPublicError",
+    "TenantAssertionRole",
+    "TenantAssertionSelectionError",
     "TenantExternalAssertion",
     "assert_public_observation_boundary",
     "build_action_eligibility",
@@ -113,7 +133,9 @@ __all__ = [
     "build_setup_assessment_transition",
     "evidence_window_from_assessment_command",
     "evidence_window_preimage",
+    "first_slice_role_timeframes",
     "hash_canonical_evidence_window",
     "refuse_tenant_assertion_as_public_observation",
     "require_distinct_observation_for_finality_change",
+    "select_identity_forming_tenant_assertions",
 ]

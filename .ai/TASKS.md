@@ -881,7 +881,10 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `CompiledSetupDefinition` / `TradeDirection` / `Timeframe`.
 - Branch: `cursor/phase6-contract-freeze`
 - Deliverables: `app.signal_fusion`; tests in
-  `backend/tests/test_phase6_signal_fusion_contracts.py`. No Alembic, no
+  `backend/tests/test_phase6_signal_fusion_contracts.py` and
+  `backend/tests/test_phase6_contract_hardening.py`. Hardening covers
+  market-identity integrity, policy-selected tenant assertions, canonical
+  set semantics, and revision-aware observation identity. No Alembic, no
   evaluator, no adapter implementations.
 - Validation: targeted contract tests + full backend pytest + ruff + mypy
   `--strict` on `src/app/signal_fusion` + GitHub CI. Draft PR only; do not merge.

@@ -15,23 +15,29 @@ from app.market_contracts.identity import EvidenceMarketIdentity
 from app.market_contracts.models import CanonicalModel
 from app.market_contracts.observation import PublicMarketObservation
 from app.schemas.common import TradeDirection
-from app.signal_fusion.enums import EvidenceAdapterKind, EvidenceRole
+from app.signal_fusion.enums import EvidenceAdapterKind, EvidenceRole, TenantAssertionRole
+from app.signal_fusion.errors import TenantAssertionSelectionError
 from app.signal_fusion.evidence_window import (
     CanonicalEvidenceWindowV1,
     build_canonical_evidence_window_v1,
 )
 from app.signal_fusion.observation import TenantExternalAssertion
-from app.signal_fusion.policy import DEFAULT_CORRECTION_SELECTION_POLICY
+from app.signal_fusion.policy import (
+    DEFAULT_CORRECTION_SELECTION_POLICY,
+    first_slice_role_timeframes,
+)
 from app.signal_fusion.types import (
     ExecutableSetupRef,
     HalfOpenInterval,
     ManualLevelRevisionRef,
     PolicyVersion,
     PresentationEvidenceRef,
+    RoleTimeframeBinding,
     SelectedPublicObservation,
+    SelectedTenantAssertion,
     SemanticSourceIdentity,
-    TenantAssertionRef,
     TriggerIdentity,
+    require_observation_matches_evidence,
     selected_observation_from_public,
 )
 
@@ -53,6 +59,12 @@ class AssessmentCommand(CanonicalModel):
     public_observations: tuple[PublicMarketObservation, ...]
     selected_roles: tuple[EvidenceRole, ...]
     tenant_assertions: tuple[TenantExternalAssertion, ...] = ()
+    assertion_roles: tuple[TenantAssertionRole, ...] = ()
+    required_assertion_roles: tuple[TenantAssertionRole, ...] = ()
+    identity_assertion_roles: tuple[TenantAssertionRole, ...] = ()
+    role_timeframes: tuple[RoleTimeframeBinding, ...] = Field(
+        default_factory=first_slice_role_timeframes
+    )
     manual_level_revision: ManualLevelRevisionRef | None = None
     source_set: tuple[SemanticSourceIdentity, ...]
     correction_selection_policy: PolicyVersion = DEFAULT_CORRECTION_SELECTION_POLICY
@@ -81,11 +93,39 @@ def selected_observations_for_command(
 ) -> tuple[SelectedPublicObservation, ...]:
     if len(command.public_observations) != len(command.selected_roles):
         raise ValueError("Each public observation must be paired with exactly one selected role.")
-    return tuple(
-        selected_observation_from_public(observation, role=role)
-        for observation, role in zip(
-            command.public_observations, command.selected_roles, strict=True
+    selected: list[SelectedPublicObservation] = []
+    for observation, role in zip(command.public_observations, command.selected_roles, strict=True):
+        require_observation_matches_evidence(
+            observation,
+            evidence_identity=command.evidence_identity,
+            role=role,
+            role_timeframes=command.role_timeframes,
         )
+        selected.append(selected_observation_from_public(observation, role=role))
+    return tuple(selected)
+
+
+def selected_tenant_assertions_for_command(
+    command: AssessmentCommand,
+) -> tuple[SelectedTenantAssertion, ...]:
+    """Pair adapter-supplied assertions with explicit roles.
+
+    Unpaired tenant assertions remain transport-only and cannot enter the
+    evidence-window hash unless a role is supplied.
+    """
+    if not command.assertion_roles:
+        return ()
+    if len(command.tenant_assertions) != len(command.assertion_roles):
+        raise TenantAssertionSelectionError(
+            "Each tenant assertion must be paired with exactly one assertion role."
+        )
+    return tuple(
+        SelectedTenantAssertion(
+            role=role,
+            assertion_id=item.assertion_id,
+            content_hash=item.content_hash,
+        )
+        for item, role in zip(command.tenant_assertions, command.assertion_roles, strict=True)
     )
 
 
@@ -95,12 +135,10 @@ def evidence_window_from_assessment_command(
     """Project an AssessmentCommand into CanonicalEvidenceWindowV1.
 
     Adapter kind, scan/action/correlation IDs, and presentation evidence are
-    accepted on the command and excluded from the window hash.
+    accepted on the command and excluded from the window hash. Arbitrary
+    adapter-supplied tenant assertions are hashed only when required or
+    explicitly selected by the command's semantic policy.
     """
-    tenant_refs = tuple(
-        TenantAssertionRef(assertion_id=item.assertion_id, content_hash=item.content_hash)
-        for item in command.tenant_assertions
-    )
     return build_canonical_evidence_window_v1(
         organization_id=command.organization_id,
         strategy_version_id=command.strategy_version_id,
@@ -116,7 +154,10 @@ def evidence_window_from_assessment_command(
         mandatory_evidence_roles=command.mandatory_evidence_roles,
         selected_public_observations=selected_observations_for_command(command),
         source_set=command.source_set,
-        tenant_assertions=tenant_refs,
+        tenant_assertions=selected_tenant_assertions_for_command(command),
+        required_assertion_roles=command.required_assertion_roles,
+        identity_assertion_roles=command.identity_assertion_roles,
+        role_timeframes=command.role_timeframes,
         manual_level_revision=command.manual_level_revision,
         correction_selection_policy=command.correction_selection_policy,
         scan_id=command.scan_id,

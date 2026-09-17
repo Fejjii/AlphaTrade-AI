@@ -7,10 +7,14 @@ from decimal import Decimal
 from uuid import UUID
 
 from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
-from app.market_contracts.enums import Finality, FreshnessState, SourceFamily
+from app.market_contracts.enums import Finality, FreshnessState, SourceFamily, VenueId
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
-from app.market_contracts.identity import interval_timedelta
+from app.market_contracts.identity import (
+    EvidenceMarketIdentity,
+    canonical_instrument_id,
+    interval_timedelta,
+)
 from app.market_contracts.observation import PublicMarketObservation, observation_from_ohlcv
 from app.schemas.common import Timeframe, TradeDirection
 from app.signal_fusion.adapters import AssessmentCommand
@@ -19,6 +23,7 @@ from app.signal_fusion.enums import (
     EvidenceAdapterKind,
     EvidenceRole,
     SetupIdentityKind,
+    TenantAssertionRole,
 )
 from app.signal_fusion.observation import TenantExternalAssertion, build_tenant_external_assertion
 from app.signal_fusion.policy import (
@@ -27,18 +32,26 @@ from app.signal_fusion.policy import (
     FusionPolicy,
     FusionThresholds,
     build_fusion_policy,
+    first_slice_role_timeframes,
 )
 from app.signal_fusion.types import (
     ExecutableSetupRef,
     HalfOpenInterval,
     ManualLevelRevisionRef,
     PresentationEvidenceRef,
+    RoleTimeframeBinding,
     RuleWeight,
     SemanticSourceIdentity,
     TriggerIdentity,
     selected_observation_from_public,
 )
-from tests.support.phase5_market import EVALUATED_AT, TRIGGER_OPEN, closed_bar, identity
+from tests.support.phase5_market import (
+    EVALUATED_AT,
+    TRIGGER_OPEN,
+    closed_bar,
+    eth_instrument,
+    identity,
+)
 
 ORG_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 USER_ID = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -77,18 +90,49 @@ def executable_setup(*, content_hash: str = SETUP_CONTENT_HASH) -> ExecutableSet
 
 
 def public_observation(
-    *, index: int = 0, timeframe: Timeframe = Timeframe.M15
+    *,
+    index: int = 0,
+    timeframe: Timeframe = Timeframe.M15,
+    market_identity: EvidenceMarketIdentity | None = None,
+    revision: int = 1,
 ) -> PublicMarketObservation:
+    frame = market_identity or identity(timeframe=timeframe)
     open_time = TRIGGER_OPEN - (interval_timedelta(timeframe) * index)
-    bar = closed_bar(index=index, timeframe=timeframe, open_time=open_time)
+    bar = closed_bar(
+        index=index,
+        timeframe=timeframe,
+        open_time=open_time,
+        instrument=frame.instrument,
+        revision=revision,
+    )
     assert bar.finality is Finality.FINAL
     return observation_from_ohlcv(
         bar,
-        identity=identity(timeframe=timeframe),
+        identity=frame,
         observed_at=EVALUATED_AT,
         receive_time=EVALUATED_AT,
         freshness_state=FreshnessState.FRESH,
     )
+
+
+def eth_evidence_identity(timeframe: Timeframe = Timeframe.M15) -> EvidenceMarketIdentity:
+    return identity(timeframe=timeframe).model_copy(update={"instrument": eth_instrument()})
+
+
+def blofin_evidence_identity(timeframe: Timeframe = Timeframe.M15) -> EvidenceMarketIdentity:
+    base = identity(timeframe=timeframe)
+    instrument = base.instrument.model_copy(
+        update={
+            "venue": VenueId.BLOFIN,
+            "instrument_id": canonical_instrument_id(
+                venue=VenueId.BLOFIN,
+                product_family=base.instrument.product_family,
+                market_type=base.instrument.market_type,
+                symbol=base.instrument.provider_symbol,
+            ),
+        }
+    )
+    return base.model_copy(update={"venue": VenueId.BLOFIN, "instrument": instrument})
 
 
 def semantic_sources() -> tuple[SemanticSourceIdentity, ...]:
@@ -122,6 +166,9 @@ def fusion_policy(
     *,
     threshold: Decimal = Decimal("1.0"),
     policy_version: str = DEFAULT_FUSION_POLICY_VERSION,
+    required_assertion_roles: tuple[TenantAssertionRole, ...] = (),
+    identity_assertion_roles: tuple[TenantAssertionRole, ...] = (),
+    role_timeframes: tuple[RoleTimeframeBinding, ...] | None = None,
 ) -> FusionPolicy:
     return build_fusion_policy(
         policy_version=policy_version,
@@ -135,6 +182,11 @@ def fusion_policy(
         ),
         freshness_policy_version=FIRST_SLICE_FRESHNESS_POLICY_VERSION,
         finality_policy_version=FINALITY_POLICY_VERSION,
+        role_timeframes=(
+            first_slice_role_timeframes() if role_timeframes is None else role_timeframes
+        ),
+        required_assertion_roles=required_assertion_roles,
+        identity_assertion_roles=identity_assertion_roles,
     )
 
 
@@ -166,14 +218,19 @@ def window_kwargs() -> dict[str, object]:
     }
 
 
-def tenant_assertion() -> TenantExternalAssertion:
+def tenant_assertion(
+    *,
+    assertion_id: UUID = ASSERTION_ID,
+    source: AssertionSource = AssertionSource.TRADINGVIEW,
+    source_event_id: str = "tv-alert-1",
+) -> TenantExternalAssertion:
     inst = identity().instrument
     return build_tenant_external_assertion(
-        assertion_id=ASSERTION_ID,
+        assertion_id=assertion_id,
         organization_id=ORG_ID,
         user_id=USER_ID,
-        source=AssertionSource.TRADINGVIEW,
-        source_event_id="tv-alert-1",
+        source=source,
+        source_event_id=source_event_id,
         venue=inst.venue,
         market_type=inst.market_type,
         instrument_id=inst.instrument_id,
@@ -191,39 +248,54 @@ def assessment_command(
     adapter_kind: EvidenceAdapterKind,
     correlation_id: UUID = CORRELATION_A,
     presentation_label: str = "chart-overlay",
+    public_observations: tuple[PublicMarketObservation, ...] | None = None,
+    selected_roles: tuple[EvidenceRole, ...] | None = None,
+    tenant_assertions: tuple[TenantExternalAssertion, ...] = (),
+    assertion_roles: tuple[TenantAssertionRole, ...] = (),
+    required_assertion_roles: tuple[TenantAssertionRole, ...] = (),
+    identity_assertion_roles: tuple[TenantAssertionRole, ...] = (),
+    role_timeframes: tuple[RoleTimeframeBinding, ...] | None = None,
 ) -> AssessmentCommand:
     kwargs = window_kwargs()
-    observations = (
+    observations = public_observations or (
         public_observation(index=0),
         public_observation(index=1, timeframe=Timeframe.H4),
         public_observation(index=2),
     )
-    return AssessmentCommand(
-        organization_id=ORG_ID,
-        strategy_version_id=STRATEGY_VERSION_ID,
-        executable_setup=executable_setup(),
-        fusion_policy_version=DEFAULT_FUSION_POLICY_VERSION,
-        finality_policy_version=FINALITY_POLICY_VERSION,
-        freshness_policy_version=FIRST_SLICE_FRESHNESS_POLICY_VERSION,
-        direction=TradeDirection.SHORT,
-        evidence_identity=first_slice_identity(timeframe=Timeframe.M15, replay=True),
-        interval=kwargs["interval"],  # type: ignore[arg-type]
-        trigger=kwargs["trigger"],  # type: ignore[arg-type]
-        mandatory_evidence_roles=MANDATORY_ROLES,
-        public_observations=observations,
-        selected_roles=(
+    payload: dict[str, object] = {
+        "organization_id": ORG_ID,
+        "strategy_version_id": STRATEGY_VERSION_ID,
+        "executable_setup": executable_setup(),
+        "fusion_policy_version": DEFAULT_FUSION_POLICY_VERSION,
+        "finality_policy_version": FINALITY_POLICY_VERSION,
+        "freshness_policy_version": FIRST_SLICE_FRESHNESS_POLICY_VERSION,
+        "direction": TradeDirection.SHORT,
+        "evidence_identity": first_slice_identity(timeframe=Timeframe.M15, replay=True),
+        "interval": kwargs["interval"],
+        "trigger": kwargs["trigger"],
+        "mandatory_evidence_roles": MANDATORY_ROLES,
+        "public_observations": observations,
+        "selected_roles": selected_roles
+        or (
             EvidenceRole.TRIGGER_OHLCV,
             EvidenceRole.CONTEXT_OHLCV,
             EvidenceRole.CVD_WINDOW,
         ),
-        source_set=semantic_sources(),
-        manual_level_revision=manual_level(),
-        adapter_kind=adapter_kind,
-        scan_id=SCAN_ID,
-        action_id=ACTION_ID,
-        correlation_id=correlation_id,
-        presentation_evidence=(presentation_evidence(presentation_label),),
-    )
+        "tenant_assertions": tenant_assertions,
+        "assertion_roles": assertion_roles,
+        "required_assertion_roles": required_assertion_roles,
+        "identity_assertion_roles": identity_assertion_roles,
+        "source_set": semantic_sources(),
+        "manual_level_revision": manual_level(),
+        "adapter_kind": adapter_kind,
+        "scan_id": SCAN_ID,
+        "action_id": ACTION_ID,
+        "correlation_id": correlation_id,
+        "presentation_evidence": (presentation_evidence(presentation_label),),
+    }
+    if role_timeframes is not None:
+        payload["role_timeframes"] = role_timeframes
+    return AssessmentCommand(**payload)  # type: ignore[arg-type]
 
 
 def interval(*, start: datetime = TRIGGER_OPEN, end: datetime = INTERVAL_END) -> HalfOpenInterval:

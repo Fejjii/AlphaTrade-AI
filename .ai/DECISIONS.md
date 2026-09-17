@@ -798,7 +798,13 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   Telegram, or BloFin calls.
 - **Consequences:** Later Phase 6 agents implement evaluator, persistence, and
   adapters against this package.
-- **Validation:** `backend/tests/test_phase6_signal_fusion_contracts.py`;
-  ruff; mypy `--strict` on `src/app/signal_fusion`.
+- **Hardening (2026-09-17, PR #84):** Fail-closed selected-observation
+  venue/market/instrument matching; role-aware timeframes (trigger vs context
+  may differ); tenant assertions enter CanonicalEvidenceWindowV1 only when
+  required or explicitly selected by FusionPolicy; duplicate semantic set
+  members are canonicalized; Phase 5 `observation_id_for` is revision-aware
+  (`source_event_id|finality|revision`) so FORMING, FINAL, and corrected
+  revisions are distinct immutable appends. No evaluator, persistence, or
+  live trading.
 
 
