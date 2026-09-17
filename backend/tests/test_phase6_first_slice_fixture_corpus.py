@@ -28,6 +28,7 @@ from app.analysis.wilder_atr_v1 import (
 from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.cursor import (
     TradeStreamAssembler,
+    TradeStreamSnapshot,
     require_contiguous_sequences,
 )
 from app.market_contracts.cvd import (
@@ -65,7 +66,12 @@ from app.market_contracts.identity import (
     require_instrument,
     require_perpetual,
 )
-from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
+from app.market_contracts.ohlcv import (
+    ClosedOhlcvSeries,
+    OhlcvBar,
+    observation_id_for,
+    require_closed_series,
+)
 from app.market_contracts.trades import OrderedTradeBatch
 from app.schemas.common import SetupCompileStatus, Timeframe, TradeDirection
 from app.schemas.strategy_pattern_spec import FIRST_SLICE_NAME, canonical_first_slice_authored_spec
@@ -195,7 +201,7 @@ def _atr(bars: tuple[OhlcvBar, ...]) -> WilderAtrFeatureV1:
     return compute_wilder_atr_v1([_atr_bar(bar) for bar in bars])
 
 
-def _snapshot(fixture: Phase6Fixture) -> object:
+def _snapshot(fixture: Phase6Fixture) -> TradeStreamSnapshot:
     trigger = fixture.bars_15m[-1]
     window_start = first_slice_baseline_open(trigger)
     coverage = build_complete_trade_window_coverage(
@@ -223,7 +229,7 @@ def _snapshot(fixture: Phase6Fixture) -> object:
     return assembler.ingest_batch(batch, observed_at=fixture.evaluated_at)
 
 
-def _closed_15m(fixture: Phase6Fixture) -> object:
+def _closed_15m(fixture: Phase6Fixture) -> ClosedOhlcvSeries:
     return require_closed_series(
         list(fixture.bars_15m),
         identity=fixture.identity_15m,
@@ -579,9 +585,9 @@ def test_negative_matrix_mutations_fail_the_intended_predicate(
     assert highs[index] <= max(highs[index - 2 : index] + highs[index + 1 : index + 3])
 
     watch = corpus["watch"]
-    assert watch.bars_15m[-1].high < SWING_PRICE + (
-        spec.sweep_threshold_atr * _atr(watch.bars_15m).value
-    )
+    watch_atr = _atr(watch.bars_15m).value
+    assert watch_atr is not None
+    assert watch.bars_15m[-1].high < SWING_PRICE + (spec.sweep_threshold_atr * watch_atr)
 
     partial = corpus["partial-match"]
     assert partial.bars_15m[-1].close >= partial.bars_15m[-1].open
