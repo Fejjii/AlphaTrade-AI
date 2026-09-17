@@ -44,6 +44,7 @@ def closed_bar(
     index: int = 0,
     evaluated_at: datetime = EVALUATED_AT,
     instrument: InstrumentIdentity | None = None,
+    revision: int = 1,
 ) -> OhlcvBar:
     open_ = Decimal("100000") + Decimal(index)
     close = open_ + Decimal("2")
@@ -61,6 +62,7 @@ def closed_bar(
         grace=timedelta(seconds=first_slice_freshness_policy().ohlcv_post_close_grace_seconds),
         trade_count=4,
         adapter_version=ADAPTER_VERSION,
+        revision=revision,
     )
 
 

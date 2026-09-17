@@ -19,7 +19,7 @@ from app.market_contracts.first_slice import (
     FIRST_SLICE_MIN_FINAL_15M,
     first_slice_spec,
 )
-from app.market_contracts.hashing import semantic_content_hash
+from app.market_contracts.hashing import semantic_content_hash, with_content_hash
 from app.market_contracts.identity import (
     ProviderProvenance,
     binance_usdm_btcusdt,
@@ -27,7 +27,12 @@ from app.market_contracts.identity import (
     require_perpetual,
 )
 from app.market_contracts.observation import observation_from_ohlcv
-from app.market_contracts.ohlcv import build_ohlcv_bar, require_closed_series
+from app.market_contracts.ohlcv import (
+    OhlcvBar,
+    build_ohlcv_bar,
+    observation_id_for,
+    require_closed_series,
+)
 from app.schemas.common import Timeframe
 from tests.support.phase5_market import (
     EVALUATED_AT,
@@ -170,3 +175,108 @@ def test_observation_envelope_excludes_recorded_time_from_hash() -> None:
     assert first.content_hash == second.content_hash
     assert first.privacy_class.value == "public_market_data"
     assert first.observation_id == second.observation_id
+    assert first.observation_id == observation_id_for(
+        bar.source_event_id, finality=bar.finality, revision=bar.revision
+    )
+    assert observation_id_for(bar.source_event_id) != first.observation_id
+
+
+def _forming_bar() -> OhlcvBar:
+    return build_ohlcv_bar(
+        instrument=binance_usdm_btcusdt(),
+        timeframe=Timeframe.M15,
+        interval_start=TRIGGER_OPEN,
+        open_=Decimal("100000"),
+        high=Decimal("100010"),
+        low=Decimal("99990"),
+        close=Decimal("100005"),
+        base_volume=Decimal("10"),
+        quote_volume=Decimal("1000000"),
+        evaluated_at=TRIGGER_OPEN + timedelta(minutes=5),
+        grace=timedelta(0),
+        provider_complete=False,
+        revision=1,
+    )
+
+
+def test_forming_and_final_observations_have_distinct_append_ids() -> None:
+    forming_bar = _forming_bar()
+    final_bar = closed_bar()
+    assert forming_bar.source_event_id == final_bar.source_event_id
+    forming = observation_from_ohlcv(
+        forming_bar,
+        identity=identity(),
+        observed_at=EVALUATED_AT,
+        receive_time=EVALUATED_AT,
+        freshness_state=FreshnessState.FRESH,
+    )
+    final = observation_from_ohlcv(
+        final_bar,
+        identity=identity(),
+        observed_at=EVALUATED_AT,
+        receive_time=EVALUATED_AT,
+        freshness_state=FreshnessState.FRESH,
+    )
+    assert forming.finality is Finality.FORMING
+    assert final.finality is Finality.FINAL
+    assert forming.observation_id != final.observation_id
+    assert forming.observation_id == observation_id_for(
+        forming_bar.source_event_id, finality=Finality.FORMING, revision=1
+    )
+    assert final.observation_id == observation_id_for(
+        final_bar.source_event_id, finality=Finality.FINAL, revision=1
+    )
+
+
+def test_corrected_revision_has_distinct_observation_id() -> None:
+    first_bar = closed_bar(revision=1)
+    corrected_bar = with_content_hash(
+        first_bar.model_copy(
+            update={
+                "revision": 2,
+                "finality": Finality.CORRECTED,
+                "content_hash": "0" * 64,
+            }
+        )
+    )
+    assert first_bar.source_event_id == corrected_bar.source_event_id
+    first = observation_from_ohlcv(
+        first_bar,
+        identity=identity(),
+        observed_at=EVALUATED_AT,
+        receive_time=EVALUATED_AT,
+        freshness_state=FreshnessState.FRESH,
+    )
+    corrected = observation_from_ohlcv(
+        corrected_bar,
+        identity=identity(),
+        observed_at=EVALUATED_AT,
+        receive_time=EVALUATED_AT,
+        freshness_state=FreshnessState.FRESH,
+    )
+    assert first.observation_id != corrected.observation_id
+    assert first.revision == 1
+    assert corrected.revision == 2
+    assert corrected.finality is Finality.CORRECTED
+
+
+def test_observation_id_replay_of_same_revision_is_stable() -> None:
+    bar = closed_bar(revision=2)
+    first = observation_from_ohlcv(
+        bar,
+        identity=identity(),
+        observed_at=EVALUATED_AT,
+        receive_time=EVALUATED_AT,
+        freshness_state=FreshnessState.FRESH,
+    )
+    second = observation_from_ohlcv(
+        bar,
+        identity=identity(),
+        observed_at=EVALUATED_AT,
+        receive_time=EVALUATED_AT,
+        freshness_state=FreshnessState.FRESH,
+    )
+    assert first.observation_id == second.observation_id
+    assert first.observation_id == observation_id_for(
+        bar.source_event_id, finality=bar.finality, revision=2
+    )

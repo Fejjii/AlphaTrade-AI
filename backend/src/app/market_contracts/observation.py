@@ -47,7 +47,11 @@ def observation_from_ohlcv(
 ) -> PublicMarketObservation:
     recorded = datetime.now(UTC)
     envelope = PublicMarketObservation(
-        observation_id=observation_id_for(bar.source_event_id),
+        observation_id=observation_id_for(
+            bar.source_event_id,
+            finality=bar.finality,
+            revision=bar.revision,
+        ),
         identity=identity,
         observation_type=ObservationType.OHLCV,
         source_event_id=bar.source_event_id,
