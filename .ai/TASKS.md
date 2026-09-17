@@ -891,3 +891,23 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-024
 
+### AT-045 — Phase 6 deterministic fusion evaluator (setup truth only)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-044 Phase 6 contract
+  freeze (PR 84 HEAD `5db47b7`) · Risk: Medium (setup-truth authority)
+- Safety classification: Paper-safe / evaluator only; no candidates, eligibility,
+  execution, Telegram, watcher activation, migrations, or live trading
+- Goal: Implement the deterministic first-slice fusion evaluator that consumes
+  frozen `FusionPolicy`, `AssessmentCommand`, `CanonicalEvidenceWindowV1`, and
+  Phase 5 evidence and emits authoritative `SetupAssessment` for
+  “Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance
+  at 4h Resistance” on BTCUSDT perpetual 15m/4h.
+- Branch: `cursor/phase6-deterministic-evaluator-0069`
+- Deliverables: `app.signal_fusion.evaluator.evaluate_setup`; synthetic matrix
+  in `backend/tests/test_phase6_fusion_evaluator.py`. No Candidate persistence,
+  no PR 84 contract semantic changes.
+- Validation: targeted evaluator + Phase 5 + Phase 6 contract tests; full
+  backend pytest; ruff; mypy `--strict` on `src/app/signal_fusion`; GitHub CI.
+  Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-025
+
