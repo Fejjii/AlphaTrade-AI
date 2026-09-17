@@ -1,0 +1,375 @@
+{
+  "schema_version": "phase6-first-slice-fixture-manifest/v2",
+  "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+  "evidence_identity": "CanonicalEvidenceWindowV1",
+  "fixtures": [
+    {
+      "fixture_id": "confirmed-setup",
+      "purpose": "Exact confirmed setup for Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "confirmed_setup",
+      "expected_reason_codes": [
+        "all_mandatory_evidence_confirmed"
+      ],
+      "fixture_detail_code": "all_first_slice_predicates_confirmed",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "BASELINE"
+    },
+    {
+      "fixture_id": "no-setup",
+      "purpose": "No strict confirmed L2/R2 swing high exists.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [],
+      "fixture_detail_code": "confirmed_swing_missing",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "watch",
+      "purpose": "Resistance context is valid while the sweep threshold is not yet reached.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "watch",
+      "expected_reason_codes": [
+        "preconditions_passed"
+      ],
+      "fixture_detail_code": "awaiting_liquidity_sweep",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "partial-match",
+      "purpose": "All numeric trigger evidence passes but the trigger candle is not bearish.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "partial_match",
+      "expected_reason_codes": [
+        "sequence_step_passed"
+      ],
+      "fixture_detail_code": "trigger_not_bearish",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "invalidated-by-price",
+      "purpose": "A confirmed candidate is invalidated by the first subsequent final bar.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "invalidated",
+      "expected_reason_codes": [
+        "pattern_invalidated"
+      ],
+      "fixture_detail_code": "price_invalidation_reached",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_plus_2_final_post_trigger_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "PRESERVE_CANONICAL_IDENTITY"
+    },
+    {
+      "fixture_id": "stale-source",
+      "purpose": "Latest perpetual trade is one second outside the freshness bound.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "required_source_stale"
+      ],
+      "fixture_detail_code": "latest_trade_stale",
+      "expected_freshness_posture": "stale_at_11s",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "sequence-gap",
+      "purpose": "The ordered perpetual trade stream omits one venue sequence.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "required_source_gapped"
+      ],
+      "fixture_detail_code": "trade_sequence_gap",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "reconnect-discontinuity",
+      "purpose": "The CVD window crosses two source connection epochs.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "required_source_gapped"
+      ],
+      "fixture_detail_code": "cross_connection_cvd_forbidden",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "wrong-venue",
+      "purpose": "Blofin BTCUSDT perpetual evidence is supplied for the Binance slice.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "wrong_venue_or_market"
+      ],
+      "fixture_detail_code": "wrong_venue",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "wrong-instrument",
+      "purpose": "ETHUSDT perpetual evidence is supplied for the BTCUSDT slice.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "wrong_venue_or_market"
+      ],
+      "fixture_detail_code": "wrong_instrument",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "wrong-market",
+      "purpose": "The evidence envelope is labelled as a delivery market.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "wrong_venue_or_market"
+      ],
+      "fixture_detail_code": "wrong_market",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "spot-substitution",
+      "purpose": "BTCUSDT spot evidence is substituted for perpetual evidence.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "wrong_venue_or_market"
+      ],
+      "fixture_detail_code": "spot_not_perpetual",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "fallback-source",
+      "purpose": "Evidence provenance declares a forbidden fallback source.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [
+        "required_source_fallback"
+      ],
+      "fixture_detail_code": "fallback_source_forbidden",
+      "expected_freshness_posture": "untrusted_fallback",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "incomplete-warmup",
+      "purpose": "Only 99 final 15m bars are available.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [],
+      "fixture_detail_code": "trigger_warmup_incomplete",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "99_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "forming-candle",
+      "purpose": "The trigger candle is still forming at its source finality clock.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [],
+      "fixture_detail_code": "forming_trigger_candle",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "99_final_plus_1_forming_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "missing-manual-resistance",
+      "purpose": "No active versioned 4h manual resistance is available.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "watch",
+      "expected_reason_codes": [],
+      "fixture_detail_code": "manual_resistance_missing",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "resistance-outside-tolerance",
+      "purpose": "Nearest active resistance is beyond 0.50 ATR4h from the swing.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "no_setup",
+      "expected_reason_codes": [],
+      "fixture_detail_code": "resistance_outside_atr_tolerance",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "volume-threshold-failure",
+      "purpose": "Trigger volume is 1.40 times the prior 20-bar mean.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "partial_match",
+      "expected_reason_codes": [
+        "sequence_step_passed"
+      ],
+      "fixture_detail_code": "trigger_volume_ratio_below_threshold",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "cvd-divergence-failure",
+      "purpose": "CVD at trigger close is not below CVD at swing close.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "partial_match",
+      "expected_reason_codes": [
+        "sequence_step_passed"
+      ],
+      "fixture_detail_code": "bearish_cvd_divergence_missing",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "sell-imbalance-failure",
+      "purpose": "Trigger signed quote-flow ratio is -0.05, above the -0.10 threshold.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "partial_match",
+      "expected_reason_codes": [
+        "sequence_step_passed"
+      ],
+      "fixture_detail_code": "aggressive_sell_imbalance_missing",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "expiry",
+      "purpose": "A confirmed candidate expires after two additional final 15m bars.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "expired",
+      "expected_reason_codes": [
+        "validity_interval_elapsed"
+      ],
+      "fixture_detail_code": "two_final_bars_elapsed",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_plus_2_final_post_trigger_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "PRESERVE_CANONICAL_IDENTITY"
+    },
+    {
+      "fixture_id": "corrected-candle-revision",
+      "purpose": "A final trigger candle correction has revision 2 and a distinct evidence window.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "confirmed_setup",
+      "expected_reason_codes": [
+        "all_mandatory_evidence_confirmed",
+        "distinct_evidence_window"
+      ],
+      "fixture_detail_code": "corrected_final_candle_re_evaluated",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_with_trigger_revision_2_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "DISTINCT_EVIDENCE_WINDOW"
+    },
+    {
+      "fixture_id": "presentation-enrichment",
+      "purpose": "Presentation evidence and a PRESENTATION tenant assertion leave identity unchanged.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "confirmed_setup",
+      "expected_reason_codes": [
+        "all_mandatory_evidence_confirmed"
+      ],
+      "fixture_detail_code": "optional_presentation_evidence_added",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "PRESERVE_CANONICAL_IDENTITY"
+    },
+    {
+      "fixture_id": "mandatory-evidence-change",
+      "purpose": "A new active manual-level revision creates a distinct evidence window.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "confirmed_setup",
+      "expected_reason_codes": [
+        "all_mandatory_evidence_confirmed",
+        "distinct_evidence_window"
+      ],
+      "fixture_detail_code": "mandatory_evidence_revision_changed",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "DISTINCT_EVIDENCE_WINDOW"
+    },
+    {
+      "fixture_id": "adjacent-trigger-window",
+      "purpose": "The same setup in the adjacent 15m trigger window has a distinct identity.",
+      "strategy_name": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+      "direction": "short",
+      "expected_assessment_state": "confirmed_setup",
+      "expected_reason_codes": [
+        "all_mandatory_evidence_confirmed",
+        "distinct_evidence_window"
+      ],
+      "fixture_detail_code": "adjacent_trigger_window",
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "DISTINCT_EVIDENCE_WINDOW"
+    }
+  ]
+}
