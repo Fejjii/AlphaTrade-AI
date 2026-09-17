@@ -807,4 +807,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   revisions are distinct immutable appends. No evaluator, persistence, or
   live trading.
 
+## AT-ADR-025 — Phase 6 deterministic first-slice fusion evaluator
+- **Date:** 2026-09-17
+- **Status:** Accepted (setup-truth evaluator only)
+- **Context:** PR 84 froze identities. Setup truth still had no deterministic
+  evaluator. Parallel agents must not invent a second identity or let risk
+  rewrite pattern presence.
+- **Decision:**
+  1. `evaluate_setup(policy, command, evidence, evaluated_at)` is the sole
+     first-slice setup-truth function. It reuses PR 84 contracts and Phase 5
+     payloads; it does not create `Candidate` or `ActionEligibility`.
+  2. Canonical pattern name remains **Bearish Liquidity Sweep with CVD
+     Divergence and Aggressive Sell Imbalance at 4h Resistance**. The first
+     slice makes no exhaustion claim.
+  3. States are only `NO_SETUP`, `WATCH`, `PARTIAL_MATCH`, `CONFIRMED_SETUP`,
+     `INVALIDATED`, `EXPIRED`. Risk, account, leverage, balance, portfolio,
+     and execution availability cannot alter `SetupAssessment`.
+  4. Confirmation requires every mandatory Boolean predicate (equal weight,
+     threshold `1.0`): identity, finality, freshness ≤ 10s, no gap, warmup,
+     Wilder ATR14, confirmed L2/R2 swing `S`, nearest versioned 4h resistance
+     `R` with `abs(S-R) <= 0.50 ATR4h`, sweep/close, volume ≥ 1.50, bearish
+     quote-volume CVD divergence, aggressive sell imbalance ≤ -0.10.
+  5. Invalidation is `T.high + max(0.10 ATR15m, 2 * tick)`; expiry is two
+     additional final 15m bars. Fail closed on wrong market/instrument/venue,
+     forming/stale/missing evidence, unresolved gap, wrong perpetual identity,
+     incomplete warmup, missing/invalid manual resistance, incompatible policy.
+  6. Evidence order and adapter kind (watcher vs detector) must not change
+     the assessment. Equivalent semantic evidence hashes identically via
+     `CanonicalEvidenceWindowV1`.
+- **Alternatives considered:** Interpret a generic AST VM now (rejected: first
+  slice is one compiled pattern); persist candidates in this slice (rejected:
+  evaluator owns truth only); let account/risk fields veto setup (rejected:
+  eligibility is a later contract).
+- **Safety impact:** Paper only. No exchange, execution, Telegram, watcher, or
+  deployment calls.
+- **Consequences:** Candidate persistence and action eligibility remain later
+  Phase 6 slices against the same frozen identities.
+
 

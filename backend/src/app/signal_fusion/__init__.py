@@ -1,9 +1,9 @@
-"""Phase 6 canonical contracts for observations, fusion, assessment, and candidates.
+"""Phase 6 signal-fusion contracts and the deterministic setup-truth evaluator.
 
-This package freezes typed immutable contracts and CanonicalEvidenceWindowV1
-hashing. It does not implement the fusion evaluator, candidate persistence,
-Alembic migrations, watcher/Telegram/TradingView adapters, risk evaluation,
-alerts, outbox, execution, or frontend.
+Canonical identities remain the PR 84 freeze. This package now also evaluates
+first-slice ``SetupAssessment`` truth. It does not persist candidates, evaluate
+ActionEligibility, run Alembic migrations, activate watcher/Telegram adapters,
+or execute trades.
 
 Public market facts reuse ``app.market_contracts.PublicMarketObservation``.
 Venue, instrument, timeframe, direction, strategy, setup, freshness, and
@@ -58,12 +58,18 @@ from app.signal_fusion.errors import (
     TenantAssertionNotPublicError,
     TenantAssertionSelectionError,
 )
+from app.signal_fusion.evaluator import evaluate_setup
 from app.signal_fusion.evidence_window import (
     CanonicalEvidenceWindowV1,
     build_canonical_evidence_window_v1,
     evidence_window_preimage,
     hash_canonical_evidence_window,
     select_identity_forming_tenant_assertions,
+)
+from app.signal_fusion.first_slice_types import (
+    FIRST_SLICE_TICK_SIZE,
+    FirstSliceEvidenceBundle,
+    ManualResistanceEvidence,
 )
 from app.signal_fusion.observation import (
     TenantExternalAssertion,
@@ -86,6 +92,7 @@ from app.signal_fusion.types import (
 __all__ = [
     "ALLOWED_ASSESSMENT_TRANSITIONS",
     "ALLOWED_CANDIDATE_TRANSITIONS",
+    "FIRST_SLICE_TICK_SIZE",
     "TERMINAL_CANDIDATE_STATES",
     "ActionEligibility",
     "ActionEligibilityState",
@@ -104,6 +111,7 @@ __all__ = [
     "EvidenceIdentityMismatchError",
     "EvidenceRole",
     "ExecutableSetupRef",
+    "FirstSliceEvidenceBundle",
     "FormingObservationMutationError",
     "FormingObservationNotExecutableError",
     "FusionPolicy",
@@ -111,6 +119,7 @@ __all__ = [
     "IllegalAssessmentTransitionError",
     "IllegalCandidateTransitionError",
     "IllegalSetupIdentityError",
+    "ManualResistanceEvidence",
     "PublicMarketObservation",
     "RoleTimeframeBinding",
     "SelectedTenantAssertion",
@@ -131,6 +140,7 @@ __all__ = [
     "build_fusion_policy",
     "build_setup_assessment",
     "build_setup_assessment_transition",
+    "evaluate_setup",
     "evidence_window_from_assessment_command",
     "evidence_window_preimage",
     "first_slice_role_timeframes",
