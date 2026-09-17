@@ -903,12 +903,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   append-only transitions; terminal non-resurrection; tenant isolation.
   PaperValidationCandidate remains a downstream consumer only.
 - Branch: `cursor/phase6-candidate-lifecycle-service-1c4d`
+- PR: https://github.com/Fejjii/AlphaTrade-AI/pull/86 (draft; do not merge)
 - Deliverables: `app.signal_fusion.lifecycle`, `ports`, `memory`; tests in
   `backend/tests/test_phase6_candidate_lifecycle.py`. No fusion evaluator,
   no Alembic, no PostgreSQL adapter.
-- Validation: candidate lifecycle tests + Phase 6 contract tests + full
-  backend pytest + ruff + mypy `--strict` on `src/app/signal_fusion` +
-  GitHub CI. Draft PR only; do not merge.
+- Validation: lifecycle tests 29 passed; Phase 6 contract tests 56 passed
+  (`test_phase6_signal_fusion_contracts.py` 34 + `test_phase6_contract_hardening.py`
+  22); local full backend pytest exit 0 (1843 passed, 47 skipped without
+  Postgres); `uv run ruff check .` and `ruff format --check .` pass; `uv run
+  mypy --strict src/app/signal_fusion` Success (14 files). GitHub CI run
+  35212249349 success: backend 1890 passed (Postgres available), ruff
+  check/format, frontend, docker-build, deployment-safety, evaluation,
+  e2e-smoke. Paper posture unchanged. Draft PR only; do not merge.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-025
 
