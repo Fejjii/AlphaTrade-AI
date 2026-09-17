@@ -1,8 +1,8 @@
-"""Isolated watcher orchestration foundation (Phase 7 worker contracts).
+"""Isolated watcher orchestration and Phase 6 fusion evaluation wiring.
 
-No market adapters, candidate lifecycle, Telegram, execution, journal, or ORM
-models. Persistence is a typed port with a deterministic in-memory repository
-until a later integration phase binds PostgreSQL.
+Persistence remains the typed WatcherStore port. Fusion wiring is one evaluation
+boundary that calls evaluate_setup and CandidateLifecycleService. Telegram,
+execution, journal, TradePlan, and ORM/Alembic stay out of this package.
 """
 
 from __future__ import annotations
@@ -15,14 +15,26 @@ from app.watcher.contracts import (
     WatcherHealthState,
     WatcherRuntimeConfig,
 )
+from app.watcher.fusion_evaluation import (
+    BoundEvaluationClock,
+    InMemoryWatcherScanEvidence,
+    WatcherCanonicalScanEvidence,
+    WatcherFusionEvaluationService,
+    build_fusion_evaluation_service,
+)
 from app.watcher.orchestrator import WatcherOrchestrator
 
 __all__ = [
+    "BoundEvaluationClock",
     "EvaluationMode",
     "EvaluationStatus",
+    "InMemoryWatcherScanEvidence",
     "ScanTrigger",
+    "WatcherCanonicalScanEvidence",
+    "WatcherFusionEvaluationService",
     "WatcherHealthState",
     "WatcherOrchestrator",
     "WatcherRuntimeConfig",
+    "build_fusion_evaluation_service",
     "build_orchestrator",
 ]

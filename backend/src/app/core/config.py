@@ -160,7 +160,9 @@ class Settings(BaseSettings):
 
     # --- Watcher orchestration foundation (Phase 7 worker; disabled by default) ---
     # Isolated from the legacy scanner. Must stay false until a later integration
-    # review. Does not enable candidate creation, Telegram, execution, or journal.
+    # review. Fusion wiring may persist a canonical candidate only when this flag
+    # is on and evaluate_setup returns CONFIRMED_SETUP. Does not enable Telegram,
+    # TradePlan, execution, journal, or live trading.
     watcher_orchestration_enabled: bool = False
     watcher_lease_ttl_seconds: int = Field(default=30, ge=1, le=3600)
     watcher_heartbeat_stale_after_seconds: int = Field(default=90, ge=5, le=3600)
