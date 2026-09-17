@@ -18,13 +18,21 @@ from app.market_contracts.identity import (
 from app.market_contracts.observation import PublicMarketObservation, observation_from_ohlcv
 from app.schemas.common import Timeframe, TradeDirection
 from app.signal_fusion.adapters import AssessmentCommand
+from app.signal_fusion.assessment import SetupAssessment, build_setup_assessment
 from app.signal_fusion.enums import (
     AssertionSource,
+    AssessmentReasonCode,
     EvidenceAdapterKind,
     EvidenceRole,
+    SetupAssessmentState,
     SetupIdentityKind,
     TenantAssertionRole,
 )
+from app.signal_fusion.evidence_window import (
+    CanonicalEvidenceWindowV1,
+    build_canonical_evidence_window_v1,
+)
+from app.signal_fusion.lifecycle import CandidateCreationCommand
 from app.signal_fusion.observation import TenantExternalAssertion, build_tenant_external_assertion
 from app.signal_fusion.policy import (
     DEFAULT_CORRECTION_SELECTION_POLICY,
@@ -40,6 +48,7 @@ from app.signal_fusion.types import (
     ManualLevelRevisionRef,
     PresentationEvidenceRef,
     RoleTimeframeBinding,
+    RuleResult,
     RuleWeight,
     SemanticSourceIdentity,
     TriggerIdentity,
@@ -300,3 +309,86 @@ def assessment_command(
 
 def interval(*, start: datetime = TRIGGER_OPEN, end: datetime = INTERVAL_END) -> HalfOpenInterval:
     return HalfOpenInterval(start=start, end=end)
+
+
+def make_evidence_window(**overrides: object) -> CanonicalEvidenceWindowV1:
+    payload = window_kwargs()
+    payload.update(overrides)
+    return build_canonical_evidence_window_v1(**payload)  # type: ignore[arg-type]
+
+
+def make_assessment(
+    window: CanonicalEvidenceWindowV1,
+    *,
+    state: SetupAssessmentState = SetupAssessmentState.CONFIRMED_SETUP,
+    organization_id: UUID = ORG_ID,
+    strategy_version_id: UUID = STRATEGY_VERSION_ID,
+    setup: ExecutableSetupRef | None = None,
+    fusion_policy_version: str | None = None,
+    assessment_id: UUID = ASSESSMENT_ID,
+    assessed_at: datetime = EVALUATED_AT,
+    valid_until: datetime = VALID_UNTIL,
+    previous_state: SetupAssessmentState | None = SetupAssessmentState.PARTIAL_MATCH,
+    explanation: str = "All mandatory evidence confirmed under first-slice-fusion/v1.",
+) -> SetupAssessment:
+    resolved_setup = setup if setup is not None else executable_setup()
+    previous = None if state is SetupAssessmentState.NO_SETUP else previous_state
+    return build_setup_assessment(
+        assessment_id=assessment_id,
+        organization_id=organization_id,
+        strategy_version_id=strategy_version_id,
+        executable_setup=resolved_setup,
+        fusion_policy_version=fusion_policy_version or window.fusion_policy_version,
+        observation_ids=tuple(
+            item.observation_id
+            for item in window.selected_public_observations
+            if item.observation_id is not None
+        ),
+        assessment_window=window.interval,
+        state=state,
+        previous_assessment_id=None,
+        previous_state=previous,
+        rule_results=(
+            RuleResult(
+                rule_id="mandatory_evidence",
+                passed=state is SetupAssessmentState.CONFIRMED_SETUP,
+                weight=Decimal("1.0"),
+                reason_code=AssessmentReasonCode.ALL_MANDATORY_EVIDENCE_CONFIRMED.value,
+                evidence_role=EvidenceRole.TRIGGER_OHLCV,
+            ),
+        ),
+        threshold=Decimal("1.0"),
+        reason_codes=(AssessmentReasonCode.ALL_MANDATORY_EVIDENCE_CONFIRMED,),
+        explanation=explanation,
+        evidence_window_hash=window.content_hash,
+        assessed_at=assessed_at,
+        valid_until=valid_until,
+        correlation_id=CORRELATION_A,
+    )
+
+
+def make_creation_command(
+    *,
+    window: CanonicalEvidenceWindowV1 | None = None,
+    assessment: SetupAssessment | None = None,
+    setup: ExecutableSetupRef | None = None,
+    evidence_identity: EvidenceMarketIdentity | None = None,
+    idempotency_key: str = "candidate-create-1",
+    correlation_id: UUID = CORRELATION_A,
+) -> CandidateCreationCommand:
+    resolved_window = window if window is not None else make_evidence_window()
+    resolved_setup = setup if setup is not None else executable_setup()
+    resolved_assessment = (
+        assessment
+        if assessment is not None
+        else make_assessment(resolved_window, setup=resolved_setup)
+    )
+    identity = evidence_identity or first_slice_identity(timeframe=Timeframe.M15, replay=True)
+    return CandidateCreationCommand(
+        assessment=resolved_assessment,
+        evidence_window=resolved_window,
+        executable_setup=resolved_setup,
+        evidence_identity=identity,
+        idempotency_key=idempotency_key,
+        correlation_id=correlation_id,
+    )

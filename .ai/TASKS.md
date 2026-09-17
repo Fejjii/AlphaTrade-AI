@@ -871,7 +871,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-021 · Docs: `docs/market_source_contracts.md`
 
 ### AT-044 — Phase 6 contract freeze (observations, fusion, candidates)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-041 Phase 5 market
+- Priority: P0 · Status: DONE · Dependencies: AT-041 Phase 5 market
   contracts; Phase 3 compiled setup identity · Risk: Medium (identity authority)
 - Safety classification: Paper-safe / contracts only; no evaluator, persistence,
   watcher, Telegram, execution, or live trading
@@ -886,8 +886,73 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   market-identity integrity, policy-selected tenant assertions, canonical
   set semantics, and revision-aware observation identity. No Alembic, no
   evaluator, no adapter implementations.
-- Validation: targeted contract tests + full backend pytest + ruff + mypy
-  `--strict` on `src/app/signal_fusion` + GitHub CI. Draft PR only; do not merge.
+- Validation: Merged to `main` via PR #84 (`d8193ec`) and golden fixture
+  corpus PR #82 (`addf5ef`). Paper posture unchanged.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-024
+
+### AT-045 — Phase 6 deterministic fusion evaluator (setup truth only)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-044 Phase 6 contract
+  freeze · Risk: Medium (setup-truth authority)
+- Safety classification: Paper-safe / evaluator only; no PostgreSQL, Alembic,
+  watcher, Telegram, execution, or live trading
+- Goal: Implement the deterministic first-slice fusion evaluator that consumes
+  frozen `FusionPolicy`, `AssessmentCommand`, `CanonicalEvidenceWindowV1`, and
+  Phase 5 evidence and emits authoritative `SetupAssessment` for
+  “Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance
+  at 4h Resistance” on BTCUSDT perpetual 15m/4h.
+- Branch: `cursor/phase6-deterministic-evaluator-0069` (source PR #87);
+  integrated on `cursor/phase6-evaluator-candidate-integration`
+- Deliverables: `app.signal_fusion.evaluator.evaluate_setup`; synthetic matrix
+  in `backend/tests/test_phase6_fusion_evaluator.py`. No Candidate persistence,
+  no PR 84 contract semantic changes.
+- Validation: evaluator suite + Phase 5 + Phase 6 contract tests; full backend
+  pytest; ruff; mypy `--strict` on `src/app.signal_fusion`; GitHub CI.
+  Draft integration PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-025
+
+### AT-046 — Phase 6 candidate lifecycle service (in-memory authority)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-044 Phase 6 contract
+  freeze · Risk: Medium (identity authority)
+- Safety classification: Paper-safe / in-memory application service; no
+  PostgreSQL, Alembic, watcher, Telegram, execution, or live trading
+- Goal: Implement canonical Candidate authority: idempotent creation from
+  CONFIRMED_SETUP + exact CanonicalEvidenceWindowV1 + tenant-owned
+  CompiledSetupDefinition; uniqueness via CandidateUniquenessTuple;
+  append-only transitions; terminal non-resurrection; tenant isolation;
+  organization-scoped creation idempotency and candidate-scoped transition
+  idempotency. PaperValidationCandidate remains a downstream consumer only.
+- Branch: `cursor/phase6-candidate-lifecycle-service-1c4d` (source PR #86);
+  integrated on `cursor/phase6-evaluator-candidate-integration`
+- PR: https://github.com/Fejjii/AlphaTrade-AI/pull/86 (source; do not merge)
+- Deliverables: `app.signal_fusion.lifecycle`, `ports`, `memory`; tests in
+  `backend/tests/test_phase6_candidate_lifecycle.py`. No fusion evaluator
+  coupling, no Alembic, no PostgreSQL adapter.
+- Validation: lifecycle tests + Phase 6 contract tests; full backend pytest;
+  ruff; mypy `--strict` on `src/app.signal_fusion`; GitHub CI.
+  Draft integration PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-026
+
+### AT-047 — Phase 6 evaluator + candidate runtime foundation integration
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-044, AT-045, AT-046,
+  golden fixture corpus on `main@addf5ef` · Risk: Medium (identity composition)
+- Safety classification: Paper-safe / in-memory runtime foundation; no
+  PostgreSQL, Alembic, watcher, Telegram, eligibility, TradePlan, execution,
+  frontend, or live trading
+- Goal: Produce one clean Phase 6 runtime foundation containing deterministic
+  setup evaluation, canonical candidate lifecycle authority, and the already
+  merged golden fixtures. Combined flow: canonical evidence → CONFIRMED_SETUP
+  → exactly one ACTIVE candidate; duplicate semantic evaluation converges.
+- Branch: `cursor/phase6-evaluator-candidate-integration`
+- Deliverables: integrated `app.signal_fusion` evaluator + lifecycle; combined
+  tests in `backend/tests/test_phase6_evaluator_candidate_flow.py`. Do not
+  overwrite `backend/tests/fixtures/phase6_first_slice/`.
+- Validation: golden fixture suite, Phase 5 market suite, Phase 6 contract
+  suite, evaluator suite, candidate lifecycle suite, combined flow tests,
+  full backend pytest, ruff, mypy `--strict` on `src/app.signal_fusion`,
+  GitHub CI. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-027
 
