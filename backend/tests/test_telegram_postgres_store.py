@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,11 +16,12 @@ from app.persistence.composition import (
     build_postgres_telegram_security_protocol,
     build_postgres_telegram_security_store,
 )
-from app.telegram_security.actions import APPROVE_EXECUTES, TelegramRemoteAction
+from app.telegram_security.actions import APPROVE_EXECUTES, ActionEffectKind, TelegramRemoteAction
 from app.telegram_security.clock import FrozenClock
 from app.telegram_security.contracts import (
     ActionNonce,
     ActionOutcome,
+    ActionReceipt,
     ActionReceiptState,
     BindingState,
     ChatType,
@@ -28,6 +29,7 @@ from app.telegram_security.contracts import (
     OutboxKind,
     OutboxRecord,
     OutboxState,
+    ReceiptTransition,
 )
 from app.telegram_security.errors import (
     TelegramInteractionDisabledError,
@@ -79,6 +81,59 @@ def _protocol(
         rate_limit_policy=rate_limit_policy,
         lease_owner=lease_owner,
         outbox_lease=outbox_lease,
+    )
+
+
+def _receipt(
+    *,
+    receipt_id: UUID,
+    now: datetime,
+    state: ActionReceiptState,
+    fingerprint: str,
+) -> ActionReceipt:
+    return ActionReceipt(
+        receipt_id=receipt_id,
+        bot_id=BOT,
+        update_id=7,
+        callback_query_id="cb-pk-1",
+        message_id="msg-pk-1",
+        telegram_user_id=TG_USER,
+        chat_id=CHAT,
+        organization_id=ORG,
+        user_id=USER,
+        account_id=ACCOUNT,
+        action=TelegramRemoteAction.APPROVE,
+        payload_hash="d" * 64,
+        replay_fingerprint=fingerprint,
+        state=state,
+        transitions=(
+            ReceiptTransition(
+                sequence=1,
+                from_state=None,
+                to_state=state,
+                at=now,
+            ),
+        ),
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _outbox(*, outbox_id: UUID, now: datetime, text: str) -> OutboxRecord:
+    return OutboxRecord(
+        outbox_id=outbox_id,
+        organization_id=ORG,
+        user_id=USER,
+        binding_id=None,
+        bot_id=BOT,
+        chat_id=CHAT,
+        idempotency_key="outbox-pk-1",
+        kind=OutboxKind.PRIVATE_MESSAGE,
+        text=text,
+        state=OutboxState.PENDING,
+        attempt=0,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -637,6 +692,137 @@ def test_postgres_delivery_acknowledgement_idempotency() -> None:
     )
     assert replay.outbox_id == acked.outbox_id
     assert replay.state is OutboxState.ACKNOWLEDGED
+
+
+@requires_postgres
+def test_postgres_receipt_same_pk_exact_replay_allows_lifecycle_update() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    receipt_id = uuid4()
+    binding_id = uuid4()
+    claimed = _receipt(
+        receipt_id=receipt_id,
+        now=clock.now(),
+        state=ActionReceiptState.CLAIMED,
+        fingerprint="a" * 64,
+    )
+    store.save_receipt(claimed)
+    clock.advance(timedelta(seconds=1))
+    applied = claimed.model_copy(
+        update={
+            "state": ActionReceiptState.APPLIED,
+            "nonce_hash": "c" * 64,
+            "binding_id": binding_id,
+            "effect_kind": ActionEffectKind.AUTHORIZATION_INTENT,
+            "updated_at": clock.now(),
+            "transitions": (
+                *claimed.transitions,
+                ReceiptTransition(
+                    sequence=2,
+                    from_state=ActionReceiptState.CLAIMED,
+                    to_state=ActionReceiptState.APPLIED,
+                    at=clock.now(),
+                ),
+            ),
+        }
+    )
+    store.save_receipt(applied)
+    stored = store.get_update_receipt(bot_id=BOT, update_id=7)
+    assert stored is not None
+    assert stored.receipt_id == receipt_id
+    assert stored.state is ActionReceiptState.APPLIED
+    assert stored.bot_id == BOT
+    assert stored.replay_fingerprint == "a" * 64
+    assert stored.nonce_hash == "c" * 64
+    assert stored.binding_id == binding_id
+    assert stored.telegram_user_id == TG_USER
+    assert stored.chat_id == CHAT
+    assert stored.organization_id == ORG
+    assert stored.user_id == USER
+    assert stored.account_id == ACCOUNT
+    assert stored.action is TelegramRemoteAction.APPROVE
+    assert stored.payload_hash == "d" * 64
+
+
+@requires_postgres
+def test_postgres_receipt_same_pk_conflicting_replay_fails_closed() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    receipt_id = uuid4()
+    original = _receipt(
+        receipt_id=receipt_id,
+        now=clock.now(),
+        state=ActionReceiptState.CLAIMED,
+        fingerprint="a" * 64,
+    )
+    store.save_receipt(original)
+    conflict = original.model_copy(
+        update={
+            "replay_fingerprint": "b" * 64,
+            "chat_id": "tg-chat-conflict",
+            "updated_at": clock.now(),
+        }
+    )
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_receipt(conflict)
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
+    stored = store.get_update_receipt(bot_id=BOT, update_id=7)
+    assert stored is not None
+    assert stored.receipt_id == receipt_id
+    assert stored.replay_fingerprint == "a" * 64
+    assert stored.chat_id == CHAT
+    assert stored.state is ActionReceiptState.CLAIMED
+
+
+@requires_postgres
+def test_postgres_outbox_same_pk_exact_replay_allows_delivery_lifecycle() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    outbox_id = uuid4()
+    pending = _outbox(outbox_id=outbox_id, now=clock.now(), text="same-binding")
+    store.save_outbox(pending)
+    clock.advance(timedelta(seconds=1))
+    sent = pending.model_copy(
+        update={
+            "state": OutboxState.SENT,
+            "attempt": 1,
+            "transport_message_id": "tg-msg-1",
+            "lease_owner": None,
+            "lease_until": None,
+            "updated_at": clock.now(),
+        }
+    )
+    store.save_outbox(sent)
+    stored = store.get_outbox(outbox_id)
+    assert stored is not None
+    assert stored.state is OutboxState.SENT
+    assert stored.attempt == 1
+    assert stored.transport_message_id == "tg-msg-1"
+    assert stored.text == "same-binding"
+    assert stored.organization_id == ORG
+    assert stored.user_id == USER
+    assert stored.bot_id == BOT
+    assert stored.chat_id == CHAT
+    assert stored.idempotency_key == "outbox-pk-1"
+    assert stored.kind is OutboxKind.PRIVATE_MESSAGE
+
+
+@requires_postgres
+def test_postgres_outbox_same_pk_conflicting_binding_fails_closed() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    outbox_id = uuid4()
+    pending = _outbox(outbox_id=outbox_id, now=clock.now(), text="original-text")
+    store.save_outbox(pending)
+    conflict = pending.model_copy(update={"text": "mutated-text", "updated_at": clock.now()})
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_outbox(conflict)
+    assert exc.value.reason is TelegramSecurityReason.OUTBOX_CONFLICT
+    stored = store.get_outbox(outbox_id)
+    assert stored is not None
+    assert stored.text == "original-text"
+    assert stored.state is OutboxState.PENDING
+    assert stored.attempt == 0
 
 
 @requires_postgres

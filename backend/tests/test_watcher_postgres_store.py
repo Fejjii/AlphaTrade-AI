@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -38,6 +39,57 @@ from app.watcher.orchestrator import WatcherOrchestrator
 from app.watcher.ports import NamedCrashBarrier, WatcherStore
 from tests.support.postgres_persistence import persistence_session_factory, requires_postgres
 from tests.test_watcher_orchestration_foundation import SHARED_TENANT_SCOPE, _policy, _request
+
+
+def _worker_health(
+    *,
+    organization_id: UUID,
+    scan_scope: str,
+    owner_id: str,
+    lease_epoch: int,
+    fencing_token: int,
+    now: datetime,
+) -> WatcherHealthSnapshot:
+    return WatcherHealthSnapshot(
+        state=WatcherHealthState.HEALTHY,
+        organization_id=organization_id,
+        scan_scope=scan_scope,
+        enabled=True,
+        lease_owner=owner_id,
+        lease_epoch=lease_epoch,
+        fencing_token=fencing_token,
+        lease_expires_at=now,
+        last_beat_at=now,
+        seconds_since_beat=0.0,
+        last_attempt_status=None,
+        last_lineage_id=None,
+        reason_code="worker",
+        generated_at=now,
+    )
+
+
+def _observer_health(
+    *,
+    organization_id: UUID,
+    scan_scope: str,
+    now: datetime,
+) -> WatcherHealthSnapshot:
+    return WatcherHealthSnapshot(
+        state=WatcherHealthState.STALE,
+        organization_id=organization_id,
+        scan_scope=scan_scope,
+        enabled=True,
+        lease_owner=None,
+        lease_epoch=0,
+        fencing_token=0,
+        lease_expires_at=None,
+        last_beat_at=None,
+        seconds_since_beat=None,
+        last_attempt_status=None,
+        last_lineage_id=None,
+        reason_code="observer",
+        generated_at=now,
+    )
 
 
 def _orch(store: WatcherStore, clock: FakeClock, **kwargs: object) -> WatcherOrchestrator:
@@ -293,6 +345,58 @@ def test_postgres_stale_lease_holder_cannot_update_heartbeat() -> None:
         now=clock.now(),
         detail="owner-b",
     )
+    with pytest.raises(StaleFenceError):
+        store.record_heartbeat(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-a",
+            lease_epoch=1,
+            fencing_token=1,
+            now=clock.now(),
+            detail="stale-a",
+        )
+    beat = store.get_heartbeat(org, scope)
+    assert beat is not None
+    assert beat.owner_id == "worker-b"
+    assert beat.detail == "owner-b"
+    assert beat.fencing_token == 2
+
+
+@requires_postgres
+def test_postgres_stale_first_heartbeat_without_prior_row_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "heartbeat-stale-first"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    clock.advance(31)
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-b", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.record_heartbeat(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-a",
+            lease_epoch=1,
+            fencing_token=1,
+            now=clock.now(),
+            detail="stale-first",
+        )
+    assert store.get_heartbeat(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_heartbeat_wrong_owner_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "heartbeat-wrong-owner"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
     store.record_heartbeat(
         organization_id=org,
         scan_scope=scope,
@@ -300,13 +404,86 @@ def test_postgres_stale_lease_holder_cannot_update_heartbeat() -> None:
         lease_epoch=1,
         fencing_token=1,
         now=clock.now(),
-        detail="stale-a",
+        detail="owner-a",
     )
+    with pytest.raises(StaleFenceError):
+        store.record_heartbeat(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-b",
+            lease_epoch=1,
+            fencing_token=1,
+            now=clock.now(),
+            detail="intruder",
+        )
     beat = store.get_heartbeat(org, scope)
     assert beat is not None
-    assert beat.owner_id == "worker-b"
-    assert beat.detail == "owner-b"
-    assert beat.fencing_token == 2
+    assert beat.owner_id == "worker-a"
+    assert beat.detail == "owner-a"
+
+
+@requires_postgres
+def test_postgres_heartbeat_wrong_fence_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "heartbeat-wrong-fence"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.record_heartbeat(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-a",
+            lease_epoch=1,
+            fencing_token=99,
+            now=clock.now(),
+            detail="wrong-fence",
+        )
+    assert store.get_heartbeat(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_heartbeat_expired_lease_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "heartbeat-expired"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    clock.advance(31)
+    with pytest.raises(StaleFenceError):
+        store.record_heartbeat(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-a",
+            lease_epoch=1,
+            fencing_token=1,
+            now=clock.now(),
+            detail="expired",
+        )
+    assert store.get_heartbeat(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_heartbeat_missing_lease_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "heartbeat-missing-lease"
+    with pytest.raises(StaleFenceError):
+        store.record_heartbeat(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-a",
+            lease_epoch=1,
+            fencing_token=1,
+            now=clock.now(),
+            detail="no-lease",
+        )
+    assert store.get_heartbeat(org, scope) is None
 
 
 @requires_postgres
@@ -340,6 +517,142 @@ def test_postgres_stale_lease_holder_cannot_publish_health() -> None:
     )
     with pytest.raises(StaleFenceError):
         store.remember_health(stale)
+    assert store.latest_health(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_worker_health_missing_lease_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "health-missing-lease"
+    with pytest.raises(StaleFenceError):
+        store.remember_health(
+            _worker_health(
+                organization_id=org,
+                scan_scope=scope,
+                owner_id="worker-a",
+                lease_epoch=1,
+                fencing_token=1,
+                now=clock.now(),
+            )
+        )
+    assert store.latest_health(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_worker_health_expired_lease_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "health-expired"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    clock.advance(31)
+    with pytest.raises(StaleFenceError):
+        store.remember_health(
+            _worker_health(
+                organization_id=org,
+                scan_scope=scope,
+                owner_id="worker-a",
+                lease_epoch=1,
+                fencing_token=1,
+                now=clock.now(),
+            )
+        )
+    assert store.latest_health(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_worker_health_wrong_owner_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "health-wrong-owner"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.remember_health(
+            _worker_health(
+                organization_id=org,
+                scan_scope=scope,
+                owner_id="worker-b",
+                lease_epoch=1,
+                fencing_token=1,
+                now=clock.now(),
+            )
+        )
+    assert store.latest_health(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_worker_health_stale_fence_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "health-stale-fence"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.remember_health(
+            _worker_health(
+                organization_id=org,
+                scan_scope=scope,
+                owner_id="worker-a",
+                lease_epoch=1,
+                fencing_token=99,
+                now=clock.now(),
+            )
+        )
+    assert store.latest_health(org, scope) is None
+
+
+@requires_postgres
+def test_postgres_observer_health_without_lease_is_allowed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "health-observer"
+    snapshot = _observer_health(organization_id=org, scan_scope=scope, now=clock.now())
+    store.remember_health(snapshot)
+    stored = store.latest_health(org, scope)
+    assert stored is not None
+    assert stored.lease_owner is None
+    assert stored.lease_epoch == 0
+    assert stored.fencing_token == 0
+    assert stored.reason_code == "observer"
+
+
+@requires_postgres
+def test_postgres_observer_health_cannot_overwrite_active_lease() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "health-observer-vs-active"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    store.remember_health(
+        _worker_health(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-a",
+            lease_epoch=1,
+            fencing_token=1,
+            now=clock.now(),
+        )
+    )
+    with pytest.raises(StaleFenceError):
+        store.remember_health(
+            _observer_health(organization_id=org, scan_scope=scope, now=clock.now())
+        )
+    stored = store.latest_health(org, scope)
+    assert stored is not None
+    assert stored.lease_owner == "worker-a"
+    assert stored.fencing_token == 1
 
 
 @requires_postgres

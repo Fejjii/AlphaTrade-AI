@@ -420,14 +420,15 @@ class PostgresWatcherStore:
             lease = _lock_lease(session, organization_id, scan_scope)
             if lease is not None:
                 self._reject_mismatch(lease.organization_id, organization_id, record="lease")
-            if lease is None or not _fence_matches(lease, owner_id, fencing_token, now):
-                existing = _load_heartbeat(session, organization_id, scan_scope)
-                if existing is not None:
-                    self._reject_mismatch(
-                        existing.organization_id, organization_id, record="heartbeat"
-                    )
-                    return _heartbeat_from_row(existing)
-                return beat
+            _require_current_lease_authority(
+                lease,
+                owner_id=owner_id,
+                lease_epoch=lease_epoch,
+                fencing_token=fencing_token,
+                now=now,
+                scan_scope=scan_scope,
+                message="Stale fence holder cannot record a watcher heartbeat.",
+            )
             current = _load_heartbeat(session, organization_id, scan_scope)
             if current is None:
                 session.add(_heartbeat_to_row(beat))
@@ -501,17 +502,20 @@ class PostgresWatcherStore:
                 self._reject_mismatch(
                     lease.organization_id, snapshot.organization_id, record="lease"
                 )
-            if (
-                lease is not None
-                and _lease_is_active(lease, snapshot.generated_at)
-                and (
-                    snapshot.fencing_token != lease.fencing_token
-                    or snapshot.lease_owner != lease.owner_id
+            if _snapshot_claims_worker_authority(snapshot):
+                _require_current_lease_authority(
+                    lease,
+                    owner_id=snapshot.lease_owner,
+                    lease_epoch=snapshot.lease_epoch,
+                    fencing_token=snapshot.fencing_token,
+                    now=snapshot.generated_at,
+                    scan_scope=snapshot.scan_scope,
+                    message="Stale fence holder cannot publish watcher health.",
                 )
-            ):
+            elif _lease_is_active(lease, snapshot.generated_at):
                 raise StaleFenceError(
-                    "Stale fence holder cannot publish watcher health.",
-                    details={"scan_scope": snapshot.scan_scope},
+                    "Observer health cannot overwrite an active worker lease.",
+                    details={"scan_scope": snapshot.scan_scope, "cause": "observer_vs_active"},
                 )
             current = _load_health(session, snapshot.organization_id, snapshot.scan_scope)
             if current is None:
@@ -686,13 +690,72 @@ def _lease_is_active(row: WatcherWorkerLeaseRow | None, now: datetime) -> bool:
 def _fence_matches(
     row: WatcherWorkerLeaseRow, owner_id: str, fencing_token: int, now: datetime
 ) -> bool:
+    return _lease_authority_matches(
+        row,
+        owner_id=owner_id,
+        lease_epoch=fencing_token,
+        fencing_token=fencing_token,
+        now=now,
+    )
+
+
+def _lease_authority_matches(
+    row: WatcherWorkerLeaseRow,
+    *,
+    owner_id: str,
+    lease_epoch: int,
+    fencing_token: int,
+    now: datetime,
+) -> bool:
     if row.owner_id != owner_id:
         return False
-    if row.fencing_token != fencing_token or row.lease_epoch != fencing_token:
+    if row.lease_epoch != lease_epoch:
+        return False
+    if row.fencing_token != fencing_token:
         return False
     if row.expires_at is None:
         return False
     return row.expires_at > now
+
+
+def _snapshot_claims_worker_authority(snapshot: WatcherHealthSnapshot) -> bool:
+    return (
+        snapshot.lease_owner is not None or snapshot.lease_epoch != 0 or snapshot.fencing_token != 0
+    )
+
+
+def _require_current_lease_authority(
+    lease: WatcherWorkerLeaseRow | None,
+    *,
+    owner_id: str | None,
+    lease_epoch: int,
+    fencing_token: int,
+    now: datetime,
+    scan_scope: str,
+    message: str,
+) -> None:
+    if lease is None:
+        raise StaleFenceError(
+            message,
+            details={"scan_scope": scan_scope, "cause": "missing_lease"},
+        )
+    if owner_id is None:
+        raise StaleFenceError(
+            message,
+            details={"scan_scope": scan_scope, "cause": "missing_owner"},
+        )
+    if not _lease_authority_matches(
+        lease,
+        owner_id=owner_id,
+        lease_epoch=lease_epoch,
+        fencing_token=fencing_token,
+        now=now,
+    ):
+        cause = "expired_lease" if not _lease_is_active(lease, now) else "mismatched_authority"
+        raise StaleFenceError(
+            message,
+            details={"scan_scope": scan_scope, "cause": cause},
+        )
 
 
 def _reject_stale_success(
