@@ -891,3 +891,24 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-024
 
+### AT-045 — Phase 6 candidate lifecycle service (in-memory authority)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-044 Phase 6 contract
+  freeze (PR #84 HEAD `5db47b728ba255b993717f59922076733630d510`) · Risk: Medium
+  (identity authority)
+- Safety classification: Paper-safe / in-memory application service; no
+  evaluator, PostgreSQL, Alembic, watcher, Telegram, execution, or live trading
+- Goal: Implement canonical Candidate authority: idempotent creation from
+  CONFIRMED_SETUP + exact CanonicalEvidenceWindowV1 + tenant-owned
+  CompiledSetupDefinition; uniqueness via CandidateUniquenessTuple;
+  append-only transitions; terminal non-resurrection; tenant isolation.
+  PaperValidationCandidate remains a downstream consumer only.
+- Branch: `cursor/phase6-candidate-lifecycle-service-1c4d`
+- Deliverables: `app.signal_fusion.lifecycle`, `ports`, `memory`; tests in
+  `backend/tests/test_phase6_candidate_lifecycle.py`. No fusion evaluator,
+  no Alembic, no PostgreSQL adapter.
+- Validation: candidate lifecycle tests + Phase 6 contract tests + full
+  backend pytest + ruff + mypy `--strict` on `src/app/signal_fusion` +
+  GitHub CI. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-025
+

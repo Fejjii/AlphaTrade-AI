@@ -807,4 +807,38 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   revisions are distinct immutable appends. No evaluator, persistence, or
   live trading.
 
+## AT-ADR-025 — Phase 6 candidate lifecycle service (in-memory authority)
+- **Date:** 2026-09-17
+- **Status:** Accepted (application service; PostgreSQL/Alembic not in this slice)
+- **Context:** PR #84 froze Candidate / CandidateUniquenessTuple / transitions.
+  Parallel persistence work must not invent a second candidate authority.
+  PaperValidationCandidate remains a downstream queue (§26).
+- **Decision:**
+  1. Canonical candidate authority is `CandidateLifecycleService`.
+  2. Creation requires SetupAssessment `CONFIRMED_SETUP` plus the exact
+     `CanonicalEvidenceWindowV1` plus the tenant-owned
+     `CompiledSetupDefinition` identity. NO_SETUP / WATCH / PARTIAL_MATCH /
+     EXPIRED / INVALIDATED cannot mint ACTIVE candidates.
+  3. Uniqueness is exactly `CandidateUniquenessTuple`. Duplicate semantic
+     confirmations converge, including concurrent inserts. Distinct org,
+     strategy version, compiled setup, fusion policy version, direction,
+     venue, market, instrument, timeframe, or evidence-window hash do not
+     converge.
+  4. Initial state is ACTIVE. Descendants are PLAN_CREATED and terminal
+     REJECTED / SKIPPED / EXPIRED / INVALIDATED. Terminal states cannot
+     resurrect. Identical replays are idempotent; conflicting terminals
+     fail closed. History is append-only.
+  5. Persistence is a typed `CandidateRepository` port with deterministic
+     `InMemoryCandidateRepository` only. No SQLAlchemy models, no Alembic,
+     no fusion evaluator, no watcher/Telegram/execution wiring.
+  6. Legacy `PaperValidationCandidate` cannot create canonical identity.
+- **Alternatives considered:** Persist PostgreSQL in this slice (rejected:
+  separate durable-persistence agent); derive candidates from PVC or
+  TradingView signals (rejected: competing authority).
+- **Safety impact:** Paper only. No network, execution, feature flags, or
+  live trading.
+- **Consequences:** Later Phase 6 agents bind PostgreSQL to the same port
+  without changing uniqueness or lifecycle rules.
+
+
 
