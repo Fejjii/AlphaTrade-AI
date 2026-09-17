@@ -808,3 +808,108 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   live trading.
 
 
+## AT-ADR-025 — Phase 6 deterministic first-slice fusion evaluator
+- **Date:** 2026-09-17
+- **Status:** Accepted (setup-truth evaluator only)
+- **Context:** PR 84 froze identities. Setup truth still had no deterministic
+  evaluator. Parallel agents must not invent a second identity or let risk
+  rewrite pattern presence.
+- **Decision:**
+  1. `evaluate_setup(policy, command, evidence, evaluated_at)` is the sole
+     first-slice setup-truth function. It reuses PR 84 contracts and Phase 5
+     payloads; it does not create `Candidate` or `ActionEligibility`.
+  2. Canonical pattern name remains **Bearish Liquidity Sweep with CVD
+     Divergence and Aggressive Sell Imbalance at 4h Resistance**. The first
+     slice makes no exhaustion claim.
+  3. States are only `NO_SETUP`, `WATCH`, `PARTIAL_MATCH`, `CONFIRMED_SETUP`,
+     `INVALIDATED`, `EXPIRED`. Risk, account, leverage, balance, portfolio,
+     and execution availability cannot alter `SetupAssessment`.
+  4. Confirmation requires every mandatory Boolean predicate (equal weight,
+     threshold `1.0`): identity, finality, freshness ≤ 10s, no gap, warmup,
+     Wilder ATR14, confirmed L2/R2 swing `S`, nearest versioned 4h resistance
+     `R` with `abs(S-R) <= 0.50 ATR4h`, sweep/close, volume ≥ 1.50, bearish
+     quote-volume CVD divergence, aggressive sell imbalance ≤ -0.10.
+  5. Invalidation is `T.high + max(0.10 ATR15m, 2 * tick)`; expiry is two
+     additional final 15m bars. Fail closed on wrong market/instrument/venue,
+     forming/stale/missing evidence, unresolved gap, wrong perpetual identity,
+     incomplete warmup, missing/invalid manual resistance, incompatible policy.
+  6. Evidence order and adapter kind (watcher vs detector) must not change
+     the assessment. Equivalent semantic evidence hashes identically via
+     `CanonicalEvidenceWindowV1`.
+- **Alternatives considered:** Interpret a generic AST VM now (rejected: first
+  slice is one compiled pattern); persist candidates in this slice (rejected:
+  evaluator owns truth only); let account/risk fields veto setup (rejected:
+  eligibility is a later contract).
+- **Safety impact:** Paper only. No exchange, execution, Telegram, watcher, or
+  deployment calls.
+- **Consequences:** Candidate persistence and action eligibility remain later
+  Phase 6 slices against the same frozen identities.
+
+## AT-ADR-026 — Phase 6 candidate lifecycle service (in-memory authority)
+- **Date:** 2026-09-17
+- **Status:** Accepted (application service; PostgreSQL/Alembic not in this slice)
+- **Context:** PR #84 froze Candidate / CandidateUniquenessTuple / transitions.
+  Parallel persistence work must not invent a second candidate authority.
+  PaperValidationCandidate remains a downstream queue (§26).
+- **Decision:**
+  1. Canonical candidate authority is `CandidateLifecycleService`.
+  2. Creation requires SetupAssessment `CONFIRMED_SETUP` plus the exact
+     `CanonicalEvidenceWindowV1` plus the tenant-owned
+     `CompiledSetupDefinition` identity. NO_SETUP / WATCH / PARTIAL_MATCH /
+     EXPIRED / INVALIDATED cannot mint ACTIVE candidates.
+  3. Uniqueness is exactly `CandidateUniquenessTuple`. Duplicate semantic
+     confirmations converge, including concurrent inserts. Distinct org,
+     strategy version, compiled setup, fusion policy version, direction,
+     venue, market, instrument, timeframe, or evidence-window hash do not
+     converge.
+  4. Initial state is ACTIVE. Descendants are PLAN_CREATED and terminal
+     REJECTED / SKIPPED / EXPIRED / INVALIDATED. Terminal states cannot
+     resurrect. History is append-only.
+  5. Persistence is a typed `CandidateRepository` port with deterministic
+     `InMemoryCandidateRepository` only. No SQLAlchemy models, no Alembic,
+     no fusion evaluator, no watcher/Telegram/execution wiring.
+  6. Legacy `PaperValidationCandidate` cannot create canonical identity.
+  7. **Idempotency (integration hardening):** organization-scoped creation
+     `idempotency_key` binds to the canonical uniqueness fingerprint. Exact
+     retries converge; same key with a different payload fails closed.
+     Transition idempotency is candidate-scoped: exact key+payload replay
+     returns the original record; key reuse with a changed payload fails
+     closed. A different key requesting an already-applied state converges
+     only when the semantic fingerprint matches the original transition.
+- **Alternatives considered:** Persist PostgreSQL in this slice (rejected:
+  separate durable-persistence agent); derive candidates from PVC or
+  TradingView signals (rejected: competing authority).
+- **Safety impact:** Paper only. No network, execution, feature flags, or
+  live trading.
+- **Consequences:** Later Phase 6 agents bind PostgreSQL to the same port
+  without changing uniqueness or lifecycle rules.
+
+## AT-ADR-027 — Phase 6 evaluator + candidate runtime foundation integration
+- **Date:** 2026-09-17
+- **Status:** Accepted (in-memory runtime foundation only)
+- **Context:** Main already contains Phase 6 contracts, compatibility audit,
+  and the golden first-slice fixture corpus. PR #87 owns setup truth. PR #86
+  owns candidate authority. They must share one package without rewriting
+  frozen contracts or restoring removed fixture-specific semantic hashing.
+- **Decision:**
+  1. Integrate evaluator and candidate lifecycle additively onto current
+     main. Do not change CanonicalEvidenceWindowV1, SetupAssessment,
+     Candidate, or the golden fixture corpus.
+  2. Canonical strategy name remains **Bearish Liquidity Sweep with CVD
+     Divergence and Aggressive Sell Imbalance at 4h Resistance**.
+  3. Evaluator never creates candidates. Combined flow is composition:
+     evidence → `evaluate_setup` → CONFIRMED_SETUP → exactly one ACTIVE
+     candidate. Duplicate semantic evaluation converges.
+  4. Golden fixtures remain the authoritative corpus in
+     `backend/tests/fixtures/phase6_first_slice/`. Evaluator/candidate
+     tests adapt to current support APIs; they do not overwrite fixtures.
+  5. No PostgreSQL, Alembic, watcher, Telegram, eligibility, TradePlan,
+     execution, frontend, or live trading.
+- **Alternatives considered:** Merge PR 86/87 fixture support over the
+  corpus (rejected: corpus on main is authoritative); couple evaluator to
+  candidate creation (rejected: separate authorities).
+- **Safety impact:** Paper only. No external calls, execution, or deployment.
+- **Consequences:** Independent integration review is the next gate. Draft
+  PR only; do not merge in the implementing agent instructions.
+
+
