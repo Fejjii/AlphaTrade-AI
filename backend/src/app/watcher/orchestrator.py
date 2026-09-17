@@ -8,6 +8,7 @@ only — Agent 1 owns those semantics.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from uuid import UUID, uuid4
 
@@ -50,6 +51,8 @@ from app.watcher.ports import (
 )
 
 _TERMINAL_SUCCESS = ScanAttemptStatus.SUCCEEDED
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+_CONFIRMED_SETUP = "confirmed_setup"
 
 
 class WatcherOrchestrator:
@@ -895,16 +898,6 @@ class WatcherOrchestrator:
 
 
 def _honest_outcome(outcome: EvaluationOutcome) -> EvaluationOutcome:
-    if outcome.candidate_ids:
-        return outcome.model_copy(
-            update={
-                "status": EvaluationStatus.FAILED,
-                "reason_code": "candidate_creation_forbidden",
-                "error": "watcher foundation forbids candidate creation",
-                "candidate_ids": (),
-                "failed_units": max(outcome.failed_units, 1),
-            }
-        )
     unit_failures = sum(
         1 for unit in outcome.unit_attempts if unit.status is UnitAttemptStatus.FAILED
     )
@@ -916,9 +909,39 @@ def _honest_outcome(outcome: EvaluationOutcome) -> EvaluationOutcome:
                 "reason_code": "failure_not_propagated",
                 "failed_units": failed_units,
                 "error": outcome.error or "unit failure cannot be a successful scan",
+                "candidate_ids": (),
             }
         )
+    if outcome.candidate_ids:
+        if not _canonical_candidate_publication_allowed(outcome, failed_units=failed_units):
+            return outcome.model_copy(
+                update={
+                    "status": EvaluationStatus.FAILED,
+                    "reason_code": "candidate_creation_forbidden",
+                    "error": "watcher forbids non-canonical candidate publication",
+                    "candidate_ids": (),
+                    "failed_units": max(failed_units, 1),
+                }
+            )
+        return outcome.model_copy(update={"failed_units": failed_units})
     return outcome.model_copy(update={"failed_units": failed_units, "candidate_ids": ()})
+
+
+def _canonical_candidate_publication_allowed(
+    outcome: EvaluationOutcome, *, failed_units: int
+) -> bool:
+    """Allow exactly one candidate when persist produced canonical CONFIRMED_SETUP."""
+
+    if outcome.status is not EvaluationStatus.SUCCEEDED:
+        return False
+    if failed_units > 0 or outcome.error:
+        return False
+    if len(outcome.candidate_ids) != 1:
+        return False
+    if outcome.reason_code != _CONFIRMED_SETUP:
+        return False
+    token = outcome.evidence_validity_token
+    return token is not None and _SHA256_HEX.fullmatch(token) is not None
 
 
 def _attempt_status_for(status: EvaluationStatus) -> ScanAttemptStatus:
