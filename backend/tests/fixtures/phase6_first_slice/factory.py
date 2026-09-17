@@ -1,8 +1,10 @@
 """Deterministic Phase 6 first-slice fixture factories.
 
-This module is test infrastructure only. It assembles existing Phase 5 market
-contracts and Phase 3 strategy/compiler contracts without implementing a
-production detector, fusion service, or candidate model.
+This module is test infrastructure only. It assembles Phase 5 market contracts,
+Phase 3 strategy/compiler contracts, and the frozen Phase 6 ``app.signal_fusion``
+contracts without implementing a production evaluator, fusion service, or
+candidate persistence. Evidence identity is always the canonical
+``CanonicalEvidenceWindowV1``; no fixture-specific semantic hash exists.
 """
 
 from __future__ import annotations
@@ -12,8 +14,10 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid5
 
+from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
 from app.market_contracts.enums import (
     ContractStyle,
+    FreshnessState,
     MarketType,
     ProductFamily,
     SourceFamily,
@@ -22,8 +26,10 @@ from app.market_contracts.enums import (
 from app.market_contracts.first_slice import (
     CANONICAL_EVALUATED_AT,
     CANONICAL_TRIGGER_INTERVAL_START,
+    FIRST_SLICE_PATTERN_NAME,
     first_slice_identity,
 )
+from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
 from app.market_contracts.identity import (
     ADAPTER_VERSION,
     AGGRESSOR_CONVENTION,
@@ -35,12 +41,51 @@ from app.market_contracts.identity import (
     canonical_instrument_id,
 )
 from app.market_contracts.models import CanonicalModel
+from app.market_contracts.observation import (
+    PublicMarketObservation,
+    observation_from_ohlcv,
+    observation_from_trade,
+)
 from app.market_contracts.ohlcv import OhlcvBar, build_ohlcv_bar
 from app.market_contracts.trades import TradeEvent, build_trade_event
-from app.schemas.common import Timeframe
+from app.schemas.common import Timeframe, TradeDirection
 from app.schemas.strategy_lifecycle import ManualLevelRevisionRecord
-from app.services.canonical_serialization import canonical_json_bytes, canonical_sha256
+from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
+from app.services.canonical_serialization import canonical_json_bytes
 from app.services.manual_level_service import manual_level_revision_content_hash
+from app.services.setup_ast_compiler import compile_from_spec
+from app.signal_fusion.enums import (
+    AssertionSource,
+    AssessmentReasonCode,
+    EvidenceRole,
+    SetupAssessmentState,
+    SetupIdentityKind,
+    TenantAssertionRole,
+)
+from app.signal_fusion.evidence_window import (
+    CanonicalEvidenceWindowV1,
+    build_canonical_evidence_window_v1,
+)
+from app.signal_fusion.observation import (
+    TenantExternalAssertion,
+    build_tenant_external_assertion,
+)
+from app.signal_fusion.policy import (
+    DEFAULT_CORRECTION_SELECTION_POLICY,
+    DEFAULT_FUSION_POLICY_VERSION,
+    first_slice_role_timeframes,
+)
+from app.signal_fusion.types import (
+    ExecutableSetupRef,
+    HalfOpenInterval,
+    ManualLevelRevisionRef,
+    PresentationEvidenceRef,
+    SelectedPublicObservation,
+    SelectedTenantAssertion,
+    SemanticSourceIdentity,
+    TriggerIdentity,
+    selected_observation_from_public,
+)
 
 FIXTURE_NAMESPACE = UUID("f64e9110-fc12-49cc-90e2-8cae1b4d7610")
 BASE_CONNECTION_ID = UUID("622aa569-934f-4cb7-90b1-862167480001")
@@ -48,32 +93,40 @@ RECONNECT_CONNECTION_ID = UUID("622aa569-934f-4cb7-90b1-862167480002")
 ORGANIZATION_ID = UUID("622aa569-934f-4cb7-90b1-862167480003")
 USER_ID = UUID("622aa569-934f-4cb7-90b1-862167480004")
 LEVEL_ID = UUID("622aa569-934f-4cb7-90b1-862167480005")
+STRATEGY_VERSION_ID = UUID("622aa569-934f-4cb7-90b1-862167480006")
+COMPILED_SETUP_DEFINITION_ID = UUID("622aa569-934f-4cb7-90b1-862167480007")
+PRESENTATION_ASSERTION_ID = UUID("622aa569-934f-4cb7-90b1-862167480008")
+STRATEGY_NAME = FIRST_SLICE_PATTERN_NAME
+DIRECTION = TradeDirection.SHORT
 TICK_SIZE = Decimal("0.10")
 SWING_INDEX = 96
 SWING_PRICE = Decimal("100100")
 RESISTANCE_PRICE = Decimal("100250")
 FIRST_TRADE_SEQUENCE = 9_000_000
-
-
-class AssessmentState(StrEnum):
-    CONFIRMED = "CONFIRMED"
-    NO_SETUP = "NO_SETUP"
-    WATCH = "WATCH"
-    PARTIAL_MATCH = "PARTIAL_MATCH"
-    INVALIDATED = "INVALIDATED"
-    EXPIRED = "EXPIRED"
+CVD_WINDOW_BARS = 33
+# Canonical first-slice roles bound by ``first_slice_role_timeframes``.
+MANDATORY_EVIDENCE_ROLES: tuple[EvidenceRole, ...] = (
+    EvidenceRole.TRIGGER_OHLCV,
+    EvidenceRole.CONTEXT_OHLCV,
+    EvidenceRole.CVD_WINDOW,
+)
 
 
 class EvidenceIdentityBehavior(StrEnum):
+    """Fixture relationship to the confirmed baseline CanonicalEvidenceWindowV1."""
+
     BASELINE = "BASELINE"
     NO_CANDIDATE = "NO_CANDIDATE"
-    PRESERVE_SEMANTIC_IDENTITY = "PRESERVE_SEMANTIC_IDENTITY"
-    NEW_SEMANTIC_WINDOW = "NEW_SEMANTIC_WINDOW"
+    PRESERVE_CANONICAL_IDENTITY = "PRESERVE_CANONICAL_IDENTITY"
+    DISTINCT_EVIDENCE_WINDOW = "DISTINCT_EVIDENCE_WINDOW"
 
 
 class ExpectedOutcome(CanonicalModel):
-    assessment_state: AssessmentState
-    reason_codes: tuple[str, ...]
+    """Expected canonical outcome. ``fixture_detail_code`` is not an architecture code."""
+
+    assessment_state: SetupAssessmentState
+    reason_codes: tuple[AssessmentReasonCode, ...]
+    fixture_detail_code: str
     freshness_posture: str
     finality_posture: str
     candidate_creation: bool
@@ -91,6 +144,8 @@ class SwingHighEvidence(CanonicalModel):
 class Phase6Fixture(CanonicalModel):
     fixture_id: str
     purpose: str
+    strategy_name: str
+    direction: TradeDirection
     evaluated_at: datetime
     lifecycle_evaluated_at: datetime | None
     identity_15m: EvidenceMarketIdentity
@@ -103,12 +158,28 @@ class Phase6Fixture(CanonicalModel):
     swing: SwingHighEvidence | None
     tick_size: Decimal
     post_trigger_bars: tuple[OhlcvBar, ...]
-    presentation_evidence: dict[str, str]
+    presentation_evidence: tuple[PresentationEvidenceRef, ...]
+    presentation_assertions: tuple[TenantExternalAssertion, ...]
     expected: ExpectedOutcome
 
 
 def _fixture_uuid(name: str) -> UUID:
     return uuid5(FIXTURE_NAMESPACE, name)
+
+
+def _blofin_instrument() -> InstrumentIdentity:
+    base = binance_usdm_btcusdt()
+    return base.model_copy(
+        update={
+            "venue": VenueId.BLOFIN,
+            "instrument_id": canonical_instrument_id(
+                venue=VenueId.BLOFIN,
+                product_family=base.product_family,
+                market_type=base.market_type,
+                symbol=base.provider_symbol,
+            ),
+        }
+    )
 
 
 def _eth_instrument() -> InstrumentIdentity:
@@ -550,8 +621,9 @@ def _post_trigger_bars(
 
 
 def _expected(
-    state: AssessmentState,
-    reason: str,
+    state: SetupAssessmentState,
+    reason_codes: tuple[AssessmentReasonCode, ...],
+    detail: str,
     *,
     candidate: bool,
     identity_behavior: EvidenceIdentityBehavior,
@@ -560,13 +632,41 @@ def _expected(
 ) -> ExpectedOutcome:
     return ExpectedOutcome(
         assessment_state=state,
-        reason_codes=(reason,),
+        reason_codes=reason_codes,
+        fixture_detail_code=detail,
         freshness_posture=freshness,
         finality_posture=finality,
         candidate_creation=candidate,
         evidence_identity_behavior=identity_behavior,
     )
 
+
+def _no_candidate(
+    state: SetupAssessmentState,
+    reason_codes: tuple[AssessmentReasonCode, ...],
+    detail: str,
+    *,
+    freshness: str = "fresh_at_10s_boundary",
+    finality: str = "100_final_15m_and_30_final_4h",
+) -> ExpectedOutcome:
+    return _expected(
+        state,
+        reason_codes,
+        detail,
+        candidate=False,
+        identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
+        freshness=freshness,
+        finality=finality,
+    )
+
+
+_CONFIRMED = (AssessmentReasonCode.ALL_MANDATORY_EVIDENCE_CONFIRMED,)
+_DISTINCT_CONFIRMED = (
+    AssessmentReasonCode.ALL_MANDATORY_EVIDENCE_CONFIRMED,
+    AssessmentReasonCode.DISTINCT_EVIDENCE_WINDOW,
+)
+_WRONG_MARKET = (AssessmentReasonCode.WRONG_VENUE_OR_MARKET,)
+_LIFECYCLE_FINALITY = "100_final_15m_plus_2_final_post_trigger_and_30_final_4h"
 
 _FIXTURE_CASES: tuple[
     tuple[
@@ -579,10 +679,11 @@ _FIXTURE_CASES: tuple[
 ] = (
     (
         "confirmed-setup",
-        "Exact confirmed bearish liquidity sweep exhaustion setup.",
+        f"Exact confirmed setup for {STRATEGY_NAME}.",
         "base",
         _expected(
-            AssessmentState.CONFIRMED,
+            SetupAssessmentState.CONFIRMED_SETUP,
+            _CONFIRMED,
             "all_first_slice_predicates_confirmed",
             candidate=True,
             identity_behavior=EvidenceIdentityBehavior.BASELINE,
@@ -592,33 +693,26 @@ _FIXTURE_CASES: tuple[
         "no-setup",
         "No strict confirmed L2/R2 swing high exists.",
         "no_swing",
-        _expected(
-            AssessmentState.NO_SETUP,
-            "confirmed_swing_missing",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
-        ),
+        _no_candidate(SetupAssessmentState.NO_SETUP, (), "confirmed_swing_missing"),
     ),
     (
         "watch",
         "Resistance context is valid while the sweep threshold is not yet reached.",
         "watch",
-        _expected(
-            AssessmentState.WATCH,
+        _no_candidate(
+            SetupAssessmentState.WATCH,
+            (AssessmentReasonCode.PRECONDITIONS_PASSED,),
             "awaiting_liquidity_sweep",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
     ),
     (
         "partial-match",
         "All numeric trigger evidence passes but the trigger candle is not bearish.",
         "partial_match",
-        _expected(
-            AssessmentState.PARTIAL_MATCH,
+        _no_candidate(
+            SetupAssessmentState.PARTIAL_MATCH,
+            (AssessmentReasonCode.SEQUENCE_STEP_PASSED,),
             "trigger_not_bearish",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
     ),
     (
@@ -626,22 +720,22 @@ _FIXTURE_CASES: tuple[
         "A confirmed candidate is invalidated by the first subsequent final bar.",
         "invalidated",
         _expected(
-            AssessmentState.INVALIDATED,
+            SetupAssessmentState.INVALIDATED,
+            (AssessmentReasonCode.PATTERN_INVALIDATED,),
             "price_invalidation_reached",
             candidate=True,
-            identity_behavior=EvidenceIdentityBehavior.PRESERVE_SEMANTIC_IDENTITY,
-            finality="100_final_15m_plus_2_final_post_trigger_and_30_final_4h",
+            identity_behavior=EvidenceIdentityBehavior.PRESERVE_CANONICAL_IDENTITY,
+            finality=_LIFECYCLE_FINALITY,
         ),
     ),
     (
         "stale-source",
         "Latest perpetual trade is one second outside the freshness bound.",
         "stale",
-        _expected(
-            AssessmentState.NO_SETUP,
+        _no_candidate(
+            SetupAssessmentState.NO_SETUP,
+            (AssessmentReasonCode.REQUIRED_SOURCE_STALE,),
             "latest_trade_stale",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
             freshness="stale_at_11s",
         ),
     ),
@@ -649,66 +743,54 @@ _FIXTURE_CASES: tuple[
         "sequence-gap",
         "The ordered perpetual trade stream omits one venue sequence.",
         "sequence_gap",
-        _expected(
-            AssessmentState.NO_SETUP,
+        _no_candidate(
+            SetupAssessmentState.NO_SETUP,
+            (AssessmentReasonCode.REQUIRED_SOURCE_GAPPED,),
             "trade_sequence_gap",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
     ),
     (
         "reconnect-discontinuity",
         "The CVD window crosses two source connection epochs.",
         "reconnect",
-        _expected(
-            AssessmentState.NO_SETUP,
+        _no_candidate(
+            SetupAssessmentState.NO_SETUP,
+            (AssessmentReasonCode.REQUIRED_SOURCE_GAPPED,),
             "cross_connection_cvd_forbidden",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
+    ),
+    (
+        "wrong-venue",
+        "Blofin BTCUSDT perpetual evidence is supplied for the Binance slice.",
+        "wrong_venue",
+        _no_candidate(SetupAssessmentState.NO_SETUP, _WRONG_MARKET, "wrong_venue"),
     ),
     (
         "wrong-instrument",
         "ETHUSDT perpetual evidence is supplied for the BTCUSDT slice.",
         "wrong_instrument",
-        _expected(
-            AssessmentState.NO_SETUP,
-            "wrong_instrument",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
-        ),
+        _no_candidate(SetupAssessmentState.NO_SETUP, _WRONG_MARKET, "wrong_instrument"),
     ),
     (
         "wrong-market",
         "The evidence envelope is labelled as a delivery market.",
         "wrong_market",
-        _expected(
-            AssessmentState.NO_SETUP,
-            "wrong_market",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
-        ),
+        _no_candidate(SetupAssessmentState.NO_SETUP, _WRONG_MARKET, "wrong_market"),
     ),
     (
         "spot-substitution",
         "BTCUSDT spot evidence is substituted for perpetual evidence.",
         "spot",
-        _expected(
-            AssessmentState.NO_SETUP,
-            "spot_not_perpetual",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
-        ),
+        _no_candidate(SetupAssessmentState.NO_SETUP, _WRONG_MARKET, "spot_not_perpetual"),
     ),
     (
         "fallback-source",
         "Evidence provenance declares a forbidden fallback source.",
         "fallback",
-        _expected(
-            AssessmentState.NO_SETUP,
+        _no_candidate(
+            SetupAssessmentState.NO_SETUP,
+            (AssessmentReasonCode.REQUIRED_SOURCE_FALLBACK,),
             "fallback_source_forbidden",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
             freshness="untrusted_fallback",
         ),
     ),
@@ -716,11 +798,10 @@ _FIXTURE_CASES: tuple[
         "incomplete-warmup",
         "Only 99 final 15m bars are available.",
         "incomplete_warmup",
-        _expected(
-            AssessmentState.NO_SETUP,
+        _no_candidate(
+            SetupAssessmentState.NO_SETUP,
+            (),
             "trigger_warmup_incomplete",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
             finality="99_final_15m_and_30_final_4h",
         ),
     ),
@@ -728,11 +809,10 @@ _FIXTURE_CASES: tuple[
         "forming-candle",
         "The trigger candle is still forming at its source finality clock.",
         "forming",
-        _expected(
-            AssessmentState.NO_SETUP,
+        _no_candidate(
+            SetupAssessmentState.NO_SETUP,
+            (),
             "forming_trigger_candle",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
             finality="99_final_plus_1_forming_15m_and_30_final_4h",
         ),
     ),
@@ -740,55 +820,42 @@ _FIXTURE_CASES: tuple[
         "missing-manual-resistance",
         "No active versioned 4h manual resistance is available.",
         "missing_resistance",
-        _expected(
-            AssessmentState.WATCH,
-            "manual_resistance_missing",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
-        ),
+        _no_candidate(SetupAssessmentState.WATCH, (), "manual_resistance_missing"),
     ),
     (
         "resistance-outside-tolerance",
         "Nearest active resistance is beyond 0.50 ATR4h from the swing.",
         "resistance_outside",
-        _expected(
-            AssessmentState.NO_SETUP,
-            "resistance_outside_atr_tolerance",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
-        ),
+        _no_candidate(SetupAssessmentState.NO_SETUP, (), "resistance_outside_atr_tolerance"),
     ),
     (
         "volume-threshold-failure",
         "Trigger volume is 1.40 times the prior 20-bar mean.",
         "volume_failure",
-        _expected(
-            AssessmentState.PARTIAL_MATCH,
+        _no_candidate(
+            SetupAssessmentState.PARTIAL_MATCH,
+            (AssessmentReasonCode.SEQUENCE_STEP_PASSED,),
             "trigger_volume_ratio_below_threshold",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
     ),
     (
         "cvd-divergence-failure",
         "CVD at trigger close is not below CVD at swing close.",
         "cvd_failure",
-        _expected(
-            AssessmentState.PARTIAL_MATCH,
+        _no_candidate(
+            SetupAssessmentState.PARTIAL_MATCH,
+            (AssessmentReasonCode.SEQUENCE_STEP_PASSED,),
             "bearish_cvd_divergence_missing",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
     ),
     (
         "sell-imbalance-failure",
         "Trigger signed quote-flow ratio is -0.05, above the -0.10 threshold.",
         "flow_failure",
-        _expected(
-            AssessmentState.PARTIAL_MATCH,
+        _no_candidate(
+            SetupAssessmentState.PARTIAL_MATCH,
+            (AssessmentReasonCode.SEQUENCE_STEP_PASSED,),
             "aggressive_sell_imbalance_missing",
-            candidate=False,
-            identity_behavior=EvidenceIdentityBehavior.NO_CANDIDATE,
         ),
     ),
     (
@@ -796,45 +863,49 @@ _FIXTURE_CASES: tuple[
         "A confirmed candidate expires after two additional final 15m bars.",
         "expiry",
         _expected(
-            AssessmentState.EXPIRED,
+            SetupAssessmentState.EXPIRED,
+            (AssessmentReasonCode.VALIDITY_INTERVAL_ELAPSED,),
             "two_final_bars_elapsed",
             candidate=True,
-            identity_behavior=EvidenceIdentityBehavior.PRESERVE_SEMANTIC_IDENTITY,
-            finality="100_final_15m_plus_2_final_post_trigger_and_30_final_4h",
+            identity_behavior=EvidenceIdentityBehavior.PRESERVE_CANONICAL_IDENTITY,
+            finality=_LIFECYCLE_FINALITY,
         ),
     ),
     (
         "corrected-candle-revision",
-        "A final trigger candle correction has revision 2 and changed semantic evidence.",
+        "A final trigger candle correction has revision 2 and a distinct evidence window.",
         "corrected_revision",
         _expected(
-            AssessmentState.CONFIRMED,
+            SetupAssessmentState.CONFIRMED_SETUP,
+            _DISTINCT_CONFIRMED,
             "corrected_final_candle_re_evaluated",
             candidate=True,
-            identity_behavior=EvidenceIdentityBehavior.NEW_SEMANTIC_WINDOW,
+            identity_behavior=EvidenceIdentityBehavior.DISTINCT_EVIDENCE_WINDOW,
             finality="100_final_15m_with_trigger_revision_2_and_30_final_4h",
         ),
     ),
     (
         "presentation-enrichment",
-        "Optional presentation evidence is enriched without changing semantic identity.",
+        "Presentation evidence and a PRESENTATION tenant assertion leave identity unchanged.",
         "presentation",
         _expected(
-            AssessmentState.CONFIRMED,
+            SetupAssessmentState.CONFIRMED_SETUP,
+            _CONFIRMED,
             "optional_presentation_evidence_added",
             candidate=True,
-            identity_behavior=EvidenceIdentityBehavior.PRESERVE_SEMANTIC_IDENTITY,
+            identity_behavior=EvidenceIdentityBehavior.PRESERVE_CANONICAL_IDENTITY,
         ),
     ),
     (
         "mandatory-evidence-change",
-        "A new active manual-level revision creates a new semantic window.",
+        "A new active manual-level revision creates a distinct evidence window.",
         "mandatory_evidence_change",
         _expected(
-            AssessmentState.CONFIRMED,
+            SetupAssessmentState.CONFIRMED_SETUP,
+            _DISTINCT_CONFIRMED,
             "mandatory_evidence_revision_changed",
             candidate=True,
-            identity_behavior=EvidenceIdentityBehavior.NEW_SEMANTIC_WINDOW,
+            identity_behavior=EvidenceIdentityBehavior.DISTINCT_EVIDENCE_WINDOW,
         ),
     ),
     (
@@ -842,13 +913,60 @@ _FIXTURE_CASES: tuple[
         "The same setup in the adjacent 15m trigger window has a distinct identity.",
         "adjacent",
         _expected(
-            AssessmentState.CONFIRMED,
+            SetupAssessmentState.CONFIRMED_SETUP,
+            _DISTINCT_CONFIRMED,
             "adjacent_trigger_window",
             candidate=True,
-            identity_behavior=EvidenceIdentityBehavior.NEW_SEMANTIC_WINDOW,
+            identity_behavior=EvidenceIdentityBehavior.DISTINCT_EVIDENCE_WINDOW,
         ),
     ),
 )
+
+
+def _instrument_for(mutation: str) -> InstrumentIdentity:
+    if mutation == "wrong_venue":
+        return _blofin_instrument()
+    if mutation == "wrong_instrument":
+        return _eth_instrument()
+    if mutation == "wrong_market":
+        return _delivery_instrument()
+    if mutation == "spot":
+        return _spot_instrument()
+    return binance_usdm_btcusdt()
+
+
+def _identities(
+    mutation: str, instrument: InstrumentIdentity
+) -> tuple[EvidenceMarketIdentity, EvidenceMarketIdentity]:
+    if mutation == "spot":
+        return _spot_identity(Timeframe.M15), _spot_identity(Timeframe.H4)
+    if mutation == "fallback":
+        return _fallback_identity(Timeframe.M15), _fallback_identity(Timeframe.H4)
+    return _identity_for(instrument, Timeframe.M15), _identity_for(instrument, Timeframe.H4)
+
+
+def _presentation_assertion(
+    *, instrument: InstrumentIdentity, evaluated_at: datetime
+) -> TenantExternalAssertion:
+    """Tenant-owned chart annotation. Never a public observation; never identity-forming."""
+    return build_tenant_external_assertion(
+        assertion_id=PRESENTATION_ASSERTION_ID,
+        organization_id=ORGANIZATION_ID,
+        user_id=USER_ID,
+        source=AssertionSource.USER_ASSERTION,
+        source_event_id="chart-annotation-bearish-sweep-at-4h-resistance",
+        venue=instrument.venue,
+        market_type=instrument.market_type,
+        instrument_id=instrument.instrument_id,
+        received_at=evaluated_at,
+        recorded_at=evaluated_at + timedelta(seconds=1),
+    )
+
+
+_BAR_MUTATIONS = frozenset(
+    {"no_swing", "watch", "partial_match", "volume_failure", "corrected_revision", "forming"}
+)
+_TRADE_MUTATIONS = frozenset({"stale", "sequence_gap", "reconnect", "cvd_failure", "flow_failure"})
 
 
 def _build_fixture(
@@ -857,74 +975,25 @@ def _build_fixture(
     mutation: str,
     expected: ExpectedOutcome,
 ) -> Phase6Fixture:
-    trigger_open = (
-        CANONICAL_TRIGGER_INTERVAL_START + timedelta(minutes=15)
-        if mutation == "adjacent"
-        else CANONICAL_TRIGGER_INTERVAL_START
-    )
-    evaluated_at = (
-        CANONICAL_EVALUATED_AT + timedelta(minutes=15)
-        if mutation == "adjacent"
-        else CANONICAL_EVALUATED_AT
-    )
-    instrument = (
-        _eth_instrument()
-        if mutation == "wrong_instrument"
-        else _delivery_instrument()
-        if mutation == "wrong_market"
-        else _spot_instrument()
-        if mutation == "spot"
-        else binance_usdm_btcusdt()
-    )
-    bar_mutation = (
-        mutation
-        if mutation
-        in {
-            "no_swing",
-            "watch",
-            "partial_match",
-            "volume_failure",
-            "corrected_revision",
-            "forming",
-        }
-        else "base"
-    )
+    shift = timedelta(minutes=15) if mutation == "adjacent" else timedelta(0)
+    trigger_open = CANONICAL_TRIGGER_INTERVAL_START + shift
+    evaluated_at = CANONICAL_EVALUATED_AT + shift
+    instrument = _instrument_for(mutation)
     bars_15m = _build_15m_bars(
         trigger_open=trigger_open,
         evaluated_at=evaluated_at,
         instrument=instrument,
-        mutation=bar_mutation,
+        mutation=mutation if mutation in _BAR_MUTATIONS else "base",
     )
     if mutation == "incomplete_warmup":
         bars_15m = bars_15m[1:]
     bars_4h = _build_4h_bars(evaluated_at=evaluated_at, instrument=instrument)
-
-    if mutation == "spot":
-        identity_15m = _spot_identity(Timeframe.M15)
-        identity_4h = _spot_identity(Timeframe.H4)
-    elif mutation == "fallback":
-        identity_15m = _fallback_identity(Timeframe.M15)
-        identity_4h = _fallback_identity(Timeframe.H4)
-    else:
-        identity_15m = _identity_for(instrument, Timeframe.M15)
-        identity_4h = _identity_for(instrument, Timeframe.H4)
-    trade_mutation = (
-        mutation
-        if mutation
-        in {
-            "stale",
-            "sequence_gap",
-            "reconnect",
-            "cvd_failure",
-            "flow_failure",
-        }
-        else "base"
-    )
+    identity_15m, identity_4h = _identities(mutation, instrument)
     trades = _build_trades(
         bars=bars_15m,
         evaluated_at=evaluated_at,
         instrument=instrument,
-        mutation=trade_mutation,
+        mutation=mutation if mutation in _TRADE_MUTATIONS else "base",
     )
     revisions = _manual_revisions(mutation)
     active_revision_id = revisions[-1].id if revisions else None
@@ -948,14 +1017,23 @@ def _build_fixture(
             invalidated=mutation == "invalidated",
         )
         lifecycle_evaluated_at = post_bars[-1].interval_end + timedelta(seconds=5)
-    presentation = (
-        {"chart_annotation": "Bearish sweep at versioned 4h resistance"}
-        if mutation == "presentation"
-        else {}
-    )
+    presentation: tuple[PresentationEvidenceRef, ...] = ()
+    presentation_assertions: tuple[TenantExternalAssertion, ...] = ()
+    if mutation == "presentation":
+        assertion = _presentation_assertion(instrument=instrument, evaluated_at=evaluated_at)
+        presentation = (
+            PresentationEvidenceRef(
+                label="chart-annotation",
+                content_hash=assertion.content_hash,
+                note="Bearish sweep at versioned 4h resistance (UI only).",
+            ),
+        )
+        presentation_assertions = (assertion,)
     return Phase6Fixture(
         fixture_id=fixture_id,
         purpose=purpose,
+        strategy_name=STRATEGY_NAME,
+        direction=DIRECTION,
         evaluated_at=evaluated_at,
         lifecycle_evaluated_at=lifecycle_evaluated_at,
         identity_15m=identity_15m,
@@ -969,6 +1047,7 @@ def _build_fixture(
         tick_size=TICK_SIZE,
         post_trigger_bars=post_bars,
         presentation_evidence=presentation,
+        presentation_assertions=presentation_assertions,
         expected=expected,
     )
 
@@ -978,33 +1057,172 @@ def build_fixture_corpus() -> tuple[Phase6Fixture, ...]:
     return tuple(_build_fixture(*case) for case in _FIXTURE_CASES)
 
 
-def semantic_window_hash(fixture: Phase6Fixture) -> str:
-    """Hash mandatory evidence only; presentation enrichment is deliberately excluded."""
-    return canonical_sha256(
-        {
-            "identity_15m": fixture.identity_15m.model_dump(mode="python"),
-            "identity_4h": fixture.identity_4h.model_dump(mode="python"),
-            "bars_15m": [bar.content_hash for bar in fixture.bars_15m],
-            "bars_4h": [bar.content_hash for bar in fixture.bars_4h],
-            "trades": [
-                {
-                    "content_hash": trade.content_hash,
-                    "sequence": trade.sequence,
-                    "source_connection_id": trade.source_connection_id,
-                }
-                for trade in fixture.trades
-            ],
-            "manual_level_revisions": [
-                revision.content_hash for revision in fixture.manual_level_revisions
-            ],
-            "active_manual_revision_id": fixture.active_manual_revision_id,
-            "swing": (
-                fixture.swing.model_dump(mode="python") if fixture.swing is not None else None
+def executable_setup_ref() -> ExecutableSetupRef:
+    """Tenant-owned CompiledSetupDefinition reference bound to the compiled first-slice AST."""
+    compiled = compile_from_spec(canonical_first_slice_authored_spec())
+    if compiled.document is None:
+        raise ValueError("Canonical first-slice spec must compile to an executable document.")
+    return ExecutableSetupRef(
+        setup_definition_id=COMPILED_SETUP_DEFINITION_ID,
+        kind=SetupIdentityKind.COMPILED_SETUP_DEFINITION,
+        content_hash=compiled.document.content_hash,
+    )
+
+
+def bar_observation(
+    bar: OhlcvBar,
+    *,
+    identity: EvidenceMarketIdentity,
+    observed_at: datetime,
+) -> PublicMarketObservation:
+    """Phase 5 public envelope for one bar; observation identity is revision-aware."""
+    return observation_from_ohlcv(
+        bar,
+        identity=identity,
+        observed_at=observed_at,
+        receive_time=observed_at,
+        freshness_state=FreshnessState.FRESH,
+    )
+
+
+def trigger_observation(fixture: Phase6Fixture) -> PublicMarketObservation:
+    return bar_observation(
+        fixture.bars_15m[-1],
+        identity=fixture.identity_15m,
+        observed_at=fixture.evaluated_at,
+    )
+
+
+def public_observations(
+    fixture: Phase6Fixture,
+) -> tuple[tuple[EvidenceRole, PublicMarketObservation], ...]:
+    """Role-bound Phase 5 public observations forming the fixture's semantic input set.
+
+    Trigger-timeframe OHLCV, context-timeframe OHLCV, and the CVD-window trade
+    events are the public facts every first-slice predicate is derived from.
+    """
+    trigger_series = tuple(
+        (
+            EvidenceRole.TRIGGER_OHLCV,
+            bar_observation(bar, identity=fixture.identity_15m, observed_at=fixture.evaluated_at),
+        )
+        for bar in fixture.bars_15m
+    )
+    context_series = tuple(
+        (
+            EvidenceRole.CONTEXT_OHLCV,
+            bar_observation(bar, identity=fixture.identity_4h, observed_at=fixture.evaluated_at),
+        )
+        for bar in fixture.bars_4h
+    )
+    cvd_window = tuple(
+        (
+            EvidenceRole.CVD_WINDOW,
+            observation_from_trade(
+                trade,
+                identity=fixture.identity_15m,
+                observed_at=fixture.evaluated_at,
+                freshness_state=FreshnessState.FRESH,
             ),
-            "tick_size": fixture.tick_size,
-            "trigger_interval_start": fixture.bars_15m[-1].interval_start,
-            "trigger_interval_end": fixture.bars_15m[-1].interval_end,
-        }
+        )
+        for trade in fixture.trades
+    )
+    return trigger_series + context_series + cvd_window
+
+
+def selected_public_observations(
+    fixture: Phase6Fixture,
+) -> tuple[SelectedPublicObservation, ...]:
+    return tuple(
+        selected_observation_from_public(observation, role=role)
+        for role, observation in public_observations(fixture)
+    )
+
+
+def manual_level_revision_ref(fixture: Phase6Fixture) -> ManualLevelRevisionRef | None:
+    if fixture.active_manual_revision_id is None:
+        return None
+    active = next(
+        revision
+        for revision in fixture.manual_level_revisions
+        if revision.id == fixture.active_manual_revision_id
+    )
+    return ManualLevelRevisionRef(
+        level_id=active.level_id,
+        revision_number=active.revision_number,
+        content_hash=active.content_hash,
+    )
+
+
+def semantic_source_set(fixture: Phase6Fixture) -> tuple[SemanticSourceIdentity, ...]:
+    return (
+        SemanticSourceIdentity(
+            venue=fixture.identity_15m.venue,
+            market_type=fixture.identity_15m.market_type,
+            source_family=fixture.identity_15m.source.family,
+        ),
+    )
+
+
+def trigger_identity(fixture: Phase6Fixture) -> TriggerIdentity:
+    trigger = fixture.bars_15m[-1]
+    return TriggerIdentity(natural_event_id=trigger.source_event_id, revision=trigger.revision)
+
+
+def trigger_interval(fixture: Phase6Fixture) -> HalfOpenInterval:
+    trigger = fixture.bars_15m[-1]
+    return HalfOpenInterval(start=trigger.interval_start, end=trigger.interval_end)
+
+
+def presentation_tenant_assertions(
+    fixture: Phase6Fixture,
+) -> tuple[SelectedTenantAssertion, ...]:
+    return tuple(
+        SelectedTenantAssertion(
+            role=TenantAssertionRole.PRESENTATION,
+            assertion_id=assertion.assertion_id,
+            content_hash=assertion.content_hash,
+        )
+        for assertion in fixture.presentation_assertions
+    )
+
+
+def canonical_evidence_window(
+    fixture: Phase6Fixture,
+    *,
+    tenant_assertions: tuple[SelectedTenantAssertion, ...] | None = None,
+    required_assertion_roles: tuple[TenantAssertionRole, ...] = (),
+) -> CanonicalEvidenceWindowV1:
+    """Project a fixture into the canonical Phase 6 evidence window.
+
+    Presentation evidence and PRESENTATION-role tenant assertions are passed on
+    purpose: the canonical builder must drop them from the hash preimage.
+    """
+    return build_canonical_evidence_window_v1(
+        organization_id=ORGANIZATION_ID,
+        strategy_version_id=STRATEGY_VERSION_ID,
+        compiled_setup_definition_id=COMPILED_SETUP_DEFINITION_ID,
+        compiled_setup_content_hash=executable_setup_ref().content_hash,
+        fusion_policy_version=DEFAULT_FUSION_POLICY_VERSION,
+        finality_policy_version=FINALITY_POLICY_VERSION,
+        freshness_policy_version=FIRST_SLICE_FRESHNESS_POLICY_VERSION,
+        direction=fixture.direction,
+        evidence_identity=fixture.identity_15m,
+        interval=trigger_interval(fixture),
+        trigger=trigger_identity(fixture),
+        mandatory_evidence_roles=MANDATORY_EVIDENCE_ROLES,
+        selected_public_observations=selected_public_observations(fixture),
+        source_set=semantic_source_set(fixture),
+        tenant_assertions=(
+            presentation_tenant_assertions(fixture)
+            if tenant_assertions is None
+            else tenant_assertions
+        ),
+        required_assertion_roles=required_assertion_roles,
+        role_timeframes=first_slice_role_timeframes(),
+        manual_level_revision=manual_level_revision_ref(fixture),
+        correction_selection_policy=DEFAULT_CORRECTION_SELECTION_POLICY,
+        presentation_evidence=fixture.presentation_evidence,
     )
 
 
@@ -1021,8 +1239,11 @@ def manifest_rows() -> list[dict[str, object]]:
         {
             "fixture_id": fixture.fixture_id,
             "purpose": fixture.purpose,
+            "strategy_name": fixture.strategy_name,
+            "direction": fixture.direction.value,
             "expected_assessment_state": fixture.expected.assessment_state.value,
-            "expected_reason_codes": list(fixture.expected.reason_codes),
+            "expected_reason_codes": [code.value for code in fixture.expected.reason_codes],
+            "fixture_detail_code": fixture.expected.fixture_detail_code,
             "expected_freshness_posture": fixture.expected.freshness_posture,
             "expected_finality_posture": fixture.expected.finality_posture,
             "expected_candidate_creation": fixture.expected.candidate_creation,
