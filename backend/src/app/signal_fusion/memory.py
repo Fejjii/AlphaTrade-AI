@@ -211,7 +211,7 @@ class InMemoryCandidateRepository:
             )
         if new_state is CandidateState.ACTIVE:
             raise IllegalCandidateTransitionError(
-                "Candidate ACTIVE is the initial confirmed state and cannot be a resurrection."
+                "Candidate ACTIVE is the initial confirmed state and cannot be resurrected."
             )
         allowed = ALLOWED_CANDIDATE_TRANSITIONS.get(current.state, frozenset())
         if new_state not in allowed:

@@ -177,7 +177,9 @@ def test_different_evidence_window_creates_distinct_candidate() -> None:
             end=TRIGGER_OPEN + timedelta(minutes=30),
         )
     )
-    second = service.create_from_confirmed_setup(make_creation_command(window=adjacent))
+    second = service.create_from_confirmed_setup(
+        make_creation_command(window=adjacent, idempotency_key="candidate-create-adjacent")
+    )
     assert first.candidate_id != second.candidate_id
     assert first.evidence_window_hash != second.evidence_window_hash
     assert first.uniqueness_tuple().canonical_hash() != second.uniqueness_tuple().canonical_hash()
@@ -205,6 +207,7 @@ def test_different_strategy_version_creates_distinct_candidate() -> None:
         make_creation_command(
             window=window,
             assessment=make_assessment(window, strategy_version_id=STRATEGY_VERSION_B),
+            idempotency_key="candidate-create-strategy-b",
         )
     )
     assert first.candidate_id != second.candidate_id
@@ -261,16 +264,18 @@ def _distinct_command(label: str) -> CandidateCreationCommand:
             window=window,
             setup=setup,
             assessment=make_assessment(window, setup=setup),
+            idempotency_key="candidate-create-compiled-b",
         )
     if label == "fusion_policy_version":
         window = make_evidence_window(fusion_policy_version="alt-fusion/v2")
         return make_creation_command(
             window=window,
             assessment=make_assessment(window, fusion_policy_version="alt-fusion/v2"),
+            idempotency_key="candidate-create-policy-v2",
         )
     if label == "direction":
         window = make_evidence_window(direction=TradeDirection.LONG)
-        return make_creation_command(window=window)
+        return make_creation_command(window=window, idempotency_key="candidate-create-long")
     if label == "venue":
         blofin_m15 = blofin_evidence_identity(Timeframe.M15)
         blofin_h4 = blofin_evidence_identity(Timeframe.H4)
@@ -285,7 +290,11 @@ def _distinct_command(label: str) -> CandidateCreationCommand:
                 ),
             ),
         )
-        return make_creation_command(window=window, evidence_identity=blofin_m15)
+        return make_creation_command(
+            window=window,
+            evidence_identity=blofin_m15,
+            idempotency_key="candidate-create-blofin",
+        )
     if label == "instrument":
         eth_m15 = eth_evidence_identity(Timeframe.M15)
         eth_h4 = eth_evidence_identity(Timeframe.H4)
@@ -296,11 +305,19 @@ def _distinct_command(label: str) -> CandidateCreationCommand:
             evidence_identity=identity,
             selected_public_observations=_observations_for(eth_m15, eth_h4),
         )
-        return make_creation_command(window=window, evidence_identity=identity)
+        return make_creation_command(
+            window=window,
+            evidence_identity=identity,
+            idempotency_key="candidate-create-eth",
+        )
     if label == "timeframe":
         identity = first_slice_identity(timeframe=Timeframe.H1, replay=True)
         window = make_evidence_window(evidence_identity=identity)
-        return make_creation_command(window=window, evidence_identity=identity)
+        return make_creation_command(
+            window=window,
+            evidence_identity=identity,
+            idempotency_key="candidate-create-h1",
+        )
     raise AssertionError(f"unknown uniqueness dimension {label}")
 
 

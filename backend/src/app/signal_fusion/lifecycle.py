@@ -137,7 +137,7 @@ class CandidateLifecycleService:
         """
         if new_state is CandidateState.ACTIVE:
             raise IllegalCandidateTransitionError(
-                "Candidate ACTIVE is the initial confirmed state and cannot be a resurrection."
+                "Candidate ACTIVE is the initial confirmed state and cannot be resurrected."
             )
         required_reason = _STATE_REASON_CODE[new_state]
         if required_reason not in reason_codes:
