@@ -869,3 +869,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   included in the follow-up PR #80 HEAD validation. Paper posture unchanged.
 - Recommended model: Grok 4.6
 - ADR: AT-ADR-021 · Docs: `docs/market_source_contracts.md`
+
+### AT-044 — Phase 6 contract freeze (observations, fusion, candidates)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-041 Phase 5 market
+  contracts; Phase 3 compiled setup identity · Risk: Medium (identity authority)
+- Safety classification: Paper-safe / contracts only; no evaluator, persistence,
+  watcher, Telegram, execution, or live trading
+- Goal: Freeze typed immutable Phase 6 domain contracts and
+  `CanonicalEvidenceWindowV1` hashing so parallel agents share one identity
+  system. Reuse Phase 5 `PublicMarketObservation` and Phase 3
+  `CompiledSetupDefinition` / `TradeDirection` / `Timeframe`.
+- Branch: `cursor/phase6-contract-freeze`
+- Deliverables: `app.signal_fusion`; tests in
+  `backend/tests/test_phase6_signal_fusion_contracts.py` and
+  `backend/tests/test_phase6_contract_hardening.py`. Hardening covers
+  market-identity integrity, policy-selected tenant assertions, canonical
+  set semantics, and revision-aware observation identity. No Alembic, no
+  evaluator, no adapter implementations.
+- Validation: targeted contract tests + full backend pytest + ruff + mypy
+  `--strict` on `src/app/signal_fusion` + GitHub CI. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-024
+
