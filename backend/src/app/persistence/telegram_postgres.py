@@ -298,7 +298,8 @@ class PostgresTelegramSecurityStore:
         def work(session: Session) -> None:
             current = session.get(TelegramActionReceiptRow, row.receipt_id, with_for_update=True)
             if current is not None:
-                _apply_receipt(current, row)
+                _reject_conflicting_receipt_binding(current, row)
+                _apply_receipt_lifecycle(current, row)
                 session.flush()
                 return
             winner = _locked_receipt_identity(session, row)
@@ -355,7 +356,8 @@ class PostgresTelegramSecurityStore:
         def work(session: Session) -> None:
             current = session.get(TelegramOutboxRow, row.outbox_id, with_for_update=True)
             if current is not None:
-                _apply_outbox(current, row)
+                _reject_conflicting_outbox_binding(current, row)
+                _apply_outbox_lifecycle(current, row)
                 session.flush()
                 return
             existing = _load_outbox_key(
@@ -528,26 +530,61 @@ def _locked_receipt_identity(
 def _reject_or_converge_receipt(
     existing: TelegramActionReceiptRow, incoming: ActionReceipt
 ) -> None:
-    if existing.replay_fingerprint == incoming.replay_fingerprint:
-        return
-    raise TelegramSecurityError(
-        "Inbound Telegram replay conflicts with the original fingerprint.",
-        reason=TelegramSecurityReason.REPLAY_CONFLICT,
-        details={"bot_id": existing.bot_id, "update_id": str(existing.update_id)},
-    )
+    _reject_conflicting_receipt_binding(existing, incoming)
 
 
 def _reject_or_converge_outbox(existing: TelegramOutboxRow, incoming: OutboxRecord) -> None:
+    _reject_conflicting_outbox_binding(existing, incoming)
+
+
+def _bound_identity_conflict(stored: object, incoming: object) -> bool:
+    if stored is None:
+        return False
+    return stored != incoming
+
+
+def _reject_conflicting_receipt_binding(
+    existing: TelegramActionReceiptRow, incoming: ActionReceipt
+) -> None:
+    incoming_action = None if incoming.action is None else incoming.action.value
     if (
-        existing.text == incoming.text
-        and existing.chat_id == incoming.chat_id
-        and existing.bot_id == incoming.bot_id
+        existing.bot_id != incoming.bot_id
+        or int(existing.update_id) != incoming.update_id
+        or existing.callback_query_id != incoming.callback_query_id
+        or existing.message_id != incoming.message_id
+        or existing.telegram_user_id != incoming.telegram_user_id
+        or existing.chat_id != incoming.chat_id
+        or existing.organization_id != incoming.organization_id
+        or existing.user_id != incoming.user_id
+        or existing.account_id != incoming.account_id
+        or existing.payload_hash != incoming.payload_hash
+        or existing.replay_fingerprint != incoming.replay_fingerprint
+        or existing.action != incoming_action
+        or _bound_identity_conflict(existing.nonce_hash, incoming.nonce_hash)
+        or _bound_identity_conflict(existing.binding_id, incoming.binding_id)
     ):
-        return
-    raise TelegramSecurityError(
-        "Outbox idempotency key is bound to a different payload.",
-        reason=TelegramSecurityReason.OUTBOX_CONFLICT,
-    )
+        raise TelegramSecurityError(
+            "Inbound Telegram replay conflicts with the original fingerprint.",
+            reason=TelegramSecurityReason.REPLAY_CONFLICT,
+            details={"bot_id": existing.bot_id, "update_id": str(existing.update_id)},
+        )
+
+
+def _reject_conflicting_outbox_binding(existing: TelegramOutboxRow, incoming: OutboxRecord) -> None:
+    if (
+        existing.organization_id != incoming.organization_id
+        or existing.user_id != incoming.user_id
+        or existing.binding_id != incoming.binding_id
+        or existing.bot_id != incoming.bot_id
+        or existing.chat_id != incoming.chat_id
+        or existing.idempotency_key != incoming.idempotency_key
+        or existing.kind != incoming.kind.value
+        or existing.text != incoming.text
+    ):
+        raise TelegramSecurityError(
+            "Outbox idempotency key is bound to a different payload.",
+            reason=TelegramSecurityReason.OUTBOX_CONFLICT,
+        )
 
 
 def _aware(value: datetime) -> datetime:
@@ -747,27 +784,16 @@ def _receipt_to_row(row: ActionReceipt) -> TelegramActionReceiptRow:
     )
 
 
-def _apply_receipt(current: TelegramActionReceiptRow, row: ActionReceipt) -> None:
-    current.bot_id = row.bot_id
-    current.update_id = row.update_id
-    current.callback_query_id = row.callback_query_id
-    current.message_id = row.message_id
-    current.telegram_user_id = row.telegram_user_id
-    current.chat_id = row.chat_id
-    current.organization_id = row.organization_id
-    current.user_id = row.user_id
-    current.account_id = row.account_id
-    current.nonce_hash = row.nonce_hash
-    current.action = None if row.action is None else row.action.value
-    current.payload_hash = row.payload_hash
-    current.replay_fingerprint = row.replay_fingerprint
+def _apply_receipt_lifecycle(current: TelegramActionReceiptRow, row: ActionReceipt) -> None:
+    if current.nonce_hash is None:
+        current.nonce_hash = row.nonce_hash
+    if current.binding_id is None:
+        current.binding_id = row.binding_id
     current.state = row.state.value
     current.reason_code = row.reason_code
     current.authorization_intent_id = row.authorization_intent_id
-    current.binding_id = row.binding_id
     current.effect_kind = row.effect_kind.value
     current.transitions = _transitions_to_json(row.transitions)
-    current.created_at = row.created_at
     current.updated_at = row.updated_at
 
 
@@ -901,22 +927,13 @@ def _outbox_to_row(row: OutboxRecord) -> TelegramOutboxRow:
     )
 
 
-def _apply_outbox(current: TelegramOutboxRow, row: OutboxRecord) -> None:
-    current.organization_id = row.organization_id
-    current.user_id = row.user_id
-    current.binding_id = row.binding_id
-    current.bot_id = row.bot_id
-    current.chat_id = row.chat_id
-    current.idempotency_key = row.idempotency_key
-    current.kind = row.kind.value
-    current.text = row.text
+def _apply_outbox_lifecycle(current: TelegramOutboxRow, row: OutboxRecord) -> None:
     current.state = row.state.value
     current.attempt = row.attempt
     current.lease_owner = row.lease_owner
     current.lease_until = row.lease_until
     current.transport_message_id = row.transport_message_id
     current.last_error = row.last_error
-    current.created_at = row.created_at
     current.updated_at = row.updated_at
 
 
