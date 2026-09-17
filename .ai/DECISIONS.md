@@ -912,4 +912,44 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Independent integration review is the next gate. Draft
   PR only; do not merge in the implementing agent instructions.
 
+## AT-ADR-028 — Phase 6 Candidate Telegram alert foundation
+- **Date:** 2026-09-17
+- **Status:** Accepted (composition foundation; Telegram remains disabled)
+- **Context:** Canonical Candidate authority (AT-ADR-026/027) and the isolated
+  Telegram security protocol (AT-ADR-023) both exist. Alerts must not treat
+  PaperValidationCandidate, PaperSignal, SetupDetection, or TradingViewSignal
+  as independent candidate authorities. APPROVE must never execute.
+- **Decision:**
+  1. New package `app.candidate_alerts` composes Candidate -> deterministic
+     `CandidateAlertIntent` -> existing Telegram outbox -> secured actions.
+  2. Identity binds organization, user, account, candidate ID, candidate
+     content hash, strategy version, compiled setup identity, fusion policy
+     version, evidence window hash, lifecycle revision, alert kind, and
+     Telegram channel. Duplicate semantic events converge. Revision/content
+     changes produce a distinct identity.
+  3. Structured alert facts are canonical only. No profitability claims.
+     No LLM-authored setup truth.
+  4. APPROVE stays authorization intent (`executes=false`). REJECT/SKIP map
+     to `CandidateLifecycleService` through the gateway. REDUCE_RISK emits
+     typed intent and does not mutate Candidate. EXPLAIN/SHOW_CHART/STATUS
+     are read-only. CLOSE remains unavailable. EXECUTE_PAPER_PLAN is absent.
+  5. Reuse `TelegramSecurityStore` / in-memory protocol store. No new
+     PostgreSQL adapter, no Alembic, no webhook, no Telegram network call.
+     PR 85 remains durable Telegram persistence owner.
+  6. `TELEGRAM_INTERACTION_ENABLED=false`, `ENABLE_REAL_TRADING=false`,
+     `EXECUTION_MODE=paper`.
+- **Alternatives considered:** Alert from PaperValidationCandidate or
+  TradingViewSignal (rejected: competing authority); extend TelegramSecurityStore
+  with alert tables (rejected: second persistence model); let APPROVE call
+  execution (rejected: CRITICAL-03).
+- **Safety impact:** Telegram stays off. Live trading stays disabled. Approval
+  cannot execute. Candidate immutability is preserved for REDUCE_RISK and
+  read-only actions.
+- **Consequences:** Docs in `docs/phase6_candidate_telegram_alerts.md`. Tests in
+  `backend/tests/test_phase6_candidate_telegram_alerts.py`.
+- **Validation:** Candidate alert tests, Telegram protocol tests, Phase 6
+  Candidate tests, full backend pytest, ruff, mypy `--strict` on the new
+  package plus `app.telegram_security` and `app.signal_fusion`, GitHub CI.
+  Draft PR only; do not merge in the implementing agent instructions.
+
 
