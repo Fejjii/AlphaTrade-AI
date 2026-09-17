@@ -45,3 +45,23 @@ class TenantAssertionSelectionError(SignalFusionContractError):
 
 class ConflictingSemanticInputError(EvidenceWindowContractError):
     """Duplicate semantic inputs conflict or cannot be canonicalized."""
+
+
+class CandidateCreationAuthorityError(SignalFusionContractError):
+    """Canonical candidates originate only from CONFIRMED_SETUP + exact evidence window."""
+
+
+class ExpiredCandidateAssessmentError(CandidateCreationAuthorityError):
+    """Elapsed or EXPIRED assessments cannot mint an ACTIVE candidate."""
+
+
+class LegacyCandidateAuthorityError(CandidateCreationAuthorityError):
+    """PaperValidationCandidate and other legacy records cannot mint canonical candidates."""
+
+
+class CandidateNotFoundError(SignalFusionContractError):
+    """Candidate identity is unknown in the requested tenant scope."""
+
+
+class ConflictingCandidateTransitionError(IllegalCandidateTransitionError):
+    """A competing non-idempotent candidate transition was rejected."""

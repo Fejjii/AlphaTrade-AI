@@ -891,3 +891,30 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-024
 
+### AT-045 — Phase 6 candidate lifecycle service (in-memory authority)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-044 Phase 6 contract
+  freeze (PR #84 HEAD `5db47b728ba255b993717f59922076733630d510`) · Risk: Medium
+  (identity authority)
+- Safety classification: Paper-safe / in-memory application service; no
+  evaluator, PostgreSQL, Alembic, watcher, Telegram, execution, or live trading
+- Goal: Implement canonical Candidate authority: idempotent creation from
+  CONFIRMED_SETUP + exact CanonicalEvidenceWindowV1 + tenant-owned
+  CompiledSetupDefinition; uniqueness via CandidateUniquenessTuple;
+  append-only transitions; terminal non-resurrection; tenant isolation.
+  PaperValidationCandidate remains a downstream consumer only.
+- Branch: `cursor/phase6-candidate-lifecycle-service-1c4d`
+- PR: https://github.com/Fejjii/AlphaTrade-AI/pull/86 (draft; do not merge)
+- Deliverables: `app.signal_fusion.lifecycle`, `ports`, `memory`; tests in
+  `backend/tests/test_phase6_candidate_lifecycle.py`. No fusion evaluator,
+  no Alembic, no PostgreSQL adapter.
+- Validation: lifecycle tests 29 passed; Phase 6 contract tests 56 passed
+  (`test_phase6_signal_fusion_contracts.py` 34 + `test_phase6_contract_hardening.py`
+  22); local full backend pytest exit 0 (1843 passed, 47 skipped without
+  Postgres); `uv run ruff check .` and `ruff format --check .` pass; `uv run
+  mypy --strict src/app/signal_fusion` Success (14 files). GitHub CI run
+  35212249349 success: backend 1890 passed (Postgres available), ruff
+  check/format, frontend, docker-build, deployment-safety, evaluation,
+  e2e-smoke. Paper posture unchanged. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-025
+
