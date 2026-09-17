@@ -126,6 +126,8 @@ class CandidateReasonCode(StrEnum):
 
 
 class EligibilityReasonCode(StrEnum):
+    """Account/action block reasons. Complementary to ActionEligibilityState."""
+
     ELIGIBLE = "eligible"
     BLOCKED_KILL_SWITCH = "blocked_kill_switch"
     BLOCKED_DAILY_LOSS = "blocked_daily_loss"
@@ -137,4 +139,6 @@ class EligibilityReasonCode(StrEnum):
     BLOCKED_DATA_QUALITY = "blocked_data_quality"
     BLOCKED_BASIS = "blocked_basis"
     BLOCKED_CANDIDATE_TTL = "blocked_candidate_ttl"
+    BLOCKED_CONFIGURATION = "blocked_configuration"
+    BLOCKED_SETUP_NOT_CONFIRMED = "blocked_setup_not_confirmed"
     EXPIRED = "expired"

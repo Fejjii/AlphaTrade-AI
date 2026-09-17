@@ -912,4 +912,47 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Independent integration review is the next gate. Draft
   PR only; do not merge in the implementing agent instructions.
 
+## AT-ADR-028 — Phase 6 deterministic ActionEligibility service
+- **Date:** 2026-09-17
+- **Status:** Accepted (in-memory eligibility authority only)
+- **Context:** Frozen `ActionEligibility` binds identity and state but does not
+  evaluate. SetupAssessment is market truth. A confirmed Candidate still must
+  not proceed toward paper TradePlan creation until account, risk, safety,
+  configuration, stale action evidence, and first-slice cross-venue basis are
+  checked without rewriting setup history.
+- **Decision:**
+  1. `ActionEligibilityService.evaluate` is the sole first-slice action gate.
+     It consumes a canonical Candidate, SetupAssessment lineage, account,
+     portfolio, risk snapshot, safety snapshot, market-action evidence, and
+     paper execution configuration. It does not create Candidates, mutate
+     SetupAssessment, create TradePlanRevision, reserve risk, consume
+     approval, or call venues.
+  2. Frozen `ActionEligibilityState` remains `ELIGIBLE | BLOCKED | EXPIRED`.
+     Finer distinctions are `EligibilityReasonCode` values. Kill switch maps
+     to `BLOCKED_KILL_SWITCH` and always dominates. Daily loss and weekly loss
+     use Phase 1 `check_daily_loss_lock` / `check_weekly_loss`. Capacity uses
+     `RiskEngine.limits.max_position_pct_of_equity`. Account/tenant isolation
+     maps to `BLOCKED_ACCOUNT_STATE`. Stale required action evidence maps to
+     `BLOCKED_DATA_QUALITY`. Cross-venue basis above 20 bps maps to
+     `BLOCKED_BASIS` and never changes SetupAssessment. Live/real-trading
+     configuration maps to `BLOCKED_CONFIGURATION`. Non-confirmed setup maps
+     to `BLOCKED_SETUP_NOT_CONFIRMED`.
+  3. First-slice cross-venue basis threshold is 20 bps (`>` blocks; `<=`
+     eligible). Basis is an eligibility gate only.
+  4. Identical semantic evaluation converges on one immutable record.
+     Changed risk snapshot identity or safety epoch appends a distinct
+     evaluation revision without mutating history.
+  5. `live_executable` is always false. `paper_actionable` is true only for
+     `ELIGIBLE` under paper configuration. Persistence remains in-memory.
+- **Alternatives considered:** New ActionEligibilityState values such as
+  `BLOCKED_SAFETY` (rejected: frozen contract already has ELIGIBLE/BLOCKED/
+  EXPIRED); evaluating eligibility inside `evaluate_setup` (rejected: setup
+  truth must stay independent); constructing TradePlan to probe risk size
+  (rejected: this slice ends at eligibility truth).
+- **Safety impact:** Paper only. Kill switch remains the Phase 1 authority.
+  Real trading cannot become executable. No network, Telegram, watcher,
+  Alembic, or deployment.
+- **Consequences:** Later slices may bind PostgreSQL and feed ELIGIBLE results
+  into paper TradePlan creation. Draft PR only; do not merge.
+
 
