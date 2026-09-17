@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, and_, or_, select, text
+from sqlalchemy import ColumnElement, Select, and_, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -474,7 +474,7 @@ def _active_binding_stmt() -> Select[tuple[TelegramBindingRow]]:
     )
 
 
-def _outbox_claimable(now: datetime) -> object:
+def _outbox_claimable(now: datetime) -> ColumnElement[bool]:
     return or_(
         TelegramOutboxRow.state.in_(_CLAIMABLE_STATES),
         and_(
@@ -819,7 +819,7 @@ def _transitions_from_json(rows: list[dict[str, object]] | None) -> tuple[Receip
         from_state = item.get("from_state")
         parsed.append(
             ReceiptTransition(
-                sequence=int(item["sequence"]),  # type: ignore[arg-type]
+                sequence=_json_int(item["sequence"]),
                 from_state=None if from_state is None else ActionReceiptState(str(from_state)),
                 to_state=ActionReceiptState(str(item["to_state"])),
                 at=_aware(_parse_datetime(item["at"])),
@@ -833,6 +833,12 @@ def _parse_datetime(value: object) -> datetime:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value))
+
+
+def _json_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("Receipt transition sequence must be an integer.")
+    return value
 
 
 def _intent_to_row(row: AuthorizationIntent) -> TelegramAuthorizationIntentRow:
