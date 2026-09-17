@@ -1,0 +1,245 @@
+{
+  "schema_version": "phase6-first-slice-fixture-manifest/v1",
+  "fixtures": [
+    {
+      "fixture_id": "confirmed-setup",
+      "purpose": "Exact confirmed bearish liquidity sweep exhaustion setup.",
+      "expected_assessment_state": "CONFIRMED",
+      "expected_reason_codes": ["all_first_slice_predicates_confirmed"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "BASELINE"
+    },
+    {
+      "fixture_id": "no-setup",
+      "purpose": "No strict confirmed L2/R2 swing high exists.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["confirmed_swing_missing"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "watch",
+      "purpose": "Resistance context is valid while the sweep threshold is not yet reached.",
+      "expected_assessment_state": "WATCH",
+      "expected_reason_codes": ["awaiting_liquidity_sweep"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "partial-match",
+      "purpose": "All numeric trigger evidence passes but the trigger candle is not bearish.",
+      "expected_assessment_state": "PARTIAL_MATCH",
+      "expected_reason_codes": ["trigger_not_bearish"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "invalidated-by-price",
+      "purpose": "A confirmed candidate is invalidated by the first subsequent final bar.",
+      "expected_assessment_state": "INVALIDATED",
+      "expected_reason_codes": ["price_invalidation_reached"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_plus_2_final_post_trigger_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "PRESERVE_SEMANTIC_IDENTITY"
+    },
+    {
+      "fixture_id": "stale-source",
+      "purpose": "Latest perpetual trade is one second outside the freshness bound.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["latest_trade_stale"],
+      "expected_freshness_posture": "stale_at_11s",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "sequence-gap",
+      "purpose": "The ordered perpetual trade stream omits one venue sequence.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["trade_sequence_gap"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "reconnect-discontinuity",
+      "purpose": "The CVD window crosses two source connection epochs.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["cross_connection_cvd_forbidden"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "wrong-instrument",
+      "purpose": "ETHUSDT perpetual evidence is supplied for the BTCUSDT slice.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["wrong_instrument"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "wrong-market",
+      "purpose": "The evidence envelope is labelled as a delivery market.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["wrong_market"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "spot-substitution",
+      "purpose": "BTCUSDT spot evidence is substituted for perpetual evidence.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["spot_not_perpetual"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "fallback-source",
+      "purpose": "Evidence provenance declares a forbidden fallback source.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["fallback_source_forbidden"],
+      "expected_freshness_posture": "untrusted_fallback",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "incomplete-warmup",
+      "purpose": "Only 99 final 15m bars are available.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["trigger_warmup_incomplete"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "99_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "forming-candle",
+      "purpose": "The trigger candle is still forming at its source finality clock.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["forming_trigger_candle"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "99_final_plus_1_forming_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "missing-manual-resistance",
+      "purpose": "No active versioned 4h manual resistance is available.",
+      "expected_assessment_state": "WATCH",
+      "expected_reason_codes": ["manual_resistance_missing"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "resistance-outside-tolerance",
+      "purpose": "Nearest active resistance is beyond 0.50 ATR4h from the swing.",
+      "expected_assessment_state": "NO_SETUP",
+      "expected_reason_codes": ["resistance_outside_atr_tolerance"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "volume-threshold-failure",
+      "purpose": "Trigger volume is 1.40 times the prior 20-bar mean.",
+      "expected_assessment_state": "PARTIAL_MATCH",
+      "expected_reason_codes": ["trigger_volume_ratio_below_threshold"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "cvd-divergence-failure",
+      "purpose": "CVD at trigger close is not below CVD at swing close.",
+      "expected_assessment_state": "PARTIAL_MATCH",
+      "expected_reason_codes": ["bearish_cvd_divergence_missing"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "sell-imbalance-failure",
+      "purpose": "Trigger signed quote-flow ratio is -0.05, above the -0.10 threshold.",
+      "expected_assessment_state": "PARTIAL_MATCH",
+      "expected_reason_codes": ["aggressive_sell_imbalance_missing"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": false,
+      "expected_evidence_identity_behavior": "NO_CANDIDATE"
+    },
+    {
+      "fixture_id": "expiry",
+      "purpose": "A confirmed candidate expires after two additional final 15m bars.",
+      "expected_assessment_state": "EXPIRED",
+      "expected_reason_codes": ["two_final_bars_elapsed"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_plus_2_final_post_trigger_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "PRESERVE_SEMANTIC_IDENTITY"
+    },
+    {
+      "fixture_id": "corrected-candle-revision",
+      "purpose": "A final trigger candle correction has revision 2 and changed semantic evidence.",
+      "expected_assessment_state": "CONFIRMED",
+      "expected_reason_codes": ["corrected_final_candle_re_evaluated"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_with_trigger_revision_2_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "NEW_SEMANTIC_WINDOW"
+    },
+    {
+      "fixture_id": "presentation-enrichment",
+      "purpose": "Optional presentation evidence is enriched without changing semantic identity.",
+      "expected_assessment_state": "CONFIRMED",
+      "expected_reason_codes": ["optional_presentation_evidence_added"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "PRESERVE_SEMANTIC_IDENTITY"
+    },
+    {
+      "fixture_id": "mandatory-evidence-change",
+      "purpose": "A new active manual-level revision creates a new semantic window.",
+      "expected_assessment_state": "CONFIRMED",
+      "expected_reason_codes": ["mandatory_evidence_revision_changed"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "NEW_SEMANTIC_WINDOW"
+    },
+    {
+      "fixture_id": "adjacent-trigger-window",
+      "purpose": "The same setup in the adjacent 15m trigger window has a distinct identity.",
+      "expected_assessment_state": "CONFIRMED",
+      "expected_reason_codes": ["adjacent_trigger_window"],
+      "expected_freshness_posture": "fresh_at_10s_boundary",
+      "expected_finality_posture": "100_final_15m_and_30_final_4h",
+      "expected_candidate_creation": true,
+      "expected_evidence_identity_behavior": "NEW_SEMANTIC_WINDOW"
+    }
+  ]
+}
