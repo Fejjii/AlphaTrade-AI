@@ -765,3 +765,40 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `app.telegram_security`, GitHub CI. No merge in the implementing PR's agent
   instructions.
 
+## AT-ADR-024 — Phase 6 canonical signal-fusion contract freeze
+- **Date:** 2026-09-17
+- **Status:** Accepted (contracts only; evaluator/persistence not in this slice)
+- **Context:** Parallel Phase 6 implementation needs one typed identity and hash
+  layer so observations, fusion, assessment, candidates, eligibility, adapters,
+  and PostgreSQL persistence cannot invent competing schemas.
+- **Decision:**
+  1. Canonical package is `app.signal_fusion`. Phase 5
+     `PublicMarketObservation` and market identities are reused, not duplicated.
+  2. Freeze immutable contracts: `FusionPolicy`, `SetupAssessment`,
+     `ActionEligibility`, `Candidate`, `CandidateTransition`, and
+     `CanonicalEvidenceWindowV1`.
+  3. Setup truth lifecycle is `NO_SETUP -> WATCH -> PARTIAL_MATCH ->
+     CONFIRMED_SETUP` or market-only `INVALIDATED`/`EXPIRED`. Risk/account
+     state cannot occupy `SetupAssessment`.
+  4. Confirmed candidates start `ACTIVE`. Terminal `REJECTED`/`SKIPPED`/
+     `EXPIRED`/`INVALIDATED` cannot resurrect to `ACTIVE`.
+  5. Candidate uniqueness is the §5 tuple; `setup_definition_id` is a
+     tenant-owned `CompiledSetupDefinition` only.
+  6. `CanonicalEvidenceWindowV1` hashes the §26 semantic preimage with
+     canonical Decimal/datetime serialization and deterministic ordering.
+     Transport metadata and presentation evidence are excluded.
+  7. This slice does not implement the fusion evaluator, candidate repository,
+     Alembic, watcher/Telegram/TradingView adapters, risk evaluation, alerts,
+     outbox, execution, or frontend.
+- **Alternatives considered:** New observation identity in fusion (rejected:
+  Phase 5 already owns public observations); persist candidates now (rejected:
+  contract freeze only); let adapters keep source-specific candidate keys
+  (rejected: equivalent watcher/detector/TradingView evidence must converge).
+- **Safety impact:** Paper mode unchanged. No network, execution, watcher,
+  Telegram, or BloFin calls.
+- **Consequences:** Later Phase 6 agents implement evaluator, persistence, and
+  adapters against this package.
+- **Validation:** `backend/tests/test_phase6_signal_fusion_contracts.py`;
+  ruff; mypy `--strict` on `src/app/signal_fusion`.
+
+
