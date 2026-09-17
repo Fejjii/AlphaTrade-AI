@@ -74,6 +74,7 @@ Apply in Render Dashboard → **Environment** → **Save** → **Manual Deploy**
 | `EMAIL_PROVIDER` | `mock` |
 | `MARKET_WATCHER_ENABLED` | `false` |
 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` |
+| `WATCHER_ORCHESTRATION_ENABLED` | `false` |
 | `REQUIRE_EMAIL_VERIFIED` | `false` (frictionless demo login) |
 | `DEMO_SEED_ENABLED` | `true` (enables owner-only `POST /demo/seed` on staging) |
 | `DEMO_SEED_PASSWORD` | Private demo password on Render (min 12 characters; never commit). Sets `demo@alphatrade.ai` on seed. |

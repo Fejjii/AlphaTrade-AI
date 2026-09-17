@@ -685,3 +685,36 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/market_source_contracts.md`; tests in
   `test_phase5_*.py`. Pattern/fusion/watcher remain out of scope.
 - **Validation:** Targeted Phase 5 pytest, full backend pytest, ruff, scoped mypy.
+
+## AT-ADR-022 — Isolated watcher orchestration foundation (typed persistence)
+- **Date:** 2026-09-16
+- **Status:** Accepted
+- **Context:** Phase 7 watcher work is split across parallel agents. This agent
+  owns worker orchestration (leases, fencing, lineage, retry, health, scheduling)
+  without market semantics, candidates, Telegram, execution, journal, or ORM
+  migrations. Agent 1 later supplies source freshness and evidence validity.
+- **Decision:**
+  1. New isolated package `app.watcher` with typed persistence ports and a
+     deterministic in-memory repository for this wave.
+  2. Manual and worker callers share one `WatcherOrchestrator.evaluate` boundary
+     (`PREVIEW | PERSIST_EVIDENCE | PERSIST_AND_NOTIFY`). Notify stays blocked.
+  3. One fenced worker owns a tenant-scoped scan key `(organization_id, scan_scope)`;
+     stale fence holders cannot publish. `scan_scope` strings are not a tenant boundary.
+  4. Every scan has an immutable lineage; attempts are append-only; retries are
+     idempotent; failures cannot be rewritten as successes.
+  5. Health is exclusive `healthy | degraded | blocked | stale`.
+  6. `WATCHER_ORCHESTRATION_ENABLED` defaults false and is not wired into the
+     live worker loop. No shared ORM model or Alembic changes.
+  7. WatcherStore methods take `organization_id` explicitly and reject organization
+     mismatch. Lease, fence, heartbeat, health, latest-attempt-by-scope, and
+     lineage-by-scope are keyed by `(organization_id, scan_scope)`.
+- **Alternatives considered:** Extend `MarketWatcherService` / SQLAlchemy models
+  now (rejected: collides with parallel agents and premature PostgreSQL binding);
+  process-local locks only (rejected: architecture requires monotonic lease
+  epochs on every worker-caused write).
+- **Safety impact:** Watcher stays disabled; no automatic trading or candidate
+  creation; real trading remains disabled.
+- **Consequences:** Later integration review binds the ports to PostgreSQL after
+  all three parallel PRs land.
+- **Validation:** `backend/tests/test_watcher_orchestration_foundation.py`.
+
