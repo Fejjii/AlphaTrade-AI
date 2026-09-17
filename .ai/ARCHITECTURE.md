@@ -65,6 +65,9 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   Persistence interfaces + in-memory test store; no Alembic. Exact replay binds an inbound
   semantic fingerprint (`REPLAY_CONFLICT` on mismatch). Inbound size uses
   `TelegramInboundUpdate.body_size`. See `docs/telegram_security_protocol.md`.
+- `candidate_alerts/`: composes canonical Phase 6 `Candidate` onto that protocol. Candidate is
+  the only alert authority. APPROVE never executes. Telegram remains disabled. No webhook.
+  See `docs/phase6_candidate_telegram_alerts.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

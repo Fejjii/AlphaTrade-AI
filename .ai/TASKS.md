@@ -1006,3 +1006,26 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
   those IDs were already used by ActionEligibility, so this task is `AT-049`.
 
+### AT-050 — Phase 6 Candidate Telegram alert foundation
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-043 Telegram security
+  protocol; AT-046/AT-047 canonical Candidate · Risk: Medium (identity +
+  authorization boundary)
+- Safety classification: Paper-safe / Telegram disabled; no webhook, no
+  execution, no PostgreSQL adapter, no Alembic
+- Goal: Bind canonical Candidate events to deterministic CandidateAlertIntent
+  identity and the existing Telegram outbox/security contracts. APPROVE is
+  authorization intent only and never executes. REJECT/SKIP use typed
+  Candidate transitions. REDUCE_RISK must not mutate Candidate. CLOSE stays
+  unavailable. EXECUTE_PAPER_PLAN stays outside Telegram.
+- Branch: `cursor/phase6-telegram-candidate-alerts-0960`
+- Deliverables: `app.candidate_alerts`; tests in
+  `backend/tests/test_phase6_candidate_telegram_alerts.py`; docs
+  `docs/phase6_candidate_telegram_alerts.md`.
+- Validation: Candidate alert tests, Telegram protocol tests, Phase 6
+  Candidate tests, full backend pytest, ruff, mypy `--strict`, GitHub CI.
+  Draft PR to main only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-030
+  Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
+  those IDs were already used, so this task is `AT-050`.
+
