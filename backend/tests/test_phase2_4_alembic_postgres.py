@@ -24,6 +24,19 @@ PHASE2 = "7e8f1a2b3c4d"
 PHASE3 = "8a9b0c1d2e3f"
 PHASE4 = "9b0c1d2e3f4a"
 HARDENING = "a0c1d2e3f4b5"
+WATCHER_TELEGRAM_PERSISTENCE = "3ec264f9aaa8"
+
+_NEW_TABLES = (
+    "watcher_worker_leases",
+    "watcher_scheduled_scans",
+    "watcher_scan_lineages",
+    "telegram_security_action_nonces",
+    "telegram_security_action_receipts",
+    "telegram_security_outbox",
+    "telegram_security_enrollment_challenges",
+    "telegram_security_bindings",
+    "telegram_security_authorization_intents",
+)
 
 
 def _postgres_available() -> bool:
@@ -63,7 +76,16 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == HARDENING
+        assert version == WATCHER_TELEGRAM_PERSISTENCE
+        for table_name in _NEW_TABLES:
+            present = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = :name"
+                ),
+                {"name": table_name},
+            ).scalar()
+            assert present == 1, table_name
         has_pattern = conn.execute(
             text(
                 "SELECT 1 FROM information_schema.columns "
@@ -86,6 +108,20 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
         ).scalar()
         assert trigger == 1
 
+    command.downgrade(config, HARDENING)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == HARDENING
+        for table_name in _NEW_TABLES:
+            missing = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = :name"
+                ),
+                {"name": table_name},
+            ).scalar()
+            assert missing is None, table_name
+
     command.downgrade(config, PHASE4)
     command.downgrade(config, PHASE3)
     command.downgrade(config, PHASE2)
@@ -101,7 +137,7 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == HARDENING
+        assert version == WATCHER_TELEGRAM_PERSISTENCE
         count = conn.execute(text("SELECT COUNT(*) FROM user_strategy_versions")).scalar()
         assert int(count or 0) == 0
         backfill_ok = conn.execute(
