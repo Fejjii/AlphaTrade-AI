@@ -143,6 +143,8 @@ class Settings(BaseSettings):
     alert_webhook_max_retries: int = Field(default=2, ge=0, le=5)
     telegram_alerts_enabled: bool = False
     automatic_telegram_delivery_enabled: bool = False
+    # Isolated inbound interaction protocol (AT-043). Not wired to HTTP or execution.
+    telegram_interaction_enabled: bool = False
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     telegram_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)

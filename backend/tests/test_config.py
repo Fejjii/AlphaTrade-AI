@@ -15,6 +15,8 @@ def test_defaults_are_safe() -> None:
     assert settings.real_trading_enabled is False
     assert settings.provider_mode == "mock"
     assert settings.observability_strict_mode is False
+    assert settings.telegram_alerts_enabled is False
+    assert settings.telegram_interaction_enabled is False
 
 
 def test_cors_origins_accepts_comma_separated_string() -> None:
