@@ -455,7 +455,7 @@ def test_postgres_concurrent_callback_nonce_one_consumer() -> None:
 @requires_postgres
 def test_postgres_exact_replay_does_not_consume_rate_limit() -> None:
     protocol = _protocol(
-        rate_limit_policy=RateLimitPolicy(callback_per_user=1, callback_per_chat=1)
+        rate_limit_policy=RateLimitPolicy(callback_per_user=2, callback_per_chat=2)
     )
     _, binding_id = enroll(protocol)
     issued = protocol.issue_action_nonce(binding_id=binding_id, payload=payload())
