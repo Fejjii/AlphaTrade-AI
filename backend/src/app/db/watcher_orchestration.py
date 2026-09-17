@@ -45,7 +45,7 @@ class WatcherPolicyVersionRow(Base):
             name="uq_watcher_policy_versions_policy_version",
         ),
         CheckConstraint("version >= 1", name="watcher_policy_version_min"),
-        CheckConstraint("char_length(content_hash) = 64", name="watcher_policy_hash_len"),
+        CheckConstraint("length(content_hash) = 64", name="watcher_policy_hash_len"),
     )
 
     policy_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)

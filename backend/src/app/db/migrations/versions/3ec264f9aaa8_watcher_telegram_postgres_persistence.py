@@ -42,11 +42,11 @@ def upgrade() -> None:
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("consumed_by_receipt_id", sa.Uuid(), nullable=True),
         sa.CheckConstraint(
-            "char_length(nonce_hash) = 64",
+            "length(nonce_hash) = 64",
             name=op.f("ck_telegram_security_action_nonces_tgsec_nonce_hash_len"),
         ),
         sa.CheckConstraint(
-            "char_length(payload_hash) = 64",
+            "length(payload_hash) = 64",
             name=op.f("ck_telegram_security_action_nonces_tgsec_nonce_payload_hash_len"),
         ),
         sa.PrimaryKeyConstraint("nonce_id", name=op.f("pk_telegram_security_action_nonces")),
@@ -82,7 +82,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "char_length(replay_fingerprint) = 64",
+            "length(replay_fingerprint) = 64",
             name=op.f("ck_telegram_security_action_receipts_tgsec_receipt_fp_len"),
         ),
         sa.CheckConstraint(
@@ -166,7 +166,7 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("binding_id", sa.Uuid(), nullable=True),
         sa.CheckConstraint(
-            "char_length(token_hash) = 64",
+            "length(token_hash) = 64",
             name=op.f("ck_telegram_security_enrollment_challenges_tgsec_challenge_hash_len"),
         ),
         sa.PrimaryKeyConstraint(
@@ -300,7 +300,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("content_hash", sa.String(length=64), nullable=False),
         sa.CheckConstraint(
-            "char_length(content_hash) = 64",
+            "length(content_hash) = 64",
             name=op.f("ck_watcher_policy_versions_watcher_policy_hash_len"),
         ),
         sa.CheckConstraint(

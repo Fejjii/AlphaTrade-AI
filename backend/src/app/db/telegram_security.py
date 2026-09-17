@@ -50,7 +50,7 @@ class TelegramEnrollmentChallengeRow(Base):
             "state",
         ),
         Index("ix_tgsec_challenges_binding_id", "binding_id"),
-        CheckConstraint("char_length(token_hash) = 64", name="tgsec_challenge_hash_len"),
+        CheckConstraint("length(token_hash) = 64", name="tgsec_challenge_hash_len"),
     )
 
     challenge_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -129,8 +129,8 @@ class TelegramActionNonceRow(Base):
             "payload_hash",
             name="uq_tgsec_nonces_org_hash_payload",
         ),
-        CheckConstraint("char_length(nonce_hash) = 64", name="tgsec_nonce_hash_len"),
-        CheckConstraint("char_length(payload_hash) = 64", name="tgsec_nonce_payload_hash_len"),
+        CheckConstraint("length(nonce_hash) = 64", name="tgsec_nonce_hash_len"),
+        CheckConstraint("length(payload_hash) = 64", name="tgsec_nonce_payload_hash_len"),
     )
 
     nonce_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -170,7 +170,7 @@ class TelegramActionReceiptRow(Base):
             unique=True,
             postgresql_where=text("callback_query_id IS NOT NULL"),
         ),
-        CheckConstraint("char_length(replay_fingerprint) = 64", name="tgsec_receipt_fp_len"),
+        CheckConstraint("length(replay_fingerprint) = 64", name="tgsec_receipt_fp_len"),
         CheckConstraint("update_id >= 0", name="tgsec_receipt_update_id_min"),
     )
 
