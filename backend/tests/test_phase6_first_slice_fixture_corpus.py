@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import timedelta
 from decimal import Decimal
+from itertools import pairwise
 from pathlib import Path
 from uuid import UUID, uuid5
 
@@ -61,6 +62,7 @@ from app.services.setup_ast_compiler import compile_from_spec
 from tests.fixtures.phase6_first_slice.factory import (
     BASE_CONNECTION_ID,
     RECONNECT_CONNECTION_ID,
+    SWING_INDEX,
     SWING_PRICE,
     AssessmentState,
     EvidenceIdentityBehavior,
@@ -73,7 +75,7 @@ from tests.fixtures.phase6_first_slice.factory import (
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "phase6_first_slice"
 ATR_REVISION_NAMESPACE = UUID("df85c21d-99dc-43cb-8fe9-7a5c48ec0b1f")
-EXPECTED_CORPUS_SHA256 = "PENDING"
+EXPECTED_CORPUS_SHA256 = "c1d28f2b365e7c3aaa8e9a1ee4e0c1e0a07a1289f8e1bb33f6bc8a0e929242bb"
 
 
 @pytest.fixture(scope="module")
@@ -100,11 +102,7 @@ def _atr_bar(bar: OhlcvBar) -> FinalOhlcvBar:
         low=bar.low,
         close=bar.close,
         volume=bar.base_volume,
-        finality=(
-            OhlcvFinality.FINAL
-            if bar.finality is Finality.FINAL
-            else OhlcvFinality.FORMING
-        ),
+        finality=(OhlcvFinality.FINAL if bar.finality is Finality.FINAL else OhlcvFinality.FORMING),
     )
 
 
@@ -152,7 +150,7 @@ def _closed_15m(fixture: Phase6Fixture) -> object:
 
 def _assert_ordered_contiguous_bars(bars: tuple[OhlcvBar, ...]) -> None:
     assert list(bars) == sorted(bars, key=lambda bar: bar.interval_start)
-    for previous, current in zip(bars, bars[1:], strict=False):
+    for previous, current in pairwise(bars):
         assert current.interval_start == previous.interval_end
 
 
@@ -571,23 +569,19 @@ def test_assessment_and_candidate_expectation_matrix(
 ) -> None:
     expected_counts = {
         AssessmentState.CONFIRMED: 5,
-        AssessmentState.NO_SETUP: 9,
+        AssessmentState.NO_SETUP: 11,
         AssessmentState.WATCH: 2,
         AssessmentState.PARTIAL_MATCH: 4,
         AssessmentState.INVALIDATED: 1,
         AssessmentState.EXPIRED: 1,
     }
     actual_counts = {
-        state: sum(
-            fixture.expected.assessment_state is state for fixture in corpus.values()
-        )
+        state: sum(fixture.expected.assessment_state is state for fixture in corpus.values())
         for state in AssessmentState
     }
     assert actual_counts == expected_counts
     candidate_ids = {
-        fixture.fixture_id
-        for fixture in corpus.values()
-        if fixture.expected.candidate_creation
+        fixture.fixture_id for fixture in corpus.values() if fixture.expected.candidate_creation
     }
     assert candidate_ids == {
         "confirmed-setup",

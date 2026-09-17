@@ -24,7 +24,6 @@ from app.market_contracts.first_slice import (
     CANONICAL_TRIGGER_INTERVAL_START,
     first_slice_identity,
 )
-from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import (
     ADAPTER_VERSION,
     AGGRESSOR_CONVENTION,
@@ -147,6 +146,30 @@ def _spot_instrument() -> InstrumentIdentity:
             venue=VenueId.BINANCE,
             product_family=ProductFamily.SPOT,
             market_type=MarketType.SPOT,
+            symbol=symbol,
+        ),
+        provider_symbol=symbol,
+        base_asset="BTC",
+        quote_asset="USDT",
+        settlement_asset="USDT",
+        contract_multiplier=Decimal("1"),
+        price_unit="USDT",
+        base_quantity_unit="BTC",
+        quote_quantity_unit="USDT",
+    )
+
+
+def _delivery_instrument() -> InstrumentIdentity:
+    symbol = "BTCUSDT"
+    return InstrumentIdentity(
+        venue=VenueId.BINANCE,
+        market_type=MarketType.DELIVERY,
+        product_family=ProductFamily.USDM_FUTURES,
+        contract_style=ContractStyle.LINEAR,
+        instrument_id=canonical_instrument_id(
+            venue=VenueId.BINANCE,
+            product_family=ProductFamily.USDM_FUTURES,
+            market_type=MarketType.DELIVERY,
             symbol=symbol,
         ),
         provider_symbol=symbol,
@@ -303,9 +326,7 @@ def _build_15m_bars(
     return bars
 
 
-def _build_4h_bars(
-    *, evaluated_at: datetime, instrument: InstrumentIdentity
-) -> list[OhlcvBar]:
+def _build_4h_bars(*, evaluated_at: datetime, instrument: InstrumentIdentity) -> list[OhlcvBar]:
     last_open = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
     first_open = last_open - timedelta(hours=4 * 29)
     return [
@@ -398,8 +419,7 @@ def _build_trades(
                 _trade(
                     instrument=instrument,
                     sequence=sequence + 1,
-                    event_time=evaluated_at
-                    - timedelta(seconds=11 if mutation == "stale" else 10),
+                    event_time=evaluated_at - timedelta(seconds=11 if mutation == "stale" else 10),
                     evaluated_at=evaluated_at,
                     quantity=sell_quantity,
                     buyer_is_maker=True,
@@ -850,18 +870,25 @@ def _build_fixture(
     instrument = (
         _eth_instrument()
         if mutation == "wrong_instrument"
+        else _delivery_instrument()
+        if mutation == "wrong_market"
         else _spot_instrument()
         if mutation == "spot"
         else binance_usdm_btcusdt()
     )
-    bar_mutation = mutation if mutation in {
-        "no_swing",
-        "watch",
-        "partial_match",
-        "volume_failure",
-        "corrected_revision",
-        "forming",
-    } else "base"
+    bar_mutation = (
+        mutation
+        if mutation
+        in {
+            "no_swing",
+            "watch",
+            "partial_match",
+            "volume_failure",
+            "corrected_revision",
+            "forming",
+        }
+        else "base"
+    )
     bars_15m = _build_15m_bars(
         trigger_open=trigger_open,
         evaluated_at=evaluated_at,
@@ -881,17 +908,18 @@ def _build_fixture(
     else:
         identity_15m = _identity_for(instrument, Timeframe.M15)
         identity_4h = _identity_for(instrument, Timeframe.H4)
-    if mutation == "wrong_market":
-        identity_15m = identity_15m.model_copy(update={"market_type": MarketType.DELIVERY})
-        identity_4h = identity_4h.model_copy(update={"market_type": MarketType.DELIVERY})
-
-    trade_mutation = mutation if mutation in {
-        "stale",
-        "sequence_gap",
-        "reconnect",
-        "cvd_failure",
-        "flow_failure",
-    } else "base"
+    trade_mutation = (
+        mutation
+        if mutation
+        in {
+            "stale",
+            "sequence_gap",
+            "reconnect",
+            "cvd_failure",
+            "flow_failure",
+        }
+        else "base"
+    )
     trades = _build_trades(
         bars=bars_15m,
         evaluated_at=evaluated_at,
