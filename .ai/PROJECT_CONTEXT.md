@@ -52,6 +52,7 @@ Release line: `v0.1.0-paper-mvp` (built in vertical slices 1–~91A per `docs/`)
 | `EXCHANGE_MODE` | Safe default `paper_internal` (Mode A). Staging may run Mode C `paper_exchange_demo` when demo credentials are configured; never live. |
 | `BILLING_ENABLED` | `false` |
 | Notifications (Telegram/webhook) | disabled by default |
+| Telegram interaction protocol | disabled by default; not wired to HTTP or execution |
 | Worker / scanner / scheduler automation | disabled by default |
 
 ## Live surfaces (staging, paper-only)

@@ -63,6 +63,7 @@ Template: [`.env.staging.example`](../.env.staging.example)
 | 25 | `EMAIL_PROVIDER` | `mock` | ☐ |
 | 26 | `MARKET_WATCHER_ENABLED` | `false` | ☐ |
 | 27 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` | ☐ |
+| 27b | `WATCHER_ORCHESTRATION_ENABLED` | `false` | ☐ |
 | 28 | `REQUIRE_EMAIL_VERIFIED` | `false` (demo login) | ☐ |
 
 Validate before deploy:

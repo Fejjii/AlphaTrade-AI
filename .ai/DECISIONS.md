@@ -685,3 +685,83 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/market_source_contracts.md`; tests in
   `test_phase5_*.py`. Pattern/fusion/watcher remain out of scope.
 - **Validation:** Targeted Phase 5 pytest, full backend pytest, ruff, scoped mypy.
+
+## AT-ADR-022 — Isolated watcher orchestration foundation (typed persistence)
+- **Date:** 2026-09-16
+- **Status:** Accepted
+- **Context:** Phase 7 watcher work is split across parallel agents. This agent
+  owns worker orchestration (leases, fencing, lineage, retry, health, scheduling)
+  without market semantics, candidates, Telegram, execution, journal, or ORM
+  migrations. Agent 1 later supplies source freshness and evidence validity.
+- **Decision:**
+  1. New isolated package `app.watcher` with typed persistence ports and a
+     deterministic in-memory repository for this wave.
+  2. Manual and worker callers share one `WatcherOrchestrator.evaluate` boundary
+     (`PREVIEW | PERSIST_EVIDENCE | PERSIST_AND_NOTIFY`). Notify stays blocked.
+  3. One fenced worker owns a tenant-scoped scan key `(organization_id, scan_scope)`;
+     stale fence holders cannot publish. `scan_scope` strings are not a tenant boundary.
+  4. Every scan has an immutable lineage; attempts are append-only; retries are
+     idempotent; failures cannot be rewritten as successes.
+  5. Health is exclusive `healthy | degraded | blocked | stale`.
+  6. `WATCHER_ORCHESTRATION_ENABLED` defaults false and is not wired into the
+     live worker loop. No shared ORM model or Alembic changes.
+  7. WatcherStore methods take `organization_id` explicitly and reject organization
+     mismatch. Lease, fence, heartbeat, health, latest-attempt-by-scope, and
+     lineage-by-scope are keyed by `(organization_id, scan_scope)`.
+- **Alternatives considered:** Extend `MarketWatcherService` / SQLAlchemy models
+  now (rejected: collides with parallel agents and premature PostgreSQL binding);
+  process-local locks only (rejected: architecture requires monotonic lease
+  epochs on every worker-caused write).
+- **Safety impact:** Watcher stays disabled; no automatic trading or candidate
+  creation; real trading remains disabled.
+- **Consequences:** Later integration review binds the ports to PostgreSQL after
+  all three parallel PRs land.
+- **Validation:** `backend/tests/test_watcher_orchestration_foundation.py`.
+
+## AT-ADR-023 — Isolated Telegram security protocol; APPROVE never executes (AT-043)
+- **Date:** 2026-09-16
+- **Status:** Accepted
+- **Context:** Agentic redesign §10 requires verified private-chat enrollment,
+  opaque action nonces, receipts, replay protection, and a RemoteActionGateway
+  that is not a second mutation stack. Agent 3 owns the isolated security
+  foundation only. Telegram must remain disabled and must not connect to
+  execution. CLOSE stays unavailable. EXECUTE_PAPER_PLAN is out of scope.
+- **Decision:**
+  1. **Isolated package.** `app.telegram_security` holds enrollment, binding,
+     message/callback identity, nonce, receipt, rate-limit, outbox, delivery
+     acknowledgement, transport, and the action authorization boundary.
+  2. **Persistence interfaces only.** `TelegramSecurityStore` + deterministic
+     `InMemoryTelegramSecurityStore`. No shared ORM models, no Alembic.
+  3. **Disabled by default.** `telegram_interaction_enabled=false`. No FastAPI
+     webhook. Fake transport for tests; no live Telegram API calls.
+  4. **Private chat only.** Group/channel chats and chat-id-only enrollment fail.
+  5. **Opaque one-time nonces** bind org, user, account, Telegram identity, resource,
+     revision/content hash, one action, expiry, and single-use state.
+  6. **APPROVE** records a protocol-level authorization intent (`executes=false`).
+     It never calls ExecutionService. EXECUTE_PAPER_PLAN is not in the Telegram
+     vocabulary.
+  7. **CLOSE** is a known name but unavailable (issue and apply both fail).
+  8. Duplicate `update_id` / `callback_query_id` / outbox idempotency keys
+     converge only when the inbound semantic fingerprint is identical. Same
+     transport lookup identity with changed update/message/callback identity,
+     Telegram user, chat, chat type, bot, nonce or enrollment-token hash,
+     action, organization, AlphaTrade user, account, resource, revision,
+     content hash, or payload hash fails closed as `REPLAY_CONFLICT`.
+  9. Inbound type and size validation precede receipt lookup. Exact persisted
+     replay convergence and conflicting replay rejection precede rate-limit
+     charging; only genuinely new semantic inbound actions consume budget.
+  10. `MAX_INBOUND_UPDATE_BYTES` is enforced against
+     `TelegramInboundUpdate.body_size` (raw Telegram request payload), never
+     nonce or enrollment-token length. Webhook wiring remains out of scope.
+  11. Delivery is at-least-once via durable claim.
+- **Alternatives considered:** Wire inbound webhook now (rejected: later
+  integration); persist via Alembic in this slice (rejected: later PostgreSQL
+  binding); allow APPROVE to call execution (rejected: CRITICAL-03).
+- **Safety impact:** Telegram stays off. Live trading stays disabled. Approval
+  cannot execute. CLOSE cannot close.
+- **Consequences:** Docs in `docs/telegram_security_protocol.md`. Tests in
+  `backend/tests/test_telegram_security_protocol.py`.
+- **Validation:** Targeted protocol tests, full backend pytest, ruff, mypy on
+  `app.telegram_security`, GitHub CI. No merge in the implementing PR's agent
+  instructions.
+

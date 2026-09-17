@@ -27,6 +27,7 @@ Alerts **never execute trades**. Paper validation only.
 | `ALERT_WEBHOOK_TIMEOUT_SECONDS` | `5` | HTTP timeout |
 | `ALERT_WEBHOOK_MAX_RETRIES` | `2` | Retry cap per alert |
 | `TELEGRAM_ALERTS_ENABLED` | `false` | Telegram provider |
+| `TELEGRAM_INTERACTION_ENABLED` | `false` | Inbound interaction protocol (not wired) |
 | `TELEGRAM_BOT_TOKEN` | empty | Bot token (secret — env only) |
 | `TELEGRAM_CHAT_ID` | empty | Default chat id for staging |
 | `TELEGRAM_TIMEOUT_SECONDS` | `5` | HTTP timeout |
@@ -52,6 +53,11 @@ Signed payloads when `ALERT_WEBHOOK_SECRET` is set (`X-AlphaTrade-Signature`). U
 ## Telegram delivery
 
 Uses Telegram Bot API `sendMessage`. Disabled unless env flag, bot token, chat id, and user preference are all enabled. Bot token never logged.
+
+Inbound Telegram interaction (enrollment, callbacks, remote actions) is a **separate
+disabled protocol**. See [telegram_security_protocol.md](telegram_security_protocol.md).
+It is not mounted on HTTP in this release. `TELEGRAM_INTERACTION_ENABLED` defaults
+to `false`. `APPROVE` in that protocol never executes. `CLOSE` is unavailable.
 
 ## Delivery routing
 

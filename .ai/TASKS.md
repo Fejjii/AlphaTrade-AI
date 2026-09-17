@@ -477,6 +477,27 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Completion evidence: PR https://github.com/Fejjii/AlphaTrade-AI/pull/27 merged
   (`05b79ea`, CI run 30160911227). Head commit `4c2e49d`.
 
+### AT-043 — Telegram security and interaction protocol foundation
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: agentic redesign Phase 8 design
+  (`docs/redesign/agentic_redesign_target_architecture.md` §10) · Risk: Medium
+  (security-critical; must remain disconnected from execution)
+- Safety classification: Security / paper-safe / Telegram disabled
+- Goal: Isolated Telegram enrollment, verified private-chat identity, nonce,
+  receipt, replay, rate-limit, outbox, delivery-ack, and action-authorization
+  contracts. Telegram stays disabled. APPROVE never executes. CLOSE unavailable.
+  No FastAPI webhook, no ORM/Alembic, no execution wiring.
+- Branch: `cursor/telegram-security-foundation-5bf5`
+- Deliverables: `app.telegram_security`; in-memory store; fake transport;
+  `docs/telegram_security_protocol.md`; tests
+  `test_telegram_security_protocol.py`; `TELEGRAM_INTERACTION_ENABLED=false`.
+  Final hardening (PR 79): exact-replay fingerprint +
+  `TelegramInboundUpdate.body_size`; closure binds full transport identity and
+  resolves exact/conflicting replay before rate-limit charging.
+- Validation: targeted protocol tests + full backend pytest + ruff + mypy on
+  the new package + GitHub CI. No merge in this task.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-023
+
 ### AT-039 — Premium UI/UX blueprint + screen inventory (planning only)
 - Priority: P1 · Status: DONE · Dependencies: AT-038 · Risk: Low (docs only)
 - Safety classification: Product/design planning; no runtime change
@@ -700,6 +721,23 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   do not reopen Portfolio/Risk or Analytics PRs 1–3 scope in that chat. Final readiness
   audit follows Analytics PR 4 and final polish (see blueprint §8 PR 4 and
   `docs/product/at040_final_polish_and_readiness_audit.md` when merged).
+
+### AT-042 — Watcher orchestration foundation (Phase 7 worker; isolated)
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: agentic redesign Phase 7
+  contracts; Agent 1 source freshness later · Risk: Medium
+- Safety classification: Paper-safe; watcher remains disabled; no execution,
+  journal, Telegram, candidates, or ORM/migrations
+- Goal: Isolated worker architecture — scan request / watchlist policy contracts,
+  leases, fencing, retry, scan lineage, dedupe, idempotent scheduling, manual
+  and worker evaluation-boundary parity, health, failure reporting, observability,
+  and deterministic test repositories.
+- Branch: `cursor/watcher-orchestration-foundation-4364`
+- Validation: Targeted foundation tests plus full backend, ruff, mypy, GitHub CI.
+  Tenant isolation: two organizations with identical `scan_scope` acquire independent
+  leases/fences/heartbeats/health/lineage. `WATCHER_ORCHESTRATION_ENABLED` default
+  false; no Alembic migrations.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-022
 
 ---
 
