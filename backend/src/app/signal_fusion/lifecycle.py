@@ -6,7 +6,8 @@ and the tenant-owned CompiledSetupDefinition on that assessment.
 
 PaperValidationCandidate is a downstream compatibility consumer and cannot mint
 canonical identity. This module does not evaluate fusion, persist to PostgreSQL,
-or activate execution.
+or activate execution. ``PLAN_CREATED`` is applied by CanonicalTradePlanService
+only after a successful canonical TradePlanRevision insert.
 """
 
 from __future__ import annotations

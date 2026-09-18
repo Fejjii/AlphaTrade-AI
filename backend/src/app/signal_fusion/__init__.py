@@ -5,10 +5,13 @@ first-slice ``SetupAssessment`` truth, owns in-memory candidate lifecycle
 authority, and evaluates deterministic ``ActionEligibility`` for paper action.
 
 PostgreSQL Candidate persistence lives in ``app.persistence`` and binds this
-package's ``CandidateRepository`` port. This package does not activate
-watcher/Telegram adapters, create trade plans, or execute trades.
+package's ``CandidateRepository`` port. Canonical TradePlanRevision creation is
+owned by ``CanonicalTradePlanService`` after an ELIGIBLE ActionEligibility
+result; this package does not mint plans or execute trades. This package does
+not activate watcher/Telegram adapters.
 PaperValidationCandidate remains a downstream compatibility consumer and is not
-candidate authority. SetupAssessment remains independent of account/risk state.
+candidate or plan authority. SetupAssessment remains independent of account/risk
+state.
 """
 
 from app.market_contracts.observation import PublicMarketObservation
