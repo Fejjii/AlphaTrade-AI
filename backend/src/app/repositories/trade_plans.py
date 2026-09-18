@@ -1,4 +1,10 @@
-"""Persistence for internal execution accounts and immutable plan revisions."""
+"""Persistence for internal execution accounts and immutable plan revisions.
+
+SQLAlchemy ``TradePlanRevisionRepository`` reads Phase 1 ORM rows whose
+``candidate_id`` still foreign-keys ``paper_validation_candidates``. Canonical
+plan authority lives on ``CanonicalTradePlanStore`` /
+``CanonicalTradePlanService`` until Agent 1 remaps that binding.
+"""
 
 from __future__ import annotations
 

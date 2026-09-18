@@ -1039,4 +1039,49 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   package plus `app.telegram_security` and `app.signal_fusion`, GitHub CI.
   Draft PR only; do not merge in the implementing agent instructions.
 
+## AT-ADR-031 — Phase 7 canonical TradePlanRevision application layer
+- **Date:** 2026-09-18
+- **Status:** Accepted (application layer only; PostgreSQL/Alembic not in this slice)
+- **Context:** Phase 6 froze Candidate and ActionEligibility as in-memory
+  authorities. Phase 1 `TradePlanRevision` is hash-stable and immutable, but
+  `ProposalService.create_revision` is fail-closed and
+  `trade_plan_revisions.candidate_id` still foreign-keys
+  `paper_validation_candidates`. Parallel Agent 1 owns schema. This slice must
+  make Candidate → ActionEligibility → TradePlanRevision the canonical flow
+  without mutating ORM/Alembic.
+- **Decision:**
+  1. `CanonicalTradePlanService.create` is the sole first-slice plan authority.
+  2. Creation loads Candidate and ActionEligibility from those services. Only
+     `ACTIVE` + currently paper-actionable `ELIGIBLE` may insert. Lineage
+     (org/user/account, candidate identity/hash/revision, assessment, evidence
+     window, strategy/setup, venue/market/instrument/timeframe/side) must match
+     exactly. Plan `candidate_id` is the canonical Candidate id.
+  3. Phase 1 `TradePlanRevisionSemantic` / `CanonicalTradePlanContentV1` stays
+     hash-stable. Canonical binding is `CanonicalTradePlanLineage` beside that
+     preimage, not new semantic fields.
+  4. Identical semantic requests converge (presentation/correlation first-write
+     wins). Conflicting organization-scoped idempotency fails closed. One plan
+     per (org, user, account, candidate) in this slice.
+  5. `CandidateState.PLAN_CREATED` is applied only after a successful store
+     insert; failed creates do not transition. Transition identity is derived
+     from plan uniqueness so retries converge.
+  6. `PaperValidationCandidate` and `ProposalService.create_revision` cannot
+     mint canonical plan authority. Approval may bind revision id + content
+     hash only and cannot change executable semantics. Execution is absent.
+  7. Persistence is `CanonicalTradePlanStore` (in-memory).
+     `UnboundSqlAlchemyCanonicalTradePlanAdapter` refuses ORM writes until
+     Agent 1 remaps the PVC FK and persists Candidate/Eligibility/lineage.
+- **Alternatives considered:** Add lineage fields to `TradePlanRevisionSemantic`
+  (rejected: would break existing Phase 1 content-hash verification); write
+  canonical UUID5 ids into the PVC FK (rejected: competing identity, FK
+  violation); implement Alembic in this wave (rejected: Agent 1 owns schema).
+- **Safety impact:** Paper only. Live trading cannot become executable. No
+  network, Watcher, Telegram, Journal, execution dispatch, frontend, or
+  deployment changes.
+- **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
+  Tests in `backend/tests/test_phase7_canonical_trade_plan.py`.
+- **Validation:** Focused canonical plan tests, Phase 1 planning/approval
+  tests, Phase 6 candidate/eligibility tests, full backend pytest, ruff,
+  mypy `--strict`, GitHub CI. Draft PR only; do not merge.
+
 

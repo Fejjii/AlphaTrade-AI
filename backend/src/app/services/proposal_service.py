@@ -188,7 +188,11 @@ class ProposalService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> TradePlanRevision:
-        """Fail closed until an authoritative planner and permission source are available."""
+        """Legacy proposal/PVC path cannot mint canonical TradePlanRevision authority.
+
+        Canonical plans are created only by ``CanonicalTradePlanService`` from an
+        ACTIVE Candidate plus ELIGIBLE ActionEligibility.
+        """
         del proposal_id, data, organization_id, user_id
         raise ValidationAppError(
             "ANALYSIS_ONLY_CANNOT_CREATE_EXECUTABLE_PLAN: "
