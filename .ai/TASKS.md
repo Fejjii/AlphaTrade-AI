@@ -979,3 +979,30 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-028
 
+### AT-049 — Watcher to Phase 6 fusion wiring (first slice)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-042, AT-047 / PR #88
+  head `046929cbe612e1bafc2e87ebe794d9b59300ec35` · Risk: Medium
+  (orchestration identity)
+- Safety classification: Paper-safe / orchestration wiring only; watcher
+  remains disabled; no scheduler, Telegram, TradePlan, execution, Alembic,
+  or live trading
+- Goal: Connect Watcher scan → canonical market evidence →
+  CanonicalEvidenceWindowV1 → evaluate_setup → SetupAssessment → canonical
+  Candidate only when CONFIRMED_SETUP. Manual and worker evaluation must
+  converge for identical semantic evidence. First slice: Bearish Liquidity
+  Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance,
+  BTCUSDT perpetual, 15m trigger, 4h context.
+- Branch: `cursor/phase6-watcher-fusion-wiring`
+- Deliverables: `WatcherFusionEvaluationService` as the single evaluation
+  boundary; integration tests for parity, gating, fencing, tenant isolation,
+  and crash/retry convergence. Do not redesign WatcherStore, Phase 5/6
+  contracts, the evaluator, or candidate lifecycle authority.
+- Validation: watcher tests, Phase 5, Phase 6 contracts/evaluator/lifecycle,
+  new integration tests, full backend pytest, ruff, mypy `--strict` on
+  `src/app/watcher` and `src/app/signal_fusion`, GitHub CI. Draft PR only;
+  do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-029
+  Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
+  those IDs were already used by ActionEligibility, so this task is `AT-049`.
+
