@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from typing import Protocol, cast
 from uuid import UUID, uuid4
 
 from app.guardrails.redaction import redact_text
@@ -53,6 +54,14 @@ from app.watcher.ports import (
 _TERMINAL_SUCCESS = ScanAttemptStatus.SUCCEEDED
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 _CONFIRMED_SETUP = "confirmed_setup"
+
+
+class _ConfirmedSetupPersist(Protocol):
+    """Optional fusion persist hook. Foundation evaluators do not implement it."""
+
+    def persist_confirmed_setup(
+        self, command: EvaluationCommand, outcome: EvaluationOutcome
+    ) -> EvaluationOutcome: ...
 
 
 class WatcherOrchestrator:
@@ -292,6 +301,7 @@ class WatcherOrchestrator:
             fencing_token=None,
             evaluation_input_hash=input_hash,
         )
+        outcome = self._persist_canonical_candidate(command, outcome)
         published = self._publish(
             attempt=attempt,
             lineage=lineage,
@@ -515,6 +525,37 @@ class WatcherOrchestrator:
                 reason_code="stale_fence",
             )
 
+        try:
+            outcome = self._persist_canonical_candidate(command, outcome)
+        except SimulatedWorkerCrashError:
+            raise
+        except Exception as exc:
+            outcome = EvaluationOutcome(
+                command_id=command.command_id,
+                request_hash=command.request_hash,
+                evaluation_input_hash=command.evaluation_input_hash,
+                status=EvaluationStatus.FAILED,
+                reason_code="candidate_creation_failed",
+                error=_sanitize(str(exc)),
+                candidate_ids=(),
+            )
+
+        if not self._store.fence_is_active(
+            organization_id=request.organization_id,
+            scan_scope=request.scan_scope,
+            owner_id=worker_id,
+            fencing_token=lease.fencing_token,
+            now=self._clock.now(),
+        ):
+            return self._reject_stale(
+                attempt=attempt,
+                lineage=lineage,
+                request=request,
+                worker_id=worker_id,
+                fencing_token=lease.fencing_token,
+                reason_code="stale_fence",
+            )
+
         published, final_outcome = self._publish(
             attempt=attempt,
             lineage=lineage,
@@ -570,6 +611,15 @@ class WatcherOrchestrator:
             return self._blocked_outcome(command, reason_code="notify_disabled")
         raw = self._evaluator.evaluate(command)
         return _honest_outcome(raw)
+
+    def _persist_canonical_candidate(
+        self, command: EvaluationCommand, outcome: EvaluationOutcome
+    ) -> EvaluationOutcome:
+        persist = getattr(self._evaluator, "persist_confirmed_setup", None)
+        if not callable(persist):
+            return outcome
+        boundary = cast(_ConfirmedSetupPersist, self._evaluator)
+        return _honest_outcome(boundary.persist_confirmed_setup(command, outcome))
 
     def _blocked_outcome(
         self, command: EvaluationCommand, *, reason_code: str

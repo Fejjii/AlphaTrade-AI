@@ -20,6 +20,7 @@ from app.market_contracts.cursor import TradeStreamSnapshot
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.enums import CandidateState, EvidenceAdapterKind, SetupAssessmentState
+from app.signal_fusion.errors import CandidateCreationAuthorityError
 from app.signal_fusion.evaluator import evaluate_setup
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.lifecycle import (
@@ -519,6 +520,13 @@ def test_stale_worker_fencing_cannot_publish() -> None:
     lineage = store.get_lineage(stolen.lineage_id, request.organization_id)
     assert lineage is not None
     assert lineage.terminal_status is not ScanAttemptStatus.SUCCEEDED
+    assert inner.published_candidate_ids == ()
+    uniqueness = uniqueness_from_confirmed(
+        _direct_assessment(world),
+        evidence_window_from_assessment_command(world.command),
+        world.command.executable_setup,
+    )
+    assert inner.lifecycle.get_by_uniqueness(uniqueness) is None
 
     winner = build_orchestrator(
         enabled=True,
@@ -688,6 +696,11 @@ def test_fusion_wiring_does_not_hash_or_mint_identity() -> None:
     assert "evaluate_setup" in text
     assert "evidence_window_from_assessment_command" in text
     assert "create_from_confirmed_setup" in text
+    assert "persist_confirmed_setup" in text
+    assert "FIRST_SLICE_SWEEP" not in text
+    assert "cvd_at_close" not in text
+    assert "compute_wilder_atr" not in text
+    assert "bar_signed_quote_flow" not in text
 
 
 def test_direct_manual_and_worker_commands_share_window() -> None:
@@ -709,19 +722,183 @@ def test_direct_manual_and_worker_commands_share_window() -> None:
             correlation_id=uuid4(),
         )
     )
-    worker = service.evaluate(
-        EvaluationCommand(
-            command_id=uuid4(),
-            request=worker_request,
-            request_hash=scan_request_hash(worker_request),
-            evaluation_input_hash=evaluation_input_hash(worker_request),
-            mode=EvaluationMode.PERSIST_EVIDENCE,
-            trigger=ScanTrigger.WORKER,
-            correlation_id=uuid4(),
-        )
+    worker_command = EvaluationCommand(
+        command_id=uuid4(),
+        request=worker_request,
+        request_hash=scan_request_hash(worker_request),
+        evaluation_input_hash=evaluation_input_hash(worker_request),
+        mode=EvaluationMode.PERSIST_EVIDENCE,
+        trigger=ScanTrigger.WORKER,
+        correlation_id=uuid4(),
     )
-    assert manual.evidence_validity_token == worker.evidence_validity_token
-    assert manual.reason_code == worker.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
+    worker_assessed = service.evaluate(worker_command)
+    assert manual.evidence_validity_token == worker_assessed.evidence_validity_token
+    assert (
+        manual.reason_code
+        == worker_assessed.reason_code
+        == SetupAssessmentState.CONFIRMED_SETUP.value
+    )
     assert manual.candidate_ids == ()
+    assert worker_assessed.candidate_ids == ()
+    assert service.published_candidate_ids == ()
+    worker = service.persist_confirmed_setup(worker_command, worker_assessed)
     assert len(worker.candidate_ids) == 1
     assert evaluation_input_hash(manual_request) == evaluation_input_hash(worker_request)
+
+
+def test_revision_change_creates_distinct_evidence_and_candidate() -> None:
+    first_world = make_world(trigger_revision=1)
+    second_world = make_world(trigger_revision=2)
+    first_direct = _direct_assessment(first_world)
+    second_direct = _direct_assessment(second_world)
+    assert first_direct.state is SetupAssessmentState.CONFIRMED_SETUP
+    assert second_direct.state is SetupAssessmentState.CONFIRMED_SETUP
+    assert first_direct.evidence_window_hash != second_direct.evidence_window_hash
+
+    clock = FakeClock()
+    store = InMemoryWatcherStore()
+    repo = InMemoryCandidateRepository()
+    eval_clock = BoundEvaluationClock()
+    lifecycle = CandidateLifecycleService(repository=repo, clock=eval_clock)
+    evidence = InMemoryWatcherScanEvidence()
+    evidence.bind(snapshot_from_world(first_world), scan_scope="revision-1")
+    evidence.bind(snapshot_from_world(second_world), scan_scope="revision-2")
+    service = WatcherFusionEvaluationService(
+        evidence=evidence, lifecycle=lifecycle, clock=eval_clock
+    )
+    orch = build_orchestrator(
+        enabled=True,
+        clock=clock,
+        store=store,
+        evaluator=service,
+        side_effects=SideEffectProbe(),
+    )
+    first_policy = _policy(clock)
+    second_policy = _policy(clock)
+    store.put_policy_version(first_policy)
+    store.put_policy_version(second_policy)
+    first = orch.run_worker(
+        _request(first_policy, key="rev-1", scan_scope="revision-1"),
+        worker_id="worker-1",
+    )
+    second = orch.run_worker(
+        _request(second_policy, key="rev-2", scan_scope="revision-2"),
+        worker_id="worker-2",
+    )
+    assert first.outcome is not None
+    assert second.outcome is not None
+    assert first.outcome.evidence_validity_token == first_direct.evidence_window_hash
+    assert second.outcome.evidence_validity_token == second_direct.evidence_window_hash
+    assert first.outcome.candidate_ids != second.outcome.candidate_ids
+    assert len(set(service.published_candidate_ids)) == 2
+
+
+def test_watcher_cannot_bypass_canonical_evaluator() -> None:
+    world = make_world()
+    orch, _clock, _store, _service, probe, _evidence, policy = _wired(world)
+    worker = orch.run_worker(_request(policy, key="canonical"), worker_id="worker-1")
+    assert worker.outcome is not None
+    assert worker.outcome.evidence_validity_token == _direct_assessment(world).evidence_window_hash
+    assert worker.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
+    _assert_no_side_effects(probe)
+    text = FUSION_EVAL_SRC.read_text(encoding="utf-8")
+    assert "def evaluate_setup" not in text
+    assert text.count("evaluate_setup(") == 1
+
+
+def test_candidate_creation_failure_is_failed_scan() -> None:
+    world = make_world()
+    clock = FakeClock()
+    store = InMemoryWatcherStore()
+    evidence = InMemoryWatcherScanEvidence()
+    evidence.bind(snapshot_from_world(world), scan_scope=SHARED_SCOPE)
+
+    class _RejectingLifecycle(CandidateLifecycleService):
+        def create_from_confirmed_setup(self, command: object) -> object:
+            del command
+            raise CandidateCreationAuthorityError("forced candidate authority failure")
+
+    eval_clock = BoundEvaluationClock()
+    service = WatcherFusionEvaluationService(
+        evidence=evidence,
+        lifecycle=_RejectingLifecycle(
+            repository=InMemoryCandidateRepository(),
+            clock=eval_clock,
+        ),
+        clock=eval_clock,
+    )
+    orch = build_orchestrator(
+        enabled=True,
+        clock=clock,
+        store=store,
+        evaluator=service,
+        side_effects=SideEffectProbe(),
+    )
+    policy = _policy(clock)
+    store.put_policy_version(policy)
+    result = orch.run_worker(_request(policy, key="create-fail"), worker_id="worker-1")
+    assert result.outcome is not None
+    assert result.outcome.status is EvaluationStatus.FAILED
+    assert result.outcome.reason_code == "candidate_creation_failed"
+    assert result.outcome.candidate_ids == ()
+    assert result.outcome.reason_code != SetupAssessmentState.CONFIRMED_SETUP.value
+    assert service.published_candidate_ids == ()
+
+
+def test_evidence_load_failure_is_not_setup_truth() -> None:
+    world = make_world()
+    _orch, _clock, store, _service, probe, _evidence, policy = _wired(world)
+
+    class _ExplodingEvidence:
+        def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
+            del command
+            raise RuntimeError("canonical evidence backend exploded")
+
+    eval_clock = BoundEvaluationClock()
+    bare = WatcherFusionEvaluationService(
+        evidence=_ExplodingEvidence(),
+        lifecycle=CandidateLifecycleService(
+            repository=InMemoryCandidateRepository(),
+            clock=eval_clock,
+        ),
+        clock=eval_clock,
+    )
+    failed = build_orchestrator(
+        enabled=True,
+        store=store,
+        clock=FakeClock(),
+        evaluator=bare,
+        side_effects=probe,
+    ).run_worker(_request(policy, key="exploded"), worker_id="worker-1")
+    assert failed.outcome is not None
+    assert failed.outcome.status is EvaluationStatus.FAILED
+    assert failed.outcome.reason_code == "canonical_evidence_unavailable"
+    assert failed.outcome.candidate_ids == ()
+    assert failed.outcome.reason_code != SetupAssessmentState.CONFIRMED_SETUP.value
+    _assert_no_side_effects(probe)
+
+
+def test_assessment_command_tenant_mismatch_fails_closed() -> None:
+    world = make_world()
+    foreign = uuid4()
+    snapshot = snapshot_from_world(world).model_copy(
+        update={"assessment_command": world.command.model_copy(update={"organization_id": foreign})}
+    )
+    probe = SideEffectProbe()
+    clock = FakeClock()
+    store = InMemoryWatcherStore()
+    evidence = InMemoryWatcherScanEvidence()
+    evidence.bind(snapshot, scan_scope=SHARED_SCOPE)
+    service = build_fusion_evaluation_service(evidence=evidence)
+    orch = build_orchestrator(
+        enabled=True, clock=clock, store=store, evaluator=service, side_effects=probe
+    )
+    policy = _policy(clock)
+    store.put_policy_version(policy)
+    result = orch.run_worker(_request(policy, key="tenant-mismatch"), worker_id="worker-1")
+    assert result.outcome is not None
+    assert result.outcome.status is EvaluationStatus.FAILED
+    assert result.outcome.reason_code == "organization_mismatch"
+    assert result.outcome.candidate_ids == ()
+    assert service.published_candidate_ids == ()
+    _assert_no_side_effects(probe)

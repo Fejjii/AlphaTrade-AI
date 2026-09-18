@@ -5,7 +5,7 @@ does not compute a second evidence hash, and does not mint candidate identity.
 Canonical flow:
 
     scan evidence → CanonicalEvidenceWindowV1 → evaluate_setup → SetupAssessment
-    → Candidate only when CONFIRMED_SETUP and persist mode
+    → Candidate only when CONFIRMED_SETUP, persist mode, and publish is authorized
 
 Setup truth stays independent of balance, portfolio, risk, leverage, execution
 availability, and account state. Action eligibility is out of scope.
@@ -13,6 +13,7 @@ availability, and account state. Action eligibility is out of scope.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import RLock
 from typing import Protocol
@@ -110,6 +111,16 @@ class InMemoryWatcherScanEvidence:
         return snapshot
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedScan:
+    """Canonical assessor output. Does not persist Candidate state."""
+
+    snapshot: WatcherCanonicalScanEvidence
+    bound_command: AssessmentCommand
+    window: CanonicalEvidenceWindowV1 | None
+    assessment: SetupAssessment
+
+
 class WatcherFusionEvaluationService:
     """Shared manual/worker evaluation boundary for the first-slice strategy."""
 
@@ -134,7 +145,7 @@ class WatcherFusionEvaluationService:
         return tuple(self._published_candidate_ids)
 
     def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
-        """Evaluate setup truth and optionally persist a canonical candidate."""
+        """Evaluate setup truth only. Candidate persistence is fence-gated."""
 
         if command.mode is EvaluationMode.PERSIST_AND_NOTIFY:
             return _outcome(
@@ -143,7 +154,84 @@ class WatcherFusionEvaluationService:
                 reason_code="notify_disabled",
                 failed_units=0,
             )
+        prepared = self._prepare(command)
+        if isinstance(prepared, EvaluationOutcome):
+            return prepared
+        return self._assessment_outcome(command, prepared)
 
+    def persist_confirmed_setup(
+        self,
+        command: EvaluationCommand,
+        outcome: EvaluationOutcome,
+    ) -> EvaluationOutcome:
+        """Persist one canonical Candidate after orchestration authorizes publish.
+
+        ``evaluate`` never inserts Candidate state. A stale worker that loses its
+        fence before this method runs cannot mint Candidate authority.
+        """
+
+        if command.mode is EvaluationMode.PERSIST_AND_NOTIFY:
+            return _outcome(
+                command,
+                status=EvaluationStatus.BLOCKED,
+                reason_code="notify_disabled",
+                failed_units=0,
+            )
+        if command.mode is not EvaluationMode.PERSIST_EVIDENCE:
+            return outcome.model_copy(update={"candidate_ids": ()})
+        if outcome.status is not EvaluationStatus.SUCCEEDED:
+            return outcome.model_copy(update={"candidate_ids": ()})
+        if outcome.reason_code != SetupAssessmentState.CONFIRMED_SETUP.value:
+            return outcome.model_copy(update={"candidate_ids": ()})
+        if outcome.error or outcome.failed_units > 0:
+            return outcome.model_copy(update={"candidate_ids": ()})
+
+        prepared = self._prepare(command)
+        if isinstance(prepared, EvaluationOutcome):
+            return prepared
+        if (
+            prepared.assessment.state is not SetupAssessmentState.CONFIRMED_SETUP
+            or prepared.assessment.evidence_window_hash != outcome.evidence_validity_token
+        ):
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code="candidate_creation_failed",
+                failed_units=1,
+                error="confirmed setup did not recompute identically for persist",
+                evidence_validity_token=prepared.assessment.evidence_window_hash,
+                unit_reason=prepared.assessment.state.value,
+            )
+        try:
+            candidate_ids = self._maybe_create_candidate(
+                command=command,
+                bound_command=prepared.bound_command,
+                assessment=prepared.assessment,
+                window=prepared.window,
+            )
+        except SignalFusionContractError as exc:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code="candidate_creation_failed",
+                failed_units=1,
+                error=str(exc),
+                evidence_validity_token=prepared.assessment.evidence_window_hash,
+                unit_reason=prepared.assessment.state.value,
+            )
+        except Exception as exc:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code="candidate_creation_failed",
+                failed_units=1,
+                error=str(exc),
+                evidence_validity_token=prepared.assessment.evidence_window_hash,
+                unit_reason=prepared.assessment.state.value,
+            )
+        return self._assessment_outcome(command, prepared, candidate_ids=candidate_ids)
+
+    def _prepare(self, command: EvaluationCommand) -> EvaluationOutcome | _PreparedScan:
         try:
             snapshot = self._evidence.load(command)
         except WatcherTenantMismatchError as exc:
@@ -151,6 +239,14 @@ class WatcherFusionEvaluationService:
                 command,
                 status=EvaluationStatus.FAILED,
                 reason_code="organization_mismatch",
+                failed_units=1,
+                error=str(exc),
+            )
+        except Exception as exc:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code="canonical_evidence_unavailable",
                 failed_units=1,
                 error=str(exc),
             )
@@ -196,39 +292,45 @@ class WatcherFusionEvaluationService:
             }
         )
         window = _canonical_window(bound_command)
-        assessment = evaluate_setup(
-            policy=snapshot.policy,
-            command=bound_command,
-            evidence=snapshot.evidence,
-            evaluated_at=snapshot.evaluated_at,
-            previous_assessment=snapshot.previous_assessment,
-            account_context=None,
-        )
         try:
-            candidate_ids = self._maybe_create_candidate(
-                command=command,
-                bound_command=bound_command,
-                assessment=assessment,
-                window=window,
+            assessment = evaluate_setup(
+                policy=snapshot.policy,
+                command=bound_command,
+                evidence=snapshot.evidence,
+                evaluated_at=snapshot.evaluated_at,
+                previous_assessment=snapshot.previous_assessment,
+                account_context=None,
             )
-        except SignalFusionContractError as exc:
+        except Exception as exc:
             return _outcome(
                 command,
                 status=EvaluationStatus.FAILED,
-                reason_code="candidate_creation_failed",
+                reason_code="evaluation_exception",
                 failed_units=1,
                 error=str(exc),
-                evidence_validity_token=assessment.evidence_window_hash,
-                unit_reason=assessment.state.value,
             )
+        return _PreparedScan(
+            snapshot=snapshot,
+            bound_command=bound_command,
+            window=window,
+            assessment=assessment,
+        )
+
+    def _assessment_outcome(
+        self,
+        command: EvaluationCommand,
+        prepared: _PreparedScan,
+        *,
+        candidate_ids: tuple[UUID, ...] = (),
+    ) -> EvaluationOutcome:
         return _outcome(
             command,
             status=EvaluationStatus.SUCCEEDED,
-            reason_code=assessment.state.value,
+            reason_code=prepared.assessment.state.value,
             failed_units=0,
-            evidence_validity_token=assessment.evidence_window_hash,
+            evidence_validity_token=prepared.assessment.evidence_window_hash,
             candidate_ids=candidate_ids,
-            unit_reason=assessment.state.value,
+            unit_reason=prepared.assessment.state.value,
         )
 
     def _maybe_create_candidate(
