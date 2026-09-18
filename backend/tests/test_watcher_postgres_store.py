@@ -847,14 +847,15 @@ def test_postgres_orchestrator_stale_fence_cannot_publish() -> None:
             )
             return super().evaluate(command)
 
-    with pytest.raises(StaleFenceError):
-        _orch(store, clock, evaluator=StealOnEvaluate(), lease_ttl_seconds=30).run_worker(
-            request, worker_id="worker-a"
-        )
+    stolen = _orch(store, clock, evaluator=StealOnEvaluate(), lease_ttl_seconds=30).run_worker(
+        request, worker_id="worker-a"
+    )
+    assert stolen.published is False
+    assert stolen.status.value == "rejected_stale_fence"
     scheduled = store.get_schedule(request.organization_id, None, "scan-1")
     assert scheduled is not None
     stale_attempts = store.list_attempts(scheduled.lineage_id)
-    assert stale_attempts[0].status is ScanAttemptStatus.STARTED
+    assert stale_attempts[0].status is ScanAttemptStatus.REJECTED_STALE_FENCE
     winner = _orch(store, clock).run_worker(request, worker_id="worker-b")
     assert winner.status.value == "succeeded"
     assert winner.published is True

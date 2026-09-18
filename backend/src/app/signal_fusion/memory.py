@@ -12,12 +12,9 @@ from threading import RLock
 from uuid import UUID
 
 from app.signal_fusion.candidate import (
-    ALLOWED_CANDIDATE_TRANSITIONS,
-    TERMINAL_CANDIDATE_STATES,
     Candidate,
     CandidateTransition,
     CandidateUniquenessTuple,
-    build_candidate,
     build_candidate_transition,
 )
 from app.signal_fusion.enums import CandidateReasonCode, CandidateState
@@ -25,7 +22,11 @@ from app.signal_fusion.errors import (
     CandidateNotFoundError,
     ConflictingCandidateIdempotencyError,
     ConflictingCandidateTransitionError,
-    IllegalCandidateTransitionError,
+)
+from app.signal_fusion.repository_rules import (
+    project_candidate,
+    reject_illegal_candidate_transition,
+    transition_intent_matches,
 )
 
 
@@ -42,30 +43,6 @@ class FrozenClock:
 
     def now(self) -> datetime:
         return self._moment
-
-
-def _project(candidate: Candidate, *, state: CandidateState, transition_version: int) -> Candidate:
-    payload = candidate.model_dump()
-    payload["state"] = state
-    payload["transition_version"] = transition_version
-    return build_candidate(**payload)
-
-
-def _intent_matches(
-    stored: CandidateTransition,
-    *,
-    new_state: CandidateState,
-    reason_codes: tuple[CandidateReasonCode, ...],
-    correlation_id: UUID,
-    occurred_at: datetime | None,
-) -> bool:
-    if stored.new_state is not new_state:
-        return False
-    if stored.reason_codes != reason_codes:
-        return False
-    if stored.correlation_id != correlation_id:
-        return False
-    return occurred_at is None or stored.occurred_at == occurred_at
 
 
 class InMemoryCandidateRepository:
@@ -147,7 +124,7 @@ class InMemoryCandidateRepository:
             key = (organization_id, candidate_id, idempotency_key)
             stored = self._transition_by_key.get(key)
             if stored is not None:
-                if not _intent_matches(
+                if not transition_intent_matches(
                     stored,
                     new_state=new_state,
                     reason_codes=reason_codes,
@@ -161,7 +138,7 @@ class InMemoryCandidateRepository:
                 return current
             if current.state is new_state:
                 established = self._establishing_transition(candidate_id)
-                if established is not None and _intent_matches(
+                if established is not None and transition_intent_matches(
                     established,
                     new_state=new_state,
                     reason_codes=reason_codes,
@@ -174,7 +151,7 @@ class InMemoryCandidateRepository:
                     "A different idempotency key requested an already-applied candidate "
                     "state with a conflicting semantic payload."
                 )
-            self._reject_illegal_transition(current, new_state)
+            reject_illegal_candidate_transition(current, new_state)
             stamped = occurred_at if occurred_at is not None else now
             next_version = current.transition_version + 1
             transition = build_candidate_transition(
@@ -186,7 +163,9 @@ class InMemoryCandidateRepository:
                 correlation_id=correlation_id,
                 idempotency_key=idempotency_key,
             )
-            projection = _project(current, state=new_state, transition_version=next_version)
+            projection = project_candidate(
+                current, state=new_state, transition_version=next_version
+            )
             history = self._history[candidate_id]
             history.append(transition)
             self._by_id[candidate_id] = projection
@@ -198,26 +177,6 @@ class InMemoryCandidateRepository:
         if not history:
             return None
         return history[-1]
-
-    def _reject_illegal_transition(self, current: Candidate, new_state: CandidateState) -> None:
-        if current.state in TERMINAL_CANDIDATE_STATES:
-            if new_state in TERMINAL_CANDIDATE_STATES:
-                raise ConflictingCandidateTransitionError(
-                    f"Conflicting terminal transition {current.state.value} -> {new_state.value}."
-                )
-            raise IllegalCandidateTransitionError(
-                f"Terminal candidate state {current.state.value} cannot be resurrected "
-                f"to {new_state.value}."
-            )
-        if new_state is CandidateState.ACTIVE:
-            raise IllegalCandidateTransitionError(
-                "Candidate ACTIVE is the initial confirmed state and cannot be resurrected."
-            )
-        allowed = ALLOWED_CANDIDATE_TRANSITIONS.get(current.state, frozenset())
-        if new_state not in allowed:
-            raise IllegalCandidateTransitionError(
-                f"Illegal candidate transition {current.state.value} -> {new_state.value}."
-            )
 
     def _scoped_get(self, organization_id: UUID, candidate_id: UUID) -> Candidate | None:
         candidate = self._by_id.get(candidate_id)

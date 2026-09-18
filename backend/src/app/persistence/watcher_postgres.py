@@ -236,16 +236,20 @@ class PostgresWatcherStore:
             lineage = session.get(WatcherScanLineageRow, row.lineage_id)
             if lineage is None:
                 raise KeyError(row.lineage_id)
-            _require_worker_write_authority(
-                session,
-                organization_id=lineage.organization_id,
-                scan_scope=lineage.scan_scope,
-                worker_id=row.worker_id,
-                lease_epoch=row.lease_epoch,
-                fencing_token=row.fencing_token,
-                now=row.finished_at or row.heartbeat_at,
-                message="Stale fence holder cannot update a watcher scan attempt.",
-            )
+            # A worker that lost its lease at Candidate persist must still be able
+            # to confess REJECTED_STALE_FENCE on *its own* STARTED attempt. Success
+            # and failure outcomes remain fenced so stale holders cannot publish.
+            if not _is_own_stale_fence_confession(current, row):
+                _require_worker_write_authority(
+                    session,
+                    organization_id=lineage.organization_id,
+                    scan_scope=lineage.scan_scope,
+                    worker_id=row.worker_id,
+                    lease_epoch=row.lease_epoch,
+                    fencing_token=row.fencing_token,
+                    now=row.finished_at or row.heartbeat_at,
+                    message="Stale fence holder cannot update a watcher scan attempt.",
+                )
             if current is None:
                 session.add(_attempt_to_row(row, lineage.organization_id, lineage.scan_scope))
             else:
@@ -774,6 +778,32 @@ def _claims_worker_write_authority(
     worker_id: str | None, lease_epoch: int | None, fencing_token: int | None
 ) -> bool:
     return worker_id is not None or lease_epoch is not None or fencing_token is not None
+
+
+_STALE_CONFESSION_STATUSES = frozenset(
+    {
+        ScanAttemptStatus.STARTED.value,
+        ScanAttemptStatus.REJECTED_STALE_FENCE.value,
+    }
+)
+
+
+def _is_own_stale_fence_confession(current: WatcherScanAttemptRow | None, row: ScanAttempt) -> bool:
+    """True when a stale worker is marking its own attempt as rejected_stale_fence."""
+
+    if current is None:
+        return False
+    if row.status is not ScanAttemptStatus.REJECTED_STALE_FENCE:
+        return False
+    if current.status not in _STALE_CONFESSION_STATUSES:
+        return False
+    if current.worker_id != row.worker_id:
+        return False
+    if current.lease_epoch != row.lease_epoch:
+        return False
+    if current.fencing_token != row.fencing_token:
+        return False
+    return _claims_worker_write_authority(row.worker_id, row.lease_epoch, row.fencing_token)
 
 
 def _authority_for_unit_write(

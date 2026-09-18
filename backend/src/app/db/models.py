@@ -42,6 +42,15 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.canonical_candidates import (  # noqa: F401
+    CanonicalCandidateCreationKeyRow,
+    CanonicalCandidateRow,
+    CanonicalCandidateTransitionKeyRow,
+    CanonicalCandidateTransitionRow,
+)
+from app.db.canonical_candidates import (
+    register_canonical_candidate_immutability as _register_canonical_candidate_immutability,
+)
 from app.db.historical_immutability import install_historical_immutability as _install_history
 from app.db.journal_immutability import (
     register_journal_immutability as _register_journal_immutability,
@@ -3439,3 +3448,4 @@ class BloFinDemoSyncSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 _ = _install_history
 _register_strategy_immutability()
 _register_journal_immutability()
+_register_canonical_candidate_immutability()
