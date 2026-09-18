@@ -69,3 +69,11 @@ class ConflictingCandidateTransitionError(IllegalCandidateTransitionError):
 
 class ConflictingCandidateIdempotencyError(SignalFusionContractError):
     """Idempotency key reused with a conflicting organization-scoped semantic payload."""
+
+
+class ActionEligibilityLineageError(SignalFusionContractError):
+    """Candidate, assessment, and evidence-window identities do not bind."""
+
+
+class ConflictingActionEligibilityError(SignalFusionContractError):
+    """Reused eligibility identities were bound to a conflicting semantic payload.""" ""

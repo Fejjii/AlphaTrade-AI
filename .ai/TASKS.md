@@ -956,3 +956,76 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-027
 
+### AT-048 — Phase 6 deterministic ActionEligibility (paper action gate)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-047 evaluator +
+  candidate runtime foundation · Risk: Medium (safety-critical gating)
+- Safety classification: Paper-safe / in-memory application service; no
+  PostgreSQL, Alembic, watcher, Telegram, TradePlan, execution, or live trading
+- Goal: Implement the deterministic ActionEligibility service. SetupAssessment
+  remains market truth. Eligibility decides whether a confirmed canonical
+  Candidate may proceed toward paper TradePlan creation from account, portfolio,
+  risk, safety, stale action evidence, paper configuration, and a first-slice
+  20 bps cross-venue basis gate. Kill switch dominates. Live trading cannot
+  make a result executable.
+- Branch: `cursor/phase6-action-eligibility-078e`
+- Deliverables: `app.signal_fusion.action_eligibility`; tests in
+  `backend/tests/test_phase6_action_eligibility.py`. Frozen
+  `ActionEligibilityState` remains `ELIGIBLE | BLOCKED | EXPIRED`. No TradePlan,
+  no venue APIs, no Alembic.
+- Validation: Phase 1 risk/safety regressions, Phase 6 contracts, evaluator,
+  candidate lifecycle, new ActionEligibility tests, full backend pytest, ruff,
+  mypy `--strict` on `src/app.signal_fusion`, GitHub CI. Draft PR to main;
+  do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-028
+
+### AT-049 — Watcher to Phase 6 fusion wiring (first slice)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-042, AT-047 / PR #88
+  head `046929cbe612e1bafc2e87ebe794d9b59300ec35` · Risk: Medium
+  (orchestration identity)
+- Safety classification: Paper-safe / orchestration wiring only; watcher
+  remains disabled; no scheduler, Telegram, TradePlan, execution, Alembic,
+  or live trading
+- Goal: Connect Watcher scan → canonical market evidence →
+  CanonicalEvidenceWindowV1 → evaluate_setup → SetupAssessment → canonical
+  Candidate only when CONFIRMED_SETUP. Manual and worker evaluation must
+  converge for identical semantic evidence. First slice: Bearish Liquidity
+  Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance,
+  BTCUSDT perpetual, 15m trigger, 4h context.
+- Branch: `cursor/phase6-watcher-fusion-wiring`
+- Deliverables: `WatcherFusionEvaluationService` as the single evaluation
+  boundary; integration tests for parity, gating, fencing, tenant isolation,
+  and crash/retry convergence. Do not redesign WatcherStore, Phase 5/6
+  contracts, the evaluator, or candidate lifecycle authority.
+- Validation: watcher tests, Phase 5, Phase 6 contracts/evaluator/lifecycle,
+  new integration tests, full backend pytest, ruff, mypy `--strict` on
+  `src/app/watcher` and `src/app/signal_fusion`, GitHub CI. Draft PR only;
+  do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-029
+  Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
+  those IDs were already used by ActionEligibility, so this task is `AT-049`.
+
+### AT-050 — Phase 6 Candidate Telegram alert foundation
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-043 Telegram security
+  protocol; AT-046/AT-047 canonical Candidate · Risk: Medium (identity +
+  authorization boundary)
+- Safety classification: Paper-safe / Telegram disabled; no webhook, no
+  execution, no PostgreSQL adapter, no Alembic
+- Goal: Bind canonical Candidate events to deterministic CandidateAlertIntent
+  identity and the existing Telegram outbox/security contracts. APPROVE is
+  authorization intent only and never executes. REJECT/SKIP use typed
+  Candidate transitions. REDUCE_RISK must not mutate Candidate. CLOSE stays
+  unavailable. EXECUTE_PAPER_PLAN stays outside Telegram.
+- Branch: `cursor/phase6-telegram-candidate-alerts-0960`
+- Deliverables: `app.candidate_alerts`; tests in
+  `backend/tests/test_phase6_candidate_telegram_alerts.py`; docs
+  `docs/phase6_candidate_telegram_alerts.md`.
+- Validation: Candidate alert tests, Telegram protocol tests, Phase 6
+  Candidate tests, full backend pytest, ruff, mypy `--strict`, GitHub CI.
+  Draft PR to main only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-030
+  Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
+  those IDs were already used, so this task is `AT-050`.
+

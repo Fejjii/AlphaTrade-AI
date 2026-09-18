@@ -912,4 +912,131 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Independent integration review is the next gate. Draft
   PR only; do not merge in the implementing agent instructions.
 
+## AT-ADR-028 — Phase 6 deterministic ActionEligibility service
+- **Date:** 2026-09-17
+- **Status:** Accepted (in-memory eligibility authority only)
+- **Context:** Frozen `ActionEligibility` binds identity and state but does not
+  evaluate. SetupAssessment is market truth. A confirmed Candidate still must
+  not proceed toward paper TradePlan creation until account, risk, safety,
+  configuration, stale action evidence, and first-slice cross-venue basis are
+  checked without rewriting setup history.
+- **Decision:**
+  1. `ActionEligibilityService.evaluate` is the sole first-slice action gate.
+     It consumes a canonical Candidate, SetupAssessment lineage, account,
+     portfolio, risk snapshot, safety snapshot, market-action evidence, and
+     paper execution configuration. It does not create Candidates, mutate
+     SetupAssessment, create TradePlanRevision, reserve risk, consume
+     approval, or call venues.
+  2. Frozen `ActionEligibilityState` remains `ELIGIBLE | BLOCKED | EXPIRED`.
+     Finer distinctions are `EligibilityReasonCode` values. Kill switch maps
+     to `BLOCKED_KILL_SWITCH` and always dominates. Daily loss and weekly loss
+     use Phase 1 `check_daily_loss_lock` / `check_weekly_loss`. Capacity uses
+     `RiskEngine.limits.max_position_pct_of_equity`. Account/tenant isolation
+     maps to `BLOCKED_ACCOUNT_STATE`. Stale required action evidence maps to
+     `BLOCKED_DATA_QUALITY`. Cross-venue basis above 20 bps maps to
+     `BLOCKED_BASIS` and never changes SetupAssessment. Live/real-trading
+     configuration maps to `BLOCKED_CONFIGURATION`. Non-confirmed setup maps
+     to `BLOCKED_SETUP_NOT_CONFIRMED`.
+  3. First-slice cross-venue basis threshold is 20 bps (`>` blocks; `<=`
+     eligible). Basis is an eligibility gate only.
+  4. Identical semantic evaluation converges on one immutable record.
+     Changed risk snapshot identity or safety epoch appends a distinct
+     evaluation revision without mutating history.
+  5. `live_executable` is always false. `paper_actionable` is true only for
+     `ELIGIBLE` under paper configuration. Persistence remains in-memory.
+- **Alternatives considered:** New ActionEligibilityState values such as
+  `BLOCKED_SAFETY` (rejected: frozen contract already has ELIGIBLE/BLOCKED/
+  EXPIRED); evaluating eligibility inside `evaluate_setup` (rejected: setup
+  truth must stay independent); constructing TradePlan to probe risk size
+  (rejected: this slice ends at eligibility truth).
+- **Safety impact:** Paper only. Kill switch remains the Phase 1 authority.
+  Real trading cannot become executable. No network, Telegram, watcher,
+  Alembic, or deployment.
+- **Consequences:** Later slices may bind PostgreSQL and feed ELIGIBLE results
+  into paper TradePlan creation. Draft PR only; do not merge.
+
+## AT-ADR-029 — Watcher orchestration wires to Phase 6 fusion (first slice)
+- **Date:** 2026-09-17
+- **Status:** Accepted (orchestration wiring only)
+- **Context:** PR #88 integrated `evaluate_setup` and `CandidateLifecycleService`
+  on frozen contracts. Watcher orchestration still used a scripted evaluation
+  boundary that forbade all candidate IDs. Manual and worker scans must consume
+  the same deterministic evidence and evaluator without a second identity.
+  Wave B integration assigned this ADR `AT-ADR-029` because PR 90 already
+  occupied `AT-ADR-028` for ActionEligibility.
+- **Decision:**
+  1. One typed service, `WatcherFusionEvaluationService`, implements
+     `WatcherEvaluationBoundary`. Watcher does not implement trading predicates.
+  2. Flow is scan evidence → `evidence_window_from_assessment_command` →
+     `evaluate_setup` → `SetupAssessment` → `CandidateLifecycleService` only
+     when state is `CONFIRMED_SETUP` and mode is `PERSIST_EVIDENCE`.
+  3. Watcher does not compute a second evidence hash and does not mint
+     candidate IDs. CanonicalEvidenceWindowV1 and CandidateLifecycleService
+     remain identity authorities.
+  4. NO_SETUP, WATCH, PARTIAL_MATCH, INVALIDATED, and EXPIRED do not create
+     an ACTIVE candidate. Duplicate semantic scans converge. Organization
+     isolation remains `(organization_id, scan_scope)` plus the candidate
+     uniqueness tuple.
+  5. SetupAssessment stays market truth only. Balance, portfolio, risk,
+     leverage, execution availability, and account state are not inputs.
+     Action eligibility, TradePlan, Telegram, execution, Alembic, and a
+     second WatcherStore adapter are out of scope.
+  6. Persistence remains the existing WatcherStore port (in-memory now;
+     PostgreSQL owned by PR #85). `WATCHER_ORCHESTRATION_ENABLED` and
+     `MARKET_WATCHER_ENABLED` stay false. No scheduler activation.
+  7. Orchestrator honesty still rejects unverified candidate IDs. Canonical
+     publication requires SUCCEEDED, reason `confirmed_setup`, a 64-hex
+     `evidence_validity_token`, and exactly one candidate id.
+- **Alternatives considered:** Put predicates in WatcherOrchestrator
+  (rejected: second evaluator); mint watcher-scoped candidate IDs (rejected:
+  competing identity); create candidates on PREVIEW (rejected: dry-run);
+  mix ActionEligibility into SetupAssessment (rejected: setup vs action).
+- **Safety impact:** Watcher remains disabled. Paper only. No live trading,
+  exchange mutation, Telegram, or deployment.
+- **Consequences:** Draft PR only; do not merge. Later work may bind a live
+  market-evidence adapter and PostgreSQL WatcherStore without changing this
+  evaluation boundary.
+
+## AT-ADR-030 — Phase 6 Candidate Telegram alert foundation
+- **Date:** 2026-09-17
+- **Status:** Accepted (composition foundation; Telegram remains disabled)
+- **Context:** Canonical Candidate authority (AT-ADR-026/027) and the isolated
+  Telegram security protocol (AT-ADR-023) both exist. Alerts must not treat
+  PaperValidationCandidate, PaperSignal, SetupDetection, or TradingViewSignal
+  as independent candidate authorities. APPROVE must never execute. Wave B
+  integration assigned this ADR `AT-ADR-030` because `AT-ADR-028` is
+  ActionEligibility and `AT-ADR-029` is watcher fusion wiring.
+- **Decision:**
+  1. New package `app.candidate_alerts` composes Candidate -> deterministic
+     `CandidateAlertIntent` -> existing Telegram outbox -> secured actions.
+  2. Identity binds organization, user, account, candidate ID, candidate
+     content hash, strategy version, compiled setup identity, fusion policy
+     version, evidence window hash, lifecycle revision, alert kind, and
+     Telegram channel. Duplicate semantic events converge. Revision/content
+     changes produce a distinct identity.
+  3. Structured alert facts are canonical only. No profitability claims.
+     No LLM-authored setup truth.
+  4. APPROVE stays authorization intent (`executes=false`). REJECT/SKIP map
+     to `CandidateLifecycleService` through the gateway. REDUCE_RISK emits
+     typed intent and does not mutate Candidate. EXPLAIN/SHOW_CHART/STATUS
+     are read-only. CLOSE remains unavailable. EXECUTE_PAPER_PLAN is absent.
+  5. Reuse `TelegramSecurityStore` / in-memory protocol store. No new
+     PostgreSQL adapter, no Alembic, no webhook, no Telegram network call.
+     PR 85 remains durable Telegram persistence owner.
+  6. `TELEGRAM_INTERACTION_ENABLED=false`, `ENABLE_REAL_TRADING=false`,
+     `EXECUTION_MODE=paper`.
+- **Alternatives considered:** Alert from PaperValidationCandidate or
+  TradingViewSignal (rejected: competing authority); extend TelegramSecurityStore
+  with alert tables (rejected: second persistence model); let APPROVE call
+  execution (rejected: CRITICAL-03).
+- **Safety impact:** Telegram stays off. Live trading stays disabled. Approval
+  cannot execute. Candidate immutability is preserved for REDUCE_RISK and
+  read-only actions.
+- **Consequences:** Docs in `docs/phase6_candidate_telegram_alerts.md`. Tests in
+  `backend/tests/test_phase6_candidate_telegram_alerts.py`.
+- **Validation:** Candidate alert tests, Telegram protocol tests, Phase 6
+  Candidate tests, full backend pytest, ruff, mypy `--strict` on the new
+  package plus `app.telegram_security` and `app.signal_fusion`, GitHub CI.
+  Draft PR only; do not merge in the implementing agent instructions.
+
 

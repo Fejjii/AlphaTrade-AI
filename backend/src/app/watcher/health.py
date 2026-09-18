@@ -156,6 +156,15 @@ def _seconds_since(stamp: datetime | None, now: datetime) -> float | None:
     return (now - stamp).total_seconds()
 
 
+def _fenced_lease(lease: WorkerLease | None, now: datetime) -> WorkerLease | None:
+    """Observer health must not claim worker fencing without a current active lease."""
+    if lease is None or lease.owner_id is None or lease.expires_at is None:
+        return None
+    if lease.expires_at <= now:
+        return None
+    return lease
+
+
 def _reject_health_mismatch(
     organization_id: UUID,
     lease: WorkerLease | None,
@@ -186,14 +195,15 @@ def _snapshot(
     reason_code: str,
     seconds_since_beat: float | None = None,
 ) -> WatcherHealthSnapshot:
+    fenced = _fenced_lease(lease, now)
     return WatcherHealthSnapshot(
         state=state,
         organization_id=organization_id,
         scan_scope=scan_scope,
         enabled=config.enabled,
-        lease_owner=lease.owner_id if lease is not None else None,
-        lease_epoch=lease.lease_epoch if lease is not None else 0,
-        fencing_token=lease.fencing_token if lease is not None else 0,
+        lease_owner=None if fenced is None else fenced.owner_id,
+        lease_epoch=0 if fenced is None else fenced.lease_epoch,
+        fencing_token=0 if fenced is None else fenced.fencing_token,
         lease_expires_at=lease.expires_at if lease is not None else None,
         last_beat_at=heartbeat.last_beat_at if heartbeat is not None else None,
         seconds_since_beat=seconds_since_beat,

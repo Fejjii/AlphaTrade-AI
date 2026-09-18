@@ -656,6 +656,8 @@ def test_scan_lineage_is_immutable_across_retry() -> None:
 
 
 def test_candidate_ids_from_evaluator_are_rejected() -> None:
+    """Unverified candidate IDs without canonical evidence still fail closed."""
+
     class _CandidateEvaluator(ScriptedEvaluationBoundary):
         def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
             outcome = super().evaluate(command)

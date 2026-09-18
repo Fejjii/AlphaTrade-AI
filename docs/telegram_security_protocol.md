@@ -116,3 +116,8 @@ disabled (`real_trading_enabled` is always false).
 - `EXECUTE_PAPER_PLAN`
 - `CLOSE` confirmation nonces
 - Frontend enrollment UI
+
+Candidate alert composition lives in `app.candidate_alerts` and is documented in
+[phase6_candidate_telegram_alerts.md](./phase6_candidate_telegram_alerts.md). That
+package uses this protocol's public store/outbox/action APIs. It does not add a
+second Telegram persistence model, webhook, or execution path.
