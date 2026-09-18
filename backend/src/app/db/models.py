@@ -49,6 +49,27 @@ from app.db.journal_immutability import (
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )
+from app.db.telegram_security import (  # noqa: F401
+    TelegramActionNonceRow,
+    TelegramActionReceiptRow,
+    TelegramAuthorizationIntentRow,
+    TelegramBindingRow,
+    TelegramEnrollmentChallengeRow,
+    TelegramOutboxRow,
+    TelegramProtocolAuditEventRow,
+)
+from app.db.watcher_orchestration import (  # noqa: F401
+    WatcherHealthSnapshotRow,
+    WatcherHeartbeatRow,
+    WatcherObservabilityEventRow,
+    WatcherPolicyVersionRow,
+    WatcherScanAttemptRow,
+    WatcherScanLineageRow,
+    WatcherScheduledScanRow,
+    WatcherSourceFetchAttemptRow,
+    WatcherSubscriptionEvalAttemptRow,
+    WatcherWorkerLeaseRow,
+)
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,
