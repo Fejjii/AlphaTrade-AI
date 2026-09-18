@@ -69,6 +69,7 @@ def test_confirmed_setup_with_valid_account_and_risk_is_eligible() -> None:
     assert result.eligibility.candidate_revision == candidate.transition_version
     assert result.eligibility.assessment_id == assessment.assessment_id
     assert result.safety_epoch == 1
+    assert result.currently_paper_actionable(EVALUATED_AT) is True
 
 
 def test_kill_switch_blocks_and_dominates() -> None:
@@ -408,5 +409,8 @@ def test_action_eligibility_module_does_not_create_plans_or_call_venues() -> Non
     assert "KillSwitchService" not in source
     assert "httpx" not in source
     assert "requests" not in source
+    assert "langchain" not in source
+    assert "openai" not in source
+    assert "anthropic" not in source
     assert USER_ID
     assert ACCOUNT_ID

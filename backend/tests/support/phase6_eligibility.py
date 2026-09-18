@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -48,6 +49,7 @@ ORG_B = UUID("aaaaaaaa-bbbb-cccc-dddd-aaaaaaaaaaaa")
 ACCOUNT_B = UUID("cccccccc-cccc-cccc-cccc-000000000002")
 USER_B = UUID("bbbbbbbb-bbbb-bbbb-bbbb-000000000002")
 RISK_SNAPSHOT_B = UUID("99999999-9999-9999-9999-000000000002")
+VENUE_STATE_B = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeee1")
 
 
 def account_identity(
@@ -136,6 +138,7 @@ def market_action(
     basis_bps: Decimal | None = None,
     required_action_evidence_fresh: bool = True,
     basis_fresh: bool = True,
+    action_evidence_valid_until: datetime = VALID_UNTIL,
 ) -> MarketActionEvidence:
     return MarketActionEvidence(
         venue_state_id=venue_state_id,
@@ -145,7 +148,7 @@ def market_action(
         execution_price=execution_price,
         basis_bps=basis_bps,
         required_action_evidence_fresh=required_action_evidence_fresh,
-        action_evidence_valid_until=VALID_UNTIL,
+        action_evidence_valid_until=action_evidence_valid_until,
         basis_fresh=basis_fresh,
     )
 
@@ -213,6 +216,7 @@ def eligibility_command(
     safety: SafetyStateSnapshot | None = None,
     market: MarketActionEvidence | None = None,
     configuration: PaperExecutionConfiguration | None = None,
+    correlation_id: UUID = CORRELATION_A,
 ) -> ActionEligibilityCommand:
     resolved_window = window
     resolved_assessment = assessment
@@ -232,7 +236,7 @@ def eligibility_command(
         safety=safety or safety_snapshot(),
         market_action=market or market_action(),
         configuration=configuration or paper_configuration(),
-        correlation_id=CORRELATION_A,
+        correlation_id=correlation_id,
     )
 
 

@@ -19,6 +19,7 @@ from pydantic import AwareDatetime, Field, model_validator
 
 from app.core.config import ExchangeMode, ExecutionMode
 from app.market_contracts.enums import VenueId
+from app.market_contracts.hashing import CONTENT_HASH_EXCLUDE, semantic_content_hash
 from app.market_contracts.models import (
     CanonicalDecimal,
     CanonicalModel,
@@ -44,7 +45,10 @@ from app.signal_fusion.enums import (
     EligibilityReasonCode,
     SetupAssessmentState,
 )
-from app.signal_fusion.errors import ActionEligibilityLineageError
+from app.signal_fusion.errors import (
+    ActionEligibilityLineageError,
+    ConflictingActionEligibilityError,
+)
 from app.signal_fusion.evidence_window import (
     CanonicalEvidenceWindowV1,
     hash_canonical_evidence_window,
@@ -56,6 +60,7 @@ from app.signal_fusion.types import Sha256Hex, hashed_model
 ELIGIBILITY_IDENTITY_NAMESPACE = UUID("b22ea7de-0006-4000-8000-ac710e11e101")
 PAPER_ELIGIBILITY_CONFIG_VERSION = "paper-execution/v1"
 FIRST_SLICE_CROSS_VENUE_BASIS_THRESHOLD_BPS = Decimal("20")
+_ALLOWED_EXCHANGE_MODES = frozenset({ExchangeMode.PAPER_INTERNAL, ExchangeMode.PAPER_EXCHANGE_DEMO})
 _BPS = Decimal("10000")
 _ELIGIBILITY_FALLBACK_TTL = timedelta(seconds=1)
 _CAPACITY_PROBE_SIZE = Decimal("0.00000001")
@@ -145,7 +150,7 @@ class PaperExecutionConfiguration(CanonicalModel):
         return (
             self.execution_mode is ExecutionMode.PAPER
             and not self.enable_real_trading
-            and self.exchange_mode is not ExchangeMode.TRADE_LIVE
+            and self.exchange_mode in _ALLOWED_EXCHANGE_MODES
         )
 
 
@@ -187,6 +192,15 @@ class ActionEligibilityEvaluation(CanonicalModel):
             raise ValueError("paper_actionable requires ELIGIBLE.")
         return self
 
+    def currently_paper_actionable(self, now: datetime) -> bool:
+        """True only while the stored ELIGIBLE paper decision is still inside valid_until."""
+        if self.live_executable or not self.paper_actionable:
+            return False
+        eligibility = self.eligibility
+        return (
+            eligibility.state is ActionEligibilityState.ELIGIBLE and eligibility.valid_until > now
+        )
+
 
 def uniqueness_preimage(command: ActionEligibilityCommand) -> dict[str, object]:
     """Semantic identity for converge/reevaluate. Excludes clocks and correlation."""
@@ -219,6 +233,19 @@ def build_action_eligibility_evaluation(**kwargs: object) -> ActionEligibilityEv
     return hashed_model(draft)
 
 
+def _model_fingerprint(value: CanonicalModel) -> str:
+    return canonical_sha256(value.model_dump(mode="python"))
+
+
+def _require_model_content_hash(value: CanonicalModel, label: str) -> None:
+    digest = semantic_content_hash(value, extra_exclude=CONTENT_HASH_EXCLUDE)
+    claimed = value.model_dump()["content_hash"]
+    if claimed != digest:
+        raise ActionEligibilityLineageError(
+            f"{label} content hash is not the canonical semantic digest."
+        )
+
+
 class InMemoryActionEligibilityStore:
     """Append-only eligibility history. Identical uniqueness converges."""
 
@@ -226,6 +253,12 @@ class InMemoryActionEligibilityStore:
         self._lock = RLock()
         self._by_uniqueness: dict[str, ActionEligibilityEvaluation] = {}
         self._history: dict[tuple[UUID, UUID, UUID], list[ActionEligibilityEvaluation]] = {}
+        self._risk_snapshots: dict[UUID, str] = {}
+        self._venue_states: dict[UUID, str] = {}
+        self._safety_epochs: dict[tuple[UUID, UUID, int], str] = {}
+        self._assessments: dict[UUID, str] = {}
+        self._candidate_revisions: dict[tuple[UUID, int], str] = {}
+        self._candidate_organizations: dict[UUID, UUID] = {}
 
     def get(self, digest: str) -> ActionEligibilityEvaluation | None:
         with self._lock:
@@ -239,27 +272,97 @@ class InMemoryActionEligibilityStore:
 
     def get_or_insert(
         self,
+        command: ActionEligibilityCommand,
         digest: str,
         factory: Callable[[int], ActionEligibilityEvaluation],
-        *,
-        organization_id: UUID,
-        account_id: UUID,
-        candidate_id: UUID,
     ) -> ActionEligibilityEvaluation:
-        lineage = (organization_id, account_id, candidate_id)
+        lineage = (
+            command.account.organization_id,
+            command.account.account_id,
+            command.candidate.candidate_id,
+        )
         with self._lock:
             existing = self._by_uniqueness.get(digest)
             if existing is not None:
                 return existing
+            self._reject_identity_conflicts(command)
             history = self._history.setdefault(lineage, [])
             produced = factory(len(history) + 1)
             if produced.uniqueness_hash != digest:
                 raise ActionEligibilityLineageError(
                     "Eligibility uniqueness hash drifted during insert."
                 )
+            self._bind_identities(command)
             self._by_uniqueness[digest] = produced
             history.append(produced)
             return produced
+
+    def _reject_identity_conflicts(self, command: ActionEligibilityCommand) -> None:
+        self._reject_bound(
+            self._risk_snapshots,
+            command.risk.risk_snapshot_id,
+            _model_fingerprint(command.risk),
+            "Risk snapshot id is already bound to different risk facts.",
+        )
+        self._reject_bound(
+            self._venue_states,
+            command.market_action.venue_state_id,
+            _model_fingerprint(command.market_action),
+            "Venue state id is already bound to different market-action evidence.",
+        )
+        self._reject_bound(
+            self._safety_epochs,
+            (
+                command.safety.organization_id,
+                command.safety.account_id,
+                command.safety.safety_epoch,
+            ),
+            _model_fingerprint(command.safety),
+            "Safety epoch is already bound to different kill-switch facts.",
+        )
+        self._reject_bound(
+            self._assessments,
+            command.assessment.assessment_id,
+            command.assessment.content_hash,
+            "Assessment id is already bound to a different SetupAssessment digest.",
+        )
+        self._reject_bound(
+            self._candidate_revisions,
+            (command.candidate.candidate_id, command.candidate.transition_version),
+            command.candidate.content_hash,
+            "Candidate revision is already bound to a different Candidate digest.",
+        )
+        bound_org = self._candidate_organizations.get(command.candidate.candidate_id)
+        if bound_org is not None and bound_org != command.candidate.organization_id:
+            raise ConflictingActionEligibilityError(
+                "Candidate id is already bound to a different organization."
+            )
+
+    def _bind_identities(self, command: ActionEligibilityCommand) -> None:
+        self._risk_snapshots[command.risk.risk_snapshot_id] = _model_fingerprint(command.risk)
+        self._venue_states[command.market_action.venue_state_id] = _model_fingerprint(
+            command.market_action
+        )
+        self._safety_epochs[
+            (
+                command.safety.organization_id,
+                command.safety.account_id,
+                command.safety.safety_epoch,
+            )
+        ] = _model_fingerprint(command.safety)
+        self._assessments[command.assessment.assessment_id] = command.assessment.content_hash
+        self._candidate_revisions[
+            (command.candidate.candidate_id, command.candidate.transition_version)
+        ] = command.candidate.content_hash
+        self._candidate_organizations[command.candidate.candidate_id] = (
+            command.candidate.organization_id
+        )
+
+    @staticmethod
+    def _reject_bound[K](index: dict[K, str], key: K, fingerprint: str, message: str) -> None:
+        bound = index.get(key)
+        if bound is not None and bound != fingerprint:
+            raise ConflictingActionEligibilityError(message)
 
 
 class ActionEligibilityService:
@@ -280,11 +383,9 @@ class ActionEligibilityService:
         self._validate_lineage(command)
         digest = uniqueness_hash(command)
         return self._store.get_or_insert(
+            command,
             digest,
             lambda revision: self._build_evaluation(command, digest, revision),
-            organization_id=command.account.organization_id,
-            account_id=command.account.account_id,
-            candidate_id=command.candidate.candidate_id,
         )
 
     def history(
@@ -350,22 +451,18 @@ class ActionEligibilityService:
     ) -> EligibilityReasonCode | None:
         if self._kill_switch_blocks(command):
             return EligibilityReasonCode.BLOCKED_KILL_SWITCH
+        if self._acting_scope_mismatch(command) or not command.account.account_active:
+            return EligibilityReasonCode.BLOCKED_ACCOUNT_STATE
+        if self._action_evidence_stale(command, now):
+            return EligibilityReasonCode.BLOCKED_DATA_QUALITY
         if not command.configuration.is_paper_only:
             return EligibilityReasonCode.BLOCKED_CONFIGURATION
         if command.assessment.state in _NON_CONFIRMED_SETUP:
             return EligibilityReasonCode.BLOCKED_SETUP_NOT_CONFIRMED
         if command.candidate.state is not CandidateState.ACTIVE:
-            return EligibilityReasonCode.BLOCKED_CANDIDATE_TTL
+            return EligibilityReasonCode.BLOCKED_CANDIDATE_STATE
         if command.candidate.valid_until <= now or command.assessment.valid_until <= now:
             return EligibilityReasonCode.EXPIRED
-        if self._tenant_mismatch(command):
-            return EligibilityReasonCode.BLOCKED_ACCOUNT_STATE
-        if self._account_mismatch(command):
-            return EligibilityReasonCode.BLOCKED_ACCOUNT_STATE
-        if not command.account.account_active:
-            return EligibilityReasonCode.BLOCKED_ACCOUNT_STATE
-        if self._action_evidence_stale(command, now):
-            return EligibilityReasonCode.BLOCKED_DATA_QUALITY
         basis_reason = self._basis_reason(command)
         if basis_reason is not None:
             return basis_reason
@@ -385,7 +482,7 @@ class ActionEligibilityService:
         if check_daily_loss_lock(request, self._risk.limits, context) is not None:
             return EligibilityReasonCode.BLOCKED_DAILY_LOSS
         if check_weekly_loss(request, self._risk.limits, context) is not None:
-            return EligibilityReasonCode.BLOCKED_DAILY_LOSS
+            return EligibilityReasonCode.BLOCKED_WEEKLY_LOSS
         if command.risk.cooldown_active:
             return EligibilityReasonCode.BLOCKED_COOLDOWN
         if command.risk.portfolio_conflict:
@@ -428,20 +525,9 @@ class ActionEligibilityService:
         return request, context
 
     @staticmethod
-    def _tenant_mismatch(command: ActionEligibilityCommand) -> bool:
-        orgs = {
-            command.account.organization_id,
-            command.candidate.organization_id,
-            command.assessment.organization_id,
-            command.evidence_window.organization_id,
-            command.portfolio.organization_id,
-            command.risk.organization_id,
-            command.safety.organization_id,
-        }
-        return len(orgs) != 1
-
-    @staticmethod
-    def _account_mismatch(command: ActionEligibilityCommand) -> bool:
+    def _acting_scope_mismatch(command: ActionEligibilityCommand) -> bool:
+        if command.account.organization_id != command.candidate.organization_id:
+            return True
         if command.risk.user_id != command.account.user_id:
             return True
         accounts = {
@@ -450,7 +536,13 @@ class ActionEligibilityService:
             command.risk.account_id,
             command.safety.account_id,
         }
-        return len(accounts) != 1
+        orgs = {
+            command.account.organization_id,
+            command.portfolio.organization_id,
+            command.risk.organization_id,
+            command.safety.organization_id,
+        }
+        return len(accounts) != 1 or len(orgs) != 1
 
     @staticmethod
     def _action_evidence_stale(command: ActionEligibilityCommand, now: datetime) -> bool:
@@ -463,16 +555,9 @@ class ActionEligibilityService:
 
     @staticmethod
     def _basis_reason(command: ActionEligibilityCommand) -> EligibilityReasonCode | None:
-        market = command.market_action
-        cross_venue = market.evidence_venue is not market.execution_venue
-        if market.basis_bps is not None:
-            bps = market.basis_bps
-        elif market.execution_price is not None:
-            bps = abs(market.execution_price - market.evidence_price) / market.evidence_price * _BPS
-        elif cross_venue:
+        bps = _resolved_basis_bps(command.market_action)
+        if bps is None:
             return EligibilityReasonCode.BLOCKED_VENUE_STATE
-        else:
-            bps = Decimal("0")
         if bps > FIRST_SLICE_CROSS_VENUE_BASIS_THRESHOLD_BPS:
             return EligibilityReasonCode.BLOCKED_BASIS
         return None
@@ -498,6 +583,8 @@ class ActionEligibilityService:
             raise ActionEligibilityLineageError(
                 "CanonicalEvidenceWindowV1 content hash is not the §26 preimage digest."
             )
+        _require_model_content_hash(assessment, "SetupAssessment")
+        _require_model_content_hash(candidate, "Candidate")
         if candidate.assessment_id != assessment.assessment_id:
             raise ActionEligibilityLineageError(
                 "Candidate assessment_id must match the supplied SetupAssessment."
@@ -510,6 +597,86 @@ class ActionEligibilityService:
             raise ActionEligibilityLineageError(
                 "SetupAssessment evidence_window_hash must match CanonicalEvidenceWindowV1."
             )
+        if candidate.organization_id != assessment.organization_id:
+            raise ActionEligibilityLineageError(
+                "Candidate organization_id must match SetupAssessment."
+            )
+        if candidate.organization_id != window.organization_id:
+            raise ActionEligibilityLineageError(
+                "Candidate organization_id must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.strategy_version_id != assessment.strategy_version_id:
+            raise ActionEligibilityLineageError(
+                "Candidate strategy_version_id must match SetupAssessment."
+            )
+        if candidate.strategy_version_id != window.strategy_version_id:
+            raise ActionEligibilityLineageError(
+                "Candidate strategy_version_id must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.executable_setup != assessment.executable_setup:
+            raise ActionEligibilityLineageError(
+                "Candidate executable setup must match SetupAssessment exactly."
+            )
+        if candidate.setup_definition_id != window.compiled_setup_definition_id:
+            raise ActionEligibilityLineageError(
+                "Candidate setup_definition_id must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.executable_setup.content_hash != window.compiled_setup_content_hash:
+            raise ActionEligibilityLineageError(
+                "CompiledSetupDefinition hash must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.fusion_policy_version != assessment.fusion_policy_version:
+            raise ActionEligibilityLineageError(
+                "Candidate fusion_policy_version must match SetupAssessment."
+            )
+        if candidate.fusion_policy_version != window.fusion_policy_version:
+            raise ActionEligibilityLineageError(
+                "Candidate fusion_policy_version must match CanonicalEvidenceWindowV1."
+            )
+        if assessment.fusion_policy_version != window.fusion_policy_version:
+            raise ActionEligibilityLineageError(
+                "SetupAssessment fusion_policy_version must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.direction is not window.direction:
+            raise ActionEligibilityLineageError(
+                "Candidate direction must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.evidence_venue is not window.evidence_venue:
+            raise ActionEligibilityLineageError(
+                "Candidate evidence_venue must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.evidence_market is not window.evidence_market:
+            raise ActionEligibilityLineageError(
+                "Candidate evidence_market must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.evidence_instrument != window.evidence_instrument:
+            raise ActionEligibilityLineageError(
+                "Candidate evidence_instrument must match CanonicalEvidenceWindowV1."
+            )
+        if candidate.timeframe is not window.timeframe:
+            raise ActionEligibilityLineageError(
+                "Candidate timeframe must match CanonicalEvidenceWindowV1."
+            )
+
+
+def _resolved_basis_bps(market: MarketActionEvidence) -> Decimal | None:
+    computed: Decimal | None = None
+    if market.execution_price is not None:
+        computed = (
+            abs(market.execution_price - market.evidence_price) / market.evidence_price * _BPS
+        )
+    stated = None if market.basis_bps is None else abs(market.basis_bps)
+    if stated is not None and computed is not None and stated != computed:
+        raise ConflictingActionEligibilityError(
+            "basis_bps conflicts with evidence and execution prices."
+        )
+    if stated is not None:
+        return stated
+    if computed is not None:
+        return computed
+    if market.evidence_venue is not market.execution_venue:
+        return None
+    return Decimal("0")
 
 
 def in_memory_action_eligibility(

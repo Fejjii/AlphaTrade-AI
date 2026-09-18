@@ -73,3 +73,7 @@ class ConflictingCandidateIdempotencyError(SignalFusionContractError):
 
 class ActionEligibilityLineageError(SignalFusionContractError):
     """Candidate, assessment, and evidence-window identities do not bind."""
+
+
+class ConflictingActionEligibilityError(SignalFusionContractError):
+    """Reused eligibility identities were bound to a conflicting semantic payload.""" ""
