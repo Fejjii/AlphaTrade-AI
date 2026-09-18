@@ -68,6 +68,10 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `candidate_alerts/`: composes canonical Phase 6 `Candidate` onto that protocol. Candidate is
   the only alert authority. APPROVE never executes. Telegram remains disabled. No webhook.
   See `docs/phase6_candidate_telegram_alerts.md`.
+- `learning_attribution/`: record-only Phase 7 lineage from SetupAssessment → Candidate →
+  TradePlan → paper execution → JournalTrade → learning facts. Reuses
+  `JournalLifecycleProjector`; REJECT/SKIP never create executed outcomes. No Alembic.
+  See `docs/phase7_learning_attribution.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

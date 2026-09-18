@@ -1029,3 +1029,27 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
   those IDs were already used, so this task is `AT-050`.
 
+### AT-051 — Phase 7 learning attribution (canonical lifecycle → learning)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: Phase 4 canonical journal
+  projector; Phase 6 Candidate / SetupAssessment contracts · Risk: Medium
+  (lineage / learning integrity)
+- Safety classification: Paper-safe / record-only; no execution, Watcher,
+  Telegram, frontend, Alembic, or live trading
+- Goal: Connect SetupAssessment → Candidate → TradePlan → paper execution →
+  JournalTrade → outcome → strategy/pattern stats → learning evidence without a
+  second trading authority. Reuse `JournalLifecycleProjector`. REJECT/SKIP never
+  create executed trade outcomes. Distinguish planned setup quality from
+  execution quality and trader behavior. LLMs may explain, not rewrite facts.
+- Branch: `cursor/phase7_learning_attribution`
+- Deliverables: `app.learning_attribution`;
+  `JournalLifecycleLearningService`; sticky `payload.lineage`; lesson/analytics/RAG
+  adapters; Agent 1 persistence contract; tests in
+  `backend/tests/test_learning_attribution.py` and
+  `backend/tests/test_journal_lifecycle_lineage.py`; docs
+  `docs/phase7_learning_attribution.md`.
+- Validation: attribution tests, journal lifecycle tests, learning tests, full
+  backend pytest, ruff, mypy `--strict` on the new package plus journal lifecycle
+  modules, GitHub CI. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-031
+

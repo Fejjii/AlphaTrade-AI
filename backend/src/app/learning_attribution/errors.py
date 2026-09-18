@@ -1,0 +1,44 @@
+"""Record-only learning attribution errors. Never an execution authority."""
+
+from __future__ import annotations
+
+from app.core.errors import ConflictError, ForbiddenError, ValidationAppError
+
+
+class LearningAttributionError(ValidationAppError):
+    """Base typed failure for the learning attribution layer."""
+
+    code = "learning_attribution_error"
+
+
+class LearningAttributionConflictError(ConflictError):
+    """Same source identity replayed with conflicting semantic content."""
+
+    code = "learning_attribution_conflict"
+
+
+class CrossTenantAttributionError(ForbiddenError):
+    """Lineage organization does not match the attribution command."""
+
+    code = "cross_tenant_attribution"
+
+    def __init__(self, message: str = "Cross-tenant attribution is refused.") -> None:
+        super().__init__(message, details={"reason": "cross_tenant_attribution"})
+
+
+class ExecutedOutcomeForbiddenError(LearningAttributionError):
+    """REJECT/SKIP (or non-confirmed setup) cannot mint an executed trade outcome."""
+
+    code = "executed_outcome_forbidden"
+
+
+class MarketTruthMutationError(LearningAttributionError):
+    """Learning facts attempted to rewrite SetupAssessment or evidence hashes."""
+
+    code = "market_truth_immutable"
+
+
+class NarrativeCannotRewriteFactsError(LearningAttributionError):
+    """LLM/narrative text cannot override deterministic attribution facts."""
+
+    code = "narrative_cannot_rewrite_facts"
