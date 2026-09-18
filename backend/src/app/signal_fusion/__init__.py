@@ -1,16 +1,32 @@
-"""Phase 6 signal-fusion contracts, evaluator, and candidate authority.
+"""Phase 6 signal-fusion contracts, evaluator, candidate, and action eligibility.
 
 Canonical identities remain the Phase 6 contract freeze. This package evaluates
-first-slice ``SetupAssessment`` truth and owns the in-memory candidate lifecycle
-application service.
+first-slice ``SetupAssessment`` truth, owns in-memory candidate lifecycle
+authority, and evaluates deterministic ``ActionEligibility`` for paper action.
 
-It does not persist candidates to PostgreSQL, evaluate ActionEligibility, run
-Alembic migrations, activate watcher/Telegram adapters, or execute trades.
+It does not persist to PostgreSQL, run Alembic migrations, activate
+watcher/Telegram adapters, create trade plans, or execute trades.
 PaperValidationCandidate remains a downstream compatibility consumer and is not
-candidate authority.
+candidate authority. SetupAssessment remains independent of account/risk state.
 """
 
 from app.market_contracts.observation import PublicMarketObservation
+from app.signal_fusion.action_eligibility import (
+    FIRST_SLICE_CROSS_VENUE_BASIS_THRESHOLD_BPS,
+    PAPER_ELIGIBILITY_CONFIG_VERSION,
+    AccountIdentity,
+    ActionEligibilityCommand,
+    ActionEligibilityEvaluation,
+    ActionEligibilityService,
+    InMemoryActionEligibilityStore,
+    MarketActionEvidence,
+    PaperExecutionConfiguration,
+    PortfolioState,
+    RiskStateSnapshot,
+    SafetyStateSnapshot,
+    in_memory_action_eligibility,
+    uniqueness_hash,
+)
 from app.signal_fusion.adapters import (
     AssessmentCommand,
     DownstreamPaperValidationCandidateRef,
@@ -47,8 +63,10 @@ from app.signal_fusion.enums import (
     TenantAssertionRole,
 )
 from app.signal_fusion.errors import (
+    ActionEligibilityLineageError,
     CandidateCreationAuthorityError,
     CandidateNotFoundError,
+    ConflictingActionEligibilityError,
     ConflictingCandidateIdempotencyError,
     ConflictingCandidateTransitionError,
     ConflictingSemanticInputError,
@@ -105,9 +123,16 @@ from app.signal_fusion.types import (
 __all__ = [
     "ALLOWED_ASSESSMENT_TRANSITIONS",
     "ALLOWED_CANDIDATE_TRANSITIONS",
+    "FIRST_SLICE_CROSS_VENUE_BASIS_THRESHOLD_BPS",
     "FIRST_SLICE_TICK_SIZE",
+    "PAPER_ELIGIBILITY_CONFIG_VERSION",
     "TERMINAL_CANDIDATE_STATES",
+    "AccountIdentity",
     "ActionEligibility",
+    "ActionEligibilityCommand",
+    "ActionEligibilityEvaluation",
+    "ActionEligibilityLineageError",
+    "ActionEligibilityService",
     "ActionEligibilityState",
     "AssessmentCommand",
     "AssessmentReasonCode",
@@ -121,6 +146,7 @@ __all__ = [
     "CandidateTransition",
     "CandidateUniquenessTuple",
     "CanonicalEvidenceWindowV1",
+    "ConflictingActionEligibilityError",
     "ConflictingCandidateIdempotencyError",
     "ConflictingCandidateTransitionError",
     "ConflictingSemanticInputError",
@@ -140,11 +166,17 @@ __all__ = [
     "IllegalAssessmentTransitionError",
     "IllegalCandidateTransitionError",
     "IllegalSetupIdentityError",
+    "InMemoryActionEligibilityStore",
     "InMemoryCandidateRepository",
     "LegacyCandidateAuthorityError",
     "ManualResistanceEvidence",
+    "MarketActionEvidence",
+    "PaperExecutionConfiguration",
+    "PortfolioState",
     "PublicMarketObservation",
+    "RiskStateSnapshot",
     "RoleTimeframeBinding",
+    "SafetyStateSnapshot",
     "SelectedTenantAssertion",
     "SetupAssessment",
     "SetupAssessmentState",
@@ -170,9 +202,11 @@ __all__ = [
     "evidence_window_preimage",
     "first_slice_role_timeframes",
     "hash_canonical_evidence_window",
+    "in_memory_action_eligibility",
     "in_memory_candidate_lifecycle",
     "refuse_tenant_assertion_as_public_observation",
     "require_distinct_observation_for_finality_change",
     "select_identity_forming_tenant_assertions",
     "uniqueness_from_confirmed",
+    "uniqueness_hash",
 ]

@@ -956,3 +956,26 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6
 - ADR: AT-ADR-027
 
+### AT-048 — Phase 6 deterministic ActionEligibility (paper action gate)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-047 evaluator +
+  candidate runtime foundation · Risk: Medium (safety-critical gating)
+- Safety classification: Paper-safe / in-memory application service; no
+  PostgreSQL, Alembic, watcher, Telegram, TradePlan, execution, or live trading
+- Goal: Implement the deterministic ActionEligibility service. SetupAssessment
+  remains market truth. Eligibility decides whether a confirmed canonical
+  Candidate may proceed toward paper TradePlan creation from account, portfolio,
+  risk, safety, stale action evidence, paper configuration, and a first-slice
+  20 bps cross-venue basis gate. Kill switch dominates. Live trading cannot
+  make a result executable.
+- Branch: `cursor/phase6-action-eligibility-078e`
+- Deliverables: `app.signal_fusion.action_eligibility`; tests in
+  `backend/tests/test_phase6_action_eligibility.py`. Frozen
+  `ActionEligibilityState` remains `ELIGIBLE | BLOCKED | EXPIRED`. No TradePlan,
+  no venue APIs, no Alembic.
+- Validation: Phase 1 risk/safety regressions, Phase 6 contracts, evaluator,
+  candidate lifecycle, new ActionEligibility tests, full backend pytest, ruff,
+  mypy `--strict` on `src/app.signal_fusion`, GitHub CI. Draft PR to main;
+  do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-028
+
