@@ -1029,3 +1029,26 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
   those IDs were already used, so this task is `AT-050`.
 
+### AT-051 — Phase 7 canonical TradePlanRevision application layer
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-046/AT-047 Candidate
+  authority; AT-048 ActionEligibility; Phase 1 TradePlanRevision hash contract
+  · Risk: Medium (plan identity + immutability)
+- Safety classification: Paper-safe / in-memory application service; no
+  PostgreSQL, Alembic, Watcher, Telegram, Journal, execution dispatch,
+  frontend, or live trading
+- Goal: Canonical flow Candidate → ActionEligibility → TradePlanRevision →
+  approval → paper execution, with this slice owning plan creation only. Only
+  ACTIVE + ELIGIBLE may insert; lineage and tenant scope must match; semantic
+  content immutable; identical requests converge; conflicting idempotency
+  fails closed; PLAN_CREATED only after successful insert; PVC cannot mint
+  canonical plans; approval cannot change executable semantics.
+- Branch: `cursor/phase7_tradeplan_canonical`
+- Deliverables: `CanonicalTradePlanService`, `CanonicalTradePlanStore`,
+  lineage envelope, fail-closed SQLAlchemy adapter, remaining DB-binding
+  documentation. Agent 1 owns schema.
+- Validation: focused canonical tests, Phase 1 planning/approval tests,
+  Phase 6 candidate/eligibility tests, full backend pytest, ruff, mypy
+  `--strict`, GitHub CI. Draft PR to main; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-031
+
