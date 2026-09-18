@@ -10,6 +10,8 @@ Linearization points
   by ``created_at``. Expired ``CLAIMED`` leases are reclaimable.
 * Replay first-writer: unique ``(bot_id, update_id)`` and unique
   ``(bot_id, callback_query_id)``; conflicting fingerprints fail closed.
+* Immutable identity: existing primary keys freeze semantic identity after the
+  first writer. Exact replay may converge; conflicting identity fails closed.
 """
 
 from __future__ import annotations
@@ -63,6 +65,19 @@ _RECEIPT_UNIQUES = (
     "uq_tgsec_receipts_bot_callback",
 )
 _OUTBOX_UNIQUES = ("uq_tgsec_outbox_org_idempotency",)
+_NONCE_UNIQUES = (
+    "uq_tgsec_nonces_hash",
+    "uq_tgsec_nonces_org_hash",
+    "uq_tgsec_nonces_org_id",
+    "uq_tgsec_nonces_org_hash_payload",
+    "pk_telegram_security_action_nonces",
+)
+_CHALLENGE_UNIQUES = (
+    "uq_tgsec_challenges_token_hash",
+    "uq_tgsec_challenges_org_token_hash",
+    "uq_tgsec_challenges_org_id",
+    "pk_telegram_security_enrollment_challenges",
+)
 _CLAIMABLE_STATES = (OutboxState.PENDING.value, OutboxState.RETRYABLE.value)
 
 
@@ -105,12 +120,35 @@ class PostgresTelegramSecurityStore:
 
     def save_challenge(self, row: EnrollmentChallenge) -> None:
         def work(session: Session) -> None:
-            current = session.get(TelegramEnrollmentChallengeRow, row.challenge_id)
-            if current is None:
-                session.add(_challenge_to_row(row))
-            else:
-                _apply_challenge(current, row)
-            session.flush()
+            current = session.get(
+                TelegramEnrollmentChallengeRow, row.challenge_id, with_for_update=True
+            )
+            if current is not None:
+                _reject_conflicting_challenge_binding(current, row)
+                _apply_challenge_lifecycle(current, row)
+                session.flush()
+                return
+            hashed = _locked_challenge_hash(session, row.token_hash)
+            if hashed is not None:
+                _reject_conflicting_challenge_binding(hashed, row)
+                _apply_challenge_lifecycle(hashed, row)
+                session.flush()
+                return
+            try:
+                with session.begin_nested():
+                    session.add(_challenge_to_row(row))
+                    session.flush()
+            except IntegrityError as exc:
+                if not is_unique_violation(exc, *_CHALLENGE_UNIQUES):
+                    raise
+                existing = session.get(
+                    TelegramEnrollmentChallengeRow, row.challenge_id, with_for_update=True
+                ) or _locked_challenge_hash(session, row.token_hash)
+                if existing is None:
+                    raise
+                _reject_conflicting_challenge_binding(existing, row)
+                _apply_challenge_lifecycle(existing, row)
+                session.flush()
 
         self._run(work)
 
@@ -165,7 +203,8 @@ class PostgresTelegramSecurityStore:
             )
             if current is None or _challenge_from_row(current) != expected:
                 return False
-            _apply_challenge(current, updated)
+            _reject_conflicting_challenge_binding(current, updated)
+            _apply_challenge_lifecycle(current, updated)
             session.flush()
             return True
 
@@ -173,11 +212,12 @@ class PostgresTelegramSecurityStore:
 
     def save_binding(self, row: TelegramBinding) -> None:
         def work(session: Session) -> None:
-            current = session.get(TelegramBindingRow, row.binding_id)
+            current = session.get(TelegramBindingRow, row.binding_id, with_for_update=True)
             if current is None:
                 session.add(_binding_to_row(row))
             else:
-                _apply_binding(current, row)
+                _reject_conflicting_binding_identity(current, row)
+                _apply_binding_lifecycle(current, row)
             session.flush()
 
         self._run(work)
@@ -231,16 +271,33 @@ class PostgresTelegramSecurityStore:
 
     def save_nonce(self, row: ActionNonce) -> None:
         def work(session: Session) -> None:
-            current = session.scalars(
-                select(TelegramActionNonceRow)
-                .where(TelegramActionNonceRow.nonce_hash == row.nonce_hash)
-                .with_for_update()
-            ).first()
-            if current is None:
-                session.add(_nonce_to_row(row))
-            else:
-                _apply_nonce(current, row)
-            session.flush()
+            current = session.get(TelegramActionNonceRow, row.nonce_id, with_for_update=True)
+            if current is not None:
+                _reject_conflicting_nonce_binding(current, row)
+                _apply_nonce_lifecycle(current, row)
+                session.flush()
+                return
+            hashed = _locked_nonce_hash(session, row.nonce_hash)
+            if hashed is not None:
+                _reject_conflicting_nonce_binding(hashed, row)
+                _apply_nonce_lifecycle(hashed, row)
+                session.flush()
+                return
+            try:
+                with session.begin_nested():
+                    session.add(_nonce_to_row(row))
+                    session.flush()
+            except IntegrityError as exc:
+                if not is_unique_violation(exc, *_NONCE_UNIQUES):
+                    raise
+                existing = session.get(
+                    TelegramActionNonceRow, row.nonce_id, with_for_update=True
+                ) or _locked_nonce_hash(session, row.nonce_hash)
+                if existing is None:
+                    raise
+                _reject_conflicting_nonce_binding(existing, row)
+                _apply_nonce_lifecycle(existing, row)
+                session.flush()
 
         self._run(work)
 
@@ -264,7 +321,8 @@ class PostgresTelegramSecurityStore:
             ).first()
             if current is None or _nonce_from_row(current) != expected:
                 return False
-            _apply_nonce(current, updated)
+            _reject_conflicting_nonce_binding(current, updated)
+            _apply_nonce_lifecycle(current, updated)
             session.flush()
             return True
 
@@ -486,6 +544,24 @@ def _outbox_claimable(now: datetime) -> ColumnElement[bool]:
     )
 
 
+def _locked_nonce_hash(session: Session, nonce_hash: str) -> TelegramActionNonceRow | None:
+    return session.scalars(
+        select(TelegramActionNonceRow)
+        .where(TelegramActionNonceRow.nonce_hash == nonce_hash)
+        .with_for_update()
+    ).first()
+
+
+def _locked_challenge_hash(
+    session: Session, token_hash: str
+) -> TelegramEnrollmentChallengeRow | None:
+    return session.scalars(
+        select(TelegramEnrollmentChallengeRow)
+        .where(TelegramEnrollmentChallengeRow.token_hash == token_hash)
+        .with_for_update()
+    ).first()
+
+
 def _load_outbox_key(
     session: Session,
     organization_id: UUID,
@@ -560,6 +636,7 @@ def _reject_conflicting_receipt_binding(
         or existing.payload_hash != incoming.payload_hash
         or existing.replay_fingerprint != incoming.replay_fingerprint
         or existing.action != incoming_action
+        or _aware(existing.created_at) != _aware(incoming.created_at)
         or _bound_identity_conflict(existing.nonce_hash, incoming.nonce_hash)
         or _bound_identity_conflict(existing.binding_id, incoming.binding_id)
     ):
@@ -568,6 +645,93 @@ def _reject_conflicting_receipt_binding(
             reason=TelegramSecurityReason.REPLAY_CONFLICT,
             details={"bot_id": existing.bot_id, "update_id": str(existing.update_id)},
         )
+
+
+def _reject_conflicting_nonce_binding(
+    existing: TelegramActionNonceRow, incoming: ActionNonce
+) -> None:
+    incoming_revision = incoming.revision_id
+    if (
+        existing.nonce_id != incoming.nonce_id
+        or existing.nonce_hash != incoming.nonce_hash
+        or existing.organization_id != incoming.organization_id
+        or existing.user_id != incoming.user_id
+        or existing.account_id != incoming.account_id
+        or existing.telegram_user_id != incoming.telegram_user_id
+        or existing.chat_id != incoming.chat_id
+        or existing.bot_id != incoming.bot_id
+        or existing.binding_id != incoming.binding_id
+        or existing.action != incoming.action.value
+        or existing.resource_type != incoming.resource_type
+        or existing.resource_id != incoming.resource_id
+        or existing.revision_id != incoming_revision
+        or existing.content_hash != incoming.content_hash
+        or existing.payload_hash != incoming.payload_hash
+        or _aware(existing.expires_at) != _aware(incoming.expires_at)
+        or _aware(existing.created_at) != _aware(incoming.created_at)
+    ):
+        raise TelegramSecurityError(
+            "Action nonce is bound to a different payload identity.",
+            reason=TelegramSecurityReason.PAYLOAD_MISMATCH,
+            details={"nonce_id": str(existing.nonce_id)},
+        )
+
+
+def _reject_conflicting_binding_identity(
+    existing: TelegramBindingRow, incoming: TelegramBinding
+) -> None:
+    existing_actions = list(existing.allowed_actions)
+    incoming_actions = [action.value for action in incoming.allowed_actions]
+    if existing.organization_id != incoming.organization_id:
+        reason = TelegramSecurityReason.CROSS_ORGANIZATION
+    elif existing.user_id != incoming.user_id:
+        reason = TelegramSecurityReason.CROSS_USER
+    elif existing.bot_id != incoming.bot_id:
+        reason = TelegramSecurityReason.CROSS_BOT
+    elif (
+        existing.telegram_user_id != incoming.telegram_user_id
+        or existing.chat_id != incoming.chat_id
+        or existing.chat_type != incoming.chat_type.value
+    ):
+        reason = TelegramSecurityReason.CROSS_CHAT
+    elif (
+        _aware(existing.verified_at) != _aware(incoming.verified_at)
+        or existing_actions != incoming_actions
+    ):
+        reason = TelegramSecurityReason.CROSS_USER
+    else:
+        return
+    raise TelegramSecurityError(
+        "Telegram binding identity is immutable after first writer persistence.",
+        reason=reason,
+        details={"binding_id": str(existing.binding_id)},
+    )
+
+
+def _reject_conflicting_challenge_binding(
+    existing: TelegramEnrollmentChallengeRow, incoming: EnrollmentChallenge
+) -> None:
+    if existing.challenge_id != incoming.challenge_id:
+        reason = TelegramSecurityReason.ENROLLMENT_USED
+    elif existing.organization_id != incoming.organization_id:
+        reason = TelegramSecurityReason.CROSS_ORGANIZATION
+    elif existing.user_id != incoming.user_id:
+        reason = TelegramSecurityReason.CROSS_USER
+    elif existing.bot_id != incoming.bot_id:
+        reason = TelegramSecurityReason.ENROLLMENT_WRONG_BOT
+    elif (
+        existing.token_hash != incoming.token_hash
+        or _aware(existing.expires_at) != _aware(incoming.expires_at)
+        or _aware(existing.created_at) != _aware(incoming.created_at)
+    ):
+        reason = TelegramSecurityReason.PAYLOAD_MISMATCH
+    else:
+        return
+    raise TelegramSecurityError(
+        "Enrollment challenge identity is immutable after first writer persistence.",
+        reason=reason,
+        details={"challenge_id": str(existing.challenge_id)},
+    )
 
 
 def _reject_conflicting_outbox_binding(existing: TelegramOutboxRow, incoming: OutboxRecord) -> None:
@@ -580,6 +744,7 @@ def _reject_conflicting_outbox_binding(existing: TelegramOutboxRow, incoming: Ou
         or existing.idempotency_key != incoming.idempotency_key
         or existing.kind != incoming.kind.value
         or existing.text != incoming.text
+        or _aware(existing.created_at) != _aware(incoming.created_at)
     ):
         raise TelegramSecurityError(
             "Outbox idempotency key is bound to a different payload.",
@@ -612,16 +777,19 @@ def _challenge_to_row(row: EnrollmentChallenge) -> TelegramEnrollmentChallengeRo
     )
 
 
-def _apply_challenge(current: TelegramEnrollmentChallengeRow, row: EnrollmentChallenge) -> None:
-    current.organization_id = row.organization_id
-    current.user_id = row.user_id
-    current.bot_id = row.bot_id
-    current.token_hash = row.token_hash
+def _apply_challenge_lifecycle(
+    current: TelegramEnrollmentChallengeRow, row: EnrollmentChallenge
+) -> None:
+    if current.binding_id is None:
+        current.binding_id = row.binding_id
+    elif row.binding_id is not None and current.binding_id != row.binding_id:
+        raise TelegramSecurityError(
+            "Enrollment challenge identity is immutable after first writer persistence.",
+            reason=TelegramSecurityReason.ENROLLMENT_USED,
+            details={"challenge_id": str(current.challenge_id)},
+        )
     current.state = row.state.value
-    current.expires_at = row.expires_at
-    current.created_at = row.created_at
     current.completed_at = row.completed_at
-    current.binding_id = row.binding_id
 
 
 def _challenge_from_row(row: TelegramEnrollmentChallengeRow) -> EnrollmentChallenge:
@@ -655,17 +823,9 @@ def _binding_to_row(row: TelegramBinding) -> TelegramBindingRow:
     )
 
 
-def _apply_binding(current: TelegramBindingRow, row: TelegramBinding) -> None:
-    current.organization_id = row.organization_id
-    current.user_id = row.user_id
-    current.telegram_user_id = row.telegram_user_id
-    current.chat_id = row.chat_id
-    current.chat_type = row.chat_type.value
-    current.bot_id = row.bot_id
+def _apply_binding_lifecycle(current: TelegramBindingRow, row: TelegramBinding) -> None:
     current.state = row.state.value
-    current.verified_at = row.verified_at
     current.revoked_at = row.revoked_at
-    current.allowed_actions = [action.value for action in row.allowed_actions]
 
 
 def _binding_from_row(row: TelegramBindingRow) -> TelegramBinding:
@@ -709,25 +869,8 @@ def _nonce_to_row(row: ActionNonce) -> TelegramActionNonceRow:
     )
 
 
-def _apply_nonce(current: TelegramActionNonceRow, row: ActionNonce) -> None:
-    current.nonce_id = row.nonce_id
-    current.nonce_hash = row.nonce_hash
-    current.organization_id = row.organization_id
-    current.user_id = row.user_id
-    current.account_id = row.account_id
-    current.telegram_user_id = row.telegram_user_id
-    current.chat_id = row.chat_id
-    current.bot_id = row.bot_id
-    current.binding_id = row.binding_id
-    current.action = row.action.value
-    current.resource_type = row.resource_type
-    current.resource_id = row.resource_id
-    current.revision_id = row.revision_id
-    current.content_hash = row.content_hash
-    current.payload_hash = row.payload_hash
+def _apply_nonce_lifecycle(current: TelegramActionNonceRow, row: ActionNonce) -> None:
     current.state = row.state.value
-    current.expires_at = row.expires_at
-    current.created_at = row.created_at
     current.consumed_at = row.consumed_at
     current.consumed_by_receipt_id = row.consumed_by_receipt_id
 

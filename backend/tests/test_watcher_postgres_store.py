@@ -25,6 +25,9 @@ from app.watcher.contracts import (
     ScanLineage,
     ScanTrigger,
     ScheduledScan,
+    SourceFetchAttempt,
+    SubscriptionEvaluationAttempt,
+    UnitAttemptStatus,
     WatcherHealthSnapshot,
     WatcherHealthState,
 )
@@ -89,6 +92,51 @@ def _observer_health(
         last_lineage_id=None,
         reason_code="observer",
         generated_at=now,
+    )
+
+
+def _lineage_row(store: WatcherStore, org: UUID, scope: str, clock: FakeClock) -> ScanLineage:
+    return store.insert_lineage(
+        ScanLineage(
+            lineage_id=uuid4(),
+            organization_id=org,
+            principal_id=None,
+            scan_scope=scope,
+            request_hash="c" * 64,
+            policy_id=uuid4(),
+            policy_version=1,
+            policy_content_hash="d" * 64,
+            trigger_created_by=ScanTrigger.WORKER,
+            created_at=clock.now(),
+        )
+    )
+
+
+def _scan_attempt(
+    lineage: ScanLineage,
+    *,
+    worker_id: str | None,
+    lease_epoch: int | None,
+    fencing_token: int | None,
+    clock: FakeClock,
+    status: ScanAttemptStatus = ScanAttemptStatus.STARTED,
+    attempt_id: UUID | None = None,
+    attempt_number: int = 1,
+) -> ScanAttempt:
+    now = clock.now()
+    return ScanAttempt(
+        attempt_id=attempt_id or uuid4(),
+        lineage_id=lineage.lineage_id,
+        attempt_number=attempt_number,
+        worker_id=worker_id,
+        lease_epoch=lease_epoch,
+        fencing_token=fencing_token,
+        trigger=ScanTrigger.MANUAL if worker_id is None else ScanTrigger.WORKER,
+        mode=EvaluationMode.PERSIST_EVIDENCE,
+        status=status,
+        started_at=now,
+        heartbeat_at=now,
+        finished_at=None if status is ScanAttemptStatus.STARTED else now,
     )
 
 
@@ -799,11 +847,286 @@ def test_postgres_orchestrator_stale_fence_cannot_publish() -> None:
             )
             return super().evaluate(command)
 
-    stolen = _orch(store, clock, evaluator=StealOnEvaluate(), lease_ttl_seconds=30).run_worker(
-        request, worker_id="worker-a"
-    )
-    assert stolen.status.value == "rejected_stale_fence"
+    with pytest.raises(StaleFenceError):
+        _orch(store, clock, evaluator=StealOnEvaluate(), lease_ttl_seconds=30).run_worker(
+            request, worker_id="worker-a"
+        )
+    scheduled = store.get_schedule(request.organization_id, None, "scan-1")
+    assert scheduled is not None
+    stale_attempts = store.list_attempts(scheduled.lineage_id)
+    assert stale_attempts[0].status is ScanAttemptStatus.STARTED
     winner = _orch(store, clock).run_worker(request, worker_id="worker-b")
     assert winner.status.value == "succeeded"
     assert winner.published is True
-    assert winner.fencing_token != stolen.fencing_token
+    assert winner.fencing_token == 2
+
+
+def _takeover_pair(store: WatcherStore, org: UUID, scope: str, clock: FakeClock) -> ScanLineage:
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    clock.advance(31)
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-b", ttl_seconds=30, now=clock.now()
+    )
+    return lineage
+
+
+@requires_postgres
+def test_postgres_stale_holder_cannot_insert_attempt_after_takeover() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "insert-attempt-stale"
+    lineage = _takeover_pair(store, org, scope, clock)
+    with pytest.raises(StaleFenceError) as exc:
+        store.insert_attempt(
+            _scan_attempt(
+                lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock
+            )
+        )
+    assert exc.value.details["cause"] == "mismatched_authority"
+    assert store.list_attempts(lineage.lineage_id) == ()
+
+
+@requires_postgres
+def test_postgres_incomplete_worker_authority_cannot_insert_attempt() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "insert-attempt-incomplete"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    with pytest.raises(StaleFenceError) as exc:
+        store.insert_attempt(
+            _scan_attempt(
+                lineage, worker_id="worker-a", lease_epoch=None, fencing_token=None, clock=clock
+            )
+        )
+    assert exc.value.details["cause"] == "incomplete_authority"
+    assert store.list_attempts(lineage.lineage_id) == ()
+
+
+@requires_postgres
+def test_postgres_manual_attempt_without_worker_authority_is_allowed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "manual-attempt"
+    lineage = _lineage_row(store, org, scope, clock)
+    inserted = store.insert_attempt(
+        _scan_attempt(lineage, worker_id=None, lease_epoch=None, fencing_token=None, clock=clock)
+    )
+    updated = store.update_attempt(
+        inserted.model_copy(update={"status": ScanAttemptStatus.FAILED, "finished_at": clock.now()})
+    )
+    assert updated.status is ScanAttemptStatus.FAILED
+    terminal = store.cas_lineage_terminal(
+        lineage.lineage_id, updated.attempt_id, ScanAttemptStatus.FAILED.value, org
+    )
+    assert terminal.terminal_status is ScanAttemptStatus.FAILED
+
+
+@requires_postgres
+def test_postgres_stale_holder_cannot_update_failed_attempt_after_takeover() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "failed-attempt-stale"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    attempt = store.insert_attempt(
+        _scan_attempt(lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock)
+    )
+    clock.advance(31)
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-b", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.update_attempt(
+            attempt.model_copy(
+                update={"status": ScanAttemptStatus.FAILED, "finished_at": clock.now()}
+            )
+        )
+    stored = store.get_attempt(attempt.attempt_id)
+    assert stored is not None
+    assert stored.status is ScanAttemptStatus.STARTED
+
+
+@requires_postgres
+def test_postgres_current_owner_can_publish_failed_attempt() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "failed-attempt-current"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    attempt = store.insert_attempt(
+        _scan_attempt(lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock)
+    )
+    updated = store.update_attempt(
+        attempt.model_copy(update={"status": ScanAttemptStatus.FAILED, "finished_at": clock.now()})
+    )
+    assert updated.status is ScanAttemptStatus.FAILED
+    terminal = store.cas_lineage_terminal(
+        lineage.lineage_id, updated.attempt_id, ScanAttemptStatus.FAILED.value, org
+    )
+    assert terminal.terminal_status is ScanAttemptStatus.FAILED
+
+
+@requires_postgres
+def test_postgres_stale_holder_cannot_insert_source_fetch_after_takeover() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "source-fetch-stale"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    attempt = store.insert_attempt(
+        _scan_attempt(lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock)
+    )
+    clock.advance(31)
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-b", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.insert_source_fetch(
+            SourceFetchAttempt(
+                fetch_attempt_id=uuid4(),
+                scan_attempt_id=attempt.attempt_id,
+                lineage_id=lineage.lineage_id,
+                lease_epoch=1,
+                fencing_token=1,
+                subject_id=uuid4(),
+                status=UnitAttemptStatus.FAILED,
+                reason_code="stale",
+                created_at=clock.now(),
+                finished_at=clock.now(),
+            )
+        )
+    assert store.list_source_fetches(attempt.attempt_id) == ()
+
+
+@requires_postgres
+def test_postgres_stale_holder_cannot_insert_subscription_eval_after_takeover() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "sub-eval-stale"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    attempt = store.insert_attempt(
+        _scan_attempt(lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock)
+    )
+    clock.advance(31)
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-b", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.insert_subscription_eval(
+            SubscriptionEvaluationAttempt(
+                subscription_attempt_id=uuid4(),
+                scan_attempt_id=attempt.attempt_id,
+                lineage_id=lineage.lineage_id,
+                lease_epoch=1,
+                fencing_token=1,
+                subject_id=uuid4(),
+                status=UnitAttemptStatus.FAILED,
+                reason_code="stale",
+                created_at=clock.now(),
+                finished_at=clock.now(),
+            )
+        )
+    assert store.list_subscription_evals(attempt.attempt_id) == ()
+
+
+@requires_postgres
+def test_postgres_stale_holder_cannot_publish_failed_lineage_after_takeover() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "lineage-failed-stale"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    attempt = store.insert_attempt(
+        _scan_attempt(lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock)
+    )
+    clock.advance(31)
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-b", ttl_seconds=30, now=clock.now()
+    )
+    with pytest.raises(StaleFenceError):
+        store.cas_lineage_terminal(
+            lineage.lineage_id, attempt.attempt_id, ScanAttemptStatus.FAILED.value, org
+        )
+    stored = store.get_lineage(lineage.lineage_id, org)
+    assert stored is not None
+    assert stored.terminal_status is None
+    assert stored.terminal_attempt_id is None
+
+
+@requires_postgres
+def test_postgres_takeover_race_stale_failed_write_fails_closed() -> None:
+    store = build_postgres_watcher_store(persistence_session_factory())
+    clock = FakeClock()
+    org = uuid4()
+    scope = "takeover-race-failed"
+    store.claim_lease(
+        organization_id=org, scan_scope=scope, owner_id="worker-a", ttl_seconds=30, now=clock.now()
+    )
+    lineage = _lineage_row(store, org, scope, clock)
+    attempt = store.insert_attempt(
+        _scan_attempt(lineage, worker_id="worker-a", lease_epoch=1, fencing_token=1, clock=clock)
+    )
+    clock.advance(31)
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def claim_b() -> None:
+        barrier.wait(timeout=20)
+        store.claim_lease(
+            organization_id=org,
+            scan_scope=scope,
+            owner_id="worker-b",
+            ttl_seconds=30,
+            now=clock.now(),
+        )
+
+    def stale_fail() -> None:
+        barrier.wait(timeout=20)
+        try:
+            store.update_attempt(
+                attempt.model_copy(
+                    update={"status": ScanAttemptStatus.FAILED, "finished_at": clock.now()}
+                )
+            )
+        except BaseException as exc:
+            with lock:
+                errors.append(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(claim_b), pool.submit(stale_fail)]
+        for future in futures:
+            future.result(timeout=30)
+    stored = store.get_attempt(attempt.attempt_id)
+    assert stored is not None
+    assert stored.status is ScanAttemptStatus.STARTED
+    assert any(isinstance(item, StaleFenceError) for item in errors)
+    lease = store.get_lease(org, scope)
+    assert lease is not None
+    assert lease.owner_id == "worker-b"
+    assert lease.fencing_token == 2

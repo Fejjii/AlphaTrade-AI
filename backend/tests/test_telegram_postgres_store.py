@@ -25,11 +25,14 @@ from app.telegram_security.contracts import (
     ActionReceiptState,
     BindingState,
     ChatType,
+    EnrollmentChallenge,
+    EnrollmentChallengeState,
     NonceState,
     OutboxKind,
     OutboxRecord,
     OutboxState,
     ReceiptTransition,
+    TelegramBinding,
 )
 from app.telegram_security.errors import (
     TelegramInteractionDisabledError,
@@ -116,6 +119,74 @@ def _receipt(
         ),
         created_at=now,
         updated_at=now,
+    )
+
+
+def _nonce(
+    *,
+    nonce_id: UUID,
+    nonce_hash: str,
+    clock: FrozenClock,
+    account_id: UUID = ACCOUNT,
+    action: TelegramRemoteAction = TelegramRemoteAction.APPROVE,
+    payload_hash: str = "c" * 64,
+    resource_id: UUID = RESOURCE,
+) -> ActionNonce:
+    return ActionNonce(
+        nonce_id=nonce_id,
+        nonce_hash=nonce_hash,
+        organization_id=ORG,
+        user_id=USER,
+        account_id=account_id,
+        telegram_user_id=TG_USER,
+        chat_id=CHAT,
+        bot_id=BOT,
+        binding_id=uuid4(),
+        action=action,
+        resource_type="trade_plan_revision",
+        resource_id=resource_id,
+        revision_id=REVISION,
+        content_hash="b" * 64,
+        payload_hash=payload_hash,
+        state=NonceState.ISSUED,
+        expires_at=clock.now() + timedelta(minutes=10),
+        created_at=clock.now(),
+    )
+
+
+def _binding(
+    *, binding_id: UUID, clock: FrozenClock, telegram_user_id: str = TG_USER
+) -> TelegramBinding:
+    return TelegramBinding(
+        binding_id=binding_id,
+        organization_id=ORG,
+        user_id=USER,
+        telegram_user_id=telegram_user_id,
+        chat_id=CHAT,
+        chat_type=ChatType.PRIVATE,
+        bot_id=BOT,
+        state=BindingState.VERIFIED,
+        verified_at=clock.now(),
+        allowed_actions=(TelegramRemoteAction.APPROVE,),
+    )
+
+
+def _challenge(
+    *,
+    challenge_id: UUID,
+    token_hash: str,
+    clock: FrozenClock,
+    bot_id: str = BOT,
+) -> EnrollmentChallenge:
+    return EnrollmentChallenge(
+        challenge_id=challenge_id,
+        organization_id=ORG,
+        user_id=USER,
+        bot_id=bot_id,
+        token_hash=token_hash,
+        state=EnrollmentChallengeState.PENDING,
+        expires_at=clock.now() + timedelta(minutes=15),
+        created_at=clock.now(),
     )
 
 
@@ -840,3 +911,192 @@ def test_postgres_close_unavailable_and_unknown_action() -> None:
     with pytest.raises(TelegramSecurityError) as unknown:
         parse_remote_action("EXECUTE_PAPER_PLAN")
     assert unknown.value.reason is TelegramSecurityReason.UNKNOWN_ACTION
+
+
+@requires_postgres
+def test_postgres_nonce_same_pk_exact_replay_converges() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    nonce = _nonce(nonce_id=uuid4(), nonce_hash="a" * 64, clock=clock)
+    store.save_nonce(nonce)
+    store.save_nonce(nonce)
+    stored = store.get_nonce_by_hash(nonce.nonce_hash)
+    assert stored is not None
+    assert stored.nonce_id == nonce.nonce_id
+    assert stored.state is NonceState.ISSUED
+    consumed = nonce.model_copy(
+        update={
+            "state": NonceState.CONSUMED,
+            "consumed_at": clock.now(),
+            "consumed_by_receipt_id": uuid4(),
+        }
+    )
+    store.save_nonce(consumed)
+    stored = store.get_nonce_by_hash(nonce.nonce_hash)
+    assert stored is not None
+    assert stored.state is NonceState.CONSUMED
+    assert stored.account_id == ACCOUNT
+    assert stored.payload_hash == "c" * 64
+
+
+@requires_postgres
+def test_postgres_nonce_same_pk_conflicting_payload_fails_closed() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    nonce_id = uuid4()
+    nonce = _nonce(nonce_id=nonce_id, nonce_hash="a" * 64, clock=clock)
+    store.save_nonce(nonce)
+    conflict = nonce.model_copy(
+        update={
+            "account_id": OTHER_ACCOUNT,
+            "payload_hash": "d" * 64,
+            "action": TelegramRemoteAction.STATUS,
+        }
+    )
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_nonce(conflict)
+    assert exc.value.reason is TelegramSecurityReason.PAYLOAD_MISMATCH
+    stored = store.get_nonce_by_hash(nonce.nonce_hash)
+    assert stored is not None
+    assert stored.nonce_id == nonce_id
+    assert stored.account_id == ACCOUNT
+    assert stored.payload_hash == "c" * 64
+    assert stored.action is TelegramRemoteAction.APPROVE
+
+
+@requires_postgres
+def test_postgres_nonce_same_hash_different_pk_fails_closed() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    nonce = _nonce(nonce_id=uuid4(), nonce_hash="a" * 64, clock=clock)
+    store.save_nonce(nonce)
+    conflict = nonce.model_copy(update={"nonce_id": uuid4()})
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_nonce(conflict)
+    assert exc.value.reason is TelegramSecurityReason.PAYLOAD_MISMATCH
+    stored = store.get_nonce_by_hash(nonce.nonce_hash)
+    assert stored is not None
+    assert stored.nonce_id == nonce.nonce_id
+
+
+@requires_postgres
+def test_postgres_nonce_same_pk_different_hash_fails_closed() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    nonce = _nonce(nonce_id=uuid4(), nonce_hash="a" * 64, clock=clock)
+    store.save_nonce(nonce)
+    conflict = nonce.model_copy(update={"nonce_hash": "f" * 64})
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_nonce(conflict)
+    assert exc.value.reason is TelegramSecurityReason.PAYLOAD_MISMATCH
+    assert store.get_nonce_by_hash("f" * 64) is None
+    stored = store.get_nonce_by_hash("a" * 64)
+    assert stored is not None
+    assert stored.nonce_hash == "a" * 64
+
+
+@requires_postgres
+def test_postgres_cas_nonce_cannot_replace_identity() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    nonce = _nonce(nonce_id=uuid4(), nonce_hash="a" * 64, clock=clock)
+    store.save_nonce(nonce)
+    mutated = nonce.model_copy(
+        update={
+            "state": NonceState.CONSUMED,
+            "consumed_at": clock.now(),
+            "resource_id": uuid4(),
+        }
+    )
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.cas_nonce(nonce_hash=nonce.nonce_hash, expected=nonce, updated=mutated)
+    assert exc.value.reason is TelegramSecurityReason.PAYLOAD_MISMATCH
+    stored = store.get_nonce_by_hash(nonce.nonce_hash)
+    assert stored is not None
+    assert stored.state is NonceState.ISSUED
+    assert stored.resource_id == RESOURCE
+
+
+@requires_postgres
+def test_postgres_binding_same_pk_lifecycle_and_identity() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    binding_id = uuid4()
+    original = _binding(binding_id=binding_id, clock=clock)
+    store.save_binding(original)
+    clock.advance(timedelta(seconds=1))
+    revoked = original.model_copy(update={"state": BindingState.REVOKED, "revoked_at": clock.now()})
+    store.save_binding(revoked)
+    stored = store.get_binding(binding_id)
+    assert stored is not None
+    assert stored.state is BindingState.REVOKED
+    assert stored.telegram_user_id == TG_USER
+    assert stored.organization_id == ORG
+    conflict = revoked.model_copy(update={"telegram_user_id": "tg-user-other"})
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_binding(conflict)
+    assert exc.value.reason is TelegramSecurityReason.CROSS_CHAT
+    stored = store.get_binding(binding_id)
+    assert stored is not None
+    assert stored.telegram_user_id == TG_USER
+    org_conflict = revoked.model_copy(update={"organization_id": OTHER_ORG})
+    with pytest.raises(TelegramSecurityError) as org_exc:
+        store.save_binding(org_conflict)
+    assert org_exc.value.reason is TelegramSecurityReason.CROSS_ORGANIZATION
+
+
+@requires_postgres
+def test_postgres_challenge_same_pk_lifecycle_and_identity() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    challenge_id = uuid4()
+    original = _challenge(challenge_id=challenge_id, token_hash="a" * 64, clock=clock)
+    store.save_challenge(original)
+    binding_id = uuid4()
+    completed = original.model_copy(
+        update={
+            "state": EnrollmentChallengeState.COMPLETED,
+            "completed_at": clock.now(),
+            "binding_id": binding_id,
+        }
+    )
+    assert store.cas_challenge(challenge_id=challenge_id, expected=original, updated=completed)
+    stored = store.get_challenge_by_hash("a" * 64)
+    assert stored is not None
+    assert stored.state is EnrollmentChallengeState.COMPLETED
+    assert stored.binding_id == binding_id
+    assert stored.token_hash == "a" * 64
+    conflict = completed.model_copy(update={"token_hash": "b" * 64, "bot_id": "bot-other"})
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_challenge(conflict)
+    assert exc.value.reason in {
+        TelegramSecurityReason.PAYLOAD_MISMATCH,
+        TelegramSecurityReason.ENROLLMENT_WRONG_BOT,
+    }
+    stored = store.get_challenge_by_hash("a" * 64)
+    assert stored is not None
+    assert stored.token_hash == "a" * 64
+    assert stored.bot_id == BOT
+    assert store.get_challenge_by_hash("b" * 64) is None
+
+
+@requires_postgres
+def test_postgres_receipt_same_pk_cannot_replace_bound_nonce() -> None:
+    store = build_postgres_telegram_security_store(persistence_session_factory())
+    clock = FrozenClock()
+    receipt_id = uuid4()
+    original = _receipt(
+        receipt_id=receipt_id,
+        now=clock.now(),
+        state=ActionReceiptState.CLAIMED,
+        fingerprint="a" * 64,
+    ).model_copy(update={"nonce_hash": "c" * 64})
+    store.save_receipt(original)
+    conflict = original.model_copy(update={"nonce_hash": "d" * 64, "updated_at": clock.now()})
+    with pytest.raises(TelegramSecurityError) as exc:
+        store.save_receipt(conflict)
+    assert exc.value.reason is TelegramSecurityReason.REPLAY_CONFLICT
+    stored = store.get_update_receipt(bot_id=BOT, update_id=7)
+    assert stored is not None
+    assert stored.nonce_hash == "c" * 64
+    assert stored.replay_fingerprint == "a" * 64

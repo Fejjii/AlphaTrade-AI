@@ -2,8 +2,10 @@
 
 Linearization point for lease claim / fencing: ``SELECT ... FOR UPDATE`` on the
 unique ``(organization_id, scan_scope)`` lease row, or the unique insert of that
-row. Worker writes that publish successful scan state, heartbeats, or health
-snapshots validate current lease ownership and fencing token at this boundary.
+row. Every worker-authoritative durable write proves organization identity,
+scan scope, lease owner, lease epoch, fencing token, and a current non-expired
+lease at this boundary. Stale or incomplete authority fails closed with
+``StaleFenceError`` and never returns a success-shaped persisted result.
 """
 
 from __future__ import annotations
@@ -68,7 +70,6 @@ _POLICY_UNIQUES = (
     "uq_watcher_policy_versions_policy_version",
 )
 _LEASE_UNIQUE = "uq_watcher_worker_leases_org_scope"
-_PUBLISHABLE_SUCCESS = ScanAttemptStatus.SUCCEEDED
 
 
 class PostgresWatcherStore:
@@ -170,17 +171,19 @@ class PostgresWatcherStore:
                 and current.terminal_attempt_id is not None
             ):
                 return _lineage_from_row(current)
-            if status == ScanAttemptStatus.SUCCEEDED.value:
-                attempt = session.get(WatcherScanAttemptRow, attempt_id)
-                if attempt is not None:
-                    _reject_stale_success(
-                        session,
-                        organization_id=attempt.organization_id,
-                        scan_scope=attempt.scan_scope,
-                        worker_id=attempt.worker_id,
-                        fencing_token=attempt.fencing_token,
-                        now=attempt.finished_at or attempt.heartbeat_at,
-                    )
+            attempt = session.get(WatcherScanAttemptRow, attempt_id)
+            if attempt is None:
+                raise KeyError(attempt_id)
+            _require_worker_write_authority(
+                session,
+                organization_id=current.organization_id,
+                scan_scope=current.scan_scope,
+                worker_id=attempt.worker_id,
+                lease_epoch=attempt.lease_epoch,
+                fencing_token=attempt.fencing_token,
+                now=attempt.finished_at or attempt.heartbeat_at,
+                message="Stale fence holder cannot publish terminal lineage state.",
+            )
             current.terminal_attempt_id = attempt_id
             current.terminal_status = status
             session.flush()
@@ -211,6 +214,16 @@ class PostgresWatcherStore:
             lineage = session.get(WatcherScanLineageRow, row.lineage_id)
             if lineage is None:
                 raise KeyError(row.lineage_id)
+            _require_worker_write_authority(
+                session,
+                organization_id=lineage.organization_id,
+                scan_scope=lineage.scan_scope,
+                worker_id=row.worker_id,
+                lease_epoch=row.lease_epoch,
+                fencing_token=row.fencing_token,
+                now=row.heartbeat_at,
+                message="Stale fence holder cannot insert a watcher scan attempt.",
+            )
             session.add(_attempt_to_row(row, lineage.organization_id, lineage.scan_scope))
             session.flush()
             return row
@@ -223,15 +236,16 @@ class PostgresWatcherStore:
             lineage = session.get(WatcherScanLineageRow, row.lineage_id)
             if lineage is None:
                 raise KeyError(row.lineage_id)
-            if row.status is _PUBLISHABLE_SUCCESS:
-                _reject_stale_success(
-                    session,
-                    organization_id=lineage.organization_id,
-                    scan_scope=lineage.scan_scope,
-                    worker_id=row.worker_id,
-                    fencing_token=row.fencing_token,
-                    now=row.finished_at or row.heartbeat_at,
-                )
+            _require_worker_write_authority(
+                session,
+                organization_id=lineage.organization_id,
+                scan_scope=lineage.scan_scope,
+                worker_id=row.worker_id,
+                lease_epoch=row.lease_epoch,
+                fencing_token=row.fencing_token,
+                now=row.finished_at or row.heartbeat_at,
+                message="Stale fence holder cannot update a watcher scan attempt.",
+            )
             if current is None:
                 session.add(_attempt_to_row(row, lineage.organization_id, lineage.scan_scope))
             else:
@@ -244,6 +258,22 @@ class PostgresWatcherStore:
     def insert_source_fetch(self, row: SourceFetchAttempt) -> SourceFetchAttempt:
         def work(session: Session) -> SourceFetchAttempt:
             org, scope = _scope_for_attempt(session, row.scan_attempt_id, row.lineage_id)
+            worker_id, lease_epoch, fencing_token = _authority_for_unit_write(
+                session,
+                scan_attempt_id=row.scan_attempt_id,
+                lease_epoch=row.lease_epoch,
+                fencing_token=row.fencing_token,
+            )
+            _require_worker_write_authority(
+                session,
+                organization_id=org,
+                scan_scope=scope,
+                worker_id=worker_id,
+                lease_epoch=lease_epoch,
+                fencing_token=fencing_token,
+                now=row.finished_at or row.created_at,
+                message="Stale fence holder cannot insert a watcher source fetch.",
+            )
             session.add(_source_to_row(row, org, scope))
             session.flush()
             return row
@@ -266,6 +296,22 @@ class PostgresWatcherStore:
     ) -> SubscriptionEvaluationAttempt:
         def work(session: Session) -> SubscriptionEvaluationAttempt:
             org, scope = _scope_for_attempt(session, row.scan_attempt_id, row.lineage_id)
+            worker_id, lease_epoch, fencing_token = _authority_for_unit_write(
+                session,
+                scan_attempt_id=row.scan_attempt_id,
+                lease_epoch=row.lease_epoch,
+                fencing_token=row.fencing_token,
+            )
+            _require_worker_write_authority(
+                session,
+                organization_id=org,
+                scan_scope=scope,
+                worker_id=worker_id,
+                lease_epoch=lease_epoch,
+                fencing_token=fencing_token,
+                now=row.finished_at or row.created_at,
+                message="Stale fence holder cannot insert a watcher subscription evaluation.",
+            )
             session.add(_subscription_to_row(row, org, scope))
             session.flush()
             return row
@@ -724,6 +770,61 @@ def _snapshot_claims_worker_authority(snapshot: WatcherHealthSnapshot) -> bool:
     )
 
 
+def _claims_worker_write_authority(
+    worker_id: str | None, lease_epoch: int | None, fencing_token: int | None
+) -> bool:
+    return worker_id is not None or lease_epoch is not None or fencing_token is not None
+
+
+def _authority_for_unit_write(
+    session: Session,
+    *,
+    scan_attempt_id: UUID,
+    lease_epoch: int | None,
+    fencing_token: int | None,
+) -> tuple[str | None, int | None, int | None]:
+    parent = session.get(WatcherScanAttemptRow, scan_attempt_id)
+    worker_id = None if parent is None else parent.worker_id
+    epoch = lease_epoch
+    token = fencing_token
+    if parent is not None:
+        if epoch is None:
+            epoch = parent.lease_epoch
+        if token is None:
+            token = parent.fencing_token
+    return worker_id, epoch, token
+
+
+def _require_worker_write_authority(
+    session: Session,
+    *,
+    organization_id: UUID,
+    scan_scope: str,
+    worker_id: str | None,
+    lease_epoch: int | None,
+    fencing_token: int | None,
+    now: datetime,
+    message: str,
+) -> None:
+    if not _claims_worker_write_authority(worker_id, lease_epoch, fencing_token):
+        return
+    if worker_id is None or lease_epoch is None or fencing_token is None:
+        raise StaleFenceError(
+            message,
+            details={"scan_scope": scan_scope, "cause": "incomplete_authority"},
+        )
+    lease = _lock_lease(session, organization_id, scan_scope)
+    _require_current_lease_authority(
+        lease,
+        owner_id=worker_id,
+        lease_epoch=lease_epoch,
+        fencing_token=fencing_token,
+        now=now,
+        scan_scope=scan_scope,
+        message=message,
+    )
+
+
 def _require_current_lease_authority(
     lease: WatcherWorkerLeaseRow | None,
     *,
@@ -755,25 +856,6 @@ def _require_current_lease_authority(
         raise StaleFenceError(
             message,
             details={"scan_scope": scan_scope, "cause": cause},
-        )
-
-
-def _reject_stale_success(
-    session: Session,
-    *,
-    organization_id: UUID,
-    scan_scope: str,
-    worker_id: str | None,
-    fencing_token: int | None,
-    now: datetime,
-) -> None:
-    if worker_id is None or fencing_token is None:
-        return
-    lease = _lock_lease(session, organization_id, scan_scope)
-    if lease is None or not _fence_matches(lease, worker_id, fencing_token, now):
-        raise StaleFenceError(
-            "Stale fence holder cannot publish successful scan state.",
-            details={"scan_scope": scan_scope},
         )
 
 
