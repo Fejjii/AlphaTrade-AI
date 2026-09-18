@@ -72,6 +72,10 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   plan authority. PostgreSQL binding uses `plan_authority` so legacy PVC-backed
   rows stay distinct from canonical Candidate ids. See
   `docs/phase7_canonical_trade_plan_binding.md`.
+- `learning_attribution/`: record-only Phase 7 lineage from SetupAssessment → Candidate →
+  TradePlan → paper execution → JournalTrade → learning facts. Reuses
+  `JournalLifecycleProjector`; REJECT/SKIP never create executed outcomes. No Alembic.
+  See `docs/phase7_learning_attribution.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

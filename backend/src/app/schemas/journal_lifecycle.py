@@ -13,6 +13,52 @@ from pydantic import Field
 
 from app.schemas.common import JournalLifecycleEventType, ORMModel, StrictModel
 
+LINEAGE_PAYLOAD_KEY = "lineage"
+"""Nested payload key for Candidate/SetupAssessment/TradePlan lineage.
+
+Not a JournalTrade column in this wave. Agent 1 owns any later durable columns.
+"""
+
+LINEAGE_STICKY_KEYS = (
+    "organization_id",
+    "account_id",
+    "execution_lifecycle_id",
+    "candidate_id",
+    "candidate_content_hash",
+    "assessment_id",
+    "assessment_content_hash",
+    "evidence_window_hash",
+    "trade_plan_revision_id",
+    "trade_plan_content_hash",
+    "setup_definition_id",
+    "strategy_version_id",
+    "fusion_policy_version",
+    "uniqueness_tuple_hash",
+)
+
+
+class JournalLineagePayload(StrictModel):
+    """Typed lineage carried on lifecycle events without new ORM columns.
+
+    First-seen values are sticky for an execution lifecycle. Conflicting values
+    fail closed. These fields must not be treated as execution authority.
+    """
+
+    organization_id: UUID | None = None
+    account_id: UUID | None = None
+    execution_lifecycle_id: UUID | None = None
+    candidate_id: UUID | None = None
+    candidate_content_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    assessment_id: UUID | None = None
+    assessment_content_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    evidence_window_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    trade_plan_revision_id: UUID | None = None
+    trade_plan_content_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    setup_definition_id: UUID | None = None
+    strategy_version_id: UUID | None = None
+    fusion_policy_version: str | None = Field(default=None, min_length=3, max_length=120)
+    uniqueness_tuple_hash: str | None = Field(default=None, min_length=64, max_length=64)
+
 
 class JournalLifecycleEventInput(StrictModel):
     """One projector input. Source identity is the idempotency key."""

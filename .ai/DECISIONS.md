@@ -1116,6 +1116,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   tests, Phase 6 candidate/eligibility tests, full backend pytest, ruff,
   mypy `--strict`, GitHub CI. Draft PR only; do not merge.
 
+## AT-ADR-033 — Phase 7 learning attribution reuses journal projector
+- **Date:** 2026-09-18
+- **Status:** Accepted (application service; PostgreSQL/Alembic not in this slice)
+- **Context:** Phase 4 already converges one execution lifecycle to one
+  `JournalTrade`. Phase 6 froze SetupAssessment/Candidate/TradePlan identity.
+  Learning analytics still summarize the older paper-validation funnel. This
+  wave must connect canonical lifecycle to learning without a second trading
+  authority or competing migration. Source PR 95 claimed `AT-ADR-031`, already
+  used by Candidate PostgreSQL, so this ADR is `AT-ADR-033`.
+- **Decision:**
+  1. `JournalLifecycleProjector` remains the only JournalTrade writer.
+  2. `LearningAttributionService` / `JournalLifecycleLearningService` are
+     record-only consumers. They copy lineage; they do not evaluate setups,
+     create candidates, authorize plans, or dispatch execution.
+  3. Lineage rides on append-only `payload.lineage`. First-seen values are
+     sticky. Duplicate source identity converges. Conflicting identity and
+     cross-tenant attribution fail closed.
+  4. REJECT/SKIP never create executed trade outcomes. Quality axes are
+     planned setup vs execution vs trader behavior. PnL cannot rewrite
+     SetupAssessment hashes. LLM narrative is excluded from `facts_hash`.
+  5. Lesson/analytics/RAG adapters consume facts. Lessons are suggestions
+     only. RAG is a renderer only. No shared schema changes in this wave.
+- **Alternatives considered:** New journal trade writer for learning (rejected:
+  competing authority); Alembic columns in this wave (rejected: Candidate and
+  TradePlan migrations already occupy the Alembic head); auto-persisting
+  lessons or RAG ingest (rejected: review workflow and market-truth integrity).
+- **Safety impact:** Paper only. No live trading, Watcher, Telegram, frontend,
+  or execution-dispatch changes.
+- **Consequences:** Docs in `docs/phase7_learning_attribution.md`. Tests in
+  `backend/tests/test_learning_attribution.py` and
+  `backend/tests/test_journal_lifecycle_lineage.py`.
+- **Validation:** Targeted attribution/journal/learning pytest, full backend
+  pytest, ruff, mypy `--strict` on the new package plus journal lifecycle
+  modules, GitHub CI. Draft PR only; do not merge.
+
 ## AT-ADR-034 — Phase 7 canonical TradePlan / ActionEligibility PostgreSQL binding
 - **Date:** 2026-09-19
 - **Status:** Accepted (PostgreSQL adapter; not wired into staging/production)
@@ -1156,5 +1191,3 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
   Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
   `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.
-
-
