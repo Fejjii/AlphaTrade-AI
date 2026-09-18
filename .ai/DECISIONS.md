@@ -1039,4 +1039,37 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   package plus `app.telegram_security` and `app.signal_fusion`, GitHub CI.
   Draft PR only; do not merge in the implementing agent instructions.
 
+## AT-ADR-031 — Phase 6 canonical Candidate PostgreSQL persistence
+- **Date:** 2026-09-18
+- **Status:** Accepted (PostgreSQL adapter; not wired into staging/production)
+- **Context:** AT-ADR-026 froze CandidateLifecycleService as the only Candidate
+  authority with an in-memory `CandidateRepository`. Durable uniqueness,
+  append-only transitions, and the remaining Watcher persist-after-lease-loss
+  race require a PostgreSQL adapter that cannot become a second authority.
+- **Decision:**
+  1. `PostgresCandidateRepository` implements the existing
+     `CandidateRepository` port. `CandidateLifecycleService` remains the only
+     Candidate authority. In-memory remains the unit-test default.
+  2. Projections persist in `canonical_candidates`. Creation idempotency,
+     append-only transitions, and transition-key aliases are separate tables
+     with uniqueness constraints matching in-memory semantics.
+  3. Worker-originated writes bind Watcher lease identity. The Candidate
+     persist transaction `SELECT ... FOR UPDATE` locks
+     `watcher_worker_leases (organization_id, scan_scope)` and proves current
+     owner, epoch, fencing token, and a non-expired lease before committing
+     Candidate authority. A stale worker cannot persist after losing its lease.
+  4. One Alembic revision from head `3ec264f9aaa8`. Adapters are constructed
+     explicitly and are not imported by FastAPI, workers, or feature flags.
+  5. `WATCHER_ORCHESTRATION_ENABLED`, `MARKET_WATCHER_ENABLED`,
+     `TELEGRAM_INTERACTION_ENABLED`, and live trading remain disabled.
+- **Alternatives considered:** Check fence then persist in a later transaction
+  (rejected: TOCTOU); put Candidate identity in WatcherStore (rejected: second
+  authority); change TradePlan / ActionEligibility / SetupAssessment (out of
+  scope).
+- **Safety impact:** Paper only. No Watcher, Telegram, or live-trading
+  activation.
+- **Consequences:** Tests in `backend/tests/test_phase6_candidate_postgres.py`.
+  Migration `4fd8c1a90b27`.
+
+
 
