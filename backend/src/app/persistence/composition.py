@@ -8,6 +8,13 @@ an open DB transaction. Lease claim linearizes on
 ``SELECT ... FOR UPDATE`` of ``watcher_worker_leases (organization_id, scan_scope)``
 (or the unique insert of that key).
 
+Candidate: every repository method opens and commits its own SQLAlchemy
+transaction. Worker-originated Candidate writes, when a Watcher fence is bound,
+lock that same lease row ``FOR UPDATE`` and prove current fencing authority in
+the Candidate persist transaction before inserting the projection or appending
+a transition. A stale worker cannot commit Candidate authority after losing
+its lease.
+
 Telegram: ``transaction()`` takes a transaction-scoped advisory lock, matching
 the in-memory store's process lock, then uses row locks for nonce CAS and outbox
 claims. ``deliver_pending`` claims under ``transaction()`` and performs transport
@@ -26,8 +33,11 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.persistence.candidate_postgres import PostgresCandidateRepository
 from app.persistence.telegram_postgres import PostgresTelegramSecurityStore
 from app.persistence.watcher_postgres import PostgresWatcherStore
+from app.signal_fusion.lifecycle import CandidateLifecycleService
+from app.signal_fusion.ports import Clock as CandidateClock
 from app.telegram_security.clock import Clock, FrozenClock
 from app.telegram_security.protocol import TelegramSecurityProtocol
 from app.telegram_security.rate_limit import ProtocolRateLimiter, RateLimitPolicy
@@ -45,6 +55,29 @@ from app.watcher.ports import (
     SideEffectPorts,
     WatcherEvaluationBoundary,
 )
+
+
+def build_postgres_candidate_repository(
+    session_factory: sessionmaker[Session],
+    *,
+    clock: CandidateClock | None = None,
+) -> PostgresCandidateRepository:
+    """Construct a PostgreSQL CandidateRepository. Callers must inject it explicitly."""
+
+    return PostgresCandidateRepository(session_factory, clock=clock)
+
+
+def build_postgres_candidate_lifecycle(
+    session_factory: sessionmaker[Session],
+    *,
+    clock: CandidateClock,
+) -> CandidateLifecycleService:
+    """Lifecycle authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+
+    return CandidateLifecycleService(
+        repository=build_postgres_candidate_repository(session_factory, clock=clock),
+        clock=clock,
+    )
 
 
 def build_postgres_watcher_store(

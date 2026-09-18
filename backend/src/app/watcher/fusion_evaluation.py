@@ -13,10 +13,11 @@ availability, and account state. Action eligibility is out of scope.
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import RLock
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
@@ -47,7 +48,7 @@ from app.watcher.contracts import (
     UnitAttemptKind,
     UnitAttemptStatus,
 )
-from app.watcher.errors import WatcherTenantMismatchError
+from app.watcher.errors import StaleFenceError, WatcherTenantMismatchError
 
 
 class BoundEvaluationClock:
@@ -84,6 +85,14 @@ class WatcherScanEvidencePort(Protocol):
     """Loads already-normalized first-slice evidence. Does not evaluate setup."""
 
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None: ...
+
+
+class CandidatePersistenceFence(Protocol):
+    """Binds worker lease identity around CandidateLifecycleService writes."""
+
+    def bind_from_evaluation_command(
+        self, command: EvaluationCommand
+    ) -> AbstractContextManager[None]: ...
 
 
 class InMemoryWatcherScanEvidence:
@@ -130,10 +139,12 @@ class WatcherFusionEvaluationService:
         evidence: WatcherScanEvidencePort,
         lifecycle: CandidateLifecycleService,
         clock: BoundEvaluationClock,
+        persistence_fence: CandidatePersistenceFence | None = None,
     ) -> None:
         self._evidence = evidence
         self._lifecycle = lifecycle
         self._clock = clock
+        self._persistence_fence = persistence_fence
         self._published_candidate_ids: list[UUID] = []
 
     @property
@@ -209,6 +220,8 @@ class WatcherFusionEvaluationService:
                 assessment=prepared.assessment,
                 window=prepared.window,
             )
+        except StaleFenceError:
+            raise
         except SignalFusionContractError as exc:
             return _outcome(
                 command,
@@ -349,16 +362,17 @@ class WatcherFusionEvaluationService:
             raise CandidateCreationAuthorityError(
                 "CONFIRMED_SETUP cannot persist without CanonicalEvidenceWindowV1."
             )
-        created = self._lifecycle.create_from_confirmed_setup(
-            CandidateCreationCommand(
-                assessment=assessment,
-                evidence_window=window,
-                executable_setup=bound_command.executable_setup,
-                evidence_identity=bound_command.evidence_identity,
-                idempotency_key=f"watcher:{assessment.evidence_window_hash}",
-                correlation_id=assessment.correlation_id,
+        with _persistence_fence_context(self._persistence_fence, command):
+            created = self._lifecycle.create_from_confirmed_setup(
+                CandidateCreationCommand(
+                    assessment=assessment,
+                    evidence_window=window,
+                    executable_setup=bound_command.executable_setup,
+                    evidence_identity=bound_command.evidence_identity,
+                    idempotency_key=f"watcher:{assessment.evidence_window_hash}",
+                    correlation_id=assessment.correlation_id,
+                )
             )
-        )
         self._published_candidate_ids.append(created.candidate_id)
         return (created.candidate_id,)
 
@@ -369,20 +383,46 @@ def build_fusion_evaluation_service(
     repository: CandidateRepository | None = None,
     lifecycle: CandidateLifecycleService | None = None,
     clock: BoundEvaluationClock | None = None,
+    persistence_fence: CandidatePersistenceFence | None = None,
 ) -> WatcherFusionEvaluationService:
     """Compose the fusion evaluation boundary with in-memory candidate authority."""
 
     bound_clock = clock if clock is not None else BoundEvaluationClock()
+    resolved_repository = repository
     if lifecycle is None:
+        resolved_repository = repository or InMemoryCandidateRepository()
         lifecycle = CandidateLifecycleService(
-            repository=repository or InMemoryCandidateRepository(),
+            repository=resolved_repository,
             clock=bound_clock,
         )
+    resolved_fence = persistence_fence
+    if resolved_fence is None:
+        resolved_fence = _candidate_persistence_fence(resolved_repository)
     return WatcherFusionEvaluationService(
         evidence=evidence,
         lifecycle=lifecycle,
         clock=bound_clock,
+        persistence_fence=resolved_fence,
     )
+
+
+def _candidate_persistence_fence(
+    repository: CandidateRepository | None,
+) -> CandidatePersistenceFence | None:
+    if repository is None:
+        return None
+    bind = getattr(repository, "bind_from_evaluation_command", None)
+    if callable(bind):
+        return cast(CandidatePersistenceFence, repository)
+    return None
+
+
+def _persistence_fence_context(
+    fence: CandidatePersistenceFence | None, command: EvaluationCommand
+) -> AbstractContextManager[None]:
+    if fence is None:
+        return nullcontext()
+    return fence.bind_from_evaluation_command(command)
 
 
 def _canonical_window(command: AssessmentCommand) -> CanonicalEvidenceWindowV1 | None:
@@ -444,6 +484,7 @@ def _outcome(
 
 __all__ = [
     "BoundEvaluationClock",
+    "CandidatePersistenceFence",
     "InMemoryWatcherScanEvidence",
     "WatcherCanonicalScanEvidence",
     "WatcherFusionEvaluationService",

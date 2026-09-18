@@ -4,7 +4,8 @@ Canonical identities remain the Phase 6 contract freeze. This package evaluates
 first-slice ``SetupAssessment`` truth, owns in-memory candidate lifecycle
 authority, and evaluates deterministic ``ActionEligibility`` for paper action.
 
-It does not persist to PostgreSQL, run Alembic migrations, activate
+PostgreSQL Candidate persistence lives in ``app.persistence`` and binds this
+package's ``CandidateRepository`` port. This package does not activate
 watcher/Telegram adapters, create trade plans, or execute trades.
 PaperValidationCandidate remains a downstream compatibility consumer and is not
 candidate authority. SetupAssessment remains independent of account/risk state.

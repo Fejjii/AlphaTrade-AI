@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.db.base import Base
+from app.db.canonical_candidates import CanonicalCandidateRow  # noqa: F401
 from app.db.models import Organization  # noqa: F401  — register metadata
 from app.db.telegram_security import TelegramBindingRow  # noqa: F401
 from app.db.watcher_orchestration import WatcherWorkerLeaseRow  # noqa: F401
@@ -44,7 +45,7 @@ def _persistence_tables() -> list[object]:
     return [
         table
         for table in Base.metadata.sorted_tables
-        if table.name.startswith(("watcher_", "telegram_security_"))
+        if table.name.startswith(("watcher_", "telegram_security_", "canonical_candidate"))
     ]
 
 

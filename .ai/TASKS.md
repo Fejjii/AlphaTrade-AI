@@ -1029,3 +1029,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
   those IDs were already used, so this task is `AT-050`.
 
+### AT-051 — Phase 6 canonical Candidate PostgreSQL persistence
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-046/AT-047 Candidate
+  authority; AT-049 Watcher fusion wiring; PR #92 remaining fencing race
+  · Risk: Medium (identity + fencing)
+- Safety classification: Paper-safe / PostgreSQL adapter only; Watcher,
+  Telegram, and live trading remain disabled; not wired into FastAPI or workers
+- Goal: Production-grade PostgreSQL `CandidateRepository` matching the existing
+  port. Persist canonical Candidate projections and append-only transitions.
+  Preserve deterministic identity, uniqueness, tenant isolation, idempotency,
+  terminal non-resurrection, replay convergence, and conflict detection.
+  Worker-originated Candidate persistence must be protected by current lease
+  and fencing authority in the same database transaction.
+- Branch: `cursor/phase7-candidate-persistence-5115`
+- Deliverables: `app.persistence.candidate_postgres`, Candidate ORM,
+  Alembic `4fd8c1a90b27`, Watcher persist fence bind, tests in
+  `backend/tests/test_phase6_candidate_postgres.py`.
+- Validation: focused Candidate/Postgres/fencing tests; full backend pytest;
+  ruff; mypy `--strict`; Alembic upgrade/downgrade and single head; GitHub CI.
+  Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-031
+
