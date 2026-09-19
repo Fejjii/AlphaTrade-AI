@@ -59,13 +59,11 @@ from app.db.canonical_eligibility import (
     register_canonical_eligibility_immutability as _register_canonical_eligibility_immutability,
 )
 from app.db.canonical_trade_plans import (  # noqa: F401
+    PLAN_AUTHORITY_PAPER_VALIDATION,
+    PLAN_ROOT_ANALYSIS,
     CanonicalTradePlanIdempotencyKeyRow,
     CanonicalTradePlanLineageRow,
     CanonicalTradePlanRootRow,
-)
-from app.db.canonical_trade_plans import (
-    PLAN_AUTHORITY_PAPER_VALIDATION,
-    PLAN_ROOT_ANALYSIS,
 )
 from app.db.canonical_trade_plans import (
     register_canonical_trade_plan_immutability as _register_canonical_trade_plan_immutability,

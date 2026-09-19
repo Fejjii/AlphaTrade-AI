@@ -124,11 +124,15 @@ class CanonicalTradePlanService:
             )
         self._validate_insert_gates(command, candidate, evaluation)
         revision = self._build_revision(command, lineage, digest)
+
+        def _after_insert() -> None:
+            self._transition_plan_created(command, digest)
+
         return self._store.insert(
             digest,
             revision,
             idempotency_key=command.idempotency_key,
-            on_inserted=lambda: self._transition_plan_created(command, digest),
+            on_inserted=_after_insert,
         )
 
     def create_from_paper_validation_candidate(self, source: object) -> NoReturn:
