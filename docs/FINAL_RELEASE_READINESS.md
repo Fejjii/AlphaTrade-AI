@@ -1,9 +1,5 @@
 # FINAL_RELEASE_READINESS
 
-Paper-release candidate: `cursor/final_release_integration-c461`  
-Draft PR: https://github.com/Fejjii/AlphaTrade-AI/pull/104  
-Do not merge. Do not deploy from this agent.
-
 ## BLOCKERS
 
 None.
