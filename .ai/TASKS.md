@@ -1185,7 +1185,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-036
 
 ### AT-057 — Canonical paper decision frontend
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-040 design system;
+- Priority: P1 · Status: DONE · Dependencies: AT-040 design system;
   AT-055 learning persistence; AT-056 runtime execution · Risk: Medium
   (UX honesty vs unbound canonical HTTP)
 - Safety classification: Frontend / paper-only; no live execution control
@@ -1205,7 +1205,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-037
 
 ### AT-058 — Phase 8 final integration release candidate
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-055, AT-056, AT-057
+- Priority: P0 · Status: DONE · Dependencies: AT-055, AT-056, AT-057
   · Risk: Medium (execution binding, learning durability, authority isolation)
 - Safety classification: Paper-only integration; Watcher, Telegram, and live
   trading remain disabled; no deploy
@@ -1245,7 +1245,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-039
 
 ### AT-060 — Finish canonical decision UX (bind GET APIs, paper-plan only)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-057, AT-058 · Risk: Medium
+- Priority: P0 · Status: DONE · Dependencies: AT-057, AT-058 · Risk: Medium
   (UX honesty / tenant isolation)
 - Safety classification: Frontend + ProposalService firewall; paper-only
 - Goal: Bind `/decision` to canonical GET APIs (candidates, setup assessments,
@@ -1256,14 +1256,15 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   rejection (no existence oracle).
 - Branch: `cursor/final_canonical_ux-1b0c` (source); integrated on
   `cursor/final_release_integration-c461`
-- Validation: frontend lint/typecheck/tests/build/e2e; backend affected tests
-  and full CI; draft PR only; do not merge. Source PR #101 claimed AT-059;
-  remapped to AT-060 on the release-candidate branch.
+- Validation: frontend lint/typecheck/1155 tests/build; Chromium e2e 24 passed /
+  13 skipped; source PR #101 exact-head CI run 35462481756 success at `3fd8a0a`.
+  Integrated on `cursor/final_release_integration-c461`. Source PR #101 claimed
+  AT-059; remapped to AT-060. Draft PR only; do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-037
 
 ### AT-061 — Final synthetic staging readiness
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-058 Phase 8 RC on `main@c39dca6`
+- Priority: P0 · Status: DONE · Dependencies: AT-058 Phase 8 RC on `main@c39dca6`
   · Risk: Medium (ops + safety locks)
 - Safety classification: Paper-only staging readiness; Watcher, Telegram, and live
   trading remain disabled; no real exchange credentials; no merge
@@ -1277,14 +1278,15 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `cursor/final_release_integration-c461`
 - Deliverables: staging safety locks, `/health` posture flags, canonical smoke
   script + pytest, `docs/RELEASE_READINESS.md`, rollback chain notes.
-- Validation: deployment-safety, canonical HTTP smoke, Docker compose tests,
-  frontend e2e, ruff, GitHub CI. Draft PR; do not merge. Source PR #103 claimed
-  AT-059 / AT-ADR-039; remapped to AT-061 / AT-ADR-040.
+- Validation: source PR #103 exact-head CI run 35465464233 success at `24133a1`.
+  Staging deploy remains an operator/credential step, not this task. Source PR
+  #103 claimed AT-059 / AT-ADR-039; remapped to AT-061 / AT-ADR-040. Draft PR
+  only; do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-040
 
 ### AT-062 — Final paper-release candidate integration
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-059, AT-060, AT-061
+- Priority: P0 · Status: DONE · Dependencies: AT-059, AT-060, AT-061
   · Risk: Medium (overlap of safety locks, UX binding, staging smoke)
 - Safety classification: Paper-only integration; Watcher, Telegram, and live
   trading remain disabled; no deploy; no merge to main
@@ -1293,9 +1295,13 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   and synthetic staging smoke. Resolve overlapping `deployment_safety` and
   governance IDs semantically. Produce `docs/FINAL_RELEASE_READINESS.md`.
 - Branch: `cursor/final_release_integration-c461`
-- Validation: full backend, full frontend, Ruff, format, strict mypy on
-  affected modules, single Alembic head, upgrade/downgrade/reupgrade,
-  deployment safety, evaluation, canonical synthetic smoke, Chromium E2E,
-  Docker build, full GitHub CI. Draft PR only.
+- Validation: backend pytest 2271 collected, exit 0; ruff check/format 765 files;
+  mypy `--strict` 29 affected files; Alembic single head `d4f7a2c8e901` with
+  upgrade/downgrade/reupgrade; evaluation 16/16 + 5/5 + 7/7; frontend lint/
+  typecheck/1155 tests/build; Chromium e2e 24 passed / 13 skipped; canonical
+  smoke self-check + focused 3 smoke tests; GitHub CI run 35466201940 success
+  (backend, frontend, deployment-safety, evaluation, docker-build, e2e-smoke).
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/104 — do not merge;
+  do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041

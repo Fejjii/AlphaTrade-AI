@@ -1423,5 +1423,6 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   would drop either `real_trading_enabled` pin or `/health` operator surface);
   merge to `main` in this wave (rejected).
 - **Safety impact:** Paper only. No deploy. No real exchange mutation.
-- **Consequences:** Branch `cursor/final_release_integration-c461`. Report
-  `docs/FINAL_RELEASE_READINESS.md`.
+- **Consequences:** Branch `cursor/final_release_integration-c461`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
+  success. Report `docs/FINAL_RELEASE_READINESS.md`.
