@@ -1,13 +1,13 @@
 """Typed port and in-memory store for canonical TradePlanRevision authority.
 
-PostgreSQL cannot bind this port until Agent 1 remaps
-``trade_plan_revisions.candidate_id`` away from ``paper_validation_candidates``
-and adds Candidate / ActionEligibility lineage columns. This slice never writes
-the existing ORM table.
+PostgreSQL implements this port in ``app.persistence.trade_plan_postgres``.
+``insert`` may run ``on_inserted`` in the same unit of work so
+``PLAN_CREATED`` cannot land without the immutable plan row (and the reverse).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from threading import RLock
 from typing import Protocol
 from uuid import UUID
@@ -59,6 +59,7 @@ class CanonicalTradePlanStore(Protocol):
         revision: CanonicalTradePlanRevision,
         *,
         idempotency_key: str,
+        on_inserted: Callable[[], None] | None = None,
     ) -> CanonicalTradePlanRevision: ...
 
     def discard(self, digest: str) -> None: ...
@@ -146,6 +147,7 @@ class InMemoryCanonicalTradePlanStore:
         revision: CanonicalTradePlanRevision,
         *,
         idempotency_key: str,
+        on_inserted: Callable[[], None] | None = None,
     ) -> CanonicalTradePlanRevision:
         plan = revision.plan
         scope = (plan.organization_id, plan.user_id, plan.account_id, plan.candidate_id)
@@ -153,6 +155,8 @@ class InMemoryCanonicalTradePlanStore:
         with self._lock:
             existing = self._by_uniqueness.get(digest)
             if existing is not None:
+                if on_inserted is not None:
+                    on_inserted()
                 return existing
             occupied = self._by_revision.get(plan.revision_id)
             if occupied is not None:
@@ -177,6 +181,12 @@ class InMemoryCanonicalTradePlanStore:
             self._by_revision[plan.revision_id] = revision
             self._by_candidate_scope[scope] = digest
             self._by_idempotency[idem_key] = digest
+            try:
+                if on_inserted is not None:
+                    on_inserted()
+            except BaseException:
+                self.discard(digest)
+                raise
             return revision
 
     def discard(self, digest: str) -> None:

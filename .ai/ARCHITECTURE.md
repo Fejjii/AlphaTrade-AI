@@ -68,6 +68,10 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `candidate_alerts/`: composes canonical Phase 6 `Candidate` onto that protocol. Candidate is
   the only alert authority. APPROVE never executes. Telegram remains disabled. No webhook.
   See `docs/phase6_candidate_telegram_alerts.md`.
+- Canonical TradePlanRevision: `CanonicalTradePlanService` is the only first-slice
+  plan authority. PostgreSQL binding uses `plan_authority` so legacy PVC-backed
+  rows stay distinct from canonical Candidate ids. See
+  `docs/phase7_canonical_trade_plan_binding.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

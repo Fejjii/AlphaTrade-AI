@@ -51,6 +51,25 @@ from app.db.canonical_candidates import (  # noqa: F401
 from app.db.canonical_candidates import (
     register_canonical_candidate_immutability as _register_canonical_candidate_immutability,
 )
+from app.db.canonical_eligibility import (  # noqa: F401
+    ActionEligibilityEvaluationRow,
+    ActionEligibilityIdentityBindingRow,
+)
+from app.db.canonical_eligibility import (
+    register_canonical_eligibility_immutability as _register_canonical_eligibility_immutability,
+)
+from app.db.canonical_trade_plans import (  # noqa: F401
+    CanonicalTradePlanIdempotencyKeyRow,
+    CanonicalTradePlanLineageRow,
+    CanonicalTradePlanRootRow,
+)
+from app.db.canonical_trade_plans import (
+    PLAN_AUTHORITY_PAPER_VALIDATION,
+    PLAN_ROOT_ANALYSIS,
+)
+from app.db.canonical_trade_plans import (
+    register_canonical_trade_plan_immutability as _register_canonical_trade_plan_immutability,
+)
 from app.db.historical_immutability import install_historical_immutability as _install_history
 from app.db.journal_immutability import (
     register_journal_immutability as _register_journal_immutability,
@@ -455,6 +474,10 @@ class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "user_id",
             name="uq_trade_proposal_tenant_owner",
         ),
+        CheckConstraint(
+            "plan_root_kind IN ('analysis_proposal', 'canonical_plan_root')",
+            name="ck_trade_proposals_plan_root_kind",
+        ),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -503,6 +526,9 @@ class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             use_alter=True,
         ),
         nullable=True,
+    )
+    plan_root_kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=PLAN_ROOT_ANALYSIS
     )
 
 
@@ -1524,6 +1550,22 @@ class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("operation = 'SUBMIT_ENTRY'", name="ck_plan_submit_entry"),
         CheckConstraint("expected_account_mode = 'NET'", name="ck_plan_expected_net"),
         CheckConstraint("length(content_hash) = 64", name="ck_plan_content_hash_length"),
+        CheckConstraint(
+            "plan_authority IN ('paper_validation', 'canonical')",
+            name="ck_tpr_plan_authority",
+        ),
+        CheckConstraint(
+            "(plan_authority = 'paper_validation' AND canonical_candidate_id IS NULL) OR "
+            "(plan_authority = 'canonical' AND canonical_candidate_id IS NOT NULL "
+            "AND canonical_candidate_id = candidate_id)",
+            name="ck_tpr_canonical_candidate_bind",
+        ),
+        CheckConstraint(
+            "(plan_authority = 'paper_validation' AND compiled_setup_definition_id IS NULL) OR "
+            "(plan_authority = 'canonical' AND compiled_setup_definition_id IS NOT NULL "
+            "AND compiled_setup_definition_id = setup_definition_id)",
+            name="ck_tpr_compiled_setup_bind",
+        ),
         Index(
             "ix_trade_plan_revisions_plan_created",
             "organization_id",
@@ -1544,11 +1586,18 @@ class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     strategy_version_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("user_strategy_versions.id"), nullable=False
     )
-    setup_definition_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("setup_definitions.id"), nullable=False
+    setup_definition_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    plan_authority: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=PLAN_AUTHORITY_PAPER_VALIDATION
     )
-    candidate_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("paper_validation_candidates.id"), nullable=False
+    canonical_candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("canonical_candidates.candidate_id", name="fk_tpr_canonical_candidate"),
+        nullable=True,
+    )
+    compiled_setup_definition_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("compiled_setup_definitions.id", name="fk_tpr_compiled_setup"),
+        nullable=True,
     )
     expected_account_mode: Mapped[AccountMode] = mapped_column(_enum(AccountMode), nullable=False)
     permission_attestation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
@@ -3449,3 +3498,5 @@ _ = _install_history
 _register_strategy_immutability()
 _register_journal_immutability()
 _register_canonical_candidate_immutability()
+_register_canonical_eligibility_immutability()
+_register_canonical_trade_plan_immutability()

@@ -106,6 +106,17 @@ class PostgresCandidateRepository:
         self._clock = clock
         self._local = threading.local()
 
+    @contextmanager
+    def bind_session(self, session: Session) -> Iterator[None]:
+        """Join an outer transaction so Candidate writes can share a unit of work."""
+
+        previous = getattr(self._local, "session", None)
+        self._local.session = session
+        try:
+            yield
+        finally:
+            self._local.session = previous
+
     def bind_from_evaluation_command(
         self, command: EvaluationCommand
     ) -> AbstractContextManager[None]:
@@ -137,6 +148,9 @@ class PostgresCandidateRepository:
             self._local.fence = previous
 
     def _run(self, work: Callable[[Session], _T]) -> _T:
+        bound = getattr(self._local, "session", None)
+        if isinstance(bound, Session):
+            return work(bound)
         session = self._session_factory()
         try:
             with session.begin():

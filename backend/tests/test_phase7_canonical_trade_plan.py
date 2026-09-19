@@ -14,7 +14,6 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationAppError
-from app.db.models import PaperValidationCandidate
 from app.db.models import TradePlanRevision as TradePlanRevisionModel
 from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.canonical_trade_plan import CanonicalTradePlanCommand
@@ -343,19 +342,27 @@ def test_sqlalchemy_adapter_refuses_canonical_persist() -> None:
     world = make_world()
     created = world.plans.create(plan_command(world))
     adapter = UnboundSqlAlchemyCanonicalTradePlanAdapter()
-    with pytest.raises(CanonicalTradePlanPersistenceNotBoundError, match="paper_validation"):
+    with pytest.raises(CanonicalTradePlanPersistenceNotBoundError, match="never writes"):
         adapter.persist(created)
     artifacts = {item.artifact for item in adapter.required_bindings()}
     assert "trade_plan_revisions.candidate_id" in artifacts
     assert len(REQUIRED_CANONICAL_TRADE_PLAN_DATABASE_BINDINGS) >= 6
 
 
-def test_orm_candidate_fk_still_points_at_paper_validation_candidate() -> None:
-    fks = list(TradePlanRevisionModel.__table__.c.candidate_id.foreign_keys)
-    assert len(fks) == 1
-    assert fks[0].column.table.name == PaperValidationCandidate.__tablename__
+def test_orm_canonical_plan_does_not_reuse_pvc_fk() -> None:
+    candidate_fks = list(TradePlanRevisionModel.__table__.c.candidate_id.foreign_keys)
+    assert candidate_fks == []
+    canonical_fks = list(TradePlanRevisionModel.__table__.c.canonical_candidate_id.foreign_keys)
+    assert len(canonical_fks) == 1
+    assert canonical_fks[0].column.table.name == "canonical_candidates"
+    compiled_fks = list(
+        TradePlanRevisionModel.__table__.c.compiled_setup_definition_id.foreign_keys
+    )
+    assert compiled_fks[0].column.table.name == "compiled_setup_definitions"
     mapper = inspect(TradePlanRevisionModel)
     column_names = {column.key for column in mapper.columns}
+    assert "plan_authority" in column_names
+    assert "canonical_candidate_id" in column_names
     assert "eligibility_id" not in column_names
     assert "candidate_content_hash" not in column_names
 

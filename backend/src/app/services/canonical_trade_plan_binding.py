@@ -1,8 +1,8 @@
-"""Compatibility adapter: canonical plans cannot occupy the PVC-backed ORM row.
+"""Fail-closed compatibility adapter: never write canonical plans through this path.
 
-Agent 1 owns database schema. This adapter documents the exact remaining binding
-and refuses to write canonical Candidate IDs into
-``trade_plan_revisions.candidate_id`` (FK ``paper_validation_candidates.id``).
+Durable binding is ``PostgresCanonicalTradePlanStore``. This adapter stays as a
+guard so callers cannot persist canonical Candidate IDs through an unbound
+SQLAlchemy helper.
 """
 
 from __future__ import annotations
@@ -21,70 +21,76 @@ REQUIRED_CANONICAL_TRADE_PLAN_DATABASE_BINDINGS: tuple[
     CanonicalTradePlanDatabaseRequirement(
         artifact="canonical candidates table (or equivalent)",
         current_state=(
-            "CandidateLifecycleService is in-memory only. No SQLAlchemy Candidate model "
-            "and no Alembic table for CandidateUniquenessTuple."
+            "PostgresCandidateRepository persists canonical Candidate + append-only "
+            "transitions (Alembic 4fd8c1a90b27). In-memory remains the unit-test default."
         ),
         required_change=(
-            "Persist canonical Candidate + append-only CandidateTransition with unique "
-            "CandidateUniquenessTuple, tenant isolation, and creation/transition idempotency. "
-            "Do not treat PaperValidationCandidate as this identity."
+            "Keep CandidateLifecycleService as the only Candidate authority. Do not treat "
+            "PaperValidationCandidate as this identity."
         ),
+        owner="Phase 7 integration (completed)",
     ),
     CanonicalTradePlanDatabaseRequirement(
         artifact="action_eligibility table (or equivalent)",
-        current_state="ActionEligibilityService is in-memory only. No eligibility ORM table.",
+        current_state=(
+            "PostgresActionEligibilityStore persists immutable evaluations keyed by "
+            "uniqueness_hash with append-safe revision history (Alembic c9e2b4a1d078)."
+        ),
         required_change=(
-            "Persist immutable ActionEligibilityEvaluation keyed by uniqueness_hash, bound to "
-            "canonical candidate_id + candidate_revision + account_id + user_id. Identical "
+            "Keep ActionEligibilityService as the only eligibility authority. Identical "
             "evaluations converge; changed risk/safety identity appends a new revision."
         ),
+        owner="Phase 7 integration (completed)",
     ),
     CanonicalTradePlanDatabaseRequirement(
         artifact="trade_plan_revisions.candidate_id",
         current_state=(
-            "NOT NULL ForeignKey(paper_validation_candidates.id) from Phase 1 Wave 1B. "
-            "Existing PVC-backed rows are ambiguous relative to CanonicalEvidenceWindowV1."
+            "PVC foreign key dropped. Discriminator plan_authority keeps legacy PVC-backed "
+            "rows as paper_validation with canonical_candidate_id NULL. Canonical rows set "
+            "canonical_candidate_id = candidate_id and FK canonical_candidates."
         ),
         required_change=(
-            "Remap the FK to canonical Candidate identity (or a compatibility view). "
             "Do not backfill PVC ids as canonical Candidate ids. Do not write UUID5 "
             "canonical candidate ids into the PVC table."
         ),
+        owner="Phase 7 integration (completed)",
     ),
     CanonicalTradePlanDatabaseRequirement(
         artifact="trade_plan_revisions.setup_definition_id",
-        current_state="ForeignKey(setup_definitions.id) — global SetupDefinition templates.",
+        current_state=(
+            "Global SetupDefinition FK dropped. Canonical rows bind "
+            "compiled_setup_definition_id to compiled_setup_definitions."
+        ),
         required_change=(
-            "Bind executable plans to tenant-owned CompiledSetupDefinition. Global "
-            "SetupDefinition remains compatibility-only and cannot occupy Candidate "
+            "Global SetupDefinition remains compatibility-only and cannot occupy Candidate "
             "setup_definition_id."
         ),
+        owner="Phase 7 integration (completed)",
     ),
     CanonicalTradePlanDatabaseRequirement(
         artifact="trade_plan_revisions lineage columns or side table",
         current_state=(
-            "ORM stores candidate_id plus semantic_payload JSON. No candidate_content_hash, "
-            "candidate_revision, eligibility_id, eligibility_content_hash, "
-            "eligibility_uniqueness_hash, evidence_window_hash, or compiled_setup_content_hash "
-            "columns. Phase 1 TradePlanRevisionSemantic hash set must stay unchanged."
+            "canonical_trade_plan_lineage stores Candidate/eligibility hashes beside "
+            "semantic_payload. uniqueness_hash is unique; idempotency keys are "
+            "organization-scoped."
         ),
         required_change=(
-            "Persist CanonicalTradePlanLineage beside the existing semantic_payload without "
-            "mutating CanonicalTradePlanContentV1 field names. Unique constraint on "
-            "application uniqueness_hash. Organization-scoped unique idempotency_key."
+            "Do not mutate CanonicalTradePlanContentV1 field names. Phase 1 hashes stay valid."
         ),
+        owner="Phase 7 integration (completed)",
     ),
     CanonicalTradePlanDatabaseRequirement(
         artifact="trade_plan_revisions.plan_id / trade_proposals",
         current_state=(
-            "plan_id is a composite FK to trade_proposals (id, organization_id, user_id). "
-            "Canonical plan_id is UUID5(org, user, account, candidate_id) and is not a "
-            "TradeProposal."
+            "Canonical plan_id remains UUID5(org, user, account, candidate_id). A "
+            "compatibility TradeProposal with plan_root_kind=canonical_plan_root satisfies "
+            "the existing composite FK without granting proposal-path plan authority."
         ),
         required_change=(
-            "Either introduce a canonical plan-root row or explicitly map UUID5 plan_id to a "
-            "compatibility TradeProposal without granting the proposal path plan authority."
+            "ProposalService.create_revision stays fail-closed. CanonicalTradePlanService "
+            "is the only first-slice plan authority."
         ),
+        owner="Phase 7 integration (completed)",
     ),
     CanonicalTradePlanDatabaseRequirement(
         artifact="approval/execution claim rows",
@@ -93,11 +99,11 @@ REQUIRED_CANONICAL_TRADE_PLAN_DATABASE_BINDINGS: tuple[
             "modify executable semantics. Execution remains a later slice."
         ),
         required_change=(
-            "After ORM persist of canonical revisions, existing approval issuance can consume "
-            "them. No approval semantic change is required. Do not persist canonical plans by "
-            "copying them onto PaperValidationCandidate ids."
+            "Existing approval issuance can consume persisted canonical revisions. Do not "
+            "persist canonical plans by copying them onto PaperValidationCandidate ids. "
+            "Do not add execution in this wave."
         ),
-        owner="Agent 1, then approval/execution integration",
+        owner="approval/execution integration",
     ),
 )
 
@@ -108,9 +114,8 @@ class UnboundSqlAlchemyCanonicalTradePlanAdapter:
     def persist(self, revision: CanonicalTradePlanRevision) -> NoReturn:
         del revision
         raise CanonicalTradePlanPersistenceNotBoundError(
-            "trade_plan_revisions.candidate_id still foreign-keys paper_validation_candidates; "
-            "canonical Candidate identity cannot be written to PostgreSQL until Agent 1 remaps "
-            "that FK and persists Candidate / ActionEligibility lineage."
+            "UnboundSqlAlchemyCanonicalTradePlanAdapter never writes; persist canonical "
+            "TradePlanRevision rows through PostgresCanonicalTradePlanStore."
         )
 
     def required_bindings(self) -> tuple[CanonicalTradePlanDatabaseRequirement, ...]:

@@ -1116,4 +1116,45 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   tests, Phase 6 candidate/eligibility tests, full backend pytest, ruff,
   mypy `--strict`, GitHub CI. Draft PR only; do not merge.
 
+## AT-ADR-034 — Phase 7 canonical TradePlan / ActionEligibility PostgreSQL binding
+- **Date:** 2026-09-19
+- **Status:** Accepted (PostgreSQL adapter; not wired into staging/production)
+- **Context:** AT-ADR-032 froze CanonicalTradePlanService as the only first-slice
+  plan authority with an in-memory store. `trade_plan_revisions.candidate_id`
+  still foreign-keyed `paper_validation_candidates`. ActionEligibility was
+  in-memory only. Candidate PostgreSQL (AT-ADR-031 / Alembic `4fd8c1a90b27`)
+  landed first.
+- **Decision:**
+  1. Next Alembic revision is `c9e2b4a1d078` after `4fd8c1a90b27`.
+  2. `PostgresActionEligibilityStore` implements `ActionEligibilityStore`.
+     Evaluations are immutable and keyed by uniqueness hash. Identity bindings
+     fail closed. Candidate rows are locked so revision history is append-safe.
+  3. `trade_plan_revisions` keeps `candidate_id` as an unconstrained UUID for
+     legacy PVC-backed rows. Discriminator `plan_authority` is
+     `paper_validation` (canonical_candidate_id NULL) or `canonical`
+     (canonical_candidate_id = candidate_id, FK canonical_candidates).
+     Legacy PVC ids are never reinterpreted as canonical Candidate ids.
+  4. Canonical rows bind `compiled_setup_definition_id` to tenant-owned
+     `compiled_setup_definitions`. Global SetupDefinition FK is dropped.
+  5. `canonical_trade_plan_lineage` stores Candidate/eligibility hashes beside
+     unchanged `semantic_payload`. Uniqueness hash is unique. Idempotency keys
+     are organization-scoped.
+  6. Canonical `plan_id` remains UUID5(org, user, account, candidate_id). A
+     compatibility TradeProposal with `plan_root_kind=canonical_plan_root`
+     satisfies the existing composite FK without restoring ProposalService as
+     plan authority.
+  7. Plan insert locks the canonical Candidate and runs `PLAN_CREATED` in the
+     same transaction via `on_inserted`. Adapters are not imported by FastAPI,
+     workers, or feature flags. Execution remains a later slice.
+- **Alternatives considered:** Backfill PVC ids as canonical Candidate ids
+  (rejected: competing identity); put lineage fields into
+  TradePlanRevisionSemantic (rejected: would break Phase 1 hashes); delete
+  canonical rows on Alembic downgrade automatically (rejected: fail closed if
+  canonical rows exist).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay
+  disabled. No exchange mutation. No deployment.
+- **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
+  Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
+  `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.
+
 

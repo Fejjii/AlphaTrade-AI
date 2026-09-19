@@ -36,4 +36,4 @@ class LegacyPaperValidationCannotMintPlanError(CanonicalTradePlanAuthorityError)
 
 
 class CanonicalTradePlanPersistenceNotBoundError(CanonicalTradePlanError):
-    """PostgreSQL TradePlanRevision rows cannot store canonical Candidate identity yet."""
+    """This adapter path cannot persist canonical TradePlanRevision rows."""

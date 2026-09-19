@@ -1075,3 +1075,27 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-032
 
+### AT-054 — Phase 7 canonical TradePlan / ActionEligibility PostgreSQL binding
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-051 Candidate PostgreSQL;
+  AT-052 canonical TradePlan application layer
+  · Risk: Medium (identity, FKs, append-only history)
+- Safety classification: Paper-safe / PostgreSQL adapter only; Watcher, Telegram,
+  and live trading remain disabled; not wired into FastAPI or workers
+- Goal: Close the PR 93 persistence gap after Candidate migration `4fd8c1a90b27`.
+  Durable ActionEligibility with deterministic identity and append-safe revision
+  history. Bind canonical TradePlanRevision to canonical Candidate authority
+  without reinterpreting legacy PaperValidationCandidate ids. Bind setup identity
+  to tenant-owned CompiledSetupDefinition. Persist canonical lineage without
+  changing CanonicalTradePlanContentV1. Organization-scoped uniqueness and
+  idempotency. Deterministic candidate-based plan root. Approval still binds
+  exact immutable revision + content hash. Execution remains outside this wave.
+- Branch: `cursor/phase7_integration`
+- Deliverables: Alembic `c9e2b4a1d078`, `PostgresActionEligibilityStore`,
+  `PostgresCanonicalTradePlanStore`, discriminator columns, lineage side table,
+  tests in `backend/tests/test_phase7_*_postgres.py`.
+- Validation: focused eligibility/plan/alembic tests; full backend pytest; ruff;
+  mypy `--strict`; Alembic upgrade/downgrade/reupgrade and single head; GitHub CI.
+  Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-034
+

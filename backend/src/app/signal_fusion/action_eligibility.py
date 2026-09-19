@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
 from threading import RLock
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID, uuid5
 
 from pydantic import AwareDatetime, Field, model_validator
@@ -224,6 +224,56 @@ def uniqueness_hash(command: ActionEligibilityCommand) -> str:
     return canonical_sha256(uniqueness_preimage(command))
 
 
+def eligibility_identity_bindings(
+    command: ActionEligibilityCommand,
+) -> tuple[tuple[str, str, str], ...]:
+    """Deterministic fail-closed identity fingerprints for one evaluation."""
+
+    safety = command.safety
+    return (
+        (
+            "risk_snapshot",
+            str(command.risk.risk_snapshot_id),
+            _model_fingerprint(command.risk),
+        ),
+        (
+            "venue_state",
+            str(command.market_action.venue_state_id),
+            _model_fingerprint(command.market_action),
+        ),
+        (
+            "safety_epoch",
+            f"{safety.organization_id}:{safety.account_id}:{safety.safety_epoch}",
+            _model_fingerprint(safety),
+        ),
+        (
+            "assessment",
+            str(command.assessment.assessment_id),
+            command.assessment.content_hash,
+        ),
+        (
+            "candidate_revision",
+            f"{command.candidate.candidate_id}:{command.candidate.transition_version}",
+            command.candidate.content_hash,
+        ),
+        (
+            "candidate_organization",
+            str(command.candidate.candidate_id),
+            canonical_sha256({"organization_id": str(command.candidate.organization_id)}),
+        ),
+    )
+
+
+_BINDING_CONFLICT_MESSAGES: dict[str, str] = {
+    "risk_snapshot": "Risk snapshot id is already bound to different risk facts.",
+    "venue_state": "Venue state id is already bound to different market-action evidence.",
+    "safety_epoch": "Safety epoch is already bound to different kill-switch facts.",
+    "assessment": "Assessment id is already bound to a different SetupAssessment digest.",
+    "candidate_revision": "Candidate revision is already bound to a different Candidate digest.",
+    "candidate_organization": "Candidate id is already bound to a different organization.",
+}
+
+
 def deterministic_eligibility_id(digest: str) -> UUID:
     return uuid5(ELIGIBILITY_IDENTITY_NAMESPACE, digest)
 
@@ -246,6 +296,23 @@ def _require_model_content_hash(value: CanonicalModel, label: str) -> None:
         )
 
 
+class ActionEligibilityStore(Protocol):
+    """Append-only eligibility history. Identical uniqueness converges."""
+
+    def get(self, digest: str) -> ActionEligibilityEvaluation | None: ...
+
+    def history(
+        self, *, organization_id: UUID, account_id: UUID, candidate_id: UUID
+    ) -> tuple[ActionEligibilityEvaluation, ...]: ...
+
+    def get_or_insert(
+        self,
+        command: ActionEligibilityCommand,
+        digest: str,
+        factory: Callable[[int], ActionEligibilityEvaluation],
+    ) -> ActionEligibilityEvaluation: ...
+
+
 class InMemoryActionEligibilityStore:
     """Append-only eligibility history. Identical uniqueness converges."""
 
@@ -253,12 +320,7 @@ class InMemoryActionEligibilityStore:
         self._lock = RLock()
         self._by_uniqueness: dict[str, ActionEligibilityEvaluation] = {}
         self._history: dict[tuple[UUID, UUID, UUID], list[ActionEligibilityEvaluation]] = {}
-        self._risk_snapshots: dict[UUID, str] = {}
-        self._venue_states: dict[UUID, str] = {}
-        self._safety_epochs: dict[tuple[UUID, UUID, int], str] = {}
-        self._assessments: dict[UUID, str] = {}
-        self._candidate_revisions: dict[tuple[UUID, int], str] = {}
-        self._candidate_organizations: dict[UUID, UUID] = {}
+        self._bindings: dict[tuple[str, str], str] = {}
 
     def get(self, digest: str) -> ActionEligibilityEvaluation | None:
         with self._lock:
@@ -285,84 +347,28 @@ class InMemoryActionEligibilityStore:
             existing = self._by_uniqueness.get(digest)
             if existing is not None:
                 return existing
-            self._reject_identity_conflicts(command)
+            reject_eligibility_identity_conflicts(command, self._bindings.get)
             history = self._history.setdefault(lineage, [])
             produced = factory(len(history) + 1)
             if produced.uniqueness_hash != digest:
                 raise ActionEligibilityLineageError(
                     "Eligibility uniqueness hash drifted during insert."
                 )
-            self._bind_identities(command)
+            for kind, key, fingerprint in eligibility_identity_bindings(command):
+                self._bindings[(kind, key)] = fingerprint
             self._by_uniqueness[digest] = produced
             history.append(produced)
             return produced
 
-    def _reject_identity_conflicts(self, command: ActionEligibilityCommand) -> None:
-        self._reject_bound(
-            self._risk_snapshots,
-            command.risk.risk_snapshot_id,
-            _model_fingerprint(command.risk),
-            "Risk snapshot id is already bound to different risk facts.",
-        )
-        self._reject_bound(
-            self._venue_states,
-            command.market_action.venue_state_id,
-            _model_fingerprint(command.market_action),
-            "Venue state id is already bound to different market-action evidence.",
-        )
-        self._reject_bound(
-            self._safety_epochs,
-            (
-                command.safety.organization_id,
-                command.safety.account_id,
-                command.safety.safety_epoch,
-            ),
-            _model_fingerprint(command.safety),
-            "Safety epoch is already bound to different kill-switch facts.",
-        )
-        self._reject_bound(
-            self._assessments,
-            command.assessment.assessment_id,
-            command.assessment.content_hash,
-            "Assessment id is already bound to a different SetupAssessment digest.",
-        )
-        self._reject_bound(
-            self._candidate_revisions,
-            (command.candidate.candidate_id, command.candidate.transition_version),
-            command.candidate.content_hash,
-            "Candidate revision is already bound to a different Candidate digest.",
-        )
-        bound_org = self._candidate_organizations.get(command.candidate.candidate_id)
-        if bound_org is not None and bound_org != command.candidate.organization_id:
-            raise ConflictingActionEligibilityError(
-                "Candidate id is already bound to a different organization."
-            )
 
-    def _bind_identities(self, command: ActionEligibilityCommand) -> None:
-        self._risk_snapshots[command.risk.risk_snapshot_id] = _model_fingerprint(command.risk)
-        self._venue_states[command.market_action.venue_state_id] = _model_fingerprint(
-            command.market_action
-        )
-        self._safety_epochs[
-            (
-                command.safety.organization_id,
-                command.safety.account_id,
-                command.safety.safety_epoch,
-            )
-        ] = _model_fingerprint(command.safety)
-        self._assessments[command.assessment.assessment_id] = command.assessment.content_hash
-        self._candidate_revisions[
-            (command.candidate.candidate_id, command.candidate.transition_version)
-        ] = command.candidate.content_hash
-        self._candidate_organizations[command.candidate.candidate_id] = (
-            command.candidate.organization_id
-        )
-
-    @staticmethod
-    def _reject_bound[K](index: dict[K, str], key: K, fingerprint: str, message: str) -> None:
-        bound = index.get(key)
+def reject_eligibility_identity_conflicts(
+    command: ActionEligibilityCommand,
+    lookup: Callable[[tuple[str, str]], str | None],
+) -> None:
+    for kind, key, fingerprint in eligibility_identity_bindings(command):
+        bound = lookup((kind, key))
         if bound is not None and bound != fingerprint:
-            raise ConflictingActionEligibilityError(message)
+            raise ConflictingActionEligibilityError(_BINDING_CONFLICT_MESSAGES[kind])
 
 
 class ActionEligibilityService:
@@ -371,7 +377,7 @@ class ActionEligibilityService:
     def __init__(
         self,
         *,
-        store: InMemoryActionEligibilityStore,
+        store: ActionEligibilityStore,
         clock: Clock,
         risk_engine: RiskEngine | None = None,
     ) -> None:
@@ -682,7 +688,7 @@ def _resolved_basis_bps(market: MarketActionEvidence) -> Decimal | None:
 def in_memory_action_eligibility(
     *,
     now: datetime | None = None,
-    store: InMemoryActionEligibilityStore | None = None,
+    store: ActionEligibilityStore | None = None,
     risk_engine: RiskEngine | None = None,
 ) -> ActionEligibilityService:
     """Factory for tests and local paper use. No network, no PostgreSQL."""
@@ -702,6 +708,7 @@ __all__ = [
     "ActionEligibilityCommand",
     "ActionEligibilityEvaluation",
     "ActionEligibilityService",
+    "ActionEligibilityStore",
     "InMemoryActionEligibilityStore",
     "MarketActionEvidence",
     "PaperExecutionConfiguration",
@@ -710,7 +717,9 @@ __all__ = [
     "SafetyStateSnapshot",
     "build_action_eligibility_evaluation",
     "deterministic_eligibility_id",
+    "eligibility_identity_bindings",
     "in_memory_action_eligibility",
+    "reject_eligibility_identity_conflicts",
     "uniqueness_hash",
     "uniqueness_preimage",
 ]

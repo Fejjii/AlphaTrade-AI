@@ -1,8 +1,9 @@
 """Canonical Candidate + ActionEligibility → immutable TradePlanRevision.
 
 This is the sole first-slice plan-creation authority. It does not evaluate
-setup truth, does not issue approvals, and does not execute. PostgreSQL binding
-is deferred to Agent 1; persistence is the typed in-memory port.
+setup truth, does not issue approvals, and does not execute. Persistence is the
+typed ``CanonicalTradePlanStore`` port (in-memory default; PostgreSQL adapter
+in ``app.persistence.trade_plan_postgres``).
 """
 
 from __future__ import annotations
@@ -123,13 +124,12 @@ class CanonicalTradePlanService:
             )
         self._validate_insert_gates(command, candidate, evaluation)
         revision = self._build_revision(command, lineage, digest)
-        self._store.insert(digest, revision, idempotency_key=command.idempotency_key)
-        try:
-            self._transition_plan_created(command, digest)
-        except BaseException:
-            self._store.discard(digest)
-            raise
-        return revision
+        return self._store.insert(
+            digest,
+            revision,
+            idempotency_key=command.idempotency_key,
+            on_inserted=lambda: self._transition_plan_created(command, digest),
+        )
 
     def create_from_paper_validation_candidate(self, source: object) -> NoReturn:
         """Legacy queue records cannot mint canonical plan authority."""
