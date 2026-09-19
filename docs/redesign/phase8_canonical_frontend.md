@@ -1,9 +1,9 @@
 # Canonical paper decision frontend
 
-**Status:** implemented on the frontend; several backend HTTP bindings remain missing  
-**Task:** AT-055  
-**Branch:** `cursor/phase8_canonical_frontend`  
-**ADR:** AT-ADR-035  
+**Status:** integrated on `cursor/phase8_final_integration`  
+**Task:** AT-057 (source PR #98 claimed AT-055)  
+**Branch:** `cursor/phase8_final_integration`  
+**ADR:** AT-ADR-037  
 **Safety:** paper-only. No live execution control. Human approval cannot be skipped by AI.
 
 This is the user-facing decision spine. Architecture docs call the later
@@ -42,28 +42,28 @@ remain functional.
 - `GET /proposals`, `GET /proposals/{id}`, `GET /proposals/{id}/workflow`
 - `GET /proposals/{id}/revisions` (existing; newly wired in the frontend client)
 - `GET|POST /approvals*`
-- `POST /execution/paper`, `GET /execution/orders`, `GET /execution/orders/{id}`
+- `POST /execution/paper-plan` (canonical TradePlan execution)
+- `GET /execution/orders`, `GET /execution/orders/{id}` (compatibility)
+- `GET /canonical/candidates`, `GET /canonical/candidates/{id}`
+- `GET /canonical/setup-assessments/{id}`
+- `GET /canonical/candidates/{id}/eligibility`
+- `GET /canonical/executions/{receipt_id}`
+- `GET /canonical/learning/strategy-stats`
 - `GET /journal/entries/{id}`, journal list/prefill
 - `GET /lessons/candidates`
 - `GET /strategy-quality/summary`
 - `GET /learning-analytics/summary`
 - `GET /analytics/setups`
 
-## Missing backend HTTP (typed frontend contracts only)
+## Canonical HTTP (bound on the Phase 8 RC)
 
-These contracts live in `frontend/src/lib/canonical-decision/types.ts`.
-The UI labels them as unbound and does **not** treat compatibility data as
-canonical authority.
-
-| Contract | Intended path | Owner |
-|---|---|---|
-| `CanonicalCandidateContract` | `GET /canonical/candidates` | backend |
-| SetupAssessment read | `GET /canonical/setup-assessments/{id}` | backend |
-| `CanonicalActionEligibilityContract` | `GET /canonical/candidates/{id}/eligibility` | backend |
-| `CanonicalExecutionReceiptContract` | `GET /canonical/executions/{receipt_id}` | backend |
+Canonical TradePlan execution uses `POST /execution/paper-plan` only.
+Legacy `POST /execution/paper` remains compatibility-only and must not
+execute a canonical TradePlan.
 
 `PaperValidationCandidate` remains a downstream queue (AT-ADR-026). The
-candidate workspace is a **compatibility projection**.
+candidate workspace still shows that compatibility projection beside the
+canonical Candidate read API.
 
 Canonical `TradePlanRevision` already has a nested read API under proposals.
 There is still no standalone TradePlan create HTTP for the UI; this slice

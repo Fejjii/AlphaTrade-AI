@@ -1317,3 +1317,26 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   disabled. No real exchange mutation. No deployment.
 - **Consequences:** Docs in `docs/redesign/phase8_canonical_frontend.md`.
   Frontend module `frontend/src/lib/canonical-decision/`.
+
+## AT-ADR-038 — Phase 8 release-candidate integration
+- **Date:** 2026-09-19
+- **Status:** Accepted (integration; draft PR only; do not merge or deploy)
+- **Context:** PR97, PR99, and PR98 landed independently on `main@cd9087a`.
+  All three claimed AT-ADR-035 / AT-055. Canonical frontend executed through
+  legacy `POST /execution/paper`. Runtime learning used in-memory attribution.
+- **Decision:**
+  1. Integration order is PR97 → PR99 → PR98. Do not merge `main`.
+  2. ADR/task IDs remap to AT-ADR-035/AT-055 (learning), AT-ADR-036/AT-056
+     (runtime), AT-ADR-037/AT-057 (frontend).
+  3. Alembic remains a single head: `d4f7a2c8e901` after `c9e2b4a1d078`.
+  4. Canonical frontend execution binds to `POST /execution/paper-plan`.
+  5. Thin `/canonical/*` read APIs reuse Candidate, ActionEligibility,
+     ExecutionReceipt, and `LearningQueryService`. No duplicate domain models.
+  6. Runtime paper execution attributes through `PostgresAttributionStore`.
+  7. Paper only. Watcher and Telegram stay disabled. Kill switch and risk
+     BLOCK stay final. Human approval is mandatory. LLM is never authority.
+- **Alternatives considered:** Merge into `main` in this wave (rejected);
+  create another Alembic revision (rejected: not required).
+- **Safety impact:** Paper only. No deploy. No real exchange mutation.
+- **Consequences:** Branch `cursor/phase8_final_integration`. Tests in
+  `backend/tests/test_phase8_canonical_workflow.py`.

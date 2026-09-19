@@ -37,6 +37,7 @@ from app.services.canonical_execution_journal import (
     CANONICAL_EXECUTION_SOURCE_SYSTEM,
     project_canonical_execution_event,
 )
+from app.services.canonical_execution_learning import attribute_canonical_paper_event
 from app.services.canonical_trade_plan_errors import CanonicalTradePlanNotFoundError
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
 from app.services.journal_lifecycle_projector import JournalLifecycleProjector
@@ -115,22 +116,34 @@ class CanonicalPaperExecutionService:
             payload["size"] = str(fill.filled_quantity)
             # Phase 1 paper claims do not create legacy Order rows. Command
             # identity is execution_lifecycle_id; linked_order_id stays unset.
-            payload["lineage"] = _lineage_payload(envelope, command_id).model_dump(
-                mode="json", exclude_none=True
+            payload["lineage"] = _lineage_payload(
+                envelope, command_id, self._runtime
+            ).model_dump(mode="json", exclude_none=True)
+            event = JournalLifecycleEventInput(
+                event_type=JournalLifecycleEventType.FILL,
+                execution_lifecycle_id=command_id,
+                source_system=CANONICAL_EXECUTION_SOURCE_SYSTEM,
+                source_aggregate="execution-command",
+                source_event_id=str(fill.fill_id),
+                source_event_version=1,
+                account_id=account_id,
+                payload=payload,
+                correlation_id=str(envelope.plan.correlation_id),
             )
-            project_canonical_execution_event(
+            projection = project_canonical_execution_event(
                 self._projector,
-                event=JournalLifecycleEventInput(
-                    event_type=JournalLifecycleEventType.FILL,
-                    execution_lifecycle_id=command_id,
-                    source_system=CANONICAL_EXECUTION_SOURCE_SYSTEM,
-                    source_aggregate="execution-command",
-                    source_event_id=str(fill.fill_id),
-                    source_event_version=1,
-                    account_id=account_id,
-                    payload=payload,
-                    correlation_id=str(envelope.plan.correlation_id),
-                ),
+                event=event,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+            attribute_canonical_paper_event(
+                session=self._session,
+                projector=self._projector,
+                runtime=self._runtime,
+                settings=self._settings,
+                envelope=envelope,
+                event=event,
+                projection=projection,
                 organization_id=organization_id,
                 user_id=user_id,
             )
@@ -210,22 +223,34 @@ class CanonicalPaperExecutionService:
             user_id=request.user_id,
         )
         payload = _instrument_payload(envelope.plan)
-        payload["lineage"] = _lineage_payload(envelope, result.command_id).model_dump(
-            mode="json", exclude_none=True
+        payload["lineage"] = _lineage_payload(
+            envelope, result.command_id, self._runtime
+        ).model_dump(mode="json", exclude_none=True)
+        event = JournalLifecycleEventInput(
+            event_type=JournalLifecycleEventType.APPROVED_PLAN,
+            execution_lifecycle_id=result.command_id,
+            source_system=CANONICAL_EXECUTION_SOURCE_SYSTEM,
+            source_aggregate="execution-command",
+            source_event_id=str(result.command_id),
+            source_event_version=1,
+            account_id=request.account_id,
+            payload=payload,
+            correlation_id=str(envelope.plan.correlation_id),
         )
-        project_canonical_execution_event(
+        projection = project_canonical_execution_event(
             self._projector,
-            event=JournalLifecycleEventInput(
-                event_type=JournalLifecycleEventType.APPROVED_PLAN,
-                execution_lifecycle_id=result.command_id,
-                source_system=CANONICAL_EXECUTION_SOURCE_SYSTEM,
-                source_aggregate="execution-command",
-                source_event_id=str(result.command_id),
-                source_event_version=1,
-                account_id=request.account_id,
-                payload=payload,
-                correlation_id=str(envelope.plan.correlation_id),
-            ),
+            event=event,
+            organization_id=request.organization_id,
+            user_id=request.user_id,
+        )
+        attribute_canonical_paper_event(
+            session=self._session,
+            projector=self._projector,
+            runtime=self._runtime,
+            settings=self._settings,
+            envelope=envelope,
+            event=event,
+            projection=projection,
             organization_id=request.organization_id,
             user_id=request.user_id,
         )
@@ -253,9 +278,12 @@ def _instrument_payload(plan: TradePlanRevision) -> dict[str, object]:
 
 
 def _lineage_payload(
-    envelope: CanonicalTradePlanRevision, execution_lifecycle_id: UUID
+    envelope: CanonicalTradePlanRevision,
+    execution_lifecycle_id: UUID,
+    runtime: ProductionCanonicalRuntime,
 ) -> JournalLineagePayload:
     lineage = envelope.lineage
+    evaluation = runtime.eligibility.get(lineage.eligibility_uniqueness_hash)
     return JournalLineagePayload(
         organization_id=envelope.plan.organization_id,
         account_id=envelope.plan.account_id,
@@ -263,6 +291,9 @@ def _lineage_payload(
         candidate_id=lineage.candidate_id,
         candidate_content_hash=lineage.candidate_content_hash,
         assessment_id=lineage.assessment_id,
+        assessment_content_hash=(
+            None if evaluation is None else evaluation.setup_assessment_content_hash
+        ),
         evidence_window_hash=lineage.evidence_window_hash,
         trade_plan_revision_id=envelope.plan.revision_id,
         trade_plan_content_hash=envelope.plan.content_hash,

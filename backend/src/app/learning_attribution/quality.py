@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from app.db.models import JournalTrade
 from app.learning_attribution.contracts import (
@@ -43,19 +44,38 @@ _EXECUTING = frozenset(
 
 
 def planned_setup_quality(assessment: SetupAssessment) -> PlannedSetupQualityFacts:
-    axis = {
-        SetupAssessmentState.CONFIRMED_SETUP: PlannedSetupQuality.CONFIRMED,
-        SetupAssessmentState.INVALIDATED: PlannedSetupQuality.INVALIDATED,
-        SetupAssessmentState.EXPIRED: PlannedSetupQuality.EXPIRED,
-    }.get(assessment.state, PlannedSetupQuality.NOT_CONFIRMED)
-    return PlannedSetupQualityFacts(
-        axis=axis,
+    return planned_setup_quality_from_identity(
         assessment_id=assessment.assessment_id,
         assessment_state=assessment.state,
         assessment_content_hash=assessment.content_hash,
         evidence_window_hash=assessment.evidence_window_hash,
         reason_codes=tuple(code.value for code in assessment.reason_codes),
-        confirmed=assessment.state is SetupAssessmentState.CONFIRMED_SETUP,
+    )
+
+
+def planned_setup_quality_from_identity(
+    *,
+    assessment_id: UUID,
+    assessment_state: SetupAssessmentState,
+    assessment_content_hash: str,
+    evidence_window_hash: str,
+    reason_codes: tuple[str, ...] = (),
+) -> PlannedSetupQualityFacts:
+    """Copy stored SetupAssessment identity. Does not re-evaluate setup truth."""
+
+    axis = {
+        SetupAssessmentState.CONFIRMED_SETUP: PlannedSetupQuality.CONFIRMED,
+        SetupAssessmentState.INVALIDATED: PlannedSetupQuality.INVALIDATED,
+        SetupAssessmentState.EXPIRED: PlannedSetupQuality.EXPIRED,
+    }.get(assessment_state, PlannedSetupQuality.NOT_CONFIRMED)
+    return PlannedSetupQualityFacts(
+        axis=axis,
+        assessment_id=assessment_id,
+        assessment_state=assessment_state,
+        assessment_content_hash=assessment_content_hash,
+        evidence_window_hash=evidence_window_hash,
+        reason_codes=reason_codes,
+        confirmed=assessment_state is SetupAssessmentState.CONFIRMED_SETUP,
     )
 
 

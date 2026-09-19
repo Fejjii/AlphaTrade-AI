@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { missingBindings } from "@/lib/canonical-decision/bindings";
+import { boundBindings, missingBindings } from "@/lib/canonical-decision/bindings";
 import { composeDecisionCases, deriveProposalStage } from "@/lib/canonical-decision/compose";
 import { projectActionEligibility } from "@/lib/canonical-decision/eligibility";
 import { buildDecisionSteps } from "@/lib/canonical-decision/steps";
@@ -134,8 +134,8 @@ describe("composeDecisionCases", () => {
     expect(snapshot.cases).toHaveLength(2);
     expect(snapshot.cases.some((item) => item.kind === "compatibility_candidate")).toBe(true);
     expect(snapshot.cases.some((item) => item.kind === "legacy_proposal")).toBe(true);
-    expect(snapshot.missingBindings).toContain("canonical-candidates");
-    expect(snapshot.missingBindings).toContain("action-eligibility");
+    expect(snapshot.missingBindings).not.toContain("canonical-candidates");
+    expect(snapshot.missingBindings).not.toContain("action-eligibility");
   });
 
   it("advances a proposal to approval then paper execution", () => {
@@ -185,10 +185,13 @@ describe("trade plan mapping", () => {
 });
 
 describe("backend bindings", () => {
-  it("documents missing canonical HTTP authority", () => {
+  it("binds canonical reads and paper-plan execution", () => {
     const missing = missingBindings().map((item) => item.id);
-    expect(missing).toEqual(
-      expect.arrayContaining(["canonical-candidates", "action-eligibility", "execution-receipts"]),
-    );
+    expect(missing).not.toContain("canonical-candidates");
+    expect(missing).not.toContain("action-eligibility");
+    expect(missing).not.toContain("execution-receipts");
+    expect(missing).not.toContain("paper-execution");
+    const paperPlan = boundBindings().find((item) => item.id === "paper-execution");
+    expect(paperPlan?.path).toBe("POST /execution/paper-plan");
   });
 });

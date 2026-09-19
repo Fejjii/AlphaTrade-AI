@@ -1203,3 +1203,22 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   branch.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-037
+
+### AT-058 — Phase 8 final integration release candidate
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-055, AT-056, AT-057
+  · Risk: Medium (execution binding, learning durability, authority isolation)
+- Safety classification: Paper-only integration; Watcher, Telegram, and live
+  trading remain disabled; no deploy
+- Goal: Independently review and integrate PR97 + PR99 + PR98. Bind frontend
+  canonical TradePlan execution to `POST /execution/paper-plan`. Wire durable
+  Postgres learning attribution and canonical read/query APIs. Keep one Alembic
+  head. Do not merge `main`. Do not deploy.
+- Branch: `cursor/phase8_final_integration`
+- Deliverables: remapped governance IDs, `/canonical/*` reads,
+  `PostgresAttributionStore` runtime hook, frontend paper-plan binding,
+  `backend/tests/test_phase8_canonical_workflow.py`.
+- Validation: full backend pytest, frontend tests, lint, typecheck, build,
+  ruff, scoped mypy, Alembic cycle, deployment-safety, evaluation, e2e,
+  Docker build, GitHub CI.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-038

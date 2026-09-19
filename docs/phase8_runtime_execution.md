@@ -66,7 +66,14 @@ authority:
 `JournalLifecycleProjector` with `source_system=canonical_paper_execution`.
 Exact replay converges. Journal is record-only.
 
+## Learning
+
+After journal projection, `attribute_canonical_paper_event` writes durable
+facts through `PostgresAttributionStore` and
+`LearningAttributionService.apply_projected`. It does not become a second
+JournalTrade writer.
+
 ## Out of scope
 
-Learning persistence, frontend UX, strategy analytics redesign, Watcher enablement,
-Telegram enablement, live trading, and Alembic (schema already landed in Phase 7).
+Watcher enablement, Telegram enablement, live trading, and a new Alembic
+revision (schema already landed in Phase 7 plus PR97 `d4f7a2c8e901`).

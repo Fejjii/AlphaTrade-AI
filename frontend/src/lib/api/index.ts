@@ -59,6 +59,14 @@ import type {
   PaginatedUsageEvents,
   PaperOrder,
   PaginatedPaperOrders,
+  ExecutePaperPlanRequest,
+  ExecutePaperPlanResult,
+  CanonicalCandidateRead,
+  PaginatedCanonicalCandidates,
+  CanonicalSetupAssessmentRead,
+  CanonicalEligibilityRead,
+  CanonicalExecutionReceiptRead,
+  CanonicalLearningStatsRead,
   CanonicalTradePlanRevision,
   ProposalWorkflowView,
   ApprovalWorkflowView,
@@ -419,6 +427,30 @@ export const api = {
     listOrders: (params?: { limit?: number; offset?: number }) =>
       apiFetch<PaginatedPaperOrders>("/execution/orders", { query: params, auth: true }),
     getOrder: (id: string) => apiFetch<PaperOrder>(`/execution/orders/${id}`, { auth: true }),
+    executePaperPlan: (body: ExecutePaperPlanRequest) =>
+      apiFetch<ExecutePaperPlanResult>("/execution/paper-plan", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  },
+  canonical: {
+    listCandidates: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedCanonicalCandidates>("/canonical/candidates", { query: params, auth: true }),
+    getCandidate: (id: string) =>
+      apiFetch<CanonicalCandidateRead>(`/canonical/candidates/${id}`, { auth: true }),
+    getSetupAssessment: (id: string) =>
+      apiFetch<CanonicalSetupAssessmentRead>(`/canonical/setup-assessments/${id}`, { auth: true }),
+    getEligibility: (candidateId: string) =>
+      apiFetch<CanonicalEligibilityRead>(`/canonical/candidates/${candidateId}/eligibility`, {
+        auth: true,
+      }),
+    getExecutionReceipt: (receiptId: string) =>
+      apiFetch<CanonicalExecutionReceiptRead>(`/canonical/executions/${receiptId}`, { auth: true }),
+    strategyStats: (params?: { learning_venue_mode?: string }) =>
+      apiFetch<CanonicalLearningStatsRead>("/canonical/learning/strategy-stats", {
+        query: params,
+        auth: true,
+      }),
   },
   positions: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>

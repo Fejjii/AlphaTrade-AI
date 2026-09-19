@@ -3,6 +3,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
+  CanonicalLearningStatsRead,
   LearningAnalyticsSummaryResponse,
   SetupAnalyticsResponse,
   StrategyQualitySummaryResponse,
@@ -12,13 +13,34 @@ export function StrategyPerformance({
   quality,
   learning,
   setups,
+  canonical,
 }: {
   quality: StrategyQualitySummaryResponse | null;
   learning: LearningAnalyticsSummaryResponse | null;
   setups: SetupAnalyticsResponse | null;
+  canonical?: CanonicalLearningStatsRead | null;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-3" data-testid="strategy-performance">
+    <div className="grid gap-4 xl:grid-cols-4" data-testid="strategy-performance">
+      <Card data-testid="canonical-learning-stats">
+        <CardHeader>
+          <CardTitle>Canonical learning</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {canonical ? (
+            <>
+              <p>Human approvals: {canonical.snapshot.human_vs_system.human_approvals}</p>
+              <p>Paper executions: {canonical.snapshot.human_vs_system.paper_system_executions}</p>
+              <p>Executed outcomes: {canonical.snapshot.human_vs_system.executed_outcomes}</p>
+              <p className="text-caption text-text-muted">
+                LearningQueryService only. LLM narrative is not a fact.
+              </p>
+            </>
+          ) : (
+            <p className="text-text-muted">Canonical learning API unavailable.</p>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Strategy quality</CardTitle>

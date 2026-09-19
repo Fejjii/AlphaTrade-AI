@@ -5,9 +5,9 @@
  * market assessment → candidate → eligibility → TradePlan → approval →
  * paper execution → outcome → learning.
  *
- * They do not create backend authority. Fields marked as compatibility
- * projections are assembled from existing HTTP APIs. Canonical Phase 6
- * Candidate / ActionEligibility / ExecutionReceipt HTTP is not bound yet.
+ * They do not create backend authority. Canonical HTTP reads and
+ * POST /execution/paper-plan are bound. Legacy PVC/proposal surfaces remain
+ * compatibility projections.
  */
 
 export const DECISION_STAGES = [

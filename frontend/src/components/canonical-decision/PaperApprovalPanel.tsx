@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { CanonicalPaperPlanButton } from "@/components/canonical-decision/CanonicalPaperPlanButton";
 import { PaperOrderButton } from "@/components/ProposalDetailPanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -82,16 +83,28 @@ export function PaperApprovalPanel({
             <p className="text-caption uppercase tracking-wide text-text-muted">
               Separate paper execution
             </p>
-            <PaperOrderButton proposal={proposal} approval={"id" in approval ? approval : {
-              id: approvalId,
-              proposal_id: proposal.id,
-              organization_id: proposal.organization_id,
-              user_id: proposal.user_id,
-              status: status as ApprovalRequest["status"],
-              risk_level: proposal.risk_level,
-              confidence: proposal.confidence,
-              created_at: "createdAt" in approval ? approval.createdAt : proposal.created_at,
-            }} onSuccess={onRefresh} />
+            {"id" in approval && approval.authorization && (approval.plan_revision_id || approval.authorization.revision_id) ? (
+              <CanonicalPaperPlanButton approval={approval} onSuccess={() => onRefresh?.()} />
+            ) : (
+              <PaperOrderButton
+                proposal={proposal}
+                approval={
+                  "id" in approval
+                    ? approval
+                    : {
+                        id: approvalId,
+                        proposal_id: proposal.id,
+                        organization_id: proposal.organization_id,
+                        user_id: proposal.user_id,
+                        status: status as ApprovalRequest["status"],
+                        risk_level: proposal.risk_level,
+                        confidence: proposal.confidence,
+                        created_at: "createdAt" in approval ? approval.createdAt : proposal.created_at,
+                      }
+                }
+                onSuccess={onRefresh}
+              />
+            )}
           </div>
         ) : null}
       </CardContent>

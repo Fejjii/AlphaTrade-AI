@@ -11,19 +11,20 @@ import { loadSource } from "@/components/workflows";
 
 export default function DecisionStrategyPage() {
   const loader = useCallback(async () => {
-    const [quality, learning, setups] = await Promise.all([
+    const [quality, learning, setups, canonical] = await Promise.all([
       loadSource(api.strategyQuality.summary()),
       loadSource(api.learningAnalytics.summary()),
       loadSource(api.analytics.setups()),
+      loadSource(api.canonical.strategyStats()),
     ]);
-    return { quality, learning, setups };
+    return { quality, learning, setups, canonical };
   }, []);
   const { data, loading, error, reload } = useAsyncData(loader, []);
 
   return (
     <DecisionChrome
       title="Strategy and pattern performance"
-      description="Existing strategy-quality, learning-analytics, and setup APIs. No automatic rule promotion."
+      description="Canonical LearningQueryService statistics plus compatibility analytics. No automatic rule promotion."
       current="learning"
     >
       {loading ? <LoadingState label="Loading strategy performance…" /> : null}
@@ -33,6 +34,7 @@ export default function DecisionStrategyPage() {
           quality={data.quality.data}
           learning={data.learning.data}
           setups={data.setups.data}
+          canonical={data.canonical.data}
         />
       ) : null}
     </DecisionChrome>

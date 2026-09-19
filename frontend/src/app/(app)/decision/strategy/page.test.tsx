@@ -64,6 +64,23 @@ vi.mock("@/hooks/useAsyncData", () => ({
         },
         available: true,
       },
+      canonical: {
+        data: {
+          authority: "canonical",
+          snapshot: {
+            organization_id: "org",
+            patterns: [],
+            human_vs_system: {
+              human_reject_or_skip: 0,
+              human_approvals: 2,
+              paper_system_executions: 1,
+              executed_outcomes: 1,
+              setup_confirmed_count: 2,
+            },
+          },
+        },
+        available: true,
+      },
     },
     loading: false,
     error: null,
