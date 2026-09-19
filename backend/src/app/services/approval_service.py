@@ -21,6 +21,7 @@ from app.core.operation_policy import (
     assert_write_allowed,
     get_operation_decision,
 )
+from app.db.canonical_trade_plans import PLAN_AUTHORITY_CANONICAL
 from app.db.models import ApprovalAuthorization as ApprovalAuthorizationModel
 from app.db.models import ApprovalRequest as ApprovalModel
 from app.db.models import TradePlanRevision as TradePlanRevisionModel
@@ -60,6 +61,11 @@ from app.schemas.trade_plan import (
 from app.services.approval_authorization_hash import verify_authorization_issuance_hash
 from app.services.audit_service import AuditService
 from app.services.canonical_serialization import canonical_sha256
+from app.services.canonical_trade_plan import CanonicalTradePlanService
+from app.services.canonical_trade_plan_errors import (
+    CanonicalTradePlanImmutableError,
+    CanonicalTradePlanNotFoundError,
+)
 
 _DEFAULT_AUTHORIZATION_TTL = timedelta(minutes=15)
 
@@ -71,6 +77,7 @@ class ApprovalService:
         audit_service: AuditService,
         *,
         clock: Callable[[], datetime] | None = None,
+        plans: CanonicalTradePlanService | None = None,
     ) -> None:
         self._session = session
         self._repo = ApprovalRepository(session)
@@ -79,6 +86,7 @@ class ApprovalService:
         self._revisions = TradePlanRevisionRepository(session)
         self._audit = audit_service
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._plans = plans
 
     def create_for_proposal(
         self,
@@ -379,6 +387,23 @@ class ApprovalService:
         computed_plan_hash = canonical_sha256(semantic)
         if computed_plan_hash != revision.content_hash:
             raise ValidationAppError("Plan content hash verification failed.")
+        if revision.plan_authority == PLAN_AUTHORITY_CANONICAL:
+            if self._plans is None:
+                raise TradingPolicyError(
+                    "Canonical plan approval requires CanonicalTradePlanService.",
+                    details={"reason": "canonical_runtime_unbound"},
+                )
+            try:
+                self._plans.assert_approval_preserves_semantics(
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    revision_id=revision.id,
+                    plan_content_hash=revision.content_hash,
+                )
+            except CanonicalTradePlanNotFoundError as exc:
+                raise NotFoundError("Canonical trade plan revision is unknown.") from exc
+            except CanonicalTradePlanImmutableError as exc:
+                raise ValidationAppError(str(exc)) from exc
         self._validate_assertion(
             assertion,
             revision=revision,

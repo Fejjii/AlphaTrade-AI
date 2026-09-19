@@ -76,7 +76,7 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   {
     id: "plan",
     label: "Plan",
-    href: "/workspace",
+    href: "/decision",
     icon: Bot,
     ariaLabel: "Plan",
   },
@@ -151,7 +151,11 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "plan",
     items: [
-      { href: "/workspace", label: "Plan hub", icon: Bot },
+      { href: "/decision", label: "Decision", icon: ListChecks },
+      { href: "/decision/market", label: "Market quality", icon: LineChart },
+      { href: "/decision/candidates", label: "Candidates", icon: Inbox },
+      { href: "/decision/strategy", label: "Strategy performance", icon: Gauge },
+      { href: "/workspace", label: "AI assist", icon: Bot },
       { href: "/proposals", label: "Proposals", icon: FileText },
       { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
       { href: "/pre-trade", label: "Pre-Trade", icon: Scale },
@@ -278,6 +282,7 @@ const DESTINATION_MATCHERS: readonly { id: DestinationId; match: (pathname: stri
     {
       id: "plan",
       match: (p) =>
+        p.startsWith("/decision") ||
         p.startsWith("/workspace") ||
         p.startsWith("/proposals") ||
         p.startsWith("/approvals") ||
@@ -327,6 +332,7 @@ export function isNavLinkActive(pathname: string, href: string): boolean {
   if (href === "/journal") return pathname === "/journal";
   // Validate hub is exact-only so stage routes do not keep the hub link current.
   if (href === "/paper-validation") return pathname === "/paper-validation";
+  if (href === "/decision") return pathname === "/decision";
   if (href === "/risk") return pathname === "/risk" || pathname.startsWith("/risk/");
   if (href === "/alerts") return pathname === "/alerts" || pathname.startsWith("/alerts/");
   return pathname === href || pathname.startsWith(`${href}/`);

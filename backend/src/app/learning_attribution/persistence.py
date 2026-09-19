@@ -81,6 +81,36 @@ AGENT_1_ATTRIBUTION_INTEGRATION = DurableAttributionIntegrationRequirement(
             nullable=False,
             purpose="False for REJECT/SKIP/planned-only. True only after fill/close facts.",
         ),
+        DurableColumnSpec(
+            name="learning_venue_mode",
+            sql_type="VARCHAR(32) NOT NULL",
+            nullable=False,
+            purpose="paper_internal or paper_exchange_demo cohort. Live/real is not a venue.",
+        ),
+        DurableColumnSpec(
+            name="setup_quality_axis",
+            sql_type="VARCHAR(32) NOT NULL",
+            nullable=False,
+            purpose="Copied planned setup quality. Independent of PnL.",
+        ),
+        DurableColumnSpec(
+            name="execution_quality_axis",
+            sql_type="VARCHAR(32) NOT NULL",
+            nullable=False,
+            purpose="Fill/close quality versus plan. Independent of setup truth.",
+        ),
+        DurableColumnSpec(
+            name="risk_adherence_axis",
+            sql_type="VARCHAR(32) NOT NULL",
+            nullable=False,
+            purpose="Stop/size plan adherence. Independent of setup, slippage, and PnL.",
+        ),
+        DurableColumnSpec(
+            name="trader_behavior_axis",
+            sql_type="VARCHAR(32) NOT NULL",
+            nullable=False,
+            purpose="REJECT/SKIP/APPROVE/EXECUTED behavior. Never an executed outcome by itself.",
+        ),
     ),
     event_columns=(
         DurableColumnSpec(

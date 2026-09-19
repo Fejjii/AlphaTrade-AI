@@ -23,6 +23,7 @@ from app.api.routes import (
     auth,
     backtests,
     billing,
+    canonical,
     chat,
     coaching,
     dashboard,
@@ -95,6 +96,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     limiter = get_rate_limiter(settings)
     rate_backend = "redis" if getattr(limiter, "using_redis", False) else "memory"
     logger.info("rate_limit_backend", backend=rate_backend)
+
+    from app.db.session import get_session_factory
+    from app.runtime.canonical import build_production_canonical_runtime
+
+    runtime = build_production_canonical_runtime(get_session_factory(), settings=settings)
+    app.state.canonical_runtime = runtime
+    logger.info(
+        "canonical_runtime_ready",
+        watcher_enabled=runtime.watcher_enabled,
+        telegram_enabled=runtime.telegram_enabled,
+        real_trading_enabled=runtime.flags.real_trading_enabled,
+    )
 
     worker_driver = _maybe_start_in_process_worker(settings)
     app.state.worker_driver = worker_driver
@@ -195,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         proposals.router,
         approvals.router,
         execution.router,
+        canonical.router,
         exchange.router,
         positions.router,
         journal.router,

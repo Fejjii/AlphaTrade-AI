@@ -25,6 +25,7 @@ from app.learning_attribution.contracts import (
     DecisionActor,
     ExecutionQuality,
     PlannedSetupQuality,
+    RiskAdherence,
     TraderBehavior,
 )
 from app.learning_attribution.errors import (
@@ -175,6 +176,7 @@ def test_one_lifecycle_converges_to_one_journal_trade(
         assert close.executed_trade_outcome is True
         assert close.record.facts.setup_quality.axis is PlannedSetupQuality.CONFIRMED
         assert close.record.facts.execution_quality.axis is ExecutionQuality.MATCHED_PLAN
+        assert close.record.facts.risk_adherence.axis is RiskAdherence.ADHERED
         assert close.record.facts.trader_behavior.axis is TraderBehavior.EXECUTED
         assert close.record.facts.human_vs_system.decision_actor is (
             DecisionActor.PAPER_SYSTEM_EXECUTION
@@ -583,6 +585,7 @@ def test_early_exit_is_execution_quality_not_setup_quality(
         )
         session.commit()
         assert result.record.facts.execution_quality.axis is ExecutionQuality.EARLY_EXIT
+        assert result.record.facts.risk_adherence.axis is RiskAdherence.ADHERED
         assert result.record.facts.setup_quality.axis is PlannedSetupQuality.CONFIRMED
         suggestions = lesson_suggestions(result.record)
         assert any(item.mistake_type == "early_exit" for item in suggestions)

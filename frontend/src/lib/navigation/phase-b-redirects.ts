@@ -37,6 +37,7 @@ export const PHASE_B_CAPABILITY_PATHS: readonly string[] = [
   "/settings/billing",
   "/risk",
   "/workspace",
+  "/decision",
   "/proposals",
   "/approvals",
 ] as const;

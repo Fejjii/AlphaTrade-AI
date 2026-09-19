@@ -66,7 +66,18 @@ LangGraph nodes in `backend/src/app/agents/nodes.py` orchestrate:
 - Access token denylist (Redis) revokes sessions on logout; refresh rotation detects reuse
 - `GET /proposals/{id}/workflow` — proposal + linked approval + paper eligibility (Slice 20)
 - `GET /approvals/{id}/workflow` — approval + linked proposal + paper eligibility
-- `POST /execution/paper` — paper-only; requires approved approval
+- `POST /execution/paper` — legacy paper order path; Phase 1 refuses it (`EXECUTE_PAPER_PLAN` required)
+- `POST /execution/paper-plan` — paper-only EXECUTE_PAPER_PLAN for an approved immutable revision
+
+## Canonical paper lifecycle (Phase 8)
+
+`ProductionCanonicalRuntime` (`app.runtime.canonical`) attaches PostgreSQL Candidate,
+ActionEligibility, and canonical TradePlan adapters to FastAPI and the worker.
+`CandidateLifecycleService` remains the only Candidate authority. Canonical paper
+entry claims the exact approved immutable `TradePlanRevision` via
+`POST /execution/paper-plan`. Compatibility `canonical_plan_root` rows are not
+ProposalService trading authority. Watcher, Telegram, and live trading stay disabled.
+See [phase8_runtime_execution.md](phase8_runtime_execution.md).
 
 ## MVP workflow (Slice 20)
 

@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -191,6 +191,47 @@ class PostgresCandidateRepository:
     def get_by_id(self, organization_id: UUID, candidate_id: UUID) -> Candidate | None:
         def work(session: Session) -> Candidate | None:
             row = _load_candidate(session, organization_id, candidate_id)
+            return None if row is None else _candidate_from_row(row)
+
+        return self._run(work)
+
+    def list_for_organization(
+        self,
+        organization_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[tuple[Candidate, ...], int]:
+        """Tenant-scoped Candidate reads. Not a second Candidate authority."""
+
+        bounded = max(1, min(limit, 200))
+        skipped = max(0, offset)
+
+        def work(session: Session) -> tuple[tuple[Candidate, ...], int]:
+            total = session.scalar(
+                select(func.count())
+                .select_from(CanonicalCandidateRow)
+                .where(CanonicalCandidateRow.organization_id == organization_id)
+            )
+            rows = session.scalars(
+                select(CanonicalCandidateRow)
+                .where(CanonicalCandidateRow.organization_id == organization_id)
+                .order_by(CanonicalCandidateRow.created_at.desc())
+                .offset(skipped)
+                .limit(bounded)
+            ).all()
+            return tuple(_candidate_from_row(row) for row in rows), int(total or 0)
+
+        return self._run(work)
+
+    def get_by_assessment_id(self, organization_id: UUID, assessment_id: UUID) -> Candidate | None:
+        def work(session: Session) -> Candidate | None:
+            row = session.scalars(
+                select(CanonicalCandidateRow).where(
+                    CanonicalCandidateRow.organization_id == organization_id,
+                    CanonicalCandidateRow.assessment_id == assessment_id,
+                )
+            ).first()
             return None if row is None else _candidate_from_row(row)
 
         return self._run(work)
