@@ -162,7 +162,8 @@ No BloFin/live exchange credentials are used.
 | frontend `npm run test` | **1153 passed** (191 files) |
 | frontend `npm run test:e2e` (chromium) | **24 passed / 13 skipped**, exit 0. Skips are remote-staging specs (no `BASE_URL`). |
 | `docker build` in this VM | **blocked**: `docker: command not found` |
-| GitHub CI on `4479e9d` (PR #103) | `deployment-safety` SUCCESS; `frontend` SUCCESS; `docker-build` SUCCESS; `backend` / `evaluation` / `e2e-smoke` recorded on the Actions run (re-run after this docs commit). |
+| GitHub CI on `4479e9d` (run `35463066925`) | **success**: backend, frontend, deployment-safety, docker-build, evaluation, e2e-smoke |
+| GitHub CI on `a1f3cd5` (run `35463891457`, PR #103 HEAD) | **success**: backend, frontend, deployment-safety, docker-build, evaluation, e2e-smoke |
 
 No Render/Vercel/Postgres/Redis/Qdrant credentials were present. Values were never printed.
 
