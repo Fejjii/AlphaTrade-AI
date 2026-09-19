@@ -116,9 +116,9 @@ class CanonicalPaperExecutionService:
             payload["size"] = str(fill.filled_quantity)
             # Phase 1 paper claims do not create legacy Order rows. Command
             # identity is execution_lifecycle_id; linked_order_id stays unset.
-            payload["lineage"] = _lineage_payload(
-                envelope, command_id, self._runtime
-            ).model_dump(mode="json", exclude_none=True)
+            payload["lineage"] = _lineage_payload(envelope, command_id, self._runtime).model_dump(
+                mode="json", exclude_none=True
+            )
             event = JournalLifecycleEventInput(
                 event_type=JournalLifecycleEventType.FILL,
                 execution_lifecycle_id=command_id,

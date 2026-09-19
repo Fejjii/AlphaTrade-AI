@@ -402,7 +402,7 @@ class LearningAttributionService:
             facts_hash=facts.content_hash,
         )
 
-    def _event_with_lineage(self, command: AttributionCommand) -> JournalLifecycleEventInput
+    def _event_with_lineage(self, command: AttributionCommand) -> JournalLifecycleEventInput:
         event = command.event
         lifecycle_id = event.execution_lifecycle_id or command.lineage.execution_lifecycle_id
         payload = dict(event.payload)

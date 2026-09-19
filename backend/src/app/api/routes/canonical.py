@@ -24,9 +24,7 @@ from app.services.canonical_reads import CanonicalReadService
 router = APIRouter(prefix="/canonical", tags=["canonical"])
 
 _CANONICAL_READ_LIMIT = Depends(
-    tenant_rate_limit_dependency(
-        "canonical:read", limit=120, window_seconds=3600, user_limit=120
-    )
+    tenant_rate_limit_dependency("canonical:read", limit=120, window_seconds=3600, user_limit=120)
 )
 
 

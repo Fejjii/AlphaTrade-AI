@@ -164,7 +164,9 @@ describe("Decision hub", () => {
     expect(screen.getByTestId("decision-case-card")).toHaveTextContent("BTCUSDT long");
     expect(screen.queryByRole("button", { name: /place real order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /execute live/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("binding-canonical-candidates")).toHaveTextContent("missing");
+    expect(screen.queryByTestId("binding-canonical-candidates")).not.toBeInTheDocument();
+    expect(screen.getByTestId("binding-paper-validation-candidates")).toHaveTextContent("partial");
+    expect(screen.getByTestId("binding-legacy-paper-execution")).toHaveTextContent("partial");
   });
 
   it("shows loading state", () => {

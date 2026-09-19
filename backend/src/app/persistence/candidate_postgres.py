@@ -224,9 +224,7 @@ class PostgresCandidateRepository:
 
         return self._run(work)
 
-    def get_by_assessment_id(
-        self, organization_id: UUID, assessment_id: UUID
-    ) -> Candidate | None:
+    def get_by_assessment_id(self, organization_id: UUID, assessment_id: UUID) -> Candidate | None:
         def work(session: Session) -> Candidate | None:
             row = session.scalars(
                 select(CanonicalCandidateRow).where(

@@ -13,19 +13,34 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import NotFoundError
 from app.db.canonical_trade_plans import PLAN_ROOT_CANONICAL
 from app.db.learning_attribution import LearningAttributionRecordRow
-from app.db.models import JournalLifecycleEvent, JournalTrade, Membership, TradeProposal
+from app.db.models import (
+    AccountRiskAccountingState,
+    ApprovalAuthorization,
+    JournalLifecycleEvent,
+    JournalTrade,
+    Membership,
+    TradeProposal,
+)
 from app.db.session import get_session
 from app.learning_attribution.query import LearningQueryService
 from app.main import create_app
 from app.persistence.attribution_postgres import PostgresAttributionStore
 from app.schemas.common import JournalLifecycleEventType, MembershipRole
 from app.schemas.execution_protocol import ExecutionCommandOutcome
+from app.schemas.risk import KillSwitchMutationRequest
+from app.schemas.trade_plan import AuthorizationState
 from app.security.tokens import create_access_token
-from app.services.canonical_reads import CanonicalReadService
 from app.services.audit_service import AuditService
+from app.services.canonical_reads import CanonicalReadService
+from app.services.execution_claim import conservative_reservation
 from app.services.proposal_service import ProposalService
+from app.services.risk.kill_switch import KillSwitchService
+from app.signal_fusion.enums import CandidateReasonCode, CandidateState
 from tests.support.phase6_fusion import ORG_ID, USER_ID
 from tests.support.phase8_runtime import (
+    AFTER_AUTH_EXPIRY,
+    AFTER_PLAN_EXPIRY,
+    AUTH_EXPIRES_AT,
     EXECUTE_AT,
     build_runtime,
     canonical_execute_request,
@@ -131,7 +146,6 @@ def test_duplicate_request_and_restart_idempotency_keep_one_attribution() -> Non
         assert second.replayed is True
         assert second.command_id == first.command_id
         assert session.scalar(select(LearningAttributionRecordRow).limit(1)) is not None
-        restarted = build_runtime(factory)
         third, session2, _service2, _runtime2 = _execute(
             factory, envelope, authorization, key="workflow-idem"
         )
@@ -170,6 +184,109 @@ def test_cross_tenant_canonical_reads_are_invisible() -> None:
 
 
 @requires_postgres
+def test_kill_switch_and_risk_block_do_not_attribute() -> None:
+    factory = _factory()
+    _world, envelope, authorization = prepared_authorized_canonical(factory)
+    session = factory()
+    try:
+        KillSwitchService(session, AuditService(session), phase8_settings()).activate(
+            organization_id=envelope.plan.organization_id,
+            actor_user_id=envelope.plan.user_id,
+            payload=KillSwitchMutationRequest(confirm=True, reason="halt workflow"),
+        )
+        session.commit()
+    finally:
+        session.close()
+    killed, session, _service, _runtime = _execute(
+        factory, envelope, authorization, key="workflow-killed"
+    )
+    try:
+        assert killed.outcome is ExecutionCommandOutcome.BLOCKED
+        assert killed.blocked_reason_code == "safety_epoch_blocking"
+        auth = session.get(ApprovalAuthorization, authorization.authorization_id)
+        assert auth is not None
+        assert auth.state is AuthorizationState.AVAILABLE
+        assert session.scalars(select(LearningAttributionRecordRow)).first() is None
+    finally:
+        session.close()
+
+    factory = _factory()
+    _world, envelope, authorization = prepared_authorized_canonical(factory)
+    intent = conservative_reservation(envelope.plan)
+    session = factory()
+    try:
+        row = session.scalar(
+            select(AccountRiskAccountingState).where(
+                AccountRiskAccountingState.account_id == envelope.plan.account_id
+            )
+        )
+        assert row is not None
+        row.max_notional = intent.pending_notional / Decimal("2")
+        row.max_symbol_notional = intent.pending_notional
+        session.commit()
+    finally:
+        session.close()
+    blocked, session, _service, _runtime = _execute(
+        factory, envelope, authorization, key="workflow-risk"
+    )
+    try:
+        assert blocked.outcome is ExecutionCommandOutcome.BLOCKED
+        assert blocked.blocked_reason_code == "insufficient_total_exposure"
+        assert session.scalars(select(LearningAttributionRecordRow)).first() is None
+    finally:
+        session.close()
+
+
+@requires_postgres
+def test_expired_and_rejected_candidate_do_not_attribute() -> None:
+    factory = _factory()
+    world, envelope, authorization = prepared_authorized_canonical(factory)
+    world.lifecycle.transition(
+        organization_id=ORG_ID,
+        candidate_id=world.candidate.candidate_id,
+        new_state=CandidateState.REJECTED,
+        reason_codes=(CandidateReasonCode.REJECTED,),
+        idempotency_key="workflow-reject",
+        correlation_id=world.candidate.correlation_id,
+    )
+    rejected, session, _service, _runtime = _execute(
+        factory, envelope, authorization, key="workflow-rejected"
+    )
+    try:
+        assert rejected.outcome is ExecutionCommandOutcome.BLOCKED
+        assert rejected.blocked_reason_code == "candidate_rejected"
+        assert session.scalars(select(LearningAttributionRecordRow)).first() is None
+    finally:
+        session.close()
+
+    factory = _factory()
+    _world, envelope, authorization = prepared_authorized_canonical(
+        factory, authorization_expires_at=AUTH_EXPIRES_AT
+    )
+    runtime = build_runtime(factory)
+    session = factory()
+    try:
+        service = canonical_execution_service(session, runtime)
+        expired = service.execute_paper_plan(
+            canonical_execute_request(envelope, authorization, key="workflow-expired"),
+            clock=lambda: AFTER_AUTH_EXPIRY,
+        )
+        session.commit()
+        assert expired.outcome is ExecutionCommandOutcome.BLOCKED
+        assert expired.blocked_reason_code == "authorization_expired"
+        assert session.scalars(select(LearningAttributionRecordRow)).first() is None
+        late_plan = service.execute_paper_plan(
+            canonical_execute_request(envelope, authorization, key="workflow-plan-expired"),
+            clock=lambda: AFTER_PLAN_EXPIRY,
+        )
+        session.commit()
+        assert late_plan.outcome is ExecutionCommandOutcome.BLOCKED
+        assert session.scalars(select(LearningAttributionRecordRow)).first() is None
+    finally:
+        session.close()
+
+
+@requires_postgres
 def test_approval_mismatch_and_modified_plan_fail_closed() -> None:
     factory = _factory()
     _world, envelope, authorization = prepared_authorized_canonical(factory)
@@ -179,9 +296,9 @@ def test_approval_mismatch_and_modified_plan_fail_closed() -> None:
         service = canonical_execution_service(session, runtime)
         mismatched = canonical_execute_request(envelope, authorization, key="workflow-mismatch")
         mismatched = mismatched.model_copy(update={"authorization_id": uuid4()})
-        result = service.execute_paper_plan(mismatched, clock=lambda: EXECUTE_AT)
-        session.commit()
-        assert result.outcome is ExecutionCommandOutcome.BLOCKED
+        with pytest.raises(NotFoundError):
+            service.execute_paper_plan(mismatched, clock=lambda: EXECUTE_AT)
+        session.rollback()
         assert session.scalars(select(LearningAttributionRecordRow)).first() is None
     finally:
         session.close()
@@ -211,9 +328,7 @@ def test_http_paper_plan_binding_and_legacy_isolation() -> None:
     _world, envelope, authorization = prepared_authorized_canonical(factory)
     session = factory()
     try:
-        session.add(
-            Membership(user_id=USER_ID, organization_id=ORG_ID, role=MembershipRole.OWNER)
-        )
+        session.add(Membership(user_id=USER_ID, organization_id=ORG_ID, role=MembershipRole.OWNER))
         session.commit()
     finally:
         session.close()
@@ -236,7 +351,14 @@ def test_http_paper_plan_binding_and_legacy_isolation() -> None:
         settings=settings,
     )
     with TestClient(app) as client:
+        # Lifespan composes a process-wide factory; bind the same test factory
+        # so HTTP reads see committed Candidate / learning rows.
+        app.state.canonical_runtime = build_runtime(factory)
         client.headers.update({"Authorization": f"Bearer {token}"})
+        first, exec_session, _service, _runtime = _execute(
+            factory, envelope, authorization, key="http-plan-1"
+        )
+        exec_session.close()
         forbidden = client.post(
             "/execution/paper-plan",
             json={
@@ -260,6 +382,8 @@ def test_http_paper_plan_binding_and_legacy_isolation() -> None:
         assert allow.status_code == 200
         body = allow.json()
         assert body["outcome"] == "ALLOW"
+        assert body["replayed"] is True
+        assert body["command_id"] == str(first.command_id)
         receipt_id = body["receipt"]["receipt_id"]
         candidates = client.get("/canonical/candidates")
         assert candidates.status_code == 200
