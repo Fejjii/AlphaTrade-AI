@@ -1,5 +1,6 @@
 import type {
   ApprovalRequest,
+  CanonicalExecutionReceiptRead,
   CanonicalTradePlanRevision,
   PaperOrder,
   PaperValidationCandidateItem,
@@ -104,6 +105,7 @@ export function executionFromOrder(
 ): PaperExecutionView {
   return {
     orderId: order?.id ?? null,
+    receiptId: null,
     proposalId: order?.proposal_id ?? proposal?.id ?? null,
     approvalId: order?.approval_id ?? approval?.id ?? null,
     status: order ? mapPaperExecutionStatus(order.status) : blockReason ? "blocked" : "not_started",
@@ -114,6 +116,29 @@ export function executionFromOrder(
     liveExecutionAvailable: false,
     createdAt: order?.created_at ?? null,
     blockReason,
+    authority: "compatibility_projection",
+  };
+}
+
+export function executionFromReceipt(read: CanonicalExecutionReceiptRead): PaperExecutionView {
+  const projectionState = read.projection?.state;
+  const outcome = read.receipt.blocked_reason_code
+    ? "blocked"
+    : projectionState ?? read.receipt.outcome;
+  return {
+    orderId: null,
+    receiptId: read.receipt.receipt_id,
+    proposalId: null,
+    approvalId: read.receipt.authorization_id ?? null,
+    status: mapPaperExecutionStatus(outcome),
+    symbol: null,
+    side: null,
+    size: null,
+    mode: "paper",
+    liveExecutionAvailable: false,
+    createdAt: read.receipt.created_at,
+    blockReason: read.receipt.blocked_reason_code ?? null,
+    authority: "canonical",
   };
 }
 

@@ -119,12 +119,20 @@ class ProposalService:
         )
         return self.create(data)
 
-    def get(self, proposal_id: uuid.UUID) -> TradeProposal:
-        row = self._repo.get(proposal_id)
-        if row is None:
-            raise NotFoundError("Trade proposal not found")
-        self._reject_canonical_plan_root(row)
-        return proposal_to_schema(row)
+    def get(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> TradeProposal:
+        return proposal_to_schema(
+            self._require_analysis_proposal(
+                proposal_id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        )
 
     def list_proposals(
         self,
@@ -142,11 +150,19 @@ class ProposalService:
         )
         return [proposal_to_schema(row) for row in rows], total
 
-    def update_status(self, proposal_id: uuid.UUID, update: ProposalStatusUpdate) -> TradeProposal:
-        row = self._repo.get(proposal_id)
-        if row is None:
-            raise NotFoundError("Trade proposal not found")
-        self._reject_canonical_plan_root(row)
+    def update_status(
+        self,
+        proposal_id: uuid.UUID,
+        update: ProposalStatusUpdate,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> TradeProposal:
+        row = self._require_analysis_proposal(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
         row.status = update.status
         row.updated_at = datetime.now(UTC)
         self._repo.add(row)
@@ -163,13 +179,17 @@ class ProposalService:
         self,
         proposal_id: uuid.UUID,
         update: LossAcceptanceUpdate,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
     ) -> TradeProposal:
         from app.schemas.position_sizing import LossAcceptanceRequest
 
-        row = self._repo.get(proposal_id)
-        if row is None:
-            raise NotFoundError("Trade proposal not found")
-        self._reject_canonical_plan_root(row)
+        row = self._require_analysis_proposal(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
         planned = row.planned_loss_amount or update.planned_loss_amount
         result = LossAcceptanceService().evaluate(
             planned_loss_amount=planned,
@@ -212,14 +232,11 @@ class ProposalService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> TradePlanRevision:
-        proposal = self._repo.get_scoped(
+        self._require_analysis_proposal(
             proposal_id,
             organization_id=organization_id,
             user_id=user_id,
         )
-        if proposal is None:
-            raise NotFoundError("Trade proposal not found")
-        self._reject_canonical_plan_root(proposal)
         row = self._revisions.get_scoped(
             revision_id,
             plan_id=proposal_id,
@@ -237,14 +254,11 @@ class ProposalService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> list[TradePlanRevision]:
-        proposal = self._repo.get_scoped(
+        self._require_analysis_proposal(
             proposal_id,
             organization_id=organization_id,
             user_id=user_id,
         )
-        if proposal is None:
-            raise NotFoundError("Trade proposal not found")
-        self._reject_canonical_plan_root(proposal)
         return [
             trade_plan_revision_to_schema(row)
             for row in self._revisions.list_for_plan_scoped(
@@ -253,6 +267,28 @@ class ProposalService:
                 user_id=user_id,
             )
         ]
+
+    def _require_analysis_proposal(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> TradeProposalModel:
+        """Load a proposal for ProposalService trading authority.
+
+        Tenant scope is applied before canonical-root rejection so a
+        ``canonical_plan_root`` UUID is not an existence oracle across tenants.
+        """
+        row = self._repo.get_scoped(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if row is None:
+            raise NotFoundError("Trade proposal not found")
+        self._reject_canonical_plan_root(row)
+        return row
 
     def _reject_canonical_plan_root(self, row: TradeProposalModel) -> None:
         if row.plan_root_kind == PLAN_ROOT_CANONICAL:

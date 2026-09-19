@@ -86,6 +86,10 @@ vi.mock("@/lib/api", () => ({
       approve: vi.fn(),
       reject: vi.fn(),
     },
+    execution: {
+      executePaperPlan: vi.fn(),
+      paperOrder: vi.fn(),
+    },
   },
 }));
 
@@ -104,6 +108,8 @@ describe("Paper approval page", () => {
       target: { value: "approve paper" },
     });
     expect(approveButton).not.toBeDisabled();
+    expect(screen.getByTestId("canonical-paper-plan-button")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /create paper order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /execute live/i })).not.toBeInTheDocument();
   });
 });

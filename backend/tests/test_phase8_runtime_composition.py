@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
-from app.core.errors import TradingPolicyError
+from app.core.errors import NotFoundError, TradingPolicyError
 from app.db.canonical_trade_plans import PLAN_ROOT_ANALYSIS, PLAN_ROOT_CANONICAL
 from app.db.models import TradeProposal as TradeProposalModel
 from app.main import create_app
@@ -106,6 +106,41 @@ def test_proposal_service_filters_and_rejects_canonical_plan_root(session: Sessi
     items, total = service.list_proposals(organization_id=ids["organization"].id)
     assert total == 0
     assert items == []
+    with pytest.raises(TradingPolicyError) as scoped_exc:
+        service.get(
+            ids["proposal_id"],
+            organization_id=ids["organization"].id,
+            user_id=ids["user"].id,
+        )
+    assert scoped_exc.value.details["reason"] == "canonical_plan_root_not_proposal_authority"
+
+
+def test_proposal_service_canonical_plan_root_is_not_an_existence_oracle(session: Session) -> None:
+    ids = seed_support(session)
+    row = session.get(TradeProposalModel, ids["proposal_id"])
+    assert row is not None
+    row.plan_root_kind = PLAN_ROOT_CANONICAL
+    session.flush()
+    service = ProposalService(session, AuditService(session))
+    with pytest.raises(NotFoundError):
+        service.get(
+            ids["proposal_id"],
+            organization_id=ids["other_organization"].id,
+            user_id=ids["other_user"].id,
+        )
+    with pytest.raises(NotFoundError):
+        service.list_revisions(
+            ids["proposal_id"],
+            organization_id=ids["other_organization"].id,
+            user_id=ids["other_user"].id,
+        )
+    with pytest.raises(NotFoundError):
+        service.get_revision(
+            ids["proposal_id"],
+            uuid4(),
+            organization_id=ids["other_organization"].id,
+            user_id=ids["other_user"].id,
+        )
 
 
 def test_paper_validation_execute_still_works_with_bound_runtime(session: Session) -> None:

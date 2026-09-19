@@ -66,6 +66,7 @@ import type {
   CanonicalSetupAssessmentRead,
   CanonicalEligibilityRead,
   CanonicalExecutionReceiptRead,
+  CanonicalLearningRecordRead,
   CanonicalLearningStatsRead,
   CanonicalTradePlanRevision,
   ProposalWorkflowView,
@@ -446,6 +447,10 @@ export const api = {
       }),
     getExecutionReceipt: (receiptId: string) =>
       apiFetch<CanonicalExecutionReceiptRead>(`/canonical/executions/${receiptId}`, { auth: true }),
+    getLearningRecord: (candidateId: string) =>
+      apiFetch<CanonicalLearningRecordRead>(`/canonical/learning/records/${candidateId}`, {
+        auth: true,
+      }),
     strategyStats: (params?: { learning_venue_mode?: string }) =>
       apiFetch<CanonicalLearningStatsRead>("/canonical/learning/strategy-stats", {
         query: params,

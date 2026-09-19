@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import { CanonicalPaperPlanButton } from "@/components/canonical-decision/CanonicalPaperPlanButton";
-import { PaperOrderButton } from "@/components/ProposalDetailPanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +25,9 @@ export function PaperApprovalPanel({
   onRefresh?: () => void;
 }) {
   const [confirmText, setConfirmText] = useState("");
-  const approvalId = "approvalId" in approval ? approval.approvalId : approval.id;
+  const isApprovalRequest = "id" in approval;
+  const approvalRequest = isApprovalRequest ? approval : null;
+  const approvalId = isApprovalRequest ? approval.id : approval.approvalId;
   const status = approval.status;
   const pending = status === "pending";
   const confirmOk = confirmText.trim().toLowerCase() === "approve paper";
@@ -83,27 +84,14 @@ export function PaperApprovalPanel({
             <p className="text-caption uppercase tracking-wide text-text-muted">
               Separate paper execution
             </p>
-            {"id" in approval && approval.authorization && (approval.plan_revision_id || approval.authorization.revision_id) ? (
-              <CanonicalPaperPlanButton approval={approval} onSuccess={() => onRefresh?.()} />
+            {approvalRequest ? (
+              <CanonicalPaperPlanButton approval={approvalRequest} onSuccess={() => onRefresh?.()} />
             ) : (
-              <PaperOrderButton
-                proposal={proposal}
-                approval={
-                  "id" in approval
-                    ? approval
-                    : {
-                        id: approvalId,
-                        proposal_id: proposal.id,
-                        organization_id: proposal.organization_id,
-                        user_id: proposal.user_id,
-                        status: status as ApprovalRequest["status"],
-                        risk_level: proposal.risk_level,
-                        confidence: proposal.confidence,
-                        created_at: "createdAt" in approval ? approval.createdAt : proposal.created_at,
-                      }
-                }
-                onSuccess={onRefresh}
-              />
+              <p className="text-caption text-text-muted" data-testid="decision-paper-plan-only">
+                Canonical decision execution uses POST /execution/paper-plan only. This approval
+                has no bound plan revision authorization yet, so paper execution stays disabled
+                here.
+              </p>
             )}
           </div>
         ) : null}

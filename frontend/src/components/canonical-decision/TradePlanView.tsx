@@ -16,7 +16,7 @@ export function TradePlanView({ plan }: { plan: TradePlanViewModel }) {
             {plan.symbol} · {plan.direction.toUpperCase()}
           </CardTitle>
           <StatusBadge
-            label={plan.authority === "canonical" ? "TradePlan revision" : "Legacy proposal"}
+            label={plan.authority === "canonical" ? "TradePlan revision" : "Compatibility proposal"}
             tone={plan.authority === "canonical" ? "success" : "warn"}
           />
         </div>

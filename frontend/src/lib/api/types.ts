@@ -1595,21 +1595,26 @@ export interface ExecutePaperPlanResult {
   blocked_reason_code?: string | null;
 }
 
+export interface CanonicalCandidate {
+  candidate_id: string;
+  organization_id: string;
+  state: string;
+  assessment_id: string;
+  evidence_window_hash: string;
+  strategy_version_id: string;
+  setup_definition_id?: string;
+  direction: string;
+  timeframe: string;
+  evidence_instrument?: string;
+  valid_until: string;
+  created_at?: string;
+  content_hash: string;
+  confidence?: number | null;
+}
+
 export interface CanonicalCandidateRead {
   authority: "canonical";
-  candidate: {
-    candidate_id: string;
-    organization_id: string;
-    state: string;
-    assessment_id: string;
-    evidence_window_hash: string;
-    strategy_version_id: string;
-    setup_definition_id: string;
-    direction: string;
-    timeframe: string;
-    valid_until: string;
-    content_hash: string;
-  };
+  candidate: CanonicalCandidate;
 }
 
 export interface PaginatedCanonicalCandidates {
@@ -1638,7 +1643,10 @@ export interface CanonicalEligibilityRead {
       candidate_id: string;
       assessment_id: string;
       state: string;
+      reason_codes?: string[];
       paper_actionable?: boolean;
+      checked_at?: string | null;
+      valid_until?: string | null;
     };
     paper_actionable: boolean;
     live_executable: false;
@@ -1651,6 +1659,26 @@ export interface CanonicalExecutionReceiptRead {
   live_executable: false;
   receipt: ExecutePaperPlanResult["receipt"];
   projection?: ExecutePaperPlanResult["projection"];
+}
+
+export interface CanonicalLearningRecordRead {
+  authority: "canonical";
+  record: {
+    attribution_id: string;
+    candidate_id: string;
+    journal_trade_id?: string | null;
+    narrative_explanation?: string | null;
+    facts?: {
+      outcome?: {
+        result?: string | null;
+        net_pnl?: string | null;
+        status?: string | null;
+      };
+      human_vs_system?: {
+        executed_trade_outcome?: boolean;
+      };
+    };
+  };
 }
 
 export interface CanonicalLearningStatsRead {

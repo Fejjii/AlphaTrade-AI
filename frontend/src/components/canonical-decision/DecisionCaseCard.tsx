@@ -18,7 +18,14 @@ export function DecisionCaseCard({ item }: { item: DecisionCase }) {
       <CardContent className="space-y-3 text-sm">
         <p className="text-text-secondary">{item.summary}</p>
         <div className="flex flex-wrap gap-2">
-          <StatusBadge label={item.kind.replaceAll("_", " ")} tone="muted" />
+          <StatusBadge
+            label={
+              item.kind === "legacy_proposal"
+                ? "compatibility proposal"
+                : item.kind.replaceAll("_", " ")
+            }
+            tone={item.kind === "canonical_candidate" ? "success" : "muted"}
+          />
           {item.candidate ? <ConfidenceBadge value={item.candidate.confidence} /> : null}
           {item.candidate ? (
             <StatusBadge

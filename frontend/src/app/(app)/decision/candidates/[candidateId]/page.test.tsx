@@ -52,7 +52,7 @@ vi.mock("@/components/KillSwitchButton", () => ({
 
 vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => ({
-    data: candidate,
+    data: { kind: "compatibility" as const, candidate },
     loading: false,
     error: null,
     reload: vi.fn(),
@@ -72,6 +72,10 @@ describe("Candidate workspace page", () => {
     );
     expect(screen.getByTestId("action-eligibility-card")).toBeInTheDocument();
     expect(screen.getAllByText(/81% confidence/i).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("candidate-authority-copy")).toHaveTextContent(
+      /not canonical candidate authority/i,
+    );
+    expect(screen.queryByText(/canonical candidate http is unbound/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
   });
 });

@@ -1235,12 +1235,29 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   stay one unit of work under failure. Restart/duplicate converge. Canonical reads stay
   tenant-safe. Paper-only runtime and deployment safety keep accidental real trading
   impossible.
-- Branch: `cursor/final_backend_hardening`
-- Validation: adversarial hardening tests; local backend pytest 2261 passed;
-  ruff check/format; mypy `--strict` on affected modules; Alembic single head
-  `d4f7a2c8e901`; deployment-safety; evaluation 16/16 + 5/5 + 7/7; frontend
-  lint/typecheck/1153 tests/build; GitHub CI run 35462467663 success (backend,
-  frontend, deployment-safety, evaluation, docker-build, e2e-smoke). Draft PR
+- Branch: `cursor/final_backend_hardening` (source); integrated on
+  `cursor/final_release_integration-c461`
+- Validation: adversarial hardening tests; source GitHub CI run 35464006608
+  success at `60d5ef9` (backend, frontend, deployment-safety, evaluation,
+  docker-build, e2e-smoke). Draft source PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/102 — do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-039
+
+### AT-060 — Finish canonical decision UX (bind GET APIs, paper-plan only)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-057, AT-058 · Risk: Medium
+  (UX honesty / tenant isolation)
+- Safety classification: Frontend + ProposalService firewall; paper-only
+- Goal: Bind `/decision` to canonical GET APIs (candidates, setup assessments,
+  eligibility, execution receipts, learning records, strategy stats). Remove
+  stale unbound copy. Canonical decision execution uses
+  `POST /execution/paper-plan` only. PVC/legacy proposals stay compatibility
+  views. ProposalService checks tenant scope before `canonical_plan_root`
+  rejection (no existence oracle).
+- Branch: `cursor/final_canonical_ux-1b0c` (source); integrated on
+  `cursor/final_release_integration-c461`
+- Validation: frontend lint/typecheck/tests/build/e2e; backend affected tests
+  and full CI; draft PR only; do not merge. Source PR #101 claimed AT-059;
+  remapped to AT-060 on the release-candidate branch.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-037

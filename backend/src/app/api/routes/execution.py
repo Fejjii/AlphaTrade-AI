@@ -63,7 +63,10 @@ async def place_paper_order(
     usage_service: UsageServiceDep,
     session: SessionDep,
 ) -> PaperOrder:
-    proposal = proposal_service.get(body.proposal_id)
+    proposal = proposal_service.get(
+        body.proposal_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(proposal.organization_id, tenant)
     placement = execution_service.place_paper_order(body)
 

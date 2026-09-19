@@ -5,12 +5,13 @@ import { CanonicalPaperPlanButton } from "./CanonicalPaperPlanButton";
 import type { ApprovalRequest } from "@/lib/api/types";
 
 const executePaperPlan = vi.fn();
+const paperOrder = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   api: {
     execution: {
       executePaperPlan: (...args: unknown[]) => executePaperPlan(...args),
-      paperOrder: vi.fn(),
+      paperOrder: (...args: unknown[]) => paperOrder(...args),
     },
   },
 }));
@@ -43,6 +44,7 @@ describe("CanonicalPaperPlanButton", () => {
   afterEach(() => {
     cleanup();
     executePaperPlan.mockReset();
+    paperOrder.mockReset();
   });
 
   it("executes through POST /execution/paper-plan and never calls legacy paper", async () => {
@@ -72,5 +74,6 @@ describe("CanonicalPaperPlanButton", () => {
       );
     });
     expect(screen.getByTestId("paper-plan-outcome")).toHaveTextContent("ALLOW");
+    expect(paperOrder).not.toHaveBeenCalled();
   });
 });

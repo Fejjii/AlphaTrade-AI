@@ -43,7 +43,7 @@ export function StrategyPerformance({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Strategy quality</CardTitle>
+          <CardTitle>Strategy quality (compatibility)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {quality ? (
@@ -71,7 +71,7 @@ export function StrategyPerformance({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Learning analytics</CardTitle>
+          <CardTitle>Learning analytics (compatibility)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {learning ? (
@@ -90,7 +90,7 @@ export function StrategyPerformance({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Setup performance</CardTitle>
+          <CardTitle>Setup performance (compatibility)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {setups?.setups.length ? (

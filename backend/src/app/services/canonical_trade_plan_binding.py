@@ -96,12 +96,14 @@ REQUIRED_CANONICAL_TRADE_PLAN_DATABASE_BINDINGS: tuple[
         artifact="approval/execution claim rows",
         current_state=(
             "ApprovalAuthorization already binds revision_id + plan_content_hash and cannot "
-            "modify executable semantics. Execution remains a later slice."
+            "modify executable semantics. Canonical paper execution uses POST "
+            "/execution/paper-plan via CanonicalPaperExecutionService."
         ),
         required_change=(
             "Existing approval issuance can consume persisted canonical revisions. Do not "
             "persist canonical plans by copying them onto PaperValidationCandidate ids. "
-            "Do not add execution in this wave."
+            "Do not execute canonical TradePlans through ProposalService or POST "
+            "/execution/paper."
         ),
         owner="approval/execution integration",
     ),
@@ -109,7 +111,7 @@ REQUIRED_CANONICAL_TRADE_PLAN_DATABASE_BINDINGS: tuple[
 
 
 class UnboundSqlAlchemyCanonicalTradePlanAdapter:
-    """Fail-closed PostgreSQL adapter until Agent 1 completes schema work."""
+    """Fail-closed guard. Canonical writes go through PostgresCanonicalTradePlanStore."""
 
     def persist(self, revision: CanonicalTradePlanRevision) -> NoReturn:
         del revision

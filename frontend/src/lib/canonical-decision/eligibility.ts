@@ -1,5 +1,11 @@
 import { canExecutePaperOrder } from "@/lib/workflow";
-import type { ApprovalRequest, KillSwitchStatus, RiskCheckResult, TradeProposal } from "@/lib/api/types";
+import type {
+  ApprovalRequest,
+  CanonicalEligibilityRead,
+  KillSwitchStatus,
+  RiskCheckResult,
+  TradeProposal,
+} from "@/lib/api/types";
 import type {
   ActionEligibilityView,
   EligibilityExplanation,
@@ -205,9 +211,63 @@ export function projectActionEligibility(facts: EligibilityFacts): ActionEligibi
   };
 }
 
+export function projectCanonicalEligibility(
+  evaluation: CanonicalEligibilityRead,
+  facts: Pick<
+    EligibilityFacts,
+    "killSwitchActive" | "killSwitch" | "executionMode" | "realTradingEnabled"
+  >,
+): ActionEligibilityView {
+  const overlay = projectActionEligibility({
+    killSwitchActive: facts.killSwitchActive,
+    killSwitch: facts.killSwitch,
+    executionMode: facts.executionMode,
+    realTradingEnabled: facts.realTradingEnabled,
+  });
+  const rawCodes = evaluation.evaluation.eligibility.reason_codes ?? [];
+  const known = new Set(Object.keys(REASON_COPY));
+  const canonicalCodes = rawCodes.map((code) =>
+    known.has(code) ? (code as EligibilityReasonCode) : "blocked_risk_engine",
+  );
+  const overlayBlocking = overlay.reasonCodes.filter((code) => code !== "eligible");
+  const unique = [...new Set([...overlayBlocking, ...canonicalCodes])];
+  const eligibilityState = evaluation.evaluation.eligibility.state;
+  const expired =
+    eligibilityState === "expired" || unique.includes("expired");
+  const blocked = unique.length > 0 || eligibilityState === "blocked" || expired;
+  const state: ActionEligibilityView["state"] = expired ? "expired" : blocked ? "blocked" : "eligible";
+  const displayCodes: EligibilityReasonCode[] =
+    state === "eligible" ? ["eligible"] : unique.length > 0 ? unique : ["blocked_risk_engine"];
+  return {
+    authority: "canonical",
+    state,
+    paperActionable: state === "eligible" && evaluation.evaluation.paper_actionable,
+    liveExecutable: false,
+    reasonCodes: displayCodes,
+    explanations: displayCodes.map((code) =>
+      code === "eligible"
+        ? {
+            code,
+            title: "Paper-actionable (canonical)",
+            detail:
+              "ActionEligibilityService returned ELIGIBLE. Live executable stays false. Market quality still does not grant permission.",
+            domain: "action" as const,
+            blocking: false,
+          }
+        : explanation(code, true),
+    ),
+    checkedAt: evaluation.evaluation.eligibility.checked_at ?? null,
+    validUntil: evaluation.evaluation.eligibility.valid_until ?? null,
+    killSwitchActive: overlay.killSwitchActive,
+    humanApprovalSatisfied: overlay.humanApprovalSatisfied,
+  };
+}
+
 export function eligibilityHeadline(view: ActionEligibilityView): string {
   if (view.state === "eligible") {
-    return "Eligible for paper action (compatibility check)";
+    return view.authority === "canonical"
+      ? "Eligible for paper action (canonical ActionEligibility)"
+      : "Eligible for paper action (compatibility check)";
   }
   if (view.state === "expired") {
     return "Eligibility expired — re-check required";

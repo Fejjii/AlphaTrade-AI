@@ -23,7 +23,8 @@ export function BindingNotice({ compact = false }: { compact?: boolean }) {
       <CardContent className="space-y-3">
         <p className="text-sm text-text-secondary">
           This UI does not invent Candidate, ActionEligibility, or ExecutionReceipt authority.
-          Missing HTTP routes are typed frontend contracts until a backend slice binds them.
+          Canonical reads use GET /canonical/*. Paper-validation candidates and legacy proposals
+          are compatibility projections only.
         </p>
         <ul className="space-y-2">
           {items.map((item) => (

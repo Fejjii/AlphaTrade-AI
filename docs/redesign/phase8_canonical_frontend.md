@@ -1,15 +1,15 @@
 # Canonical paper decision frontend
 
-**Status:** integrated on `cursor/phase8_final_integration`  
-**Task:** AT-057 (source PR #98 claimed AT-055)  
-**Branch:** `cursor/phase8_final_integration`  
+**Status:** decision pages bound to canonical GET APIs on `cursor/final_canonical_ux-1b0c`  
+**Task:** AT-059 (follow-on to AT-057 / AT-ADR-037)  
+**Branch:** `cursor/final_canonical_ux-1b0c`  
 **ADR:** AT-ADR-037  
 **Safety:** paper-only. No live execution control. Human approval cannot be skipped by AI.
 
 This is the user-facing decision spine. Architecture docs call the later
-frontend consolidation **Phase 12**. The implementing branch name is
-`phase8_canonical_frontend`. Backend Phase 8 remains Telegram and is out of
-scope here.
+frontend consolidation **Phase 12**. Canonical Candidate, eligibility,
+execution receipt, learning record, and strategy-stats HTTP reads are bound.
+Telegram enablement remains out of scope.
 
 ## User flow
 
@@ -20,34 +20,35 @@ Screens:
 
 | Route | Job |
 |---|---|
-| `/decision` | Queue + stepper + safety rail |
+| `/decision` | Canonical + compatibility queue, stepper, safety rail |
 | `/decision/market` | Market quality vs eligibility |
-| `/decision/candidates` | Compatibility candidate list |
-| `/decision/candidates/[id]` | Candidate workspace (state, setup, evidence, confidence) |
-| `/decision/plans/[planId]` | TradePlan (entry/stop/target/sizing/risk/lineage) |
+| `/decision/candidates` | Canonical Candidate list plus PVC compatibility items |
+| `/decision/candidates/[id]` | Canonical Candidate workspace (setup, eligibility, learning) with PVC fallback |
+| `/decision/plans/[planId]` | Compatibility TradePlan (entry/stop/target/sizing/risk/lineage) |
 | `/decision/approvals/[approvalId]` | Explicit paper approval (authorization only) |
-| `/decision/executions/[executionId]` | Paper order lifecycle |
-| `/decision/outcomes/[outcomeId]` | Journal + lesson linkage |
-| `/decision/strategy` | Strategy/pattern performance from existing APIs |
+| `/decision/executions/[executionId]` | Canonical receipt first; compatibility paper-order fallback |
+| `/decision/outcomes/[outcomeId]` | Journal + canonical learning record |
+| `/decision/strategy` | Canonical LearningQueryService stats plus compatibility analytics |
 
 Legacy `/workspace`, `/proposals`, `/approvals`, and `/paper-validation/*`
-remain functional.
+remain compatibility views and are labeled as such.
 
 ## Bound HTTP (frontend may call)
 
 - `GET /health`
 - `GET /risk/kill-switch`
 - `POST /market/analyze`
-- `GET /paper-validation/candidates`
-- `GET /proposals`, `GET /proposals/{id}`, `GET /proposals/{id}/workflow`
-- `GET /proposals/{id}/revisions` (existing; newly wired in the frontend client)
+- `GET /paper-validation/candidates` (compatibility)
+- `GET /proposals`, `GET /proposals/{id}`, `GET /proposals/{id}/workflow` (compatibility)
+- `GET /proposals/{id}/revisions` (compatibility nested revision read)
 - `GET|POST /approvals*`
-- `POST /execution/paper-plan` (canonical TradePlan execution)
+- `POST /execution/paper-plan` (canonical TradePlan execution; decision workflow only)
 - `GET /execution/orders`, `GET /execution/orders/{id}` (compatibility)
 - `GET /canonical/candidates`, `GET /canonical/candidates/{id}`
 - `GET /canonical/setup-assessments/{id}`
 - `GET /canonical/candidates/{id}/eligibility`
 - `GET /canonical/executions/{receipt_id}`
+- `GET /canonical/learning/records/{candidate_id}`
 - `GET /canonical/learning/strategy-stats`
 - `GET /journal/entries/{id}`, journal list/prefill
 - `GET /lessons/candidates`
@@ -55,15 +56,14 @@ remain functional.
 - `GET /learning-analytics/summary`
 - `GET /analytics/setups`
 
-## Canonical HTTP (bound on the Phase 8 RC)
+## Canonical HTTP
 
 Canonical TradePlan execution uses `POST /execution/paper-plan` only.
-Legacy `POST /execution/paper` remains compatibility-only and must not
-execute a canonical TradePlan.
+`PaperApprovalPanel` does not fall back to legacy `POST /execution/paper`.
+That path remains on the compatibility proposals/approvals views.
 
-`PaperValidationCandidate` remains a downstream queue (AT-ADR-026). The
-candidate workspace still shows that compatibility projection beside the
-canonical Candidate read API.
+`PaperValidationCandidate` remains a downstream queue (AT-ADR-026) and is
+labeled as a compatibility projection.
 
 Canonical `TradePlanRevision` already has a nested read API under proposals.
 There is still no standalone TradePlan create HTTP for the UI; this slice
@@ -82,5 +82,6 @@ does not invent one.
 
 - `frontend/src/lib/canonical-decision/canonical-decision.test.ts`
 - page tests under `frontend/src/app/(app)/decision/`
+- `frontend/src/components/canonical-decision/PaperApprovalPanel.test.tsx`
 - `frontend/e2e/decision-workflow.spec.ts`
 - `/decision` added to readiness and iPhone WebKit route lists

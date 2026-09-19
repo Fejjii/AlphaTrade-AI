@@ -1,13 +1,23 @@
 export { DECISION_BACKEND_BINDINGS, boundBindings, missingBindings, partialBindings } from "./bindings";
 export type { BackendBinding } from "./bindings";
-export { composeDecisionCases, deriveProposalStage, marketQualityFromAnalysis, marketQualityFromCandidate } from "./compose";
+export {
+  composeDecisionCases,
+  deriveProposalStage,
+  learningFromCanonicalRecord,
+  marketQualityFromAnalysis,
+  marketQualityFromCandidate,
+  marketQualityFromSetupAssessment,
+  outcomeFromCanonicalRecord,
+  workspaceFromCanonicalCandidate,
+} from "./compose";
 export type { DecisionComposeInput } from "./compose";
-export { eligibilityHeadline, projectActionEligibility } from "./eligibility";
+export { eligibilityHeadline, projectActionEligibility, projectCanonicalEligibility } from "./eligibility";
 export type { EligibilityFacts } from "./eligibility";
 export { buildDecisionSteps, stageIndex, stageLabel } from "./steps";
 export type { DecisionStep, StepStatus } from "./steps";
 export {
   executionFromOrder,
+  executionFromReceipt,
   mapPaperExecutionStatus,
   paperOrderSize,
   tradePlanFromProposal,

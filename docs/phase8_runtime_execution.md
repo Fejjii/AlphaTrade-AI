@@ -60,7 +60,9 @@ authority:
 
 - `create` always writes `analysis_proposal`
 - list endpoints omit canonical roots
-- get/update/revision paths raise `TradingPolicyError`
+- get/update/revision paths apply tenant scope first, then raise
+  `TradingPolicyError` for same-tenant `canonical_plan_root`. Cross-tenant
+  lookups return NotFound and do not reveal that a canonical root exists.
 
 ## Journal
 

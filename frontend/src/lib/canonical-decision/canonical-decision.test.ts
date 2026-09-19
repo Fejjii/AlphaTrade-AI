@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { boundBindings, missingBindings } from "@/lib/canonical-decision/bindings";
 import { composeDecisionCases, deriveProposalStage } from "@/lib/canonical-decision/compose";
-import { projectActionEligibility } from "@/lib/canonical-decision/eligibility";
+import { projectActionEligibility, projectCanonicalEligibility } from "@/lib/canonical-decision/eligibility";
 import { buildDecisionSteps } from "@/lib/canonical-decision/steps";
 import { mapPaperExecutionStatus, tradePlanFromProposal } from "@/lib/canonical-decision/trade-plan";
-import type { ApprovalRequest, PaperValidationCandidateItem, TradeProposal } from "@/lib/api/types";
+import type {
+  ApprovalRequest,
+  CanonicalCandidateRead,
+  CanonicalEligibilityRead,
+  PaperValidationCandidateItem,
+  TradeProposal,
+} from "@/lib/api/types";
 
 const proposal: TradeProposal = {
   id: "prop-1",
@@ -68,6 +74,43 @@ const candidate: PaperValidationCandidateItem = {
   created_at: "2026-09-19T11:00:00.000Z",
 };
 
+const canonicalCandidate: CanonicalCandidateRead = {
+  authority: "canonical",
+  candidate: {
+    candidate_id: "cand-canonical-1",
+    organization_id: "org",
+    state: "active",
+    assessment_id: "assess-1",
+    evidence_window_hash: "ab".repeat(32),
+    strategy_version_id: "strat-ver-1",
+    setup_definition_id: "setup-1",
+    direction: "long",
+    timeframe: "1h",
+    evidence_instrument: "BTCUSDT",
+    valid_until: "2026-09-19T18:00:00.000Z",
+    created_at: "2026-09-19T10:00:00.000Z",
+    content_hash: "cd".repeat(32),
+  },
+};
+
+const canonicalEligibility: CanonicalEligibilityRead = {
+  authority: "canonical",
+  evaluation: {
+    eligibility: {
+      eligibility_id: "elig-1",
+      candidate_id: "cand-canonical-1",
+      assessment_id: "assess-1",
+      state: "blocked",
+      reason_codes: ["blocked_kill_switch"],
+      checked_at: "2026-09-19T12:00:00.000Z",
+      valid_until: "2026-09-19T13:00:00.000Z",
+    },
+    paper_actionable: false,
+    live_executable: false,
+    content_hash: "ef".repeat(32),
+  },
+};
+
 describe("canonical decision steps", () => {
   it("marks later paper stages blocked when the kill switch is on", () => {
     const steps = buildDecisionSteps({
@@ -116,11 +159,24 @@ describe("action eligibility projection", () => {
     expect(view.reasonCodes).toContain("blocked_human_approval_required");
     expect(view.humanApprovalSatisfied).toBe(false);
   });
+
+  it("keeps liveExecutable false on canonical ActionEligibility", () => {
+    const view = projectCanonicalEligibility(canonicalEligibility, {
+      killSwitchActive: true,
+      executionMode: "paper",
+      realTradingEnabled: false,
+    });
+    expect(view.authority).toBe("canonical");
+    expect(view.liveExecutable).toBe(false);
+    expect(view.paperActionable).toBe(false);
+    expect(view.reasonCodes).toContain("blocked_kill_switch");
+  });
 });
 
 describe("composeDecisionCases", () => {
   it("keeps paper-validation candidates separate from proposals", () => {
     const snapshot = composeDecisionCases({
+      canonicalCandidates: [canonicalCandidate],
       candidates: [candidate],
       proposals: [proposal],
       approvals: [approval],
@@ -131,11 +187,13 @@ describe("composeDecisionCases", () => {
       executionMode: "paper",
       realTradingEnabled: false,
     });
-    expect(snapshot.cases).toHaveLength(2);
+    expect(snapshot.cases).toHaveLength(3);
+    expect(snapshot.cases.some((item) => item.kind === "canonical_candidate")).toBe(true);
     expect(snapshot.cases.some((item) => item.kind === "compatibility_candidate")).toBe(true);
     expect(snapshot.cases.some((item) => item.kind === "legacy_proposal")).toBe(true);
     expect(snapshot.missingBindings).not.toContain("canonical-candidates");
     expect(snapshot.missingBindings).not.toContain("action-eligibility");
+    expect(snapshot.missingBindings).not.toContain("canonical-learning-records");
   });
 
   it("advances a proposal to approval then paper execution", () => {
@@ -191,7 +249,10 @@ describe("backend bindings", () => {
     expect(missing).not.toContain("action-eligibility");
     expect(missing).not.toContain("execution-receipts");
     expect(missing).not.toContain("paper-execution");
+    expect(missing).not.toContain("canonical-learning-records");
     const paperPlan = boundBindings().find((item) => item.id === "paper-execution");
     expect(paperPlan?.path).toBe("POST /execution/paper-plan");
+    const legacyPaper = boundBindings().find((item) => item.id === "legacy-paper-execution");
+    expect(legacyPaper).toBeUndefined();
   });
 });
