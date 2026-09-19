@@ -1029,3 +1029,99 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Wave B integration note: original source PR claimed `AT-048` / `AT-ADR-028`;
   those IDs were already used, so this task is `AT-050`.
 
+### AT-051 — Phase 6 canonical Candidate PostgreSQL persistence
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-046/AT-047 Candidate
+  authority; AT-049 Watcher fusion wiring; PR #92 remaining fencing race
+  · Risk: Medium (identity + fencing)
+- Safety classification: Paper-safe / PostgreSQL adapter only; Watcher,
+  Telegram, and live trading remain disabled; not wired into FastAPI or workers
+- Goal: Production-grade PostgreSQL `CandidateRepository` matching the existing
+  port. Persist canonical Candidate projections and append-only transitions.
+  Preserve deterministic identity, uniqueness, tenant isolation, idempotency,
+  terminal non-resurrection, replay convergence, and conflict detection.
+  Worker-originated Candidate persistence must be protected by current lease
+  and fencing authority in the same database transaction.
+- Branch: `cursor/phase7-candidate-persistence-5115`
+- Deliverables: `app.persistence.candidate_postgres`, Candidate ORM,
+  Alembic `4fd8c1a90b27`, Watcher persist fence bind, tests in
+  `backend/tests/test_phase6_candidate_postgres.py`.
+- Validation: focused Candidate/Postgres/fencing tests; full backend pytest;
+  ruff; mypy `--strict`; Alembic upgrade/downgrade and single head; GitHub CI.
+  Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6
+- ADR: AT-ADR-031
+
+### AT-052 — Phase 7 canonical TradePlanRevision application layer
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-046/AT-047 Candidate
+  authority; AT-048 ActionEligibility; AT-051 Candidate PostgreSQL; Phase 1
+  TradePlanRevision hash contract
+  · Risk: Medium (plan identity + immutability)
+- Safety classification: Paper-safe / application service; Watcher, Telegram,
+  Journal, execution dispatch, frontend, and live trading remain disabled
+- Goal: Canonical flow Candidate → ActionEligibility → TradePlanRevision →
+  approval → paper execution, with this slice owning plan creation only. Only
+  ACTIVE + ELIGIBLE may insert; lineage and tenant scope must match; semantic
+  content immutable; identical requests converge; conflicting idempotency
+  fails closed; PLAN_CREATED only after successful insert; PVC cannot mint
+  canonical plans; approval cannot change executable semantics.
+- Branch: `cursor/phase7_tradeplan_canonical` (source PR #93); integrated on
+  `cursor/phase7_integration`
+- Deliverables: `CanonicalTradePlanService`, `CanonicalTradePlanStore`,
+  lineage envelope. Source PR claimed `AT-051` / `AT-ADR-031`; those IDs were
+  already used by Candidate PostgreSQL, so this task is `AT-052`.
+- Validation: focused canonical tests, Phase 1 planning/approval tests,
+  Phase 6 candidate/eligibility tests, full backend pytest, ruff, mypy
+  `--strict`, GitHub CI. Draft PR to main; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-032
+
+### AT-053 — Phase 7 learning attribution (canonical lifecycle → learning)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: Phase 4 canonical journal
+  projector; Phase 6 Candidate / SetupAssessment contracts · Risk: Medium
+  (lineage / learning integrity)
+- Safety classification: Paper-safe / record-only; no execution, Watcher,
+  Telegram, frontend, Alembic, or live trading
+- Goal: Connect SetupAssessment → Candidate → TradePlan → paper execution →
+  JournalTrade → outcome → strategy/pattern stats → learning evidence without a
+  second trading authority. Reuse `JournalLifecycleProjector`. REJECT/SKIP never
+  create executed trade outcomes. Distinguish planned setup quality from
+  execution quality and trader behavior. LLMs may explain, not rewrite facts.
+- Branch: `cursor/phase7_learning_attribution` (source PR #95); integrated on
+  `cursor/phase7_integration`
+- Deliverables: `app.learning_attribution`;
+  `JournalLifecycleLearningService`; sticky `payload.lineage`; lesson/analytics/RAG
+  adapters; tests in
+  `backend/tests/test_learning_attribution.py` and
+  `backend/tests/test_journal_lifecycle_lineage.py`; docs
+  `docs/phase7_learning_attribution.md`. Source PR claimed `AT-051` /
+  `AT-ADR-031`; those IDs were already used by Candidate PostgreSQL, so this
+  task is `AT-053`.
+- Validation: attribution tests, journal lifecycle tests, learning tests, full
+  backend pytest, ruff, mypy `--strict` on the new package plus journal lifecycle
+  modules, GitHub CI. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-033
+
+### AT-054 — Phase 7 canonical TradePlan / ActionEligibility PostgreSQL binding
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-051 Candidate PostgreSQL;
+  AT-052 canonical TradePlan application layer
+  · Risk: Medium (identity, FKs, append-only history)
+- Safety classification: Paper-safe / PostgreSQL adapter only; Watcher, Telegram,
+  and live trading remain disabled; not wired into FastAPI or workers
+- Goal: Close the PR 93 persistence gap after Candidate migration `4fd8c1a90b27`.
+  Durable ActionEligibility with deterministic identity and append-safe revision
+  history. Bind canonical TradePlanRevision to canonical Candidate authority
+  without reinterpreting legacy PaperValidationCandidate ids. Bind setup identity
+  to tenant-owned CompiledSetupDefinition. Persist canonical lineage without
+  changing CanonicalTradePlanContentV1. Organization-scoped uniqueness and
+  idempotency. Deterministic candidate-based plan root. Approval still binds
+  exact immutable revision + content hash. Execution remains outside this wave.
+- Branch: `cursor/phase7_integration`
+- Deliverables: Alembic `c9e2b4a1d078`, `PostgresActionEligibilityStore`,
+  `PostgresCanonicalTradePlanStore`, discriminator columns, lineage side table,
+  tests in `backend/tests/test_phase7_*_postgres.py`.
+- Validation: focused eligibility/plan/alembic tests; full backend pytest; ruff;
+  mypy `--strict`; Alembic upgrade/downgrade/reupgrade and single head; GitHub CI.
+  Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-034

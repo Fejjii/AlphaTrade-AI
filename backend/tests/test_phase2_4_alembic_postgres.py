@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
@@ -25,6 +26,8 @@ PHASE3 = "8a9b0c1d2e3f"
 PHASE4 = "9b0c1d2e3f4a"
 HARDENING = "a0c1d2e3f4b5"
 WATCHER_TELEGRAM_PERSISTENCE = "3ec264f9aaa8"
+CANONICAL_CANDIDATE_PERSISTENCE = "4fd8c1a90b27"
+CANONICAL_TRADE_PLAN_ELIGIBILITY = "c9e2b4a1d078"
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -36,6 +39,15 @@ _NEW_TABLES = (
     "telegram_security_enrollment_challenges",
     "telegram_security_bindings",
     "telegram_security_authorization_intents",
+    "canonical_candidates",
+    "canonical_candidate_creation_keys",
+    "canonical_candidate_transitions",
+    "canonical_candidate_transition_keys",
+    "action_eligibility_evaluations",
+    "action_eligibility_identity_bindings",
+    "canonical_trade_plan_roots",
+    "canonical_trade_plan_lineage",
+    "canonical_trade_plan_idempotency_keys",
 )
 
 
@@ -76,7 +88,7 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == WATCHER_TELEGRAM_PERSISTENCE
+        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
         for table_name in _NEW_TABLES:
             present = conn.execute(
                 text(
@@ -137,7 +149,7 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == WATCHER_TELEGRAM_PERSISTENCE
+        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
         count = conn.execute(text("SELECT COUNT(*) FROM user_strategy_versions")).scalar()
         assert int(count or 0) == 0
         backfill_ok = conn.execute(
@@ -147,4 +159,201 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
             )
         ).scalar()
         assert int(backfill_ok or 0) == 0
+    engine.dispose()
+
+
+def test_alembic_single_head() -> None:
+    config = _alembic_config()
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert heads == [CANONICAL_TRADE_PLAN_ELIGIBILITY]
+
+
+@requires_postgres
+def test_canonical_candidate_alembic_upgrade_downgrade() -> None:
+    engine = create_engine(POSTGRES_URL, poolclass=NullPool, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    config = _alembic_config()
+    command.upgrade(config, "head")
+    candidate_tables = (
+        "canonical_candidates",
+        "canonical_candidate_creation_keys",
+        "canonical_candidate_transitions",
+        "canonical_candidate_transition_keys",
+    )
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        for table_name in candidate_tables:
+            present = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = :name"
+                ),
+                {"name": table_name},
+            ).scalar()
+            assert present == 1, table_name
+        unique_hash = conn.execute(
+            text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'uq_canonical_candidates_uniqueness_hash'"
+            )
+        ).scalar()
+        assert unique_hash == 1
+        trigger = conn.execute(
+            text(
+                "SELECT 1 FROM pg_trigger "
+                "WHERE tgname = 'trg_canonical_candidate_transitions_append_only'"
+            )
+        ).scalar()
+        assert trigger == 1
+
+    command.downgrade(config, WATCHER_TELEGRAM_PERSISTENCE)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == WATCHER_TELEGRAM_PERSISTENCE
+        for table_name in candidate_tables:
+            missing = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = :name"
+                ),
+                {"name": table_name},
+            ).scalar()
+            assert missing is None, table_name
+        watcher = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'watcher_worker_leases'"
+            )
+        ).scalar()
+        assert watcher == 1
+
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO canonical_candidates ("
+                "candidate_id, organization_id, uniqueness_hash, schema_version, "
+                "strategy_version_id, setup_definition_id, fusion_policy_version, "
+                "direction, evidence_venue, evidence_market, evidence_instrument, "
+                "timeframe, evidence_window_hash, assessment_id, executable_setup, "
+                "evidence_identity, state, created_at, valid_until, transition_version, "
+                "idempotency_key, correlation_id, content_hash"
+                ") VALUES ("
+                "gen_random_uuid(), gen_random_uuid(), :uhash, 'Candidate/v1', "
+                "gen_random_uuid(), gen_random_uuid(), 'fusion/v1', "
+                "'short', 'binance', 'perpetual', 'instrument-id-value', "
+                "'15m', :uhash, gen_random_uuid(), '{}'::json, '{}'::json, 'active', "
+                "now(), now() + interval '1 hour', 1, "
+                "'idempotency-key', gen_random_uuid(), :uhash"
+                ")"
+            ),
+            {"uhash": "a" * 64},
+        )
+    blocked = False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM canonical_candidates"))
+    except Exception:
+        blocked = True
+    assert blocked is True
+    engine.dispose()
+
+
+@requires_postgres
+def test_canonical_trade_plan_alembic_upgrade_downgrade() -> None:
+    engine = create_engine(POSTGRES_URL, poolclass=NullPool, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    config = _alembic_config()
+    command.upgrade(config, "head")
+    plan_tables = (
+        "action_eligibility_evaluations",
+        "action_eligibility_identity_bindings",
+        "canonical_trade_plan_roots",
+        "canonical_trade_plan_lineage",
+        "canonical_trade_plan_idempotency_keys",
+    )
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        for table_name in plan_tables:
+            present = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = :name"
+                ),
+                {"name": table_name},
+            ).scalar()
+            assert present == 1, table_name
+        pvc_fk = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'trade_plan_revisions' "
+                "AND constraint_type = 'FOREIGN KEY' "
+                "AND constraint_name LIKE '%paper_validation%'"
+            )
+        ).scalar()
+        assert pvc_fk is None
+        authority = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'trade_plan_revisions' AND column_name = 'plan_authority'"
+            )
+        ).scalar()
+        assert authority == 1
+        trigger = conn.execute(
+            text(
+                "SELECT 1 FROM pg_trigger "
+                "WHERE tgname = 'trg_canonical_trade_plan_lineage_append_only'"
+            )
+        ).scalar()
+        assert trigger == 1
+
+    command.downgrade(config, CANONICAL_CANDIDATE_PERSISTENCE)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CANONICAL_CANDIDATE_PERSISTENCE
+        for table_name in plan_tables:
+            missing = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = :name"
+                ),
+                {"name": table_name},
+            ).scalar()
+            assert missing is None, table_name
+        restored = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'trade_plan_revisions' "
+                "AND constraint_type = 'FOREIGN KEY' "
+                "AND constraint_name LIKE '%paper_validation%'"
+            )
+        ).scalar()
+        assert restored == 1
+        candidate = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'canonical_candidates'"
+            )
+        ).scalar()
+        assert candidate == 1
+
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        pvc_fk = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'trade_plan_revisions' "
+                "AND constraint_type = 'FOREIGN KEY' "
+                "AND constraint_name LIKE '%paper_validation%'"
+            )
+        ).scalar()
+        assert pvc_fk is None
     engine.dispose()

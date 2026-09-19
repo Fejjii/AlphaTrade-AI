@@ -47,6 +47,12 @@ from app.services.journal_integrity import (
     is_journal_lifecycle_unique_violation,
     is_journal_receipt_unique_violation,
 )
+from app.services.journal_lifecycle_lineage import (
+    assert_lineage_matches_event_scope,
+    assert_sticky_lineage,
+    extract_lineage_map,
+    merge_lineage_maps,
+)
 
 _REQUEST_TAG = "journal-lifecycle-projector"
 _NON_CREATING = frozenset(
@@ -187,6 +193,8 @@ class JournalLifecycleProjector:
                 replayed=True,
                 skipped_reason=None,
             )
+
+        self._assert_lineage(organization_id, event)
 
         skipped_reason: str | None = None
         trade: JournalTrade | None = None
@@ -349,6 +357,34 @@ class JournalLifecycleProjector:
                     "execution_lifecycle_id": str(event.execution_lifecycle_id),
                 },
             )
+
+    def _assert_lineage(
+        self,
+        organization_id: uuid.UUID,
+        event: JournalLifecycleEventInput,
+    ) -> None:
+        assert_lineage_matches_event_scope(event, organization_id=organization_id)
+        incoming = extract_lineage_map(event.payload)
+        if not incoming:
+            return
+        stored = self._stored_lineage(organization_id, event.execution_lifecycle_id)
+        assert_sticky_lineage(stored, incoming, event)
+
+    def _stored_lineage(
+        self,
+        organization_id: uuid.UUID,
+        execution_lifecycle_id: uuid.UUID | None,
+    ) -> dict[str, str]:
+        if execution_lifecycle_id is None:
+            return {}
+        stmt = select(JournalLifecycleEvent).where(
+            JournalLifecycleEvent.organization_id == organization_id,
+            JournalLifecycleEvent.execution_lifecycle_id == execution_lifecycle_id,
+        )
+        merged: dict[str, str] = {}
+        for row in self._session.scalars(stmt):
+            merged = merge_lineage_maps(merged, extract_lineage_map(row.payload))
+        return merged
 
     def _lock_lifecycle(
         self,

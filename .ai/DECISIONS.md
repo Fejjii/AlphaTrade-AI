@@ -1039,4 +1039,155 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   package plus `app.telegram_security` and `app.signal_fusion`, GitHub CI.
   Draft PR only; do not merge in the implementing agent instructions.
 
+## AT-ADR-031 — Phase 6 canonical Candidate PostgreSQL persistence
+- **Date:** 2026-09-18
+- **Status:** Accepted (PostgreSQL adapter; not wired into staging/production)
+- **Context:** AT-ADR-026 froze CandidateLifecycleService as the only Candidate
+  authority with an in-memory `CandidateRepository`. Durable uniqueness,
+  append-only transitions, and the remaining Watcher persist-after-lease-loss
+  race require a PostgreSQL adapter that cannot become a second authority.
+- **Decision:**
+  1. `PostgresCandidateRepository` implements the existing
+     `CandidateRepository` port. `CandidateLifecycleService` remains the only
+     Candidate authority. In-memory remains the unit-test default.
+  2. Projections persist in `canonical_candidates`. Creation idempotency,
+     append-only transitions, and transition-key aliases are separate tables
+     with uniqueness constraints matching in-memory semantics.
+  3. Worker-originated writes bind Watcher lease identity. The Candidate
+     persist transaction `SELECT ... FOR UPDATE` locks
+     `watcher_worker_leases (organization_id, scan_scope)` and proves current
+     owner, epoch, fencing token, and a non-expired lease before committing
+     Candidate authority. A stale worker cannot persist after losing its lease.
+  4. One Alembic revision from head `3ec264f9aaa8`. Adapters are constructed
+     explicitly and are not imported by FastAPI, workers, or feature flags.
+  5. `WATCHER_ORCHESTRATION_ENABLED`, `MARKET_WATCHER_ENABLED`,
+     `TELEGRAM_INTERACTION_ENABLED`, and live trading remain disabled.
+- **Alternatives considered:** Check fence then persist in a later transaction
+  (rejected: TOCTOU); put Candidate identity in WatcherStore (rejected: second
+  authority); change TradePlan / ActionEligibility / SetupAssessment (out of
+  scope).
+- **Safety impact:** Paper only. No Watcher, Telegram, or live-trading
+  activation.
+- **Consequences:** Tests in `backend/tests/test_phase6_candidate_postgres.py`.
+  Migration `4fd8c1a90b27`.
 
+## AT-ADR-032 — Phase 7 canonical TradePlanRevision application layer
+- **Date:** 2026-09-18
+- **Status:** Accepted (application layer; durable PostgreSQL binding follows)
+- **Context:** Phase 6 froze Candidate and ActionEligibility as in-memory
+  authorities. Phase 1 `TradePlanRevision` is hash-stable and immutable, but
+  `ProposalService.create_revision` is fail-closed and
+  `trade_plan_revisions.candidate_id` still foreign-keys
+  `paper_validation_candidates`. PR 93 owned the application layer. Source PR
+  claimed `AT-ADR-031`, already used by Candidate PostgreSQL, so this ADR is
+  `AT-ADR-032`.
+- **Decision:**
+  1. `CanonicalTradePlanService.create` is the sole first-slice plan authority.
+  2. Creation loads Candidate and ActionEligibility from those services. Only
+     `ACTIVE` + currently paper-actionable `ELIGIBLE` may insert. Lineage
+     (org/user/account, candidate identity/hash/revision, assessment, evidence
+     window, strategy/setup, venue/market/instrument/timeframe/side) must match
+     exactly. Plan `candidate_id` is the canonical Candidate id.
+  3. Phase 1 `TradePlanRevisionSemantic` / `CanonicalTradePlanContentV1` stays
+     hash-stable. Canonical binding is `CanonicalTradePlanLineage` beside that
+     preimage, not new semantic fields.
+  4. Identical semantic requests converge (presentation/correlation first-write
+     wins). Conflicting organization-scoped idempotency fails closed. One plan
+     per (org, user, account, candidate) in this slice.
+  5. `CandidateState.PLAN_CREATED` is applied only after a successful store
+     insert; failed creates do not transition. Transition identity is derived
+     from plan uniqueness so retries converge.
+  6. `PaperValidationCandidate` and `ProposalService.create_revision` cannot
+     mint canonical plan authority. Approval may bind revision id + content
+     hash only and cannot change executable semantics. Execution is absent.
+  7. Application persistence is `CanonicalTradePlanStore`. Source PR used an
+     unbound SQLAlchemy adapter because the PVC FK was still in place. Phase 7
+     integration owns the durable remap after Candidate migration `4fd8c1a90b27`.
+- **Alternatives considered:** Add lineage fields to `TradePlanRevisionSemantic`
+  (rejected: would break existing Phase 1 content-hash verification); write
+  canonical UUID5 ids into the PVC FK (rejected: competing identity, FK
+  violation).
+- **Safety impact:** Paper only. Live trading cannot become executable. No
+  network, Watcher, Telegram, Journal, execution dispatch, frontend, or
+  deployment changes.
+- **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
+  Tests in `backend/tests/test_phase7_canonical_trade_plan.py`.
+- **Validation:** Focused canonical plan tests, Phase 1 planning/approval
+  tests, Phase 6 candidate/eligibility tests, full backend pytest, ruff,
+  mypy `--strict`, GitHub CI. Draft PR only; do not merge.
+
+## AT-ADR-033 — Phase 7 learning attribution reuses journal projector
+- **Date:** 2026-09-18
+- **Status:** Accepted (application service; PostgreSQL/Alembic not in this slice)
+- **Context:** Phase 4 already converges one execution lifecycle to one
+  `JournalTrade`. Phase 6 froze SetupAssessment/Candidate/TradePlan identity.
+  Learning analytics still summarize the older paper-validation funnel. This
+  wave must connect canonical lifecycle to learning without a second trading
+  authority or competing migration. Source PR 95 claimed `AT-ADR-031`, already
+  used by Candidate PostgreSQL, so this ADR is `AT-ADR-033`.
+- **Decision:**
+  1. `JournalLifecycleProjector` remains the only JournalTrade writer.
+  2. `LearningAttributionService` / `JournalLifecycleLearningService` are
+     record-only consumers. They copy lineage; they do not evaluate setups,
+     create candidates, authorize plans, or dispatch execution.
+  3. Lineage rides on append-only `payload.lineage`. First-seen values are
+     sticky. Duplicate source identity converges. Conflicting identity and
+     cross-tenant attribution fail closed.
+  4. REJECT/SKIP never create executed trade outcomes. Quality axes are
+     planned setup vs execution vs trader behavior. PnL cannot rewrite
+     SetupAssessment hashes. LLM narrative is excluded from `facts_hash`.
+  5. Lesson/analytics/RAG adapters consume facts. Lessons are suggestions
+     only. RAG is a renderer only. No shared schema changes in this wave.
+- **Alternatives considered:** New journal trade writer for learning (rejected:
+  competing authority); Alembic columns in this wave (rejected: Candidate and
+  TradePlan migrations already occupy the Alembic head); auto-persisting
+  lessons or RAG ingest (rejected: review workflow and market-truth integrity).
+- **Safety impact:** Paper only. No live trading, Watcher, Telegram, frontend,
+  or execution-dispatch changes.
+- **Consequences:** Docs in `docs/phase7_learning_attribution.md`. Tests in
+  `backend/tests/test_learning_attribution.py` and
+  `backend/tests/test_journal_lifecycle_lineage.py`.
+- **Validation:** Targeted attribution/journal/learning pytest, full backend
+  pytest, ruff, mypy `--strict` on the new package plus journal lifecycle
+  modules, GitHub CI. Draft PR only; do not merge.
+
+## AT-ADR-034 — Phase 7 canonical TradePlan / ActionEligibility PostgreSQL binding
+- **Date:** 2026-09-19
+- **Status:** Accepted (PostgreSQL adapter; not wired into staging/production)
+- **Context:** AT-ADR-032 froze CanonicalTradePlanService as the only first-slice
+  plan authority with an in-memory store. `trade_plan_revisions.candidate_id`
+  still foreign-keyed `paper_validation_candidates`. ActionEligibility was
+  in-memory only. Candidate PostgreSQL (AT-ADR-031 / Alembic `4fd8c1a90b27`)
+  landed first.
+- **Decision:**
+  1. Next Alembic revision is `c9e2b4a1d078` after `4fd8c1a90b27`.
+  2. `PostgresActionEligibilityStore` implements `ActionEligibilityStore`.
+     Evaluations are immutable and keyed by uniqueness hash. Identity bindings
+     fail closed. Candidate rows are locked so revision history is append-safe.
+  3. `trade_plan_revisions` keeps `candidate_id` as an unconstrained UUID for
+     legacy PVC-backed rows. Discriminator `plan_authority` is
+     `paper_validation` (canonical_candidate_id NULL) or `canonical`
+     (canonical_candidate_id = candidate_id, FK canonical_candidates).
+     Legacy PVC ids are never reinterpreted as canonical Candidate ids.
+  4. Canonical rows bind `compiled_setup_definition_id` to tenant-owned
+     `compiled_setup_definitions`. Global SetupDefinition FK is dropped.
+  5. `canonical_trade_plan_lineage` stores Candidate/eligibility hashes beside
+     unchanged `semantic_payload`. Uniqueness hash is unique. Idempotency keys
+     are organization-scoped.
+  6. Canonical `plan_id` remains UUID5(org, user, account, candidate_id). A
+     compatibility TradeProposal with `plan_root_kind=canonical_plan_root`
+     satisfies the existing composite FK without restoring ProposalService as
+     plan authority.
+  7. Plan insert locks the canonical Candidate and runs `PLAN_CREATED` in the
+     same transaction via `on_inserted`. Adapters are not imported by FastAPI,
+     workers, or feature flags. Execution remains a later slice.
+- **Alternatives considered:** Backfill PVC ids as canonical Candidate ids
+  (rejected: competing identity); put lineage fields into
+  TradePlanRevisionSemantic (rejected: would break Phase 1 hashes); delete
+  canonical rows on Alembic downgrade automatically (rejected: fail closed if
+  canonical rows exist).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay
+  disabled. No exchange mutation. No deployment.
+- **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
+  Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
+  `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.

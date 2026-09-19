@@ -8,6 +8,13 @@ an open DB transaction. Lease claim linearizes on
 ``SELECT ... FOR UPDATE`` of ``watcher_worker_leases (organization_id, scan_scope)``
 (or the unique insert of that key).
 
+Candidate: every repository method opens and commits its own SQLAlchemy
+transaction. Worker-originated Candidate writes, when a Watcher fence is bound,
+lock that same lease row ``FOR UPDATE`` and prove current fencing authority in
+the Candidate persist transaction before inserting the projection or appending
+a transition. A stale worker cannot commit Candidate authority after losing
+its lease.
+
 Telegram: ``transaction()`` takes a transaction-scoped advisory lock, matching
 the in-memory store's process lock, then uses row locks for nonce CAS and outbox
 claims. ``deliver_pending`` claims under ``transaction()`` and performs transport
@@ -16,6 +23,11 @@ on first-writer unique keys ``(bot_id, update_id)`` and ``(bot_id, callback_quer
 
 These builders never enable ``WATCHER_ORCHESTRATION_ENABLED``,
 ``MARKET_WATCHER_ENABLED``, or ``TELEGRAM_INTERACTION_ENABLED``.
+
+ActionEligibility and canonical TradePlan: each store method opens its own
+transaction unless ``bind_session`` joins an outer unit of work. Plan insert
+locks the canonical Candidate, writes the compatibility TradeProposal +
+revision + lineage, then runs ``PLAN_CREATED`` in that same transaction.
 """
 
 from __future__ import annotations
@@ -26,8 +38,15 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.persistence.candidate_postgres import PostgresCandidateRepository
+from app.persistence.eligibility_postgres import PostgresActionEligibilityStore
 from app.persistence.telegram_postgres import PostgresTelegramSecurityStore
+from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
 from app.persistence.watcher_postgres import PostgresWatcherStore
+from app.services.canonical_trade_plan import CanonicalTradePlanService
+from app.signal_fusion.action_eligibility import ActionEligibilityService
+from app.signal_fusion.lifecycle import CandidateLifecycleService
+from app.signal_fusion.ports import Clock as CandidateClock
 from app.telegram_security.clock import Clock, FrozenClock
 from app.telegram_security.protocol import TelegramSecurityProtocol
 from app.telegram_security.rate_limit import ProtocolRateLimiter, RateLimitPolicy
@@ -45,6 +64,80 @@ from app.watcher.ports import (
     SideEffectPorts,
     WatcherEvaluationBoundary,
 )
+
+
+def build_postgres_candidate_repository(
+    session_factory: sessionmaker[Session],
+    *,
+    clock: CandidateClock | None = None,
+) -> PostgresCandidateRepository:
+    """Construct a PostgreSQL CandidateRepository. Callers must inject it explicitly."""
+
+    return PostgresCandidateRepository(session_factory, clock=clock)
+
+
+def build_postgres_candidate_lifecycle(
+    session_factory: sessionmaker[Session],
+    *,
+    clock: CandidateClock,
+) -> CandidateLifecycleService:
+    """Lifecycle authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+
+    return CandidateLifecycleService(
+        repository=build_postgres_candidate_repository(session_factory, clock=clock),
+        clock=clock,
+    )
+
+
+def build_postgres_action_eligibility_store(
+    session_factory: sessionmaker[Session],
+) -> PostgresActionEligibilityStore:
+    """Construct a PostgreSQL ActionEligibilityStore. Callers must inject it explicitly."""
+
+    return PostgresActionEligibilityStore(session_factory)
+
+
+def build_postgres_action_eligibility(
+    session_factory: sessionmaker[Session],
+    *,
+    clock: CandidateClock,
+) -> ActionEligibilityService:
+    """Eligibility authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+
+    return ActionEligibilityService(
+        store=build_postgres_action_eligibility_store(session_factory),
+        clock=clock,
+    )
+
+
+def build_postgres_canonical_trade_plan_store(
+    session_factory: sessionmaker[Session],
+    *,
+    candidate_repository: PostgresCandidateRepository | None = None,
+) -> PostgresCanonicalTradePlanStore:
+    """Construct a PostgreSQL CanonicalTradePlanStore. Callers must inject it explicitly."""
+
+    return PostgresCanonicalTradePlanStore(
+        session_factory, candidate_repository=candidate_repository
+    )
+
+
+def build_postgres_canonical_trade_plan(
+    session_factory: sessionmaker[Session],
+    *,
+    clock: CandidateClock,
+) -> CanonicalTradePlanService:
+    """Canonical plan authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+
+    candidate_repository = build_postgres_candidate_repository(session_factory, clock=clock)
+    return CanonicalTradePlanService(
+        store=build_postgres_canonical_trade_plan_store(
+            session_factory, candidate_repository=candidate_repository
+        ),
+        lifecycle=CandidateLifecycleService(repository=candidate_repository, clock=clock),
+        eligibility=build_postgres_action_eligibility(session_factory, clock=clock),
+        clock=clock,
+    )
 
 
 def build_postgres_watcher_store(

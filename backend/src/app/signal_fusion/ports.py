@@ -1,7 +1,8 @@
 """Candidate lifecycle persistence and clock ports.
 
-PostgreSQL adapters bind these interfaces in a later phase. This slice uses a
-deterministic in-memory repository only. No Alembic, no SQLAlchemy models.
+PostgreSQL adapters implement this port in ``app.persistence``. Candidate
+authority remains ``CandidateLifecycleService``; adapters must not invent a
+second uniqueness or transition model.
 """
 
 from __future__ import annotations

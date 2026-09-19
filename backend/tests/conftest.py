@@ -19,6 +19,7 @@ pytest_plugins = (
     "tests.test_workflows",
     "tests.test_market_watcher_scanner_slice_74",
     "tests.test_market_watcher_scanner_slice_75",
+    "tests.support.learning_attribution",
 )
 
 
