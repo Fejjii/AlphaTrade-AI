@@ -25,6 +25,12 @@ export function ExecutionLifecycle({ execution }: { execution: PaperExecutionVie
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Paper execution status</CardTitle>
           <StatusBadge label={execution.status.replaceAll("_", " ")} tone={TONE[execution.status]} />
+          <StatusBadge
+            label={
+              execution.authority === "canonical" ? "canonical receipt" : "compatibility order"
+            }
+            tone={execution.authority === "canonical" ? "success" : "muted"}
+          />
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -53,6 +59,12 @@ export function ExecutionLifecycle({ execution }: { execution: PaperExecutionVie
             <dt className="text-caption text-text-muted">Order</dt>
             <dd className="font-data break-all">{execution.orderId ?? "None"}</dd>
           </div>
+          {execution.receiptId ? (
+            <div>
+              <dt className="text-caption text-text-muted">Receipt</dt>
+              <dd className="font-data break-all">{execution.receiptId}</dd>
+            </div>
+          ) : null}
         </dl>
         {execution.proposalId ? (
           <Link href={`/decision/plans/${execution.proposalId}`} className="text-accent underline">

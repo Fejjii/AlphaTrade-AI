@@ -1,5 +1,9 @@
 import type {
   ApprovalRequest,
+  CanonicalCandidateRead,
+  CanonicalEligibilityRead,
+  CanonicalLearningRecordRead,
+  CanonicalSetupAssessmentRead,
   JournalEntry,
   LessonCandidate,
   MarketAnalyzeResponse,
@@ -7,7 +11,7 @@ import type {
   PaperValidationCandidateItem,
   TradeProposal,
 } from "@/lib/api/types";
-import { projectActionEligibility } from "@/lib/canonical-decision/eligibility";
+import { projectActionEligibility, projectCanonicalEligibility } from "@/lib/canonical-decision/eligibility";
 import {
   candidateSetupLabel,
   executionFromOrder,
@@ -32,6 +36,7 @@ import { missingBindings } from "@/lib/canonical-decision/bindings";
 import { canExecutePaperOrder } from "@/lib/workflow";
 
 export type DecisionComposeInput = {
+  canonicalCandidates?: CanonicalCandidateRead[];
   candidates: PaperValidationCandidateItem[];
   proposals: TradeProposal[];
   approvals: ApprovalRequest[];
@@ -235,6 +240,138 @@ function candidateWorkspaceFromPvc(
   };
 }
 
+function lifecycleFromCanonical(state: string): CandidateLifecycleState {
+  switch (state) {
+    case "active":
+    case "plan_created":
+    case "rejected":
+    case "skipped":
+    case "expired":
+    case "invalidated":
+      return state;
+    default:
+      return "unknown";
+  }
+}
+
+export function marketQualityFromSetupAssessment(
+  assessment: CanonicalSetupAssessmentRead,
+  candidate: CanonicalCandidateRead["candidate"],
+): MarketQualityView {
+  const setupState = assessment.assessment_state as SetupAssessmentState;
+  const grade: MarketQualityGrade =
+    setupState === "confirmed_setup"
+      ? "tradeable"
+      : setupState === "watch" || setupState === "partial_match"
+        ? "watch"
+        : setupState === "no_setup" || setupState === "unknown"
+          ? "unknown"
+          : "poor";
+  return {
+    authority: "canonical",
+    grade,
+    setupState,
+    dataQuality: assessment.evidence_window_hash,
+    confidence: candidate.confidence ?? null,
+    confidencePenaltyApplied: false,
+    symbol: candidate.evidence_instrument ?? null,
+    timeframe: candidate.timeframe,
+    direction: candidate.direction,
+    evidence: [
+      { label: "Setup assessment", detail: `${assessment.assessment_id} · ${setupState}` },
+      { label: "Evidence window", detail: assessment.evidence_window_hash },
+    ],
+    summary:
+      "Canonical SetupAssessment lineage. Market/setup truth does not grant action eligibility.",
+    doesNotGrantEligibility: true,
+  };
+}
+
+export function workspaceFromCanonicalCandidate(
+  read: CanonicalCandidateRead,
+  facts: Pick<DecisionComposeInput, "killSwitchActive" | "executionMode" | "realTradingEnabled">,
+  extras?: {
+    eligibility?: CanonicalEligibilityRead | null;
+    assessment?: CanonicalSetupAssessmentRead | null;
+  },
+): CandidateWorkspaceView {
+  const candidate = read.candidate;
+  const marketQuality = extras?.assessment
+    ? marketQualityFromSetupAssessment(extras.assessment, candidate)
+    : {
+        authority: "canonical" as const,
+        grade: "unknown" as MarketQualityGrade,
+        setupState: "unknown" as SetupAssessmentState,
+        dataQuality: candidate.evidence_window_hash,
+        confidence: candidate.confidence ?? null,
+        confidencePenaltyApplied: false,
+        symbol: candidate.evidence_instrument ?? null,
+        timeframe: candidate.timeframe,
+        direction: candidate.direction,
+        evidence: [{ label: "Evidence window", detail: candidate.evidence_window_hash }],
+        summary:
+          "Canonical Candidate. SetupAssessment was not loaded on this queue row; market truth still does not grant eligibility.",
+        doesNotGrantEligibility: true as const,
+      };
+  const eligibility = extras?.eligibility
+    ? projectCanonicalEligibility(extras.eligibility, facts)
+    : projectActionEligibility({
+        killSwitchActive: facts.killSwitchActive,
+        executionMode: facts.executionMode,
+        realTradingEnabled: facts.realTradingEnabled,
+        candidateActionable: candidate.state === "active" || candidate.state === "plan_created",
+        setupConfirmed: extras?.assessment?.assessment_state === "confirmed_setup",
+      });
+  return {
+    authority: "canonical",
+    caseId: `canonical:${candidate.candidate_id}`,
+    sourceId: candidate.candidate_id,
+    sourceKind: "canonical_candidate",
+    lifecycleState: lifecycleFromCanonical(candidate.state),
+    symbol: candidate.evidence_instrument ?? null,
+    timeframe: candidate.timeframe,
+    direction: candidate.direction,
+    setupLabel: candidate.setup_definition_id ?? candidate.strategy_version_id,
+    thesis: null,
+    entryCriteria: null,
+    invalidation: candidate.valid_until ? `Valid until ${candidate.valid_until}` : null,
+    confidence: candidate.confidence ?? null,
+    evidence: marketQuality.evidence,
+    strategyId: candidate.strategy_version_id,
+    createdAt: candidate.created_at ?? null,
+    legacyHref: null,
+    marketQuality,
+    eligibility,
+  };
+}
+
+export function learningFromCanonicalRecord(read: CanonicalLearningRecordRead): LearningView {
+  const outcome = read.record.facts?.outcome;
+  return {
+    lessonId: read.record.attribution_id,
+    status: outcome?.status ?? "canonical_record",
+    lessonText:
+      read.record.narrative_explanation ??
+      "Canonical learning attribution (record-only). LLM narrative is not a fact.",
+    mistakeType: outcome?.result ?? null,
+    href: `/decision/candidates/${read.record.candidate_id}`,
+  };
+}
+
+export function outcomeFromCanonicalRecord(read: CanonicalLearningRecordRead): OutcomeView {
+  const outcome = read.record.facts?.outcome;
+  return {
+    journalId: read.record.journal_trade_id ?? null,
+    positionId: null,
+    proposalId: null,
+    symbol: null,
+    result: outcome?.result ?? null,
+    pnl: outcome?.net_pnl ?? null,
+    lessons: read.record.narrative_explanation ?? null,
+    href: `/decision/candidates/${read.record.candidate_id}`,
+  };
+}
+
 export function composeDecisionCases(input: DecisionComposeInput): DecisionQueueSnapshot {
   const approvalsByProposal = new Map(input.approvals.map((item) => [item.proposal_id, item]));
   const ordersByProposal = new Map(
@@ -254,6 +391,30 @@ export function composeDecisionCases(input: DecisionComposeInput): DecisionQueue
   );
 
   const cases: DecisionCase[] = [];
+
+  for (const read of input.canonicalCandidates ?? []) {
+    const workspace = workspaceFromCanonicalCandidate(read, input);
+    const stage: DecisionStage =
+      workspace.eligibility.state === "blocked" ? "eligibility" : "candidate";
+    cases.push({
+      id: workspace.caseId,
+      kind: "canonical_candidate",
+      stage,
+      symbol: workspace.symbol ?? "Candidate",
+      direction: workspace.direction,
+      timeframe: workspace.timeframe,
+      title: `${workspace.symbol ?? "Candidate"} · ${workspace.setupLabel ?? "canonical"}`,
+      summary: `${workspace.lifecycleState.replaceAll("_", " ")} · ${workspace.eligibility.state}`,
+      href: `/decision/candidates/${read.candidate.candidate_id}`,
+      createdAt: workspace.createdAt,
+      candidate: workspace,
+      tradePlan: null,
+      approval: null,
+      execution: null,
+      outcome: null,
+      learning: null,
+    });
+  }
 
   for (const proposal of input.proposals) {
     const approval = approvalsByProposal.get(proposal.id);

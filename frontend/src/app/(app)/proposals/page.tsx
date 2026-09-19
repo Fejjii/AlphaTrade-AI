@@ -71,7 +71,10 @@ export default function ProposalsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Trade Proposals</h1>
-          <p className="text-sm text-zinc-400">Review structured plans with exits and risk results.</p>
+          <p className="text-sm text-zinc-400">
+            Compatibility analysis proposals. Canonical TradePlans are not listed here and are not
+            ProposalService trading authority.
+          </p>
         </div>
         <KillSwitchButton compact />
       </div>

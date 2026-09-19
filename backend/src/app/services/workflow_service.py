@@ -20,8 +20,18 @@ class WorkflowService:
         self._proposals = proposal_service
         self._approvals = approval_service
 
-    def get_proposal_workflow(self, proposal_id: uuid.UUID) -> ProposalWorkflowView:
-        proposal = self._proposals.get(proposal_id)
+    def get_proposal_workflow(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> ProposalWorkflowView:
+        proposal = self._proposals.get(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
         approval = self._approvals.get_by_proposal(proposal_id)
         can_execute, block_reason = paper_execution_eligibility(proposal, approval)
         return ProposalWorkflowView(
@@ -31,10 +41,20 @@ class WorkflowService:
             block_reason=block_reason,
         )
 
-    def get_approval_workflow(self, approval_id: uuid.UUID) -> ApprovalWorkflowView:
+    def get_approval_workflow(
+        self,
+        approval_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> ApprovalWorkflowView:
         approval = self._approvals.get(approval_id)
         try:
-            proposal = self._proposals.get(approval.proposal_id)
+            proposal = self._proposals.get(
+                approval.proposal_id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
         except NotFoundError:
             return ApprovalWorkflowView(
                 approval=approval,

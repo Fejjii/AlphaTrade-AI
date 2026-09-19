@@ -1,4 +1,4 @@
-"""Attribution persistence port. In-memory for unit tests; PostgreSQL in Phase 8."""
+"""Attribution persistence port. In-memory for unit tests; PostgreSQL in production."""
 
 from __future__ import annotations
 

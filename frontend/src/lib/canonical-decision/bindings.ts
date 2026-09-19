@@ -133,7 +133,7 @@ export const DECISION_BACKEND_BINDINGS: readonly BackendBinding[] = [
     path: "GET /execution/orders",
     owner: "backend",
     usedByFrontend: true,
-    notes: "Compatibility execution status. Canonical ExecutionReceipt HTTP is missing.",
+    notes: "Compatibility paper-order lifecycle. Canonical receipts use GET /canonical/executions/{receipt_id}.",
   },
   {
     id: "execution-receipts",
@@ -151,7 +151,16 @@ export const DECISION_BACKEND_BINDINGS: readonly BackendBinding[] = [
     path: "GET /canonical/learning/strategy-stats",
     owner: "backend",
     usedByFrontend: true,
-    notes: "LearningQueryService rollup. Slice 84 /learning-analytics remains compatibility-only.",
+    notes: "LearningQueryService rollup. Slice 84 /learning-analytics remains a compatibility analytics view.",
+  },
+  {
+    id: "canonical-learning-records",
+    title: "Canonical learning records",
+    status: "bound",
+    path: "GET /canonical/learning/records/{candidate_id}",
+    owner: "backend",
+    usedByFrontend: true,
+    notes: "Candidate-scoped LearningQueryService attribution. Review-only; no auto-promotion.",
   },
   {
     id: "positions",

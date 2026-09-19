@@ -1222,3 +1222,19 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Docker build, GitHub CI.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-038
+
+### AT-059 — Finish canonical decision UX (bind GET APIs, paper-plan only)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-057, AT-058 · Risk: Medium
+  (UX honesty / tenant isolation)
+- Safety classification: Frontend + ProposalService firewall; paper-only
+- Goal: Bind `/decision` to canonical GET APIs (candidates, setup assessments,
+  eligibility, execution receipts, learning records, strategy stats). Remove
+  stale unbound copy. Canonical decision execution uses
+  `POST /execution/paper-plan` only. PVC/legacy proposals stay compatibility
+  views. ProposalService checks tenant scope before `canonical_plan_root`
+  rejection (no existence oracle).
+- Branch: `cursor/final_canonical_ux-1b0c`
+- Validation: frontend lint/typecheck/tests/build/e2e; backend affected tests
+  and full CI; draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-037

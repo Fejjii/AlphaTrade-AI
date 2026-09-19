@@ -36,6 +36,7 @@ test.describe("Canonical paper decision workflow", () => {
     await page.goto("/decision");
     await expect(page.getByRole("link", { name: /legacy ai assist/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /legacy approvals/i })).toBeVisible();
+    await expect(page.getByText(/canonical candidate http is unbound/i)).toHaveCount(0);
   });
 
   test("iPhone-width decision hub does not overflow and keeps Plan in the bottom nav", async ({

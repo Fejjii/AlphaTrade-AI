@@ -46,9 +46,10 @@ export function CandidateWorkspace({ candidate }: { candidate: CandidateWorkspac
               Open legacy validation candidate
             </Link>
           ) : null}
-          <p className="text-caption text-text-muted">
-            Canonical Candidate HTTP is unbound. This workspace is a compatibility projection and
-            cannot mint a TradePlan by itself.
+          <p className="text-caption text-text-muted" data-testid="candidate-authority-copy">
+            {candidate.authority === "canonical"
+              ? "Canonical Candidate read. This workspace does not mint a TradePlan by itself."
+              : "Compatibility projection from the paper-validation queue. Not canonical Candidate authority."}
           </p>
         </CardContent>
       </Card>

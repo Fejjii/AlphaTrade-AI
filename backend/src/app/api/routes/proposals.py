@@ -60,7 +60,10 @@ async def get_proposal(
     tenant: TenantDep,
     proposal_service: ProposalServiceDep,
 ) -> TradeProposal:
-    proposal = proposal_service.get(proposal_id)
+    proposal = proposal_service.get(
+        proposal_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(proposal.organization_id, tenant)
     return proposal
 
@@ -75,7 +78,10 @@ async def get_proposal_workflow(
     tenant: TenantDep,
     workflow_service: WorkflowServiceDep,
 ) -> ProposalWorkflowView:
-    view = workflow_service.get_proposal_workflow(proposal_id)
+    view = workflow_service.get_proposal_workflow(
+        proposal_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(view.proposal.organization_id, tenant)
     return view
 
@@ -92,9 +98,16 @@ async def update_proposal_status(
     proposal_service: ProposalServiceDep,
     session: SessionDep,
 ) -> TradeProposal:
-    proposal = proposal_service.get(proposal_id)
+    proposal = proposal_service.get(
+        proposal_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(proposal.organization_id, tenant)
-    result = proposal_service.update_status(proposal_id, body)
+    result = proposal_service.update_status(
+        proposal_id,
+        body,
+        organization_id=tenant.organization_id,
+    )
     session.commit()
     return result
 
@@ -111,9 +124,16 @@ async def update_loss_acceptance(
     proposal_service: ProposalServiceDep,
     session: SessionDep,
 ) -> TradeProposal:
-    proposal = proposal_service.get(proposal_id)
+    proposal = proposal_service.get(
+        proposal_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(proposal.organization_id, tenant)
-    result = proposal_service.update_loss_acceptance(proposal_id, body)
+    result = proposal_service.update_loss_acceptance(
+        proposal_id,
+        body,
+        organization_id=tenant.organization_id,
+    )
     session.commit()
     return result
 

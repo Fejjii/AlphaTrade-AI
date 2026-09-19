@@ -89,7 +89,10 @@ async def get_approval_workflow(
     tenant: TenantDep,
     workflow_service: WorkflowServiceDep,
 ) -> ApprovalWorkflowView:
-    view = workflow_service.get_approval_workflow(approval_id)
+    view = workflow_service.get_approval_workflow(
+        approval_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(view.approval.organization_id, tenant)
     return view
 
