@@ -14,10 +14,12 @@ from app.db.base import Base
 from app.db.models import ExecutionAccount, Membership, Organization, User
 from app.learning_attribution.contracts import (
     AttributionCommand,
+    LearningVenueMode,
     LineageSnapshot,
     TradePlanLineageRef,
 )
 from app.learning_attribution.memory import InMemoryAttributionStore
+from app.learning_attribution.ports import AttributionStore
 from app.market_contracts.first_slice import first_slice_identity
 from app.schemas.common import JournalLifecycleEventType, MembershipRole, Timeframe, TradeDirection
 from app.schemas.journal_lifecycle import JournalLifecycleEventInput
@@ -203,6 +205,7 @@ def command_for(
     organization_id: UUID = ORG_ID,
     user_id: UUID = USER_ID,
     narrative: str | None = None,
+    learning_venue_mode: LearningVenueMode = LearningVenueMode.PAPER_INTERNAL,
 ) -> AttributionCommand:
     return AttributionCommand(
         organization_id=organization_id,
@@ -210,11 +213,12 @@ def command_for(
         event=event,
         lineage=lineage,
         narrative_explanation=narrative,
+        learning_venue_mode=learning_venue_mode,
     )
 
 
 def learning_service(
-    session: Session, store: InMemoryAttributionStore | None = None
+    session: Session, store: AttributionStore | None = None
 ) -> JournalLifecycleLearningService:
     return JournalLifecycleLearningService(
         session,
