@@ -53,20 +53,19 @@ fail closed. Cross-tenant organization mismatch fails closed.
 
 ## Persistence
 
-No Alembic and no ORM model changes in this wave (Agent 1 owns shared schema).
+Phase 8 binds the contract in
+`app.learning_attribution.persistence.AGENT_1_ATTRIBUTION_INTEGRATION` to
+PostgreSQL. See [phase8_learning_persistence.md](./phase8_learning_persistence.md).
 
-Reuse now:
+Reuse:
 
 - `journal_lifecycle_events` + `payload.lineage`
 - `journal_projection_receipts`
 - `journal_trades.execution_lifecycle_id` uniqueness
+- projector-stamped lineage query columns on `journal_trades`
 
-In-memory `InMemoryAttributionStore` holds computed `AttributionRecord`s.
-The exact later PostgreSQL contract is
-`app.learning_attribution.persistence.AGENT_1_ATTRIBUTION_INTEGRATION`.
-
-Optional later `journal_trades` columns (Agent 1 only): `candidate_id`,
-`assessment_id`, `evidence_window_hash`, `trade_plan_revision_id`.
+`PostgresAttributionStore` persists `AttributionRecord`s.
+`InMemoryAttributionStore` remains the unit-test default.
 
 ## Adapters
 

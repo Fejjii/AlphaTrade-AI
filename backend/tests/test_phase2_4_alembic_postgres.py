@@ -28,6 +28,7 @@ HARDENING = "a0c1d2e3f4b5"
 WATCHER_TELEGRAM_PERSISTENCE = "3ec264f9aaa8"
 CANONICAL_CANDIDATE_PERSISTENCE = "4fd8c1a90b27"
 CANONICAL_TRADE_PLAN_ELIGIBILITY = "c9e2b4a1d078"
+LEARNING_ATTRIBUTION_PERSISTENCE = "d4f7a2c8e901"
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -48,6 +49,8 @@ _NEW_TABLES = (
     "canonical_trade_plan_roots",
     "canonical_trade_plan_lineage",
     "canonical_trade_plan_idempotency_keys",
+    "learning_attribution_records",
+    "learning_attribution_events",
 )
 
 
@@ -88,7 +91,7 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        assert version == LEARNING_ATTRIBUTION_PERSISTENCE
         for table_name in _NEW_TABLES:
             present = conn.execute(
                 text(
@@ -149,7 +152,7 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        assert version == LEARNING_ATTRIBUTION_PERSISTENCE
         count = conn.execute(text("SELECT COUNT(*) FROM user_strategy_versions")).scalar()
         assert int(count or 0) == 0
         backfill_ok = conn.execute(
@@ -165,7 +168,7 @@ def test_pr77_alembic_upgrade_downgrade_reupgrade() -> None:
 def test_alembic_single_head() -> None:
     config = _alembic_config()
     heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == [CANONICAL_TRADE_PLAN_ELIGIBILITY]
+    assert heads == [LEARNING_ATTRIBUTION_PERSISTENCE]
 
 
 @requires_postgres
@@ -184,7 +187,7 @@ def test_canonical_candidate_alembic_upgrade_downgrade() -> None:
     )
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        assert version == LEARNING_ATTRIBUTION_PERSISTENCE
         for table_name in candidate_tables:
             present = conn.execute(
                 text(
@@ -279,7 +282,7 @@ def test_canonical_trade_plan_alembic_upgrade_downgrade() -> None:
     )
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        assert version == LEARNING_ATTRIBUTION_PERSISTENCE
         for table_name in plan_tables:
             present = conn.execute(
                 text(
@@ -346,7 +349,7 @@ def test_canonical_trade_plan_alembic_upgrade_downgrade() -> None:
     command.upgrade(config, "head")
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == CANONICAL_TRADE_PLAN_ELIGIBILITY
+        assert version == LEARNING_ATTRIBUTION_PERSISTENCE
         pvc_fk = conn.execute(
             text(
                 "SELECT 1 FROM information_schema.table_constraints "

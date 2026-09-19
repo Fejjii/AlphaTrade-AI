@@ -1125,3 +1125,31 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Draft PR only; do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-034
+
+### AT-055 — Phase 8 learning persistence (canonical attribution → queryable intelligence)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-053 Phase 7 learning
+  attribution; Phase 4 canonical journal projector
+  · Risk: Medium (lineage / learning integrity / schema)
+- Safety classification: Paper-safe / PostgreSQL adapter and query services;
+  Watcher, Telegram, frontend, execution dispatch, and live trading remain out
+  of scope
+- Goal: Persist canonical learning attribution in PostgreSQL. Preserve immutable
+  lineage SetupAssessment → Candidate → TradePlan → paper execution →
+  JournalTrade → outcome. Duplicate facts converge; conflicting identities and
+  cross-tenant writes fail closed. REJECT/SKIP never become executed outcomes.
+  Separate setup quality, execution quality, risk adherence, trader behavior,
+  and outcome. Produce deterministic strategy/pattern statistics and
+  human-versus-system comparison. Support future demo trade learning as a
+  separate venue cohort. Learning never rewrites historical market truth. LLM
+  narrative remains explanation only. Facts are consumable by analytics and RAG
+  without competing journal/lesson authorities.
+- Branch: `cursor/phase8_learning_persistence-843e`
+- Deliverables: Alembic `d4f7a2c8e901`, `PostgresAttributionStore`,
+  `LearningQueryService`, journal lineage query columns, tests in
+  `backend/tests/test_phase8_learning_persistence.py`, docs
+  `docs/phase8_learning_persistence.md`.
+- Validation: Migration cycle, idempotency, conflicts, tenant isolation,
+  attribution correctness, strategy aggregation, RAG fact boundaries; full
+  backend pytest; ruff; mypy `--strict`; GitHub CI. Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-035

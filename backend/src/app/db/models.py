@@ -72,6 +72,13 @@ from app.db.historical_immutability import install_historical_immutability as _i
 from app.db.journal_immutability import (
     register_journal_immutability as _register_journal_immutability,
 )
+from app.db.learning_attribution import (  # noqa: F401
+    LearningAttributionEventRow,
+    LearningAttributionRecordRow,
+)
+from app.db.learning_attribution import (
+    register_learning_attribution_immutability as _register_learning_attribution_immutability,
+)
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )
@@ -2507,6 +2514,11 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("execution_lifecycle_id IS NOT NULL"),
             sqlite_where=text("execution_lifecycle_id IS NOT NULL"),
         ),
+        CheckConstraint(
+            "evidence_window_hash IS NULL OR length(evidence_window_hash) = 64",
+            name="ck_journal_trades_lineage_window_hash",
+        ),
+        Index("ix_journal_trades_org_candidate", "organization_id", "candidate_id"),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -2623,6 +2635,11 @@ class JournalTrade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     projector_watermark_rank: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     projector_lock_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Phase 8: query helpers copied from sticky payload.lineage. Projector-owned.
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    assessment_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    evidence_window_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    trade_plan_revision_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
 
 
 class JournalTradeEvidence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -3498,3 +3515,4 @@ _register_journal_immutability()
 _register_canonical_candidate_immutability()
 _register_canonical_eligibility_immutability()
 _register_canonical_trade_plan_immutability()
+_register_learning_attribution_immutability()

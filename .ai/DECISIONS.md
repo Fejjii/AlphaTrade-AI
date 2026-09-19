@@ -1191,3 +1191,45 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
   Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
   `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.
+
+## AT-ADR-035 — Phase 8 learning attribution PostgreSQL persistence
+- **Date:** 2026-09-19
+- **Status:** Accepted (PostgreSQL adapter; not wired into FastAPI/workers)
+- **Context:** AT-ADR-033 froze record-only learning attribution on
+  `JournalLifecycleProjector` with an in-memory store. Canonical trade outcomes
+  still could not be queried as durable strategy/pattern intelligence. Agent 1's
+  persistence contract lived in `AGENT_1_ATTRIBUTION_INTEGRATION`.
+- **Decision:**
+  1. Next Alembic revision is `d4f7a2c8e901` after `c9e2b4a1d078`.
+  2. `learning_attribution_records` is the candidate-scoped aggregate
+     (`UNIQUE(organization_id, candidate_id)`). Partial unique
+     `(organization_id, execution_lifecycle_id)` when set. Events are append-only
+     and unique on the same source identity as journal projection receipts.
+  3. `PostgresAttributionStore` implements `AttributionStore` on the caller's
+     session. Duplicate source identity converges. Conflicting identity, sticky
+     lineage, and cross-tenant access fail closed.
+  4. Quality axes remain separate: setup quality, execution quality, risk
+     adherence, trader behavior, and outcome. REJECT/SKIP cannot become executed
+     outcomes. PnL cannot rewrite SetupAssessment or evidence-window hashes.
+  5. `learning_venue_mode` is `paper_internal` or `paper_exchange_demo` so future
+     demo trade learning does not mix with internal paper stats. Live/real is
+     not a venue.
+  6. `LearningQueryService` is the read API for strategy/pattern stats,
+     human-versus-system comparison, lesson suggestions (`persist=false`), and
+     RAG evidence documents. Narrative is labeled `NARRATIVE_NOT_FACT` and is
+     excluded from `facts_hash`. RagService is not called.
+  7. Optional `journal_trades` lineage columns are projector-stamped query
+     helpers. The projector remains the only JournalTrade writer. Slice 84
+     paper-validation learning analytics is not replaced.
+- **Alternatives considered:** Materialized stats table as a second authority
+  (rejected: derive stats from records); auto-ingest learning narrative to Qdrant
+  (rejected: market-truth and lesson-review integrity); FastAPI/worker wiring
+  (rejected: out of scope).
+- **Safety impact:** Paper only. No live trading, Watcher, Telegram, frontend, or
+  execution-dispatch changes.
+- **Consequences:** Docs in `docs/phase8_learning_persistence.md`. Tests in
+  `backend/tests/test_phase8_learning_persistence.py`. Migration `d4f7a2c8e901`.
+- **Validation:** Attribution/idempotency/tenant/RAG-boundary tests, Alembic
+  upgrade/downgrade/reupgrade and single head, full backend pytest, ruff, mypy
+  `--strict`, GitHub CI. Draft PR only; do not merge.
+

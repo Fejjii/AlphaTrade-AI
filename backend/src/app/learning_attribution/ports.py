@@ -1,4 +1,4 @@
-"""Attribution persistence port. In-memory this wave; Agent 1 owns SQL."""
+"""Attribution persistence port. In-memory for unit tests; PostgreSQL in Phase 8."""
 
 from __future__ import annotations
 

@@ -99,6 +99,8 @@ def test_matching_lineage_converges(
         session.commit()
         assert first.journal_trade_id == second.journal_trade_id
         assert session.scalar(select(func.count()).select_from(JournalTrade)) == 1
+        trade = session.scalars(select(JournalTrade)).one()
+        assert trade.candidate_id == CANDIDATE_ID
 
 
 def test_events_without_lineage_remain_valid(

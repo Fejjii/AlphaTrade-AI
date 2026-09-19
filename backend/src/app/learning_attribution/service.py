@@ -22,6 +22,7 @@ from app.learning_attribution.contracts import (
     StrategyPatternStatFacts,
 )
 from app.learning_attribution.errors import (
+    ExecutedOutcomeForbiddenError,
     LearningAttributionConflictError,
     NarrativeCannotRewriteFactsError,
 )
@@ -38,6 +39,7 @@ from app.learning_attribution.quality import (
     execution_quality_facts,
     outcome_facts,
     planned_setup_quality,
+    risk_adherence_facts,
     strategy_pattern_facts,
 )
 from app.repositories.journal_trades import JournalTradeRepository
@@ -197,6 +199,11 @@ class LearningAttributionService:
             trade=trade,
             payload=dict(command.event.payload),
         )
+        risk = risk_adherence_facts(
+            event_type=event_type,
+            trade=trade,
+            payload=dict(command.event.payload),
+        )
         behavior = behavior_facts(event_type=event_type, candidate=candidate, trade=trade)
         outcome = outcome_facts(event_type=event_type, trade=trade)
         if event_type in {
@@ -212,11 +219,13 @@ class LearningAttributionService:
             event_type=event_type,
             trade=trade,
             outcome=outcome,
+            learning_venue_mode=command.learning_venue_mode,
         )
         human = HumanVsSystemAttributionFacts(
             decision_actor=behavior.actor,
             setup_quality_axis=setup.axis,
             execution_quality_axis=execution.axis,
+            risk_adherence_axis=risk.axis,
             trader_behavior_axis=behavior.axis,
             planned_entry_price=execution.planned_entry_price,
             actual_entry_price=execution.actual_entry_price,
@@ -252,8 +261,10 @@ class LearningAttributionService:
             assessment_id=assessment.assessment_id,
             evidence_window_hash=assessment.evidence_window_hash,
             trade_plan_revision_id=None if plan is None else plan.revision_id,
+            learning_venue_mode=command.learning_venue_mode,
             setup_quality=setup,
             execution_quality=execution,
+            risk_adherence=risk,
             trader_behavior=behavior,
             outcome=outcome,
             human_vs_system=human,
@@ -327,6 +338,24 @@ class LearningAttributionService:
             raise LearningAttributionConflictError(
                 "Evidence window hash conflict for this attribution aggregate.",
                 details={"reason": "evidence_window_conflict"},
+            )
+        if previous.facts.learning_venue_mode is not command.learning_venue_mode:
+            raise LearningAttributionConflictError(
+                "Learning venue mode conflict for this attribution aggregate.",
+                details={"reason": "learning_venue_mode_conflict"},
+            )
+        executing = command.event.event_type in {
+            JournalLifecycleEventType.APPROVED_PLAN,
+            JournalLifecycleEventType.FILL,
+            JournalLifecycleEventType.CLOSE,
+            JournalLifecycleEventType.RECONCILE,
+        }
+        if executing and (
+            previous.facts.strategy_pattern.rejected or previous.facts.strategy_pattern.skipped
+        ):
+            raise ExecutedOutcomeForbiddenError(
+                "REJECT/SKIP attribution cannot later become an executed trade outcome.",
+                details={"reason": "reject_skip_cannot_execute"},
             )
 
     def _bound_lifecycle(
