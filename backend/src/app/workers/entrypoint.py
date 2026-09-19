@@ -10,11 +10,14 @@ orders; it only scans market data and records observability rows.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import structlog
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import get_session_factory
+from app.runtime.canonical import ProductionCanonicalRuntime, build_production_canonical_runtime
 from app.workers.lock import build_worker_lock
 from app.workers.notifier import WorkerNotifier
 from app.workers.runner import WorkerLoopDriver
@@ -24,7 +27,7 @@ from app.workers.service import ScanResult, WorkerService
 logger = structlog.get_logger(__name__)
 
 
-def _build_cycle_notifier(settings: Settings):
+def _build_cycle_notifier(settings: Settings) -> Callable[[ScanResult], None]:
     """Return an ``on_cycle`` hook that emits outbound system alerts."""
     notifier = WorkerNotifier(settings)
 
@@ -37,17 +40,32 @@ def _build_cycle_notifier(settings: Settings):
     return _on_cycle
 
 
+def build_canonical_runtime(settings: Settings) -> ProductionCanonicalRuntime:
+    """Attach PostgreSQL canonical adapters. Never starts Watcher or Telegram."""
+
+    runtime = build_production_canonical_runtime(get_session_factory(), settings=settings)
+    logger.info(
+        "canonical_runtime_ready",
+        watcher_enabled=runtime.watcher_enabled,
+        telegram_enabled=runtime.telegram_enabled,
+        real_trading_enabled=runtime.flags.real_trading_enabled,
+    )
+    return runtime
+
+
 def build_driver(settings: Settings) -> WorkerLoopDriver:
     """Wire the worker service + loop driver from settings."""
     from app.core.paper_safety import assert_execution_capable_composition_root
 
     assert_execution_capable_composition_root(settings)
+    runtime = build_canonical_runtime(settings)
     service = WorkerService(
         get_session_factory(),
         build_worker_lock(settings),
         worker_name=settings.worker_name,
         scanner=build_market_scan_scanner(settings),
         on_cycle=_build_cycle_notifier(settings),
+        canonical_runtime=runtime,
     )
     return WorkerLoopDriver(service, interval_seconds=settings.worker_scan_interval_seconds)
 

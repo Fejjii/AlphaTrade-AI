@@ -263,3 +263,36 @@ def test_execution_paper_order(client_with_db: tuple[TestClient, sessionmaker[Se
     body = response.json()
     assert body["error"]["code"] == "trading_policy_violation"
     assert "EXECUTE_PAPER_PLAN" in body["error"]["message"]
+
+
+def test_execute_paper_plan_http_rejects_extra_fields(
+    client_with_db: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _factory = client_with_db
+    response = client.post(
+        "/execution/paper-plan",
+        json={
+            "account_id": str(uuid.uuid4()),
+            "authorization_id": str(uuid.uuid4()),
+            "revision_id": str(uuid.uuid4()),
+            "idempotency_key": "http-extra",
+            "side": "buy",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_execute_paper_plan_http_unknown_revision_is_not_found(
+    client_with_db: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _factory = client_with_db
+    response = client.post(
+        "/execution/paper-plan",
+        json={
+            "account_id": str(uuid.uuid4()),
+            "authorization_id": str(uuid.uuid4()),
+            "revision_id": str(uuid.uuid4()),
+            "idempotency_key": "http-missing",
+        },
+    )
+    assert response.status_code == 404

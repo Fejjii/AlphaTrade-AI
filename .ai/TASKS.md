@@ -1131,8 +1131,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   attribution; Phase 4 canonical journal projector
   · Risk: Medium (lineage / learning integrity / schema)
 - Safety classification: Paper-safe / PostgreSQL adapter and query services;
-  Watcher, Telegram, frontend, execution dispatch, and live trading remain out
-  of scope
+  FastAPI/runtime wiring owned by later Phase 8 slices
 - Goal: Persist canonical learning attribution in PostgreSQL. Preserve immutable
   lineage SetupAssessment → Candidate → TradePlan → paper execution →
   JournalTrade → outcome. Duplicate facts converge; conflicting identities and
@@ -1143,13 +1142,44 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   separate venue cohort. Learning never rewrites historical market truth. LLM
   narrative remains explanation only. Facts are consumable by analytics and RAG
   without competing journal/lesson authorities.
-- Branch: `cursor/phase8_learning_persistence-843e`
+- Branch: `cursor/phase8_learning_persistence-843e` (source); integrated on
+  `cursor/phase8_final_integration`
 - Deliverables: Alembic `d4f7a2c8e901`, `PostgresAttributionStore`,
   `LearningQueryService`, journal lineage query columns, tests in
   `backend/tests/test_phase8_learning_persistence.py`, docs
   `docs/phase8_learning_persistence.md`.
 - Validation: Migration cycle, idempotency, conflicts, tenant isolation,
   attribution correctness, strategy aggregation, RAG fact boundaries; full
-  backend pytest; ruff; mypy `--strict`; GitHub CI. Draft PR only; do not merge.
+  backend pytest; ruff; mypy `--strict`; GitHub CI. Source PR #97.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-035
+
+### AT-056 — Phase 8 canonical PAPER runtime execution
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-051 Candidate PostgreSQL;
+  AT-052 canonical TradePlan application layer; AT-054 PostgreSQL binding;
+  AT-055 learning persistence
+  · Risk: Medium (execution safety, lineage, idempotency)
+- Safety classification: Paper-safe / runtime wiring; Watcher, Telegram, and
+  live trading remain disabled; no real exchange mutation
+- Goal: Wire Phase 7 PostgreSQL Candidate, ActionEligibility, and canonical
+  TradePlan adapters into FastAPI and workers. Complete the canonical PAPER
+  lifecycle: Evidence → SetupAssessment → Candidate → ActionEligibility →
+  TradePlanRevision → approval → EXECUTE_PAPER_PLAN → journal. CandidateLifecycleService
+  remains sole Candidate authority. Execution requires the exact approved
+  immutable TradePlanRevision. Duplicate requests converge. Stale/rejected/
+  expired/mismatched/modified plans fail closed. Risk engine BLOCK and kill
+  switch stay final. `canonical_plan_root` is never ProposalService trading
+  authority.
+- Branch: `cursor/phase8_runtime_execution` (source); integrated on
+  `cursor/phase8_final_integration`
+- Deliverables: `app.runtime.canonical`, `CanonicalPaperExecutionService`,
+  `POST /execution/paper-plan`, ProposalService filter, journal projection
+  source `canonical_paper_execution`, tests
+  `backend/tests/test_phase8_*.py`, docs `docs/phase8_runtime_execution.md`.
+  No Alembic.
+- Validation: adversarial execution tests (restart/idempotency, tenant
+  isolation, stale state, kill switch, risk rejection, duplicates, journal);
+  full backend pytest; ruff; scoped `mypy --strict`; GitHub CI. Source PR #99
+  claimed AT-055; remapped to AT-056 on the RC branch.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-036

@@ -34,6 +34,10 @@ class WorkerLoopDriver:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
+    @property
+    def service(self) -> WorkerService:
+        return self._service
+
     def stop(self) -> None:
         self._stop.set()
 

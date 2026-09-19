@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,6 +15,9 @@ from app.db.models import MarketScanRun
 from app.guardrails.redaction import redact_text
 from app.workers.lock import WorkerLock
 from app.workers.repository import MarketScanRunRepository, WorkerHeartbeatRepository
+
+if TYPE_CHECKING:
+    from app.runtime.canonical import ProductionCanonicalRuntime
 
 logger = structlog.get_logger(__name__)
 
@@ -48,6 +52,7 @@ class WorkerService:
         scanner: Scanner | None = None,
         on_cycle: Callable[[ScanResult], None] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        canonical_runtime: ProductionCanonicalRuntime | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._lock = lock
@@ -55,6 +60,7 @@ class WorkerService:
         self._scanner = scanner or _noop_scanner
         self._on_cycle = on_cycle
         self._clock = clock
+        self.canonical_runtime = canonical_runtime
 
     def set_paused(self, paused: bool) -> None:
         """Manually pause or resume scanning (persisted on the heartbeat)."""
