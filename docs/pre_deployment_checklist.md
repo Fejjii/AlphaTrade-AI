@@ -11,16 +11,17 @@ Complete **inside Cursor / locally** before creating Render, Vercel, Upstash, or
 | 5 | Worksheet copied | `cp docs/staging_deployment_worksheet.template.md docs/staging_deployment_worksheet.local.md` | ☐ |
 | 6 | Render Postgres planned | Account ready; know region | ☐ |
 | 7 | Redis provider planned | Upstash or Render Redis | ☐ |
-| 8 | Qdrant decision made | Cloud cluster **or** empty `QDRANT_URL` on staging | ☐ |
+| 8 | Qdrant Cloud planned | Hosted HTTPS `QDRANT_URL` required on staging (AT-013) | ☐ |
 | 9 | Backend deploy command known | Docker `backend/Dockerfile`; pre-deploy `alembic upgrade head` | ☐ |
 | 10 | Migration command known | `alembic upgrade head` or `./scripts/run-migrations.sh` | ☐ |
 | 11 | Frontend deploy command known | Vercel root `frontend`; `npm run build` | ☐ |
 | 12 | CORS configured (plan) | `CORS_ORIGINS` = exact Vercel HTTPS URL | ☐ |
 | 13 | Cookie settings configured (plan) | `AUTH_*` + `NEXT_PUBLIC_AUTH_COOKIE_MODE=true` | ☐ |
 | 14 | Safety scripts ready | `./scripts/verify-safety.sh` executable | ☐ |
-| 15 | Smoke scripts ready | `./scripts/staging-smoke.sh` + `./scripts/post-deploy-smoke-gate.sh` executable | ☐ |
+| 15 | Smoke scripts ready | `./scripts/staging-smoke.sh` + `./scripts/post-deploy-smoke-gate.sh` + `./scripts/canonical-staging-smoke.sh` executable | ☐ |
 | 15b | Rollback runbook reviewed | `docs/deploy_rollback_runbook.md` (AT-005) | ☐ |
 | 16 | Real trading disabled | `ENABLE_REAL_TRADING=false`, `EXECUTION_MODE=paper` | ☐ |
+| 16b | Watcher + Telegram disabled | `MARKET_WATCHER_ENABLED=false`, `WATCHER_ORCHESTRATION_ENABLED=false`, `TELEGRAM_*_ENABLED=false` | ☐ |
 | 17 | Billing disabled | `BILLING_ENABLED=false` | ☐ |
 
 ## Local validation commands

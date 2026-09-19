@@ -204,6 +204,35 @@ def test_deployment_posture_reports_at018_hardening() -> None:
     assert posture["trusted_proxy_hops"] == 1
     assert posture["telegram_interaction_enabled"] is False
     assert posture["telegram_alerts_enabled"] is False
+    assert posture["automatic_telegram_delivery_enabled"] is False
+    assert posture["market_watcher_enabled"] is False
+    assert posture["market_watcher_bridge_enabled"] is False
+    assert posture["watcher_orchestration_enabled"] is False
+
+
+def test_staging_rejects_market_watcher_enabled() -> None:
+    with pytest.raises(ValidationError, match="market_watcher_enabled"):
+        Settings(**{**_STAGING_BASE, "market_watcher_enabled": True})
+
+
+def test_staging_rejects_watcher_orchestration_enabled() -> None:
+    with pytest.raises(ValidationError, match="watcher_orchestration_enabled"):
+        Settings(**{**_STAGING_BASE, "watcher_orchestration_enabled": True})
+
+
+def test_staging_rejects_telegram_alerts_enabled() -> None:
+    with pytest.raises(ValidationError, match="telegram_alerts_enabled"):
+        Settings(**{**_STAGING_BASE, "telegram_alerts_enabled": True})
+
+
+def test_staging_rejects_telegram_interaction_enabled() -> None:
+    with pytest.raises(ValidationError, match="telegram_interaction_enabled"):
+        Settings(**{**_STAGING_BASE, "telegram_interaction_enabled": True})
+
+
+def test_staging_rejects_automatic_telegram_delivery_enabled() -> None:
+    with pytest.raises(ValidationError, match="automatic_telegram_delivery_enabled"):
+        Settings(**{**_STAGING_BASE, "automatic_telegram_delivery_enabled": True})
 
 
 def test_validate_deployment_skips_local() -> None:

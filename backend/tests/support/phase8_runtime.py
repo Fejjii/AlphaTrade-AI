@@ -8,11 +8,11 @@ from decimal import Decimal
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.db.models import AccountRiskAccountingState
+from app.db.models import AccountRiskAccountingState, Membership
 from app.runtime.canonical import ProductionCanonicalRuntime, build_production_canonical_runtime
 from app.schemas.approval import ApprovalAuthorization, ApprovalDecisionRequest
 from app.schemas.canonical_trade_plan import CanonicalTradePlanRevision
-from app.schemas.common import ApprovalAction
+from app.schemas.common import ApprovalAction, MembershipRole
 from app.schemas.execution_protocol import ExecutePaperPlanRequest
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
@@ -21,7 +21,7 @@ from app.services.execution_service import ExecutionService
 from app.signal_fusion.memory import FrozenClock
 from tests.support.phase1_plan_fixtures import paper_settings
 from tests.support.phase5_market import EVALUATED_AT
-from tests.support.phase6_fusion import VALID_UNTIL
+from tests.support.phase6_fusion import ORG_ID, USER_ID, VALID_UNTIL
 from tests.support.phase7_postgres import postgres_plan_world
 from tests.support.phase7_trade_plan import CanonicalPlanWorld, plan_command
 from tests.support.postgres_persistence import POSTGRES_URL
@@ -102,6 +102,23 @@ def seed_paper_capacity(
             version=1,
         )
     )
+
+
+def prepared_unapproved_canonical(
+    factory: sessionmaker[Session],
+) -> tuple[CanonicalPlanWorld, CanonicalTradePlanRevision]:
+    """Candidate + eligibility + TradePlan + paper capacity, no authorization."""
+
+    world = postgres_plan_world(factory)
+    envelope = world.plans.create(plan_command(world))
+    session = factory()
+    try:
+        seed_paper_capacity(session, envelope)
+        session.add(Membership(user_id=USER_ID, organization_id=ORG_ID, role=MembershipRole.OWNER))
+        session.commit()
+    finally:
+        session.close()
+    return world, envelope
 
 
 def prepared_authorized_canonical(

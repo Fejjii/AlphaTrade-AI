@@ -75,8 +75,16 @@ export interface HealthResponse {
   environment: string;
   execution_mode: string;
   real_trading_enabled: boolean;
+  exchange_mode?: string;
   must_verify_email: boolean;
   demo_seed_enabled?: boolean;
+  market_watcher_enabled?: boolean;
+  market_watcher_bridge_enabled?: boolean;
+  watcher_orchestration_enabled?: boolean;
+  telegram_alerts_enabled?: boolean;
+  telegram_interaction_enabled?: boolean;
+  automatic_telegram_delivery_enabled?: boolean;
+  git_sha?: string | null;
   timestamp: string;
 }
 

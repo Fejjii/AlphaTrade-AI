@@ -25,6 +25,7 @@
 #   COOKIE_MODE              true|false (default false; staging cross-domain often true)
 #   ALLOW_DEGRADED_READY     true|false (default false)
 #   GATE_PROFILE             safety | standard (default) | extended
+#   INCLUDE_CANONICAL        true to run canonical synthetic smoke in standard/extended
 #   SKIP_STAGING_SMOKE       true to skip staging-smoke even in standard/extended
 #   INCLUDE_ANALYTICS        forwarded to staging-smoke (default false)
 #   INCLUDE_STRATEGY_QUALITY forwarded to staging-smoke (default false)
@@ -47,6 +48,7 @@ REQUIRED_SCRIPTS=(
   "scripts/verify-safety.sh"
   "scripts/staging-smoke.sh"
   "scripts/staging-live-smoke.sh"
+  "scripts/canonical-staging-smoke.sh"
 )
 
 fail_misconfig() {
@@ -152,7 +154,7 @@ fi
 
 if [[ "$GATE_PROFILE" == "extended" ]]; then
   echo ""
-  echo "[3/3] Extended live smoke (staging-live-smoke.sh)"
+  echo "[3/4] Extended live smoke (staging-live-smoke.sh)"
   live_env=("BACKEND_URL=${BASE_URL}")
   if [[ -n "${FRONTEND_URL:-}" ]]; then
     live_env+=("FRONTEND_URL=${FRONTEND_URL}")
@@ -162,7 +164,35 @@ if [[ "$GATE_PROFILE" == "extended" ]]; then
   fi
 else
   echo ""
-  echo "[3/3] Extended live smoke skipped (set GATE_PROFILE=extended to enable)"
+  echo "[3/4] Extended live smoke skipped (set GATE_PROFILE=extended to enable)"
+fi
+
+run_canonical=false
+if [[ "${INCLUDE_CANONICAL:-false}" == "true" || "$GATE_PROFILE" == "extended" ]]; then
+  run_canonical=true
+fi
+if [[ "$run_canonical" == "true" ]]; then
+  echo ""
+  echo "[4/4] Canonical synthetic smoke (canonical-staging-smoke.sh)"
+  canon_env=(
+    "BASE_URL=${BASE_URL}"
+    "COOKIE_MODE=${COOKIE_MODE}"
+  )
+  if [[ -n "${SMOKE_EMAIL:-}" ]]; then
+    canon_env+=("SMOKE_EMAIL=${SMOKE_EMAIL}")
+  fi
+  if [[ -n "${SMOKE_PASSWORD:-}" ]]; then
+    canon_env+=("SMOKE_PASSWORD=${SMOKE_PASSWORD}")
+  fi
+  if [[ -n "${SMOKE_ACCESS_TOKEN:-}" ]]; then
+    canon_env+=("SMOKE_ACCESS_TOKEN=${SMOKE_ACCESS_TOKEN}" "SKIP_REGISTER=${SKIP_REGISTER:-true}")
+  fi
+  if ! env "${canon_env[@]}" "${ROOT_DIR}/scripts/canonical-staging-smoke.sh"; then
+    fail_gate "canonical-staging-smoke.sh failed — treat as rollback trigger"
+  fi
+else
+  echo ""
+  echo "[4/4] Canonical synthetic smoke skipped (set INCLUDE_CANONICAL=true or GATE_PROFILE=extended)"
 fi
 
 echo ""

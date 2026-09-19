@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+# Render `dockerCommand` (and Compose `command`) is passed as arguments to this
+# ENTRYPOINT. Honor them so the worker service does not boot uvicorn.
+if [ "$#" -gt 0 ]; then
+  echo "Running container command: $*"
+  exec "$@"
+fi
+
 echo "Running Alembic migrations..."
 alembic upgrade head
 

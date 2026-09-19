@@ -1222,3 +1222,22 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Docker build, GitHub CI.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-038
+
+### AT-059 — Final synthetic staging readiness
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-058 Phase 8 RC on `main@c39dca6`
+  · Risk: Medium (ops + safety locks)
+- Safety classification: Paper-only staging readiness; Watcher, Telegram, and live
+  trading remain disabled; no real exchange credentials; no merge
+- Goal: Confirm the canonical architecture can deploy to paper staging. Document
+  required env vars. Enforce paper mode, Watcher off, Telegram off, real trading
+  impossible. Add synthetic HTTP smoke for auth, Candidate reads, eligibility,
+  TradePlan approval, paper execution, journal, learning, strategy stats, decision
+  frontend, kill switch, risk BLOCK, and cross-tenant rejection. Deploy only if
+  cloud credentials already exist; otherwise stop at the human boundary.
+- Branch: `cursor/final_staging_readiness`
+- Deliverables: staging safety locks, `/health` posture flags, canonical smoke
+  script + pytest, `docs/RELEASE_READINESS.md`, rollback chain notes.
+- Validation: deployment-safety, canonical HTTP smoke, Docker compose tests,
+  frontend e2e, ruff, GitHub CI. Draft PR; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-039

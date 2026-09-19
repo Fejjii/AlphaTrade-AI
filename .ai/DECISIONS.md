@@ -1340,3 +1340,26 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. No deploy. No real exchange mutation.
 - **Consequences:** Branch `cursor/phase8_final_integration`. Tests in
   `backend/tests/test_phase8_canonical_workflow.py`.
+
+## AT-ADR-039 — Staging/production refuse Watcher and Telegram enablement
+- **Date:** 2026-09-19
+- **Status:** Accepted
+- **Context:** Phase 8 canonical architecture is paper-ready. Watcher and Telegram
+  defaulted false but were not locked, so a staging env-var mistake could start
+  orchestration or outbound alerts. Final synthetic staging validation requires
+  those surfaces to stay off.
+- **Decision:**
+  1. `deployment_safety` rejects Watcher (scanner, bridge, auto-tick, orchestration)
+     and Telegram (alerts, interaction, automatic delivery) when `ENVIRONMENT` is
+     staging or production.
+  2. `/health` exposes those flags plus `exchange_mode` so `verify-safety.sh` can
+     assert them without printing secrets.
+  3. Real trading remains permanently impossible (`paper_safety`).
+  4. Canonical HTTP minting is still out of scope; synthetic smoke seeds via
+     existing services or optional operator IDs.
+- **Alternatives considered:** Leave flags default-off only (rejected: operator
+  misconfig could enable Watcher/Telegram on staging).
+- **Safety impact:** Tightens paper staging; does not enable live trading.
+- **Consequences:** Branch `cursor/final_staging_readiness`. Tests in
+  `backend/tests/test_deployment_safety.py` and
+  `backend/tests/test_canonical_staging_smoke.py`.

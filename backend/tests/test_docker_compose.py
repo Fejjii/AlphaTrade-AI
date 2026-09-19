@@ -36,6 +36,11 @@ def test_compose_backend_has_safe_trading_defaults(compose_config: dict) -> None
     env = compose_config["services"]["backend"]["environment"]
     assert env["EXECUTION_MODE"] == "paper"
     assert env["ENABLE_REAL_TRADING"] in ("false", False)
+    assert env["EXCHANGE_MODE"] == "paper_internal"
+    assert env["MARKET_WATCHER_ENABLED"] in ("false", False)
+    assert env["WATCHER_ORCHESTRATION_ENABLED"] in ("false", False)
+    assert env["TELEGRAM_ALERTS_ENABLED"] in ("false", False)
+    assert env["TELEGRAM_INTERACTION_ENABLED"] in ("false", False)
     assert env["OBSERVABILITY_STRICT_MODE"] in ("false", False)
     assert env["PROVIDER_MODE"] == "mock"
     assert env["OPENAI_API_KEY"] in ("", None)
@@ -149,6 +154,9 @@ def test_health_and_provider_status_under_docker_like_settings() -> None:
         body = health.json()
         assert body["execution_mode"] == "paper"
         assert body["real_trading_enabled"] is False
+        assert body["exchange_mode"] == "paper_internal"
+        assert body["market_watcher_enabled"] is False
+        assert body["telegram_alerts_enabled"] is False
 
         ready = client.get("/health/ready")
         assert ready.status_code == 200

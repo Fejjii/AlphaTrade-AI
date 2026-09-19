@@ -67,6 +67,18 @@ import json, sys
 payload = json.loads(sys.argv[1])
 assert payload.get("execution_mode") == "paper", payload
 assert payload.get("real_trading_enabled") is False, payload
+exchange_mode = payload.get("exchange_mode")
+assert exchange_mode in (None, "paper_internal", "paper_exchange_demo"), payload
+for flag in (
+    "market_watcher_enabled",
+    "market_watcher_bridge_enabled",
+    "watcher_orchestration_enabled",
+    "telegram_alerts_enabled",
+    "telegram_interaction_enabled",
+    "automatic_telegram_delivery_enabled",
+):
+    if flag in payload:
+        assert payload.get(flag) is False, payload
 git_sha = payload.get("git_sha")
 print(f"  OK: paper mode, real_trading_enabled=false, git_sha={git_sha or 'null'}")
 PY

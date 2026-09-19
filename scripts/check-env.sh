@@ -46,7 +46,7 @@ except Exception as exc:
     print("  - JWT_SECRET: openssl rand -base64 32", file=sys.stderr)
     print("  - CORS_ORIGINS: exact https:// Vercel URL, no trailing slash", file=sys.stderr)
     print("  - DATABASE_URL: managed Postgres (Render adds postgres:// — OK)", file=sys.stderr)
-    print("  - Staging QDRANT_URL: hosted HTTPS or empty for in-memory fallback", file=sys.stderr)
+    print("  - Staging QDRANT_URL: hosted HTTPS Qdrant is required (AT-013 fail-closed)", file=sys.stderr)
     sys.exit(1)
 
 posture = deployment_posture(settings)
@@ -60,6 +60,12 @@ if settings.environment.value in ("staging", "production"):
         "execution_mode": ("paper", settings.execution_mode.value),
         "enable_real_trading": (False, settings.enable_real_trading),
         "billing_enabled": (False, settings.billing_enabled),
+        "market_watcher_enabled": (False, settings.market_watcher_enabled),
+        "market_watcher_bridge_enabled": (False, settings.market_watcher_bridge_enabled),
+        "watcher_orchestration_enabled": (False, settings.watcher_orchestration_enabled),
+        "telegram_alerts_enabled": (False, settings.telegram_alerts_enabled),
+        "telegram_interaction_enabled": (False, settings.telegram_interaction_enabled),
+        "automatic_telegram_delivery_enabled": (False, settings.automatic_telegram_delivery_enabled),
     }
     print("Staging/production safety checks:")
     for name, (expected, actual) in required.items():

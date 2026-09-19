@@ -20,6 +20,7 @@ SCRIPTS = (
     "scripts/test-seed-path-staging.sh",
     "scripts/run-migrations.sh",
     "scripts/provider-validation-smoke.sh",
+    "scripts/canonical-staging-smoke.sh",
     "scripts/recreate-rag-collection.sh",
     "scripts/reingest-knowledge-base.sh",
 )
@@ -46,6 +47,7 @@ def test_staging_deployment_docs_exist() -> None:
         "docs/staging_execution_checklist.md",
         "docs/staging_deployment.md",
         "docs/deploy_rollback_runbook.md",
+        "docs/RELEASE_READINESS.md",
         "docs/slice_66b_demo_venue_validation.md",
         "render.yaml",
         "frontend/vercel.json",
@@ -106,12 +108,41 @@ def test_post_deploy_smoke_gate_rejects_placeholder_base_url() -> None:
     assert "placeholder" in result.stderr.lower()
 
 
+def test_canonical_staging_smoke_self_check() -> None:
+    script = ROOT / "scripts/canonical-staging-smoke.sh"
+    result = subprocess.run(
+        [str(script), "--self-check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "self-check passed" in result.stdout
+
+
+def test_backend_entrypoint_honors_custom_command() -> None:
+    text = (ROOT / "backend/docker/entrypoint.sh").read_text(encoding="utf-8")
+    assert 'if [ "$#" -gt 0 ]' in text
+    assert 'exec "$@"' in text
+    assert "alembic upgrade head" in text
+
+
+def test_staging_env_example_requires_hosted_qdrant() -> None:
+    text = (ROOT / ".env.staging.example").read_text(encoding="utf-8")
+    assert "QDRANT_URL=https://YOUR-CLUSTER.qdrant.io" in text
+    assert "TELEGRAM_ALERTS_ENABLED=false" in text
+    assert "WATCHER_ORCHESTRATION_ENABLED=false" in text
+    assert "MARKET_WATCHER_ENABLED=false" in text
+
+
 def test_post_deploy_smoke_gate_mandates_verify_safety() -> None:
     """Gate script must keep verify-safety as a hard dependency."""
     text = (ROOT / "scripts/post-deploy-smoke-gate.sh").read_text(encoding="utf-8")
     assert "verify-safety.sh" in text
     assert "GATE FAILED" in text
     assert "docs/deploy_rollback_runbook.md" in text
+    assert "canonical-staging-smoke.sh" in text
 
 
 def test_deploy_rollback_runbook_covers_required_sections() -> None:
@@ -124,5 +155,7 @@ def test_deploy_rollback_runbook_covers_required_sections() -> None:
         "post-deploy-smoke-gate.sh",
         "ENABLE_REAL_TRADING",
         "execution_mode",
+        "d4f7a2c8e901",
+        "canonical-staging-smoke.sh",
     ):
         assert needle in text, f"missing section/marker: {needle}"

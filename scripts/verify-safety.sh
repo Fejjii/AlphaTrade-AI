@@ -37,7 +37,26 @@ if mode != "paper":
 if real is not False:
     print(f"FAIL: real_trading_enabled={real!r} (expected false)", file=sys.stderr)
     sys.exit(1)
-print(f"  health: execution_mode=paper, real_trading_enabled=false, environment={env}")
+exchange_mode = payload.get("exchange_mode")
+if exchange_mode not in (None, "paper_internal", "paper_exchange_demo"):
+    print(f"FAIL: exchange_mode={exchange_mode!r}", file=sys.stderr)
+    sys.exit(1)
+disabled_flags = (
+    "market_watcher_enabled",
+    "market_watcher_bridge_enabled",
+    "watcher_orchestration_enabled",
+    "telegram_alerts_enabled",
+    "telegram_interaction_enabled",
+    "automatic_telegram_delivery_enabled",
+)
+for flag in disabled_flags:
+    if flag in payload and payload.get(flag) is not False:
+        print(f"FAIL: {flag}={payload.get(flag)!r} (expected false)", file=sys.stderr)
+        sys.exit(1)
+print(
+    f"  health: execution_mode=paper, real_trading_enabled=false, "
+    f"environment={env}, exchange_mode={exchange_mode or 'unset'}"
+)
 PY
 
 providers_json=""
