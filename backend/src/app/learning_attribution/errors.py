@@ -17,6 +17,24 @@ class LearningAttributionConflictError(ConflictError):
     code = "learning_attribution_conflict"
 
 
+class LearningAttributionIncompleteError(ConflictError):
+    """Required Candidate, eligibility, or lineage is missing after ALLOW.
+
+    Canonical paper execution must fail closed (or persist this explicit
+    reason) rather than skip learning evidence.
+    """
+
+    code = "learning_attribution_incomplete"
+
+    def __init__(
+        self,
+        message: str = "Canonical learning attribution cannot proceed without required lineage.",
+        *,
+        reason: str,
+    ) -> None:
+        super().__init__(message, details={"reason": reason})
+
+
 class CrossTenantAttributionError(ForbiddenError):
     """Lineage organization does not match the attribution command."""
 

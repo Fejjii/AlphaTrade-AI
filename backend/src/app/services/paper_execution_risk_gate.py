@@ -1,8 +1,14 @@
-"""Fail-closed fresh risk evaluation for paper order placement (AT-012).
+"""Legacy AT-012 fail-closed risk evaluation for ``place_paper_order``.
 
 Does not trust client-supplied or stale stored risk results. Re-evaluates the
 deterministic RiskEngine with authoritative DailyRiskState synced from paper
 portfolio facts, plus kill switch and request↔proposal binding.
+
+Phase 1/8 ``EXECUTE_PAPER_PLAN`` claim authority is ``evaluate_claim_predicate``
+under locked safety-epoch + ``AccountRiskAccountingState``, plus the canonical
+pre-claim lineage revalidation (including persisted ActionEligibility TTL).
+This gate is not a second claim-time risk authority and must not be wired
+beside the predicate.
 """
 
 from __future__ import annotations

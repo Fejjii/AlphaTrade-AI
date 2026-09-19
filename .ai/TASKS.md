@@ -1222,3 +1222,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Docker build, GitHub CI.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-038
+
+### AT-059 — Final backend hardening (release residues)
+- Priority: P0 · Status: DONE · Dependencies: AT-058 Phase 8 final integration
+  · Risk: Medium (learning integrity, claim-time risk, deployment safety)
+- Safety classification: Paper-only; Watcher, Telegram, and live trading remain disabled;
+  no deploy
+- Goal: Close remaining medium backend residues before release. Canonical learning
+  attribution must not silently skip after ALLOW. Claim-time risk stays
+  `evaluate_claim_predicate` plus persisted ActionEligibility (do not wire unused
+  `PaperExecutionRiskGate` as a second authority). Approval/execution/journal/learning
+  stay one unit of work under failure. Restart/duplicate converge. Canonical reads stay
+  tenant-safe. Paper-only runtime and deployment safety keep accidental real trading
+  impossible.
+- Branch: `cursor/final_backend_hardening`
+- Validation: adversarial hardening tests; local backend pytest 2261 passed;
+  ruff check/format; mypy `--strict` on affected modules; Alembic single head
+  `d4f7a2c8e901`; deployment-safety; evaluation 16/16 + 5/5 + 7/7; frontend
+  lint/typecheck/1153 tests/build; GitHub CI run 35462467663 success (backend,
+  frontend, deployment-safety, evaluation, docker-build, e2e-smoke). Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/102 — do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-039

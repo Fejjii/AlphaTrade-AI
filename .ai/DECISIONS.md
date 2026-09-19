@@ -1340,3 +1340,35 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. No deploy. No real exchange mutation.
 - **Consequences:** Branch `cursor/phase8_final_integration`. Tests in
   `backend/tests/test_phase8_canonical_workflow.py`.
+
+## AT-ADR-039 — Final backend hardening fail-closed attribution and deployment pins
+- **Date:** 2026-09-19
+- **Status:** Accepted
+- **Context:** After Phase 8 integration (`main@c39dca6`), ALLOW journal projection
+  could silently skip learning when Candidate or ActionEligibility lookup returned
+  `None`. `PaperExecutionRiskGate` remains unused on `EXECUTE_PAPER_PLAN`. Staging
+  deployment safety logged Telegram flags but did not reject Watcher/Telegram enablement.
+- **Decision:**
+  1. Missing Candidate, eligibility, or required assessment lineage after ALLOW
+     raises `LearningAttributionIncompleteError` and rolls back the claim/journal
+     unit of work. Learning evidence is never silently skipped.
+  2. Claim-time final risk authority remains `evaluate_claim_predicate` under
+     locked safety-epoch and `AccountRiskAccountingState`, plus canonical lineage
+     revalidation including persisted ActionEligibility TTL. Do not integrate
+     unused `PaperExecutionRiskGate` as a competing claim authority.
+  3. `POST /execution/paper-plan` commits replay requests without double-metering
+     usage so healing writes persist.
+  4. Canonical fill projection fails closed when the command/plan is missing or
+     the production canonical runtime is unbound on a canonical plan.
+  5. Staging/production reject Watcher and Telegram enablement flags. Accidental
+     real trading remains impossible via existing paper/deployment/exchange
+     invariants (`real_trading_enabled` is permanently false).
+- **Alternatives considered:** Persist a separate attribution-failure row while
+  committing ALLOW (rejected for this slice: would split execution from learning);
+  wire `PaperExecutionRiskGate` into claim (rejected: second risk authority).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay disabled.
+  No deploy.
+- **Consequences:** Branch `cursor/final_backend_hardening`. Tests in
+  `backend/tests/test_phase8_backend_hardening.py`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/102 (do not merge). GitHub CI run
+  35462467663 success.

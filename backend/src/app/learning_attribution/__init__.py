@@ -35,6 +35,7 @@ from app.learning_attribution.errors import (
     CrossTenantAttributionError,
     ExecutedOutcomeForbiddenError,
     LearningAttributionConflictError,
+    LearningAttributionIncompleteError,
     MarketTruthMutationError,
     NarrativeCannotRewriteFactsError,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "ExecutionQuality",
     "InMemoryAttributionStore",
     "LearningAttributionConflictError",
+    "LearningAttributionIncompleteError",
     "LearningAttributionService",
     "LearningEvidenceDocument",
     "LearningQueryService",

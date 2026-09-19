@@ -41,10 +41,27 @@ def validate_deployment_settings(settings: Settings) -> None:
 
     if settings.enable_real_trading:
         errors.append("enable_real_trading must be false in staging/production")
+    if settings.real_trading_enabled:
+        errors.append("real_trading_enabled must be false in staging/production")
     if settings.execution_mode is ExecutionMode.TRADE:
         errors.append("execution_mode=trade is not allowed in staging/production")
     if settings.execution_mode is not ExecutionMode.PAPER:
         errors.append("execution_mode must be paper in staging/production")
+
+    if settings.market_watcher_enabled:
+        errors.append("market_watcher_enabled must be false in staging/production")
+    if settings.market_watcher_bridge_enabled:
+        errors.append("market_watcher_bridge_enabled must be false in staging/production")
+    if settings.market_watcher_bridge_auto_tick:
+        errors.append("market_watcher_bridge_auto_tick must be false in staging/production")
+    if settings.watcher_orchestration_enabled:
+        errors.append("watcher_orchestration_enabled must be false in staging/production")
+    if settings.telegram_alerts_enabled:
+        errors.append("telegram_alerts_enabled must be false in staging/production")
+    if settings.telegram_interaction_enabled:
+        errors.append("telegram_interaction_enabled must be false in staging/production")
+    if settings.automatic_telegram_delivery_enabled:
+        errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
 
     # The demo exchange is allowed in staging only (for validation), never in
     # production. ``trade_live`` is rejected globally by exchange_safety.
@@ -165,4 +182,8 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "embeddings_dimensions": settings.embeddings_dimensions,
         "telegram_alerts_enabled": settings.telegram_alerts_enabled,
         "telegram_interaction_enabled": settings.telegram_interaction_enabled,
+        "automatic_telegram_delivery_enabled": settings.automatic_telegram_delivery_enabled,
+        "market_watcher_enabled": settings.market_watcher_enabled,
+        "market_watcher_bridge_enabled": settings.market_watcher_bridge_enabled,
+        "watcher_orchestration_enabled": settings.watcher_orchestration_enabled,
     }

@@ -113,9 +113,9 @@ async def execute_paper_plan(
             correlation_id=body.correlation_id,
         )
     )
-    if result.replayed:
-        return result
-    if result.outcome is ExecutionCommandOutcome.ALLOW:
+    # Replay still commits so any healing journal/attribution writes in this
+    # request survive process restart. Usage is metered only on first ALLOW.
+    if not result.replayed and result.outcome is ExecutionCommandOutcome.ALLOW:
         usage_service.record(
             UsageEventCreate(
                 request_id=body.idempotency_key,
