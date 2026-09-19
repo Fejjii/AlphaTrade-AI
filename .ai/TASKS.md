@@ -1183,3 +1183,23 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   claimed AT-055; remapped to AT-056 on the RC branch.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-036
+
+### AT-057 — Canonical paper decision frontend
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-040 design system;
+  AT-055 learning persistence; AT-056 runtime execution · Risk: Medium
+  (UX honesty vs unbound canonical HTTP)
+- Safety classification: Frontend / paper-only; no live execution control
+- Goal: User-facing canonical decision workflow: market assessment → candidate
+  → eligibility → TradePlan → human approval → paper execution → outcome →
+  learning. Reuse design system. Do not invent backend authority. Bind
+  canonical TradePlan execution to `POST /execution/paper-plan`.
+- Branch: `cursor/phase8_canonical_frontend` (source); integrated on
+  `cursor/phase8_final_integration`
+- Deliverables: `/decision` screens, typed contracts for canonical HTTP,
+  frontend API clients for paper-plan + canonical reads + learning queries,
+  tests, docs `docs/redesign/phase8_canonical_frontend.md`.
+- Validation: frontend lint, typecheck, unit tests, build, relevant e2e,
+  GitHub CI. Source PR #98 claimed AT-055; remapped to AT-057 on the RC
+  branch.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-037

@@ -1281,3 +1281,39 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   scoped `mypy --strict` on Phase 8 modules, deployment-safety, relevant HTTP
   E2E, GitHub CI. Source PR #99; integrated on
   `cursor/phase8_final_integration`.
+
+## AT-ADR-037 — Canonical paper decision frontend (user-facing workflow)
+- **Date:** 2026-09-19
+- **Status:** Accepted (frontend composition; no backend authority invented)
+- **Context:** Redesign architecture §14/§15 Phase 12 consolidates surfaces.
+  Backend Phase 6/7 Candidate, ActionEligibility, TradePlanRevision, and
+  ExecutionReceipt exist as services/stores. Source PR #98 claimed
+  `AT-ADR-035`, already used by learning persistence, so this ADR is
+  `AT-ADR-037`.
+- **Decision:**
+  1. Plan landing is `/decision`. Legacy `/workspace`, `/proposals`,
+     `/approvals`, and `/paper-validation/*` stay reachable.
+  2. Market quality and action eligibility are separate cards. Setup quality
+     never grants permission to act.
+  3. Canonical TradePlan execution binds to `POST /execution/paper-plan`
+     with identity + idempotency only. Legacy `POST /execution/paper` remains
+     compatibility-only and must not execute a canonical TradePlan.
+  4. Canonical reads reuse existing authorities: candidates, setup
+     assessment, action eligibility, execution receipt, and
+     `LearningQueryService` strategy/pattern statistics. Missing HTTP is
+     added as a thin read adapter, not a second domain model.
+  5. PaperValidationCandidate is a compatibility projection, not
+     CandidateLifecycleService. `canonical_plan_root` stays invisible to
+     ProposalService trading authority.
+  6. Human approval records authorization only. AI copy cannot claim to
+     approve or execute. No live execution control is rendered.
+  7. Kill switch and paper/real-trading posture are on every decision screen.
+     LLM never becomes deterministic authority.
+- **Alternatives considered:** Treat PVC as canonical Candidate (rejected:
+  AT-ADR-026); keep `POST /execution/paper` as the decision-hub execute path
+  (rejected: AT-ADR-036 fail-closed); hide legacy Plan routes (rejected: keep
+  functional until telemetry justifies deprecation).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay
+  disabled. No real exchange mutation. No deployment.
+- **Consequences:** Docs in `docs/redesign/phase8_canonical_frontend.md`.
+  Frontend module `frontend/src/lib/canonical-decision/`.
