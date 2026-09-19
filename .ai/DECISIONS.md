@@ -1235,4 +1235,6 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `backend/tests/test_phase8_canonical_paper_execution.py`.
 - **Validation:** Adversarial execution pytest, full backend pytest
   (2221 passed, 2026-09-19), ruff, scoped `mypy --strict` on Phase 8 modules,
-  deployment-safety, relevant HTTP E2E, GitHub CI. Draft PR only; do not merge.
+  deployment-safety, relevant HTTP E2E, GitHub CI run 35446135194 success
+  (backend, frontend, docker-build, deployment-safety, evaluation, e2e-smoke).
+  Draft PR #99 only; do not merge.

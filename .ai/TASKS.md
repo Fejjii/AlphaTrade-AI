@@ -1153,8 +1153,9 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   format `--check` clean; scoped `mypy --strict` on 17 Phase 8 modules clean;
   repo-wide `mypy --strict src` still has pre-existing errors (AT-001, not in
   CI); deployment-safety tests + `post-deploy-smoke-gate.sh --self-check` pass;
-  relevant HTTP E2E in `test_api_routes` / `test_phase8_*`; frontend Playwright
-  `test:e2e` left to GitHub CI (`node_modules` absent locally). Draft PR only;
-  do not merge.
+  relevant HTTP E2E in `test_api_routes` / `test_phase8_*`. GitHub CI run
+  [35446135194](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35446135194)
+  success (backend, frontend, docker-build, deployment-safety, evaluation,
+  e2e-smoke) plus Vercel preview. Draft PR #99 only; do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-035
