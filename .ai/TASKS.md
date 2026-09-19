@@ -1222,3 +1222,22 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Docker build, GitHub CI.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-038
+
+### AT-059 — Final backend hardening (release residues)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-058 Phase 8 final integration
+  · Risk: Medium (learning integrity, claim-time risk, deployment safety)
+- Safety classification: Paper-only; Watcher, Telegram, and live trading remain disabled;
+  no deploy
+- Goal: Close remaining medium backend residues before release. Canonical learning
+  attribution must not silently skip after ALLOW. Claim-time risk stays
+  `evaluate_claim_predicate` plus persisted ActionEligibility (do not wire unused
+  `PaperExecutionRiskGate` as a second authority). Approval/execution/journal/learning
+  stay one unit of work under failure. Restart/duplicate converge. Canonical reads stay
+  tenant-safe. Paper-only runtime and deployment safety keep accidental real trading
+  impossible.
+- Branch: `cursor/final_backend_hardening`
+- Validation: adversarial hardening tests; full backend pytest; ruff; mypy `--strict`
+  on affected modules; Alembic single head; deployment-safety; evaluation; GitHub CI.
+  Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-039
