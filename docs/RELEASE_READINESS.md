@@ -143,10 +143,28 @@ No BloFin/live exchange credentials are used.
 
 ---
 
-## Local validation (filled after this run)
+## Local validation (this cloud agent)
 
-See the pull request body and `CHANGELOG_SESSION.md` for exact commands and
-exit codes from this agent run.
+| Command | Result |
+|---------|--------|
+| `uv run ruff check .` && `ruff format --check .` (backend) | exit 0; 764 files already formatted |
+| `uv run pytest --collect-only` | **2255 tests collected** (head `d4f7a2c8e901`) |
+| `uv run pytest -q` (full backend) | **exit 0**; 2255 passed / 0 failed (~1127s). Warnings only (Starlette TestClient deprecation; JWT HMAC key length in fixtures). |
+| Focused: `test_deployment_safety.py` `test_deployment_scripts.py` `test_config.py` `test_canonical_staging_smoke.py` `test_docker_compose.py` `test_health.py` | **76 passed**, exit 0 |
+| Canonical HTTP smoke (`test_canonical_staging_smoke.py`) | **3 passed** (happy path + kill switch BLOCK + capacity BLOCK) |
+| `./scripts/post-deploy-smoke-gate.sh --self-check` | exit 0 |
+| `./scripts/canonical-staging-smoke.sh --self-check` | exit 0 |
+| `ENV_FILE=.env.staging.example ./scripts/check-env.sh` | exit 1 — expected: placeholder `OPENAI_API_KEY` empty (operator secret boundary) |
+| Synthetic `check-env.sh` (hosted URLs, cookie+Redis fail-closed, Watcher/Telegram false; no real secrets) | exit 0; posture paper + Watcher/Telegram false |
+| `uv run python ../evaluation/evaluate_agent.py` | **16/16 passed**, exit 0 |
+| `uv run python ../evaluation/evaluate_rag.py` | **5/5 passed**, exit 0 |
+| `uv run python ../evaluation/evaluate_guardrails.py` | **7/7 passed**, exit 0 |
+| frontend `npm run test` | **1153 passed** (191 files) |
+| frontend `npm run test:e2e` (chromium) | **24 passed / 13 skipped**, exit 0. Skips are remote-staging specs (no `BASE_URL`). |
+| `docker build` in this VM | **blocked**: `docker: command not found` |
+| GitHub CI on `4479e9d` (PR #103) | `deployment-safety` SUCCESS; `frontend` SUCCESS; `docker-build` SUCCESS; `backend` / `evaluation` / `e2e-smoke` recorded on the Actions run (re-run after this docs commit). |
+
+No Render/Vercel/Postgres/Redis/Qdrant credentials were present. Values were never printed.
 
 ---
 

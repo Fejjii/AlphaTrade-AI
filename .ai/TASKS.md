@@ -1224,7 +1224,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-038
 
 ### AT-059 — Final synthetic staging readiness
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-058 Phase 8 RC on `main@c39dca6`
+- Priority: P0 · Status: REVIEW_REQUIRED · Dependencies: AT-058 Phase 8 RC on `main@c39dca6`
   · Risk: Medium (ops + safety locks)
 - Safety classification: Paper-only staging readiness; Watcher, Telegram, and live
   trading remain disabled; no real exchange credentials; no merge
