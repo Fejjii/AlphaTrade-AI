@@ -47,13 +47,13 @@ export default function DecisionHubPage() {
   const snapshot = useMemo(() => {
     if (!data) return null;
     return composeDecisionCases({
-      canonicalCandidates: data.canonicalCandidates.data?.items ?? [],
-      candidates: data.candidates.data?.items ?? [],
-      proposals: data.proposals.data?.items ?? [],
-      approvals: data.approvals.data?.items ?? [],
-      orders: data.orders.data?.items ?? [],
-      journals: data.journals.data?.items ?? [],
-      lessons: data.lessons.data?.items ?? [],
+      canonicalCandidates: data.canonicalCandidates?.data?.items ?? [],
+      candidates: data.candidates?.data?.items ?? [],
+      proposals: data.proposals?.data?.items ?? [],
+      approvals: data.approvals?.data?.items ?? [],
+      orders: data.orders?.data?.items ?? [],
+      journals: data.journals?.data?.items ?? [],
+      lessons: data.lessons?.data?.items ?? [],
       killSwitchActive,
       executionMode,
       realTradingEnabled,

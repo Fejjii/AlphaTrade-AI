@@ -131,6 +131,7 @@ vi.mock("@/lib/canonical-decision/compose", async () => {
 
 let asyncState = {
   data: {
+    canonicalCandidates: { data: { items: [] }, available: true },
     candidates: { data: { items: [] }, available: true },
     proposals: { data: { items: [] }, available: true },
     approvals: { data: { items: [] }, available: true },
