@@ -58,6 +58,8 @@ import type {
   PaginatedTradeProposals,
   PaginatedUsageEvents,
   PaperOrder,
+  PaginatedPaperOrders,
+  CanonicalTradePlanRevision,
   ProposalWorkflowView,
   ApprovalWorkflowView,
   Position,
@@ -362,6 +364,12 @@ export const api = {
       apiFetch<PaginatedTradeProposals>("/proposals", { query: params }),
     get: (id: string) => apiFetch<TradeProposal>(`/proposals/${id}`),
     workflow: (id: string) => apiFetch<ProposalWorkflowView>(`/proposals/${id}/workflow`),
+    listRevisions: (id: string) =>
+      apiFetch<CanonicalTradePlanRevision[]>(`/proposals/${id}/revisions`, { auth: true }),
+    getRevision: (id: string, revisionId: string) =>
+      apiFetch<CanonicalTradePlanRevision>(`/proposals/${id}/revisions/${revisionId}`, {
+        auth: true,
+      }),
     lossAcceptance: (id: string, body: { planned_loss_amount: string; accepted: boolean }) =>
       apiFetch<TradeProposal>(`/proposals/${id}/loss-acceptance`, {
         method: "PATCH",
@@ -408,6 +416,9 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    listOrders: (params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedPaperOrders>("/execution/orders", { query: params, auth: true }),
+    getOrder: (id: string) => apiFetch<PaperOrder>(`/execution/orders/${id}`, { auth: true }),
   },
   positions: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>
@@ -422,6 +433,7 @@ export const api = {
   journal: {
     list: (params?: { limit?: number; offset?: number }) =>
       apiFetch<PaginatedJournalEntries>("/journal/entries", { query: params }),
+    get: (id: string) => apiFetch<JournalEntry>(`/journal/entries/${id}`),
     prefill: (params: { linked_proposal_id?: string; linked_position_id?: string }) =>
       apiFetch<{
         symbol: string;
