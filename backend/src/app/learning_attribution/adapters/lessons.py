@@ -6,6 +6,7 @@ from app.learning_attribution.contracts import (
     AttributionRecord,
     ExecutionQuality,
     LessonSuggestionFact,
+    RiskAdherence,
     TraderBehavior,
 )
 from app.schemas.human_vs_system import LessonCandidateSuggestion
@@ -55,6 +56,26 @@ def lesson_suggestions(record: AttributionRecord) -> tuple[LessonSuggestionFact,
                 category="lifecycle_attribution",
                 summary="Fill price deviated from the planned entry beyond 10 bps.",
                 mistake_type="entry_slippage",
+                severity="medium",
+                executed_trade_outcome=True,
+            )
+        )
+    if facts.risk_adherence.axis is RiskAdherence.STOP_VIOLATION and facts.outcome.eligible:
+        suggestions.append(
+            LessonSuggestionFact(
+                category="lifecycle_attribution",
+                summary="Exit price violated the planned stop beyond 10 bps.",
+                mistake_type="stop_violation",
+                severity="high",
+                executed_trade_outcome=True,
+            )
+        )
+    if facts.risk_adherence.axis is RiskAdherence.SIZE_OR_RISK_VIOLATION and facts.outcome.eligible:
+        suggestions.append(
+            LessonSuggestionFact(
+                category="lifecycle_attribution",
+                summary="Filled size deviated from the planned size beyond 100 bps.",
+                mistake_type="size_or_risk_violation",
                 severity="medium",
                 executed_trade_outcome=True,
             )

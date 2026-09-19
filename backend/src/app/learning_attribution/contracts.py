@@ -27,10 +27,11 @@ from app.signal_fusion.candidate import Candidate
 from app.signal_fusion.enums import CandidateState, SetupAssessmentState
 from app.signal_fusion.types import Sha256Hex
 
-ATTRIBUTION_SCHEMA: Literal["LearningAttribution/v1"] = "LearningAttribution/v1"
+ATTRIBUTION_SCHEMA: Literal["LearningAttribution/v2"] = "LearningAttribution/v2"
 NARRATIVE_NOT_FACT_BANNER = "NARRATIVE_NOT_FACT — LLM wording cannot rewrite deterministic facts"
 EARLY_EXIT_CAPTURE_PCT = Decimal("50")
 ENTRY_MATCH_BPS = Decimal("10")
+SIZE_MATCH_BPS = Decimal("100")
 
 
 class DecisionActor(StrEnum):
@@ -74,6 +75,24 @@ class TraderBehavior(StrEnum):
     RECONCILED = "reconciled"
 
 
+class RiskAdherence(StrEnum):
+    """Plan-risk adherence. Independent of setup quality, execution fill quality, and PnL."""
+
+    NOT_APPLICABLE = "not_applicable"
+    NOT_YET_ASSESSED = "not_yet_assessed"
+    INCOMPLETE_FACTS = "incomplete_facts"
+    ADHERED = "adhered"
+    STOP_VIOLATION = "stop_violation"
+    SIZE_OR_RISK_VIOLATION = "size_or_risk_violation"
+
+
+class LearningVenueMode(StrEnum):
+    """Cohort for learning stats. Live/real execution is not a valid learning venue."""
+
+    PAPER_INTERNAL = "paper_internal"
+    PAPER_EXCHANGE_DEMO = "paper_exchange_demo"
+
+
 class TradePlanLineageRef(CanonicalModel):
     """Identity-only TradePlan pointer. Not a second TradePlan implementation."""
 
@@ -104,6 +123,7 @@ class AttributionCommand(StrictModel):
     actor_user_id: UUID | None = None
     event: JournalLifecycleEventInput
     lineage: LineageSnapshot
+    learning_venue_mode: LearningVenueMode = LearningVenueMode.PAPER_INTERNAL
     narrative_explanation: str | None = Field(default=None, max_length=4000)
 
 
@@ -140,6 +160,19 @@ class TraderBehaviorFacts(CanonicalModel):
     executed_trade_outcome: bool
 
 
+class RiskAdherenceFacts(CanonicalModel):
+    """Copied plan-risk facts. Outcome PnL cannot change this axis."""
+
+    axis: RiskAdherence
+    journal_trade_id: UUID | None = None
+    planned_risk_amount: CanonicalDecimal | None = None
+    planned_stop_price: CanonicalDecimal | None = None
+    actual_exit_price: CanonicalDecimal | None = None
+    planned_size: CanonicalDecimal | None = None
+    actual_size: CanonicalDecimal | None = None
+    size_deviation_bps: CanonicalDecimal | None = None
+
+
 class TradeOutcomeFacts(CanonicalModel):
     """Executed outcome copied from JournalTrade. None when REJECT/SKIP."""
 
@@ -157,6 +190,7 @@ class HumanVsSystemAttributionFacts(CanonicalModel):
     decision_actor: DecisionActor
     setup_quality_axis: PlannedSetupQuality
     execution_quality_axis: ExecutionQuality
+    risk_adherence_axis: RiskAdherence
     trader_behavior_axis: TraderBehavior
     planned_entry_price: CanonicalDecimal | None = None
     actual_entry_price: CanonicalDecimal | None = None
@@ -179,6 +213,7 @@ class StrategyPatternStatFacts(CanonicalModel):
     setup_definition_id: UUID
     fusion_policy_version: str = Field(min_length=3, max_length=120)
     uniqueness_tuple_hash: Sha256Hex
+    learning_venue_mode: LearningVenueMode = LearningVenueMode.PAPER_INTERNAL
     candidate_confirmed: bool
     rejected: bool
     skipped: bool
@@ -194,7 +229,7 @@ class StrategyPatternStatFacts(CanonicalModel):
 class AttributionFacts(CanonicalModel):
     """Deterministic facts. Narrative is excluded from the content hash."""
 
-    schema_version: Literal["LearningAttribution/v1"] = ATTRIBUTION_SCHEMA
+    schema_version: Literal["LearningAttribution/v2"] = ATTRIBUTION_SCHEMA
     attribution_id: UUID
     organization_id: UUID
     account_id: UUID
@@ -207,8 +242,10 @@ class AttributionFacts(CanonicalModel):
     assessment_id: UUID
     evidence_window_hash: Sha256Hex
     trade_plan_revision_id: UUID | None
+    learning_venue_mode: LearningVenueMode = LearningVenueMode.PAPER_INTERNAL
     setup_quality: PlannedSetupQualityFacts
     execution_quality: ExecutionQualityFacts
+    risk_adherence: RiskAdherenceFacts
     trader_behavior: TraderBehaviorFacts
     outcome: TradeOutcomeFacts
     human_vs_system: HumanVsSystemAttributionFacts

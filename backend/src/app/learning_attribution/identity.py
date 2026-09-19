@@ -10,11 +10,41 @@ from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.candidate import Candidate
 
 ATTRIBUTION_NAMESPACE = UUID("7e1a7b51-0c4e-4d7a-9f3a-21a0d0a7b051")
+ATTRIBUTION_EVENT_NAMESPACE = UUID("8e2b8c62-1d5f-4e8b-a04b-32b1e1b8c162")
 
 
 def attribution_id_for(*, organization_id: UUID, candidate_id: UUID) -> UUID:
     """Stable aggregate id: one learning record per org-owned candidate."""
     return uuid5(ATTRIBUTION_NAMESPACE, f"{organization_id}:{candidate_id}")
+
+
+def attribution_event_id_for(
+    *,
+    organization_id: UUID,
+    account_id: UUID,
+    source_system: str,
+    source_aggregate: str,
+    event_type: str,
+    source_event_id: str,
+    source_event_version: int,
+    supersession: int,
+) -> UUID:
+    """Stable event id: one row per journal source identity within an organization."""
+    return uuid5(
+        ATTRIBUTION_EVENT_NAMESPACE,
+        ":".join(
+            (
+                str(organization_id),
+                str(account_id),
+                source_system,
+                source_aggregate,
+                event_type,
+                source_event_id,
+                str(source_event_version),
+                str(supersession),
+            )
+        ),
+    )
 
 
 def lineage_payload_from_snapshot(snapshot: LineageSnapshot) -> dict[str, object]:
