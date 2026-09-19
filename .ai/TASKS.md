@@ -1224,7 +1224,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-038
 
 ### AT-059 — Final backend hardening (release residues)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-058 Phase 8 final integration
+- Priority: P0 · Status: DONE · Dependencies: AT-058 Phase 8 final integration
   · Risk: Medium (learning integrity, claim-time risk, deployment safety)
 - Safety classification: Paper-only; Watcher, Telegram, and live trading remain disabled;
   no deploy
@@ -1236,8 +1236,11 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   tenant-safe. Paper-only runtime and deployment safety keep accidental real trading
   impossible.
 - Branch: `cursor/final_backend_hardening`
-- Validation: adversarial hardening tests; full backend pytest; ruff; mypy `--strict`
-  on affected modules; Alembic single head; deployment-safety; evaluation; GitHub CI.
-  Draft PR only; do not merge.
+- Validation: adversarial hardening tests; local backend pytest 2261 passed;
+  ruff check/format; mypy `--strict` on affected modules; Alembic single head
+  `d4f7a2c8e901`; deployment-safety; evaluation 16/16 + 5/5 + 7/7; frontend
+  lint/typecheck/1153 tests/build; GitHub CI run 35462467663 success (backend,
+  frontend, deployment-safety, evaluation, docker-build, e2e-smoke). Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/102 — do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-039

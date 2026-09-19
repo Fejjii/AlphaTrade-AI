@@ -1369,4 +1369,6 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. Watcher, Telegram, and live trading stay disabled.
   No deploy.
 - **Consequences:** Branch `cursor/final_backend_hardening`. Tests in
-  `backend/tests/test_phase8_backend_hardening.py`.
+  `backend/tests/test_phase8_backend_hardening.py`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/102 (do not merge). GitHub CI run
+  35462467663 success.
