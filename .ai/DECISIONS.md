@@ -1191,3 +1191,39 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
   Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
   `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.
+
+## AT-ADR-035 — Canonical paper decision frontend (user-facing workflow)
+- **Date:** 2026-09-19
+- **Status:** Accepted (frontend composition; no backend authority invented)
+- **Context:** Redesign architecture §14/§15 Phase 12 consolidates surfaces.
+  Backend Phase 6/7 Candidate, ActionEligibility, TradePlanRevision, and
+  ExecutionReceipt exist as services/stores, but several have no FastAPI read
+  API. Users still need one paper decision loop: market assessment → candidate
+  → eligibility → TradePlan → human approval → paper execution → outcome →
+  learning.
+- **Decision:**
+  1. Plan landing is `/decision`. Legacy `/workspace`, `/proposals`,
+     `/approvals`, and `/paper-validation/*` stay reachable.
+  2. Market quality and action eligibility are separate cards. Setup quality
+     never grants permission to act.
+  3. Existing HTTP APIs are the only mutation/read authorities the UI calls:
+     `/market/analyze`, paper-validation candidates, `/proposals` plus
+     `/proposals/{id}/revisions`, `/approvals`, `/execution/paper` and
+     `/execution/orders`, `/journal`, `/lessons`, `/strategy-quality`,
+     `/learning-analytics`, `/analytics/setups`, `/risk/kill-switch`, `/health`.
+  4. Missing canonical HTTP (`GET /canonical/candidates`, eligibility,
+     ExecutionReceipt) is a typed frontend contract plus a labeled binding
+     notice. PaperValidationCandidate is a compatibility projection, not
+     CandidateLifecycleService.
+  5. Human approval records authorization only. AI copy cannot claim to
+     approve or execute. No live execution control is rendered.
+  6. Kill switch and paper/real-trading posture are on every decision screen.
+- **Alternatives considered:** Treat PVC as canonical Candidate (rejected:
+  AT-ADR-026); hide legacy Plan routes (rejected: keep functional until
+  telemetry justifies deprecation); probe missing endpoints at runtime
+  (rejected: noisy 404s; static binding registry instead).
+- **Safety impact:** Paper only. No backend execution, Watcher, Telegram,
+  Alembic, or live-trading change.
+- **Consequences:** Docs in `docs/redesign/phase8_canonical_frontend.md`.
+  Frontend module `frontend/src/lib/canonical-decision/`.
+

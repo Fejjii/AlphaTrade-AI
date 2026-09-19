@@ -1522,12 +1522,68 @@ export interface AgentMessageResponse {
 export interface PaperOrder {
   id: string;
   proposal_id?: string | null;
+  approval_id?: string | null;
+  organization_id?: string;
+  user_id?: string;
+  strategy_id?: string | null;
+  mode?: string;
   symbol: string;
   side: string;
+  type?: string;
   status: string;
-  quantity: string;
+  /** Backend PaperOrder uses `size`; `quantity` is a compatibility alias. */
+  quantity?: string;
+  size?: string;
+  price?: string | null;
   filled_price?: string | null;
+  reduce_only?: boolean;
+  idempotency_key?: string;
+  exchange_order_id?: string | null;
   created_at: string;
+}
+
+export interface PaginatedPaperOrders {
+  items: PaperOrder[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CanonicalTradePlanRevision {
+  schema_version?: string;
+  plan_id: string;
+  revision_id: string;
+  organization_id: string;
+  user_id: string;
+  account_id: string;
+  candidate_id: string;
+  strategy_version_id: string;
+  setup_definition_id: string;
+  side: "BUY" | "SELL" | string;
+  timeframe: string;
+  execution_instrument?: string;
+  evidence_instrument?: string;
+  quantity: { value: string; unit: string };
+  quantity_unit: string;
+  order_type?: string;
+  limit_price?: { value: string; unit: string } | null;
+  risk_and_exits: {
+    stop: { value: string; unit: string };
+    targets: Array<{
+      order: number;
+      price: { value: string; unit: string };
+      quantity_fraction: string;
+    }>;
+    risk_budget: { value: string; unit: string };
+    maximum_loss: { value: string; unit: string };
+    leverage: string;
+  };
+  content_hash: string;
+  correlation_id: string;
+  created_at: string;
+  valid_from: string;
+  valid_until: string;
+  evidence_ids: string[];
 }
 
 export interface User {

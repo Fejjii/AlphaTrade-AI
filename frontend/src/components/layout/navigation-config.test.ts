@@ -68,6 +68,8 @@ describe("AT-040 Phase B navigation config", () => {
     expect(getDestinationId("/settings/billing")).toBe("settings");
     expect(getDestinationId("/risk")).toBe("portfolio");
     expect(getDestinationId("/workspace")).toBe("plan");
+    expect(getDestinationId("/decision")).toBe("plan");
+    expect(getDestinationId("/decision/candidates")).toBe("plan");
   });
 
   it("marks nested routes active without false dashboard matches", () => {
@@ -124,7 +126,18 @@ describe("AT-040 Phase B navigation config", () => {
       title: "Validate",
       subtitle: "Candidates",
     });
-    expect(resolvePageIdentity("/unknown-path").title).toBe("AlphaTrade");
+    expect(resolvePageIdentity("/decision")).toMatchObject({
+      title: "Plan",
+      subtitle: null,
+    });
+    expect(resolvePageIdentity("/workspace")).toMatchObject({
+      title: "Plan",
+      subtitle: "AI assist",
+    });
+    expect(resolvePageIdentity("/decision/candidates")).toMatchObject({
+      title: "Plan",
+      subtitle: "Candidates",
+    });
   });
 
   it("uses FP2-119 secondary label defaults", () => {
@@ -192,7 +205,9 @@ describe("AT-040 Phase B navigation config", () => {
     expect(reachable.has("/portfolio")).toBe(true);
     expect(reachable.has("/settings")).toBe(true);
     expect(reachable.has("/settings/billing")).toBe(true);
-    expect(reachable.has("/risk")).toBe(true);
+    expect(reachable.has("/decision")).toBe(true);
+    expect(reachable.has("/decision/candidates")).toBe(true);
+    expect(reachable.has("/workspace")).toBe(true);
   });
 });
 

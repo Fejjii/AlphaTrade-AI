@@ -23,6 +23,7 @@ const ROUTES = [
   "/market",
   "/settings",
   "/settings/billing",
+  "/decision",
 ] as const;
 
 test.describe("Automated readiness validation (AT-041 PR4)", () => {

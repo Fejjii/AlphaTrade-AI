@@ -97,6 +97,22 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
     });
   }
 
+  if (
+    positiveCount(input.pendingApprovals) ||
+    positiveCount(input.pendingProposals) ||
+    positiveCount(input.candidatesQueued)
+  ) {
+    pushItem(items, {
+      id: "canonical-decision",
+      section: "pending_decisions",
+      title: "Paper decision workflow has work",
+      summary: "Review market quality, eligibility, TradePlan, and human approval. AI cannot approve.",
+      href: "/decision",
+      actionLabel: "Open decision",
+      tone: "info",
+    });
+  }
+
   if (positiveCount(input.pendingApprovals)) {
     pushItem(items, {
       id: "pending-approvals",
