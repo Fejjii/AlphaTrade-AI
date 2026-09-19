@@ -94,6 +94,18 @@ class ExecutePaperPlanRequest(BaseModel):
     correlation_id: UUID | None = None
 
 
+class ExecutePaperPlanHttpRequest(BaseModel):
+    """HTTP body for canonical/paper EXECUTE_PAPER_PLAN. Executable fields are forbidden."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False, frozen=True)
+
+    account_id: UUID
+    authorization_id: UUID
+    revision_id: UUID
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    correlation_id: UUID | None = None
+
+
 class SemanticQuantity(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -1191,3 +1191,48 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
   Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
   `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.
+
+## AT-ADR-035 — Phase 8 canonical PAPER runtime execution
+- **Date:** 2026-09-19
+- **Status:** Accepted (runtime composition; paper execution only)
+- **Context:** AT-ADR-034 bound Candidate, ActionEligibility, and canonical
+  TradePlanRevision to PostgreSQL without FastAPI or worker wiring. Phase 1
+  `EXECUTE_PAPER_PLAN` already claims `paper_validation` plans. Canonical plans
+  must not become ProposalService trading authority.
+- **Decision:**
+  1. `ProductionCanonicalRuntime` is the production composition for PostgreSQL
+     Candidate, ActionEligibility, and CanonicalTradePlan adapters.
+     `CandidateLifecycleService` remains the only Candidate authority.
+  2. FastAPI lifespan stores the runtime on `app.state`. Request handlers bind
+     the caller's Session. The worker constructs the same runtime and never
+     starts Watcher or Telegram. Flags default false.
+  3. `ExecutionService.execute_paper_plan` routes `plan_authority=canonical` to
+     `CanonicalPaperExecutionService`. That path re-verifies Candidate,
+     eligibility, plan hash, approval, and account lineage immediately before
+     the existing `PaperPlanClaimService` claim transaction. Kill switch and
+     `evaluate_claim_predicate` remain final. Authorization is not consumed on
+     `BLOCKED`.
+  4. Canonical execution is PAPER only. `live_executable` stays false. No
+     exchange mutation. Duplicate idempotency keys converge across restarts.
+     Stale, rejected, expired, mismatched, or modified plans fail closed.
+  5. Compatibility `canonical_plan_root` TradeProposal rows remain FK-only.
+     ProposalService create always writes `analysis_proposal`. List omits
+     canonical roots. Get/update paths raise `TradingPolicyError`.
+  6. Journal lifecycle receives deterministic `approved_plan` / `fill` events
+     with `source_system=canonical_paper_execution` via
+     `JournalLifecycleProjector`. Exact replay converges.
+  7. HTTP `POST /execution/paper-plan` accepts only identity + idempotency.
+     Executable fields are forbidden. Legacy `POST /execution/paper` stays
+     fail-closed.
+- **Alternatives considered:** Making ProposalService the canonical plan
+  authority (rejected: competing authority); enabling Watcher/Telegram with
+  this wave (rejected: explicitly out of scope); new Alembic (rejected: Phase 7
+  schema is sufficient).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay
+  disabled. No real exchange mutation. No deployment.
+- **Consequences:** Docs in `docs/phase8_runtime_execution.md`. Tests in
+  `backend/tests/test_phase8_runtime_composition.py` and
+  `backend/tests/test_phase8_canonical_paper_execution.py`.
+- **Validation:** Adversarial execution pytest, full backend pytest
+  (2221 passed, 2026-09-19), ruff, scoped `mypy --strict` on Phase 8 modules,
+  deployment-safety, relevant HTTP E2E, GitHub CI. Draft PR only; do not merge.

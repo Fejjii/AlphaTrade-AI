@@ -21,6 +21,7 @@ from app.core.operation_policy import PersistenceKind, assert_write_allowed
 from app.core.paper_safety import assert_execution_capable_composition_root
 from app.db.models import (
     ExchangeOrder,
+    ExecutionCommand,
     Order,
     TradeProposal,
     VenueSubmitEffect,
@@ -34,6 +35,8 @@ from app.repositories.approvals import ApprovalRepository
 from app.repositories.exchange_orders import ExchangeFillRepository, ExchangeOrderRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.proposals import ProposalRepository
+from app.repositories.trade_plans import TradePlanRevisionRepository
+from app.runtime.canonical import ProductionCanonicalRuntime
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import ActorType, AuditEventType
 from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOrderRequest
@@ -43,6 +46,10 @@ from app.schemas.execution_protocol import (
     UniqueFillResult,
 )
 from app.services.audit_service import AuditService
+from app.services.canonical_paper_execution import (
+    CanonicalPaperExecutionService,
+    is_canonical_plan_authority,
+)
 from app.services.execution_claim import ExecutionClaimHooks
 from app.services.market_data_service import MarketDataService
 from app.services.paper_execution_risk_gate import BoundPaperPlacement, PaperExecutionRiskGate
@@ -70,11 +77,13 @@ class ExecutionService:
         risk_settings: RiskSettingsService | None = None,
         market_data_service: MarketDataService | None = None,
         kill_switch: KillSwitchService | None = None,
+        canonical_runtime: ProductionCanonicalRuntime | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
         self._orders = OrderRepository(session)
         self._proposals = ProposalRepository(session)
+        self._revisions = TradePlanRevisionRepository(session)
         self._approvals = ApprovalRepository(session)
         self._exchange_orders = ExchangeOrderRepository(session)
         self._exchange_fills = ExchangeFillRepository(session)
@@ -90,6 +99,7 @@ class ExecutionService:
             daily_risk=self._daily_risk,
             kill_switch=self._kill_switch,
         )
+        self._canonical_runtime = canonical_runtime
         assert_execution_capable_composition_root(settings)
 
     def place_paper_order(self, request: PaperOrderRequest) -> PaperOrderPlacementResult:
@@ -255,11 +265,32 @@ class ExecutionService:
         from app.services.safety_epoch import SafetyEpochService
 
         safety = SafetyEpochService(self._session, self._settings, self._risk_settings)
+        resolved_clock = clock or (lambda: datetime.now(UTC))
+        plan_row = self._revisions.get_scoped(
+            request.revision_id,
+            organization_id=request.organization_id,
+            user_id=request.user_id,
+        )
+        if plan_row is not None and is_canonical_plan_authority(plan_row.plan_authority):
+            if self._canonical_runtime is None:
+                raise TradingPolicyError(
+                    "Canonical paper execution requires the production canonical runtime.",
+                    details={"reason": "canonical_runtime_unbound"},
+                )
+            return CanonicalPaperExecutionService(
+                self._session,
+                self._settings,
+                self._audit,
+                self._canonical_runtime,
+                safety_epochs=safety,
+                clock=resolved_clock,
+                hooks=hooks,
+            ).execute(request)
         return PaperPlanClaimService(
             self._session,
             self._settings,
             safety,
-            clock=clock or (lambda: datetime.now(UTC)),
+            clock=resolved_clock,
             hooks=hooks,
         ).claim(request)
 
@@ -313,13 +344,46 @@ class ExecutionService:
         occurred_at: datetime,
         venue_source: str = "phase1-fake-venue",
     ) -> UniqueFillResult:
-        return self._dispatcher().apply_unique_fill(
+        fill = self._dispatcher().apply_unique_fill(
             command_id=command_id,
             fill_quantity=fill_quantity,
             fill_price=fill_price,
             source_identity=source_identity,
             venue_source=venue_source,
             occurred_at=occurred_at,
+        )
+        self._project_canonical_fill(command_id, fill)
+        return fill
+
+    def _project_canonical_fill(self, command_id: uuid.UUID, fill: UniqueFillResult) -> None:
+        if self._canonical_runtime is None:
+            return
+        command = self._session.get(ExecutionCommand, command_id)
+        if command is None:
+            return
+        plan_row = self._revisions.get_scoped(
+            command.revision_id,
+            organization_id=command.organization_id,
+            user_id=command.user_id,
+        )
+        if plan_row is None or not is_canonical_plan_authority(plan_row.plan_authority):
+            return
+        from app.services.safety_epoch import SafetyEpochService
+
+        CanonicalPaperExecutionService(
+            self._session,
+            self._settings,
+            self._audit,
+            self._canonical_runtime,
+            safety_epochs=SafetyEpochService(self._session, self._settings, self._risk_settings),
+            clock=lambda: datetime.now(UTC),
+        ).project_fill(
+            organization_id=command.organization_id,
+            user_id=command.user_id,
+            account_id=command.account_id,
+            command_id=command.id,
+            fill=fill,
+            revision_id=command.revision_id,
         )
 
     def _dispatcher(self) -> VenueSubmitDispatcher:

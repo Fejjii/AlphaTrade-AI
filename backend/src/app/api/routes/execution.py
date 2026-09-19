@@ -14,6 +14,13 @@ from app.core.dependencies import (
     UsageServiceDep,
 )
 from app.schemas.execution import PaginatedPaperOrders, PaperOrder, PaperOrderRequest
+from app.schemas.execution_protocol import (
+    ExecutePaperPlanHttpRequest,
+    ExecutePaperPlanRequest,
+    ExecutePaperPlanResult,
+    ExecutionCommandOutcome,
+)
+from app.schemas.usage import UsageEventCreate
 from app.security.quota_enforcement import require_quota
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import TraderDep
@@ -31,6 +38,15 @@ _EXECUTION_RATE_LIMIT = Depends(
     )
 )
 _PAPER_EXECUTION_QUOTA = require_quota("paper_execution")
+_PAPER_PLAN_RATE_LIMIT = Depends(
+    tenant_rate_limit_dependency(
+        "execution:paper-plan",
+        limit=30,
+        window_seconds=3600,
+        ip_limit=60,
+        user_limit=30,
+    )
+)
 
 
 @router.post(
@@ -50,7 +66,6 @@ async def place_paper_order(
     proposal = proposal_service.get(body.proposal_id)
     ensure_same_organization(proposal.organization_id, tenant)
     placement = execution_service.place_paper_order(body)
-    from app.schemas.usage import UsageEventCreate
 
     # Replays and concurrent losers have no new unit-of-work to commit. The
     # convergence path already rolled back its dedicated request session.
@@ -72,6 +87,49 @@ async def place_paper_order(
     # One authoritative commit: business + audit (flushed in service) + usage.
     session.commit()
     return placement.order
+
+
+@router.post(
+    "/paper-plan",
+    response_model=ExecutePaperPlanResult,
+    summary="Execute an approved paper trade plan revision",
+    dependencies=[_PAPER_PLAN_RATE_LIMIT, _PAPER_EXECUTION_QUOTA],
+)
+async def execute_paper_plan(
+    body: ExecutePaperPlanHttpRequest,
+    tenant: TraderDep,
+    execution_service: ExecutionServiceDep,
+    usage_service: UsageServiceDep,
+    session: SessionDep,
+) -> ExecutePaperPlanResult:
+    result = execution_service.execute_paper_plan(
+        ExecutePaperPlanRequest(
+            organization_id=tenant.organization_id,
+            user_id=tenant.user_id,
+            account_id=body.account_id,
+            authorization_id=body.authorization_id,
+            revision_id=body.revision_id,
+            idempotency_key=body.idempotency_key,
+            correlation_id=body.correlation_id,
+        )
+    )
+    if result.replayed:
+        return result
+    if result.outcome is ExecutionCommandOutcome.ALLOW:
+        usage_service.record(
+            UsageEventCreate(
+                request_id=body.idempotency_key,
+                organization_id=tenant.organization_id,
+                user_id=tenant.user_id,
+                feature="paper_execution",
+                provider="paper-engine",
+                input_tokens=0,
+                output_tokens=0,
+                provider_metadata={"cost_source": "unavailable"},
+            )
+        )
+    session.commit()
+    return result
 
 
 @router.get("/orders", response_model=PaginatedPaperOrders, summary="List paper orders")

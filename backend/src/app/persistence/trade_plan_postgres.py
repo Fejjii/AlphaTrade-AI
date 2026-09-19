@@ -10,7 +10,7 @@ authority.
 ``PLAN_CREATED`` runs through ``on_inserted`` in the same transaction as the
 plan insert after locking the canonical Candidate. Legacy PVC-backed rows stay
 ``plan_authority='paper_validation'`` with ``canonical_candidate_id`` NULL.
-Not wired into FastAPI, workers, or feature flags.
+Production composition binds this store through ``ProductionCanonicalRuntime``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,9 @@
-"""Explicit PostgreSQL adapter construction. Not wired into staging or production.
+"""Explicit PostgreSQL adapter construction.
+
+FastAPI and the worker attach Candidate, ActionEligibility, and canonical
+TradePlan through ``ProductionCanonicalRuntime``. Watcher and Telegram builders
+remain explicit and default disabled. This module never starts those loops or
+enables live trading.
 
 Transaction boundaries
 ----------------------
@@ -9,11 +14,11 @@ an open DB transaction. Lease claim linearizes on
 (or the unique insert of that key).
 
 Candidate: every repository method opens and commits its own SQLAlchemy
-transaction. Worker-originated Candidate writes, when a Watcher fence is bound,
-lock that same lease row ``FOR UPDATE`` and prove current fencing authority in
-the Candidate persist transaction before inserting the projection or appending
-a transition. A stale worker cannot commit Candidate authority after losing
-its lease.
+transaction unless ``bind_session`` joins an outer unit of work. Worker-originated
+Candidate writes, when a Watcher fence is bound, lock that same lease row
+``FOR UPDATE`` and prove current fencing authority in the Candidate persist
+transaction before inserting the projection or appending a transition. A stale
+worker cannot commit Candidate authority after losing its lease.
 
 Telegram: ``transaction()`` takes a transaction-scoped advisory lock, matching
 the in-memory store's process lock, then uses row locks for nonce CAS and outbox
@@ -81,7 +86,7 @@ def build_postgres_candidate_lifecycle(
     *,
     clock: CandidateClock,
 ) -> CandidateLifecycleService:
-    """Lifecycle authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+    """Lifecycle authority backed by PostgreSQL. Production uses ProductionCanonicalRuntime."""
 
     return CandidateLifecycleService(
         repository=build_postgres_candidate_repository(session_factory, clock=clock),
@@ -102,7 +107,7 @@ def build_postgres_action_eligibility(
     *,
     clock: CandidateClock,
 ) -> ActionEligibilityService:
-    """Eligibility authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+    """Eligibility authority backed by PostgreSQL. Production uses ProductionCanonicalRuntime."""
 
     return ActionEligibilityService(
         store=build_postgres_action_eligibility_store(session_factory),
@@ -127,7 +132,7 @@ def build_postgres_canonical_trade_plan(
     *,
     clock: CandidateClock,
 ) -> CanonicalTradePlanService:
-    """Canonical plan authority backed by PostgreSQL. Not wired into FastAPI or workers."""
+    """Canonical plan authority backed by PostgreSQL. Production uses ProductionCanonicalRuntime."""
 
     candidate_repository = build_postgres_candidate_repository(session_factory, clock=clock)
     return CanonicalTradePlanService(
