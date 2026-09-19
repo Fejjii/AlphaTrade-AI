@@ -46,9 +46,10 @@ canonical candidate ids into `paper_validation_candidates`.
 
 ## Still later
 
-Approval issuance can consume persisted canonical revisions. Execution dispatch
-stays a later slice. Adapters are not wired into FastAPI, workers, Watcher,
-Telegram, or live trading.
+Approval issuance can consume persisted canonical revisions. Phase 8 wires the
+PostgreSQL adapters into FastAPI/workers and completes PAPER `EXECUTE_PAPER_PLAN`
+(see `docs/phase8_runtime_execution.md`). Watcher, Telegram, and live trading
+remain disabled.
 
 ## Application invariants (unchanged)
 

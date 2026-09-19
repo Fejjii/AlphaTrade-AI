@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Protocol
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -92,11 +93,23 @@ class ReservationIntent:
     contract_type: str
 
 
+class ClaimRevalidator(Protocol):
+    def __call__(
+        self,
+        *,
+        plan: TradePlanRevision,
+        authorization: ApprovalAuthorization,
+        request: ExecutePaperPlanRequest,
+        at: datetime,
+    ) -> str | None: ...
+
+
 @dataclass
 class ExecutionClaimHooks:
     after_idempotency: Callable[[], None] | None = None
     after_epoch_lock: Callable[[], None] | None = None
     before_return: Callable[[], None] | None = None
+    revalidate: ClaimRevalidator | None = None
 
 
 def _now() -> datetime:
@@ -210,7 +223,7 @@ class PaperPlanClaimService:
         blocked_reason = self._revalidate_without_consuming(
             plan=plan,
             authorization=authorization,
-            request_account_id=request.account_id,
+            request=request,
             at=now,
         )
         epoch = self._epochs.lock_epoch(
@@ -382,7 +395,7 @@ class PaperPlanClaimService:
         *,
         plan: TradePlanRevision,
         authorization: ApprovalAuthorization,
-        request_account_id: uuid.UUID,
+        request: ExecutePaperPlanRequest,
         at: datetime,
     ) -> str | None:
         from app.schemas.trade_plan import AuthorizationState
@@ -395,10 +408,17 @@ class PaperPlanClaimService:
             return "plan_validity_window"
         if plan.account_id != authorization.account_id:
             return "account_mismatch"
-        if plan.account_id != request_account_id:
+        if plan.account_id != request.account_id:
             return "account_mismatch"
         if plan.content_hash != authorization.plan_content_hash:
             return "plan_hash_mismatch"
+        if self._hooks.revalidate is not None:
+            return self._hooks.revalidate(
+                plan=plan,
+                authorization=authorization,
+                request=request,
+                at=at,
+            )
         return None
 
     def _persist_blocked(
@@ -418,7 +438,7 @@ class PaperPlanClaimService:
             id=command_id,
             organization_id=request.organization_id,
             user_id=request.user_id,
-            account_id=request.account_id,
+            account_id=plan.account_id,
             exchange_account_id=plan.exchange_account_id,
             operation=PlanOperation.SUBMIT_ENTRY,
             operation_namespace=SUBMIT_ENTRY_NAMESPACE,
@@ -439,7 +459,7 @@ class PaperPlanClaimService:
             authorization_id=authorization.authorization_id,
             organization_id=request.organization_id,
             user_id=request.user_id,
-            account_id=request.account_id,
+            account_id=plan.account_id,
         )
         self._receipts.add(receipt)
         append_transition(

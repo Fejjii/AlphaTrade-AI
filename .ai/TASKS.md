@@ -1125,3 +1125,37 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Draft PR only; do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-034
+
+### AT-055 — Phase 8 canonical PAPER runtime execution
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-051 Candidate PostgreSQL;
+  AT-052 canonical TradePlan application layer; AT-054 PostgreSQL binding
+  · Risk: Medium (execution safety, lineage, idempotency)
+- Safety classification: Paper-safe / runtime wiring; Watcher, Telegram, and
+  live trading remain disabled; no real exchange mutation
+- Goal: Wire Phase 7 PostgreSQL Candidate, ActionEligibility, and canonical
+  TradePlan adapters into FastAPI and workers. Complete the canonical PAPER
+  lifecycle: Evidence → SetupAssessment → Candidate → ActionEligibility →
+  TradePlanRevision → approval → EXECUTE_PAPER_PLAN → journal. CandidateLifecycleService
+  remains sole Candidate authority. Execution requires the exact approved
+  immutable TradePlanRevision. Duplicate requests converge. Stale/rejected/
+  expired/mismatched/modified plans fail closed. Risk engine BLOCK and kill
+  switch stay final. `canonical_plan_root` is never ProposalService trading
+  authority.
+- Branch: `cursor/phase8_runtime_execution`
+- Deliverables: `app.runtime.canonical`, `CanonicalPaperExecutionService`,
+  `POST /execution/paper-plan`, ProposalService filter, journal projection
+  source `canonical_paper_execution`, tests
+  `backend/tests/test_phase8_*.py`, docs `docs/phase8_runtime_execution.md`.
+  No Alembic.
+- Validation: adversarial execution tests (restart/idempotency, tenant
+  isolation, stale state, kill switch, risk rejection, duplicates, journal);
+  full backend pytest **2221 passed** (2026-09-19, 1042.80s); ruff check +
+  format `--check` clean; scoped `mypy --strict` on 17 Phase 8 modules clean;
+  repo-wide `mypy --strict src` still has pre-existing errors (AT-001, not in
+  CI); deployment-safety tests + `post-deploy-smoke-gate.sh --self-check` pass;
+  relevant HTTP E2E in `test_api_routes` / `test_phase8_*`. GitHub CI run
+  [35446135194](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35446135194)
+  success (backend, frontend, docker-build, deployment-safety, evaluation,
+  e2e-smoke) plus Vercel preview. Draft PR #99 only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-035

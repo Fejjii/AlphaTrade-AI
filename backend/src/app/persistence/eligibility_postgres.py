@@ -2,7 +2,8 @@
 
 Evaluations are immutable and keyed by uniqueness hash. Identity bindings fail
 closed. Candidate rows are locked in the same transaction so revision history
-is append-safe. Not wired into FastAPI, workers, or feature flags.
+is append-safe. Production composition binds this store through
+``ProductionCanonicalRuntime``.
 """
 
 from __future__ import annotations

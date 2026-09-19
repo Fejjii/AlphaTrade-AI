@@ -196,6 +196,7 @@ Protected endpoints (IP-scoped; authenticated routes also user-scoped):
 | `chat:message` | `POST /chat/message` |
 | `knowledge:ingest` | `POST /knowledge/ingest` |
 | `execution:paper` | `POST /execution/paper` |
+| `execution:paper-plan` | `POST /execution/paper-plan` |
 
 Violations emit structured logs and audit events (`rate_limit_exceeded`). Auth scopes use high severity.
 
