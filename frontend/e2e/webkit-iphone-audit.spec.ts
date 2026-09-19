@@ -32,10 +32,22 @@ function meaningfulConsoleErrors(errors: string[]): string[] {
 
 
 async function settledGoto(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await page.waitForLoadState("load").catch(() => undefined);
-  // WebKit can still be finishing App Router transitions after load.
-  await page.waitForTimeout(150);
+  // Next.js Fast Refresh can interrupt WebKit navigations during compile.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await page.waitForLoadState("load").catch(() => undefined);
+      // WebKit can still be finishing App Router transitions after load.
+      await page.waitForTimeout(150);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/interrupted by another navigation/i.test(message) || attempt === 2) {
+        throw error;
+      }
+      await page.waitForTimeout(400);
+    }
+  }
 }
 
 async function hasHorizontalOverflow(page: Page): Promise<boolean> {
