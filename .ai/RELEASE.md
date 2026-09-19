@@ -15,15 +15,18 @@ npm run lint && npm run typecheck && npm run test && npm run build
 - Inspect `git status` and full diff; confirm every changed file is intentional.
 - Secret scan the diff; confirm no secrets, keys, or private URLs.
 - Confirm `render.yaml` preserves paper-safe values: `PROVIDER_MODE=fallback`,
-  `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `EXCHANGE_MODE=paper_internal`.
+  `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `EXCHANGE_MODE=paper_internal`,
+  Watcher/Telegram flags `false`.
 
 ## Deploy validation (staging, paper-only)
 - `ENV_FILE=.env.staging ./scripts/check-env.sh`
 - `BASE_URL=<api> ./scripts/post-deploy-smoke-gate.sh` (AT-005 mandatory gate; exit 0)
+- Canonical path: `INCLUDE_CANONICAL=true BASE_URL=<api> ./scripts/post-deploy-smoke-gate.sh`
+  or `BASE_URL=<api> ./scripts/canonical-staging-smoke.sh`
 - On gate exit 1 → follow `docs/deploy_rollback_runbook.md` before further work
 - `BASE_URL=<api> ./scripts/verify-safety.sh` (included in the gate; may run alone)
 - `BACKEND_URL=<api> ./scripts/validate-exchange-demo-staging.sh`
-- Confirm `/health`, `/health/ready`, `/openapi.json`, `/providers/status`.
+- Confirm `/health` paper posture, `real_trading_enabled=false`, Watcher/Telegram false.
 - Confirm providers remain mock until an operator manually configures keys.
 - Never enable real trading during deploy or rollback.
 

@@ -1261,3 +1261,41 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   remapped to AT-060 on the release-candidate branch.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-037
+
+### AT-061 — Final synthetic staging readiness
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-058 Phase 8 RC on `main@c39dca6`
+  · Risk: Medium (ops + safety locks)
+- Safety classification: Paper-only staging readiness; Watcher, Telegram, and live
+  trading remain disabled; no real exchange credentials; no merge
+- Goal: Confirm the canonical architecture can deploy to paper staging. Document
+  required env vars. Enforce paper mode, Watcher off, Telegram off, real trading
+  impossible. Add synthetic HTTP smoke for auth, Candidate reads, eligibility,
+  TradePlan approval, paper execution, journal, learning, strategy stats, decision
+  frontend, kill switch, risk BLOCK, and cross-tenant rejection. Deploy only if
+  cloud credentials already exist; otherwise stop at the human boundary.
+- Branch: `cursor/final_staging_readiness` (source); integrated on
+  `cursor/final_release_integration-c461`
+- Deliverables: staging safety locks, `/health` posture flags, canonical smoke
+  script + pytest, `docs/RELEASE_READINESS.md`, rollback chain notes.
+- Validation: deployment-safety, canonical HTTP smoke, Docker compose tests,
+  frontend e2e, ruff, GitHub CI. Draft PR; do not merge. Source PR #103 claimed
+  AT-059 / AT-ADR-039; remapped to AT-061 / AT-ADR-040.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-040
+
+### AT-062 — Final paper-release candidate integration
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-059, AT-060, AT-061
+  · Risk: Medium (overlap of safety locks, UX binding, staging smoke)
+- Safety classification: Paper-only integration; Watcher, Telegram, and live
+  trading remain disabled; no deploy; no merge to main
+- Goal: Independently review and integrate PR102 + PR101 + PR103 on
+  `main@c39dca6`. Preserve fail-closed learning, canonical GET/paper-plan UX,
+  and synthetic staging smoke. Resolve overlapping `deployment_safety` and
+  governance IDs semantically. Produce `docs/FINAL_RELEASE_READINESS.md`.
+- Branch: `cursor/final_release_integration-c461`
+- Validation: full backend, full frontend, Ruff, format, strict mypy on
+  affected modules, single Alembic head, upgrade/downgrade/reupgrade,
+  deployment safety, evaluation, canonical synthetic smoke, Chromium E2E,
+  Docker build, full GitHub CI. Draft PR only.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-041

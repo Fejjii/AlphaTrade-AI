@@ -13,6 +13,11 @@ def test_health_ok(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["execution_mode"] == "paper"
     assert body["real_trading_enabled"] is False
+    assert body["exchange_mode"] == "paper_internal"
+    assert body["market_watcher_enabled"] is False
+    assert body["watcher_orchestration_enabled"] is False
+    assert body["telegram_alerts_enabled"] is False
+    assert body["telegram_interaction_enabled"] is False
     assert body["version"]
 
 

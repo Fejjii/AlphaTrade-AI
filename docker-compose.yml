@@ -79,6 +79,14 @@ services:
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       EXECUTION_MODE: paper
       ENABLE_REAL_TRADING: "false"
+      EXCHANGE_MODE: paper_internal
+      MARKET_WATCHER_ENABLED: "false"
+      MARKET_WATCHER_BRIDGE_ENABLED: "false"
+      WATCHER_ORCHESTRATION_ENABLED: "false"
+      TELEGRAM_ALERTS_ENABLED: "false"
+      TELEGRAM_INTERACTION_ENABLED: "false"
+      AUTOMATIC_TELEGRAM_DELIVERY_ENABLED: "false"
+      ENABLE_PAPER_SCHEDULER: "false"
       OBSERVABILITY_STRICT_MODE: "false"
       PROVIDER_MODE: mock
       DATABASE_URL: postgresql+psycopg://alphatrade:alphatrade@postgres:5432/alphatrade

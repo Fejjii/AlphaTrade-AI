@@ -1370,5 +1370,58 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   No deploy.
 - **Consequences:** Branch `cursor/final_backend_hardening`. Tests in
   `backend/tests/test_phase8_backend_hardening.py`. Draft PR
-  https://github.com/Fejjii/AlphaTrade-AI/pull/102 (do not merge). GitHub CI run
-  35462467663 success.
+  https://github.com/Fejjii/AlphaTrade-AI/pull/102 (do not merge). Integrated on
+  `cursor/final_release_integration-c461`.
+
+## AT-ADR-040 — Staging/production refuse Watcher and Telegram enablement
+- **Date:** 2026-09-19
+- **Status:** Accepted
+- **Context:** Phase 8 canonical architecture is paper-ready. Watcher and Telegram
+  defaulted false but were not locked, so a staging env-var mistake could start
+  orchestration or outbound alerts. Final synthetic staging validation requires
+  those surfaces to stay off. Source PR #103 claimed AT-ADR-039; remapped to
+  AT-ADR-040 so backend hardening keeps AT-ADR-039.
+- **Decision:**
+  1. `deployment_safety` rejects Watcher (scanner, bridge, auto-tick, orchestration)
+     and Telegram (alerts, interaction, automatic delivery) when `ENVIRONMENT` is
+     staging or production. The same checks are not duplicated: they sit next to
+     the paper/`real_trading_enabled` pins.
+  2. `/health` exposes those flags plus `exchange_mode` so `verify-safety.sh` can
+     assert them without printing secrets.
+  3. Real trading remains permanently impossible (`paper_safety`).
+  4. Canonical HTTP minting is still out of scope; synthetic smoke seeds via
+     existing services or optional operator IDs.
+- **Alternatives considered:** Leave flags default-off only (rejected: operator
+  misconfig could enable Watcher/Telegram on staging).
+- **Safety impact:** Tightens paper staging; does not enable live trading.
+- **Consequences:** Branch `cursor/final_staging_readiness`. Tests in
+  `backend/tests/test_deployment_safety.py` and
+  `backend/tests/test_canonical_staging_smoke.py`. Integrated on
+  `cursor/final_release_integration-c461`.
+
+## AT-ADR-041 — Final paper-release candidate integration
+- **Date:** 2026-09-19
+- **Status:** Accepted (integration; draft PR only; do not merge or deploy)
+- **Context:** PR102, PR101, and PR103 landed independently on `main@c39dca6`.
+  All three claimed AT-059. PR102 and PR103 both claimed AT-ADR-039.
+  `deployment_safety` Watcher/Telegram locks overlapped.
+- **Decision:**
+  1. Integration order is PR102 → PR101 → PR103. Do not merge `main`. Do not deploy.
+  2. Task/ADR IDs remap to AT-059/AT-ADR-039 (backend hardening), AT-060/AT-ADR-037
+     (canonical UX), AT-061/AT-ADR-040 (staging readiness), AT-062/AT-ADR-041
+     (this integration).
+  3. Watcher/Telegram fail-closed checks are kept once beside paper and
+     `real_trading_enabled` pins. `/health` posture flags from staging readiness
+     remain the operator-visible surface.
+  4. Canonical frontend binds GET APIs and `POST /execution/paper-plan` only.
+     ProposalService tenant-scopes before `canonical_plan_root` rejection.
+  5. Alembic remains a single head: `d4f7a2c8e901`.
+  6. Paper only. Watcher and Telegram stay disabled. Kill switch and risk BLOCK
+     stay final. Human approval is mandatory. No silent learning loss. Cross-tenant
+     lookups fail closed. Duplicate/restart paper-plan requests are idempotent.
+- **Alternatives considered:** Last-write-wins on `deployment_safety` (rejected:
+  would drop either `real_trading_enabled` pin or `/health` operator surface);
+  merge to `main` in this wave (rejected).
+- **Safety impact:** Paper only. No deploy. No real exchange mutation.
+- **Consequences:** Branch `cursor/final_release_integration-c461`. Report
+  `docs/FINAL_RELEASE_READINESS.md`.

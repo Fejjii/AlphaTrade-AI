@@ -20,8 +20,15 @@ class HealthResponse(BaseModel):
     environment: str
     execution_mode: str
     real_trading_enabled: bool
+    exchange_mode: str
     must_verify_email: bool
     demo_seed_enabled: bool = False
+    market_watcher_enabled: bool = False
+    market_watcher_bridge_enabled: bool = False
+    watcher_orchestration_enabled: bool = False
+    telegram_alerts_enabled: bool = False
+    telegram_interaction_enabled: bool = False
+    automatic_telegram_delivery_enabled: bool = False
     git_sha: str | None = None
     timestamp: datetime
 

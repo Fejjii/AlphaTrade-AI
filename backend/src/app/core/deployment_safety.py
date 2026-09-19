@@ -48,6 +48,9 @@ def validate_deployment_settings(settings: Settings) -> None:
     if settings.execution_mode is not ExecutionMode.PAPER:
         errors.append("execution_mode must be paper in staging/production")
 
+    # Staging/production remain paper-readiness environments: Watcher and Telegram
+    # stay off until a separately authorized enablement task. Accidental real
+    # trading remains impossible via the pins above plus paper/exchange safety.
     if settings.market_watcher_enabled:
         errors.append("market_watcher_enabled must be false in staging/production")
     if settings.market_watcher_bridge_enabled:
