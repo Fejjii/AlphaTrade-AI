@@ -49,6 +49,9 @@ test.describe("Canonical paper decision workflow", () => {
     expect(await hasHorizontalOverflow(page)).toBeFalsy();
     const plan = page.getByTestId("mobile-bottom-navigation").getByRole("link", { name: "Plan" });
     await expect(plan).toHaveAttribute("href", "/decision");
-    await expect(page.getByTestId("kill-switch-button")).toBeVisible();
+    await expect(page.getByRole("banner").getByTestId("kill-switch-button")).toBeVisible();
+    await expect(
+      page.getByTestId("decision-safety-rail").getByTestId("kill-switch-button"),
+    ).toBeVisible();
   });
 });
