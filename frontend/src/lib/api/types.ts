@@ -164,9 +164,23 @@ export interface PaginatedTradeProposals {
   offset: number;
 }
 
+export interface ApprovalAuthorization {
+  authorization_id: string;
+  approval_request_id: string;
+  organization_id: string;
+  user_id: string;
+  account_id: string;
+  revision_id: string;
+  plan_id: string;
+  plan_content_hash: string;
+  state: string;
+  expires_at: string;
+}
+
 export interface ApprovalRequest {
   id: string;
   proposal_id: string;
+  plan_revision_id?: string | null;
   organization_id: string;
   user_id: string;
   status: ApprovalStatus;
@@ -176,6 +190,7 @@ export interface ApprovalRequest {
   confidence: number;
   approval_reason?: string | null;
   audit_event_id?: string | null;
+  authorization?: ApprovalAuthorization | null;
   created_at: string;
   decided_at?: string | null;
 }
@@ -1522,12 +1537,184 @@ export interface AgentMessageResponse {
 export interface PaperOrder {
   id: string;
   proposal_id?: string | null;
+  approval_id?: string | null;
+  organization_id?: string;
+  user_id?: string;
+  strategy_id?: string | null;
+  mode?: string;
   symbol: string;
   side: string;
+  type?: string;
   status: string;
-  quantity: string;
+  /** Backend PaperOrder uses `size`; `quantity` is a compatibility alias. */
+  quantity?: string;
+  size?: string;
+  price?: string | null;
   filled_price?: string | null;
+  reduce_only?: boolean;
+  idempotency_key?: string;
+  exchange_order_id?: string | null;
   created_at: string;
+}
+
+export interface PaginatedPaperOrders {
+  items: PaperOrder[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ExecutePaperPlanRequest {
+  account_id: string;
+  authorization_id: string;
+  revision_id: string;
+  idempotency_key: string;
+  correlation_id?: string | null;
+}
+
+export interface ExecutePaperPlanResult {
+  replayed: boolean;
+  outcome: "ALLOW" | "BLOCKED";
+  command_id: string;
+  canonical_payload_hash: string;
+  receipt: {
+    receipt_id: string;
+    command_id: string;
+    authorization_id?: string | null;
+    organization_id: string;
+    account_id: string;
+    created_at: string;
+    outcome: "ALLOW" | "BLOCKED";
+    blocked_reason_code?: string | null;
+  };
+  projection?: {
+    receipt_id: string;
+    state: string;
+    version: number;
+  } | null;
+  blocked_reason_code?: string | null;
+}
+
+export interface CanonicalCandidateRead {
+  authority: "canonical";
+  candidate: {
+    candidate_id: string;
+    organization_id: string;
+    state: string;
+    assessment_id: string;
+    evidence_window_hash: string;
+    strategy_version_id: string;
+    setup_definition_id: string;
+    direction: string;
+    timeframe: string;
+    valid_until: string;
+    content_hash: string;
+  };
+}
+
+export interface PaginatedCanonicalCandidates {
+  items: CanonicalCandidateRead[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CanonicalSetupAssessmentRead {
+  authority: "canonical_lineage_projection";
+  assessment_id: string;
+  organization_id: string;
+  candidate_id: string;
+  assessment_state: string;
+  assessment_content_hash?: string | null;
+  evidence_window_hash: string;
+  live_executable: false;
+}
+
+export interface CanonicalEligibilityRead {
+  authority: "canonical";
+  evaluation: {
+    eligibility: {
+      eligibility_id: string;
+      candidate_id: string;
+      assessment_id: string;
+      state: string;
+      paper_actionable?: boolean;
+    };
+    paper_actionable: boolean;
+    live_executable: false;
+    content_hash: string;
+  };
+}
+
+export interface CanonicalExecutionReceiptRead {
+  authority: "canonical";
+  live_executable: false;
+  receipt: ExecutePaperPlanResult["receipt"];
+  projection?: ExecutePaperPlanResult["projection"];
+}
+
+export interface CanonicalLearningStatsRead {
+  authority: "canonical";
+  venue_mode?: string | null;
+  snapshot: {
+    organization_id: string;
+    patterns: Array<{
+      strategy_version_id: string;
+      setup_definition_id: string;
+      learning_venue_mode: string;
+      sample_candidates: number;
+      plan_approved_count: number;
+      filled_count: number;
+      executed_outcome_count: number;
+      win_count: number;
+      loss_count: number;
+      executed_win_rate?: string | null;
+    }>;
+    human_vs_system: {
+      human_reject_or_skip: number;
+      human_approvals: number;
+      paper_system_executions: number;
+      executed_outcomes: number;
+      setup_confirmed_count: number;
+    };
+  };
+}
+
+export interface CanonicalTradePlanRevision {
+  schema_version?: string;
+  plan_id: string;
+  revision_id: string;
+  organization_id: string;
+  user_id: string;
+  account_id: string;
+  candidate_id: string;
+  strategy_version_id: string;
+  setup_definition_id: string;
+  side: "BUY" | "SELL" | string;
+  timeframe: string;
+  execution_instrument?: string;
+  evidence_instrument?: string;
+  quantity: { value: string; unit: string };
+  quantity_unit: string;
+  order_type?: string;
+  limit_price?: { value: string; unit: string } | null;
+  risk_and_exits: {
+    stop: { value: string; unit: string };
+    targets: Array<{
+      order: number;
+      price: { value: string; unit: string };
+      quantity_fraction: string;
+    }>;
+    risk_budget: { value: string; unit: string };
+    maximum_loss: { value: string; unit: string };
+    leverage: string;
+  };
+  content_hash: string;
+  correlation_id: string;
+  created_at: string;
+  valid_from: string;
+  valid_until: string;
+  evidence_ids: string[];
 }
 
 export interface User {

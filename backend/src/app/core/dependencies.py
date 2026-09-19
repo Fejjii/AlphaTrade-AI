@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -12,6 +13,7 @@ from app.db.session import get_session
 from app.providers.exchange.factory import resolve_exchange_execution_provider
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
+from app.runtime.canonical import ProductionCanonicalRuntime
 from app.services.alert_delivery_service import AlertDeliveryService
 from app.services.analytics.facade import TradingAnalyticsFacade
 from app.services.approval_service import ApprovalService
@@ -146,12 +148,38 @@ def get_market_service(session: SessionDep, audit_service: AuditServiceDep) -> M
     return MarketService(session, audit_service)
 
 
+def get_canonical_runtime(
+    request: Request,
+    session: SessionDep,
+) -> Iterator[ProductionCanonicalRuntime]:
+    """Bind PostgreSQL canonical adapters to the request unit of work."""
+
+    from app.runtime.canonical import build_production_canonical_runtime
+
+    runtime = getattr(request.app.state, "canonical_runtime", None)
+    if not isinstance(runtime, ProductionCanonicalRuntime):
+        from app.db.session import get_session_factory
+
+        runtime = build_production_canonical_runtime(
+            get_session_factory(), settings=request.app.state.settings
+        )
+    with runtime.bind_session(session):
+        yield runtime
+
+
+CanonicalRuntimeDep = Annotated[ProductionCanonicalRuntime, Depends(get_canonical_runtime)]
+
+
 def get_proposal_service(session: SessionDep, audit_service: AuditServiceDep) -> ProposalService:
     return ProposalService(session, audit_service)
 
 
-def get_approval_service(session: SessionDep, audit_service: AuditServiceDep) -> ApprovalService:
-    return ApprovalService(session, audit_service)
+def get_approval_service(
+    session: SessionDep,
+    audit_service: AuditServiceDep,
+    canonical_runtime: CanonicalRuntimeDep,
+) -> ApprovalService:
+    return ApprovalService(session, audit_service, plans=canonical_runtime.plans)
 
 
 def get_execution_service(
@@ -162,6 +190,7 @@ def get_execution_service(
     risk_service: RiskServiceDep,
     risk_settings: RiskSettingsServiceDep,
     kill_switch: KillSwitchServiceDep,
+    canonical_runtime: CanonicalRuntimeDep,
 ) -> ExecutionService:
     exchange_execution = resolve_exchange_execution_provider(settings)
     return ExecutionService(
@@ -173,6 +202,7 @@ def get_execution_service(
         risk_settings=risk_settings,
         market_data_service=market_data_service,
         kill_switch=kill_switch,
+        canonical_runtime=canonical_runtime,
     )
 
 

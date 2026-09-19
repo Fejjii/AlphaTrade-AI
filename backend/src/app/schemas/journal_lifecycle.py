@@ -16,7 +16,7 @@ from app.schemas.common import JournalLifecycleEventType, ORMModel, StrictModel
 LINEAGE_PAYLOAD_KEY = "lineage"
 """Nested payload key for Candidate/SetupAssessment/TradePlan lineage.
 
-Not a JournalTrade column in this wave. Agent 1 owns any later durable columns.
+Phase 8 copies first-seen values onto optional ``journal_trades`` query columns.
 """
 
 LINEAGE_STICKY_KEYS = (

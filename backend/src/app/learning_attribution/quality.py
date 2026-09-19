@@ -1,23 +1,28 @@
-"""Pure quality axes: planned setup vs execution vs trader behavior.
+"""Pure quality axes: setup vs execution vs risk adherence vs trader behavior vs outcome.
 
 Outcome PnL never rewrites SetupAssessment state. REJECT/SKIP never become
-executed trade outcomes.
+executed trade outcomes. Risk adherence is independent of fill slippage and PnL.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from app.db.models import JournalTrade
 from app.learning_attribution.contracts import (
     EARLY_EXIT_CAPTURE_PCT,
     ENTRY_MATCH_BPS,
+    SIZE_MATCH_BPS,
     DecisionActor,
     ExecutionQuality,
     ExecutionQualityFacts,
+    LearningVenueMode,
     PlannedSetupQuality,
     PlannedSetupQualityFacts,
+    RiskAdherence,
+    RiskAdherenceFacts,
     StrategyPatternStatFacts,
     TradeOutcomeFacts,
     TraderBehavior,
@@ -39,19 +44,38 @@ _EXECUTING = frozenset(
 
 
 def planned_setup_quality(assessment: SetupAssessment) -> PlannedSetupQualityFacts:
-    axis = {
-        SetupAssessmentState.CONFIRMED_SETUP: PlannedSetupQuality.CONFIRMED,
-        SetupAssessmentState.INVALIDATED: PlannedSetupQuality.INVALIDATED,
-        SetupAssessmentState.EXPIRED: PlannedSetupQuality.EXPIRED,
-    }.get(assessment.state, PlannedSetupQuality.NOT_CONFIRMED)
-    return PlannedSetupQualityFacts(
-        axis=axis,
+    return planned_setup_quality_from_identity(
         assessment_id=assessment.assessment_id,
         assessment_state=assessment.state,
         assessment_content_hash=assessment.content_hash,
         evidence_window_hash=assessment.evidence_window_hash,
         reason_codes=tuple(code.value for code in assessment.reason_codes),
-        confirmed=assessment.state is SetupAssessmentState.CONFIRMED_SETUP,
+    )
+
+
+def planned_setup_quality_from_identity(
+    *,
+    assessment_id: UUID,
+    assessment_state: SetupAssessmentState,
+    assessment_content_hash: str,
+    evidence_window_hash: str,
+    reason_codes: tuple[str, ...] = (),
+) -> PlannedSetupQualityFacts:
+    """Copy stored SetupAssessment identity. Does not re-evaluate setup truth."""
+
+    axis = {
+        SetupAssessmentState.CONFIRMED_SETUP: PlannedSetupQuality.CONFIRMED,
+        SetupAssessmentState.INVALIDATED: PlannedSetupQuality.INVALIDATED,
+        SetupAssessmentState.EXPIRED: PlannedSetupQuality.EXPIRED,
+    }.get(assessment_state, PlannedSetupQuality.NOT_CONFIRMED)
+    return PlannedSetupQualityFacts(
+        axis=axis,
+        assessment_id=assessment_id,
+        assessment_state=assessment_state,
+        assessment_content_hash=assessment_content_hash,
+        evidence_window_hash=evidence_window_hash,
+        reason_codes=reason_codes,
+        confirmed=assessment_state is SetupAssessmentState.CONFIRMED_SETUP,
     )
 
 
@@ -136,6 +160,54 @@ def behavior_facts(
     )
 
 
+def risk_adherence_facts(
+    *,
+    event_type: JournalLifecycleEventType,
+    trade: JournalTrade | None,
+    payload: dict[str, object] | None = None,
+) -> RiskAdherenceFacts:
+    """Stop/size plan adherence. Early-exit capture is execution quality, not this axis."""
+    body = payload or {}
+    if event_type not in _EXECUTING or trade is None:
+        return RiskAdherenceFacts(axis=RiskAdherence.NOT_APPLICABLE)
+    planned_stop = _decimal_or_none(trade.planned_stop_price)
+    actual_exit = _decimal_or_none(trade.exit_price)
+    planned_risk = _decimal_or_none(trade.planned_risk_amount)
+    planned_size = _decimal_from_payload(body.get("planned_size"))
+    actual_size = _decimal_or_none(trade.size)
+    size_deviation = _entry_deviation_bps(planned_size, actual_size)
+    if trade.status is JournalTradeStatus.PLANNED:
+        return RiskAdherenceFacts(
+            axis=RiskAdherence.NOT_YET_ASSESSED,
+            journal_trade_id=trade.id,
+            planned_risk_amount=planned_risk,
+            planned_stop_price=planned_stop,
+            planned_size=planned_size,
+            actual_size=actual_size,
+            size_deviation_bps=size_deviation,
+        )
+    if trade.entry_price is None:
+        axis = RiskAdherence.INCOMPLETE_FACTS
+    elif _is_stop_exit(trade, body) and _stop_deviated(planned_stop, actual_exit):
+        axis = RiskAdherence.STOP_VIOLATION
+    elif size_deviation is not None and abs(size_deviation) > SIZE_MATCH_BPS:
+        axis = RiskAdherence.SIZE_OR_RISK_VIOLATION
+    elif trade.status in {JournalTradeStatus.OPEN, JournalTradeStatus.CLOSED}:
+        axis = RiskAdherence.ADHERED
+    else:
+        axis = RiskAdherence.INCOMPLETE_FACTS
+    return RiskAdherenceFacts(
+        axis=axis,
+        journal_trade_id=trade.id,
+        planned_risk_amount=planned_risk,
+        planned_stop_price=planned_stop,
+        actual_exit_price=actual_exit,
+        planned_size=planned_size,
+        actual_size=actual_size,
+        size_deviation_bps=size_deviation,
+    )
+
+
 def execution_quality_facts(
     *,
     event_type: JournalLifecycleEventType,
@@ -179,6 +251,7 @@ def strategy_pattern_facts(
     event_type: JournalLifecycleEventType,
     trade: JournalTrade | None,
     outcome: TradeOutcomeFacts,
+    learning_venue_mode: LearningVenueMode = LearningVenueMode.PAPER_INTERNAL,
 ) -> StrategyPatternStatFacts:
     filled = trade is not None and trade.status in {
         JournalTradeStatus.OPEN,
@@ -191,6 +264,7 @@ def strategy_pattern_facts(
         setup_definition_id=candidate.setup_definition_id,
         fusion_policy_version=candidate.fusion_policy_version,
         uniqueness_tuple_hash=candidate.uniqueness_tuple().canonical_hash(),
+        learning_venue_mode=learning_venue_mode,
         candidate_confirmed=True,
         rejected=event_type is JournalLifecycleEventType.REJECT,
         skipped=event_type is JournalLifecycleEventType.SKIP,
@@ -268,6 +342,12 @@ def _capture_pct(trade: JournalTrade, payload: dict[str, object] | None) -> Deci
 
 
 def _decimal_or_none(value: Decimal | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(str(value))
+
+
+def _decimal_from_payload(value: object) -> Decimal | None:
     if value is None:
         return None
     return Decimal(str(value))

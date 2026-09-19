@@ -403,6 +403,11 @@ class ActionEligibilityService:
             candidate_id=candidate_id,
         )
 
+    def get(self, digest: str) -> ActionEligibilityEvaluation | None:
+        """Return the immutable evaluation for a uniqueness digest, if present."""
+
+        return self._store.get(digest)
+
     def _build_evaluation(
         self,
         command: ActionEligibilityCommand,

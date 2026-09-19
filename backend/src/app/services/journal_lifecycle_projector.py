@@ -564,6 +564,7 @@ class JournalLifecycleProjector:
             planned_targets=[],
         )
         self._apply_create_fields(row, event.payload)
+        self._stamp_lineage_columns(row, event.payload)
         try:
             with self._session.begin_nested():
                 self._trades.add(row)
@@ -605,6 +606,47 @@ class JournalLifecycleProjector:
         if incoming_rank >= int(row.projector_watermark_rank or 0):
             row.projector_watermark_rank = incoming_rank
         row.projector_lock_version = int(row.projector_lock_version or 0) + 1
+        self._stamp_lineage_columns(row, event.payload)
+
+    def _stamp_lineage_columns(self, row: JournalTrade, payload: dict[str, object]) -> None:
+        """Copy sticky payload.lineage onto query-helper columns. First-seen values win."""
+        lineage = extract_lineage_map(payload)
+        if not lineage:
+            return
+        uuid_fields = (
+            ("candidate_id", "candidate_id"),
+            ("assessment_id", "assessment_id"),
+            ("trade_plan_revision_id", "trade_plan_revision_id"),
+        )
+        for lineage_key, attr in uuid_fields:
+            raw = lineage.get(lineage_key)
+            if raw is None:
+                continue
+            incoming = uuid.UUID(raw)
+            current = getattr(row, attr)
+            if current is not None and current != incoming:
+                raise JournalProjectionConflictError(
+                    "Journal trade lineage column conflict.",
+                    details={"reason": "conflicting_lineage_identity", "key": lineage_key},
+                )
+            if current is None:
+                setattr(row, attr, incoming)
+        window = lineage.get("evidence_window_hash")
+        if window is None:
+            return
+        if len(window) != 64:
+            raise ValidationAppError(
+                "Journal lineage evidence window hash is not 64 hex characters.",
+                details={"reason": "invalid_evidence_window_hash"},
+            )
+        current_hash = row.evidence_window_hash
+        if current_hash is not None and current_hash != window:
+            raise JournalProjectionConflictError(
+                "Journal trade lineage column conflict.",
+                details={"reason": "conflicting_lineage_identity", "key": "evidence_window_hash"},
+            )
+        if current_hash is None:
+            row.evidence_window_hash = window
 
     def _promote_status(
         self, row: JournalTrade, desired: JournalTradeStatus, *, stale: bool

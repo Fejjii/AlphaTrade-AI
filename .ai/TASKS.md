@@ -1125,3 +1125,100 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Draft PR only; do not merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-034
+
+### AT-055 — Phase 8 learning persistence (canonical attribution → queryable intelligence)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-053 Phase 7 learning
+  attribution; Phase 4 canonical journal projector
+  · Risk: Medium (lineage / learning integrity / schema)
+- Safety classification: Paper-safe / PostgreSQL adapter and query services;
+  FastAPI/runtime wiring owned by later Phase 8 slices
+- Goal: Persist canonical learning attribution in PostgreSQL. Preserve immutable
+  lineage SetupAssessment → Candidate → TradePlan → paper execution →
+  JournalTrade → outcome. Duplicate facts converge; conflicting identities and
+  cross-tenant writes fail closed. REJECT/SKIP never become executed outcomes.
+  Separate setup quality, execution quality, risk adherence, trader behavior,
+  and outcome. Produce deterministic strategy/pattern statistics and
+  human-versus-system comparison. Support future demo trade learning as a
+  separate venue cohort. Learning never rewrites historical market truth. LLM
+  narrative remains explanation only. Facts are consumable by analytics and RAG
+  without competing journal/lesson authorities.
+- Branch: `cursor/phase8_learning_persistence-843e` (source); integrated on
+  `cursor/phase8_final_integration`
+- Deliverables: Alembic `d4f7a2c8e901`, `PostgresAttributionStore`,
+  `LearningQueryService`, journal lineage query columns, tests in
+  `backend/tests/test_phase8_learning_persistence.py`, docs
+  `docs/phase8_learning_persistence.md`.
+- Validation: Migration cycle, idempotency, conflicts, tenant isolation,
+  attribution correctness, strategy aggregation, RAG fact boundaries; full
+  backend pytest; ruff; mypy `--strict`; GitHub CI. Source PR #97.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-035
+
+### AT-056 — Phase 8 canonical PAPER runtime execution
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-051 Candidate PostgreSQL;
+  AT-052 canonical TradePlan application layer; AT-054 PostgreSQL binding;
+  AT-055 learning persistence
+  · Risk: Medium (execution safety, lineage, idempotency)
+- Safety classification: Paper-safe / runtime wiring; Watcher, Telegram, and
+  live trading remain disabled; no real exchange mutation
+- Goal: Wire Phase 7 PostgreSQL Candidate, ActionEligibility, and canonical
+  TradePlan adapters into FastAPI and workers. Complete the canonical PAPER
+  lifecycle: Evidence → SetupAssessment → Candidate → ActionEligibility →
+  TradePlanRevision → approval → EXECUTE_PAPER_PLAN → journal. CandidateLifecycleService
+  remains sole Candidate authority. Execution requires the exact approved
+  immutable TradePlanRevision. Duplicate requests converge. Stale/rejected/
+  expired/mismatched/modified plans fail closed. Risk engine BLOCK and kill
+  switch stay final. `canonical_plan_root` is never ProposalService trading
+  authority.
+- Branch: `cursor/phase8_runtime_execution` (source); integrated on
+  `cursor/phase8_final_integration`
+- Deliverables: `app.runtime.canonical`, `CanonicalPaperExecutionService`,
+  `POST /execution/paper-plan`, ProposalService filter, journal projection
+  source `canonical_paper_execution`, tests
+  `backend/tests/test_phase8_*.py`, docs `docs/phase8_runtime_execution.md`.
+  No Alembic.
+- Validation: adversarial execution tests (restart/idempotency, tenant
+  isolation, stale state, kill switch, risk rejection, duplicates, journal);
+  full backend pytest; ruff; scoped `mypy --strict`; GitHub CI. Source PR #99
+  claimed AT-055; remapped to AT-056 on the RC branch.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-036
+
+### AT-057 — Canonical paper decision frontend
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-040 design system;
+  AT-055 learning persistence; AT-056 runtime execution · Risk: Medium
+  (UX honesty vs unbound canonical HTTP)
+- Safety classification: Frontend / paper-only; no live execution control
+- Goal: User-facing canonical decision workflow: market assessment → candidate
+  → eligibility → TradePlan → human approval → paper execution → outcome →
+  learning. Reuse design system. Do not invent backend authority. Bind
+  canonical TradePlan execution to `POST /execution/paper-plan`.
+- Branch: `cursor/phase8_canonical_frontend` (source); integrated on
+  `cursor/phase8_final_integration`
+- Deliverables: `/decision` screens, typed contracts for canonical HTTP,
+  frontend API clients for paper-plan + canonical reads + learning queries,
+  tests, docs `docs/redesign/phase8_canonical_frontend.md`.
+- Validation: frontend lint, typecheck, unit tests, build, relevant e2e,
+  GitHub CI. Source PR #98 claimed AT-055; remapped to AT-057 on the RC
+  branch.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-037
+
+### AT-058 — Phase 8 final integration release candidate
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-055, AT-056, AT-057
+  · Risk: Medium (execution binding, learning durability, authority isolation)
+- Safety classification: Paper-only integration; Watcher, Telegram, and live
+  trading remain disabled; no deploy
+- Goal: Independently review and integrate PR97 + PR99 + PR98. Bind frontend
+  canonical TradePlan execution to `POST /execution/paper-plan`. Wire durable
+  Postgres learning attribution and canonical read/query APIs. Keep one Alembic
+  head. Do not merge `main`. Do not deploy.
+- Branch: `cursor/phase8_final_integration`
+- Deliverables: remapped governance IDs, `/canonical/*` reads,
+  `PostgresAttributionStore` runtime hook, frontend paper-plan binding,
+  `backend/tests/test_phase8_canonical_workflow.py`.
+- Validation: full backend pytest, frontend tests, lint, typecheck, build,
+  ruff, scoped mypy, Alembic cycle, deployment-safety, evaluation, e2e,
+  Docker build, GitHub CI.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-038

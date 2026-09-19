@@ -1191,3 +1191,152 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Docs in `docs/phase7_canonical_trade_plan_binding.md`.
   Tests in `backend/tests/test_phase7_eligibility_postgres.py` and
   `backend/tests/test_phase7_trade_plan_postgres.py`. Migration `c9e2b4a1d078`.
+
+## AT-ADR-035 — Phase 8 learning attribution PostgreSQL persistence
+- **Date:** 2026-09-19
+- **Status:** Accepted (PostgreSQL adapter; FastAPI/runtime wiring owned by later Phase 8 slices)
+- **Context:** AT-ADR-033 froze record-only learning attribution on
+  `JournalLifecycleProjector` with an in-memory store. Canonical trade outcomes
+  still could not be queried as durable strategy/pattern intelligence. Agent 1's
+  persistence contract lived in `AGENT_1_ATTRIBUTION_INTEGRATION`.
+- **Decision:**
+  1. Next Alembic revision is `d4f7a2c8e901` after `c9e2b4a1d078`.
+  2. `learning_attribution_records` is the candidate-scoped aggregate
+     (`UNIQUE(organization_id, candidate_id)`). Partial unique
+     `(organization_id, execution_lifecycle_id)` when set. Events are append-only
+     and unique on the same source identity as journal projection receipts.
+  3. `PostgresAttributionStore` implements `AttributionStore` on the caller's
+     session. Duplicate source identity converges. Conflicting identity, sticky
+     lineage, and cross-tenant access fail closed.
+  4. Quality axes remain separate: setup quality, execution quality, risk
+     adherence, trader behavior, and outcome. REJECT/SKIP cannot become executed
+     outcomes. PnL cannot rewrite SetupAssessment or evidence-window hashes.
+  5. `learning_venue_mode` is `paper_internal` or `paper_exchange_demo` so future
+     demo trade learning does not mix with internal paper stats. Live/real is
+     not a venue.
+  6. `LearningQueryService` is the read API for strategy/pattern stats,
+     human-versus-system comparison, lesson suggestions (`persist=false`), and
+     RAG evidence documents. Narrative is labeled `NARRATIVE_NOT_FACT` and is
+     excluded from `facts_hash`. RagService is not called.
+  7. Optional `journal_trades` lineage columns are projector-stamped query
+     helpers. The projector remains the only JournalTrade writer. Slice 84
+     paper-validation learning analytics is not replaced.
+- **Alternatives considered:** Materialized stats table as a second authority
+  (rejected: derive stats from records); auto-ingest learning narrative to Qdrant
+  (rejected: market-truth and lesson-review integrity); FastAPI/worker wiring
+  (rejected: out of scope for this slice).
+- **Safety impact:** Paper only. No live trading, Watcher, Telegram, frontend, or
+  execution-dispatch changes in this slice.
+- **Consequences:** Docs in `docs/phase8_learning_persistence.md`. Tests in
+  `backend/tests/test_phase8_learning_persistence.py`. Migration `d4f7a2c8e901`.
+- **Validation:** Attribution/idempotency/tenant/RAG-boundary tests, Alembic
+  upgrade/downgrade/reupgrade and single head, full backend pytest, ruff, mypy
+  `--strict`, GitHub CI. Source PR #97; integrated on
+  `cursor/phase8_final_integration`.
+
+## AT-ADR-036 — Phase 8 canonical PAPER runtime execution
+- **Date:** 2026-09-19
+- **Status:** Accepted (runtime composition; paper execution only)
+- **Context:** AT-ADR-034 bound Candidate, ActionEligibility, and canonical
+  TradePlanRevision to PostgreSQL without FastAPI or worker wiring. Phase 1
+  `EXECUTE_PAPER_PLAN` already claims `paper_validation` plans. Canonical plans
+  must not become ProposalService trading authority. Source PR #99 claimed
+  `AT-ADR-035`, already used by learning persistence, so this ADR is
+  `AT-ADR-036`.
+- **Decision:**
+  1. `ProductionCanonicalRuntime` is the production composition for PostgreSQL
+     Candidate, ActionEligibility, and CanonicalTradePlan adapters.
+     `CandidateLifecycleService` remains the only Candidate authority.
+  2. FastAPI lifespan stores the runtime on `app.state`. Request handlers bind
+     the caller's Session. The worker constructs the same runtime and never
+     starts Watcher or Telegram. Flags default false.
+  3. `ExecutionService.execute_paper_plan` routes `plan_authority=canonical` to
+     `CanonicalPaperExecutionService`. That path re-verifies Candidate,
+     eligibility, plan hash, approval, and account lineage immediately before
+     the existing `PaperPlanClaimService` claim transaction. Kill switch and
+     `evaluate_claim_predicate` remain final. Authorization is not consumed on
+     `BLOCKED`.
+  4. Canonical execution is PAPER only. `live_executable` stays false. No
+     exchange mutation. Duplicate idempotency keys converge across restarts.
+     Stale, rejected, expired, mismatched, or modified plans fail closed.
+  5. Compatibility `canonical_plan_root` TradeProposal rows remain FK-only.
+     ProposalService create always writes `analysis_proposal`. List omits
+     canonical roots. Get/update paths raise `TradingPolicyError`.
+  6. Journal lifecycle receives deterministic `approved_plan` / `fill` events
+     with `source_system=canonical_paper_execution` via
+     `JournalLifecycleProjector`. Exact replay converges.
+  7. HTTP `POST /execution/paper-plan` accepts only identity + idempotency.
+     Executable fields are forbidden. Legacy `POST /execution/paper` stays
+     fail-closed and must not mint canonical Candidate or TradePlan authority.
+- **Alternatives considered:** Making ProposalService the canonical plan
+  authority (rejected: competing authority); enabling Watcher/Telegram with
+  this wave (rejected: explicitly out of scope); new Alembic (rejected: Phase 7
+  schema plus PR97 learning migration are sufficient).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay
+  disabled. No real exchange mutation. No deployment.
+- **Consequences:** Docs in `docs/phase8_runtime_execution.md`. Tests in
+  `backend/tests/test_phase8_runtime_composition.py` and
+  `backend/tests/test_phase8_canonical_paper_execution.py`.
+- **Validation:** Adversarial execution pytest, full backend pytest, ruff,
+  scoped `mypy --strict` on Phase 8 modules, deployment-safety, relevant HTTP
+  E2E, GitHub CI. Source PR #99; integrated on
+  `cursor/phase8_final_integration`.
+
+## AT-ADR-037 — Canonical paper decision frontend (user-facing workflow)
+- **Date:** 2026-09-19
+- **Status:** Accepted (frontend composition; no backend authority invented)
+- **Context:** Redesign architecture §14/§15 Phase 12 consolidates surfaces.
+  Backend Phase 6/7 Candidate, ActionEligibility, TradePlanRevision, and
+  ExecutionReceipt exist as services/stores. Source PR #98 claimed
+  `AT-ADR-035`, already used by learning persistence, so this ADR is
+  `AT-ADR-037`.
+- **Decision:**
+  1. Plan landing is `/decision`. Legacy `/workspace`, `/proposals`,
+     `/approvals`, and `/paper-validation/*` stay reachable.
+  2. Market quality and action eligibility are separate cards. Setup quality
+     never grants permission to act.
+  3. Canonical TradePlan execution binds to `POST /execution/paper-plan`
+     with identity + idempotency only. Legacy `POST /execution/paper` remains
+     compatibility-only and must not execute a canonical TradePlan.
+  4. Canonical reads reuse existing authorities: candidates, setup
+     assessment, action eligibility, execution receipt, and
+     `LearningQueryService` strategy/pattern statistics. Missing HTTP is
+     added as a thin read adapter, not a second domain model.
+  5. PaperValidationCandidate is a compatibility projection, not
+     CandidateLifecycleService. `canonical_plan_root` stays invisible to
+     ProposalService trading authority.
+  6. Human approval records authorization only. AI copy cannot claim to
+     approve or execute. No live execution control is rendered.
+  7. Kill switch and paper/real-trading posture are on every decision screen.
+     LLM never becomes deterministic authority.
+- **Alternatives considered:** Treat PVC as canonical Candidate (rejected:
+  AT-ADR-026); keep `POST /execution/paper` as the decision-hub execute path
+  (rejected: AT-ADR-036 fail-closed); hide legacy Plan routes (rejected: keep
+  functional until telemetry justifies deprecation).
+- **Safety impact:** Paper only. Watcher, Telegram, and live trading stay
+  disabled. No real exchange mutation. No deployment.
+- **Consequences:** Docs in `docs/redesign/phase8_canonical_frontend.md`.
+  Frontend module `frontend/src/lib/canonical-decision/`.
+
+## AT-ADR-038 — Phase 8 release-candidate integration
+- **Date:** 2026-09-19
+- **Status:** Accepted (integration; draft PR only; do not merge or deploy)
+- **Context:** PR97, PR99, and PR98 landed independently on `main@cd9087a`.
+  All three claimed AT-ADR-035 / AT-055. Canonical frontend executed through
+  legacy `POST /execution/paper`. Runtime learning used in-memory attribution.
+- **Decision:**
+  1. Integration order is PR97 → PR99 → PR98. Do not merge `main`.
+  2. ADR/task IDs remap to AT-ADR-035/AT-055 (learning), AT-ADR-036/AT-056
+     (runtime), AT-ADR-037/AT-057 (frontend).
+  3. Alembic remains a single head: `d4f7a2c8e901` after `c9e2b4a1d078`.
+  4. Canonical frontend execution binds to `POST /execution/paper-plan`.
+  5. Thin `/canonical/*` read APIs reuse Candidate, ActionEligibility,
+     ExecutionReceipt, and `LearningQueryService`. No duplicate domain models.
+  6. Runtime paper execution attributes through `PostgresAttributionStore`.
+  7. Paper only. Watcher and Telegram stay disabled. Kill switch and risk
+     BLOCK stay final. Human approval is mandatory. LLM is never authority.
+- **Alternatives considered:** Merge into `main` in this wave (rejected);
+  create another Alembic revision (rejected: not required).
+- **Safety impact:** Paper only. No deploy. No real exchange mutation.
+- **Consequences:** Branch `cursor/phase8_final_integration`. Tests in
+  `backend/tests/test_phase8_canonical_workflow.py`.

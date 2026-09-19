@@ -2,7 +2,8 @@
 
 Evaluations are immutable and keyed by uniqueness hash. Identity bindings fail
 closed. Candidate rows are locked in the same transaction so revision history
-is append-safe. Not wired into FastAPI, workers, or feature flags.
+is append-safe. Production composition binds this store through
+``ProductionCanonicalRuntime``.
 """
 
 from __future__ import annotations
@@ -91,6 +92,22 @@ class PostgresActionEligibilityStore:
                 .order_by(ActionEligibilityEvaluationRow.evaluation_revision)
             ).all()
             return tuple(_evaluation_from_row(row) for row in rows)
+
+        return self._run(work)
+
+    def latest_for_candidate(
+        self, *, organization_id: UUID, candidate_id: UUID
+    ) -> ActionEligibilityEvaluation | None:
+        def work(session: Session) -> ActionEligibilityEvaluation | None:
+            row = session.scalars(
+                select(ActionEligibilityEvaluationRow)
+                .where(
+                    ActionEligibilityEvaluationRow.organization_id == organization_id,
+                    ActionEligibilityEvaluationRow.candidate_id == candidate_id,
+                )
+                .order_by(ActionEligibilityEvaluationRow.evaluation_revision.desc())
+            ).first()
+            return None if row is None else _evaluation_from_row(row)
 
         return self._run(work)
 

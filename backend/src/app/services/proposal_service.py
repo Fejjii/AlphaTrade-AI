@@ -7,8 +7,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError, ValidationAppError
+from app.core.errors import NotFoundError, TradingPolicyError, ValidationAppError
 from app.core.operation_policy import PersistenceKind, assert_write_allowed
+from app.db.canonical_trade_plans import PLAN_ROOT_ANALYSIS, PLAN_ROOT_CANONICAL
 from app.db.models import TradeProposal as TradeProposalModel
 from app.repositories.proposals import ProposalRepository
 from app.repositories.trade_plans import TradePlanRevisionRepository
@@ -70,6 +71,7 @@ class ProposalService:
             planned_loss_amount=data.planned_loss_amount,
             loss_acceptance_required=data.loss_acceptance_required,
             loss_acceptance_status=data.loss_acceptance_status,
+            plan_root_kind=PLAN_ROOT_ANALYSIS,
             **exit_cols,
         )
         self._repo.add(row)
@@ -121,6 +123,7 @@ class ProposalService:
         row = self._repo.get(proposal_id)
         if row is None:
             raise NotFoundError("Trade proposal not found")
+        self._reject_canonical_plan_root(row)
         return proposal_to_schema(row)
 
     def list_proposals(
@@ -143,6 +146,7 @@ class ProposalService:
         row = self._repo.get(proposal_id)
         if row is None:
             raise NotFoundError("Trade proposal not found")
+        self._reject_canonical_plan_root(row)
         row.status = update.status
         row.updated_at = datetime.now(UTC)
         self._repo.add(row)
@@ -165,6 +169,7 @@ class ProposalService:
         row = self._repo.get(proposal_id)
         if row is None:
             raise NotFoundError("Trade proposal not found")
+        self._reject_canonical_plan_root(row)
         planned = row.planned_loss_amount or update.planned_loss_amount
         result = LossAcceptanceService().evaluate(
             planned_loss_amount=planned,
@@ -207,6 +212,14 @@ class ProposalService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> TradePlanRevision:
+        proposal = self._repo.get_scoped(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if proposal is None:
+            raise NotFoundError("Trade proposal not found")
+        self._reject_canonical_plan_root(proposal)
         row = self._revisions.get_scoped(
             revision_id,
             plan_id=proposal_id,
@@ -231,6 +244,7 @@ class ProposalService:
         )
         if proposal is None:
             raise NotFoundError("Trade proposal not found")
+        self._reject_canonical_plan_root(proposal)
         return [
             trade_plan_revision_to_schema(row)
             for row in self._revisions.list_for_plan_scoped(
@@ -239,6 +253,13 @@ class ProposalService:
                 user_id=user_id,
             )
         ]
+
+    def _reject_canonical_plan_root(self, row: TradeProposalModel) -> None:
+        if row.plan_root_kind == PLAN_ROOT_CANONICAL:
+            raise TradingPolicyError(
+                "canonical_plan_root is not a ProposalService trading authority.",
+                details={"reason": "canonical_plan_root_not_proposal_authority"},
+            )
 
     def _record_audit(self, event_type: AuditEventType, **fields: object) -> None:
         self._audit.record(
