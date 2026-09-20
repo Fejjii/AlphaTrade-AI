@@ -71,7 +71,7 @@ export default function PaperValidationCandidatesPage() {
   return (
     <ValidatePageChrome
       title="Paper Validation Queue"
-      description="Structured validation candidates from ready drafts. Queue only — no run started, no orders, no proposals, no Telegram."
+      description="Structured validation candidates from ready drafts. Compatibility queue only — not canonical Candidate authority. No run started, no orders, no proposals, no Telegram."
       posture={posture}
       providerMode={providerMode}
       freshnessSources={freshnessSources}

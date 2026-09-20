@@ -6,11 +6,8 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { ApprovalRequest, ExecutePaperPlanResult } from "@/lib/api/types";
 
-function newIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `paper-plan-${Date.now()}`;
+function paperPlanIdempotencyKey(authorizationId: string): string {
+  return `paper-plan:${authorizationId}`;
 }
 
 export function CanonicalPaperPlanButton({
@@ -38,7 +35,7 @@ export function CanonicalPaperPlanButton({
         account_id: authorization.account_id,
         authorization_id: authorization.authorization_id,
         revision_id: revisionId,
-        idempotency_key: newIdempotencyKey(),
+        idempotency_key: paperPlanIdempotencyKey(authorization.authorization_id),
       });
       setResult(response);
       onSuccess?.(response);

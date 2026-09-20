@@ -162,6 +162,29 @@ Never commit connection strings or dump contents into git.
 3. Run the smoke gate.  
 4. Rotate `JWT_SECRET` only with an explicit session-invalidation plan.
 
+### 5.5 Canonical schema chain (Phase 7/8)
+
+Current Alembic head is a single linear chain:
+
+`4fd8c1a90b27` (canonical Candidate) → `c9e2b4a1d078` (TradePlan + ActionEligibility)
+→ `d4f7a2c8e901` (learning attribution).
+
+All three revisions ship non-empty `downgrade()`. Prefer leaving additive schema
+forward when rolling back the API image: old paper code can typically read the
+new columns. Do **not** blindly `alembic downgrade -1` on staging data without
+an explicit restore plan.
+
+| Head to reverse | Safer action |
+|-----------------|--------------|
+| App-only defect after `d4f7a2c8e901` applied | Roll back the Render image; leave DB at head |
+| Need to undo learning tables only | `alembic downgrade c9e2b4a1d078` after written approval |
+| Need to undo TradePlan/eligibility | `alembic downgrade 4fd8c1a90b27` after written approval **or** AT-019 restore |
+| Need to undo Candidate persistence | AT-019 restore preferred over in-place downgrade |
+
+Re-run `./scripts/post-deploy-smoke-gate.sh` and, when validating the canonical
+path, `INCLUDE_CANONICAL=true ./scripts/post-deploy-smoke-gate.sh` or
+`./scripts/canonical-staging-smoke.sh`.
+
 ---
 
 ## 6. Post-rollback verification
@@ -176,7 +199,8 @@ COOKIE_MODE=true \
 Must observe:
 
 1. Gate exit code **0**.  
-2. `/health` → `execution_mode=paper`, `real_trading_enabled=false`.  
+2. `/health` → `execution_mode=paper`, `real_trading_enabled=false`,
+   watcher/Telegram flags false.  
 3. `/health` → `git_sha` equals the **last known good** revision.  
 4. Manual: staging frontend loads; paper banner visible; no secrets in screenshots.
 

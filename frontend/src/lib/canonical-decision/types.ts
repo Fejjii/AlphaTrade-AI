@@ -81,7 +81,11 @@ export type PaperExecutionStatus =
   | "rejected"
   | "unknown";
 
-export type DecisionCaseKind = "compatibility_candidate" | "legacy_proposal" | "linked_outcome";
+export type DecisionCaseKind =
+  | "canonical_candidate"
+  | "compatibility_candidate"
+  | "legacy_proposal"
+  | "linked_outcome";
 
 export interface EvidenceFact {
   label: string;
@@ -210,6 +214,7 @@ export interface PaperApprovalView {
 
 export interface PaperExecutionView {
   orderId: string | null;
+  receiptId: string | null;
   proposalId: string | null;
   approvalId: string | null;
   status: PaperExecutionStatus;
@@ -220,6 +225,7 @@ export interface PaperExecutionView {
   liveExecutionAvailable: false;
   createdAt: string | null;
   blockReason: string | null;
+  authority: AuthorityKind;
 }
 
 export interface OutcomeView {

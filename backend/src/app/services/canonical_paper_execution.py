@@ -4,7 +4,9 @@ EXECUTE_PAPER_PLAN for ``plan_authority=canonical`` must bind the exact approved
 immutable TradePlanRevision and re-verify Candidate, ActionEligibility, plan,
 approval, and account lineage immediately before the claim transaction.
 
-RiskEngine BLOCK and the kill switch remain final inside PaperPlanClaimService.
+RiskEngine BLOCK and the kill switch remain final inside PaperPlanClaimService
+via ``evaluate_claim_predicate``. Missing Candidate, eligibility, or required
+lineage after ALLOW fails closed rather than skipping learning evidence.
 This module never calls an exchange.
 """
 
@@ -37,7 +39,10 @@ from app.services.canonical_execution_journal import (
     CANONICAL_EXECUTION_SOURCE_SYSTEM,
     project_canonical_execution_event,
 )
-from app.services.canonical_execution_learning import attribute_canonical_paper_event
+from app.services.canonical_execution_learning import (
+    attribute_canonical_paper_event,
+    require_canonical_attribution_lineage,
+)
 from app.services.canonical_trade_plan_errors import CanonicalTradePlanNotFoundError
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
 from app.services.journal_lifecycle_projector import JournalLifecycleProjector
@@ -283,7 +288,11 @@ def _lineage_payload(
     runtime: ProductionCanonicalRuntime,
 ) -> JournalLineagePayload:
     lineage = envelope.lineage
-    evaluation = runtime.eligibility.get(lineage.eligibility_uniqueness_hash)
+    resolved = require_canonical_attribution_lineage(
+        runtime=runtime,
+        organization_id=envelope.plan.organization_id,
+        envelope=envelope,
+    )
     return JournalLineagePayload(
         organization_id=envelope.plan.organization_id,
         account_id=envelope.plan.account_id,
@@ -291,9 +300,7 @@ def _lineage_payload(
         candidate_id=lineage.candidate_id,
         candidate_content_hash=lineage.candidate_content_hash,
         assessment_id=lineage.assessment_id,
-        assessment_content_hash=(
-            None if evaluation is None else evaluation.setup_assessment_content_hash
-        ),
+        assessment_content_hash=resolved.evaluation.setup_assessment_content_hash,
         evidence_window_hash=lineage.evidence_window_hash,
         trade_plan_revision_id=envelope.plan.revision_id,
         trade_plan_content_hash=envelope.plan.content_hash,

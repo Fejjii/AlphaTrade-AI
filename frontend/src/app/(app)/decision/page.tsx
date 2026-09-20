@@ -15,6 +15,7 @@ import { loadSource, type SourceResult } from "@/components/workflows";
 import { cn } from "@/lib/utils";
 
 type HubSources = {
+  canonicalCandidates: SourceResult<Awaited<ReturnType<typeof api.canonical.listCandidates>>>;
   candidates: SourceResult<Awaited<ReturnType<typeof api.strategies.candidates>>>;
   proposals: SourceResult<Awaited<ReturnType<typeof api.proposals.list>>>;
   approvals: SourceResult<Awaited<ReturnType<typeof api.approvals.list>>>;
@@ -28,15 +29,17 @@ export default function DecisionHubPage() {
   const { executionMode, realTradingEnabled } = useSafetyPosture();
 
   const loader = useCallback(async (): Promise<HubSources> => {
-    const [candidates, proposals, approvals, orders, journals, lessons] = await Promise.all([
-      loadSource(api.strategies.candidates({ limit: 50 })),
-      loadSource(api.proposals.list({ limit: 50 })),
-      loadSource(api.approvals.list({ limit: 50 })),
-      loadSource(api.execution.listOrders({ limit: 50 })),
-      loadSource(api.journal.list({ limit: 50 })),
-      loadSource(api.lessons.listCandidates()),
-    ]);
-    return { candidates, proposals, approvals, orders, journals, lessons };
+    const [canonicalCandidates, candidates, proposals, approvals, orders, journals, lessons] =
+      await Promise.all([
+        loadSource(api.canonical.listCandidates({ limit: 50 })),
+        loadSource(api.strategies.candidates({ limit: 50 })),
+        loadSource(api.proposals.list({ limit: 50 })),
+        loadSource(api.approvals.list({ limit: 50 })),
+        loadSource(api.execution.listOrders({ limit: 50 })),
+        loadSource(api.journal.list({ limit: 50 })),
+        loadSource(api.lessons.listCandidates()),
+      ]);
+    return { canonicalCandidates, candidates, proposals, approvals, orders, journals, lessons };
   }, []);
 
   const { data, loading, error, reload } = useAsyncData(loader, []);
@@ -44,12 +47,13 @@ export default function DecisionHubPage() {
   const snapshot = useMemo(() => {
     if (!data) return null;
     return composeDecisionCases({
-      candidates: data.candidates.data?.items ?? [],
-      proposals: data.proposals.data?.items ?? [],
-      approvals: data.approvals.data?.items ?? [],
-      orders: data.orders.data?.items ?? [],
-      journals: data.journals.data?.items ?? [],
-      lessons: data.lessons.data?.items ?? [],
+      canonicalCandidates: data.canonicalCandidates?.data?.items ?? [],
+      candidates: data.candidates?.data?.items ?? [],
+      proposals: data.proposals?.data?.items ?? [],
+      approvals: data.approvals?.data?.items ?? [],
+      orders: data.orders?.data?.items ?? [],
+      journals: data.journals?.data?.items ?? [],
+      lessons: data.lessons?.data?.items ?? [],
       killSwitchActive,
       executionMode,
       realTradingEnabled,
@@ -87,7 +91,7 @@ export default function DecisionHubPage() {
       {snapshot && snapshot.cases.length === 0 ? (
         <EmptyState
           title="No paper decisions yet"
-          description="Market assessment, validation candidates, and proposals will appear here. Nothing here can place a live order."
+          description="Canonical Candidates, market assessment, and compatibility proposals will appear here. Nothing here can place a live order."
         />
       ) : null}
 

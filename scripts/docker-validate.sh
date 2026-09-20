@@ -29,6 +29,14 @@ import sys
 payload = json.loads(sys.argv[1])
 assert payload.get("execution_mode") == "paper", payload
 assert payload.get("real_trading_enabled") is False, payload
+for flag in (
+    "market_watcher_enabled",
+    "watcher_orchestration_enabled",
+    "telegram_alerts_enabled",
+    "telegram_interaction_enabled",
+):
+    if flag in payload:
+        assert payload.get(flag) is False, payload
 print("  execution_mode=paper, real_trading_enabled=false")
 PY
 

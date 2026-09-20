@@ -356,18 +356,23 @@ class ExecutionService:
         return fill
 
     def _project_canonical_fill(self, command_id: uuid.UUID, fill: UniqueFillResult) -> None:
-        if self._canonical_runtime is None:
-            return
         command = self._session.get(ExecutionCommand, command_id)
         if command is None:
-            return
+            raise NotFoundError("Execution command is unknown; refusing fill journal projection.")
         plan_row = self._revisions.get_scoped(
             command.revision_id,
             organization_id=command.organization_id,
             user_id=command.user_id,
         )
-        if plan_row is None or not is_canonical_plan_authority(plan_row.plan_authority):
+        if plan_row is None:
+            raise NotFoundError("Trade plan revision is unknown; refusing fill journal projection.")
+        if not is_canonical_plan_authority(plan_row.plan_authority):
             return
+        if self._canonical_runtime is None:
+            raise TradingPolicyError(
+                "Canonical paper fill projection requires the production canonical runtime.",
+                details={"reason": "canonical_runtime_unbound"},
+            )
         from app.services.safety_epoch import SafetyEpochService
 
         CanonicalPaperExecutionService(

@@ -63,7 +63,10 @@ async def place_paper_order(
     usage_service: UsageServiceDep,
     session: SessionDep,
 ) -> PaperOrder:
-    proposal = proposal_service.get(body.proposal_id)
+    proposal = proposal_service.get(
+        body.proposal_id,
+        organization_id=tenant.organization_id,
+    )
     ensure_same_organization(proposal.organization_id, tenant)
     placement = execution_service.place_paper_order(body)
 
@@ -113,9 +116,9 @@ async def execute_paper_plan(
             correlation_id=body.correlation_id,
         )
     )
-    if result.replayed:
-        return result
-    if result.outcome is ExecutionCommandOutcome.ALLOW:
+    # Replay still commits so any healing journal/attribution writes in this
+    # request survive process restart. Usage is metered only on first ALLOW.
+    if not result.replayed and result.outcome is ExecutionCommandOutcome.ALLOW:
         usage_service.record(
             UsageEventCreate(
                 request_id=body.idempotency_key,

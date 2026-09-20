@@ -48,7 +48,9 @@ Canonical execution:
 6. `live_executable` stays false. No exchange mutation.
 
 HTTP: `POST /execution/paper-plan` accepts only account/authorization/revision
-identity plus an idempotency key. Executable fields are forbidden.
+identity plus an idempotency key. Executable fields are forbidden. Exact replay
+converges, does not double-meter usage, and still commits the request session
+so any healing journal/attribution writes persist.
 
 ## ProposalService firewall
 
@@ -58,7 +60,9 @@ authority:
 
 - `create` always writes `analysis_proposal`
 - list endpoints omit canonical roots
-- get/update/revision paths raise `TradingPolicyError`
+- get/update/revision paths apply tenant scope first, then raise
+  `TradingPolicyError` for same-tenant `canonical_plan_root`. Cross-tenant
+  lookups return NotFound and do not reveal that a canonical root exists.
 
 ## Journal
 
@@ -70,8 +74,10 @@ Exact replay converges. Journal is record-only.
 
 After journal projection, `attribute_canonical_paper_event` writes durable
 facts through `PostgresAttributionStore` and
-`LearningAttributionService.apply_projected`. It does not become a second
-JournalTrade writer.
+`LearningAttributionService.apply_projected`. Missing Candidate,
+ActionEligibility, or required assessment lineage fails closed with
+`LearningAttributionIncompleteError` and rolls back the ALLOW unit of work.
+It does not skip learning evidence and is not a second JournalTrade writer.
 
 ## Out of scope
 

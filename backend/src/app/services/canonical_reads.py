@@ -110,7 +110,7 @@ class CanonicalReadService:
         if row is None or row.organization_id != organization_id:
             raise NotFoundError("Canonical execution receipt is unknown in this organization.")
         command = self._commands.get(row.command_id)
-        if command is None:
+        if command is None or command.organization_id != organization_id:
             raise NotFoundError("Canonical execution command is unknown in this organization.")
         projection = self._projections.get_by_receipt(row.id)
         return CanonicalExecutionReceiptRead(

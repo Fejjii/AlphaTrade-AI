@@ -117,6 +117,7 @@ describe("ProposalsPage route honesty (FP2-129)", () => {
     const headings = screen.getAllByRole("heading", { level: 1 });
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent("Trade Proposals");
+    expect(screen.getByText(/compatibility analysis proposals/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /kill switch/i })).toBeInTheDocument();
   });
 
