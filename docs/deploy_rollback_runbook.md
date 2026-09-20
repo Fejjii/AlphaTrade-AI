@@ -167,16 +167,17 @@ Never commit connection strings or dump contents into git.
 Current Alembic head is a single linear chain:
 
 `4fd8c1a90b27` (canonical Candidate) → `c9e2b4a1d078` (TradePlan + ActionEligibility)
-→ `d4f7a2c8e901` (learning attribution).
+→ `d4f7a2c8e901` (learning attribution) → `e8f1c4a9b702` (`journal_trades.account_id`).
 
-All three revisions ship non-empty `downgrade()`. Prefer leaving additive schema
+All four revisions ship non-empty `downgrade()`. Prefer leaving additive schema
 forward when rolling back the API image: old paper code can typically read the
 new columns. Do **not** blindly `alembic downgrade -1` on staging data without
 an explicit restore plan.
 
 | Head to reverse | Safer action |
 |-----------------|--------------|
-| App-only defect after `d4f7a2c8e901` applied | Roll back the Render image; leave DB at head |
+| App-only defect after `e8f1c4a9b702` / `d4f7a2c8e901` applied | Roll back the Render image; leave DB at head |
+| Need to undo `journal_trades.account_id` only | `alembic downgrade d4f7a2c8e901` after written approval |
 | Need to undo learning tables only | `alembic downgrade c9e2b4a1d078` after written approval |
 | Need to undo TradePlan/eligibility | `alembic downgrade 4fd8c1a90b27` after written approval **or** AT-019 restore |
 | Need to undo Candidate persistence | AT-019 restore preferred over in-place downgrade |

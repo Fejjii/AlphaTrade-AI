@@ -17,7 +17,7 @@ agent without Render or Vercel credentials:
 
 | Item | Evidence |
 |------|----------|
-| Canonical schema deploys via `alembic upgrade head` | Single head `d4f7a2c8e901` revises `c9e2b4a1d078` revises `4fd8c1a90b27` |
+| Canonical schema deploys via `alembic upgrade head` | Single head `e8f1c4a9b702` revises `d4f7a2c8e901` revises `c9e2b4a1d078` revises `4fd8c1a90b27` |
 | Render blueprint pins paper + Watcher/Telegram off | `render.yaml` |
 | Worker `dockerCommand` is honored | `backend/docker/entrypoint.sh` execs `"$@"` before uvicorn |
 | Staging/production refuse Watcher + Telegram | `deployment_safety.py` |
@@ -79,7 +79,7 @@ Do **not** treat these as product defects. They are the exact human/ops boundary
 - [ ] `BILLING_ENABLED=false`
 - [ ] Hosted `DATABASE_URL`, `REDIS_URL`, `QDRANT_URL` (not localhost)
 - [ ] `OPENAI_API_KEY` set (value never logged)
-- [ ] `alembic upgrade head` → `d4f7a2c8e901`
+- [ ] `alembic upgrade head` → `e8f1c4a9b702`
 - [ ] `/health` paper + Watcher/Telegram false
 - [ ] `/health/ready` ready (or pre-approved degraded)
 - [ ] `./scripts/post-deploy-smoke-gate.sh` exit 0
@@ -114,7 +114,8 @@ Do **not** treat these as product defects. They are the exact human/ops boundary
 
 1. `4fd8c1a90b27` — canonical Candidate  
 2. `c9e2b4a1d078` — ActionEligibility + canonical TradePlan  
-3. `d4f7a2c8e901` — learning attribution (current head)
+3. `d4f7a2c8e901` — learning attribution  
+4. `e8f1c4a9b702` — `journal_trades.account_id` (current head)
 
 Worker containers skip entrypoint migrations and run `python -m app.workers.entrypoint`
 (still `WORKER_ENABLED=false`).

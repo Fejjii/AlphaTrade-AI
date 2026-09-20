@@ -63,7 +63,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src/app/learning_attributi
 PERSISTENCE_MODULE = (
     Path(__file__).resolve().parents[1] / "src/app/persistence/attribution_postgres.py"
 )
-HEAD = "d4f7a2c8e901"
+HEAD = "e8f1c4a9b702"
 PREVIOUS_HEAD = "c9e2b4a1d078"
 FORBIDDEN_SNIPPETS = (
     "app.services.execution",
@@ -512,6 +512,13 @@ def test_phase8_alembic_upgrade_downgrade_reupgrade() -> None:
             )
         ).scalar()
         assert candidate_col == 1
+        account_col = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'journal_trades' AND column_name = 'account_id'"
+            )
+        ).scalar()
+        assert account_col == 1
         event_trigger = conn.execute(
             text(
                 "SELECT 1 FROM pg_trigger "
@@ -546,6 +553,13 @@ def test_phase8_alembic_upgrade_downgrade_reupgrade() -> None:
             )
         ).scalar()
         assert candidate_col is None
+        account_col = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'journal_trades' AND column_name = 'account_id'"
+            )
+        ).scalar()
+        assert account_col is None
 
     command.upgrade(config, "head")
     with engine.connect() as conn:
