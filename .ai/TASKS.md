@@ -1305,3 +1305,67 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
+
+---
+
+## Next live market / Watcher program (paper only; do not activate in the audit)
+
+### AT-063 — Live market data + Watcher read-only audit
+- Priority: P0 · Status: DONE · Dependencies: AT-041…AT-062 on `main@20d2cac` · Risk: Low
+- Safety classification: Audit only; Watcher, Telegram, and live trading remain disabled
+- Goal: Inventory real-time ingestion, BTC/alt prices, OHLCV, perpetual evidence, CVD,
+  aggressive flow, freshness, Watcher, scheduler, worker, leases/fencing, canonical
+  evaluator, Candidate creation, UI price path, observability. Explain stale
+  compatibility BTC prices. Design the smallest safe path. Do not implement or activate.
+- Branch: `cursor/next_live_market_watcher_audit-7e05`
+- Validation: Repository facts cited in `docs/AT063_live_market_watcher_audit.md`;
+  no application code change; paper flags unchanged.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-042
+- Completed: 2026-09-20 — audit against `main@20d2cac`.
+
+### AT-064 — Live first-slice USD-M evidence assembler (Watcher off)
+- Priority: P0 · Status: TODO · Dependencies: AT-063, AT-041 · Risk: Medium
+- Safety classification: Paper-safe / read-only evidence; Watcher remains disabled
+- Goal: Production `WatcherScanEvidencePort` assembling current closed BTCUSDT USD-M
+  15m/4h OHLCV, aggTrades, CVD, signed flow, 10s freshness, and
+  `FirstSliceEvidenceBundle`. Default `PERPETUAL_EVIDENCE_SOURCE=replay`. Live
+  `binance_usdm` opt-in, fail-closed (no spot/mock). Optional read-only HTTP. No mint.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
+### AT-065 — Compatibility price / freshness honesty in UI
+- Priority: P0 · Status: TODO · Dependencies: AT-063 · Risk: Low
+- Safety classification: Frontend honesty; paper-only; no Watcher enablement
+- Goal: Mock hash BTCUSDT=47326, demo seed 65000, and PVC `latest_price` must never
+  render as Live. Every price shows source + freshness. `/decision/market` stays
+  compatibility and is not canonical SetupAssessment.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
+### AT-066 — Paper Watcher staging safety-lock amendment (human-gated)
+- Priority: P0 · Status: TODO · Dependencies: AT-063 · Risk: Medium (safety lock)
+- Safety classification: Staging may *allow* `WATCHER_ORCHESTRATION_ENABLED` only under
+  paper pins; default remains false; production stays false; do not flip env in-audit
+- Goal: Smallest `deployment_safety` change so staging can enable orchestration Watcher
+  when paper + real trading false + Telegram false + notify blocked. Legacy
+  `MARKET_WATCHER_ENABLED` stays false. Stop at REVIEW_REQUIRED before any enablement.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
+### AT-067 — Watcher worker fusion runtime (flags default false)
+- Priority: P0 · Status: TODO · Dependencies: AT-064, AT-066 · Risk: Medium
+- Safety classification: Paper-safe wiring; flags stay false until authorized
+- Goal: `WatcherOrchestrator.run_worker` in the worker loop with fusion evaluator,
+  Postgres store, Candidate fence, and the evidence port. Mint only on
+  CONFIRMED_SETUP + PERSIST_EVIDENCE. No TradePlan, Telegram, or execution.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
+### AT-068 — Canonical paper Watcher monitoring UI + observability
+- Priority: P1 · Status: TODO · Dependencies: AT-064; Candidate rows need AT-067 · Risk: Low
+- Safety classification: Frontend + metrics; paper-only; no flag flip
+- Goal: Decision/monitoring shows canonical Candidates and Phase 5 freshness; disabled
+  Watcher is explicit; PVC remains compatibility; add watcher/evidence metrics.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-042
