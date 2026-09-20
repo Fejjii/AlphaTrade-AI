@@ -70,10 +70,43 @@ describe("CanonicalPaperPlanButton", () => {
           account_id: "acct-1",
           authorization_id: "auth-1",
           revision_id: "rev-1",
+          idempotency_key: "paper-plan:auth-1",
         }),
       );
     });
     expect(screen.getByTestId("paper-plan-outcome")).toHaveTextContent("ALLOW");
     expect(paperOrder).not.toHaveBeenCalled();
+  });
+
+  it("reuses the authorization-bound idempotency key on retry", async () => {
+    executePaperPlan.mockRejectedValueOnce(new Error("network")).mockResolvedValue({
+      replayed: true,
+      outcome: "ALLOW",
+      command_id: "cmd-1",
+      canonical_payload_hash: "cd".repeat(32),
+      receipt: {
+        receipt_id: "rcpt-1",
+        command_id: "cmd-1",
+        organization_id: "org",
+        account_id: "acct-1",
+        created_at: "2026-09-19T12:10:00.000Z",
+        outcome: "ALLOW",
+      },
+    });
+    render(<CanonicalPaperPlanButton approval={approval} />);
+    fireEvent.click(screen.getByTestId("execute-paper-plan-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("paper-plan-error")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("execute-paper-plan-button"));
+    await waitFor(() => {
+      expect(executePaperPlan).toHaveBeenCalledTimes(2);
+    });
+    expect(executePaperPlan.mock.calls[0]?.[0]).toMatchObject({
+      idempotency_key: "paper-plan:auth-1",
+    });
+    expect(executePaperPlan.mock.calls[1]?.[0]).toMatchObject({
+      idempotency_key: "paper-plan:auth-1",
+    });
   });
 });

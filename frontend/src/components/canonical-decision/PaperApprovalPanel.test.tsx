@@ -51,6 +51,24 @@ const approval: ApprovalRequest = {
   created_at: "2026-09-19T12:01:00.000Z",
 };
 
+const canonicalApproval: ApprovalRequest = {
+  ...approval,
+  proposal_id: "canonical-root-1",
+  plan_revision_id: "rev-1",
+  authorization: {
+    authorization_id: "auth-1",
+    approval_request_id: "appr-1",
+    organization_id: "org",
+    user_id: "user",
+    account_id: "acct-1",
+    revision_id: "rev-1",
+    plan_id: "plan-1",
+    plan_content_hash: "ab".repeat(32),
+    state: "AVAILABLE",
+    expires_at: "2026-09-19T13:00:00.000Z",
+  },
+};
+
 describe("PaperApprovalPanel", () => {
   afterEach(() => {
     cleanup();
@@ -61,6 +79,14 @@ describe("PaperApprovalPanel", () => {
   it("uses paper-plan execution and never renders the legacy paper order button", () => {
     render(<PaperApprovalPanel approval={approval} proposal={proposal} />);
     expect(screen.getByTestId("canonical-paper-plan-button")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /create paper order/i })).not.toBeInTheDocument();
+    expect(paperOrder).not.toHaveBeenCalled();
+  });
+
+  it("shows paper-plan execute when the canonical workflow omits the compatibility proposal", () => {
+    render(<PaperApprovalPanel approval={canonicalApproval} proposal={null} />);
+    expect(screen.getByTestId("canonical-paper-plan-button")).toBeInTheDocument();
+    expect(screen.getByTestId("execute-paper-plan-button")).toBeEnabled();
     expect(screen.queryByRole("button", { name: /create paper order/i })).not.toBeInTheDocument();
     expect(paperOrder).not.toHaveBeenCalled();
   });

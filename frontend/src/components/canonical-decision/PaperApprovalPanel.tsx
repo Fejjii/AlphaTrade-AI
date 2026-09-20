@@ -31,6 +31,9 @@ export function PaperApprovalPanel({
   const status = approval.status;
   const pending = status === "pending";
   const confirmOk = confirmText.trim().toLowerCase() === "approve paper";
+  const canExecuteCanonicalPlan = Boolean(
+    approvalRequest && (approvalRequest.authorization || approvalRequest.plan_revision_id),
+  );
 
   return (
     <Card data-testid="paper-approval-panel">
@@ -79,7 +82,7 @@ export function PaperApprovalPanel({
             </div>
           </div>
         ) : null}
-        {proposal ? (
+        {proposal || canExecuteCanonicalPlan ? (
           <div className="space-y-2 rounded-card border border-border-subtle p-3">
             <p className="text-caption uppercase tracking-wide text-text-muted">
               Separate paper execution

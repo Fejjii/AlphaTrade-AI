@@ -94,7 +94,15 @@ vi.mock("@/lib/api", () => ({
 }));
 
 describe("Paper approval page", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    workflowState.data = {
+      approval,
+      proposal,
+      can_execute_paper: false,
+      block_reason: "pending",
+    };
+  });
 
   it("requires typed confirmation and states that approval does not execute", () => {
     render(<DecisionApprovalPage />);
@@ -111,5 +119,35 @@ describe("Paper approval page", () => {
     expect(screen.getByTestId("canonical-paper-plan-button")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /create paper order/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /execute live/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps paper-plan execute available when workflow returns no compatibility proposal", () => {
+    workflowState.data = {
+      approval: {
+        ...approval,
+        status: "approved",
+        plan_revision_id: "rev-1",
+        authorization: {
+          authorization_id: "auth-1",
+          approval_request_id: "appr-1",
+          organization_id: "org",
+          user_id: "user",
+          account_id: "acct-1",
+          revision_id: "rev-1",
+          plan_id: "plan-1",
+          plan_content_hash: "ab".repeat(32),
+          state: "AVAILABLE",
+          expires_at: "2026-09-19T13:00:00.000Z",
+        },
+      },
+      proposal: null,
+      can_execute_paper: false,
+      block_reason: "Canonical plans execute via EXECUTE_PAPER_PLAN, not the proposal workflow.",
+    };
+    render(<DecisionApprovalPage />);
+    expect(screen.queryByTestId("trade-plan-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("canonical-paper-plan-button")).toBeInTheDocument();
+    expect(screen.getByTestId("execute-paper-plan-button")).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /create paper order/i })).not.toBeInTheDocument();
   });
 });
