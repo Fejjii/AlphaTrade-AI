@@ -46,6 +46,7 @@ if [[ "$SELF_CHECK" == "true" ]]; then
   echo "Canonical staging smoke — self-check (no network)"
   [[ -f "${ROOT_DIR}/scripts/smoke-auth-helpers.sh" ]] || fail "missing smoke-auth-helpers.sh"
   grep -q 'canonical/candidates' "$0" || fail "lost canonical candidate coverage"
+  grep -q 'canonical/evidence' "$0" || fail "lost canonical evidence coverage"
   grep -q 'risk/check' "$0" || fail "lost risk BLOCK coverage"
   grep -q 'ENABLE_REAL_TRADING' "$0" || fail "lost real-trading refusal note"
   echo "  OK: script present and wired"
@@ -106,6 +107,8 @@ PY
 echo "2/10 — unauthenticated canonical reads are 401"
 unauth="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/canonical/candidates")"
 [[ "$unauth" == "401" ]] || fail "expected 401 for /canonical/candidates, got ${unauth}"
+unauth_ev="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/canonical/evidence")"
+[[ "$unauth_ev" == "401" ]] || fail "expected 401 for /canonical/evidence, got ${unauth_ev}"
 echo "  OK"
 
 if [[ "$SKIP_REGISTER" == "true" ]]; then
@@ -128,6 +131,21 @@ import json, sys
 payload = json.loads(sys.argv[1])
 assert "items" in payload and "total" in payload, payload
 print(f"  OK: total={payload.get('total')}")
+PY
+
+echo "4b/10 — canonical evidence is replay/fail-closed, never a live mark"
+ev_json="$(curl_api -H "$(auth_header "$token_a")" "${BASE_URL}/canonical/evidence")"
+python3 - <<'PY' "$ev_json"
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload.get("authority") == "canonical", payload
+assert payload.get("live_executable") is False, payload
+assert payload.get("watcher_activated") is False, payload
+price = payload.get("current_price") or {}
+assert price.get("usable_as_current_market_price") is False, payload
+assert price.get("presentation") != "live_mark", payload
+assert price.get("fallback_used") is False, payload
+print("  OK: presentation=%s" % price.get("presentation"))
 PY
 
 echo "5/10 — paper-plan rejects executable fields (422)"

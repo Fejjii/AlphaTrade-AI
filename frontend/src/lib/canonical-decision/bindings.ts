@@ -35,13 +35,24 @@ export const DECISION_BACKEND_BINDINGS: readonly BackendBinding[] = [
     notes: "Server-side kill switch; BLOCK is final. No UI override.",
   },
   {
-    id: "market-analyze",
-    title: "Market assessment",
+    id: "canonical-evidence",
+    title: "Canonical USD-M evidence",
     status: "bound",
-    path: "POST /market/analyze",
+    path: "GET /canonical/evidence",
     owner: "backend",
     usedByFrontend: true,
-    notes: "Market quality / setup signals only. Does not grant action eligibility.",
+    notes:
+      "Read-only first-slice perpetual evidence + current price honesty. Replay is never a live mark. Fail-closed on missing/stale/incomplete. Does not start Watcher.",
+  },
+  {
+    id: "market-analyze",
+    title: "Compatibility market snapshot",
+    status: "partial",
+    path: "POST /market/analyze",
+    owner: "backend",
+    usedByFrontend: false,
+    notes:
+      "Legacy /market monitor only. Frozen compatibility snapshots must not be presented as canonical current prices.",
   },
   {
     id: "paper-validation-candidates",

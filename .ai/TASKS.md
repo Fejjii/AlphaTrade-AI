@@ -1305,3 +1305,22 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
+
+### AT-064 — Canonical live read-only USD-M evidence pipeline
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-063 / PR #108 market
+  contracts on `main@20d2cac` · Risk: Medium (freshness honesty)
+- Safety classification: Paper-only read path; Watcher, Telegram, and live
+  trading remain disabled; no exchange mutation; no merge
+- Goal: Assemble CanonicalEvidenceWindowV1 from existing Binance USD-M contracts
+  (BTCUSDT first, multi-symbol catalog). Expose truthful current price +
+  freshness on GET `/canonical/evidence`. Stop canonical UI from presenting
+  frozen compatibility prices as live marks. Preserve replay fixtures.
+  Do not activate Watcher.
+- Branch: `cursor/live_evidence_pipeline-5b0d`
+- Deliverables: `app.evidence_pipeline`, catalog, canonical evidence HTTP,
+  `/decision/market` honesty, fail-closed tests (fresh/stale/partial/outage/
+  wrong-symbol/duplicate/restart/source/CVD/tenant).
+- Validation: pending this session (backend pytest, ruff, mypy, frontend,
+  e2e, GitHub CI). Draft PR only; do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-042

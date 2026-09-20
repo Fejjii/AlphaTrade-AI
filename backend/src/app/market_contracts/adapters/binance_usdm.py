@@ -12,6 +12,7 @@ import httpx
 
 from app.market_contracts.adapters.aggtrades import fetch_complete_agg_trade_rows
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
+from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
@@ -30,7 +31,6 @@ from app.market_contracts.identity import (
     ADAPTER_VERSION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
-    binance_usdm_btcusdt,
     require_instrument,
     require_perpetual,
 )
@@ -68,6 +68,7 @@ class BinanceUsdmPerpetualSource:
         timeout_seconds: float = 10.0,
         transport: httpx.BaseTransport | None = None,
         client: ReadOnlyHttpGetClient | None = None,
+        catalog: PerpetualInstrumentCatalog | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._http = client or ReadOnlyHttpGetClient(
@@ -75,6 +76,7 @@ class BinanceUsdmPerpetualSource:
             timeout_seconds=timeout_seconds,
             transport=transport,
         )
+        self._catalog = catalog if catalog is not None else default_perpetual_catalog()
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
         self._regional_failure = False
@@ -245,10 +247,10 @@ class BinanceUsdmPerpetualSource:
     ) -> None:
         require_perpetual(identity)
         require_instrument(identity, instrument)
-        expected = binance_usdm_btcusdt()
-        if instrument.instrument_id != expected.instrument_id:
+        enabled = self._catalog.require(instrument.provider_symbol)
+        if instrument.instrument_id != enabled.instrument_id:
             raise WrongInstrumentError(
-                "This adapter is contracted for Binance USD-M BTCUSDT perpetual only."
+                "Requested instrument does not match the enabled USD-M catalog identity."
             )
         if identity.venue is not VenueId.BINANCE:
             raise WrongMarketError("Binance USD-M adapter cannot serve a non-Binance venue.")

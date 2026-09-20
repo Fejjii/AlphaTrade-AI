@@ -18,7 +18,8 @@ Implemented:
 - replay fixtures (no network)
 
 Not implemented here: watcher orchestration, Telegram, candidates, fusion predicates,
-execution, BloFin submission, journal automation, frontend, or schema migrations.
+execution, BloFin submission, or journal automation. Canonical read HTTP and the
+`/decision/market` honesty surface are implemented in AT-064. Watcher remains off.
 
 ## Canonical first slice
 
@@ -118,3 +119,23 @@ can hash-compare identical inputs.
 Default registry registers `binance-usdm-perpetual-replay` (explicit mock).
 `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` selects the live read-only adapter.
 Live unavailability does not substitute spot data.
+
+## Canonical live read-only pipeline (AT-064)
+
+`app.evidence_pipeline` assembles existing USD-M contracts into
+`CanonicalEvidenceWindowV1` without enabling Watcher, Telegram, or execution.
+
+| Piece | Behavior |
+|---|---|
+| Catalog | BTCUSDT enabled by default; additional USD-M symbols can be registered without rewriting the assembler |
+| Assembler | Closed 15m/4h OHLCV, CVD `[T-32 open, T end)`, trigger-bar signed quote flow, source identity, completeness |
+| Current price | Last contracted perpetual trade in the 10s freshness window. Empty windows fail closed. No fabricated prices |
+| Usable live mark | `is_live` and not mock, `fallback_used=false`, not replay, freshness `fresh` or `aging` |
+| Replay | Default `PERPETUAL_EVIDENCE_SOURCE=replay`. Fixture prices are `replay_fixture`, never `live_mark` |
+| HTTP | Authenticated `GET /canonical/evidence`. 200 fail-closed envelope (`price=null` when unusable). 422 unknown symbol |
+| Identity | Canonical window hash is deterministic. `organization_id` is in the preimage, so tenants fork hashes |
+| Watcher | `AssemblingWatcherScanEvidence` exists but is not wired into the worker. `watcher_activated` stays false |
+
+Canonical UI (`/decision/market`) reads this GET path. Compatibility
+`POST /market/analyze` snapshots are not canonical current prices.
+

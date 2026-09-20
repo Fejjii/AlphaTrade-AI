@@ -2,9 +2,12 @@ export { DECISION_BACKEND_BINDINGS, boundBindings, missingBindings, partialBindi
 export type { BackendBinding } from "./bindings";
 export {
   composeDecisionCases,
+  canonicalPriceFreshnessState,
+  currentPriceHonestyFromCanonical,
   deriveProposalStage,
   learningFromCanonicalRecord,
   marketQualityFromAnalysis,
+  marketQualityFromCanonicalEvidence,
   marketQualityFromCandidate,
   marketQualityFromSetupAssessment,
   outcomeFromCanonicalRecord,
@@ -35,6 +38,7 @@ export type {
   DecisionStage,
   EligibilityReasonCode,
   MarketQualityView,
+  CurrentPriceHonesty,
   PaperExecutionView,
   TradePlanViewModel,
 } from "./types";

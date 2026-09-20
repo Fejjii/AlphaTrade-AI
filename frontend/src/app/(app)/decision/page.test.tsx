@@ -77,6 +77,7 @@ const snapshot: DecisionQueueSnapshot = {
           evidence: [],
           summary: "Proposal-derived",
           doesNotGrantEligibility: true,
+          currentPrice: null,
         },
         eligibility: {
           authority: "compatibility_projection",

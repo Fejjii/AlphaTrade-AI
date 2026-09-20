@@ -21,7 +21,7 @@ Screens:
 | Route | Job |
 |---|---|
 | `/decision` | Canonical + compatibility queue, stepper, safety rail |
-| `/decision/market` | Market quality vs eligibility |
+| `/decision/market` | Canonical USD-M evidence + freshness vs eligibility |
 | `/decision/candidates` | Canonical Candidate list plus PVC compatibility items |
 | `/decision/candidates/[id]` | Canonical Candidate workspace (setup, eligibility, learning) with PVC fallback |
 | `/decision/plans/[planId]` | Compatibility TradePlan (entry/stop/target/sizing/risk/lineage) |
@@ -37,7 +37,9 @@ remain compatibility views and are labeled as such.
 
 - `GET /health`
 - `GET /risk/kill-switch`
-- `POST /market/analyze`
+- `GET /canonical/evidence`
+- `GET /paper-validation/candidates` (compatibility)
+- `POST /market/analyze` (legacy `/market` monitor only; not canonical current price)
 - `GET /paper-validation/candidates` (compatibility)
 - `GET /proposals`, `GET /proposals/{id}`, `GET /proposals/{id}/workflow` (compatibility)
 - `GET /proposals/{id}/revisions` (compatibility nested revision read)
@@ -81,6 +83,7 @@ does not invent one.
 ## Tests
 
 - `frontend/src/lib/canonical-decision/canonical-decision.test.ts`
+- `frontend/src/components/canonical-decision/MarketQualityCard.test.tsx`
 - page tests under `frontend/src/app/(app)/decision/`
 - `frontend/src/components/canonical-decision/PaperApprovalPanel.test.tsx`
 - `frontend/e2e/decision-workflow.spec.ts`
