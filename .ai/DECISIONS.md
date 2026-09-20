@@ -1426,3 +1426,51 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_release_integration-c461`. Draft PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
   success. Report `docs/FINAL_RELEASE_READINESS.md`.
+
+## AT-ADR-042 — Paper-only live market evidence + Watcher program (do not activate in audit)
+- **Date:** 2026-09-20
+- **Status:** Accepted (design; audit only; Watcher remains disabled)
+- **Context:** `main@20d2cac` already contains Phase 5 USD-M contracts, fusion
+  `evaluate_setup`, Candidate lifecycle + Postgres, Watcher orchestration +
+  Postgres store, and fusion evaluation wiring — none of it is the staging UI
+  ticker or a running scan loop. Staging can display stale compatibility BTC
+  prices because `/decision` stamps `compatibility_projection`, the spot path
+  mock-falls-back to hash price 47326, PVC/`latest_price` is a frozen scan
+  snapshot, demo seed writes 65000, and perpetual evidence defaults to replay.
+- **Decision:**
+  1. **Do not enable Watcher, Telegram, or real trading in the audit or in the
+     first implementation slices.** `WATCHER_ORCHESTRATION_ENABLED` stays false
+     until AT-066 + explicit human enablement.
+  2. **Canonical evidence source is Binance USD-M public REST**, not spot
+     `binance-public` and not mock. Spot `/market/*` remains a compatibility
+     monitor. It must not feed `evaluate_setup`.
+  3. **First implementation slice (AT-064)** is a live/replay
+     `WatcherScanEvidencePort` assembler for BTCUSDT 15m/4h + CVD + signed flow
+     + 10s freshness. Default `PERPETUAL_EVIDENCE_SOURCE=replay`. `binance_usdm`
+     is opt-in and fail-closed (no spot/mock substitute).
+  4. **UI honesty (AT-065)** is a parallel slice: mock/demo/PVC prices cannot
+     render as Live. Compatibility authority stays labeled.
+  5. **Do not revive legacy `MARKET_WATCHER_ENABLED` / Slice-59 `analyze()` as
+     canonical setup truth.** Those paths write observations, alerts, and
+     `SetupDetectionRecord`s. Only `evaluate_setup` → `CandidateLifecycleService`
+     may mint Candidates.
+  6. **Continuous Watcher evaluation (AT-067)** is worker wiring behind flags,
+     after the assembler exists. Candidate mint only on `CONFIRMED_SETUP` +
+     `PERSIST_EVIDENCE`. Notify stays blocked. No TradePlan/execution from Watcher.
+  7. **Altcoin perpetuals, websockets, Telegram, and Mode D are out of this
+     program.** Legacy scanner ETH/SOL spot symbols are not first-slice identity.
+  8. **Staging safety lock (AT-066)** may later *allow* orchestration Watcher in
+     staging under paper pins; production stays false; env flips are operator
+     actions, not implicit in implementation PRs.
+- **Alternatives considered:** Turn on `MARKET_WATCHER_ENABLED` or the Slice-59
+  worker to “get prices moving” (rejected: wrong market, wrong evaluator, mock
+  fallback); point `/decision/market` at spot analyze as setup truth (rejected:
+  compatibility projection is not SetupAssessment); enable Watcher before a live
+  evidence port (rejected: scripted/in-memory evidence would mint false
+  Candidates); fail-open to spot when USD-M is blocked (rejected: AT-ADR-021).
+- **Safety impact:** Paper only. Read-only market evidence. No automatic orders.
+  Watcher default remains off.
+- **Consequences:** Audit `docs/AT063_live_market_watcher_audit.md`. Follow-up
+  tasks AT-064…AT-068. No runtime activation in the audit PR.
+- **Validation:** Read-only repository inspection on `main@20d2cac`; no pytest
+  behavior change.
