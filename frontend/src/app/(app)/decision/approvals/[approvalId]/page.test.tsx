@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DecisionApprovalPage from "./page";
-import type { ApprovalRequest, TradeProposal } from "@/lib/api/types";
+import type { ApprovalRequest, ApprovalWorkflowView, TradeProposal } from "@/lib/api/types";
 
 const proposal: TradeProposal = {
   id: "prop-1",
@@ -63,7 +63,12 @@ vi.mock("@/components/ProposalDetailPanel", () => ({
   PaperOrderButton: () => <button type="button">Create paper order (simulated)</button>,
 }));
 
-const workflowState = {
+const workflowState: {
+  data: ApprovalWorkflowView;
+  loading: boolean;
+  error: string | null;
+  reload: ReturnType<typeof vi.fn>;
+} = {
   data: {
     approval,
     proposal,
@@ -71,7 +76,7 @@ const workflowState = {
     block_reason: "pending",
   },
   loading: false,
-  error: null as string | null,
+  error: null,
   reload: vi.fn(),
 };
 
