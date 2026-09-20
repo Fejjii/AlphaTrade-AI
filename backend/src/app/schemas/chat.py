@@ -6,6 +6,7 @@ from pydantic import Field
 
 from app.schemas.analysis import TradingAnalysisDetail
 from app.schemas.common import ORMModel, RiskSeverity, StrictModel
+from app.schemas.conversation import StrategyProposalRecord
 from app.schemas.narrative import NarrativeMetadata, TradingNarrativeDetail
 from app.schemas.rag import Citation
 from app.schemas.risk import RiskCheckResult
@@ -16,6 +17,7 @@ from app.schemas.usage import UsageEvent
 class ChatMessageRequest(StrictModel):
     message: str = Field(min_length=1, max_length=8000)
     conversation_id: str | None = None
+    strategy_id: str | None = None
     symbol: str | None = None
     timeframe: str | None = None
 
@@ -43,6 +45,8 @@ class AgentMessageResponse(StrictModel):
     analysis: TradingAnalysisDetail | None = None
     narrative: TradingNarrativeDetail | None = None
     narrative_meta: NarrativeMetadata | None = None
+    pending_proposal: StrategyProposalRecord | None = None
+    history_injected: int = 0
 
 
 class ChatMessageResponse(ORMModel):

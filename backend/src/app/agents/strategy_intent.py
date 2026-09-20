@@ -9,6 +9,28 @@ def classify_strategy_workflow(message: str) -> Intent | None:
     """Return a strategy-workflow intent when the message matches known patterns."""
     lowered = message.lower()
 
+    stripped = lowered.strip().rstrip(".")
+    if ("reject" in lowered and "proposal" in lowered) or stripped in {
+        "i reject",
+        "i reject this draft",
+        "reject this draft",
+        "reject proposal",
+    }:
+        return Intent.STRATEGY_PROPOSAL_REJECT
+    if ("confirm" in lowered and "proposal" in lowered) or stripped in {
+        "i confirm",
+        "yes, confirm",
+        "confirm action",
+        "yes confirm",
+    }:
+        return Intent.STRATEGY_PROPOSAL_CONFIRM
+    if (
+        ("discuss" in lowered and "strateg" in lowered)
+        or "challenge this" in lowered
+        or "compare my strategy" in lowered
+        or "compare this idea" in lowered
+    ):
+        return Intent.STRATEGY_DISCUSSION
     if "compare" in lowered and ("trade" in lowered or "system" in lowered):
         return Intent.HUMAN_VS_SYSTEM
     if "exit too early" in lowered or "did i exit too early" in lowered:
@@ -210,4 +232,7 @@ def is_strategy_workflow_intent(intent: Intent) -> bool:
         Intent.ALERT_DELIVERY_QUERY,
         Intent.MARKET_WATCHER_QUERY,
         Intent.MARKET_WATCHER_BRIDGE_QUERY,
+        Intent.STRATEGY_PROPOSAL_CONFIRM,
+        Intent.STRATEGY_PROPOSAL_REJECT,
+        Intent.STRATEGY_DISCUSSION,
     }

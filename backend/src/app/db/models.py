@@ -115,6 +115,8 @@ from app.schemas.common import (
     BacktestRunStatus,
     BacktestStatus,
     BloFinSyncHealthStatus,
+    ConversationMessageRole,
+    ConversationStatus,
     CostSource,
     DocumentSourceType,
     ExchangeAccountStatus,
@@ -158,6 +160,7 @@ from app.schemas.common import (
     StrategyChangeSource,
     StrategyId,
     StrategyLifecycleState,
+    StrategyProposalStatus,
     StrategyValidationStatus,
     TradeDirection,
     TradeResult,
@@ -560,6 +563,142 @@ class UserStrategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     paper_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tenant-scoped chat transcript. Not a strategy or Candidate authority."""
+
+    __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_org_user_updated", "organization_id", "user_id", "updated_at"),
+        Index("ix_conversations_org_strategy", "organization_id", "strategy_id"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[ConversationStatus] = mapped_column(
+        _enum(ConversationStatus), default=ConversationStatus.ACTIVE, nullable=False
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+
+
+class ConversationMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One persisted chat turn. Payload is redacted metadata, never secrets."""
+
+    __tablename__ = "conversation_messages"
+    __table_args__ = (
+        Index("ix_conversation_messages_conversation_created", "conversation_id", "created_at"),
+        Index("ix_conversation_messages_org_user", "organization_id", "user_id"),
+    )
+
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    role: Mapped[ConversationMessageRole] = mapped_column(
+        _enum(ConversationMessageRole), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    intent: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class StrategyConversationProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Preview structured-rules draft. Confirmation is required to fork a version."""
+
+    __tablename__ = "strategy_conversation_proposals"
+    __table_args__ = (
+        Index(
+            "ix_strategy_proposals_org_conversation",
+            "organization_id",
+            "conversation_id",
+            "created_at",
+        ),
+        CheckConstraint(
+            "resulting_content_hash IS NULL OR length(resulting_content_hash) = 64",
+            name="ck_strategy_proposal_result_hash",
+        ),
+        CheckConstraint(
+            "content_hash IS NULL OR length(content_hash) = 64",
+            name="ck_strategy_proposal_content_hash",
+        ),
+    )
+
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    source_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_messages.id"), nullable=True
+    )
+    target_strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    parent_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    status: Mapped[StrategyProposalStatus] = mapped_column(
+        _enum(StrategyProposalStatus), default=StrategyProposalStatus.DRAFT, nullable=False
+    )
+    proposed_structured_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    proposed_pattern_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    proposed_card: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    validation: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    limitations: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    challenge_notes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    context_refs: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resulting_strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategies.id"), nullable=True
+    )
+    resulting_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
+    )
+    resulting_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confirmation_request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class StrategyVersionConversationLink(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Provenance: conversation proposal → immutable strategy version."""
+
+    __tablename__ = "strategy_version_conversation_links"
+    __table_args__ = (
+        UniqueConstraint("strategy_version_id", name="uq_strategy_version_conversation_link"),
+        UniqueConstraint("proposal_id", name="uq_strategy_proposal_version_link"),
+        Index("ix_strategy_version_links_org_conversation", "organization_id", "conversation_id"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    strategy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_strategies.id"), nullable=False)
+    strategy_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False
+    )
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_conversation_proposals.id"), nullable=False
+    )
+    source_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_messages.id"), nullable=True
+    )
 
 
 class UserStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):

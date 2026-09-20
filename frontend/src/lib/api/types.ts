@@ -1540,6 +1540,86 @@ export interface AgentMessageResponse {
   analysis?: TradingAnalysisDetail | null;
   narrative?: TradingNarrativeDetail | null;
   narrative_meta?: NarrativeMetadata | null;
+  pending_proposal?: StrategyProposalRecord | null;
+  history_injected?: number;
+}
+
+export type ConversationStatus = "active" | "archived";
+export type ConversationMessageRole = "user" | "assistant" | "system";
+export type StrategyProposalStatus = "draft" | "confirmed" | "rejected" | "superseded";
+
+export interface ConversationSummary {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  title?: string | null;
+  status: ConversationStatus;
+  strategy_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessageRecord {
+  id: string;
+  conversation_id: string;
+  organization_id: string;
+  user_id: string;
+  role: ConversationMessageRole;
+  content: string;
+  request_id?: string | null;
+  intent?: string | null;
+  payload?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PaginatedConversations {
+  items: ConversationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaginatedConversationMessages {
+  items: ConversationMessageRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface StrategyProposalRecord {
+  id: string;
+  conversation_id: string;
+  organization_id: string;
+  user_id: string;
+  source_message_id?: string | null;
+  target_strategy_id?: string | null;
+  parent_version_id?: string | null;
+  status: StrategyProposalStatus;
+  proposed_structured_rules?: Record<string, unknown> | null;
+  proposed_pattern_spec?: Record<string, unknown> | null;
+  proposed_card?: Record<string, unknown> | null;
+  validation: { valid: boolean; errors: string[]; warnings: string[] };
+  limitations: string[];
+  challenge_notes: string[];
+  context_refs?: Record<string, unknown>;
+  content_hash?: string | null;
+  resulting_strategy_id?: string | null;
+  resulting_version_id?: string | null;
+  resulting_content_hash?: string | null;
+  confirmation_request_id?: string | null;
+  confirmed_at?: string | null;
+  rejected_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  is_preview: boolean;
+  mutates_strategy_authority: boolean;
+}
+
+export interface PaginatedStrategyProposals {
+  items: StrategyProposalRecord[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface PaperOrder {

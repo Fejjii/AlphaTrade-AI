@@ -37,6 +37,7 @@ _MUTATING_TOOL_ACTIONS: dict[str, frozenset[str]] = {
     ),
     "risk_settings_tool": frozenset({"update"}),
     "notification_preferences_tool": frozenset({"update", "test"}),
+    "strategy_proposal_tool": frozenset({"confirm", "reject"}),
 }
 
 _ALWAYS_MUTATING_TOOLS = frozenset(
@@ -436,6 +437,11 @@ def _strategy_library_execute(args: dict[str, Any], session: Any | None) -> Tool
             sid = _uuid.UUID(str(args["strategy_id"]))
             result = service.get(sid, organization_id=org, user_id=user).model_dump(mode="json")
         elif action == "create":
+            blocked = _require_mutation_confirmation(
+                "strategy_library_tool", args, action="create a strategy card"
+            )
+            if blocked is not None:
+                return blocked
             create_args = {k: v for k, v in args.items() if k != "action"}
             payload = UserStrategyCreate.model_validate(
                 {**create_args, "organization_id": org, "user_id": user}
@@ -469,6 +475,18 @@ def _backtest_tool_execute(args: dict[str, Any], session: Any | None, settings: 
         service = BacktestService(session, settings)
 
         if action == "run":
+            blocked = _require_mutation_confirmation("backtest_tool", args, action="run a backtest")
+            if blocked is not None:
+                return blocked
+            if not args.get("strategy_id"):
+                return ToolOutput(
+                    tool_name="backtest_tool",
+                    success=False,
+                    error=(
+                        "Explicit strategy_id is required. "
+                        "First-listed strategy fallback is disabled."
+                    ),
+                )
             sid = _uuid.UUID(str(args["strategy_id"]))
             assumptions = BacktestAssumptions.model_validate(args.get("assumptions") or {})
             run = service.create(
@@ -1018,6 +1036,20 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
         run_id = listing.runs[0].id if listing.runs else None
 
         if action == "start":
+            blocked = _require_mutation_confirmation(
+                "paper_validation_tool", args, action="start paper validation"
+            )
+            if blocked is not None:
+                return blocked
+            if not args.get("strategy_id"):
+                return ToolOutput(
+                    tool_name="paper_validation_tool",
+                    success=False,
+                    error=(
+                        "Explicit strategy_id is required. "
+                        "First-listed strategy fallback is disabled."
+                    ),
+                )
             run = runtime.start(
                 sid,
                 PaperValidationRunStart(),
@@ -1290,6 +1322,11 @@ def _paper_validation_tool_execute(args: dict[str, Any], session: Any | None) ->
         elif run_id is None:
             result = {"summary": "No paper validation run found — start validation first."}
         elif action == "scan":
+            blocked = _require_mutation_confirmation(
+                "paper_validation_tool", args, action="scan paper validation"
+            )
+            if blocked is not None:
+                return blocked
             scan = runtime.scan(run_id, organization_id=org, user_id=user)
             session.commit()
             triggered = scan.signal.triggered if scan.signal else False
@@ -1447,6 +1484,111 @@ def _structure_from_text_execute(args: dict[str, Any]) -> ToolOutput:
         )
     except Exception as exc:
         return ToolOutput(tool_name="structure_from_text_tool", success=False, error=str(exc))
+
+
+def _strategy_discussion_context_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.rag_service import build_rag_service
+    from app.services.strategy_discussion_context_service import StrategyDiscussionContextService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="strategy_discussion_context_tool",
+            success=False,
+            error="DB session required.",
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        strategy_raw = args.get("strategy_id")
+        strategy_id = _uuid.UUID(str(strategy_raw)) if strategy_raw else None
+        from app.core.config import get_settings
+
+        rag = build_rag_service(get_settings(), session)
+        result = StrategyDiscussionContextService(session, rag_service=rag).gather(
+            organization_id=org,
+            user_id=user,
+            strategy_id=strategy_id,
+            query=str(args.get("query") or args.get("user_message") or ""),
+        )
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="strategy_discussion_context_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(
+            tool_name="strategy_discussion_context_tool", success=False, error=str(exc)
+        )
+
+
+def _strategy_proposal_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
+    import uuid as _uuid
+
+    from app.services.conversation_service import ConversationService
+    from app.services.strategy_proposal_service import StrategyProposalService
+
+    start = time.perf_counter()
+    if session is None:
+        return ToolOutput(
+            tool_name="strategy_proposal_tool",
+            success=False,
+            error="DB session required.",
+        )
+    try:
+        org = _uuid.UUID(str(args["organization_id"]))
+        user = _uuid.UUID(str(args["user_id"]))
+        action = str(args.get("action", "draft"))
+        service = StrategyProposalService(session)
+        user_message = str(args.get("user_message") or "")
+        if action == "confirm":
+            proposal_id = _uuid.UUID(str(args["proposal_id"]))
+            result = service.confirm(
+                proposal_id,
+                organization_id=org,
+                user_id=user,
+                confirm_message=user_message,
+                confirm_arg=bool(args.get("confirm")),
+                conversation_id=_uuid.UUID(str(args["conversation_id"]))
+                if args.get("conversation_id")
+                else None,
+            )
+        elif action == "reject":
+            proposal_id = _uuid.UUID(str(args["proposal_id"]))
+            result = service.reject(
+                proposal_id,
+                organization_id=org,
+                user_id=user,
+                confirm_message=user_message,
+                confirm_arg=bool(args.get("confirm")),
+                conversation_id=_uuid.UUID(str(args["conversation_id"]))
+                if args.get("conversation_id")
+                else None,
+            )
+        else:
+            conversation_id = _uuid.UUID(str(args["conversation_id"]))
+            conversation = ConversationService(session).require(
+                conversation_id, organization_id=org, user_id=user
+            )
+            strategy_raw = args.get("strategy_id")
+            result = service.create_draft_from_text(
+                conversation,
+                text=str(args.get("text") or user_message),
+                strategy_id=_uuid.UUID(str(strategy_raw)) if strategy_raw else None,
+            )
+        latency = (time.perf_counter() - start) * 1000
+        return ToolOutput(
+            tool_name="strategy_proposal_tool",
+            success=True,
+            result=result.model_dump(mode="json"),
+            latency_ms=latency,
+        )
+    except Exception as exc:
+        return ToolOutput(tool_name="strategy_proposal_tool", success=False, error=str(exc))
 
 
 def _risk_settings_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
@@ -1873,6 +2015,32 @@ def build_default_registry(
             has_fallback=False,
             enabled=True,
             execute=_structure_from_text_execute,
+        ),
+        ToolDefinition(
+            name="strategy_discussion_context_tool",
+            description=(
+                "Read-only strategy discussion context from existing strategies, versions, "
+                "journal, lessons, learning stats, and RAG. Not a memory authority."
+            ),
+            risk_level=ToolRiskLevel.READ,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _strategy_discussion_context_execute(args, db_session),
+        ),
+        ToolDefinition(
+            name="strategy_proposal_tool",
+            description=(
+                "Preview or confirm structured strategy proposals. Confirmation is required "
+                "to fork a version. Drafts never compile or activate."
+            ),
+            risk_level=ToolRiskLevel.MEDIUM,
+            requires_approval=False,
+            provider_dependencies=(),
+            has_fallback=False,
+            enabled=True,
+            execute=lambda args: _strategy_proposal_execute(args, db_session),
         ),
         ToolDefinition(
             name="lesson_review_tool",

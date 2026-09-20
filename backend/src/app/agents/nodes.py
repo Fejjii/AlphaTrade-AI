@@ -168,6 +168,23 @@ def _format_tool_answer(tool_name: str, summary: str) -> str:
     return f"{_SOURCE_OF_TRUTH} [{tool_name}] {summary}"
 
 
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.I,
+)
+
+
+def _message_uuid(message: str) -> str | None:
+    match = _UUID_RE.search(message)
+    return match.group(0) if match else None
+
+
+def _bound_strategy_id(agent: AgentState) -> str | None:
+    if agent.bound_strategy_id is not None:
+        return str(agent.bound_strategy_id)
+    return _message_uuid(agent.message)
+
+
 def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
     """Route Slice 33 tools for strategy library, pre-trade, sizing, and comparison."""
     agent = parse_state(state)
@@ -200,36 +217,59 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
     intent = agent.intent
 
     if intent is Intent.STRATEGY_CARD:
-        idea = agent.message.strip()[:500] or "Workspace strategy idea"
-        output = _run_tool(
-            "strategy_library_tool",
-            {
-                "action": "create",
-                "organization_id": org,
-                "user_id": user,
-                "name": idea[:80],
-                "setup_type": StrategyId.HTF_TREND_PULLBACK.value,
-                "card": {
-                    "strategy_name": idea[:120],
-                    "entry_conditions": [idea],
-                    "invalidation": ["Close below defined invalidation level"],
-                    "stop_loss": ["Below invalidation swing"],
-                    "confirmation_conditions": ["Await confirmation per playbook"],
-                    "take_profit_plan": ["TP1 at prior resistance"],
-                    "asset_universe": [symbol],
-                    "timeframes": [timeframe.value],
-                },
-            },
-        )
-        if output.success and output.result:
-            answer_lines.append(
-                _format_tool_answer(
-                    "strategy_library_tool",
-                    f"Strategy card created: {output.result.get('name', 'strategy')}.",
-                )
+        from app.agents.mutation_policy import mutation_allowed
+
+        if not mutation_allowed(agent.message):
+            output = _run_tool(
+                "strategy_library_tool",
+                {"action": "list", "organization_id": org, "user_id": user},
             )
+            if output.success and output.result:
+                total = output.result.get("total", 0)
+                answer_lines.append(
+                    _format_tool_answer(
+                        "strategy_library_tool",
+                        f"Preview only — no strategy card created ({total} existing). "
+                        "Reply with 'I confirm' plus the idea to persist a card.",
+                    )
+                )
+            else:
+                answer_lines.append(
+                    "Preview only — no strategy card created. Confirm explicitly to persist."
+                )
         else:
-            answer_lines.append(f"Strategy card creation failed: {output.error}")
+            idea = agent.message.strip()[:500] or "Workspace strategy idea"
+            output = _run_tool(
+                "strategy_library_tool",
+                {
+                    "action": "create",
+                    "organization_id": org,
+                    "user_id": user,
+                    "user_message": agent.message,
+                    "confirm": True,
+                    "name": idea[:80],
+                    "setup_type": StrategyId.HTF_TREND_PULLBACK.value,
+                    "card": {
+                        "strategy_name": idea[:120],
+                        "entry_conditions": [idea],
+                        "invalidation": ["Close below defined invalidation level"],
+                        "stop_loss": ["Below invalidation swing"],
+                        "confirmation_conditions": ["Await confirmation per playbook"],
+                        "take_profit_plan": ["TP1 at prior resistance"],
+                        "asset_universe": [symbol],
+                        "timeframes": [timeframe.value],
+                    },
+                },
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "strategy_library_tool",
+                        f"Strategy card created: {output.result.get('name', 'strategy')}.",
+                    )
+                )
+            else:
+                answer_lines.append(f"Strategy card creation failed: {output.error}")
 
     elif intent in {Intent.PRE_TRADE, Intent.INVALIDATION_QUERY}:
         output = _run_tool(
@@ -418,13 +458,21 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         )
         if output.success and output.result:
             valid = output.result.get("validation", {}).get("valid")
+            challenges = output.result.get("challenge_notes") or []
             answer_lines.append(
                 _format_tool_answer(
                     "structure_from_text_tool",
                     f"Draft structured rules generated (valid={valid}). "
-                    "Review in Strategy Lab before backtesting.",
+                    "This remains a preview until you explicitly confirm.",
                 )
             )
+            for note in challenges[:3]:
+                answer_lines.append(f"Challenge: {note}")
+            spec_errors = output.result.get("pattern_spec_errors") or []
+            if spec_errors:
+                answer_lines.append(
+                    "pattern_spec omitted (fail closed): " + "; ".join(spec_errors[:4])
+                )
         else:
             answer_lines.append(f"Structure draft failed: {output.error}")
 
@@ -698,16 +746,30 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             answer_lines.append(f"Strategy list failed: {output.error}")
 
     elif intent is Intent.BACKTEST_RUN:
-        list_out = _run_tool(
-            "strategy_library_tool",
-            {"action": "list", "organization_id": org, "user_id": user},
-        )
-        strategy_id = None
-        if list_out.success and list_out.result:
-            items = list_out.result.get("items", [])
-            strategy_id = items[0].get("id") if items else None
+        from app.agents.mutation_policy import mutation_allowed
+
+        strategy_id = _bound_strategy_id(agent)
         if strategy_id is None:
-            answer_lines.append("No strategy found to backtest.")
+            answer_lines.append(
+                "Name the strategy UUID (or open this chat from Strategy Lab) "
+                "before running a backtest. First-listed strategy fallback is disabled."
+            )
+        elif not mutation_allowed(agent.message):
+            output = _run_tool(
+                "backtest_tool",
+                {
+                    "action": "latest_result",
+                    "organization_id": org,
+                    "user_id": user,
+                    "strategy_id": strategy_id,
+                },
+            )
+            answer_lines.append(
+                "Preview only — backtest not started. "
+                "Reply with 'I confirm' and the strategy id to run."
+            )
+            if output.success and output.result:
+                answer_lines.append(_format_tool_answer("backtest_tool", str(output.result)[:400]))
         else:
             tf = timeframe.value
             output = _run_tool(
@@ -717,6 +779,8 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                     "organization_id": org,
                     "user_id": user,
                     "strategy_id": strategy_id,
+                    "user_message": agent.message,
+                    "confirm": True,
                     "assumptions": {
                         "symbol": symbol,
                         "timeframe": tf,
@@ -745,8 +809,8 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             "strategy_library_tool",
             {"action": "list", "organization_id": org, "user_id": user},
         )
-        strategy_id = None
-        if list_out.success and list_out.result:
+        strategy_id = _bound_strategy_id(agent)
+        if strategy_id is None and list_out.success and list_out.result:
             items = list_out.result.get("items", [])
             strategy_id = items[0].get("id") if items else None
         if strategy_id is None:
@@ -813,12 +877,51 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             "strategy_library_tool",
             {"action": "list", "organization_id": org, "user_id": user},
         )
-        strategy_id = None
-        if list_out.success and list_out.result:
+        from app.agents.mutation_policy import mutation_allowed
+
+        strategy_id = _bound_strategy_id(agent)
+        if (
+            strategy_id is None
+            and intent
+            in {
+                Intent.PAPER_VALIDATION_QUERY,
+                Intent.PAPER_VALIDATION_RECOMMEND,
+            }
+            and list_out.success
+            and list_out.result
+        ):
             items = list_out.result.get("items", [])
             strategy_id = items[0].get("id") if items else None
         if strategy_id is None:
-            answer_lines.append("No strategy found for paper validation.")
+            answer_lines.append(
+                "Name the strategy UUID (or open this chat from Strategy Lab). "
+                "First-listed strategy fallback is disabled for paper mutations."
+            )
+        elif intent in {Intent.PAPER_VALIDATION_START, Intent.PAPER_VALIDATION_SCAN} and (
+            not mutation_allowed(agent.message)
+        ):
+            action = "status"
+            output = _run_tool(
+                "paper_validation_tool",
+                {
+                    "action": action,
+                    "organization_id": org,
+                    "user_id": user,
+                    "strategy_id": strategy_id,
+                    "user_message": agent.message,
+                },
+            )
+            answer_lines.append(
+                "Preview only — paper validation was not started or scanned. "
+                "Reply with 'I confirm' and the strategy id to mutate."
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "paper_validation_tool",
+                        output.result.get("summary", "Paper validation data retrieved."),
+                    )
+                )
         else:
             action = "status"
             if intent is Intent.PAPER_VALIDATION_START:
@@ -854,6 +957,8 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                     "organization_id": org,
                     "user_id": user,
                     "strategy_id": strategy_id,
+                    "user_message": agent.message,
+                    "confirm": True,
                 },
             )
             if output.success and output.result:
@@ -1030,6 +1135,127 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         else:
             answer_lines.append(f"Market watcher bridge query failed: {output.error}")
 
+    elif intent is Intent.STRATEGY_DISCUSSION:
+        output = _run_tool(
+            "strategy_discussion_context_tool",
+            {
+                "organization_id": org,
+                "user_id": user,
+                "strategy_id": _bound_strategy_id(agent),
+                "query": agent.message,
+                "user_message": agent.message,
+            },
+        )
+        if output.success and output.result:
+            answer_lines.append(
+                _format_tool_answer(
+                    "strategy_discussion_context_tool",
+                    "Read-only context loaded from existing authorities "
+                    "(strategy, versions, journal, lessons, learning stats, RAG).",
+                )
+            )
+            strategy = output.result.get("strategy") or {}
+            if strategy:
+                answer_lines.append(
+                    f"Bound strategy: {strategy.get('name')} v{strategy.get('current_version')}."
+                )
+            limitations = output.result.get("limitations") or []
+            answer_lines.extend(limitations[:2])
+        else:
+            answer_lines.append(f"Strategy context failed: {output.error}")
+
+    elif intent is Intent.STRATEGY_PROPOSAL_CONFIRM:
+        from app.agents.mutation_policy import confirmed_proposal_id, is_confirmation_only_message
+
+        proposal_id = confirmed_proposal_id(agent.message)
+        if proposal_id is None and is_confirmation_only_message(agent.message):
+            proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
+        if agent.conversation_id is None or proposal_id is None:
+            answer_lines.append(
+                "Confirm a specific proposal id. Unconfirmed drafts do not "
+                "change strategy versions."
+            )
+        else:
+            output = _run_tool(
+                "strategy_proposal_tool",
+                {
+                    "action": "confirm",
+                    "organization_id": org,
+                    "user_id": user,
+                    "conversation_id": str(agent.conversation_id),
+                    "proposal_id": proposal_id,
+                    "user_message": agent.message,
+                },
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "strategy_proposal_tool",
+                        "Proposal confirmed. A new strategy version was stored. "
+                        "It is not compiled or activated.",
+                    )
+                )
+                if output.result.get("resulting_version_id"):
+                    answer_lines.append(f"Version id: {output.result.get('resulting_version_id')}")
+            else:
+                answer_lines.append(f"Proposal confirmation failed: {output.error}")
+
+    elif intent is Intent.STRATEGY_PROPOSAL_REJECT:
+        from app.agents.mutation_policy import is_rejection_only_message, rejected_proposal_id
+
+        proposal_id = rejected_proposal_id(agent.message)
+        if proposal_id is None and is_rejection_only_message(agent.message):
+            proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
+        if agent.conversation_id is None or proposal_id is None:
+            answer_lines.append(
+                "Reject a specific proposal id. No strategy version will be written."
+            )
+        else:
+            output = _run_tool(
+                "strategy_proposal_tool",
+                {
+                    "action": "reject",
+                    "organization_id": org,
+                    "user_id": user,
+                    "conversation_id": str(agent.conversation_id),
+                    "proposal_id": proposal_id,
+                    "user_message": agent.message,
+                },
+            )
+            if output.success and output.result:
+                answer_lines.append(
+                    _format_tool_answer(
+                        "strategy_proposal_tool",
+                        "Proposal rejected. Strategy versions were not changed.",
+                    )
+                )
+            else:
+                answer_lines.append(f"Proposal rejection failed: {output.error}")
+
+    pending_proposal_id = agent.pending_proposal_id
+    if intent is Intent.STRATEGY_PROPOSAL_CONFIRM:
+        from app.agents.mutation_policy import confirmed_proposal_id, is_confirmation_only_message
+
+        confirmed = confirmed_proposal_id(agent.message)
+        if confirmed is None and is_confirmation_only_message(agent.message):
+            confirmed = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
+        if confirmed:
+            try:
+                pending_proposal_id = uuid.UUID(confirmed)
+            except ValueError:
+                pending_proposal_id = agent.pending_proposal_id
+    elif intent is Intent.STRATEGY_PROPOSAL_REJECT:
+        from app.agents.mutation_policy import is_rejection_only_message, rejected_proposal_id
+
+        rejected = rejected_proposal_id(agent.message)
+        if rejected is None and is_rejection_only_message(agent.message):
+            rejected = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
+        if rejected:
+            try:
+                pending_proposal_id = uuid.UUID(rejected)
+            except ValueError:
+                pending_proposal_id = agent.pending_proposal_id
+
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
 
@@ -1042,6 +1268,7 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             "tool_outputs": tool_outputs,
             "audit_events": audit_events,
             "final_answer": final_answer,
+            "pending_proposal_id": pending_proposal_id,
         },
     )
 
@@ -1110,6 +1337,11 @@ def context_retrieval(state: dict, runtime: AgentRuntime) -> dict:
             DocumentSourceType.REVIEW_NOTE,
             DocumentSourceType.TRADING_PLAYBOOK,
         ]
+    wants_strategy_template = agent.bound_strategy_id is not None or any(
+        token in lowered for token in ("strateg", "pattern spec", "structured rule")
+    )
+    if wants_strategy_template and DocumentSourceType.STRATEGY_TEMPLATE not in source_types:
+        source_types.append(DocumentSourceType.STRATEGY_TEMPLATE)
     tool_input = ToolInput(
         tool_name="rag_retriever",
         arguments={

@@ -115,6 +115,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
       chat: {
         message: vi.fn(),
       },
+      conversations: {
+        listMessages: vi.fn(async () => ({ items: [], total: 0, limit: 100, offset: 0 })),
+      },
     },
   };
 });

@@ -54,6 +54,15 @@ test.describe("AlphaTrade MVP API workflow", () => {
     });
     expect(chat.ok()).toBeTruthy();
     const chatBody = await chat.json();
+    expect(chatBody.conversation_id).toBeTruthy();
+
+    const conversationMessages = await request.get(
+      `${API_URL}/conversations/${chatBody.conversation_id}/messages`,
+      { headers },
+    );
+    expect(conversationMessages.ok()).toBeTruthy();
+    const conversationBody = await conversationMessages.json();
+    expect(conversationBody.total).toBeGreaterThanOrEqual(2);
 
     const proposals = await request.get(`${API_URL}/proposals`, { headers });
     expect(proposals.ok()).toBeTruthy();

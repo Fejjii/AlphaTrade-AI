@@ -28,6 +28,13 @@ Version bumps create a new `user_strategy_versions` row; the parent strategy poi
 | GET | `/backtests/{id}` | Backtest run detail |
 | GET | `/backtests/{id}/trades` | Simulated trades for a run |
 | GET | `/strategies/{id}/paper-eligibility` | Gates, blockers, accepted vs pending lessons |
+| GET | `/conversations` | List tenant-scoped strategy conversations |
+| POST | `/conversations` | Create a durable conversation (optional `strategy_id`) |
+| GET | `/conversations/{id}/messages` | List persisted transcript turns |
+| GET | `/conversations/{id}/proposals` | List structured strategy proposals |
+| POST | `/conversations/{id}/proposals` | Create a **preview-only** structured draft |
+| POST | `/conversations/{id}/proposals/{proposal_id}/confirm` | Fork a version after explicit `I confirm` |
+| POST | `/conversations/{id}/proposals/{proposal_id}/reject` | Reject a draft without writing a version |
 | POST | `/strategies/{id}/paper-validation/start` | Start paper validation run (`runtime_mode`, optional `config`) |
 | GET | `/strategies/{id}/paper-validation` | List paper validation runs |
 | GET | `/strategies/{id}/paper-validation/{run_id}` | Single validation run with metrics |
@@ -51,7 +58,7 @@ Frontend routes:
 
 - `/strategy-lab` — list strategies with validation status and paper eligibility
 - `/strategy-lab/new` — create strategy card (`StrategyCardForm`)
-- `/strategy-lab/[id]` — detail, version history, **BacktestPanel**, **PaperValidationPanel** (eligibility, scan/tick, signals, trades)
+- `/strategy-lab/[id]` — detail, version history, **conversation panel**, **BacktestPanel**, **PaperValidationPanel** (eligibility, scan/tick, signals, trades)
 - `/strategy-lab/[id]/edit` — edit metadata and bump card version
 
 All pages show paper-only messaging. Backtest v1 runs deterministic candle replay; paper validation runs a **paper bot** (scan/tick) that simulates trades locally — no exchange orders.
@@ -63,6 +70,8 @@ All pages show paper-only messaging. Backtest v1 runs deterministic candle repla
 ## Agent routing
 
 Workspace questions about strategy cards, validation status, backtest runs, paper eligibility, or paper validation runtime route through `strategy_workflow_tools`, `backtest_tool`, and `paper_validation_tool` (see [agent_workflow.md](agent_workflow.md)). Deterministic tool output is labeled **SOURCE OF TRUTH**; LLM narrative cannot override card facts or invent metrics.
+
+Persistent strategy discussion (AT-065–066) uses `/conversations` plus LangGraph. Transcripts are not a memory authority. Structured proposals stay drafts until explicit confirmation. See [strategy_conversation_foundation.md](strategy_conversation_foundation.md).
 
 ## RAG
 

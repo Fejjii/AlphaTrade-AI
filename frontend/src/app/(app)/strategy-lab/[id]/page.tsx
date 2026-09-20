@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
+import { StrategyConversationPanel } from "@/components/strategy/StrategyConversationPanel";
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
 import { emptyStrategyCard } from "@/components/strategy/StrategyCardForm";
@@ -218,6 +219,8 @@ export default function StrategyDetailPage() {
       />
 
       {versionsData ? <StrategyVersionHistory versions={versionsData.items} /> : null}
+
+      {data ? <StrategyConversationPanel strategyId={id} /> : null}
 
       <section
         aria-labelledby="strategy-paper-sources-heading"
