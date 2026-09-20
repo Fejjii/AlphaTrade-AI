@@ -1426,3 +1426,40 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_release_integration-c461`. Draft PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
   success. Report `docs/FINAL_RELEASE_READINESS.md`.
+
+## AT-ADR-042 — Conversational agent must not silently mutate trading authority
+- **Date:** 2026-09-20
+- **Status:** Accepted (audit conclusion; no runtime change in AT-063)
+- **Context:** AT-063 read-only audit of strategy intelligence and conversational
+  AI on `main@20d2cac`. Target loop is discuss → structure → review → versioned
+  policy → historical validation → Watcher → Candidate → explain → paper
+  TradePlan → outcome → learning → refinement. Current code has two product
+  loops (Strategy Lab / PVC vs Phase 6–8 canonical) and three evaluation
+  authorities (code modules, Lab structured-rules adapter, first-slice fusion
+  constants). Chat is request-scoped and can silently create strategy cards or
+  start paper validation without `I confirm`.
+- **Decision:**
+  1. The conversational agent may explain, challenge, and propose refinements.
+     It must never silently mutate `SetupAssessment`, `Candidate`,
+     `ActionEligibility`, `TradePlanRevision`, risk/kill-switch results,
+     compiled pattern identity, or paper/live execution.
+  2. Draft structured rules / `pattern_spec` are previews. Persistent strategy
+     identity remains `UserStrategyVersion` via `StrategyVersioningService`
+     after human review or explicit confirmation.
+  3. Do not merge Lab/PVC identity into canonical Candidate. Adapters only.
+  4. Do not run two silent evaluation policies. AT-067 must make one
+     `content_hash` the fusion input or fail closed.
+  5. Watcher and Telegram stay disabled in staging/production
+     (`deployment_safety`). Enabling live evidence is a separate program, not
+     an ordinary strategy-agent slice.
+  6. Implementation order: AT-064 (conversation memory) → AT-065 (confirm
+     firewall) → AT-066 (structure preview) → AT-067 (evaluation chain) →
+     AT-068 (read-only Candidate chat) → AT-069 (learning RAG + explicit
+     refinement).
+- **Alternatives considered:** Let chat compile and activate `pattern_spec`
+  (rejected: silent authority); enable Watcher to “finish the loop” next
+  (rejected: deployment-safety lock); treat PVC as Candidate (rejected:
+  AT-ADR-026).
+- **Safety impact:** Paper only. No application code in AT-063. No deploy.
+- **Consequences:** Audit `docs/AT063_strategy_agent_capability_audit.md`.
+  Follow-ups AT-064–AT-069 in `.ai/TASKS.md`.
