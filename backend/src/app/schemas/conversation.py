@@ -71,6 +71,9 @@ class StrategyProposalCreate(StrictModel):
 class StrategyProposalConfirm(StrictModel):
     confirm: str = Field(min_length=1, max_length=200)
     request_id: str | None = Field(default=None, max_length=80)
+    expected_content_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    expected_parent_version_id: UUID | None = None
+    expected_target_strategy_id: UUID | None = None
 
 
 class StrategyProposalReject(StrictModel):

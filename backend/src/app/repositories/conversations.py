@@ -157,6 +157,24 @@ class StrategyConversationProposalRepository(SQLAlchemyRepository[StrategyConver
             filters.append(StrategyConversationProposal.conversation_id == conversation_id)
         return self._session.scalar(select(StrategyConversationProposal).where(*filters))
 
+    def get_scoped_for_update(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID | None = None,
+    ) -> StrategyConversationProposal | None:
+        filters = [
+            StrategyConversationProposal.id == proposal_id,
+            StrategyConversationProposal.organization_id == organization_id,
+            StrategyConversationProposal.user_id == user_id,
+        ]
+        if conversation_id is not None:
+            filters.append(StrategyConversationProposal.conversation_id == conversation_id)
+        stmt = select(StrategyConversationProposal).where(*filters).with_for_update()
+        return self._session.scalar(stmt)
+
     def list_for_conversation(
         self,
         conversation_id: uuid.UUID,

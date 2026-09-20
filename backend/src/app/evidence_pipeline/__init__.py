@@ -11,6 +11,7 @@ from app.evidence_pipeline.canonical import (
     FIRST_SLICE_READ_STRATEGY_VERSION_ID,
     build_first_slice_assessment_command,
     first_slice_read_policy,
+    is_first_slice_read_projection,
 )
 from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.service import CanonicalEvidenceService
@@ -35,5 +36,6 @@ __all__ = [
     "FirstSliceEvidenceAssembler",
     "build_first_slice_assessment_command",
     "first_slice_read_policy",
+    "is_first_slice_read_projection",
     "quote_current_price",
 ]

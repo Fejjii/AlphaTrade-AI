@@ -393,6 +393,15 @@ class WatcherFusionEvaluationService:
             raise CandidateCreationAuthorityError(
                 "CONFIRMED_SETUP cannot persist without CanonicalEvidenceWindowV1."
             )
+        from app.evidence_pipeline.canonical import is_first_slice_read_projection
+
+        if is_first_slice_read_projection(
+            strategy_version_id=bound_command.strategy_version_id,
+            setup_definition_id=bound_command.executable_setup.setup_definition_id,
+        ):
+            raise CandidateCreationAuthorityError(
+                "Read projection placeholder IDs cannot mint Candidates."
+            )
         with _persistence_fence_context(self._persistence_fence, command):
             created = self._lifecycle.create_from_confirmed_setup(
                 CandidateCreationCommand(

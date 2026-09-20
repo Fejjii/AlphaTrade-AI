@@ -92,6 +92,7 @@ Human-in-the-loop path:
 6. Journal entries optionally sync to RAG (`trade_journal`)
 7. **Analytics services** (Slice 31) — deterministic setup stats, trade review, discipline score, risk behavior (`GET /analytics/*`); agent uses `analytics_summary_tool`
 8. **Strategy library & pre-trade** (Slice 33) — user strategy cards, manual levels, pre-trade analysis, position sizing v2, loss acceptance, human-vs-system groundwork; agent tools: `strategy_library_tool`, `pretrade_analysis_tool`, `position_sizing_tool`, `manual_levels_tool`, `human_vs_system_tool`
+9. **Strategy conversation** (AT-065–066) — persistent discussion and confirm-gated drafts. Approval, compile, and canonical evaluation (AT-067) remain separate. Watcher stays off.
 
 ## Account lifecycle (Slice 25)
 

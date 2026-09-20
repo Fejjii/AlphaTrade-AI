@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 
+from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
 from app.core.config import Settings
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
-from app.evidence_pipeline.canonical import first_slice_read_policy
+from app.evidence_pipeline.canonical import (
+    FIRST_SLICE_READ_STRATEGY_VERSION_ID,
+    first_slice_read_policy,
+    is_first_slice_read_projection,
+)
 from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.types import CurrentPricePresentation
 from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
@@ -32,6 +38,11 @@ from app.market_contracts.errors import (
     WrongSourceError,
 )
 from app.market_contracts.first_slice import first_slice_identity
+from app.market_contracts.freshness import (
+    FIRST_SLICE_FRESHNESS_POLICY_VERSION,
+    live_confirmation_window_open,
+)
+from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import (
     binance_usdm_btcusdt,
     binance_usdm_perpetual,
@@ -39,7 +50,17 @@ from app.market_contracts.identity import (
 )
 from app.market_contracts.replay_fixtures import canonical_first_slice_fixture
 from app.schemas.common import Timeframe
+from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
+from app.signal_fusion.enums import EvidenceRole, SetupIdentityKind
+from app.signal_fusion.policy import (
+    DEFAULT_FUSION_POLICY_VERSION,
+    FusionThresholds,
+    build_fusion_policy,
+    first_slice_role_timeframes,
+)
+from app.signal_fusion.strategy_evaluation_policy import executable_policy_from_fusion_policy
+from app.signal_fusion.types import ExecutableSetupRef, RuleWeight
 from app.watcher.contracts import (
     EvaluationCommand,
     EvaluationMode,
@@ -140,13 +161,96 @@ def test_tenant_boundaries_fork_canonical_identity() -> None:
     assert trigger_hashes == other_hashes
 
 
-def test_stale_evaluation_fails_closed() -> None:
-    assembler = _assembler()
-    with pytest.raises(StaleEvidenceError):
-        assembler.assemble(
-            organization_id=ORG_ID,
-            evaluated_at=EVALUATED_AT + timedelta(minutes=5),
+def _role_hashes(assembled: object) -> dict[str, str]:
+    command = assembled.assessment_command  # type: ignore[attr-defined]
+    return {
+        role.value: observation.content_hash
+        for observation, role in zip(
+            command.public_observations,
+            command.selected_roles,
+            strict=True,
         )
+    }
+
+
+def _corrected_trade_source() -> ReplayPerpetualSource:
+    fixture = canonical_first_slice_fixture()
+    trades = list(fixture["trades"])
+    last = trades[-1]
+    new_qty = last.quantity + Decimal("0.01")
+    updated = last.model_copy(
+        update={
+            "quantity": new_qty,
+            "quote_quantity": last.price * new_qty * last.instrument.contract_multiplier,
+        }
+    )
+    trades[-1] = with_content_hash(updated, extra_exclude=frozenset({"source_connection_id"}))
+    return ReplayPerpetualSource(
+        bars_15m=list(fixture["bars_15m"]),
+        bars_4h=list(fixture["bars_4h"]),
+        trades=trades,
+    )
+
+
+def test_trade_correction_changes_cvd_identity_with_unchanged_candles() -> None:
+    baseline = _assembler().assemble(organization_id=ORG_ID)
+    corrected_source = _corrected_trade_source()
+    corrected = _assembler(source=corrected_source).assemble(organization_id=ORG_ID)
+    again = _assembler(source=_corrected_trade_source()).assemble(organization_id=ORG_ID)
+    assert baseline.trigger_bar.content_hash == corrected.trigger_bar.content_hash
+    assert baseline.context_bar.content_hash == corrected.context_bar.content_hash
+    assert baseline.cvd.content_hash != corrected.cvd.content_hash
+    assert baseline.signed_flow.content_hash != corrected.signed_flow.content_hash
+    assert baseline.evidence_window_hash != corrected.evidence_window_hash
+    baseline_roles = _role_hashes(baseline)
+    corrected_roles = _role_hashes(corrected)
+    assert baseline_roles["trigger_ohlcv"] == corrected_roles["trigger_ohlcv"]
+    assert baseline_roles["cvd_window"] != corrected_roles["cvd_window"]
+    assert corrected.evidence_window_hash == again.evidence_window_hash
+    assert corrected.cvd.content_hash == again.cvd.content_hash
+
+
+def test_live_confirmation_window_is_ten_seconds_after_close() -> None:
+    close = datetime(2026, 1, 15, 16, 15, tzinfo=UTC)
+    assert live_confirmation_window_open(closed_interval_end=close, evaluated_at=close) is True
+    assert (
+        live_confirmation_window_open(
+            closed_interval_end=close,
+            evaluated_at=close + timedelta(seconds=10),
+        )
+        is True
+    )
+    assert (
+        live_confirmation_window_open(
+            closed_interval_end=close,
+            evaluated_at=close + timedelta(seconds=11),
+        )
+        is False
+    )
+
+
+def test_live_window_still_enforces_ten_second_last_trade_age() -> None:
+    with pytest.raises(StaleEvidenceError):
+        _assembler().assemble(
+            organization_id=ORG_ID,
+            evaluated_at=EVALUATED_AT + timedelta(seconds=4),
+        )
+
+
+def test_closed_historical_evidence_later_in_the_next_interval() -> None:
+    later = _assembler().assemble(
+        organization_id=ORG_ID,
+        evaluated_at=EVALUATED_AT + timedelta(minutes=5),
+    )
+    just_after_window = _assembler().assemble(
+        organization_id=ORG_ID,
+        evaluated_at=EVALUATED_AT + timedelta(seconds=6),
+    )
+    assert later.current_price is None
+    assert later.completeness.cvd is DataCompleteness.COMPLETE
+    assert just_after_window.completeness.cvd is DataCompleteness.COMPLETE
+    assert later.identity.provenance.is_live is False
+    assert later.identity.source.family is SourceFamily.REPLAY_FIXTURE
 
 
 def test_partial_ohlcv_fails_closed() -> None:
@@ -405,7 +509,38 @@ def _evaluation_command(organization_id: UUID) -> EvaluationCommand:
     )
 
 
-def test_watcher_port_loads_replay_evidence_without_activating_watcher() -> None:
+def _non_placeholder_executable(organization_id: UUID):
+    policy = build_fusion_policy(
+        policy_version=DEFAULT_FUSION_POLICY_VERSION,
+        organization_id=organization_id,
+        strategy_version_id=uuid4(),
+        executable_setup=ExecutableSetupRef(
+            setup_definition_id=uuid4(),
+            kind=SetupIdentityKind.COMPILED_SETUP_DEFINITION,
+            content_hash="ab" * 32,
+        ),
+        required_roles=(
+            EvidenceRole.TRIGGER_OHLCV,
+            EvidenceRole.CONTEXT_OHLCV,
+            EvidenceRole.CVD_WINDOW,
+        ),
+        thresholds=FusionThresholds(
+            confirmation_score=Decimal("1"),
+            weights=(RuleWeight(rule_id="mandatory_evidence", weight=Decimal("1")),),
+        ),
+        freshness_policy_version=FIRST_SLICE_FRESHNESS_POLICY_VERSION,
+        finality_policy_version=FINALITY_POLICY_VERSION,
+        role_timeframes=first_slice_role_timeframes(),
+    )
+    return executable_policy_from_fusion_policy(
+        policy,
+        strategy_id=uuid4(),
+        strategy_version_content_hash="cd" * 32,
+        authored_spec=canonical_first_slice_authored_spec(),
+    )
+
+
+def test_watcher_port_requires_executable_policy_and_stays_inactive() -> None:
     settings = Settings(
         environment="local",
         execution_mode="paper",
@@ -415,14 +550,44 @@ def test_watcher_port_loads_replay_evidence_without_activating_watcher() -> None
     )
     assert settings.watcher_orchestration_enabled is False
     port = AssemblingWatcherScanEvidence(_assembler())
+    assert port.load(_evaluation_command(ORG_ID)) is None
+
+
+def test_watcher_port_binds_tenant_executable_policy() -> None:
+    executable = _non_placeholder_executable(ORG_ID)
+    port = AssemblingWatcherScanEvidence(
+        _assembler(),
+        executable_resolver=lambda _command: executable,
+    )
     snapshot = port.load(_evaluation_command(ORG_ID))
     assert snapshot is not None
     assert snapshot.organization_id == ORG_ID
+    assert snapshot.executable_policy.content_hash == executable.content_hash
+    assert snapshot.policy.strategy_version_id == executable.strategy_version_id
     assert snapshot.evidence.snapshot is not None
-    other = port.load(_evaluation_command(OTHER_ORG))
-    assert other is not None
-    assert other.organization_id == OTHER_ORG
-    assert other.assessment_command.organization_id == OTHER_ORG
+    assert not is_first_slice_read_projection(
+        strategy_version_id=snapshot.executable_policy.strategy_version_id,
+        setup_definition_id=snapshot.executable_policy.compiled_setup_definition_id,
+    )
+
+
+def test_watcher_port_refuses_read_projection_placeholders() -> None:
+    placeholder_policy = first_slice_read_policy(ORG_ID)
+    placeholder = executable_policy_from_fusion_policy(
+        placeholder_policy,
+        strategy_id=uuid4(),
+        strategy_version_content_hash=placeholder_policy.executable_setup.content_hash,
+        authored_spec=canonical_first_slice_authored_spec(),
+    )
+    assert is_first_slice_read_projection(
+        strategy_version_id=FIRST_SLICE_READ_STRATEGY_VERSION_ID,
+        setup_definition_id=placeholder.compiled_setup_definition_id,
+    )
+    port = AssemblingWatcherScanEvidence(
+        _assembler(),
+        executable_resolver=lambda _command: placeholder,
+    )
+    assert port.load(_evaluation_command(ORG_ID)) is None
 
 
 def test_watcher_port_returns_none_on_stale_evidence() -> None:

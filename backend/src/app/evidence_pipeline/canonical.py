@@ -8,11 +8,19 @@ from hashlib import sha256
 from uuid import UUID
 
 from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
+from app.market_contracts.coverage import TradeWindowCoverageProof
+from app.market_contracts.cvd import CvdWindow
 from app.market_contracts.enums import FreshnessState, SourceFamily
 from app.market_contracts.first_slice import FIRST_SLICE_PATTERN_NAME
+from app.market_contracts.flow import SignedQuoteFlow
 from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
 from app.market_contracts.identity import EvidenceMarketIdentity
-from app.market_contracts.observation import observation_from_ohlcv
+from app.market_contracts.observation import (
+    observation_from_coverage,
+    observation_from_cvd,
+    observation_from_ohlcv,
+    observation_from_signed_flow,
+)
 from app.market_contracts.ohlcv import OhlcvBar
 from app.schemas.common import Timeframe, TradeDirection
 from app.signal_fusion.adapters import AssessmentCommand
@@ -45,6 +53,18 @@ MANDATORY_ROLES: tuple[EvidenceRole, ...] = (
     EvidenceRole.CONTEXT_OHLCV,
     EvidenceRole.CVD_WINDOW,
 )
+
+
+def is_first_slice_read_projection(
+    *,
+    strategy_version_id: UUID | None = None,
+    setup_definition_id: UUID | None = None,
+) -> bool:
+    """True when identity is the GET/read projection placeholder, not a stored version."""
+
+    return strategy_version_id == FIRST_SLICE_READ_STRATEGY_VERSION_ID or (
+        setup_definition_id == FIRST_SLICE_READ_SETUP_DEFINITION_ID
+    )
 
 
 def first_slice_read_setup() -> ExecutableSetupRef:
@@ -104,31 +124,52 @@ def build_first_slice_assessment_command(
     evaluated_at: datetime,
     freshness_state: FreshnessState,
     adapter_kind: EvidenceAdapterKind,
+    cvd: CvdWindow,
+    signed_flow: SignedQuoteFlow,
+    coverage: TradeWindowCoverageProof,
     tenant_assertions: tuple[TenantExternalAssertion, ...] = (),
     manual_level_revision: ManualLevelRevisionRef | None = None,
 ) -> AssessmentCommand:
-    """Project assembled OHLCV into AssessmentCommand. Adapter kind is not hashed."""
+    """Project assembled OHLCV + CVD/flow/coverage into AssessmentCommand.
+
+    Closed-bar observation freshness is the final-bar envelope, not live-mark
+    age. Adapter kind is not hashed. CVD, signed flow, and coverage use the
+    existing public observation contract and payload content hashes.
+    """
+    closed_state = FreshnessState.FRESH
     trigger_obs = observation_from_ohlcv(
         trigger,
         identity=trigger_identity,
         observed_at=evaluated_at,
         receive_time=evaluated_at,
-        freshness_state=freshness_state,
+        freshness_state=closed_state,
     )
     context_obs = observation_from_ohlcv(
         context,
         identity=context_identity,
         observed_at=evaluated_at,
         receive_time=evaluated_at,
-        freshness_state=freshness_state,
+        freshness_state=closed_state,
     )
-    cvd_obs = observation_from_ohlcv(
-        trigger,
-        identity=trigger_identity,
+    cvd_obs = observation_from_cvd(
+        cvd,
         observed_at=evaluated_at,
         receive_time=evaluated_at,
-        freshness_state=freshness_state,
+        freshness_state=closed_state,
     )
+    flow_obs = observation_from_signed_flow(
+        signed_flow,
+        observed_at=evaluated_at,
+        receive_time=evaluated_at,
+        freshness_state=closed_state,
+    )
+    coverage_obs = observation_from_coverage(
+        coverage,
+        observed_at=evaluated_at,
+        receive_time=evaluated_at,
+        freshness_state=closed_state,
+    )
+    del freshness_state
     return AssessmentCommand(
         organization_id=organization_id,
         strategy_version_id=policy.strategy_version_id,
@@ -144,11 +185,13 @@ def build_first_slice_assessment_command(
             revision=trigger.revision,
         ),
         mandatory_evidence_roles=MANDATORY_ROLES,
-        public_observations=(trigger_obs, context_obs, cvd_obs),
+        public_observations=(trigger_obs, context_obs, cvd_obs, flow_obs, coverage_obs),
         selected_roles=(
             EvidenceRole.TRIGGER_OHLCV,
             EvidenceRole.CONTEXT_OHLCV,
             EvidenceRole.CVD_WINDOW,
+            EvidenceRole.SIGNED_FLOW,
+            EvidenceRole.TRADE_EVENT,
         ),
         tenant_assertions=tenant_assertions,
         source_set=(semantic_source_from_identity(trigger_identity),),

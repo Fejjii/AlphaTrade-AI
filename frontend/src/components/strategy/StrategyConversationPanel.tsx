@@ -101,6 +101,9 @@ export function StrategyConversationPanel({ strategyId }: Props) {
     try {
       const confirmed = await api.conversations.confirmProposal(conversationId, proposal.id, {
         confirm: "I confirm",
+        expected_content_hash: proposal.content_hash ?? undefined,
+        expected_parent_version_id: proposal.parent_version_id ?? undefined,
+        expected_target_strategy_id: proposal.target_strategy_id ?? undefined,
       });
       setProposal(confirmed);
       await loadThread(conversationId);

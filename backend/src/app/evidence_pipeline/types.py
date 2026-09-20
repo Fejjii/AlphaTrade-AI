@@ -74,7 +74,7 @@ class AssembledCanonicalEvidence(CanonicalModel):
     series_4h: ClosedOhlcvSeries
     cvd: CvdWindow
     signed_flow: SignedQuoteFlow
-    current_price: CurrentPriceQuote
+    current_price: CurrentPriceQuote | None
     completeness: CompletenessReport
     freshness_state: FreshnessState
     bundle: FirstSliceEvidenceBundle

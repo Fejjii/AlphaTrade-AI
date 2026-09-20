@@ -193,6 +193,9 @@ async def confirm_conversation_proposal(
         confirm_message=body.confirm,
         request_id=body.request_id,
         conversation_id=conversation_id,
+        expected_content_hash=body.expected_content_hash,
+        expected_parent_version_id=body.expected_parent_version_id,
+        expected_target_strategy_id=body.expected_target_strategy_id,
     )
     session.commit()
     return result

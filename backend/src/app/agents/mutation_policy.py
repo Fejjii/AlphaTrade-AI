@@ -35,6 +35,44 @@ def has_explicit_confirmation(message: str, *, confirm_arg: bool | None = None) 
     )
 
 
+def contains_quoted_or_retrieved_instruction(message: str) -> bool:
+    """True when confirmation could be coming from a quote or retrieved block."""
+
+    stripped = message.strip()
+    if not stripped:
+        return False
+    if "```" in stripped:
+        return True
+    for line in stripped.splitlines():
+        candidate = line.strip()
+        lowered = candidate.lower()
+        if candidate.startswith(">") or lowered.startswith("system:"):
+            return True
+        if lowered.startswith("retrieved:") or lowered.startswith("[retrieved"):
+            return True
+    return False
+
+
+def confirmation_authorizes_mutation(message: str) -> bool:
+    """Strategy confirmation requires an unquoted confirmation-only message."""
+
+    if is_question_message(message):
+        return False
+    if contains_quoted_or_retrieved_instruction(message):
+        return False
+    return is_confirmation_only_message(message) or confirmed_proposal_id(message) is not None
+
+
+def rejection_authorizes_mutation(message: str) -> bool:
+    """Strategy rejection requires an unquoted rejection-only message."""
+
+    if is_question_message(message):
+        return False
+    if contains_quoted_or_retrieved_instruction(message):
+        return False
+    return is_rejection_only_message(message) or rejected_proposal_id(message) is not None
+
+
 def mutation_allowed(message: str, *, confirm_arg: bool | None = None) -> bool:
     """State-changing chat actions require a non-question message with explicit confirmation."""
     if is_question_message(message):

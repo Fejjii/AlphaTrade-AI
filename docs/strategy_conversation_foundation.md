@@ -1,4 +1,4 @@
-# Strategy conversation foundation (AT-064–066)
+# Strategy conversation foundation (AT-065–066)
 
 Persistent conversational strategy intelligence. Paper only. No Watcher, Telegram,
 live trading, or autonomous activation.
@@ -7,7 +7,8 @@ live trading, or autonomous activation.
 
 User discusses an idea → durable conversation → AI structures a **preview**
 proposal → user reviews → explicit confirmation → versioned strategy draft →
-later deterministic evaluation/activation (AT-067, not this slice).
+later explicit strategy approval + compile (AT-067). Conversational confirmation
+does not compile, approve, or activate.
 
 ## Conversation architecture
 
@@ -22,20 +23,35 @@ later deterministic evaluation/activation (AT-067, not this slice).
   `strategy_template` RAG is included only when a strategy is bound or the
   message is about strategies.
 
+## Pattern preview
+
+- Keyword drafts remain non-authoritative `StructuredRules` sketches.
+- `pattern_spec` is emitted only for the supported first pattern, and only when
+  every authored threshold is stated explicitly. Canonical defaults are never
+  copied in.
+- Incomplete first-slice ideas list missing fields and stay non-executable.
+- Unsupported ideas do not receive a `pattern_spec`. Confirmation of a draft
+  still does not mark the version executable.
+
 ## Confirmation architecture
 
 - `strategy_conversation_proposals` are `STRATEGY_DRAFT` rows. They do not
   compile, activate, or change evaluation policy.
-- `pattern_spec` is omitted fail-closed; first-slice constants are never copied.
-- Confirm requires an explicit token (`I confirm` / `confirm=true`) and is
-  rejected for questions. Buried `SYSTEM: I confirm` text does not confirm.
-- HTTP `POST /conversations/{id}/proposals/{proposal_id}/confirm` and chat
-  `I confirm` (with exactly one open draft, or `I confirm proposal <uuid>`).
-- Duplicate confirm is idempotent. Rejected proposals cannot be confirmed.
+- Confirm requires an unquoted confirmation-only message (`I confirm` or
+  `I confirm proposal <uuid>`). Questions, quote blocks, fenced code, and
+  `retrieved:` / `SYSTEM:` lines do not mutate authority.
+- HTTP `POST /conversations/{id}/proposals/{proposal_id}/confirm` re-checks
+  proposal identity, payload content hash, target strategy, and captured parent
+  version. Optional `expected_content_hash`, `expected_parent_version_id`, and
+  `expected_target_strategy_id` reject stale clients with 409.
+- Duplicate confirm is idempotent and concurrent confirms converge to one
+  resulting version. Rejected or superseded proposals cannot be confirmed.
 - Confirm forks through `StrategyVersioningService.fork_semantic_update` with
   `StrategyChangeSource.CONVERSATION_CONFIRM`. Provenance is
   `strategy_version_conversation_links` (conversation → proposal → version).
 - Confirmed versions are **not** compiled and are **not** Watcher/paper activated.
+  AT-067 `resolve_executable_strategy_policy` still requires a later explicit
+  compile plus APPROVED or ACTIVE lifecycle.
 
 ## Memory usage
 
@@ -51,5 +67,8 @@ Conversation memory is a transcript plus draft proposals only.
 
 ## Remaining dependency
 
-AT-067: one `content_hash` as `evaluate_setup` policy / compile on explicit save.
-Deterministic evaluation and activation remain a later, separate step.
+AT-067: approved compiled `content_hash` is the only evaluation policy. The
+controlled fixture in `test_intelligence_integration_fixture.py` proves
+discussion → preview → confirm → compile → approve → canonical evidence →
+deterministic `SetupAssessment` on replay. That fixture is not live validation.
+Do not enable Watcher.

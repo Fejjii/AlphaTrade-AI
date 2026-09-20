@@ -243,6 +243,7 @@ def first_slice_cvd_window(
     snapshot: TradeStreamSnapshot,
     created_at: datetime,
     lookback: int = FIRST_SLICE_CVD_LOOKBACK_BARS,
+    require_live_freshness: bool = True,
 ) -> CvdWindow:
     if identity != series_15m.identity:
         raise WrongMarketError(
@@ -270,6 +271,6 @@ def first_slice_cvd_window(
         source_time=terminal_time,
         evaluated_at=created_at,
         policy=first_slice_freshness_policy(),
-        require_fresh=True,
+        require_fresh=require_live_freshness,
     )
     return window

@@ -100,9 +100,8 @@ are the only executable evaluation policy. The boundary is:
 `evaluate_setup` remains the sole SetupAssessment function. First-slice predicates
 are a compatibility adapter bound from the stored `pattern_spec`. Drafts, chat
 previews, and unsupported rules fail closed. Paper-bot `scan`/`tick` stay a
-compatibility simulator until a canonical evidence assembler exists; Watcher (still
-disabled) and `PaperValidationRuntimeService.evaluate_canonical_setup` call the
-same policy boundary. No Watcher activation, Telegram, or live trading.
+compatibility simulator. Canonical evidence assembly exists (AT-064) and is bound
+through AT-067 only after explicit compile and approval. Watcher stays disabled.
 
 ## Lesson → version flow (Slice 37–38)
 

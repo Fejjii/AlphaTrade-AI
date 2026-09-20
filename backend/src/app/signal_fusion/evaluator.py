@@ -48,7 +48,11 @@ from app.market_contracts.first_slice import (
     FIRST_SLICE_TRIGGER_TIMEFRAME,
 )
 from app.market_contracts.flow import bar_signed_quote_flow
-from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
+from app.market_contracts.freshness import (
+    evaluate_freshness,
+    first_slice_freshness_policy,
+    live_confirmation_window_open,
+)
 from app.market_contracts.identity import binance_usdm_btcusdt, interval_timedelta
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
 from app.market_contracts.trades import order_trades
@@ -579,24 +583,31 @@ def _evaluate_freshness_and_flow(
             evaluated_at=evaluated,
             min_bars=FIRST_SLICE_MIN_FINAL_15M,
         )
+        live_window = live_confirmation_window_open(
+            closed_interval_end=trigger.interval_end,
+            evaluated_at=evaluated,
+        )
         first_slice_cvd_window(
             identity=identity_15m,
             series_15m=closed,
             snapshot=snapshot,
             created_at=evaluated,
+            require_live_freshness=live_window,
         )
         flow = bar_signed_quote_flow(
             identity=identity_15m,
             bar=trigger,
             snapshot=snapshot,
             evaluated_at=evaluated,
+            require_live_freshness=live_window,
         )
-        evaluate_freshness(
-            source_time=max(trade.event_timestamp for trade in snapshot.trades),
-            evaluated_at=evaluated,
-            policy=first_slice_freshness_policy(),
-            require_fresh=True,
-        )
+        if live_window:
+            evaluate_freshness(
+                source_time=max(trade.event_timestamp for trade in snapshot.trades),
+                evaluated_at=evaluated,
+                policy=first_slice_freshness_policy(),
+                require_fresh=True,
+            )
     except StaleEvidenceError:
         rules["freshness"] = _rule(
             "freshness", False, "required_source_stale", evidence_role=EvidenceRole.TRADE_EVENT

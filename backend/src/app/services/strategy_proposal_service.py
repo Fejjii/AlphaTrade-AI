@@ -6,9 +6,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.agents.mutation_policy import mutation_allowed, rejection_allowed
+from app.agents.mutation_policy import (
+    confirmation_authorizes_mutation,
+    confirmed_proposal_id,
+    rejected_proposal_id,
+    rejection_authorizes_mutation,
+)
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.db.models import Conversation, StrategyConversationProposal, UserStrategy
 from app.repositories.conversations import (
@@ -247,18 +253,27 @@ class StrategyProposalService:
         confirm_arg: bool | None = None,
         request_id: str | None = None,
         conversation_id: uuid.UUID | None = None,
+        expected_content_hash: str | None = None,
+        expected_parent_version_id: uuid.UUID | None = None,
+        expected_target_strategy_id: uuid.UUID | None = None,
     ) -> StrategyProposalRecord:
-        if not mutation_allowed(confirm_message, confirm_arg=confirm_arg):
+        del confirm_arg
+        if not confirmation_authorizes_mutation(confirm_message):
             raise ValidationAppError(
                 "Explicit confirmation is required to store a strategy version. "
-                "Questions and unconfirmed previews do not mutate strategy authority."
+                "Questions, quotes, and retrieved instructions do not mutate strategy authority."
             )
-        row = self.require(
+        named_id = confirmed_proposal_id(confirm_message)
+        if named_id is not None and named_id != str(proposal_id):
+            raise ConflictError("Confirmation proposal id does not match the target proposal.")
+        row = self._proposals.get_scoped_for_update(
             proposal_id,
             organization_id=organization_id,
             user_id=user_id,
             conversation_id=conversation_id,
         )
+        if row is None:
+            raise NotFoundError("Strategy proposal not found.")
         if row.status is StrategyProposalStatus.CONFIRMED:
             return _record(row)
         if row.status is StrategyProposalStatus.REJECTED:
@@ -267,11 +282,113 @@ class StrategyProposalService:
             raise ConflictError("This proposal was superseded by a later draft.")
         if row.proposed_structured_rules is None:
             raise ValidationAppError("Proposal has no structured rules to persist.")
+        self._assert_confirmation_identity(
+            row,
+            expected_content_hash=expected_content_hash,
+            expected_parent_version_id=expected_parent_version_id,
+            expected_target_strategy_id=expected_target_strategy_id,
+        )
+        try:
+            with self._session.begin_nested():
+                return self._persist_confirmed_version(
+                    row,
+                    user_id=user_id,
+                    request_id=request_id,
+                    organization_id=organization_id,
+                )
+        except IntegrityError as exc:
+            self._session.expire_all()
+            winner = self._proposals.get_scoped(
+                proposal_id,
+                organization_id=organization_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            if winner is not None and winner.status is StrategyProposalStatus.CONFIRMED:
+                return _record(winner)
+            raise ConflictError(
+                "Concurrent confirmation conflicted; the resulting version did not converge."
+            ) from exc
 
+    def reject(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        confirm_message: str,
+        confirm_arg: bool | None = None,
+        conversation_id: uuid.UUID | None = None,
+    ) -> StrategyProposalRecord:
+        del confirm_arg
+        if not rejection_authorizes_mutation(confirm_message):
+            raise ValidationAppError(
+                "Explicit confirmation is required to reject a strategy proposal. "
+                "Quoted or retrieved instructions do not reject drafts."
+            )
+        named_id = rejected_proposal_id(confirm_message)
+        if named_id is not None and named_id != str(proposal_id):
+            raise ConflictError("Rejection proposal id does not match the target proposal.")
+        row = self._proposals.get_scoped_for_update(
+            proposal_id,
+            organization_id=organization_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if row is None:
+            raise NotFoundError("Strategy proposal not found.")
+        if row.status is StrategyProposalStatus.CONFIRMED:
+            raise ConflictError("Confirmed proposals cannot be rejected.")
+        if row.status is StrategyProposalStatus.REJECTED:
+            return _record(row)
+        if row.status is StrategyProposalStatus.SUPERSEDED:
+            raise ConflictError("This proposal was superseded by a later draft.")
+        now = datetime.now(UTC)
+        row.status = StrategyProposalStatus.REJECTED
+        row.rejected_at = now
+        row.updated_at = now
+        self._session.flush()
+        return _record(row)
+
+    def provenance_for_version(
+        self,
+        strategy_version_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+    ) -> StrategyVersionProvenance | None:
+        link = self._links.get_for_version(strategy_version_id, organization_id=organization_id)
+        if link is None:
+            return None
+        proposal = self._proposals.get(link.proposal_id)
+        return StrategyVersionProvenance(
+            strategy_id=link.strategy_id,
+            strategy_version_id=link.strategy_version_id,
+            conversation_id=link.conversation_id,
+            proposal_id=link.proposal_id,
+            source_message_id=link.source_message_id,
+            content_hash=proposal.resulting_content_hash if proposal is not None else None,
+        )
+
+    def _persist_confirmed_version(
+        self,
+        row: StrategyConversationProposal,
+        *,
+        user_id: uuid.UUID,
+        request_id: str | None,
+        organization_id: uuid.UUID,
+    ) -> StrategyProposalRecord:
+        if row.status is StrategyProposalStatus.CONFIRMED:
+            return _record(row)
         strategy = self._require_or_create_strategy(row, user_id=user_id)
         parent = self._versions.get_version(strategy.id, strategy.current_version)
         if parent is None:
             raise ValidationAppError("Strategy has no parent version to fork.")
+        if row.parent_version_id is not None and parent.id != row.parent_version_id:
+            raise ConflictError(
+                "Proposal parent version is stale; confirm against the current version."
+            )
+        if row.target_strategy_id is not None and strategy.id != row.target_strategy_id:
+            raise ConflictError("Proposal target strategy does not match the captured strategy.")
         version = self._versioning.fork_semantic_update(
             strategy,
             parent=parent,
@@ -312,55 +429,38 @@ class StrategyProposalService:
         self._session.flush()
         return _record(row)
 
-    def reject(
-        self,
-        proposal_id: uuid.UUID,
-        *,
-        organization_id: uuid.UUID,
-        user_id: uuid.UUID,
-        confirm_message: str,
-        confirm_arg: bool | None = None,
-        conversation_id: uuid.UUID | None = None,
-    ) -> StrategyProposalRecord:
-        if not rejection_allowed(confirm_message, confirm_arg=confirm_arg):
-            raise ValidationAppError(
-                "Explicit confirmation is required to reject a strategy proposal."
-            )
-        row = self.require(
-            proposal_id,
-            organization_id=organization_id,
-            user_id=user_id,
-            conversation_id=conversation_id,
+    def _payload_hash(self, row: StrategyConversationProposal) -> str:
+        return canonical_sha256(
+            {
+                "structured_rules": row.proposed_structured_rules,
+                "pattern_spec": row.proposed_pattern_spec,
+                "card": row.proposed_card,
+            }
         )
-        if row.status is StrategyProposalStatus.CONFIRMED:
-            raise ConflictError("Confirmed proposals cannot be rejected.")
-        if row.status is StrategyProposalStatus.REJECTED:
-            return _record(row)
-        now = datetime.now(UTC)
-        row.status = StrategyProposalStatus.REJECTED
-        row.rejected_at = now
-        row.updated_at = now
-        self._session.flush()
-        return _record(row)
 
-    def provenance_for_version(
+    def _assert_confirmation_identity(
         self,
-        strategy_version_id: uuid.UUID,
+        row: StrategyConversationProposal,
         *,
-        organization_id: uuid.UUID,
-    ) -> StrategyVersionProvenance | None:
-        link = self._links.get_for_version(strategy_version_id, organization_id=organization_id)
-        if link is None:
-            return None
-        proposal = self._proposals.get(link.proposal_id)
-        return StrategyVersionProvenance(
-            strategy_id=link.strategy_id,
-            strategy_version_id=link.strategy_version_id,
-            conversation_id=link.conversation_id,
-            proposal_id=link.proposal_id,
-            source_message_id=link.source_message_id,
-            content_hash=proposal.resulting_content_hash if proposal is not None else None,
-        )
+        expected_content_hash: str | None,
+        expected_parent_version_id: uuid.UUID | None,
+        expected_target_strategy_id: uuid.UUID | None,
+    ) -> None:
+        recomputed = self._payload_hash(row)
+        if row.content_hash is None or recomputed != row.content_hash:
+            raise ConflictError("Proposal content hash does not match the captured draft.")
+        if expected_content_hash is not None and expected_content_hash != row.content_hash:
+            raise ConflictError("Confirmation content hash does not match the proposal.")
+        if (
+            expected_parent_version_id is not None
+            and expected_parent_version_id != row.parent_version_id
+        ):
+            raise ConflictError("Confirmation parent version does not match the proposal.")
+        if (
+            expected_target_strategy_id is not None
+            and expected_target_strategy_id != row.target_strategy_id
+        ):
+            raise ConflictError("Confirmation target strategy does not match the proposal.")
 
     def _require_or_create_strategy(
         self,

@@ -146,7 +146,12 @@ describe("StrategyConversationPanel", () => {
     await screen.findByTestId("strategy-conversation-confirm");
     fireEvent.click(screen.getByTestId("strategy-conversation-confirm"));
     await waitFor(() => {
-      expect(confirmMock).toHaveBeenCalledWith("conv-1", "prop-1", { confirm: "I confirm" });
+      expect(confirmMock).toHaveBeenCalledWith("conv-1", "prop-1", {
+        confirm: "I confirm",
+        expected_content_hash: undefined,
+        expected_parent_version_id: undefined,
+        expected_target_strategy_id: undefined,
+      });
     });
   });
 

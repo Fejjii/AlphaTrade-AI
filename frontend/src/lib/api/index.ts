@@ -388,7 +388,13 @@ export const api = {
     confirmProposal: (
       conversationId: string,
       proposalId: string,
-      body: { confirm: string; request_id?: string },
+      body: {
+        confirm: string;
+        request_id?: string;
+        expected_content_hash?: string;
+        expected_parent_version_id?: string;
+        expected_target_strategy_id?: string;
+      },
     ) =>
       apiFetch<StrategyProposalRecord>(
         `/conversations/${conversationId}/proposals/${proposalId}/confirm`,

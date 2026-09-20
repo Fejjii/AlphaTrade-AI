@@ -14,6 +14,7 @@ from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
     CompletenessReport,
+    CurrentPriceQuote,
 )
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
 from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
@@ -23,7 +24,9 @@ from app.market_contracts.enums import DataCompleteness, MarketType
 from app.market_contracts.errors import (
     FallbackForbiddenError,
     FormingCandleError,
+    IncompleteWarmUpError,
     SpotFallbackRejectedError,
+    StaleEvidenceError,
     WrongSourceError,
 )
 from app.market_contracts.first_slice import (
@@ -34,7 +37,11 @@ from app.market_contracts.first_slice import (
     first_slice_spec,
 )
 from app.market_contracts.flow import bar_signed_quote_flow
-from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
+from app.market_contracts.freshness import (
+    evaluate_freshness,
+    first_slice_freshness_policy,
+    live_confirmation_window_open,
+)
 from app.market_contracts.identity import EvidenceMarketIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar
 from app.schemas.common import Timeframe
@@ -123,32 +130,44 @@ class FirstSliceEvidenceAssembler:
             expected_contiguous_count=len(batch.trades),
         )
         snapshot = assembler.ingest_batch(batch, observed_at=clock)
+        live_window = live_confirmation_window_open(
+            closed_interval_end=trigger.interval_end,
+            evaluated_at=clock,
+        )
         cvd = first_slice_cvd_window(
             identity=trigger_identity,
             series_15m=series_15m,
             snapshot=snapshot,
             created_at=clock,
+            require_live_freshness=live_window,
         )
         signed_flow = bar_signed_quote_flow(
             identity=trigger_identity,
             bar=trigger,
             snapshot=snapshot,
             evaluated_at=clock,
+            require_live_freshness=live_window,
         )
         freshness = evaluate_freshness(
             source_time=cvd.event_time_max or snapshot.trades[-1].event_timestamp,
             evaluated_at=clock,
             policy=first_slice_freshness_policy(),
-            require_fresh=True,
+            require_fresh=live_window,
         )
-        current = quote_current_price(
-            self._source,
-            identity=trigger_identity,
-            instrument=instrument,
-            evaluated_at=clock,
-            connection_id=lineage,
-            replay=self._replay,
-        )
+        current: CurrentPriceQuote | None
+        try:
+            current = quote_current_price(
+                self._source,
+                identity=trigger_identity,
+                instrument=instrument,
+                evaluated_at=clock,
+                connection_id=lineage,
+                replay=self._replay,
+            )
+        except (StaleEvidenceError, IncompleteWarmUpError):
+            if live_window:
+                raise
+            current = None
         bound_policy = policy or first_slice_read_policy(organization_id)
         if bound_policy.organization_id != organization_id:
             raise WrongSourceError(
@@ -164,6 +183,9 @@ class FirstSliceEvidenceAssembler:
             evaluated_at=clock,
             freshness_state=freshness.state,
             adapter_kind=adapter_kind,
+            cvd=cvd,
+            signed_flow=signed_flow,
+            coverage=snapshot.coverage,
             tenant_assertions=tenant_assertions,
             manual_level_revision=manual_level_revision,
         )

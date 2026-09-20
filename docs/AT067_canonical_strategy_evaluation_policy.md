@@ -41,8 +41,11 @@ no LLM on this path.
 
 ## Remaining integration
 
-- Paper-bot scan does not yet assemble `CanonicalEvidenceWindowV1` (PR #108
-  evidence assembler). `PaperValidationRuntimeService.evaluate_canonical_setup`
-  is the SetupAssessment entry for that runtime.
-- Pattern-spec authoring UI and compile HTTP are out of this slice.
+- Paper-bot `scan`/`tick` remain a compatibility simulator, not SetupAssessment.
+  Canonical evidence assembly is `app.evidence_pipeline` (AT-064) and is used by
+  the AT-063 fixture proof after explicit compile + approval.
+- Conversational confirmation (AT-066) stores a draft version only. It cannot
+  resolve executable policy until compile + APPROVED/ACTIVE.
+- Pattern-spec authoring UI remains limited; complete explicit first-slice text
+  can preview a validated spec without inventing thresholds.
 - Do not enable Watcher.

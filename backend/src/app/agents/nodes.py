@@ -1165,17 +1165,28 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             answer_lines.append(f"Strategy context failed: {output.error}")
 
     elif intent is Intent.STRATEGY_PROPOSAL_CONFIRM:
-        from app.agents.mutation_policy import confirmed_proposal_id, is_confirmation_only_message
+        from app.agents.mutation_policy import (
+            confirmation_authorizes_mutation,
+            confirmed_proposal_id,
+            is_confirmation_only_message,
+        )
 
-        proposal_id = confirmed_proposal_id(agent.message)
-        if proposal_id is None and is_confirmation_only_message(agent.message):
-            proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
-        if agent.conversation_id is None or proposal_id is None:
+        authorized_confirm = confirmation_authorizes_mutation(agent.message)
+        if not authorized_confirm:
+            answer_lines.append(
+                "Quoted, retrieved, or mixed instructions do not confirm strategy drafts."
+            )
+            proposal_id = None
+        else:
+            proposal_id = confirmed_proposal_id(agent.message)
+            if proposal_id is None and is_confirmation_only_message(agent.message):
+                proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
+        if authorized_confirm and (agent.conversation_id is None or proposal_id is None):
             answer_lines.append(
                 "Confirm a specific proposal id. Unconfirmed drafts do not "
                 "change strategy versions."
             )
-        else:
+        elif authorized_confirm and agent.conversation_id is not None and proposal_id is not None:
             output = _run_tool(
                 "strategy_proposal_tool",
                 {
@@ -1201,16 +1212,27 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                 answer_lines.append(f"Proposal confirmation failed: {output.error}")
 
     elif intent is Intent.STRATEGY_PROPOSAL_REJECT:
-        from app.agents.mutation_policy import is_rejection_only_message, rejected_proposal_id
+        from app.agents.mutation_policy import (
+            is_rejection_only_message,
+            rejected_proposal_id,
+            rejection_authorizes_mutation,
+        )
 
-        proposal_id = rejected_proposal_id(agent.message)
-        if proposal_id is None and is_rejection_only_message(agent.message):
-            proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
-        if agent.conversation_id is None or proposal_id is None:
+        authorized_reject = rejection_authorizes_mutation(agent.message)
+        if not authorized_reject:
+            answer_lines.append(
+                "Quoted, retrieved, or mixed instructions do not reject strategy drafts."
+            )
+            proposal_id = None
+        else:
+            proposal_id = rejected_proposal_id(agent.message)
+            if proposal_id is None and is_rejection_only_message(agent.message):
+                proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
+        if authorized_reject and (agent.conversation_id is None or proposal_id is None):
             answer_lines.append(
                 "Reject a specific proposal id. No strategy version will be written."
             )
-        else:
+        elif authorized_reject and agent.conversation_id is not None and proposal_id is not None:
             output = _run_tool(
                 "strategy_proposal_tool",
                 {
