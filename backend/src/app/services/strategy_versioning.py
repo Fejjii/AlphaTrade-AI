@@ -121,6 +121,20 @@ class StrategyVersioningService:
         self._session.flush()
         return event
 
+    def latest_lifecycle_event_for_version(
+        self, strategy_version_id: uuid.UUID
+    ) -> StrategyLifecycleEvent | None:
+        stmt = (
+            select(StrategyLifecycleEvent)
+            .where(StrategyLifecycleEvent.strategy_version_id == strategy_version_id)
+            .order_by(
+                StrategyLifecycleEvent.occurred_at.desc(),
+                StrategyLifecycleEvent.created_at.desc(),
+            )
+            .limit(1)
+        )
+        return self._session.scalar(stmt)
+
     def latest_lifecycle_state(self, strategy_id: uuid.UUID) -> StrategyLifecycleState | None:
         stmt = (
             select(StrategyLifecycleEvent)

@@ -63,6 +63,7 @@ from app.schemas.paper_validation import (
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.structured_rules import StructuredRules
 from app.services.audit_service import AuditService
+from app.services.canonical_strategy_evaluation import evaluate_canonical_strategy_for_version
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.journal_trade_service import JournalTradeService
 from app.services.paper_alert_service import PaperAlertService
@@ -76,6 +77,9 @@ from app.services.paper_validation_promotion import (
     sort_closed_trades_chronologically,
 )
 from app.services.structured_rule_resolver import resolve_backtest_rules
+from app.signal_fusion.adapters import AssessmentCommand
+from app.signal_fusion.assessment import SetupAssessment
+from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 
 logger = structlog.get_logger(__name__)
 
@@ -1153,4 +1157,33 @@ class PaperValidationRuntimeService:
             recommendation=recommendation,
             created_at=row.created_at,
             updated_at=row.updated_at,
+        )
+
+    def evaluate_canonical_setup(
+        self,
+        *,
+        strategy_version_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        command: AssessmentCommand,
+        evidence: FirstSliceEvidenceBundle,
+        evaluated_at: datetime,
+        previous_assessment: SetupAssessment | None = None,
+    ) -> SetupAssessment:
+        """Evaluate SetupAssessment via the canonical strategy policy boundary.
+
+        Paper-bot ``scan``/``tick`` remain compatibility simulation until a
+        canonical evidence assembler exists. This method is the SetupAssessment
+        entry Watcher also uses. It does not mint Candidates or place orders.
+        """
+
+        return evaluate_canonical_strategy_for_version(
+            self._session,
+            organization_id=organization_id,
+            strategy_version_id=strategy_version_id,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            previous_assessment=previous_assessment,
+            user_id=user_id,
         )

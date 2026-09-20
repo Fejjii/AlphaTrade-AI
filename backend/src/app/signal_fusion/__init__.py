@@ -1,8 +1,10 @@
 """Phase 6 signal-fusion contracts, evaluator, candidate, and action eligibility.
 
 Canonical identities remain the Phase 6 contract freeze. This package evaluates
-first-slice ``SetupAssessment`` truth, owns in-memory candidate lifecycle
-authority, and evaluates deterministic ``ActionEligibility`` for paper action.
+first-slice ``SetupAssessment`` truth through ``evaluate_setup``. Product callers
+resolve an approved compiled strategy via ``evaluate_canonical_strategy``.
+This package owns in-memory candidate lifecycle authority and deterministic
+``ActionEligibility`` for paper action.
 
 PostgreSQL Candidate persistence lives in ``app.persistence`` and binds this
 package's ``CandidateRepository`` port. Canonical TradePlanRevision creation is
@@ -82,6 +84,7 @@ from app.signal_fusion.errors import (
     IllegalCandidateTransitionError,
     IllegalSetupIdentityError,
     LegacyCandidateAuthorityError,
+    StrategyEvaluationPolicyError,
     TenantAssertionNotPublicError,
     TenantAssertionSelectionError,
 )
@@ -117,6 +120,11 @@ from app.signal_fusion.policy import (
     FusionThresholds,
     build_fusion_policy,
     first_slice_role_timeframes,
+)
+from app.signal_fusion.strategy_evaluation_policy import (
+    ExecutableStrategyPolicy,
+    evaluate_canonical_strategy,
+    executable_policy_from_fusion_policy,
 )
 from app.signal_fusion.types import (
     ExecutableSetupRef,
@@ -160,6 +168,7 @@ __all__ = [
     "EvidenceIdentityMismatchError",
     "EvidenceRole",
     "ExecutableSetupRef",
+    "ExecutableStrategyPolicy",
     "ExpiredCandidateAssessmentError",
     "FirstSliceEvidenceBundle",
     "FormingObservationMutationError",
@@ -186,6 +195,7 @@ __all__ = [
     "SetupAssessmentState",
     "SetupAssessmentTransition",
     "SetupIdentityKind",
+    "StrategyEvaluationPolicyError",
     "TenantAssertionNotPublicError",
     "TenantAssertionRole",
     "TenantAssertionSelectionError",
@@ -201,9 +211,11 @@ __all__ = [
     "build_setup_assessment",
     "build_setup_assessment_transition",
     "deterministic_candidate_id",
+    "evaluate_canonical_strategy",
     "evaluate_setup",
     "evidence_window_from_assessment_command",
     "evidence_window_preimage",
+    "executable_policy_from_fusion_policy",
     "first_slice_role_timeframes",
     "hash_canonical_evidence_window",
     "in_memory_action_eligibility",

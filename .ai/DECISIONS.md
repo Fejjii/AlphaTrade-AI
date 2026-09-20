@@ -1426,3 +1426,39 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_release_integration-c461`. Draft PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
   success. Report `docs/FINAL_RELEASE_READINESS.md`.
+
+## AT-ADR-043 — Canonical strategy evaluation policy (approved compiled version)
+- **Date:** 2026-09-20
+- **Status:** Accepted (implementation; draft PR only; do not merge or deploy)
+- **Context:** PR #107 found three evaluation authorities (code modules, Lab
+  structured-rules adapter, first-slice fusion constants). `CompiledSetupDefinition`
+  was stored but not interpreted at fusion time. PR #108 confirmed Watcher stays
+  off. AT-ADR-025 keeps `evaluate_setup` as the sole SetupAssessment function.
+- **Decision:**
+  1. Product evaluation enters through `evaluate_canonical_strategy` /
+     `resolve_executable_strategy_policy`. Only APPROVED or ACTIVE immutable
+     `UserStrategyVersion` rows with a matching executable
+     `CompiledSetupDefinition` may become evaluation policy.
+  2. Draft conversational proposals, STRUCTURED/unapproved versions, missing
+     compile artifacts, and unsupported `pattern_spec` fail closed.
+  3. `evaluate_setup` remains the sole SetupAssessment function. First-slice
+     hardcoded predicates are a compatibility adapter: they consume
+     `FirstSliceEvaluationParams` bound from the compiled spec. No generic AST
+     walker and no LLM on this path.
+  4. Same approved strategy plus same canonical evidence yields the same
+     `SetupAssessment`. Lineage is `strategy_version_id` + compiled setup id/hash
+     already hashed into `CanonicalEvidenceWindowV1`.
+  5. Watcher fusion evaluation calls this boundary (Watcher remains disabled).
+     Paper validation exposes `evaluate_canonical_setup` on the same boundary.
+     Paper-bot scan/tick stays compatibility simulation until a canonical
+     evidence assembler exists. Candidate creation is unchanged.
+  6. Code modules `/strategies/evaluate` stay a separate Lab/chat tool, not
+     SetupAssessment authority.
+- **Alternatives considered:** Walk a generic compiled AST now (rejected: first
+  slice only; compiler already fail-closes unsupported kinds); require stored
+  spec to match constants exactly and ignore compiled thresholds (rejected:
+  silent dual policy); enable Watcher to “finish the loop” (rejected: AT-ADR-040).
+- **Safety impact:** Paper only. No Watcher/Telegram/live-trading flag change.
+  SetupAssessment remains independent of account/risk.
+- **Consequences:** Docs `docs/AT067_canonical_strategy_evaluation_policy.md`.
+  Tests `backend/tests/test_at067_canonical_strategy_evaluation_policy.py`.

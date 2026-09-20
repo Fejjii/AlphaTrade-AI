@@ -76,4 +76,19 @@ class ActionEligibilityLineageError(SignalFusionContractError):
 
 
 class ConflictingActionEligibilityError(SignalFusionContractError):
-    """Reused eligibility identities were bound to a conflicting semantic payload.""" ""
+    """Reused eligibility identities were bound to a conflicting semantic payload."""
+
+
+class StrategyEvaluationPolicyError(SignalFusionContractError):
+    """Approved compiled strategy policy cannot be resolved or evaluated."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str,
+        details: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.details = details or {}

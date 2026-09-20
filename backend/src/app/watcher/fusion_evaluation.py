@@ -4,7 +4,8 @@ One typed orchestration service. Watcher does not implement trading predicates,
 does not compute a second evidence hash, and does not mint candidate identity.
 Canonical flow:
 
-    scan evidence → CanonicalEvidenceWindowV1 → evaluate_setup → SetupAssessment
+    scan evidence → CanonicalEvidenceWindowV1 → evaluate_canonical_strategy
+    → evaluate_setup → SetupAssessment
     → Candidate only when CONFIRMED_SETUP, persist mode, and publish is authorized
 
 Setup truth stays independent of balance, portfolio, risk, leverage, execution
@@ -29,15 +30,19 @@ from app.signal_fusion.errors import (
     EvidenceWindowContractError,
     FormingObservationNotExecutableError,
     SignalFusionContractError,
+    StrategyEvaluationPolicyError,
     TenantAssertionSelectionError,
 )
-from app.signal_fusion.evaluator import evaluate_setup
 from app.signal_fusion.evidence_window import CanonicalEvidenceWindowV1
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.lifecycle import CandidateCreationCommand, CandidateLifecycleService
 from app.signal_fusion.memory import InMemoryCandidateRepository
 from app.signal_fusion.policy import FusionPolicy
 from app.signal_fusion.ports import CandidateRepository
+from app.signal_fusion.strategy_evaluation_policy import (
+    ExecutableStrategyPolicy,
+    evaluate_canonical_strategy,
+)
 from app.watcher.contracts import (
     EvaluationCommand,
     EvaluationMode,
@@ -71,10 +76,12 @@ class WatcherCanonicalScanEvidence(FrozenModel):
 
     Watcher orchestration must not invent hashes or candidate IDs from this
     payload. ``CanonicalEvidenceWindowV1`` remains the sole evidence identity.
+    Evaluation must go through ``evaluate_canonical_strategy``.
     """
 
     organization_id: UUID
     policy: FusionPolicy
+    executable_policy: ExecutableStrategyPolicy
     assessment_command: AssessmentCommand
     evidence: FirstSliceEvidenceBundle
     evaluated_at: datetime
@@ -295,6 +302,22 @@ class WatcherFusionEvaluationService:
                 failed_units=1,
                 error="fusion policy organization_id does not match the scan",
             )
+        if snapshot.executable_policy.organization_id != command.request.organization_id:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code="organization_mismatch",
+                failed_units=1,
+                error="executable strategy policy organization_id does not match the scan",
+            )
+        if snapshot.executable_policy.fusion_policy.content_hash != snapshot.policy.content_hash:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code="strategy_evidence_mismatch",
+                failed_units=1,
+                error="watcher fusion policy does not match executable strategy policy",
+            )
 
         self._clock.bind(snapshot.evaluated_at)
         bound_command = snapshot.assessment_command.model_copy(
@@ -306,13 +329,21 @@ class WatcherFusionEvaluationService:
         )
         window = _canonical_window(bound_command)
         try:
-            assessment = evaluate_setup(
-                policy=snapshot.policy,
+            assessment = evaluate_canonical_strategy(
+                executable_policy=snapshot.executable_policy,
                 command=bound_command,
                 evidence=snapshot.evidence,
                 evaluated_at=snapshot.evaluated_at,
                 previous_assessment=snapshot.previous_assessment,
                 account_context=None,
+            )
+        except StrategyEvaluationPolicyError as exc:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code=exc.reason_code,
+                failed_units=1,
+                error=str(exc),
             )
         except Exception as exc:
             return _outcome(
