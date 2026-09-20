@@ -29,7 +29,7 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import type { AgentMessageResponse } from "@/lib/api/types";
+import type { AgentMessageResponse, ConversationMessageRecord } from "@/lib/api/types";
 
 type PlanHubData = {
   proposals: SourceResult<Awaited<ReturnType<typeof api.proposals.list>>>;
@@ -49,6 +49,7 @@ export default function WorkspacePage() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
   const [conversationId, setConversationId] = useState<string | undefined>();
+  const [thread, setThread] = useState<ConversationMessageRecord[]>([]);
   const [response, setResponse] = useState<AgentMessageResponse | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
@@ -59,6 +60,22 @@ export default function WorkspacePage() {
   useEffect(() => {
     setInvalidContextDismissed(false);
   }, [signalLookupKey]);
+
+  useEffect(() => {
+    const stored = window.sessionStorage.getItem("alphatrade.workspace.conversation_id");
+    if (stored) setConversationId(stored);
+  }, []);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    window.sessionStorage.setItem("alphatrade.workspace.conversation_id", conversationId);
+    void api.conversations
+      .listMessages(conversationId, { limit: 100 })
+      .then((page) => setThread(page.items))
+      .catch(() => {
+        /* Thread reload is best-effort; the latest reply still renders. */
+      });
+  }, [conversationId]);
 
   const invalidContextMessage =
     signalLookup.status === "invalid" && !invalidContextDismissed
@@ -328,6 +345,25 @@ export default function WorkspacePage() {
                 disabled={response?.risk_result?.action === "block"}
               />
             </div>
+            {thread.length ? (
+              <ol
+                className="max-h-64 space-y-2 overflow-y-auto rounded-control border border-border p-3 text-sm"
+                data-testid="workspace-conversation-thread"
+              >
+                {thread.map((item) => (
+                  <li key={item.id}>
+                    <p className="text-xs uppercase text-text-muted">{item.role}</p>
+                    <p className="whitespace-pre-wrap text-text-secondary">{item.content}</p>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {response?.pending_proposal ? (
+              <p className="text-sm text-text-muted" data-testid="workspace-pending-proposal">
+                Structured proposal {response.pending_proposal.status}. Drafts do not change
+                strategy versions until explicit confirmation.
+              </p>
+            ) : null}
             <Button
               disabled={
                 chatLoading ||

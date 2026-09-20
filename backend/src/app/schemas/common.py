@@ -1091,6 +1091,31 @@ class StrategyChangeSource(StrEnum):
     ROLLBACK_SELECT = "rollback_select"
     MIGRATION = "migration"
     LEGACY = "legacy"
+    CONVERSATION_CONFIRM = "conversation_confirm"
+
+
+class ConversationStatus(StrEnum):
+    """Lifecycle of a tenant-scoped strategy conversation transcript."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class ConversationMessageRole(StrEnum):
+    """Persisted chat roles. Transcripts are not strategy authority."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class StrategyProposalStatus(StrEnum):
+    """Structured strategy proposal preview. Drafts never mutate versions."""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    SUPERSEDED = "superseded"
 
 
 class StrategyLifecycleState(StrEnum):

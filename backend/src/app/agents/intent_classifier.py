@@ -111,6 +111,7 @@ _STRATEGY_READ_INTENTS = frozenset(
         Intent.ALERT_DELIVERY_QUERY,
         Intent.MARKET_WATCHER_QUERY,
         Intent.MARKET_WATCHER_BRIDGE_QUERY,
+        Intent.STRATEGY_DISCUSSION,
     }
 )
 
@@ -123,6 +124,8 @@ _STRATEGY_MUTATION_INTENTS = frozenset(
         Intent.LESSON_CREATE_VERSION,
         Intent.PAPER_VALIDATION_START,
         Intent.PAPER_VALIDATION_SCAN,
+        Intent.STRATEGY_PROPOSAL_CONFIRM,
+        Intent.STRATEGY_PROPOSAL_REJECT,
     }
 )
 

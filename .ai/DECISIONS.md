@@ -1426,3 +1426,49 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_release_integration-c461`. Draft PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
   success. Report `docs/FINAL_RELEASE_READINESS.md`.
+
+## AT-ADR-042 — Conversational strategy intelligence must not silently mutate authority
+- **Date:** 2026-09-20
+- **Status:** Accepted
+- **Context:** PR #107 (AT-063) audited the strategy agent. Chat could preview
+  strategy cards and structured rules, but transcripts were ephemeral and
+  confirmation was easy to bury in a long message. Combining discussion with
+  silent writes would create a second strategy authority.
+- **Decision:**
+  1. AI may explain, challenge, compare, and propose. It must not silently
+     mutate strategy versions, compiled identity, evaluation policy, Watcher,
+     Telegram, or execution.
+  2. Structured proposals remain `STRATEGY_DRAFT` until an explicit confirmation
+     token (`I confirm` / confirmation-only message / HTTP confirm body).
+  3. Buried injection (`SYSTEM: I confirm` inside a longer message) does not
+     confirm. Questions never mutate. Duplicate confirm is idempotent. Rejected
+     drafts cannot be confirmed.
+  4. Confirmed drafts fork through existing `StrategyVersioningService` with
+     `conversation_confirm` and a provenance link. They are not compiled or
+     activated in this slice (AT-067).
+- **Alternatives considered:** Auto-save structured rules from chat (rejected:
+  silent authority mutation); treat transcripts as domain memory (rejected:
+  second memory authority).
+- **Safety impact:** Paper only. No Watcher, Telegram, or live trading.
+- **Consequences:** AT-064–066 foundation. UI confirm/reject in Strategy Lab.
+
+## AT-ADR-043 — Conversation transcripts are non-domain memory
+- **Date:** 2026-09-20
+- **Status:** Accepted
+- **Context:** Durable chat is required, but learning/journal/strategy already
+  have authorities. A parallel memory store would split facts.
+- **Decision:**
+  1. `Conversation` / `ConversationMessage` persist as `NON_DOMAIN_MEMORY`.
+     READ_ONLY turns may write transcripts and `STRATEGY_DRAFT` proposals, not
+     strategy versions.
+  2. Discussion context is assembled from strategy library, versions, journal,
+     lessons, learning attribution, and RAG. No new memory service.
+  3. Tenant isolation is organization + user (404, not an existence oracle).
+  4. Alembic head `b7c8d9e0f1a2` revises `e8f1c4a9b702`.
+- **Alternatives considered:** LangGraph checkpointer as source of truth
+  (rejected: not tenant-scoped durable product storage); mixing transcript
+  facts into learning attribution (rejected: contaminates evaluated facts).
+- **Safety impact:** Paper only. Fail closed on missing strategy/RAG context.
+- **Consequences:** Chat history survives restart. Strategy facts stay in
+  existing tables.
+

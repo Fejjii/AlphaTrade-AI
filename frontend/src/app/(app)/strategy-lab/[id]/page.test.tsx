@@ -135,6 +135,17 @@ vi.mock("@/lib/api", async (importOriginal) => {
         ...actual.api.alerts,
         list: (...args: unknown[]) => alertsListMock(...args),
       },
+      conversations: {
+        list: vi.fn(async () => ({ items: [], total: 0, limit: 50, offset: 0 })),
+        listMessages: vi.fn(async () => ({ items: [], total: 0, limit: 100, offset: 0 })),
+        listProposals: vi.fn(async () => ({ items: [], total: 0, limit: 10, offset: 0 })),
+        confirmProposal: vi.fn(),
+        rejectProposal: vi.fn(),
+      },
+      chat: {
+        ...actual.api.chat,
+        message: vi.fn(),
+      },
     },
   };
 });

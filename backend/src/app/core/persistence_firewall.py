@@ -12,20 +12,11 @@ from sqlalchemy.orm import Mapper, Session
 from app.core.errors import PersistencePolicyError
 from app.core.operation_policy import (
     PersistenceKind,
-    assert_write_allowed,
     get_operation_decision,
+    read_only_kind_allowed,
+    write_allowed,
 )
-from app.db.models import AuditLog, ModelCallAttempt, OrganizationQuota, UsageEvent
 from app.schemas.agent import OperationClass
-
-_ALLOWED_READ_ONLY_MODELS: frozenset[type[object]] = frozenset(
-    {
-        AuditLog,
-        UsageEvent,
-        OrganizationQuota,
-        ModelCallAttempt,
-    }
-)
 
 _MODEL_KIND: dict[str, PersistenceKind] = {
     "AuditLog": PersistenceKind.AUDIT,
@@ -127,6 +118,10 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "RiskReservation": PersistenceKind.EXECUTION,
     "VenueSubmitEffect": PersistenceKind.EXECUTION,
     "ExecutionFillFact": PersistenceKind.EXECUTION,
+    "Conversation": PersistenceKind.NON_DOMAIN_MEMORY,
+    "ConversationMessage": PersistenceKind.NON_DOMAIN_MEMORY,
+    "StrategyConversationProposal": PersistenceKind.STRATEGY_DRAFT,
+    "StrategyVersionConversationLink": PersistenceKind.STRATEGY,
 }
 
 
@@ -136,7 +131,8 @@ def persistence_kind_for(entity: object) -> PersistenceKind:
 
 
 def is_readonly_allowed_model(entity: object) -> bool:
-    return type(entity) in _ALLOWED_READ_ONLY_MODELS
+    """True when this model's persistence kind is on the READ_ONLY write allowlist."""
+    return read_only_kind_allowed(persistence_kind_for(entity))
 
 
 def assert_entity_write_allowed(entity: object) -> None:
@@ -144,14 +140,14 @@ def assert_entity_write_allowed(entity: object) -> None:
     decision = get_operation_decision()
     if decision is None or decision.operation_class is not OperationClass.READ_ONLY:
         return
-    if is_readonly_allowed_model(entity):
-        assert_write_allowed(persistence_kind_for(entity), decision)
+    kind = persistence_kind_for(entity)
+    if write_allowed(kind, decision):
         return
     raise PersistencePolicyError(
         f"READ_ONLY forbids domain write of {type(entity).__name__}.",
         details={
             "model": type(entity).__name__,
-            "kind": persistence_kind_for(entity).value,
+            "kind": kind.value,
         },
     )
 
@@ -170,13 +166,14 @@ def enforce_readonly_flush(session: Session) -> None:
     if decision is None or decision.operation_class is not OperationClass.READ_ONLY:
         return
     for entity in _iter_pending_writes(session):
-        if is_readonly_allowed_model(entity):
+        kind = persistence_kind_for(entity)
+        if write_allowed(kind, decision):
             continue
         raise PersistencePolicyError(
             f"READ_ONLY forbids domain write of {type(entity).__name__}.",
             details={
                 "model": type(entity).__name__,
-                "kind": persistence_kind_for(entity).value,
+                "kind": kind.value,
             },
         )
 

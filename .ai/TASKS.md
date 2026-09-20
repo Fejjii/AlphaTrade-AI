@@ -1305,3 +1305,49 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
+
+### AT-064 — Persistent strategy conversation + message storage
+- Priority: P0 · Status: DONE · Dependencies: AT-063 audit (PR #107) · Risk: Medium
+  (transcript vs strategy authority)
+- Safety classification: Paper-only; no Watcher, Telegram, live trading, or
+  autonomous activation
+- Goal: Durable tenant-scoped conversations and messages. History survives
+  restart. Chat must not become a second memory authority.
+- Validation: `backend/tests/test_strategy_conversation_foundation.py`;
+  persistence + restart + tenant 404.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-042, AT-ADR-043
+- Note: Combined with AT-065/AT-066 because the implementation task asked for
+  the full conversational foundation in one PR. Evaluation/compile remains AT-067.
+
+### AT-065 — Strategy discussion context from existing authorities
+- Priority: P0 · Status: DONE · Dependencies: AT-064 · Risk: Medium (RAG/tenant)
+- Safety classification: Read-only assembly; paper-only
+- Goal: Discussions may reference strategies, versions, journal, lessons,
+  learning attribution, and statistics via existing services + RAG. No new
+  memory store.
+- Validation: RAG source-type boundary tests; discussion context tool.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-043
+
+### AT-066 — Structured proposals stay drafts until explicit confirmation
+- Priority: P0 · Status: DONE · Dependencies: AT-064, AT-065 · Risk: High
+  (silent mutation of strategy authority)
+- Safety classification: Confirmation-gated version fork; no compile/activation
+- Goal: AI may explain, challenge, compare, and propose. Every mutation needs
+  explicit confirmation. Provenance links conversation → proposal → version.
+  Strategy Lab conversational UI + API.
+- Validation: confirm, reject, duplicate confirm, lineage, prompt-injection
+  mutation attempts.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
+### AT-067 — Deterministic evaluation policy / compile on explicit save
+- Priority: P0 · Status: TODO · Dependencies: AT-066 · Risk: High (evaluation
+  identity)
+- Safety classification: Paper-only; still no Watcher/Telegram/live activation
+- Goal: One `content_hash` as `evaluate_setup` policy. Compile
+  `CompiledSetupDefinition` only on explicit save. Conversational drafts do not
+  invent first-slice thresholds.
+- Recommended model: Cursor Grok 4.6 Extra High
+
