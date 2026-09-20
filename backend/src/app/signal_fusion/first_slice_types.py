@@ -2,7 +2,9 @@
 
 ``ExecutableSetupRef`` / ``CompiledSetupDefinition`` remain the setup identity.
 These types only carry Phase 5 payloads the frozen ``AssessmentCommand``
-envelopes do not embed.
+envelopes do not embed. First-slice numeric constants are the compatibility
+adapter defaults for the canonical authored spec; product evaluation binds
+thresholds from the compiled spec via ``FirstSliceEvaluationParams``.
 """
 
 from __future__ import annotations

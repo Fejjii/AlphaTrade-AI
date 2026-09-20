@@ -1305,3 +1305,29 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
+
+### AT-067 — Canonical strategy evaluation policy (first-slice adapter)
+- Priority: P1 · Status: DONE · Dependencies: AT-063 audits (PR #107, PR #108)
+  · Risk: High (evaluation authority)
+- Safety classification: Paper-only; no Watcher enablement; no Telegram; no live trading
+- Goal: One deterministic evaluation policy boundary: approved immutable
+  `UserStrategyVersion` → `CompiledSetupDefinition` → canonical evidence →
+  `evaluate_canonical_strategy` → `SetupAssessment`. `evaluate_setup` remains
+  sole market-truth function. First-slice predicates become a compatibility
+  adapter. Drafts and unsupported rules fail closed. Watcher (disabled) and
+  paper-validation canonical entry call the same boundary. No Candidate mint
+  changes unless required for lineage (none required).
+- Branch: `cursor/canonical-strategy-policy-82f1`
+- Validation: 18 AT-067 tests (determinism, version change, unsupported rule,
+  stale evidence, strategy/evidence mismatch, duplicate evaluation, lineage,
+  compatibility parity, tenant isolation, no-LLM, Watcher/paper boundary).
+  Local: `ruff check/format` clean; mypy `--strict` on 8 changed modules Success;
+  backend pytest 2115 passed / 176 skipped; frontend lint+typecheck+1158 tests+build;
+  evaluation 16/16 + 5/5 + 7/7. Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/109
+  — do not merge; do not deploy; do not enable Watcher. GitHub CI run 35527427903
+  was in progress at wrap-up (frontend/deployment-safety/docker-build SUCCESS;
+  backend IN_PROGRESS). Remaining: paper-bot CanonicalEvidenceWindowV1 assembler
+  (PR #108); pattern-spec authoring UI / compile HTTP.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-043
+- Completion evidence: feat commit `4d5bfb9`; draft PR #109; AT-ADR-043.

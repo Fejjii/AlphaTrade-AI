@@ -81,6 +81,20 @@ Strategy Lab includes a **rich structured rule editor** with add/edit/remove for
 
 Testability UI shows ready-for-backtest badge, unsupported types, ambiguous conditions, and suggested next edits.
 
+## Canonical evaluation policy (AT-067)
+
+Approved immutable `UserStrategyVersion` rows with a matching `CompiledSetupDefinition`
+are the only executable evaluation policy. The boundary is:
+
+`approved version → compiled definition → canonical evidence → evaluate_canonical_strategy → SetupAssessment`.
+
+`evaluate_setup` remains the sole SetupAssessment function. First-slice predicates
+are a compatibility adapter bound from the stored `pattern_spec`. Drafts, chat
+previews, and unsupported rules fail closed. Paper-bot `scan`/`tick` stay a
+compatibility simulator until a canonical evidence assembler exists; Watcher (still
+disabled) and `PaperValidationRuntimeService.evaluate_canonical_setup` call the
+same policy boundary. No Watcher activation, Telegram, or live trading.
+
 ## Lesson → version flow (Slice 37–38)
 
 Accepted lessons may update strategy cards — **never silently**:
