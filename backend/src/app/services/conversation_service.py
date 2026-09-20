@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -161,7 +162,7 @@ class ConversationService:
         content: str,
         request_id: str | None = None,
         intent: str | None = None,
-        payload: dict | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> ConversationMessage:
         row = ConversationMessage(
             conversation_id=conversation.id,

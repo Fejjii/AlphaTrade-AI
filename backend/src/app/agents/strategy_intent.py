@@ -12,6 +12,7 @@ def classify_strategy_workflow(message: str) -> Intent | None:
     stripped = lowered.strip().rstrip(".")
     if ("reject" in lowered and "proposal" in lowered) or stripped in {
         "i reject",
+        "i reject this draft",
         "reject this draft",
         "reject proposal",
     }:

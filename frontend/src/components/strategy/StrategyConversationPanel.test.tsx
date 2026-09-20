@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StrategyConversationPanel } from "./StrategyConversationPanel";
 
@@ -53,6 +53,10 @@ const draftProposal = {
 };
 
 describe("StrategyConversationPanel", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     listMock.mockResolvedValue({
       items: [{ id: "conv-1", organization_id: "org", user_id: "user", status: "active" }],

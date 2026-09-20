@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
@@ -42,7 +43,7 @@ class ConversationMessageRecord(ORMModel):
     content: str
     request_id: str | None = None
     intent: str | None = None
-    payload: dict = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -86,12 +87,12 @@ class StrategyProposalRecord(ORMModel):
     parent_version_id: UUID | None = None
     status: StrategyProposalStatus
     proposed_structured_rules: StructuredRules | None = None
-    proposed_pattern_spec: dict | None = None
-    proposed_card: dict | None = None
+    proposed_pattern_spec: dict[str, Any] | None = None
+    proposed_card: dict[str, Any] | None = None
     validation: StructuredRulesValidation
     limitations: list[str] = Field(default_factory=list)
     challenge_notes: list[str] = Field(default_factory=list)
-    context_refs: dict = Field(default_factory=dict)
+    context_refs: dict[str, Any] = Field(default_factory=dict)
     content_hash: str | None = None
     resulting_strategy_id: UUID | None = None
     resulting_version_id: UUID | None = None
@@ -124,10 +125,10 @@ class StrategyVersionProvenance(ORMModel):
 class StrategyDiscussionContext(StrictModel):
     """Read-only references assembled from existing authorities."""
 
-    strategy: dict | None = None
-    versions: list[dict] = Field(default_factory=list)
-    lessons: list[dict] = Field(default_factory=list)
-    journal_trades: list[dict] = Field(default_factory=list)
-    learning_stats: dict | None = None
-    rag_citations: list[dict] = Field(default_factory=list)
+    strategy: dict[str, Any] | None = None
+    versions: list[dict[str, Any]] = Field(default_factory=list)
+    lessons: list[dict[str, Any]] = Field(default_factory=list)
+    journal_trades: list[dict[str, Any]] = Field(default_factory=list)
+    learning_stats: dict[str, Any] | None = None
+    rag_citations: list[dict[str, Any]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
