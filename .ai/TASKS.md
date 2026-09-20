@@ -1305,3 +1305,106 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
+
+---
+
+## Strategy intelligence / conversational agent (from AT-063 audit)
+
+Read-only audit: `docs/AT063_strategy_agent_capability_audit.md` on
+`main@20d2cac`. Do **not** enable Watcher, Telegram, or real trading in these
+tasks. Chat must never silently mutate SetupAssessment, Candidate,
+ActionEligibility, TradePlan, risk, compiled pattern identity, or execution.
+
+### AT-063 — Strategy intelligence + conversational AI capability audit
+- Priority: P1 · Status: DONE · Dependencies: AT-058–AT-062 on main · Risk: Low
+  (docs/governance only)
+- Safety classification: Audit only; paper-only posture unchanged
+- Goal: Read-only exist/missing map of strategy models, Strategy Lab, versions,
+  pattern definitions, RAG, memory, chat, journal, lessons, analytics,
+  SetupAssessment, Candidate, learning attribution, and human-vs-system against
+  the discuss → structure → version → evaluate → validate → Watcher → Candidate
+  → explain → paper TradePlan → outcome → learn → refine target.
+- Branch: `cursor/next_strategy_agent_audit`
+- Deliverables: `docs/AT063_strategy_agent_capability_audit.md`; AT-ADR-042;
+  follow-up slices AT-064–AT-069.
+- Validation: Repository evidence on `origin/main` @ `20d2cac`. No application
+  code. No deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
+### AT-064 — Durable conversation persistence + history injection
+- Priority: P1 · Status: TODO · Dependencies: AT-063 · Risk: Medium
+  (tenant isolation / PII in transcripts)
+- Safety classification: Paper-safe; no trading-authority writes
+- Goal: Persist Conversation + ChatMessage; load last N turns into AgentState;
+  Plan-hub thread UI. `memory_update` stays non-domain. Do not persist
+  strategy/Candidate/TradePlan/risk/journal facts on this path.
+- Validation: Alembic + targeted chat/agent tests; full backend pytest;
+  frontend lint/typecheck/tests/build. No deploy. No Watcher.
+- Recommended model: Cursor Grok 4.6 Extra High
+- Exact prompt: `docs/AT063_strategy_agent_capability_audit.md` §8 Prompt A
+
+### AT-065 — Uniform chat mutation confirmation
+- Priority: P0 · Status: TODO · Dependencies: AT-063 · Risk: Medium
+  (closes silent Lab writes)
+- Safety classification: Paper-safe confirmation firewall
+- Goal: `STRATEGY_CARD`, `BACKTEST_RUN`, `PAPER_VALIDATION_START`/`SCAN` require
+  `mutation_allowed`. Preview-only without confirm. Mutating tools require an
+  explicit strategy UUID (no first-listed fallback).
+- Validation: Agent/tool confirm/preview regressions; full backend pytest.
+  No deploy. No evaluation-engine change.
+- Recommended model: Cursor Grok 4.6 Extra High
+- Exact prompt: `docs/AT063_strategy_agent_capability_audit.md` §8 Prompt B
+
+### AT-066 — Discuss → structure → review (preview only)
+- Priority: P1 · Status: TODO · Dependencies: AT-064, AT-065 preferred ·
+  Risk: Medium (draft must not become policy)
+- Safety classification: Paper-safe; human review is write authority
+- Goal: Conversational + Lab preview of `StructuredRules` and optional
+  `FirstSliceAuthoredPatternSpec`. Persist only via existing
+  `StrategyVersioningService` after review/confirm. Wire Strategy Lab to
+  structure-from-text. Compiler must not invent thresholds. Do not write
+  `CompiledSetupDefinition` until AT-067.
+- Validation: Draft-vs-persist tests; incomplete-spec fail-closed; Lab
+  preview UI; full backend + frontend tests. No deploy. No Candidate mint.
+- Recommended model: Cursor Grok 4.6 Extra High
+- Exact prompt: `docs/AT063_strategy_agent_capability_audit.md` §8 Prompt C
+
+### AT-067 — One evaluation-policy chain (first-slice)
+- Priority: P1 · Status: TODO · Dependencies: AT-066 · Risk: High
+  (evaluation authority)
+- Safety classification: Paper-only; no Watcher enablement
+- Goal: One `UserStrategyVersion` `content_hash` is the policy `evaluate_setup`
+  uses. Compile on explicit save. Either walk compiled AST or require stored
+  spec to match first-slice constants and fail closed. No silent dual policy.
+  `HISTORICALLY_VALIDATED` only from backtest evidence bound to that hash —
+  still not a Candidate mint.
+- Validation: Compiler/evaluator mismatch fail-closed tests; no invented
+  thresholds; full backend pytest; scoped mypy. No deploy. No Watcher flag.
+- Recommended model: Cursor Grok 4.6 Extra High
+- Exact prompt: `docs/AT063_strategy_agent_capability_audit.md` §8 Prompt D
+
+### AT-068 — Canonical Candidate conversation (read-only)
+- Priority: P1 · Status: TODO · Dependencies: AT-064 · Risk: Medium
+  (must not mint or execute)
+- Safety classification: Read-only canonical tools; paper-only
+- Goal: Chat intents/tools that explain existing Candidate, SetupAssessment
+  projection, eligibility, and learning records via `CanonicalReadService`
+  only. Decision UI deep-link. Forbidden: mint, mutate assessment, approve,
+  execute, enable Watcher/Telegram.
+- Validation: Tool tests prove GET-only; tenant isolation; full backend +
+  frontend tests. No deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- Exact prompt: `docs/AT063_strategy_agent_capability_audit.md` §8 Prompt E
+
+### AT-069 — Learning evidence RAG + explicit refinement
+- Priority: P2 · Status: TODO · Dependencies: AT-066, AT-068 · Risk: Medium
+  (must not auto-promote rules)
+- Safety classification: Paper-safe; explicit confirm still required
+- Goal: Ingest `LearningEvidenceDocument` (facts first). Retrieve
+  `strategy_template` + learning evidence in chat when discussing that
+  strategy. Propose diffs; persist only as lesson or version fork after
+  confirm. Keep “no automatic rule promotion.”
+- Validation: Ingest/retrieval tests; persist=false default; confirm path
+  only writes via existing lesson/version services. No deploy.
+- Recommended model: Cursor Grok 4.6 Extra High

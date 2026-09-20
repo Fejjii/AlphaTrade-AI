@@ -1,5 +1,8 @@
 # Strategy Library (Slice 33–39)
 
+Current capability map vs the conversational strategy-agent target:
+[AT-063 audit](AT063_strategy_agent_capability_audit.md).
+
 Tenant-scoped user strategy cards with versioning, Strategy Lab UI, **backtest engine v1**, **paper validation runtime**, and optional RAG ingest. **Paper only** — no real exchange execution.
 
 ## Lifecycle
