@@ -70,6 +70,28 @@ export type EligibilityReasonCode =
 
 export type MarketQualityGrade = "tradeable" | "watch" | "poor" | "unknown";
 
+export type CanonicalFreshnessPillState =
+  | "live"
+  | "delayed"
+  | "stale"
+  | "fallback"
+  | "unavailable"
+  | "replay";
+
+export interface CurrentPriceHonesty {
+  usableAsCurrentMarketPrice: boolean;
+  presentation: string;
+  price: string | null;
+  sourceTime: string | null;
+  venueTradeId: string | null;
+  isLive: boolean;
+  isMock: boolean;
+  fallbackUsed: false;
+  freshnessState: CanonicalFreshnessPillState;
+  freshnessPolicyVersion: string;
+  ageSeconds: string | null;
+}
+
 export type PaperExecutionStatus =
   | "not_started"
   | "blocked"
@@ -94,6 +116,7 @@ export interface EvidenceFact {
   isLive?: boolean | null;
   fallbackUsed?: boolean | null;
   stale?: boolean | null;
+  freshnessState?: CanonicalFreshnessPillState | null;
 }
 
 export interface MarketQualityView {
@@ -108,6 +131,11 @@ export interface MarketQualityView {
   direction: string | null;
   evidence: EvidenceFact[];
   summary: string;
+  /**
+   * Canonical current perpetual mark, or null when this view must not present a
+   * market price (compatibility snapshots, candidates, proposals).
+   */
+  currentPrice: CurrentPriceHonesty | null;
   /** Market quality never implies permission to act. */
   doesNotGrantEligibility: true;
 }

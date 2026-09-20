@@ -6,7 +6,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import CanonicalRuntimeDep, SessionDep
+from app.core.dependencies import CanonicalEvidenceServiceDep, CanonicalRuntimeDep, SessionDep
+from app.evidence_pipeline.http_schemas import CanonicalEvidenceRead
 from app.learning_attribution.contracts import LearningVenueMode
 from app.schemas.canonical_reads import (
     CanonicalCandidateRead,
@@ -151,3 +152,18 @@ async def get_canonical_strategy_stats(
         organization_id=tenant.organization_id,
         learning_venue_mode=learning_venue_mode,
     )
+
+
+@router.get(
+    "/evidence",
+    response_model=CanonicalEvidenceRead,
+    summary="Canonical USD-M evidence and current price",
+    dependencies=[_CANONICAL_READ_LIMIT],
+)
+async def get_canonical_evidence(
+    tenant: ReaderDep,
+    service: CanonicalEvidenceServiceDep,
+    symbol: str = Query(default="BTCUSDT", min_length=3, max_length=16),
+) -> CanonicalEvidenceRead:
+    """Fresh read-only perpetual evidence. Never mints Candidates or live orders."""
+    return service.read(organization_id=tenant.organization_id, symbol=symbol)

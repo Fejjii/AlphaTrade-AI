@@ -1306,6 +1306,26 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
 
+### AT-064 — Canonical live read-only USD-M evidence pipeline
+- Priority: P0 · Status: DONE · Dependencies: AT-063 / PR #108 market
+  contracts on `main@20d2cac` · Risk: Medium (freshness honesty)
+- Safety classification: Paper-only read path; Watcher, Telegram, and live
+  trading remain disabled; no exchange mutation; no merge
+- Goal: Assemble CanonicalEvidenceWindowV1 from existing Binance USD-M contracts
+  (BTCUSDT first, multi-symbol catalog). Expose truthful current price +
+  freshness on GET `/canonical/evidence`. Stop canonical UI from presenting
+  frozen compatibility prices as live marks. Preserve replay fixtures.
+  Do not activate Watcher.
+- Branch: `cursor/live_evidence_pipeline-5b0d`
+- Deliverables: `app.evidence_pipeline`, catalog, canonical evidence HTTP,
+  `/decision/market` honesty, fail-closed tests (fresh/stale/partial/outage/
+  wrong-symbol/duplicate/restart/source/CVD/tenant).
+- Validation: source PR #110 exact-head CI run 35527904094 SUCCESS at `afd4d2a`
+  (backend, frontend, deployment-safety, evaluation, docker-build, e2e-smoke).
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/110 — do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-042
+
 ### AT-067 — Canonical strategy evaluation policy (first-slice adapter)
 - Priority: P1 · Status: DONE · Dependencies: AT-063 audits (PR #107, PR #108)
   · Risk: High (evaluation authority)
@@ -1331,3 +1351,4 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-043
 - Completion evidence: feat commit `4d5bfb9`; draft PR #109; AT-ADR-043.
+  Source PR #109 exact-head CI run 35528565992 SUCCESS at `872f5de`.

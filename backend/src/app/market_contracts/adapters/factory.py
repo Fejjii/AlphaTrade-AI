@@ -7,16 +7,22 @@ import httpx
 from app.core.config import Settings
 from app.market_contracts.adapters.binance_usdm import BinanceUsdmPerpetualSource
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
+from app.market_contracts.catalog import PerpetualInstrumentCatalog
 from app.market_contracts.errors import FallbackForbiddenError
 
 REPLAY_MODES = frozenset({"replay", "mock", "fixture"})
 LIVE_MODES = frozenset({"binance_usdm", "binance-usdm", "usdm"})
 
 
+def perpetual_source_is_replay(settings: Settings) -> bool:
+    return settings.perpetual_evidence_source.strip().lower() in REPLAY_MODES
+
+
 def resolve_perpetual_evidence_source(
     settings: Settings,
     *,
     transport: httpx.BaseTransport | None = None,
+    catalog: PerpetualInstrumentCatalog | None = None,
 ) -> ReplayPerpetualSource | BinanceUsdmPerpetualSource:
     mode = settings.perpetual_evidence_source.strip().lower()
     if mode in REPLAY_MODES:
@@ -26,6 +32,7 @@ def resolve_perpetual_evidence_source(
             base_url=settings.market_data_futures_base_url,
             timeout_seconds=settings.perpetual_evidence_timeout_seconds,
             transport=transport,
+            catalog=catalog,
         )
     raise FallbackForbiddenError(
         f"Unknown perpetual_evidence_source={mode}; refusing silent fallback."

@@ -68,6 +68,7 @@ import type {
   CanonicalExecutionReceiptRead,
   CanonicalLearningRecordRead,
   CanonicalLearningStatsRead,
+  CanonicalEvidenceRead,
   CanonicalTradePlanRevision,
   ProposalWorkflowView,
   ApprovalWorkflowView,
@@ -456,6 +457,8 @@ export const api = {
         query: params,
         auth: true,
       }),
+    getEvidence: (params?: { symbol?: string }) =>
+      apiFetch<CanonicalEvidenceRead>("/canonical/evidence", { query: params, auth: true }),
   },
   positions: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>

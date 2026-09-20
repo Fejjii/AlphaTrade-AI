@@ -60,7 +60,8 @@ LangGraph nodes in `backend/src/app/agents/nodes.py` orchestrate:
 - `GET /providers/status` — provider health and fallback transparency
 - `POST /chat/message` — agent workspace (structured `analysis` field in response)
 - `GET /market/ticker`, `/market/ohlcv`, `/market/snapshots` — read-only market data with provenance metadata
-- `POST /market/analyze` — market data + indicators + strategy signals
+- `POST /market/analyze` — compatibility market snapshot + indicators + strategy signals (not a canonical current price)
+- `GET /canonical/evidence` — canonical USD-M first-slice evidence and current-price honesty (replay default; fail closed)
 - Protected domain routes require JWT + tenant context (see `docs/security.md`)
 - Auth modes: bearer tokens (local dev) or httpOnly refresh cookie + short-lived access JWT (Docker/production demo)
 - Access token denylist (Redis) revokes sessions on logout; refresh rotation detects reuse

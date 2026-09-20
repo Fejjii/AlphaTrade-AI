@@ -81,8 +81,11 @@ def first_slice_identity(
     timeframe: Timeframe,
     replay: bool,
     is_live: bool = False,
+    instrument: InstrumentIdentity | None = None,
 ) -> EvidenceMarketIdentity:
-    instrument = binance_usdm_btcusdt()
+    resolved = instrument or binance_usdm_btcusdt()
+    if replay and is_live:
+        raise ValueError("Replay evidence cannot also be live.")
     source = binance_usdm_source(replay=replay)
     provenance = ProviderProvenance(
         provider_name=source.provider_name,
@@ -100,14 +103,14 @@ def first_slice_identity(
     )
     identity = EvidenceMarketIdentity(
         venue=VenueId.BINANCE,
-        market_type=instrument.market_type,
-        instrument=instrument,
+        market_type=resolved.market_type,
+        instrument=resolved,
         timeframe=timeframe,
         source=source,
         provenance=provenance,
     )
     require_perpetual(identity)
-    require_instrument(identity, instrument)
+    require_instrument(identity, resolved)
     return identity
 
 

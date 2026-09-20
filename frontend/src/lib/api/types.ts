@@ -1620,6 +1620,75 @@ export interface CanonicalCandidate {
   confidence?: number | null;
 }
 
+export interface CanonicalEvidenceSource {
+  venue: string;
+  market_type: string;
+  instrument_id: string;
+  provider_symbol: string;
+  provider_name: string;
+  source_family: string;
+  adapter_version: string;
+  is_live: boolean;
+  is_mock: boolean;
+  fallback_used: false;
+}
+
+export interface CanonicalEvidenceFreshness {
+  policy_version: string;
+  state: string;
+  evaluated_at: string;
+  source_time?: string | null;
+  age_seconds?: string | null;
+  valid_until?: string | null;
+}
+
+export interface CanonicalEvidenceCompleteness {
+  ohlcv_15m: string;
+  ohlcv_4h: string;
+  cvd: string;
+  signed_flow: string;
+  coverage_content_hash?: string | null;
+  cvd_content_hash?: string | null;
+  signed_flow_content_hash?: string | null;
+}
+
+export interface CanonicalCurrentPriceRead {
+  usable_as_current_market_price: boolean;
+  presentation: string;
+  price?: string | null;
+  source_time?: string | null;
+  venue_trade_id?: string | null;
+  is_live: boolean;
+  is_mock: boolean;
+  fallback_used: false;
+  freshness: CanonicalEvidenceFreshness;
+}
+
+export interface CanonicalSetupEvidenceRead {
+  available: boolean;
+  evidence_window_hash?: string | null;
+  trigger_interval_start?: string | null;
+  trigger_interval_end?: string | null;
+  evaluated_at?: string | null;
+  cvd_signed_quote_delta?: string | null;
+  signed_flow_ratio?: string | null;
+  completeness: CanonicalEvidenceCompleteness;
+  reason?: string | null;
+}
+
+export interface CanonicalEvidenceRead {
+  authority: "canonical";
+  live_executable: false;
+  watcher_activated: false;
+  organization_id: string;
+  symbol: string;
+  source: CanonicalEvidenceSource;
+  current_price: CanonicalCurrentPriceRead;
+  setup_evidence: CanonicalSetupEvidenceRead;
+  timestamps: Record<string, string | null>;
+  unavailable_reason?: string | null;
+}
+
 export interface CanonicalCandidateRead {
   authority: "canonical";
   candidate: CanonicalCandidate;

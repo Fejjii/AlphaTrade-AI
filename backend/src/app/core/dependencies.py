@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
+from app.evidence_pipeline.service import CanonicalEvidenceService
 from app.providers.exchange.factory import resolve_exchange_execution_provider
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
@@ -168,6 +169,16 @@ def get_canonical_runtime(
 
 
 CanonicalRuntimeDep = Annotated[ProductionCanonicalRuntime, Depends(get_canonical_runtime)]
+
+
+def get_canonical_evidence_service(settings: SettingsDep) -> CanonicalEvidenceService:
+    """Read-only USD-M evidence assembler. Does not start Watcher."""
+    return CanonicalEvidenceService(settings)
+
+
+CanonicalEvidenceServiceDep = Annotated[
+    CanonicalEvidenceService, Depends(get_canonical_evidence_service)
+]
 
 
 def get_proposal_service(session: SessionDep, audit_service: AuditServiceDep) -> ProposalService:

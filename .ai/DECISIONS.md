@@ -1427,6 +1427,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
   success. Report `docs/FINAL_RELEASE_READINESS.md`.
 
+## AT-ADR-042 — Canonical live read-only USD-M evidence pipeline (AT-064)
+- **Date:** 2026-09-20
+- **Status:** Accepted (draft PR only; do not merge)
+- **Context:** Phase 5 USD-M contracts and CanonicalEvidenceWindowV1 existed, but
+  canonical reads still lacked a live/read-only assembler. Compatibility
+  `POST /market/analyze` snapshots could be presented as current market prices.
+- **Decision:**
+  1. Assemble first-slice evidence from existing Binance USD-M GET-only contracts
+     into CanonicalEvidenceWindowV1. BTCUSDT is the enabled catalog default;
+     additional USD-M symbols are registerable without rewriting the assembler.
+  2. Current price is the last contracted perpetual trade in the 10s freshness
+     window. Missing, stale, or incomplete evidence fails closed. No spot fallback.
+     No fabricated prices. Replay fixtures are labeled `replay_fixture` and are
+     never `usable_as_current_market_price`.
+  3. Canonical identity remains the §26 window preimage. `organization_id` forks
+     tenant hashes. Connection ids and receive times stay out of the window hash.
+  4. Expose truthful current price + freshness on `GET /canonical/evidence`.
+     Canonical UI (`/decision/market`) uses that GET path. Compatibility snapshots
+     must not be shown as live marks.
+  5. `PERPETUAL_EVIDENCE_SOURCE` stays configurable; production/runtime default
+     remains `replay`. Watcher is not activated. `AssemblingWatcherScanEvidence`
+     is not wired into the worker.
+  6. Paper only: `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`. No exchange
+     mutation, Telegram, strategy redesign, or live trading.
+- **Alternatives considered:** Reuse `POST /market/analyze` as canonical current
+  price (rejected: frozen/mock snapshots); auto-enable Watcher when live source
+  is selected (rejected: explicit non-goal); spot fallback on USD-M outage
+  (rejected: AT-ADR-021).
+- **Safety impact:** Tightens honesty of market marks; does not enable Watcher
+  or live trading.
+- **Consequences:** Branch `cursor/live_evidence_pipeline-5b0d`. Tests in
+  `backend/tests/test_live_evidence_pipeline.py`,
+  `backend/tests/test_canonical_evidence_http.py`, and canonical frontend
+  honesty tests. Draft PR only; do not merge.
+
 ## AT-ADR-043 — Canonical strategy evaluation policy (approved compiled version)
 - **Date:** 2026-09-20
 - **Status:** Accepted (implementation; draft PR only; do not merge or deploy)
