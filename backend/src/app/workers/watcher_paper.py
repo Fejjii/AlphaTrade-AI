@@ -170,6 +170,7 @@ class WatcherPaperRuntime:
         side_effects: SideEffectPorts | None = None,
         settings: Settings | None = None,
         evaluation_clock: BoundEvaluationClock | None = None,
+        scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -189,6 +190,7 @@ class WatcherPaperRuntime:
         self._side_effects = side_effects if side_effects is not None else SideEffectProbe()
         self._settings = settings
         self._eval_clock = _shared_evaluation_clock(lifecycle, evaluation_clock)
+        self._scan_notification_hook = scan_notification_hook
         if self._eval_clock is not getattr(lifecycle, "_clock", None):
             repository = getattr(lifecycle, "_repository", None)
             if repository is not None:
@@ -449,6 +451,7 @@ class WatcherPaperRuntime:
             kill_switch_active=kill_active,
             evaluator=evaluator,
         )
+        self._notify_scan(report)
         observe_scan(report.reason_code)
         logger.info(
             "watcher_paper_scan",
@@ -533,6 +536,20 @@ class WatcherPaperRuntime:
                 organization_id=str(organization_id),
             )
             return False
+
+    def _notify_scan(self, report: WatcherPaperScanReport) -> None:
+        hook = self._scan_notification_hook
+        if hook is None:
+            return
+        try:
+            hook(report)
+        except Exception:
+            logger.warning(
+                "watcher_paper_notification_hook_failed",
+                organization_id=str(report.organization_id),
+                scan_scope=report.scan_scope,
+                reason_code=report.reason_code,
+            )
 
     def _remember_cycle(self, report: WatcherPaperCycleReport) -> None:
         succeeded = failed = skipped = blocked = 0

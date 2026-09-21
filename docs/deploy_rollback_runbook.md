@@ -170,15 +170,18 @@ Current Alembic head is a single linear chain:
 → `d4f7a2c8e901` (learning attribution) → `e8f1c4a9b702` (`journal_trades.account_id`)
 → `b7c8d9e0f1a2` (strategy conversations, proposals, provenance links)
 → `c8d9e0f1a2b3` (durable setup-lifetime pins)
-→ `e3f4a5b6c7d8` (paper evaluation observations).
+→ `e3f4a5b6c7d8` (paper evaluation observations)
+→ `d9e0f1a2b3c4` (paper Telegram notification/thread identity).
 
-All four revisions ship non-empty `downgrade()`. Prefer leaving additive schema
+These revisions ship non-empty `downgrade()`. Prefer leaving additive schema
 forward when rolling back the API image: old paper code can typically read the
 new columns. Do **not** blindly `alembic downgrade -1` on staging data without
 an explicit restore plan.
 
 | Head to reverse | Safer action |
 |-----------------|--------------|
+| App-only defect after `d9e0f1a2b3c4` applied | Roll back the Render image; leave DB at head |
+| Need to undo paper Telegram identity tables only | `alembic downgrade e3f4a5b6c7d8` after written approval |
 | App-only defect after `e3f4a5b6c7d8` applied | Roll back the Render image; leave DB at head |
 | Need to undo paper evaluation observations only | `alembic downgrade c8d9e0f1a2b3` after written approval |
 | App-only defect after `c8d9e0f1a2b3` applied | Roll back the Render image; leave DB at head |

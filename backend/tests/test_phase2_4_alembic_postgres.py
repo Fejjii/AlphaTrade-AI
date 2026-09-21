@@ -33,7 +33,8 @@ JOURNAL_TRADES_ACCOUNT_ID = "e8f1c4a9b702"
 STRATEGY_CONVERSATION_PERSISTENCE = "b7c8d9e0f1a2"
 SETUP_LIFETIME_PINS = "c8d9e0f1a2b3"
 PAPER_EVALUATION_OBSERVATIONS = "e3f4a5b6c7d8"
-CURRENT_HEAD = PAPER_EVALUATION_OBSERVATIONS
+TELEGRAM_PAPER_AGENT = "d9e0f1a2b3c4"
+CURRENT_HEAD = TELEGRAM_PAPER_AGENT
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -62,6 +63,10 @@ _NEW_TABLES = (
     "strategy_version_conversation_links",
     "setup_lifetime_pins",
     "paper_evaluation_observations",
+    "telegram_paper_notifications",
+    "telegram_paper_threads",
+    "telegram_paper_messages",
+    "telegram_paper_confirmations",
 )
 
 
@@ -425,6 +430,72 @@ def test_setup_lifetime_alembic_upgrade_downgrade() -> None:
             text(
                 "SELECT 1 FROM information_schema.tables "
                 "WHERE table_schema = 'public' AND table_name = 'setup_lifetime_pins'"
+            )
+        ).scalar()
+        assert present == 1
+    engine.dispose()
+
+
+@requires_postgres
+def test_telegram_paper_agent_alembic_upgrade_downgrade() -> None:
+    engine = create_engine(POSTGRES_URL, poolclass=NullPool, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    config = _alembic_config()
+    command.upgrade(config, "head")
+    tables = (
+        "telegram_paper_notifications",
+        "telegram_paper_threads",
+        "telegram_paper_messages",
+        "telegram_paper_confirmations",
+    )
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CURRENT_HEAD
+        for table_name in tables:
+            present = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    f"WHERE table_schema = 'public' AND table_name = '{table_name}'"
+                )
+            ).scalar()
+            assert present == 1
+        partial = conn.execute(
+            text(
+                "SELECT 1 FROM pg_indexes "
+                "WHERE indexname = 'uq_tg_paper_thread_scope_null_resource'"
+            )
+        ).scalar()
+        assert partial == 1
+
+    command.downgrade(config, PAPER_EVALUATION_OBSERVATIONS)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == PAPER_EVALUATION_OBSERVATIONS
+        missing = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'telegram_paper_notifications'"
+            )
+        ).scalar()
+        assert missing is None
+        observations = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'paper_evaluation_observations'"
+            )
+        ).scalar()
+        assert observations == 1
+
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CURRENT_HEAD
+        present = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'telegram_paper_threads'"
             )
         ).scalar()
         assert present == 1

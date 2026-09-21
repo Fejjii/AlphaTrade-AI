@@ -63,7 +63,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src/app/learning_attributi
 PERSISTENCE_MODULE = (
     Path(__file__).resolve().parents[1] / "src/app/persistence/attribution_postgres.py"
 )
-HEAD = "e3f4a5b6c7d8"
+HEAD = "d9e0f1a2b3c4"
 PREVIOUS_HEAD = "c9e2b4a1d078"
 FORBIDDEN_SNIPPETS = (
     "app.services.execution",

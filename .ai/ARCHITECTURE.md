@@ -60,14 +60,19 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   (redaction-safe; booleans only for secrets).
 - `core/exchange_safety.py`: exchange-mode gating; `trade_live` refuses startup.
 - `core/config.py`: trading-mode validators (`execution_mode=trade` requires explicit enable).
-  `telegram_interaction_enabled` defaults false (AT-043; inbound Telegram protocol not wired).
+  `telegram_interaction_enabled` defaults false (AT-043/AT-074; inbound Telegram
+  protocol is not mounted on HTTP).
 - `telegram_security/`: isolated enrollment/nonce/receipt/outbox protocol. No execution path.
-  Persistence interfaces + in-memory test store; no Alembic. Exact replay binds an inbound
-  semantic fingerprint (`REPLAY_CONFLICT` on mismatch). Inbound size uses
-  `TelegramInboundUpdate.body_size`. See `docs/telegram_security_protocol.md`.
+  Persistence interfaces + in-memory test store; PostgreSQL adapter + Alembic from later
+  slices. Exact replay binds an inbound semantic fingerprint (`REPLAY_CONFLICT` on mismatch).
+  Bound private-chat messages use `receive_private_message`. See `docs/telegram_security_protocol.md`.
 - `candidate_alerts/`: composes canonical Phase 6 `Candidate` onto that protocol. Candidate is
   the only alert authority. APPROVE never executes. Telegram remains disabled. No webhook.
   See `docs/phase6_candidate_telegram_alerts.md`.
+- `telegram_paper_agent/` (AT-074): paper-only Watcher/Candidate/journal notifications and
+  bound discussion. Mutating paper actions require identity-bound confirmation. Telegram
+  never executes, never mints a Candidate, never overrides SetupAssessment or risk, and
+  never enables live trading. See `docs/telegram_paper_agent.md`.
 - Paper Watcher runtime (`app.workers.watcher_paper`): continuous paper-only
   monitoring. Approved compiled strategy → live/read-only evidence →
   `WatcherOrchestrator` → `evaluate_canonical_strategy` → Candidate only on

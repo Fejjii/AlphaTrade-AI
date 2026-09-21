@@ -1764,8 +1764,49 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   (rejected: not a recorded fact).
 - **Safety impact:** Measurement only. Does not enable Watcher, Telegram, or
   live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
-- **Consequences:** Alembic head `e3f4a5b6c7d8`. Draft PR only; no merge,
-  deploy, or Watcher activation.
+- **Consequences:** Alembic revision `e3f4a5b6c7d8` (parent of the Telegram
+  identity revision). Draft PR only; no merge, deploy, or Watcher activation.
 
+## AT-ADR-053 — Telegram paper interaction is discussion, never trading authority
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** After AT-072 the paper Watcher can persist CONFIRMED_SETUP
+  Candidates, but operators still cannot discuss those events in Telegram
+  without a paper-only interaction layer. Telegram security, Candidate alerts,
+  and conversation foundations already exist and must be reused. A Telegram
+  message must never become trading authority.
+- **Decision:**
+  1. `app.telegram_paper_agent` composes `TelegramSecurityProtocol` and
+     `CandidateAlertGateway`. Watcher `PERSIST_AND_NOTIFY` stays
+     `notify_disabled`. The paper worker may take an optional scan hook;
+     default is no hook and no Telegram send.
+  2. Meaningful alerts are CONFIRMED_SETUP with a persisted Candidate and
+     fail-closed blocked scans (`stale_evidence`, `provider_outage`,
+     `wrong_source`, `candidate_creation_failed`). Empty successful scans are
+     not alerts. Journal outcomes use the same durable identity/outbox path.
+  3. Inbound private-chat messages are authorized by
+     `receive_private_message`. Discussion is read-only unless an exact issued
+     nonce payload is presented. Bare `I confirm` is not mutation authority
+     when multiple actions were presented.
+  4. Telegram refuses: implicit strategy approval/compile/activate, SetupAssessment
+     override, risk override, Candidate mint, live or paper order placement,
+     live-trading enablement, `CLOSE`, `EXECUTE_PAPER_PLAN`. `APPROVE` remains
+     protocol `AuthorizationIntent` only (`executes=false`).
+  5. Dedup uses deterministic identity hashes and existing outbox idempotency
+     (`paper-notify:`, `paper-thread:`, `candidate-alert:`). Delivery, retry,
+     rate limits, and audit stay on the Telegram security store. Paper identity
+     recovers from `telegram_paper_*` (Alembic `d9e0f1a2b3c4`).
+  6. `TELEGRAM_INTERACTION_ENABLED` defaults false. Staging/production still
+     reject the flag. No FastAPI webhook. No deploy. No merge.
+- **Alternatives considered:** Enable Watcher `PERSIST_AND_NOTIFY` (rejected:
+  AT-040/051; notify remains blocked); mount a Telegram webhook (rejected:
+  HTTP adapter is a later slice); treat chat text as strategy or risk
+  authority (rejected: Telegram is never trading authority).
+- **Safety impact:** Paper discussion only. Does not enable Telegram, Watcher,
+  or live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Alembic revision `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`.
+  Source PR #124 claimed AT-073 / AT-ADR-052; remapped because AT-073 is
+  continuous paper evaluation. Branch `cursor/telegram_paper_agent-aac1`.
+  Draft PR only; no merge, deploy, or Telegram activation.
 
 
