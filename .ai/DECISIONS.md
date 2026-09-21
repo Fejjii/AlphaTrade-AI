@@ -1597,3 +1597,38 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. No Watcher/Telegram/live-trading flag change.
 - **Consequences:** Alembic head `c8d9e0f1a2b3`. Draft PR only; no merge or
   deploy.
+
+## AT-ADR-048 — Paper-only continuous Watcher runtime (AT-069)
+- **Date:** 2026-09-21
+- **Status:** Accepted (draft PR only; do not merge or deploy)
+- **Context:** Canonical Watcher evaluation, Postgres leases/fencing, live
+  read-only evidence assembly, and CandidateLifecycleService already exist on
+  main. The missing piece is a continuous paper worker that polls approved
+  compiled strategies without enabling staging/production flags, Telegram, or
+  live orders.
+- **Decision:**
+  1. Dedicated process `python -m app.workers.watcher_paper` is the canonical
+     worker. The API may autostart a daemon thread only when
+     `paper_runtime_enabled`: local + paper + `WATCHER_ORCHESTRATION_ENABLED`
+     + real trading false. Staging/production still reject the flag.
+  2. One scan unit is tenant x approved compiled version x symbol. BTCUSDT is
+     always first. `resolve_executable_strategy_policy` is the only target
+     filter. Drafts, other tenants, and missing compiles never become targets.
+  3. Evidence comes from `AssemblingWatcherScanEvidence`. Stale data and
+     provider outages fail closed (`stale_evidence` / `provider_outage`). No
+     second evaluator: `WatcherFusionEvaluationService` →
+     `evaluate_canonical_strategy` → `evaluate_setup`.
+  4. Candidate persist requires `ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED`
+     and the Watcher evaluation clock bound to evidence time. Kill switch does
+     not block monitoring or Candidate persist; it must not invoke execution or
+     Telegram.
+  5. Idempotency key is `watcher-paper:{policy_id}:{symbol}:{closed_15m_end}` so
+     subsequent bars can re-evaluate expiry. `WatcherOrchestrator` leases remain
+     the single-active-worker fence.
+- **Alternatives considered:** Enable staging Watcher flags (rejected: explicit
+  do-not); put DB model imports in `app.watcher` (rejected: foundation isolation);
+  invent a second setup evaluator (rejected).
+- **Safety impact:** Paper monitoring only. Defaults stay disabled. No Telegram,
+  no live orders, no real exchange credentials.
+- **Consequences:** Status at `GET /watcher/paper-runtime/status`. Prometheus
+  counters on the existing registry. Draft PR only; no merge or deploy.
