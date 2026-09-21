@@ -28,6 +28,7 @@ from app.market_contracts.errors import RegionalProviderFailureError, StaleEvide
 from app.schemas.common import MembershipRole, StrategyId, StrategyLifecycleState
 from app.schemas.strategy_library import StrategyCard, UserStrategyCreate
 from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
+from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.services.compiled_setup_service import CompiledSetupService
 from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_versioning import StrategyVersioningService
@@ -45,6 +46,7 @@ from app.watcher.fusion_evaluation import (
 from app.watcher.memory import FakeClock, InMemoryWatcherStore, SideEffectProbe
 from app.watcher.ports import WatcherStore
 from app.workers.watcher_paper import (
+    WatcherPaperCycleReport,
     WatcherPaperRuntime,
     default_paper_evidence_factory,
     last_closed_interval_end,
@@ -256,6 +258,18 @@ class _WorldEvidencePort:
         return _snapshot_for_executable(self._world, executable)
 
 
+class _FrozenEvidencePort:
+    """Thread-safe snapshot port. Avoids sharing a SQLite session across workers."""
+
+    def __init__(self, snapshot: WatcherCanonicalScanEvidence) -> None:
+        self._snapshot = snapshot
+
+    def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
+        if command.request.organization_id != self._snapshot.organization_id:
+            return None
+        return self._snapshot
+
+
 def _world_factory(world: EvaluatorWorld, *, error: Exception | None = None) -> object:
     def factory(
         session: Session | None, store: WatcherStore, _symbol: str
@@ -278,6 +292,8 @@ def _runtime(
     lease_ttl_seconds: int = 30,
     kill_switch_probe: object | None = None,
     target_loader: object | None = None,
+    evidence_factory: object | None = None,
+    bind_session: bool = True,
 ) -> tuple[WatcherPaperRuntime, FakeClock, SideEffectProbe, InMemoryWatcherStore]:
     resolved_clock = clock if clock is not None else FakeClock()
     resolved_store = store if store is not None else InMemoryWatcherStore()
@@ -293,14 +309,15 @@ def _runtime(
             eval_clock = existing
     probe = SideEffectProbe()
     evidence_world = world if world is not None else make_world()
+    resolved_evidence = evidence_factory or _world_factory(evidence_world, error=error)
     runtime = WatcherPaperRuntime(
         store=resolved_store,
         lifecycle=lifecycle,
         clock=resolved_clock,
         enabled=enabled,
         worker_id=worker_id,
-        session_factory=session_factory,
-        evidence_factory=_world_factory(evidence_world, error=error),  # type: ignore[arg-type]
+        session_factory=session_factory if bind_session else None,
+        evidence_factory=resolved_evidence,  # type: ignore[arg-type]
         kill_switch_probe=kill_switch_probe,  # type: ignore[arg-type]
         target_loader=target_loader,  # type: ignore[arg-type]
         side_effects=probe,
@@ -451,29 +468,39 @@ def test_restart_recovers_same_candidate(session_factory: sessionmaker[Session])
 def test_concurrent_workers_single_lease(session_factory: sessionmaker[Session]) -> None:
     world = make_world()
     with session_factory() as session:
-        _seed_approved_compiled(session)
+        _strategy, version_id = _seed_approved_compiled(session)
+        targets = list_paper_scan_targets(
+            session, symbols=["BTCUSDT"], organization_id=ORG, limit=1
+        )
+        assert targets
+        executable = resolve_executable_strategy_policy(
+            session, organization_id=ORG, strategy_version_id=version_id
+        )
+        assert executable is not None
+        snapshot = _snapshot_for_executable(world, executable)
+
+    def _factory(
+        _session: Session | None, _store: WatcherStore, _symbol: str
+    ) -> WatcherScanEvidencePort:
+        return _FrozenEvidencePort(snapshot)
+
     store = InMemoryWatcherStore()
     clock = FakeClock()
     repo = InMemoryCandidateRepository()
     lifecycle = CandidateLifecycleService(repository=repo, clock=BoundEvaluationClock())
-    left, _c, probe_a, _s = _runtime(
-        session_factory,
-        world=world,
-        store=store,
-        clock=clock,
-        lifecycle=lifecycle,
-        worker_id="worker-left",
-    )
-    right, _c2, probe_b, _s2 = _runtime(
-        session_factory,
-        world=world,
-        store=store,
-        clock=clock,
-        lifecycle=lifecycle,
-        worker_id="worker-right",
-    )
+    shared = {
+        "store": store,
+        "clock": clock,
+        "lifecycle": lifecycle,
+        "target_loader": lambda _session: targets,
+        "evidence_factory": _factory,
+        "bind_session": False,
+        "world": world,
+    }
+    left, _c, probe_a, _s = _runtime(session_factory, worker_id="worker-left", **shared)
+    right, _c2, probe_b, _s2 = _runtime(session_factory, worker_id="worker-right", **shared)
     barrier = threading.Barrier(2)
-    results: list[object] = []
+    results: list[WatcherPaperCycleReport] = []
     lock = threading.Lock()
 
     def _run(runtime: WatcherPaperRuntime) -> None:
@@ -483,14 +510,15 @@ def test_concurrent_workers_single_lease(session_factory: sessionmaker[Session])
             results.append(report)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        pool.submit(_run, left)
-        pool.submit(_run, right)
-        pool.shutdown(wait=True)
-    statuses = sorted(report.scans[0].status for report in results)  # type: ignore[union-attr]
-    reasons = {report.scans[0].reason_code for report in results}  # type: ignore[union-attr]
+        futures = [pool.submit(_run, left), pool.submit(_run, right)]
+        for future in futures:
+            future.result(timeout=30)
+    assert len(results) == 2
+    statuses = sorted(item.scans[0].status for item in results)
+    reasons = {item.scans[0].reason_code for item in results}
     assert "succeeded" in statuses or SetupAssessmentState.CONFIRMED_SETUP.value in reasons
     assert "skipped" in statuses or "lease_held" in reasons
-    candidate_ids = [report.scans[0].candidate_ids for report in results]  # type: ignore[union-attr]
+    candidate_ids = [item.scans[0].candidate_ids for item in results]
     created = [ids for ids in candidate_ids if ids]
     assert len(created) <= 1
     assert probe_a.unused and probe_b.unused
