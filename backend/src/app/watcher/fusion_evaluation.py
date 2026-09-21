@@ -54,7 +54,11 @@ from app.watcher.contracts import (
     UnitAttemptKind,
     UnitAttemptStatus,
 )
-from app.watcher.errors import StaleFenceError, WatcherTenantMismatchError
+from app.watcher.errors import (
+    StaleFenceError,
+    WatcherEvidenceUnavailableError,
+    WatcherTenantMismatchError,
+)
 
 
 class BoundEvaluationClock:
@@ -287,6 +291,14 @@ class WatcherFusionEvaluationService:
                 command,
                 status=EvaluationStatus.FAILED,
                 reason_code="organization_mismatch",
+                failed_units=1,
+                error=str(exc),
+            )
+        except WatcherEvidenceUnavailableError as exc:
+            return _outcome(
+                command,
+                status=EvaluationStatus.FAILED,
+                reason_code=exc.reason_code,
                 failed_units=1,
                 error=str(exc),
             )

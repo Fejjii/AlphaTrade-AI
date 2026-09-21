@@ -1600,7 +1600,7 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ## AT-ADR-048 — Continuous live read-only USD-M market monitor (AT-069)
 - **Date:** 2026-09-21
-- **Status:** Accepted (implementation; draft PR only; do not merge or deploy)
+- **Status:** Accepted (source PR #118; remapped on Watcher integration)
 - **Context:** AT-064 assembles first-slice evidence on demand. Watcher still
   needs a continuous, honest perpetual feed. Compatibility `/market` snapshots
   and replay fixtures must never be shown as current live prices.
@@ -1616,13 +1616,49 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   4. Expose `GET /canonical/market-status` with availability
      `fresh|stale|degraded|unavailable|replay`. Replay remains the default
      source and is never `live_mark`.
-  5. Watcher, Telegram, and live trading stay disabled. The monitor port is
-     not wired into the worker.
+  5. Watcher, Telegram, and live trading stay disabled by default. Source PR
+     #118 left the monitor port unwired; AT-072 binds it as the Watcher
+     current-quote/stream gate without a second evidence authority.
 - **Alternatives considered:** Background websocket (rejected for this slice:
   reuse existing REST capabilities); treat 429 as regional outage (rejected:
   recoverable backoff); show last-good price during outage (rejected: fail closed).
 - **Safety impact:** Tightens market-mark honesty. Does not enable Watcher or
   live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
-- **Consequences:** Branch `cursor/live-market-monitoring-cc4d`. Tests in
+- **Consequences:** Source branch `cursor/live-market-monitoring-cc4d`. Tests in
   `backend/tests/test_live_market_monitor.py` and
-  `backend/tests/test_live_market_monitor_http.py`. Draft PR only.
+  `backend/tests/test_live_market_monitor_http.py`. Draft source PR only.
+
+## AT-ADR-049 — Paper-only continuous Watcher runtime (AT-070)
+- **Date:** 2026-09-21
+- **Status:** Accepted (source PR #120 claimed AT-ADR-048 / AT-069; remapped)
+- **Context:** Canonical Watcher evaluation, Postgres leases/fencing, live
+  read-only evidence assembly, and CandidateLifecycleService already exist on
+  main. The missing piece is a continuous paper worker that polls approved
+  compiled strategies without enabling staging/production flags, Telegram, or
+  live orders.
+- **Decision:**
+  1. Dedicated process `python -m app.workers.watcher_paper` is the canonical
+     worker. The API may autostart a daemon thread only when
+     `paper_runtime_enabled`: local + paper + `WATCHER_ORCHESTRATION_ENABLED`
+     + real trading false. Staging/production still reject the flag.
+  2. One scan unit is tenant x approved compiled version x symbol. BTCUSDT is
+     always first. `resolve_executable_strategy_policy` is the only target
+     filter. Drafts, other tenants, and missing compiles never become targets.
+  3. Evidence comes from `AssemblingWatcherScanEvidence`. Stale data and
+     provider outages fail closed (`stale_evidence` / `provider_outage`). No
+     second evaluator: `WatcherFusionEvaluationService` →
+     `evaluate_canonical_strategy` → `evaluate_setup`.
+  4. Candidate persist requires `ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED`
+     and the Watcher evaluation clock bound to evidence time. Kill switch does
+     not block monitoring or Candidate persist; it must not invoke execution or
+     Telegram.
+  5. Idempotency key is `watcher-paper:{policy_id}:{symbol}:{closed_15m_end}` so
+     subsequent bars can re-evaluate expiry. `WatcherOrchestrator` leases remain
+     the single-active-worker fence.
+- **Alternatives considered:** Enable staging Watcher flags (rejected: explicit
+  do-not); put DB model imports in `app.watcher` (rejected: foundation isolation);
+  invent a second setup evaluator (rejected).
+- **Safety impact:** Paper monitoring only. Defaults stay disabled. No Telegram,
+  no live orders, no real exchange credentials.
+- **Consequences:** Status at `GET /watcher/paper-runtime/status`. Prometheus
+  counters on the existing registry. Draft source PR only; no merge or deploy.

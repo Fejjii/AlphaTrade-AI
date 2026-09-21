@@ -68,6 +68,12 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `candidate_alerts/`: composes canonical Phase 6 `Candidate` onto that protocol. Candidate is
   the only alert authority. APPROVE never executes. Telegram remains disabled. No webhook.
   See `docs/phase6_candidate_telegram_alerts.md`.
+- Paper Watcher runtime (`app.workers.watcher_paper`): continuous paper-only
+  monitoring. Approved compiled strategy → live/read-only evidence →
+  `WatcherOrchestrator` → `evaluate_canonical_strategy` → Candidate only on
+  `CONFIRMED_SETUP`. `WATCHER_ORCHESTRATION_ENABLED` stays false in staging and
+  production. Dedicated process `python -m app.workers.watcher_paper`; local
+  autostart only when paper_runtime_enabled. No Telegram, no orders.
 - Canonical TradePlanRevision: `CanonicalTradePlanService` is the only first-slice
   plan authority. PostgreSQL binding uses `plan_authority` so legacy PVC-backed
   rows stay distinct from canonical Candidate ids. See
@@ -90,6 +96,8 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `POST /webhooks/tradingview`, `GET /tradingview/signals`, `POST /tradingview/signals/{id}/create-candidate` (AT-037 — signed intake + optional paper candidate; paper-only)
 - `POST /exchange/blofin/sync`, `GET /exchange/blofin/sync/latest` (AT-037 — BloFin demo read-only snapshots; no order mutation)
 - `GET/POST /paper-signal-orchestration/*` (AT-038 — deterministic paper-signal orchestration; paper-only; no order placement)
+- `GET /canonical/market-status` (AT-069 — live read-only perpetual monitor; replay default; never live_mark for fixtures)
+- `GET /watcher/paper-runtime/status` (AT-070 — paper Watcher monitoring status; disabled by default; no scans from HTTP)
 
 ## CI jobs
 

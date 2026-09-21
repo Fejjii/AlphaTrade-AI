@@ -1,6 +1,7 @@
 """Production WatcherScanEvidencePort backed by the live/read-only assembler.
 
-Not wired into the worker loop. Watcher flags remain false.
+Wired into the paper Watcher worker (``app.workers.watcher_paper``) through
+``default_paper_evidence_factory``. Staging/production Watcher flags stay false.
 """
 
 from __future__ import annotations
@@ -12,13 +13,17 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
 from app.evidence_pipeline.canonical import is_first_slice_read_projection
-from app.market_contracts.errors import MarketContractError
+from app.market_contracts.errors import (
+    MarketContractError,
+    RegionalProviderFailureError,
+    StaleEvidenceError,
+)
 from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.signal_fusion.enums import EvidenceAdapterKind
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
 from app.watcher.contracts import EvaluationCommand
-from app.watcher.errors import WatcherTenantMismatchError
+from app.watcher.errors import WatcherEvidenceUnavailableError, WatcherTenantMismatchError
 from app.watcher.fusion_evaluation import ExecutablePolicyAuthority, WatcherCanonicalScanEvidence
 from app.watcher.ports import WatcherStore
 
@@ -104,8 +109,21 @@ class AssemblingWatcherScanEvidence:
                 policy=policy,
                 adapter_kind=EvidenceAdapterKind.WATCHER,
             )
-        except MarketContractError:
-            return None
+        except StaleEvidenceError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Canonical scan evidence is stale.",
+                reason_code="stale_evidence",
+            ) from exc
+        except RegionalProviderFailureError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Perpetual market provider is unavailable.",
+                reason_code="provider_outage",
+            ) from exc
+        except MarketContractError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Canonical scan evidence is unavailable.",
+                reason_code="canonical_evidence_unavailable",
+            ) from exc
         if assembled.organization_id != organization_id:
             raise WatcherTenantMismatchError(
                 "Assembled evidence belongs to a different organization."

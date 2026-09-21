@@ -37,7 +37,7 @@ no LLM on this path.
 | First-slice constants in `evaluate_setup` | Retained as adapter defaults; product callers pass compiled params |
 | Strategy Lab paper-bot `scan`/`tick` | Retained as compatibility simulation (not SetupAssessment) |
 | Code strategy modules `/strategies/evaluate` | Unchanged; not canonical setup truth |
-| Watcher fusion evaluation | Calls `evaluate_canonical_strategy`; flag remains off |
+| Watcher fusion evaluation | Calls `evaluate_canonical_strategy`; staging/production flag remains off. Local paper worker is AT-069 (`python -m app.workers.watcher_paper`) |
 
 ## Remaining integration
 
