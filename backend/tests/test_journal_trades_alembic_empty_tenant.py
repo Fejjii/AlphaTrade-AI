@@ -28,7 +28,7 @@ from app.runtime.canonical import build_production_canonical_runtime
 from app.security.rate_limit import reset_rate_limiter
 from tests.support.postgres_persistence import POSTGRES_URL, requires_postgres
 
-CURRENT_HEAD = "e3f4a5b6c7d8"
+CURRENT_HEAD = "d9e0f1a2b3c4"
 
 
 def _alembic_config() -> Config:

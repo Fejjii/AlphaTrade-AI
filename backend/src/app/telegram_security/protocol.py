@@ -15,6 +15,7 @@ from app.telegram_security.actions import (
     ALLOWED_TELEGRAM_UPDATE_TYPES,
     AVAILABLE_TELEGRAM_ACTIONS,
     MAX_INBOUND_UPDATE_BYTES,
+    ActionEffectKind,
     TelegramRemoteAction,
     approve_creates_authorization_intent_only,
     effect_kind_for,
@@ -617,6 +618,220 @@ class TelegramSecurityProtocol:
                 effect_kind=effect,
             )
 
+    def receive_private_message(
+        self,
+        *,
+        identity: MessageIdentity,
+        inbound: TelegramInboundUpdate,
+        text: str,
+        presented_payload: ActionPayload | None = None,
+    ) -> ActionOutcome:
+        """Authorize a bound private-chat message. Optional payload consumes a nonce.
+
+        Discussion (no payload) is read-only. A presented payload is identity-bound
+        confirmation of exactly one issued nonce. This never executes.
+        """
+        self._require_enabled()
+        self.assert_inbound_update_allowed(inbound=inbound)
+        self._require_inbound_type(inbound, expected="message")
+        now = self._clock.now()
+        presented_text = text.strip()
+        with self._store.transaction():
+            replay_fingerprint = inbound_fingerprint_digest(
+                self._message_replay_fingerprint(
+                    identity=identity,
+                    presented_text=presented_text,
+                    presented=presented_payload,
+                )
+            )
+            existing = self._store.get_update_receipt(
+                bot_id=identity.bot_id, update_id=identity.update_id
+            )
+            if existing is not None:
+                self._require_identical_replay(existing, replay_fingerprint)
+                return self._replay_action(existing)
+            self._rate.check_callback(
+                bot_id=identity.bot_id,
+                telegram_user_id=identity.telegram_user_id,
+                chat_id=identity.chat_id,
+            )
+            receipt = self._new_receipt(
+                bot_id=identity.bot_id,
+                update_id=identity.update_id,
+                telegram_user_id=identity.telegram_user_id,
+                chat_id=identity.chat_id,
+                now=now,
+                message_id=identity.message_id,
+                organization_id=(
+                    None if presented_payload is None else presented_payload.organization_id
+                ),
+                user_id=None if presented_payload is None else presented_payload.user_id,
+                account_id=None if presented_payload is None else presented_payload.account_id,
+                action=None if presented_payload is None else presented_payload.action,
+                payload_hash=(
+                    None if presented_payload is None else payload_binding_hash(presented_payload)
+                ),
+                replay_fingerprint=replay_fingerprint,
+            )
+            claimed = self._transition(receipt, to=ActionReceiptState.CLAIMED, now=now)
+            self._store.save_receipt(claimed)
+            if identity.chat_type is not ChatType.PRIVATE:
+                return self._finalize_rejection(
+                    claimed, TelegramSecurityReason.CHAT_NOT_PRIVATE, now
+                )
+            binding = self._store.get_active_binding_for_telegram_user(
+                bot_id=identity.bot_id, telegram_user_id=identity.telegram_user_id
+            )
+            if binding is None:
+                return self._finalize_rejection(
+                    claimed, TelegramSecurityReason.BINDING_NOT_FOUND, now
+                )
+            if binding.revoked_at is not None or binding.state is BindingState.REVOKED:
+                return self._finalize_rejection(
+                    claimed, TelegramSecurityReason.BINDING_REVOKED, now
+                )
+            if binding.chat_id != identity.chat_id:
+                return self._finalize_rejection(claimed, TelegramSecurityReason.CROSS_CHAT, now)
+            if binding.bot_id != identity.bot_id:
+                return self._finalize_rejection(claimed, TelegramSecurityReason.CROSS_BOT, now)
+            if presented_payload is None:
+                applied = self._transition(
+                    claimed.model_copy(
+                        update={
+                            "organization_id": binding.organization_id,
+                            "user_id": binding.user_id,
+                            "binding_id": binding.binding_id,
+                            "effect_kind": ActionEffectKind.READ_ONLY_RESPONSE,
+                        }
+                    ),
+                    to=ActionReceiptState.APPLIED,
+                    now=now,
+                )
+                self._store.save_receipt(applied)
+                self._audit(
+                    "message_applied",
+                    organization_id=binding.organization_id,
+                    user_id=binding.user_id,
+                    details=(
+                        ("receipt_id", str(applied.receipt_id)),
+                        ("executes", "false"),
+                    ),
+                )
+                return ActionOutcome(
+                    receipt=applied,
+                    replayed=False,
+                    state_changed=True,
+                    effect_kind=ActionEffectKind.READ_ONLY_RESPONSE,
+                )
+            if presented_payload.organization_id != binding.organization_id:
+                return self._finalize_rejection(
+                    claimed, TelegramSecurityReason.CROSS_ORGANIZATION, now
+                )
+            if presented_payload.user_id != binding.user_id:
+                return self._finalize_rejection(claimed, TelegramSecurityReason.CROSS_USER, now)
+            nonce = self._store.get_issued_nonce_for_payload(
+                binding_id=binding.binding_id,
+                payload_hash=payload_binding_hash(presented_payload),
+            )
+            if nonce is None:
+                return self._finalize_rejection(
+                    claimed, TelegramSecurityReason.NONCE_NOT_FOUND, now
+                )
+            claimed = claimed.model_copy(update={"nonce_hash": nonce.nonce_hash})
+            reason = self._authorize_nonce_actor(
+                bot_id=identity.bot_id,
+                telegram_user_id=identity.telegram_user_id,
+                chat_id=identity.chat_id,
+                nonce=nonce,
+                presented=presented_payload,
+                now=now,
+            )
+            if reason is not None:
+                if reason is TelegramSecurityReason.NONCE_EXPIRED:
+                    expired = nonce.model_copy(update={"state": NonceState.EXPIRED})
+                    self._store.cas_nonce(
+                        nonce_hash=nonce.nonce_hash, expected=nonce, updated=expired
+                    )
+                return self._finalize_rejection(claimed, reason, now)
+            consumed = nonce.model_copy(
+                update={
+                    "state": NonceState.CONSUMED,
+                    "consumed_at": now,
+                    "consumed_by_receipt_id": claimed.receipt_id,
+                }
+            )
+            if not self._store.cas_nonce(
+                nonce_hash=nonce.nonce_hash, expected=nonce, updated=consumed
+            ):
+                return self._finalize_rejection(claimed, TelegramSecurityReason.NONCE_USED, now)
+            intent: AuthorizationIntent | None = None
+            effect = effect_kind_for(presented_payload.action)
+            if approve_creates_authorization_intent_only(presented_payload.action):
+                if presented_payload.revision_id is None:
+                    return self._finalize_rejection(
+                        claimed, TelegramSecurityReason.ACTION_NOT_ALLOWED, now
+                    )
+                intent = AuthorizationIntent(
+                    intent_id=uuid4(),
+                    organization_id=presented_payload.organization_id,
+                    user_id=presented_payload.user_id,
+                    account_id=presented_payload.account_id,
+                    resource_id=presented_payload.resource_id,
+                    revision_id=presented_payload.revision_id,
+                    content_hash=presented_payload.content_hash,
+                    payload_hash=nonce.payload_hash,
+                    receipt_id=claimed.receipt_id,
+                    created_at=now,
+                )
+                self._store.save_authorization_intent(intent)
+                self._enqueue_unlocked(
+                    organization_id=nonce.organization_id,
+                    user_id=nonce.user_id,
+                    binding_id=nonce.binding_id,
+                    bot_id=nonce.bot_id,
+                    chat_id=nonce.chat_id,
+                    text=(
+                        "Authorization intent recorded. APPROVE does not execute. "
+                        "EXECUTE_PAPER_PLAN remains the only execution entry path."
+                    ),
+                    idempotency_key=f"auth-intent:{intent.intent_id}",
+                    now=now,
+                )
+            applied = self._transition(
+                claimed.model_copy(
+                    update={
+                        "authorization_intent_id": None if intent is None else intent.intent_id,
+                        "binding_id": nonce.binding_id,
+                        "nonce_hash": nonce.nonce_hash,
+                        "effect_kind": effect,
+                        "organization_id": nonce.organization_id,
+                        "user_id": nonce.user_id,
+                        "account_id": nonce.account_id,
+                    }
+                ),
+                to=ActionReceiptState.APPLIED,
+                now=now,
+            )
+            self._store.save_receipt(applied)
+            self._audit(
+                "action_applied",
+                organization_id=nonce.organization_id,
+                user_id=nonce.user_id,
+                details=(
+                    ("action", presented_payload.action.value),
+                    ("receipt_id", str(applied.receipt_id)),
+                    ("source", "private_message"),
+                    ("executes", "false"),
+                ),
+            )
+            return ActionOutcome(
+                receipt=applied,
+                replayed=False,
+                state_changed=True,
+                authorization_intent=intent,
+                effect_kind=effect,
+            )
+
     def enqueue_outbound(
         self,
         *,
@@ -804,6 +1019,37 @@ class TelegramSecurityProtocol:
             payload_hash=None,
         )
 
+    def _message_replay_fingerprint(
+        self,
+        *,
+        identity: MessageIdentity,
+        presented_text: str,
+        presented: ActionPayload | None,
+    ) -> InboundReplayFingerprint:
+        return InboundReplayFingerprint(
+            update_id=identity.update_id,
+            message_id=identity.message_id,
+            callback_query_id=None,
+            telegram_user_id=identity.telegram_user_id,
+            chat_id=identity.chat_id,
+            chat_type=identity.chat_type,
+            bot_id=identity.bot_id,
+            secret_hash=hash_secret(presented_text),
+            action=None if presented is None else presented.action.value,
+            organization_id=None if presented is None else str(presented.organization_id),
+            user_id=None if presented is None else str(presented.user_id),
+            account_id=None if presented is None else str(presented.account_id),
+            resource_type=None if presented is None else presented.resource_type,
+            resource_id=None if presented is None else str(presented.resource_id),
+            revision_id=(
+                None
+                if presented is None or presented.revision_id is None
+                else str(presented.revision_id)
+            ),
+            content_hash=None if presented is None else presented.content_hash,
+            payload_hash=None if presented is None else payload_binding_hash(presented),
+        )
+
     def _callback_replay_fingerprint(
         self,
         *,
@@ -867,17 +1113,36 @@ class TelegramSecurityProtocol:
         presented: ActionPayload,
         now: datetime,
     ) -> TelegramSecurityReason | None:
+        return self._authorize_nonce_actor(
+            bot_id=identity.bot_id,
+            telegram_user_id=identity.telegram_user_id,
+            chat_id=identity.chat_id,
+            nonce=nonce,
+            presented=presented,
+            now=now,
+        )
+
+    def _authorize_nonce_actor(
+        self,
+        *,
+        bot_id: str,
+        telegram_user_id: str,
+        chat_id: str,
+        nonce: ActionNonce,
+        presented: ActionPayload,
+        now: datetime,
+    ) -> TelegramSecurityReason | None:
         if now >= nonce.expires_at:
             return TelegramSecurityReason.NONCE_EXPIRED
         if nonce.state is NonceState.CONSUMED:
             return TelegramSecurityReason.NONCE_USED
         if nonce.state is not NonceState.ISSUED:
             return TelegramSecurityReason.NONCE_USED
-        if identity.bot_id != nonce.bot_id:
+        if bot_id != nonce.bot_id:
             return TelegramSecurityReason.CROSS_BOT
-        if identity.telegram_user_id != nonce.telegram_user_id:
+        if telegram_user_id != nonce.telegram_user_id:
             return TelegramSecurityReason.CROSS_USER
-        if identity.chat_id != nonce.chat_id:
+        if chat_id != nonce.chat_id:
             return TelegramSecurityReason.CROSS_CHAT
         if presented.organization_id != nonce.organization_id:
             return TelegramSecurityReason.CROSS_ORGANIZATION
