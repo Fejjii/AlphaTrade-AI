@@ -6,9 +6,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import CanonicalEvidenceServiceDep, CanonicalRuntimeDep, SessionDep
+from app.core.dependencies import (
+    CanonicalEvidenceServiceDep,
+    CanonicalRuntimeDep,
+    PerpetualMarketMonitorServiceDep,
+    SessionDep,
+)
 from app.evidence_pipeline.http_schemas import CanonicalEvidenceRead
 from app.learning_attribution.contracts import LearningVenueMode
+from app.market_monitor.http_schemas import MarketMonitorStatusRead
 from app.schemas.canonical_reads import (
     CanonicalCandidateRead,
     CanonicalEligibilityRead,
@@ -167,3 +173,19 @@ async def get_canonical_evidence(
 ) -> CanonicalEvidenceRead:
     """Fresh read-only perpetual evidence. Never mints Candidates or live orders."""
     return service.read(organization_id=tenant.organization_id, symbol=symbol)
+
+
+@router.get(
+    "/market-status",
+    response_model=MarketMonitorStatusRead,
+    summary="Continuous USD-M perpetual market status",
+    dependencies=[_CANONICAL_READ_LIMIT],
+)
+async def get_canonical_market_status(
+    tenant: ReaderDep,
+    service: PerpetualMarketMonitorServiceDep,
+    symbol: str = Query(default="BTCUSDT", min_length=3, max_length=16),
+) -> MarketMonitorStatusRead:
+    """Live or replay perpetual status. Never mints Candidates or starts Watcher."""
+    _ = tenant
+    return service.read(symbol=symbol)

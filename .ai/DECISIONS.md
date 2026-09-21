@@ -1597,3 +1597,32 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. No Watcher/Telegram/live-trading flag change.
 - **Consequences:** Alembic head `c8d9e0f1a2b3`. Draft PR only; no merge or
   deploy.
+
+## AT-ADR-048 — Continuous live read-only USD-M market monitor (AT-069)
+- **Date:** 2026-09-21
+- **Status:** Accepted (implementation; draft PR only; do not merge or deploy)
+- **Context:** AT-064 assembles first-slice evidence on demand. Watcher still
+  needs a continuous, honest perpetual feed. Compatibility `/market` snapshots
+  and replay fixtures must never be shown as current live prices.
+- **Decision:**
+  1. Add `app.market_monitor` on existing Binance USD-M GET-only adapters and
+     Phase 5 cursor/CVD/freshness contracts. BTCUSDT is the catalog default.
+  2. Current price is the last contracted perpetual trade in the 10s window.
+     Provider outage, symbol mismatch, conflicting duplicates, out-of-order
+     trades, and unresolved gaps fail closed. No spot substitution.
+  3. HTTP 429 is a distinct `RateLimitedError` with bounded Retry-After backoff.
+     Reconnect starts a new connection epoch. Transport metadata (connection
+     ids, receive times, backoff) is excluded from the semantic hash.
+  4. Expose `GET /canonical/market-status` with availability
+     `fresh|stale|degraded|unavailable|replay`. Replay remains the default
+     source and is never `live_mark`.
+  5. Watcher, Telegram, and live trading stay disabled. The monitor port is
+     not wired into the worker.
+- **Alternatives considered:** Background websocket (rejected for this slice:
+  reuse existing REST capabilities); treat 429 as regional outage (rejected:
+  recoverable backoff); show last-good price during outage (rejected: fail closed).
+- **Safety impact:** Tightens market-mark honesty. Does not enable Watcher or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Branch `cursor/live-market-monitoring-cc4d`. Tests in
+  `backend/tests/test_live_market_monitor.py` and
+  `backend/tests/test_live_market_monitor_http.py`. Draft PR only.

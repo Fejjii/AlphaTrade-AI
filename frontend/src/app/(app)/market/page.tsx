@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -9,8 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
+import { PerpetualMarketStatusCard } from "@/components/canonical-decision/PerpetualMarketStatusCard";
 import { api } from "@/lib/api";
-import type { MarketAnalyzeResponse, MarketSnapshotResponse } from "@/lib/api/types";
+import type {
+  CanonicalMarketMonitorStatusRead,
+  MarketAnalyzeResponse,
+  MarketSnapshotResponse,
+} from "@/lib/api/types";
+import { perpetualMarketStatusFromCanonical } from "@/lib/canonical-decision/compose";
 
 const EXCHANGES = ["binance", "mock"];
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -51,8 +57,11 @@ function SnapshotPanel({ snapshot }: { snapshot: MarketSnapshotResponse }) {
         ) : null}
         <div className="grid gap-3 md:grid-cols-3">
           <div>
-            <p className="text-zinc-500">Last price</p>
-            <p className="text-lg font-medium">{snapshot.ticker?.last_price ?? "—"}</p>
+            <p className="text-zinc-500">Compatibility last price</p>
+            <p className="text-lg font-medium" data-testid="compatibility-last-price">
+              {snapshot.ticker?.last_price ?? "—"}
+            </p>
+            <p className="text-xs text-zinc-500">Not a current live perpetual price</p>
           </div>
           <div>
             <p className="text-zinc-500">Source</p>
@@ -159,6 +168,32 @@ export default function MarketPage() {
     [symbol, exchange, timeframe],
   );
   const { data, loading, error, reload } = useAsyncData(loader, [symbol, exchange, timeframe]);
+  const [monitor, setMonitor] = useState<CanonicalMarketMonitorStatusRead | null>(null);
+  const [monitorError, setMonitorError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMonitorError(null);
+    void api.canonical
+      .getMarketStatus({ symbol })
+      .then((status) => {
+        if (!cancelled) setMonitor(status);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setMonitor(null);
+          setMonitorError(err instanceof Error ? err.message : "Perpetual status unavailable");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
+  const marketStatus = useMemo(
+    () => (monitor ? perpetualMarketStatusFromCanonical(monitor) : null),
+    [monitor],
+  );
 
   async function runAnalyze() {
     setAnalyzing(true);
@@ -175,7 +210,8 @@ export default function MarketPage() {
       <div>
         <h1 className="text-2xl font-semibold">Market Monitor</h1>
         <p className="text-sm text-zinc-400">
-          Read-only market data from Binance public API with mock fallback. No exchange execution.
+          Compatibility snapshots are not current live perpetual prices. Canonical USD-M status is
+          below. No exchange execution.
         </p>
       </div>
 
@@ -229,6 +265,10 @@ export default function MarketPage() {
         </CardContent>
       </Card>
 
+      {monitorError ? (
+        <ErrorState message={`Perpetual status: ${monitorError}`} />
+      ) : null}
+      {marketStatus ? <PerpetualMarketStatusCard status={marketStatus} /> : null}
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
       {data ? <SnapshotPanel snapshot={data} /> : !loading && !error ? <EmptyState title="No snapshot" /> : null}
