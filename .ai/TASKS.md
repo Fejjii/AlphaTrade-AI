@@ -1495,7 +1495,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Completion evidence: feat `6572f71`, fix `9d36ee1`; Watcher stays disabled.
 
 ### AT-072 — Integrate paper Watcher stack (live market → runtime → monitoring UX)
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-069, AT-070, AT-071 · Risk: High
+- Priority: P0 · Status: DONE · Dependencies: AT-069, AT-070, AT-071 · Risk: High
   (evidence authority, worker safety, monitoring honesty)
 - Safety classification: Paper-only integration; Watcher/Telegram/live trading stay off;
   no deploy; no source-PR merge; no Watcher activation
@@ -1505,10 +1505,15 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   reports real heartbeat/lease evidence. Freshness clocks stay separated. Fail closed on
   stale, outage, wrong tenant, wrong lineage, expired setup, and in-memory policy.
 - Branch: `cursor/watcher_integration-b74b`
-- Validation: focused stack integration tests; full backend with PostgreSQL; frontend;
-  Ruff; strict mypy on affected modules; Alembic single head; evaluation; Chromium E2E;
-  deployment safety; Docker; exact-HEAD GitHub CI. Draft PR only; do not merge or deploy.
+- Validation: focused stack 115 passed; full backend with PostgreSQL 2464 passed / 0 skipped;
+  frontend lint+typecheck+1193 tests+build; Ruff check/format; strict mypy on affected
+  modules; Alembic single head `c8d9e0f1a2b3`; evaluation 16/16, 5/5, 7/7; Chromium E2E
+  30 passed / 13 skipped; deployment safety 60 passed; Docker image build; GitHub CI
+  run 35627618727 success on `cc226f7`. Draft PR only; do not merge or deploy.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-051
+- Completion evidence: feat `2bb9c40`, fix `cc226f7`; draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/121. Watcher, Telegram, and live trading
+  stay off. Do not merge, deploy, or activate Watcher.
 
 
