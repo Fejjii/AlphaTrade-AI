@@ -1929,6 +1929,97 @@ export interface CanonicalLearningStatsRead {
   };
 }
 
+export interface PaperEvaluationRefinement {
+  suggestion_id: string;
+  category: string;
+  summary: string;
+  severity: string;
+  activate: false;
+  auto_activate: false;
+  banner: string;
+  narrative_explanation?: string | null;
+}
+
+export interface CanonicalPaperEvaluationRead {
+  authority: "canonical";
+  live_executable: false;
+  watcher_activated: false;
+  summary: {
+    organization_id: string;
+    authority: "paper_evaluation_measurement";
+    live_executable: false;
+    facts: {
+      watcher: {
+        scan_count: number;
+        confirmed_setup_count: number;
+        candidates_published: number;
+        stale_evidence_count: number;
+        provider_outage_count: number;
+      };
+      conversion: {
+        scans: number;
+        assessments: number;
+        confirmed_setups: number;
+        candidates: number;
+        eligible: number;
+        blocked: number;
+        approved: number;
+        rejected: number;
+        skipped: number;
+        filled: number;
+        closed: number;
+      };
+      false_signals: {
+        confirmed_losses: number;
+        executed_outcomes: number;
+        false_signal_rate?: string | null;
+      };
+      strategy_overall: {
+        win_rate?: string | null;
+        expectancy?: string | null;
+        max_drawdown?: string | null;
+        average_mfe?: string | null;
+        average_mae?: string | null;
+        executed_outcome_count: number;
+        confidence: string;
+      };
+      rule_adherence: {
+        risk_adhered_count: number;
+        stop_violation_count: number;
+        adherence_rate?: string | null;
+      };
+      blocked: {
+        blocked_count: number;
+        by_reason: Array<[string, number]>;
+      };
+      human_vs_system: {
+        human_reject_or_skip: number;
+        human_approvals: number;
+        paper_system_executions: number;
+        executed_outcomes: number;
+      };
+      missed_opportunities: {
+        rejected_confirmed: number;
+        skipped_confirmed: number;
+        eligible_not_approved: number;
+        blocked_after_confirmation: number;
+        counterfactual_pnl: null;
+        warning: string;
+      };
+      data_quality: {
+        fresh_count: number;
+        stale_count: number;
+        unavailable_count: number;
+        replay_count: number;
+        stale_or_unavailable_rate?: string | null;
+      };
+      warnings: Array<{ code: string; message: string }>;
+    };
+    refinements: PaperEvaluationRefinement[];
+    narrative?: { banner: string; text: string } | null;
+  };
+}
+
 export interface CanonicalTradePlanRevision {
   schema_version?: string;
   plan_id: string;

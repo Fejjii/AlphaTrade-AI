@@ -89,6 +89,7 @@ describe("WatcherPage Slice 72/73/74/75/76", () => {
   it("renders watcher scanner panel with dry-run default on", () => {
     render(<WatcherPage />);
     expect(screen.getByTestId("watcher-monitoring-card")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-evaluation-summary")).toBeInTheDocument();
     expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STOPPED");
     expect(screen.getByTestId("watcher-monitoring-paper-only")).toHaveTextContent("Paper only");
     expect(screen.queryByText("RUNNING")).not.toBeInTheDocument();

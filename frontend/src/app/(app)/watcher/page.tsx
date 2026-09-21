@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketWatcherScannerCard } from "@/components/MarketWatcherScannerCard";
 import { WatcherMonitoringPanel } from "@/components/WatcherMonitoringPanel";
+import { PaperEvaluationSummaryCard } from "@/components/canonical-decision/PaperEvaluationSummaryCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type {
+  CanonicalPaperEvaluationRead,
   MarketWatcherCandidate,
   MarketWatcherScanResult,
   PaginatedMarketWatcherRecentScans,
@@ -59,6 +61,7 @@ export default function WatcherPage() {
   const [scanResult, setScanResult] = useState<MarketWatcherScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [recentScans, setRecentScans] = useState<PaginatedMarketWatcherRecentScans | null>(null);
+  const [evaluation, setEvaluation] = useState<CanonicalPaperEvaluationRead | null>(null);
 
   const summaryLoader = useCallback(() => api.marketWatcher.summary(), []);
   const { data: summary, loading, error, reload } = useAsyncData(summaryLoader, []);
@@ -74,6 +77,21 @@ export default function WatcherPage() {
   useEffect(() => {
     void loadRecentScans();
   }, [loadRecentScans]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await api.canonical.paperEvaluation();
+        if (!cancelled) setEvaluation(result);
+      } catch {
+        if (!cancelled) setEvaluation(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const confirmReady = confirm.trim() === CONFIRM_PHRASE;
   const createAlertsConfirmReady =
@@ -149,6 +167,8 @@ export default function WatcherPage() {
       </div>
 
       <WatcherMonitoringPanel compact />
+
+      <PaperEvaluationSummaryCard evaluation={evaluation} />
 
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}

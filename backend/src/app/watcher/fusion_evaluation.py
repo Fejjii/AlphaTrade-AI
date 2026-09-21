@@ -111,6 +111,14 @@ class WatcherScanEvidencePort(Protocol):
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None: ...
 
 
+class EvaluationOutcomeObserver(Protocol):
+    """Optional measurement observer. Must not mint Candidates or change outcomes."""
+
+    def observe_evaluation(
+        self, command: EvaluationCommand, outcome: EvaluationOutcome
+    ) -> None: ...
+
+
 class CandidatePersistenceFence(Protocol):
     """Binds worker lease identity around CandidateLifecycleService writes."""
 
@@ -178,11 +186,13 @@ class WatcherFusionEvaluationService:
         lifecycle: CandidateLifecycleService,
         clock: BoundEvaluationClock,
         persistence_fence: CandidatePersistenceFence | None = None,
+        outcome_observer: EvaluationOutcomeObserver | None = None,
     ) -> None:
         self._evidence = evidence
         self._lifecycle = lifecycle
         self._clock = clock
         self._persistence_fence = persistence_fence
+        self._outcome_observer = outcome_observer
         self._published_candidate_ids: list[UUID] = []
 
     @property
@@ -197,16 +207,29 @@ class WatcherFusionEvaluationService:
         """Evaluate setup truth only. Candidate persistence is fence-gated."""
 
         if command.mode is EvaluationMode.PERSIST_AND_NOTIFY:
-            return _outcome(
+            return self._observe(
                 command,
-                status=EvaluationStatus.BLOCKED,
-                reason_code="notify_disabled",
-                failed_units=0,
+                _outcome(
+                    command,
+                    status=EvaluationStatus.BLOCKED,
+                    reason_code="notify_disabled",
+                    failed_units=0,
+                ),
             )
         prepared = self._prepare(command)
         if isinstance(prepared, EvaluationOutcome):
-            return prepared
-        return self._assessment_outcome(command, prepared)
+            return self._observe(command, prepared)
+        return self._observe(command, self._assessment_outcome(command, prepared))
+
+    def _observe(self, command: EvaluationCommand, outcome: EvaluationOutcome) -> EvaluationOutcome:
+        observer = self._outcome_observer
+        if observer is None:
+            return outcome
+        try:
+            observer.observe_evaluation(command, outcome)
+        except Exception:
+            return outcome
+        return outcome
 
     def persist_confirmed_setup(
         self,
@@ -281,7 +304,9 @@ class WatcherFusionEvaluationService:
                 evidence_validity_token=prepared.assessment.evidence_window_hash,
                 unit_reason=prepared.assessment.state.value,
             )
-        return self._assessment_outcome(command, prepared, candidate_ids=candidate_ids)
+        return self._observe(
+            command, self._assessment_outcome(command, prepared, candidate_ids=candidate_ids)
+        )
 
     def _prepare(self, command: EvaluationCommand) -> EvaluationOutcome | _PreparedScan:
         try:
@@ -469,6 +494,7 @@ def build_fusion_evaluation_service(
     lifecycle: CandidateLifecycleService | None = None,
     clock: BoundEvaluationClock | None = None,
     persistence_fence: CandidatePersistenceFence | None = None,
+    outcome_observer: EvaluationOutcomeObserver | None = None,
 ) -> WatcherFusionEvaluationService:
     """Compose the fusion evaluation boundary. Candidate persistence still
     requires persisted approved compiled policy authority.
@@ -490,6 +516,7 @@ def build_fusion_evaluation_service(
         lifecycle=lifecycle,
         clock=bound_clock,
         persistence_fence=resolved_fence,
+        outcome_observer=outcome_observer,
     )
 
 
@@ -572,6 +599,7 @@ def _outcome(
 __all__ = [
     "BoundEvaluationClock",
     "CandidatePersistenceFence",
+    "EvaluationOutcomeObserver",
     "ExecutablePolicyAuthority",
     "InMemoryWatcherScanEvidence",
     "WatcherCanonicalScanEvidence",

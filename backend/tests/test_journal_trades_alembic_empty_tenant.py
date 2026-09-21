@@ -27,7 +27,7 @@ from app.main import create_app
 from app.security.rate_limit import reset_rate_limiter
 from tests.support.postgres_persistence import POSTGRES_URL, requires_postgres
 
-CURRENT_HEAD = "c8d9e0f1a2b3"
+CURRENT_HEAD = "e3f4a5b6c7d8"
 
 
 def _alembic_config() -> Config:
@@ -135,6 +135,19 @@ def test_empty_synthetic_tenant_journal_list_and_strategy_stats_are_200() -> Non
             assert body["authority"] == "canonical"
             assert body["snapshot"]["patterns"] == []
             assert body["snapshot"]["human_vs_system"]["human_approvals"] == 0
+
+            evaluation = client.get("/canonical/paper-evaluation/summary", headers=headers)
+            assert evaluation.status_code == 200, evaluation.text
+            summary = evaluation.json()
+            assert summary["authority"] == "canonical"
+            assert summary["live_executable"] is False
+            assert summary["watcher_activated"] is False
+            assert summary["summary"]["facts"]["conversion"]["closed"] == 0
+            assert summary["summary"]["facts"]["missed_opportunities"]["counterfactual_pnl"] is None
+            assert all(
+                item["activate"] is False and item["auto_activate"] is False
+                for item in summary["summary"]["refinements"]
+            )
 
             trades = client.get("/journal/trades", headers=headers)
             assert trades.status_code == 200, trades.text

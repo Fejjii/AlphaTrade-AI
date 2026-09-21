@@ -14,6 +14,7 @@ from app.db.canonical_candidates import CanonicalCandidateRow  # noqa: F401
 from app.db.canonical_eligibility import ActionEligibilityEvaluationRow  # noqa: F401
 from app.db.canonical_trade_plans import CanonicalTradePlanRootRow  # noqa: F401
 from app.db.models import Organization  # noqa: F401  — register metadata
+from app.db.paper_evaluation import PaperEvaluationObservationRow  # noqa: F401
 from app.db.telegram_security import TelegramBindingRow  # noqa: F401
 from app.db.watcher_orchestration import WatcherWorkerLeaseRow  # noqa: F401
 

@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError
 from app.learning_attribution.contracts import LearningVenueMode
 from app.learning_attribution.query import LearningQueryService
+from app.paper_evaluation.journal_facts import SqlAlchemyJournalExcursionPort
+from app.paper_evaluation.query import PaperEvaluationQueryService
 from app.persistence.attribution_postgres import PostgresAttributionStore
+from app.persistence.paper_evaluation_postgres import PostgresPaperEvaluationStore
 from app.repositories.execution_protocol import (
     ExecutionCommandRepository,
     ExecutionProjectionRepository,
@@ -22,6 +25,7 @@ from app.schemas.canonical_reads import (
     CanonicalExecutionReceiptRead,
     CanonicalLearningRecordRead,
     CanonicalLearningStatsRead,
+    CanonicalPaperEvaluationRead,
     CanonicalSetupAssessmentRead,
     PaginatedCanonicalCandidates,
 )
@@ -39,6 +43,11 @@ class CanonicalReadService:
         self._commands = ExecutionCommandRepository(session)
         self._projections = ExecutionProjectionRepository(session)
         self._learning = LearningQueryService(PostgresAttributionStore(session))
+        self._paper_evaluation = PaperEvaluationQueryService(
+            PostgresPaperEvaluationStore(session),
+            attribution_store=PostgresAttributionStore(session),
+            journal=SqlAlchemyJournalExcursionPort(session),
+        )
 
     def list_candidates(
         self,
@@ -153,4 +162,28 @@ class CanonicalReadService:
                 organization_id=organization_id,
                 learning_venue_mode=learning_venue_mode,
             ),
+        )
+
+    def paper_evaluation(
+        self,
+        *,
+        organization_id: UUID,
+        learning_venue_mode: LearningVenueMode | None,
+    ) -> CanonicalPaperEvaluationRead:
+        items, _total = self._runtime.candidate_repository.list_for_organization(
+            organization_id, limit=200, offset=0
+        )
+        eligibility = []
+        for candidate in items:
+            evaluation = self._runtime.eligibility_store.latest_for_candidate(
+                organization_id=organization_id, candidate_id=candidate.candidate_id
+            )
+            if evaluation is not None:
+                eligibility.append(evaluation)
+        return CanonicalPaperEvaluationRead(
+            summary=self._paper_evaluation.summary(
+                organization_id=organization_id,
+                learning_venue_mode=learning_venue_mode,
+                eligibility=tuple(eligibility),
+            )
         )

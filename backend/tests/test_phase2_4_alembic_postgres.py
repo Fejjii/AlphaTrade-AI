@@ -32,7 +32,8 @@ LEARNING_ATTRIBUTION_PERSISTENCE = "d4f7a2c8e901"
 JOURNAL_TRADES_ACCOUNT_ID = "e8f1c4a9b702"
 STRATEGY_CONVERSATION_PERSISTENCE = "b7c8d9e0f1a2"
 SETUP_LIFETIME_PINS = "c8d9e0f1a2b3"
-CURRENT_HEAD = SETUP_LIFETIME_PINS
+PAPER_EVALUATION_OBSERVATIONS = "e3f4a5b6c7d8"
+CURRENT_HEAD = PAPER_EVALUATION_OBSERVATIONS
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -60,6 +61,7 @@ _NEW_TABLES = (
     "strategy_conversation_proposals",
     "strategy_version_conversation_links",
     "setup_lifetime_pins",
+    "paper_evaluation_observations",
 )
 
 
