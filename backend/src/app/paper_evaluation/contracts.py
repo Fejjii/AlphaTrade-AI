@@ -28,8 +28,12 @@ from app.signal_fusion.enums import ActionEligibilityState, SetupAssessmentState
 from app.signal_fusion.types import Sha256Hex
 
 PAPER_EVALUATION_SCHEMA: Literal["PaperEvaluation/v1"] = "PaperEvaluation/v1"
-NARRATIVE_NOT_FACT_BANNER = "NARRATIVE_NOT_FACT — LLM wording cannot rewrite deterministic facts"
-REFINEMENT_NOT_ACTIVATED = "suggestion_only — evaluation cannot activate a strategy refinement"
+NARRATIVE_NOT_FACT_BANNER: Literal[
+    "NARRATIVE_NOT_FACT — LLM wording cannot rewrite deterministic facts"
+] = "NARRATIVE_NOT_FACT — LLM wording cannot rewrite deterministic facts"
+REFINEMENT_NOT_ACTIVATED: Literal[
+    "suggestion_only — evaluation cannot activate a strategy refinement"
+] = "suggestion_only — evaluation cannot activate a strategy refinement"
 
 
 class PaperEvaluationStage(StrEnum):
