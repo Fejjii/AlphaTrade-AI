@@ -40,6 +40,7 @@ function buildDashboardData(overrides: Record<string, unknown> = {}) {
     paperRunSessions: failed(),
     alertRouting: failed(),
     watcherSummary: failed(),
+    watcherMonitoring: failed(),
     discipline: failed(),
     risk: ok({
       daily_loss_warnings: 0,

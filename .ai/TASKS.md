@@ -1421,3 +1421,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   mypy; full backend; frontend; e2e; exact-head CI. Draft PR only; no merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-047
+
+### AT-069 — Watcher PAPER MONITORING operator UX + observability
+- Priority: P1 · Status: DONE · Dependencies: AT-ADR-040, AT-ADR-022,
+  AT-067 · Risk: Medium (honesty of runtime status; no authority change)
+- Safety classification: Paper-only observability; no Watcher enablement; no
+  Telegram; no live trading; no evaluator/strategy-authority change
+- Goal: Operator-facing Watcher paper-monitoring surface showing runtime
+  status (`RUNNING`/`STOPPED`/`DEGRADED`/`STALE`/`BLOCKED`), symbols,
+  approved strategies, last/next scan, market freshness, provider health,
+  SetupAssessment lineage, candidates, block reasons, lease/worker health,
+  recent errors, and paper-only posture. Typed API only; never infer
+  RUNNING from frontend config; no fake activity/prices/candidates.
+- Branch: `cursor/watcher_monitoring_ux-c026`
+- Validation: backend projection + `/market-watcher/monitoring` 27 tests passed;
+  frontend lint+typecheck+1189 tests+build pass; Watcher monitoring E2E 4/4;
+  full Chromium E2E 30 passed / 13 skipped; mypy on new modules clean.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/119 — do not merge
+  or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-048
+- Completion evidence: feat `6572f71`, fix `9d36ee1`; Watcher stays disabled.
+

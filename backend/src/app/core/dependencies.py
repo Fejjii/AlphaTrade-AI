@@ -82,6 +82,7 @@ from app.services.structured_rules_service import StructuredRulesService
 from app.services.tradingview_signal_service import TradingViewSignalService
 from app.services.usage_service import UsageService
 from app.services.validation_priority import ValidationPriorityService
+from app.services.watcher_monitoring_service import WatcherMonitoringService
 from app.services.workflow_service import WorkflowService
 from app.strategies.registry import StrategyRegistry, get_strategy_registry
 from app.tools.registry import ToolRegistry, get_tool_registry
@@ -549,6 +550,20 @@ def get_market_watcher_service(session: SessionDep, settings: SettingsDep) -> Ma
     return MarketWatcherService(session, settings)
 
 
+def get_watcher_monitoring_service(
+    session: SessionDep,
+    settings: SettingsDep,
+    canonical_runtime: CanonicalRuntimeDep,
+    providers: ProviderRegistryDep,
+) -> WatcherMonitoringService:
+    return WatcherMonitoringService(
+        session,
+        settings,
+        providers=providers,
+        canonical_runtime=canonical_runtime,
+    )
+
+
 def get_paper_scheduler_service(
     session: SessionDep, settings: SettingsDep, audit_service: AuditServiceDep
 ) -> PaperSchedulerService:
@@ -625,6 +640,9 @@ AlertDeliveryServiceDep = Annotated[AlertDeliveryService, Depends(get_alert_deli
 MarketWatcherServiceDep = Annotated[MarketWatcherService, Depends(get_market_watcher_service)]
 MarketWatcherBridgeServiceDep = Annotated[
     MarketWatcherBridgeService, Depends(get_market_watcher_bridge_service)
+]
+WatcherMonitoringServiceDep = Annotated[
+    WatcherMonitoringService, Depends(get_watcher_monitoring_service)
 ]
 PaperSchedulerServiceDep = Annotated[PaperSchedulerService, Depends(get_paper_scheduler_service)]
 HistoricalCandleServiceDep = Annotated[

@@ -3231,6 +3231,147 @@ export interface MarketWatcherStatus {
   real_trading_enabled: boolean;
 }
 
+export type WatcherMonitoringRuntimeState =
+  | "RUNNING"
+  | "STOPPED"
+  | "DEGRADED"
+  | "STALE"
+  | "BLOCKED";
+
+export interface WatcherConfigFlags {
+  market_watcher_enabled: boolean;
+  watcher_orchestration_enabled: boolean;
+  worker_enabled: boolean;
+  market_watcher_bridge_enabled: boolean;
+  market_watcher_bridge_auto_tick: boolean;
+  telegram_alerts_enabled: boolean;
+  telegram_interaction_enabled: boolean;
+  automatic_telegram_delivery_enabled: boolean;
+}
+
+export interface PaperMonitoringPosture {
+  paper_only: true;
+  execution_mode: string;
+  real_trading_enabled: boolean;
+  kill_switch_blocked: boolean;
+  kill_switch_reason_code?: string | null;
+  telegram_enabled: boolean;
+  watcher_config_enabled: boolean;
+  runtime_evidence: boolean;
+}
+
+export interface WatcherApprovedStrategy {
+  strategy_id: string;
+  strategy_version_id: string;
+  name: string;
+  lifecycle_state: string;
+  compiled: boolean;
+}
+
+export interface WatcherSetupAssessmentSummary {
+  assessment_id: string;
+  candidate_id: string;
+  state: string;
+  strategy_version_id: string;
+  instrument: string;
+  timeframe: string;
+  valid_until: string;
+  live_executable: false;
+}
+
+export interface WatcherDetectedCandidateSummary {
+  count: number;
+  conditions: string[];
+  last_scan_at?: string | null;
+  source: "market_watcher_scan";
+}
+
+export interface WatcherCanonicalCandidateSummary {
+  candidate_id: string;
+  assessment_id: string;
+  state: string;
+  instrument: string;
+  timeframe: string;
+  strategy_version_id: string;
+  created_at: string;
+}
+
+export interface WatcherMarketFreshness {
+  status: "fresh" | "stale" | "unavailable" | "unknown";
+  observed_at?: string | null;
+  symbol?: string | null;
+  data_freshness?: string | null;
+  stale_after_minutes: number;
+}
+
+export interface WatcherProviderHealthItem {
+  name: string;
+  kind: string;
+  health: string;
+  using_fallback: boolean;
+  is_mock: boolean;
+  detail?: string | null;
+  error_message?: string | null;
+}
+
+export interface WatcherLeaseHealth {
+  scan_scope: string;
+  owner_id?: string | null;
+  lease_epoch: number;
+  fencing_token: number;
+  expires_at?: string | null;
+  last_beat_at?: string | null;
+  seconds_since_beat?: number | null;
+  fenced: boolean;
+  heartbeat_fresh: boolean;
+  orchestration_state?: string | null;
+  reason_code?: string | null;
+}
+
+export interface WatcherWorkerHealth {
+  name: string;
+  worker_enabled: boolean;
+  heartbeat_live: boolean;
+  last_beat_at?: string | null;
+  status?: string | null;
+  paused?: boolean | null;
+  detail?: string | null;
+}
+
+export interface WatcherRecentError {
+  source: string;
+  message: string;
+  at?: string | null;
+  reason_code?: string | null;
+}
+
+export interface WatcherMonitoringSnapshot {
+  watcher_status: WatcherMonitoringRuntimeState;
+  paper_monitoring_status: WatcherMonitoringRuntimeState;
+  reason_code: string;
+  block_reasons: string[];
+  warnings: string[];
+  paper_posture: PaperMonitoringPosture;
+  config_flags: WatcherConfigFlags;
+  symbols_monitored: string[];
+  approved_strategies: WatcherApprovedStrategy[];
+  last_scan_at?: string | null;
+  last_scan_status?: string | null;
+  next_scan_at?: string | null;
+  next_scan_basis?: "worker_interval" | "lease_ttl" | "bridge_interval" | null;
+  market_freshness: WatcherMarketFreshness;
+  provider_health: WatcherProviderHealthItem[];
+  setup_assessments: WatcherSetupAssessmentSummary[];
+  scanner_candidates: WatcherDetectedCandidateSummary;
+  canonical_candidates: WatcherCanonicalCandidateSummary[];
+  leases: WatcherLeaseHealth[];
+  worker: WatcherWorkerHealth;
+  recent_errors: WatcherRecentError[];
+  limitations: string[];
+  generated_at: string;
+  paper_only: true;
+}
+
 export interface MarketWatcherSummary {
   scanner_enabled: boolean;
   manual_scan_available: boolean;
