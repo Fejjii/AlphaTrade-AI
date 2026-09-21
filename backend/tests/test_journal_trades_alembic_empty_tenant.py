@@ -24,6 +24,7 @@ from app.core.config import Settings, get_settings
 from app.db.models import JournalTrade
 from app.db.session import get_session
 from app.main import create_app
+from app.runtime.canonical import build_production_canonical_runtime
 from app.security.rate_limit import reset_rate_limiter
 from tests.support.postgres_persistence import POSTGRES_URL, requires_postgres
 
@@ -115,8 +116,14 @@ def test_empty_synthetic_tenant_journal_list_and_strategy_stats_are_200() -> Non
 
     app.dependency_overrides[get_session] = _override_session
     email = f"canonical-empty-{uuid4().hex[:12]}@example.com"
+    previous_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = POSTGRES_URL
+    get_settings.cache_clear()
     try:
         with TestClient(app) as client:
+            app.state.canonical_runtime = build_production_canonical_runtime(
+                factory, settings=settings
+            )
             registered = client.post(
                 "/auth/register",
                 json={
@@ -157,6 +164,10 @@ def test_empty_synthetic_tenant_journal_list_and_strategy_stats_are_200() -> Non
             assert listing["limit"] == 50
             assert listing["offset"] == 0
     finally:
+        if previous_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_database_url
         app.dependency_overrides.clear()
         get_settings.cache_clear()
         engine.dispose()

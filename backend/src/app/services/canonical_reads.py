@@ -12,6 +12,7 @@ from app.learning_attribution.query import LearningQueryService
 from app.paper_evaluation.journal_facts import SqlAlchemyJournalExcursionPort
 from app.paper_evaluation.query import PaperEvaluationQueryService
 from app.persistence.attribution_postgres import PostgresAttributionStore
+from app.persistence.eligibility_postgres import latest_evaluations_for_organization
 from app.persistence.paper_evaluation_postgres import PostgresPaperEvaluationStore
 from app.repositories.execution_protocol import (
     ExecutionCommandRepository,
@@ -170,20 +171,16 @@ class CanonicalReadService:
         organization_id: UUID,
         learning_venue_mode: LearningVenueMode | None,
     ) -> CanonicalPaperEvaluationRead:
-        items, _total = self._runtime.candidate_repository.list_for_organization(
-            organization_id, limit=200, offset=0
+        # Read eligibility on the request session. Runtime repositories may open a
+        # process-wide engine (default database ``alphatrade``) when threading.local
+        # bind_session does not follow the async endpoint thread.
+        eligibility = latest_evaluations_for_organization(
+            self._session, organization_id=organization_id
         )
-        eligibility = []
-        for candidate in items:
-            evaluation = self._runtime.eligibility_store.latest_for_candidate(
-                organization_id=organization_id, candidate_id=candidate.candidate_id
-            )
-            if evaluation is not None:
-                eligibility.append(evaluation)
         return CanonicalPaperEvaluationRead(
             summary=self._paper_evaluation.summary(
                 organization_id=organization_id,
                 learning_venue_mode=learning_venue_mode,
-                eligibility=tuple(eligibility),
+                eligibility=eligibility,
             )
         )
