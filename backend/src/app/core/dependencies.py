@@ -202,9 +202,7 @@ def get_perpetual_market_monitor_service(
     return PerpetualMarketMonitorService(monitor, settings=settings)
 
 
-PerpetualMarketMonitorDep = Annotated[
-    PerpetualMarketMonitor, Depends(get_perpetual_market_monitor)
-]
+PerpetualMarketMonitorDep = Annotated[PerpetualMarketMonitor, Depends(get_perpetual_market_monitor)]
 PerpetualMarketMonitorServiceDep = Annotated[
     PerpetualMarketMonitorService, Depends(get_perpetual_market_monitor_service)
 ]
