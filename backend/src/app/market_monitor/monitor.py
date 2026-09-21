@@ -11,6 +11,7 @@ from app.market_contracts.adapters.protocol import PerpetualMarketSource
 from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.errors import WrongInstrumentError
 from app.market_contracts.first_slice import canonical_first_slice_clock
+from app.market_contracts.identity import InstrumentIdentity
 from app.market_monitor.backoff import BackoffPolicy
 from app.market_monitor.runtime import SymbolMonitorRuntime
 from app.market_monitor.types import SymbolMonitorSnapshot
@@ -104,7 +105,7 @@ class PerpetualMarketMonitor:
             return canonical_first_slice_clock().evaluated_at
         return self._clock().astimezone(UTC)
 
-    def _require(self, symbol: str):
+    def _require(self, symbol: str) -> InstrumentIdentity:
         try:
             return self._catalog.require(symbol)
         except WrongInstrumentError as exc:

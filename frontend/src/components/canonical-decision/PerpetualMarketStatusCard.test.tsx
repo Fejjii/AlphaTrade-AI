@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { PerpetualMarketStatusCard } from "./PerpetualMarketStatusCard";
 import type { PerpetualMarketStatusView } from "@/lib/canonical-decision/types";
@@ -37,6 +37,10 @@ function replayStatus(): PerpetualMarketStatusView {
 }
 
 describe("PerpetualMarketStatusCard", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("labels replay fixture prices as not current live marks", () => {
     render(<PerpetualMarketStatusCard status={replayStatus()} />);
     const panel = screen.getByTestId("monitor-current-price");

@@ -148,6 +148,7 @@ describe("Decision market canonical evidence", () => {
     expect(panel).toHaveTextContent(/replay fixture/i);
     expect(panel).toHaveTextContent(/not a current market price/i);
     expect(panel).not.toHaveTextContent("Live");
-    expect(screen.getByText(/watcher is not activated/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/watcher is not activated/i).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("monitor-watcher-off")).toBeInTheDocument();
   });
 });

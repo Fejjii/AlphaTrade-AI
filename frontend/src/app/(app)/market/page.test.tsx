@@ -190,7 +190,7 @@ describe("MarketPage route honesty (FP2-129)", () => {
     expect(screen.queryByTestId("error-state")).not.toBeInTheDocument();
   });
 
-  it("renders successful mock fallback content without claiming live prices", () => {
+  it("renders successful mock fallback content without claiming live prices", async () => {
     asyncState = { data: makeSnapshot(), loading: false, error: null };
     render(<MarketPage />);
     expect(screen.getAllByText(/50123/).length).toBeGreaterThan(0);
