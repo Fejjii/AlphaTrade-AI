@@ -108,12 +108,15 @@ class PaperBotEngine:
             return EntryEvaluation(False, None, None, "No entry setup on latest bar.", [])
 
         entry_price, stop, notes = signal
+        matched_blocks = [engine_source]
+        if rules.entry_mode is not None:
+            matched_blocks.append(rules.entry_mode)
         return EntryEvaluation(
             True,
             entry_price,
             stop,
             notes,
-            [engine_source, rules.entry_mode],
+            matched_blocks,
         )
 
     def open_trade_state(

@@ -392,10 +392,7 @@ def test_setup_lifetime_alembic_upgrade_downgrade() -> None:
         ).scalar()
         assert present == 1
         unique = conn.execute(
-            text(
-                "SELECT 1 FROM pg_constraint "
-                "WHERE conname = 'uq_setup_lifetime_semantic_key'"
-            )
+            text("SELECT 1 FROM pg_constraint WHERE conname = 'uq_setup_lifetime_semantic_key'")
         ).scalar()
         assert unique == 1
 

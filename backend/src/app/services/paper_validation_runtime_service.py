@@ -84,11 +84,12 @@ from app.services.canonical_strategy_evaluation import (
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.journal_trade_service import JournalTradeService
 from app.services.paper_alert_service import PaperAlertService
-from app.services.paper_bot_engine import PaperBotEngine, _OpenPaperTrade
+from app.services.paper_bot_engine import CloseEvaluation, PaperBotEngine, _OpenPaperTrade
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_observability_service import PaperObservabilityService
 from app.services.paper_sample_window_service import PaperSampleWindowService
 from app.services.paper_validation_promotion import (
+    PaperPromotionDecision,
     compute_max_drawdown,
     evaluate_paper_promotion,
     sort_closed_trades_chronologically,
@@ -514,7 +515,7 @@ class PaperValidationRuntimeService:
         closed_count = 0
 
         open_trades = self._trades.list_open_for_run(run.id, organization_id=organization_id)
-        closed_details: list[tuple[PaperTradeModel, object]] = []
+        closed_details: list[tuple[PaperTradeModel, CloseEvaluation]] = []
         for trade_row in open_trades:
             open_state = self._trade_to_open_state(trade_row, config)
             close = self._engine.monitor_bar(
@@ -770,7 +771,7 @@ class PaperValidationRuntimeService:
         user_id: uuid.UUID,
         run_id: uuid.UUID,
         action: str,
-        metadata: dict,
+        metadata: dict[str, object],
     ) -> None:
         self._audit.record(
             AuditRecordCreate(
@@ -1037,10 +1038,12 @@ class PaperValidationRuntimeService:
         from app.services.strategy_rule_adapter import ParsedStrategyRules
 
         parsed = rules if isinstance(rules, ParsedStrategyRules) else None
-        tp_plan = {"r_multiples": [str(m) for m in (parsed.tp_r_multiples if parsed else ())]}
-        runner_plan = {"use_runner": parsed.use_runner} if parsed and parsed.use_runner else {}
-        if not isinstance(runner_plan, dict):
-            runner_plan = {}
+        tp_plan: dict[str, object] = {
+            "r_multiples": [str(m) for m in (parsed.tp_r_multiples if parsed else ())]
+        }
+        runner_plan: dict[str, object] = (
+            {"use_runner": parsed.use_runner} if parsed and parsed.use_runner else {}
+        )
         runner_plan.setdefault("bars_open", 0)
         row = PaperTradeModel(
             paper_validation_run_id=run.id,
@@ -1075,7 +1078,7 @@ class PaperValidationRuntimeService:
     ) -> _OpenPaperTrade:
         from app.services.strategy_rule_adapter import ParsedStrategyRules
 
-        tp_multiples = (Decimal("1"), Decimal("2"))
+        tp_multiples: tuple[Decimal, ...] = (Decimal("1"), Decimal("2"))
         use_runner = False
         if trade_row.tp_plan and "r_multiples" in trade_row.tp_plan:
             tp_multiples = tuple(Decimal(v) for v in trade_row.tp_plan["r_multiples"])
@@ -1141,7 +1144,7 @@ class PaperValidationRuntimeService:
         self,
         trade_id: uuid.UUID,
         event_type: str,
-        payload: dict | None,
+        payload: dict[str, object] | None,
     ) -> None:
         self._session.add(
             PaperTradeEventModel(
@@ -1153,7 +1156,7 @@ class PaperValidationRuntimeService:
 
     def _auto_journal_closed_trades(
         self,
-        closed_details: list[tuple[PaperTradeModel, object]],
+        closed_details: list[tuple[PaperTradeModel, CloseEvaluation]],
         run: PaperValidationRunModel,
     ) -> None:
         """Opt-in AT-033 hook: journal every trade closed this tick.
@@ -1266,7 +1269,7 @@ class PaperValidationRuntimeService:
         user_id: uuid.UUID,
         *,
         data_stale: bool = False,
-    ):
+    ) -> PaperPromotionDecision:
         eligibility = PaperEligibilityService(self._session, self._settings).evaluate(
             run.strategy_id,
             organization_id=organization_id,
