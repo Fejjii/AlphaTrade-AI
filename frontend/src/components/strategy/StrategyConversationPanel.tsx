@@ -27,6 +27,7 @@ export function StrategyConversationPanel({ strategyId }: Props) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [compileStatus, setCompileStatus] = useState<string | null>(null);
   const [lifecycleState, setLifecycleState] = useState<string | null>(null);
 
