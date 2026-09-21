@@ -117,6 +117,33 @@ export function WatcherMonitoringCard({
             <dd data-testid="watcher-monitoring-freshness">
               {snapshot.market_freshness.status}
               {snapshot.market_freshness.symbol ? ` · ${snapshot.market_freshness.symbol}` : ""}
+              {snapshot.market_freshness.usable_as_current_market_price
+                ? " · live mark"
+                : " · not a live perpetual mark"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-muted">Freshness clocks</dt>
+            <dd data-testid="watcher-monitoring-freshness-clocks">
+              {`quote ${snapshot.market_freshness.quote_fresh ? "fresh" : "not fresh"} · stream ${
+                snapshot.market_freshness.trade_stream_fresh ? "fresh" : "not fresh"
+              } · candle ${
+                snapshot.market_freshness.closed_candle_final == null
+                  ? "unknown"
+                  : snapshot.market_freshness.closed_candle_final
+                    ? "final"
+                    : "forming"
+              } · historical ${
+                snapshot.market_freshness.historical_evidence_valid == null
+                  ? "unknown"
+                  : snapshot.market_freshness.historical_evidence_valid
+                    ? "valid"
+                    : "invalid"
+              } · setup ${
+                snapshot.market_freshness.setup_lifetime_expired
+                  ? "expired"
+                  : "open"
+              }`}
             </dd>
           </div>
           <div>

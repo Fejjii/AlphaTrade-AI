@@ -73,6 +73,11 @@ class PerpetualMarketMonitor:
             self._last_tick_at[instrument.provider_symbol] = evaluated
             return snapshot
 
+    def latest(self, symbol: str = "BTCUSDT") -> SymbolMonitorSnapshot:
+        """Force a current-quote/stream snapshot for Watcher gating."""
+
+        return self.snapshot(symbol, force=True)
+
     def snapshot(
         self,
         symbol: str = "BTCUSDT",

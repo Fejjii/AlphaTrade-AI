@@ -17,6 +17,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import FrameType
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 import structlog
@@ -58,6 +59,9 @@ from app.workers.watcher_paper_targets import (
     list_paper_scan_targets,
     normalize_paper_symbols,
 )
+
+if TYPE_CHECKING:
+    from app.market_monitor.monitor import PerpetualMarketMonitor
 
 logger = structlog.get_logger("workers.watcher_paper")
 
@@ -584,8 +588,12 @@ def _shared_evaluation_clock(
     return BoundEvaluationClock()
 
 
-def default_paper_evidence_factory(settings: Settings) -> PaperEvidenceFactory:
-    """Assemble live/read-only evidence through the canonical Watcher port."""
+def default_paper_evidence_factory(
+    settings: Settings,
+    *,
+    monitor: PerpetualMarketMonitor | None = None,
+) -> PaperEvidenceFactory:
+    """Assemble live/read-only evidence through one monitor + canonical assembler."""
 
     from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
     from app.evidence_pipeline.setup_lifetime import SetupLifetimeStore
@@ -595,11 +603,17 @@ def default_paper_evidence_factory(settings: Settings) -> PaperEvidenceFactory:
         resolve_perpetual_evidence_source,
     )
     from app.market_contracts.catalog import default_perpetual_catalog
+    from app.market_monitor.factory import build_perpetual_market_monitor
+    from app.market_monitor.watcher_port import MarketMonitorWatcherPort
     from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 
     catalog = default_perpetual_catalog()
     source = resolve_perpetual_evidence_source(settings, catalog=catalog)
     replay = perpetual_source_is_replay(settings)
+    resolved_monitor = monitor or build_perpetual_market_monitor(
+        settings, source=source, catalog=catalog
+    )
+    gate = MarketMonitorWatcherPort(resolved_monitor)
 
     def factory(
         session: Session | None, store: WatcherStore, symbol: str
@@ -615,6 +629,7 @@ def default_paper_evidence_factory(settings: Settings) -> PaperEvidenceFactory:
             session=session,
             watcher_store=store,
             symbol=symbol,
+            monitor=gate,
         )
 
     return factory
@@ -632,6 +647,7 @@ def build_watcher_paper_runtime(
     kill_switch_probe: KillSwitchProbe | None = None,
     persistence_fence: CandidatePersistenceFence | None = None,
     side_effects: SideEffectPorts | None = None,
+    monitor: PerpetualMarketMonitor | None = None,
 ) -> WatcherPaperRuntime:
     """Compose the paper runtime. Does not enable staging/production flags."""
 
@@ -666,7 +682,8 @@ def build_watcher_paper_runtime(
         lease_ttl_seconds=settings.watcher_lease_ttl_seconds,
         heartbeat_stale_after_seconds=settings.watcher_heartbeat_stale_after_seconds,
         session_factory=session_factory,
-        evidence_factory=evidence_factory or default_paper_evidence_factory(settings),
+        evidence_factory=evidence_factory
+        or default_paper_evidence_factory(settings, monitor=monitor),
         target_loader=target_loader,
         kill_switch_probe=kill_switch_probe,
         persistence_fence=resolved_fence,

@@ -144,6 +144,44 @@ describe("WatcherMonitoringCard", () => {
     );
     expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STALE");
     expect(screen.getByTestId("watcher-monitoring-freshness")).toHaveTextContent("stale");
+    expect(screen.getByTestId("watcher-monitoring-freshness")).toHaveTextContent(
+      "not a live perpetual mark",
+    );
+  });
+
+  it("does not present replay prices as a live perpetual mark", () => {
+    render(
+      <WatcherMonitoringCard
+        snapshot={makeWatcherMonitoringSnapshot({
+          watcher_status: "RUNNING",
+          paper_monitoring_status: "RUNNING",
+          reason_code: "healthy",
+          paper_posture: {
+            paper_only: true,
+            execution_mode: "paper",
+            real_trading_enabled: false,
+            kill_switch_blocked: false,
+            telegram_enabled: false,
+            watcher_config_enabled: true,
+            runtime_evidence: true,
+          },
+          market_freshness: {
+            status: "replay",
+            symbol: "BTCUSDT",
+            stale_after_minutes: 60,
+            usable_as_current_market_price: false,
+            presentation: "replay_fixture",
+            availability: "replay",
+            quote_fresh: false,
+            trade_stream_fresh: true,
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("RUNNING");
+    expect(screen.getByTestId("watcher-monitoring-freshness")).toHaveTextContent("replay");
+    expect(screen.getByTestId("watcher-monitoring-freshness")).not.toHaveTextContent("live mark");
+    expect(screen.getByTestId("watcher-monitoring-freshness-clocks")).toHaveTextContent("quote not fresh");
   });
 
   it("renders blocked reasons and paper safety", () => {

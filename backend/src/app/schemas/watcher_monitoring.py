@@ -94,11 +94,21 @@ class WatcherCanonicalCandidateSummary(StrictModel):
 
 
 class WatcherMarketFreshness(StrictModel):
-    status: Literal["fresh", "stale", "unavailable", "unknown"] = "unknown"
+    """Separated freshness clocks. Replay is never a live perpetual mark."""
+
+    status: Literal["fresh", "stale", "degraded", "unavailable", "replay", "unknown"] = "unknown"
     observed_at: datetime | None = None
     symbol: str | None = None
     data_freshness: str | None = None
     stale_after_minutes: int
+    quote_fresh: bool = False
+    trade_stream_fresh: bool = False
+    closed_candle_final: bool | None = None
+    historical_evidence_valid: bool | None = None
+    setup_lifetime_expired: bool | None = None
+    usable_as_current_market_price: bool = False
+    presentation: str | None = None
+    availability: str | None = None
 
 
 class WatcherProviderHealthItem(StrictModel):
@@ -157,7 +167,9 @@ class WatcherMonitoringSnapshot(StrictModel):
     last_scan_at: datetime | None = None
     last_scan_status: str | None = None
     next_scan_at: datetime | None = None
-    next_scan_basis: Literal["worker_interval", "lease_ttl", "bridge_interval"] | None = None
+    next_scan_basis: Literal[
+        "worker_interval", "lease_ttl", "bridge_interval", "paper_poll"
+    ] | None = None
     market_freshness: WatcherMarketFreshness
     provider_health: list[WatcherProviderHealthItem] = Field(default_factory=list)
     setup_assessments: list[WatcherSetupAssessmentSummary] = Field(default_factory=list)

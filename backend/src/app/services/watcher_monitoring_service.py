@@ -33,7 +33,6 @@ from app.db.watcher_orchestration import (
 from app.guardrails.redaction import redact_text
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.providers.registry import get_provider_registry
-from app.repositories.market_watcher_scan import MarketWatcherScanRepository
 from app.runtime.canonical import ProductionCanonicalRuntime
 from app.schemas.common import SetupCompileStatus, StrategyLifecycleState
 from app.schemas.watcher_monitoring import (
@@ -71,6 +70,7 @@ from app.watcher.contracts import (
 )
 from app.watcher.health import project_health
 from app.watcher.settings import runtime_config_from_settings
+from app.workers.watcher_paper_targets import FIRST_SLICE_SYMBOL, normalize_paper_symbols
 
 logger = structlog.get_logger("watcher_monitoring")
 
@@ -80,6 +80,10 @@ _ERROR_EVENT_MARKERS = ("fail", "error", "blocked", "degraded", "stale", "reject
 
 class _ProviderStatusSource(Protocol):
     def statuses(self) -> list[ProviderStatus]: ...
+
+
+class _PaperRuntime(Protocol):
+    def snapshot(self) -> object: ...
 
 
 class WatcherMonitoringService:
@@ -94,6 +98,8 @@ class WatcherMonitoringService:
         canonical_runtime: ProductionCanonicalRuntime | None = None,
         market_watcher: MarketWatcherService | None = None,
         now: datetime | None = None,
+        monitor: object | None = None,
+        paper_runtime: _PaperRuntime | None = None,
     ) -> None:
         self._session = session
         self._settings = settings or get_settings()
@@ -101,6 +107,8 @@ class WatcherMonitoringService:
         self._canonical_runtime = canonical_runtime
         self._market_watcher = market_watcher or MarketWatcherService(session, self._settings)
         self._now = now
+        self._monitor = monitor
+        self._paper_runtime = paper_runtime
 
     def get_snapshot(
         self,
@@ -118,28 +126,38 @@ class WatcherMonitoringService:
             organization_id=organization_id, user_id=user_id
         )
         summary = self._market_watcher.get_summary(organization_id=organization_id, user_id=user_id)
-        last_scan = MarketWatcherScanRepository(self._session).latest_for_org(organization_id)
         observation = self._latest_observation(organization_id)
         worker = self._worker_health(now)
         leases, orchestration_snapshot = self._orchestration_health(
             organization_id=organization_id, config=config, now=now
         )
         providers = self._provider_health()
-        market_data_health = _worst_market_data_health(providers)
+        monitor_snapshot = self._monitor_snapshot()
+        paper_status = self._paper_status()
+        market_data_health = _worst_market_data_health(providers, monitor_snapshot)
         kill_blocked, kill_reason = self._kill_switch(organization_id)
         approved = self._approved_strategies(organization_id)
         assessments, canonical_candidates, candidate_limitations = self._canonical_lineage(
             organization_id
         )
+        paper_attempt = _latest_paper_attempt(self._session, organization_id)
+        last_scan_at = summary.last_scan_at
+        last_scan_status = summary.last_scan_status
+        last_scan_error = summary.last_scan_error
+        if paper_attempt is not None:
+            last_scan_at = paper_attempt.finished_at or paper_attempt.started_at
+            last_scan_status = paper_attempt.status.value
+            last_scan_error = paper_attempt.sanitized_error
         recent_errors = self._recent_errors(
             organization_id=organization_id,
-            last_scan_error=summary.last_scan_error,
-            last_scan_at=summary.last_scan_at,
+            last_scan_error=last_scan_error,
+            last_scan_at=last_scan_at,
             worker=worker,
             providers=providers,
         )
 
         primary_lease = leases[0] if leases else None
+        observation_status = _observation_status(observation, monitor_snapshot)
         evidence = WatcherMonitoringEvidence(
             execution_mode=settings.execution_mode.value,
             real_trading_enabled=bool(settings.real_trading_enabled),
@@ -159,8 +177,8 @@ class WatcherMonitoringService:
             orchestration_heartbeat_fresh=(
                 bool(primary_lease.heartbeat_fresh) if primary_lease else False
             ),
-            last_scan_status=summary.last_scan_status,
-            last_observation_status=None if observation is None else str(observation.status),
+            last_scan_status=last_scan_status,
+            last_observation_status=observation_status,
             market_data_health=market_data_health,
             generated_at=now,
         )
@@ -170,17 +188,28 @@ class WatcherMonitoringService:
             settings=settings,
             worker=worker,
             primary_lease=primary_lease,
+            paper_status=paper_status,
         )
         freshness = _market_freshness(
             observation=observation,
+            monitor_snapshot=monitor_snapshot,
             stale_after_minutes=settings.market_watcher_stale_data_max_age_minutes,
+            assessments=assessments,
+            now=now,
         )
         warnings = list(decision.warnings)
         if not approved:
             warnings.append("no_approved_strategies")
         limitations = list(candidate_limitations)
-        if last_scan is None:
+        if last_scan_at is None:
             limitations.append("No persisted Watcher scan has run for this organization.")
+        if freshness.status == "replay":
+            limitations.append("Replay/demo prices are not current live perpetual marks.")
+        if freshness.usable_as_current_market_price is False and freshness.status not in {
+            "unknown",
+            "replay",
+        }:
+            limitations.append("Current quote is not a usable live perpetual mark.")
 
         paper_posture = PaperMonitoringPosture(
             execution_mode=settings.execution_mode.value,
@@ -208,10 +237,15 @@ class WatcherMonitoringService:
                 telegram_interaction_enabled=settings.telegram_interaction_enabled,
                 automatic_telegram_delivery_enabled=settings.automatic_telegram_delivery_enabled,
             ),
-            symbols_monitored=list(watcher_status.watched_symbols),
+            symbols_monitored=_symbols_monitored(
+                settings=settings,
+                watched=list(watcher_status.watched_symbols),
+                monitor_snapshot=monitor_snapshot,
+                paper_status=paper_status,
+            ),
             approved_strategies=approved,
-            last_scan_at=summary.last_scan_at,
-            last_scan_status=summary.last_scan_status,
+            last_scan_at=last_scan_at,
+            last_scan_status=last_scan_status,
             next_scan_at=next_scan_at,
             next_scan_basis=next_scan_basis,
             market_freshness=freshness,
@@ -220,11 +254,11 @@ class WatcherMonitoringService:
             scanner_candidates=WatcherDetectedCandidateSummary(
                 count=summary.last_scan_candidate_count,
                 conditions=list(summary.last_scan_conditions_found),
-                last_scan_at=summary.last_scan_at,
+                last_scan_at=last_scan_at,
             ),
             canonical_candidates=canonical_candidates,
             leases=leases,
-            worker=worker,
+            worker=_worker_health_projection(worker, paper_status),
             recent_errors=recent_errors,
             limitations=limitations,
             generated_at=now,
@@ -476,6 +510,32 @@ class WatcherMonitoringService:
             limitations.append("No persisted canonical Candidates or SetupAssessments.")
         return assessments, candidates, limitations
 
+    def _monitor_snapshot(self) -> object | None:
+        monitor = self._monitor
+        if monitor is None:
+            return None
+        try:
+            latest = getattr(monitor, "latest", None)
+            if callable(latest):
+                return latest(FIRST_SLICE_SYMBOL)
+            snapshot = getattr(monitor, "snapshot", None)
+            if callable(snapshot):
+                return snapshot(FIRST_SLICE_SYMBOL, force=True)
+        except Exception:
+            logger.warning("watcher_monitoring_monitor_snapshot_failed", exc_info=True)
+            return None
+        return None
+
+    def _paper_status(self) -> object | None:
+        runtime = self._paper_runtime
+        if runtime is None:
+            return None
+        try:
+            return runtime.snapshot()
+        except Exception:
+            logger.warning("watcher_monitoring_paper_runtime_failed", exc_info=True)
+            return None
+
     def _recent_errors(
         self,
         *,
@@ -658,6 +718,13 @@ def _latest_attempts_by_scope(
     return latest
 
 
+def _latest_paper_attempt(session: Session, organization_id: uuid.UUID) -> ScanAttempt | None:
+    attempts = _latest_attempts_by_scope(session, organization_id)
+    if not attempts:
+        return None
+    return max(attempts.values(), key=lambda item: item.started_at)
+
+
 def _worst_orchestration_snapshot(
     snapshots: list[WatcherHealthSnapshot],
 ) -> WatcherHealthSnapshot | None:
@@ -667,7 +734,20 @@ def _worst_orchestration_snapshot(
     return max(snapshots, key=lambda item: rank.get(item.state.value, 0))
 
 
-def _worst_market_data_health(providers: list[WatcherProviderHealthItem]) -> str | None:
+def _worst_market_data_health(
+    providers: list[WatcherProviderHealthItem],
+    monitor_snapshot: object | None,
+) -> str | None:
+    from app.market_monitor.types import SymbolMonitorSnapshot
+
+    if isinstance(monitor_snapshot, SymbolMonitorSnapshot):
+        availability = monitor_snapshot.availability.value
+        if availability == "unavailable":
+            return "unavailable"
+        if availability in {"stale", "degraded"}:
+            return "degraded"
+        if availability in {"fresh", "replay"}:
+            return "healthy"
     market = [item for item in providers if item.kind == ProviderKind.MARKET_DATA.value]
     if not market:
         return None
@@ -678,15 +758,71 @@ def _worst_market_data_health(providers: list[WatcherProviderHealthItem]) -> str
     return "healthy"
 
 
+def _observation_status(
+    observation: MarketWatcherObservation | None,
+    monitor_snapshot: object | None,
+) -> str | None:
+    from app.market_monitor.types import MarketAvailability, SymbolMonitorSnapshot
+
+    if isinstance(monitor_snapshot, SymbolMonitorSnapshot):
+        availability = monitor_snapshot.availability
+        if availability is MarketAvailability.STALE:
+            return "stale"
+        if availability is MarketAvailability.UNAVAILABLE:
+            return "unavailable"
+        if availability is MarketAvailability.DEGRADED:
+            return "degraded"
+        if availability is MarketAvailability.REPLAY:
+            return "replay"
+        if availability is MarketAvailability.FRESH:
+            return "fresh"
+    if observation is None:
+        return None
+    return str(observation.status)
+
+
 def _market_freshness(
     *,
     observation: MarketWatcherObservation | None,
+    monitor_snapshot: object | None,
     stale_after_minutes: int,
+    assessments: list[WatcherSetupAssessmentSummary] | None = None,
+    now: datetime | None = None,
 ) -> WatcherMarketFreshness:
+    from app.market_monitor.types import MarketAvailability, SymbolMonitorSnapshot
+
+    setup_expired = _setup_lifetime_expired(assessments or [], now)
+    if isinstance(monitor_snapshot, SymbolMonitorSnapshot):
+        quote = monitor_snapshot.current_price
+        stream = monitor_snapshot.stream
+        status = _freshness_status(monitor_snapshot.availability.value)
+        if monitor_snapshot.availability is MarketAvailability.REPLAY:
+            status = "replay"
+        elif monitor_snapshot.availability is MarketAvailability.DEGRADED:
+            status = "degraded"
+        return WatcherMarketFreshness(
+            status=status,
+            observed_at=monitor_snapshot.last_update or monitor_snapshot.evaluated_at,
+            symbol=monitor_snapshot.symbol,
+            data_freshness=monitor_snapshot.reason.value,
+            stale_after_minutes=stale_after_minutes,
+            quote_fresh=bool(quote is not None and quote.freshness.state.value in {"fresh", "aging"}),
+            trade_stream_fresh=stream.reconnect_state.value in {"continuous", "recovered"}
+            and stream.gap_state.value == "none",
+            closed_candle_final=monitor_snapshot.ohlcv.available,
+            historical_evidence_valid=monitor_snapshot.coverage.completeness.value == "complete",
+            setup_lifetime_expired=setup_expired,
+            usable_as_current_market_price=bool(
+                quote is not None and quote.usable_as_current_market_price
+            ),
+            presentation=None if quote is None else quote.presentation.value,
+            availability=monitor_snapshot.availability.value,
+        )
     if observation is None:
         return WatcherMarketFreshness(
             status="unknown",
             stale_after_minutes=stale_after_minutes,
+            setup_lifetime_expired=setup_expired,
         )
     return WatcherMarketFreshness(
         status=_freshness_status(str(observation.status)),
@@ -694,17 +830,73 @@ def _market_freshness(
         symbol=observation.symbol,
         data_freshness=observation.data_freshness,
         stale_after_minutes=stale_after_minutes,
+        setup_lifetime_expired=setup_expired,
     )
 
 
-def _freshness_status(raw: str) -> Literal["fresh", "stale", "unavailable", "unknown"]:
-    if raw == "fresh":
-        return "fresh"
-    if raw == "stale":
-        return "stale"
-    if raw == "unavailable":
-        return "unavailable"
+def _setup_lifetime_expired(
+    assessments: list[WatcherSetupAssessmentSummary],
+    now: datetime | None,
+) -> bool | None:
+    if not assessments or now is None:
+        return None
+    return any(item.valid_until <= now for item in assessments)
+
+
+def _freshness_status(
+    raw: str,
+) -> Literal["fresh", "stale", "degraded", "unavailable", "replay", "unknown"]:
+    if raw in {"fresh", "stale", "degraded", "unavailable", "replay"}:
+        return raw  # type: ignore[return-value]
     return "unknown"
+
+
+def _symbols_monitored(
+    *,
+    settings: Settings,
+    watched: list[str],
+    monitor_snapshot: object | None,
+    paper_status: object | None,
+) -> list[str]:
+    from app.market_monitor.types import SymbolMonitorSnapshot
+
+    symbols: list[str] = []
+    if isinstance(monitor_snapshot, SymbolMonitorSnapshot):
+        symbols.append(monitor_snapshot.symbol)
+    paper_symbols = getattr(paper_status, "symbols", None)
+    if isinstance(paper_symbols, tuple | list):
+        symbols.extend(str(item) for item in paper_symbols)
+    symbols.extend(settings.watcher_paper_symbols)
+    symbols.extend(watched)
+    return list(normalize_paper_symbols(symbols))
+
+
+def _worker_health_projection(
+    worker: WatcherWorkerHealth, paper_status: object | None
+) -> WatcherWorkerHealth:
+    if paper_status is None:
+        return worker
+    worker_id = getattr(paper_status, "worker_id", None)
+    enabled = getattr(paper_status, "enabled", None)
+    running = getattr(paper_status, "running", None)
+    last_reason = getattr(paper_status, "last_reason_code", None)
+    last_cycle_at = getattr(paper_status, "last_cycle_at", None)
+    if not isinstance(worker_id, str):
+        return worker
+    status = worker.status
+    if running is True:
+        status = "running"
+    elif running is False:
+        status = "stopped"
+    return WatcherWorkerHealth(
+        name=worker_id,
+        worker_enabled=bool(enabled) if enabled is not None else worker.worker_enabled,
+        heartbeat_live=worker.heartbeat_live,
+        last_beat_at=last_cycle_at if isinstance(last_cycle_at, datetime) else worker.last_beat_at,
+        status=status,
+        paused=worker.paused,
+        detail=_sanitize(str(last_reason) if last_reason else worker.detail),
+    )
 
 
 def _next_scan(
@@ -713,7 +905,11 @@ def _next_scan(
     settings: Settings,
     worker: WatcherWorkerHealth,
     primary_lease: WatcherLeaseHealth | None,
-) -> tuple[datetime | None, Literal["worker_interval", "lease_ttl", "bridge_interval"] | None]:
+    paper_status: object | None = None,
+) -> tuple[
+    datetime | None,
+    Literal["worker_interval", "lease_ttl", "bridge_interval", "paper_poll"] | None,
+]:
     if decision.state in {
         WatcherMonitoringRuntimeState.STOPPED,
         WatcherMonitoringRuntimeState.BLOCKED,
@@ -732,15 +928,15 @@ def _next_scan(
             + timedelta(seconds=settings.market_watcher_bridge_interval_seconds),
             "bridge_interval",
         )
+    poll_seconds = settings.watcher_paper_poll_interval_seconds
+    paper_last = getattr(paper_status, "last_cycle_at", None) if paper_status is not None else None
     if (
         settings.watcher_orchestration_enabled
         and primary_lease is not None
         and primary_lease.last_beat_at is not None
     ):
-        return (
-            primary_lease.last_beat_at + timedelta(seconds=settings.watcher_lease_ttl_seconds),
-            "lease_ttl",
-        )
+        basis_at = paper_last if isinstance(paper_last, datetime) else primary_lease.last_beat_at
+        return (basis_at + timedelta(seconds=poll_seconds), "paper_poll")
     if worker.heartbeat_live and worker.last_beat_at is not None:
         return (
             worker.last_beat_at + timedelta(seconds=settings.worker_scan_interval_seconds),

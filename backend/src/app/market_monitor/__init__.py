@@ -8,6 +8,7 @@ from app.market_monitor.factory import build_perpetual_market_monitor
 from app.market_monitor.monitor import PerpetualMarketMonitor
 from app.market_monitor.service import PerpetualMarketMonitorService
 from app.market_monitor.types import MarketAvailability, MarketMode, MonitorReason
+from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
 from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "PerpetualMarketMonitor",
     "PerpetualMarketMonitorService",
     "build_perpetual_market_monitor",
+    "watcher_evidence_error_for_monitor",
 ]

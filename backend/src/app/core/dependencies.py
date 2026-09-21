@@ -576,16 +576,21 @@ def get_market_watcher_service(session: SessionDep, settings: SettingsDep) -> Ma
 
 
 def get_watcher_monitoring_service(
+    request: Request,
     session: SessionDep,
     settings: SettingsDep,
     canonical_runtime: CanonicalRuntimeDep,
     providers: ProviderRegistryDep,
+    monitor: PerpetualMarketMonitorDep,
 ) -> WatcherMonitoringService:
+    paper_runtime = getattr(request.app.state, "watcher_paper_runtime", None)
     return WatcherMonitoringService(
         session,
         settings,
         providers=providers,
         canonical_runtime=canonical_runtime,
+        monitor=monitor,
+        paper_runtime=paper_runtime,
     )
 
 

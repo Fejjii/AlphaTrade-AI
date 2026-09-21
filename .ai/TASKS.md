@@ -1494,3 +1494,21 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   the live market monitor (PR #118) and AT-070 is the paper runtime (PR #120).
 - Completion evidence: feat `6572f71`, fix `9d36ee1`; Watcher stays disabled.
 
+### AT-072 — Integrate paper Watcher stack (live market → runtime → monitoring UX)
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-069, AT-070, AT-071 · Risk: High
+  (evidence authority, worker safety, monitoring honesty)
+- Safety classification: Paper-only integration; Watcher/Telegram/live trading stay off;
+  no deploy; no source-PR merge; no Watcher activation
+- Goal: Reconcile PR #118 live monitor, PR #120 paper runtime, and PR #119 monitoring UX
+  onto `main@b4244f0` without merging those PRs. One evidence authority (monitor gate +
+  canonical assembler). One evaluator path to CONFIRMED_SETUP Candidates. Monitoring
+  reports real heartbeat/lease evidence. Freshness clocks stay separated. Fail closed on
+  stale, outage, wrong tenant, wrong lineage, expired setup, and in-memory policy.
+- Branch: `cursor/watcher_integration-b74b`
+- Validation: focused stack integration tests; full backend with PostgreSQL; frontend;
+  Ruff; strict mypy on affected modules; Alembic single head; evaluation; Chromium E2E;
+  deployment safety; Docker; exact-HEAD GitHub CI. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-051
+
+

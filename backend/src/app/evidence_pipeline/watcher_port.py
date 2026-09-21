@@ -1,7 +1,9 @@
 """Production WatcherScanEvidencePort backed by the live/read-only assembler.
 
-Wired into the paper Watcher worker (``app.workers.watcher_paper``) through
-``default_paper_evidence_factory``. Staging/production Watcher flags stay false.
+The live monitor gates current-quote and trade-stream freshness. Canonical
+``FirstSliceEvidenceAssembler`` is the sole CanonicalEvidenceWindowV1 authority.
+Wired into the paper Watcher worker through ``default_paper_evidence_factory``.
+Staging/production Watcher flags stay false.
 """
 
 from __future__ import annotations
@@ -18,6 +20,10 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     StaleEvidenceError,
 )
+from app.market_monitor.monitor import PerpetualMarketMonitor
+from app.market_monitor.types import MarketMode, SymbolMonitorSnapshot
+from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
+from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.signal_fusion.enums import EvidenceAdapterKind
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
@@ -28,6 +34,7 @@ from app.watcher.fusion_evaluation import ExecutablePolicyAuthority, WatcherCano
 from app.watcher.ports import WatcherStore
 
 ExecutableResolver = Callable[[EvaluationCommand], ExecutableStrategyPolicy | None]
+MonitorPort = PerpetualMarketMonitor | MarketMonitorWatcherPort
 
 
 def resolve_watcher_scan_policy(
@@ -61,6 +68,8 @@ class AssemblingWatcherScanEvidence:
     """Loads freshly assembled first-slice evidence for one tenant scan.
 
     Read-projection placeholders never become WatcherCanonicalScanEvidence.
+    The optional monitor is the current-quote / stream gate; the assembler is
+    the sole CanonicalEvidenceWindowV1 producer.
     """
 
     def __init__(
@@ -71,15 +80,22 @@ class AssemblingWatcherScanEvidence:
         session: Session | None = None,
         watcher_store: WatcherStore | None = None,
         symbol: str = "BTCUSDT",
+        monitor: MonitorPort | None = None,
     ) -> None:
         self._assembler = assembler
         self._executable_resolver = executable_resolver
         self._session = session
         self._store = watcher_store
         self._symbol = symbol
+        self._monitor = monitor
 
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
+        monitor_snapshot = self._monitor_snapshot()
+        if monitor_snapshot is not None:
+            gated = watcher_evidence_error_for_monitor(monitor_snapshot)
+            if gated is not None:
+                raise gated
         executable = self._resolve_executable(command)
         authority = (
             ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED
@@ -132,6 +148,7 @@ class AssemblingWatcherScanEvidence:
             raise WatcherTenantMismatchError(
                 "Assessment command organization_id does not match the scan tenant."
             )
+        _reconcile_monitor_and_assembled(monitor_snapshot, assembled.replay)
         return WatcherCanonicalScanEvidence(
             organization_id=organization_id,
             policy=policy,
@@ -157,3 +174,34 @@ class AssemblingWatcherScanEvidence:
         ):
             return None
         return resolved
+
+    def _monitor_snapshot(self) -> SymbolMonitorSnapshot | None:
+        if self._monitor is None:
+            return None
+        latest = getattr(self._monitor, "latest", None)
+        if callable(latest):
+            snapshot = latest(self._symbol)
+        else:
+            snapshot = self._monitor.snapshot(self._symbol, force=True)
+        if not isinstance(snapshot, SymbolMonitorSnapshot):
+            raise WatcherEvidenceUnavailableError(
+                "Canonical scan evidence is unavailable.",
+                reason_code="canonical_evidence_unavailable",
+            )
+        return snapshot
+
+
+def _reconcile_monitor_and_assembled(
+    monitor_snapshot: SymbolMonitorSnapshot | None,
+    assembled_replay: bool,
+) -> None:
+    """Shared source must not split live vs replay authority."""
+
+    if monitor_snapshot is None:
+        return
+    monitor_replay = monitor_snapshot.mode is MarketMode.REPLAY
+    if monitor_replay != assembled_replay:
+        raise WatcherEvidenceUnavailableError(
+            "Watcher monitor mode does not match canonical evidence replay flag.",
+            reason_code="wrong_source",
+        )

@@ -111,6 +111,20 @@ def test_stale_market_data_is_stale_when_running() -> None:
     assert decision.reason_code == "market_data_stale"
 
 
+def test_degraded_monitor_overlay_is_degraded() -> None:
+    decision = project_watcher_monitoring_state(
+        _evidence(
+            watcher_orchestration_enabled=True,
+            orchestration_lease_fenced=True,
+            orchestration_heartbeat_fresh=True,
+            orchestration_health_state="healthy",
+            last_observation_status="degraded",
+        )
+    )
+    assert decision.state is WatcherMonitoringRuntimeState.DEGRADED
+    assert decision.reason_code == "market_data_degraded"
+
+
 def test_last_scan_degraded_is_degraded() -> None:
     decision = project_watcher_monitoring_state(
         _evidence(

@@ -113,7 +113,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     worker_driver = _maybe_start_in_process_worker(settings)
     app.state.worker_driver = worker_driver
-    paper_runtime = _maybe_start_watcher_paper_runtime(settings)
+    paper_runtime = _maybe_start_watcher_paper_runtime(
+        settings, monitor=getattr(app.state, "market_monitor", None)
+    )
     app.state.watcher_paper_runtime = paper_runtime
 
     yield
@@ -142,7 +144,7 @@ def _maybe_start_in_process_worker(settings: Settings):
     return driver
 
 
-def _maybe_start_watcher_paper_runtime(settings: Settings):
+def _maybe_start_watcher_paper_runtime(settings: Settings, *, monitor: object | None = None):
     """Start the paper Watcher loop locally when orchestration is explicitly on.
 
     Staging/production cannot enable ``WATCHER_ORCHESTRATION_ENABLED``. Dedicated
@@ -150,11 +152,15 @@ def _maybe_start_watcher_paper_runtime(settings: Settings):
     """
 
     from app.db.session import get_session_factory
+    from app.market_monitor.monitor import PerpetualMarketMonitor
     from app.workers.watcher_paper import build_watcher_paper_runtime, paper_runtime_enabled
 
     if not paper_runtime_enabled(settings):
         return None
-    runtime = build_watcher_paper_runtime(settings, get_session_factory())
+    resolved_monitor = monitor if isinstance(monitor, PerpetualMarketMonitor) else None
+    runtime = build_watcher_paper_runtime(
+        settings, get_session_factory(), monitor=resolved_monitor
+    )
     runtime.start_background_thread()
     logger.info("watcher_paper_runtime_in_process", worker_id=settings.watcher_paper_worker_id)
     return runtime

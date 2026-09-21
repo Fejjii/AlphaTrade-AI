@@ -3361,11 +3361,19 @@ export interface WatcherCanonicalCandidateSummary {
 }
 
 export interface WatcherMarketFreshness {
-  status: "fresh" | "stale" | "unavailable" | "unknown";
+  status: "fresh" | "stale" | "degraded" | "unavailable" | "replay" | "unknown";
   observed_at?: string | null;
   symbol?: string | null;
   data_freshness?: string | null;
   stale_after_minutes: number;
+  quote_fresh?: boolean;
+  trade_stream_fresh?: boolean;
+  closed_candle_final?: boolean | null;
+  historical_evidence_valid?: boolean | null;
+  setup_lifetime_expired?: boolean | null;
+  usable_as_current_market_price?: boolean;
+  presentation?: string | null;
+  availability?: string | null;
 }
 
 export interface WatcherProviderHealthItem {
@@ -3422,7 +3430,7 @@ export interface WatcherMonitoringSnapshot {
   last_scan_at?: string | null;
   last_scan_status?: string | null;
   next_scan_at?: string | null;
-  next_scan_basis?: "worker_interval" | "lease_ttl" | "bridge_interval" | null;
+  next_scan_basis?: "worker_interval" | "lease_ttl" | "bridge_interval" | "paper_poll" | null;
   market_freshness: WatcherMarketFreshness;
   provider_health: WatcherProviderHealthItem[];
   setup_assessments: WatcherSetupAssessmentSummary[];

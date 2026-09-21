@@ -98,6 +98,7 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `GET/POST /paper-signal-orchestration/*` (AT-038 — deterministic paper-signal orchestration; paper-only; no order placement)
 - `GET /canonical/market-status` (AT-069 — live read-only perpetual monitor; replay default; never live_mark for fixtures)
 - `GET /watcher/paper-runtime/status` (AT-070 — paper Watcher monitoring status; disabled by default; no scans from HTTP)
+- `GET /market-watcher/monitoring` (AT-071/AT-072 — operator paper-monitoring snapshot; RUNNING requires fenced lease + fresh heartbeat; replay never live_mark)
 
 ## CI jobs
 

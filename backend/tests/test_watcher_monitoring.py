@@ -220,6 +220,10 @@ def test_default_snapshot_is_stopped_paper_only_and_empty(
     assert body["approved_strategies"] == []
     assert body["next_scan_at"] is None
     assert "no_approved_strategies" in body["warnings"]
+    assert body["market_freshness"]["usable_as_current_market_price"] is False
+    assert body["market_freshness"]["status"] in {"replay", "unknown"}
+    if body["market_freshness"]["status"] == "replay":
+        assert any("Replay" in item or "replay" in item.lower() for item in body["limitations"])
     health = client.get("/health").json()
     assert health["market_watcher_enabled"] is False
     assert health["watcher_orchestration_enabled"] is False
@@ -245,7 +249,7 @@ def test_running_requires_live_lease_and_heartbeat(monitoring_db: sessionmaker[S
     assert snapshot.reason_code == "healthy"
     assert snapshot.paper_posture.runtime_evidence is True
     assert snapshot.leases[0].fenced is True
-    assert snapshot.next_scan_basis == "lease_ttl"
+    assert snapshot.next_scan_basis == "paper_poll"
     assert snapshot.next_scan_at is not None
     assert snapshot.paper_only is True
 

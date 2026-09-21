@@ -165,6 +165,16 @@ def project_watcher_monitoring_state(
             runtime_evidence=True,
             watcher_intended=True,
         )
+    if evidence.last_observation_status == "degraded":
+        warnings.append("market_data_degraded")
+        return WatcherMonitoringDecision(
+            state=WatcherMonitoringRuntimeState.DEGRADED,
+            reason_code="market_data_degraded",
+            block_reasons=(),
+            warnings=tuple(dict.fromkeys(warnings)),
+            runtime_evidence=True,
+            watcher_intended=True,
+        )
 
     if evidence.watcher_orchestration_enabled and orchestration_state == _DEGRADED:
         reason = evidence.orchestration_reason_code or "degraded"

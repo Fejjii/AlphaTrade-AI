@@ -1696,3 +1696,46 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Source branch `cursor/watcher_monitoring_ux-c026`. Draft
   source PR only; no merge or deploy.
 
+## AT-ADR-051 — Paper Watcher stack has one evidence authority and one evaluator
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** PR #118 (live monitor), PR #120 (paper Watcher runtime), and
+  PR #119 (monitoring UX) landed as independent slices on overlapping IDs.
+  Integration must not merge those source PRs, must not deploy, and must not
+  activate Watcher. Dual market fetches and config-as-RUNNING were the
+  remaining honesty risks.
+- **Decision:**
+  1. The live/read-only monitor is the current-quote and trade-stream gate
+     (`watcher_evidence_error_for_monitor`). `FirstSliceEvidenceAssembler`
+     remains the sole `CanonicalEvidenceWindowV1` producer. Shared source:
+     replay monitor with replay assembler, live monitor with live assembler.
+     Mode mismatch is `wrong_source`. Replay is allowed for deterministic
+     tests and is never a live perpetual mark.
+  2. Canonical authority is exactly: persisted APPROVED/ACTIVE strategy →
+     executable compiled definition → gated canonical evidence →
+     `evaluate_canonical_strategy` → SetupAssessment → `CONFIRMED_SETUP`
+     only → Candidate. No second evaluator. In-memory policy authority
+     cannot mint.
+  3. Freshness clocks stay separate and fail closed: current quote, trade
+     stream, closed-candle finality, historical evidence validity, setup
+     lifetime. Existing safety thresholds are not weakened. No spot
+     fallback. No fabricated prices. Provider outage and stale evidence
+     refuse Candidate mint.
+  4. Monitoring RUNNING requires fenced lease + fresh heartbeat. Paper poll
+     is the next-scan basis when the paper worker is the live evidence.
+     Configuration flags never project RUNNING. Replay/demo prices never
+     appear as current live perpetual marks.
+  5. Watcher, Telegram, and live trading stay off. Staging/production still
+     reject Watcher activation flags. Dedicated activation remains a
+     separate authorized task.
+- **Alternatives considered:** Merge source PRs 118/119/120 (rejected:
+  explicit do-not); dual assembler+monitor evidence windows (rejected: two
+  authorities); treat config as RUNNING (rejected: AT-ADR-050); enable
+  Watcher to populate monitoring (rejected: AT-ADR-040).
+- **Safety impact:** Tightens fail-closed wiring. Does not enable Watcher,
+  Telegram, or live trading. `EXECUTION_MODE=paper`,
+  `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Integration branch `cursor/watcher_integration-b74b`.
+  Draft integration PR only; no merge, deploy, or Watcher activation.
+
+
