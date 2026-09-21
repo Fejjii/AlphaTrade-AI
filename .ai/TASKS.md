@@ -1443,4 +1443,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   7/7. Draft PR only; do not merge or deploy.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-048
-- Completion evidence: local validation on this branch; GitHub CI on draft PR.
+- Completion evidence: feat `1de8b60`; draft PR #120. GitHub CI run 35614998968
+  failed on `test_concurrent_workers_single_lease` (StaticPool SQLite shared
+  across worker threads). Follow-up isolates that test from SQLite and surfaces
+  ThreadPoolExecutor exceptions; do not merge until that head is green.
