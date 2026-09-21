@@ -1408,7 +1408,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   PR #109.
 
 ### AT-069 — Live read-only perpetual market monitoring
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-064, Phase 5 contracts
+- Priority: P0 · Status: DONE · Dependencies: AT-064, Phase 5 contracts
   · Risk: Medium (freshness honesty + stream identity)
 - Safety classification: Paper-only read path; Watcher, Telegram, and live
   trading remain disabled; no exchange mutation; no merge
@@ -1422,6 +1422,11 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   decision/market + /market honesty, fail-closed stream tests.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-048
+- Completion evidence: HEAD `69371ee` on `cursor/live-market-monitoring-cc4d`;
+  draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/118. Local: monitor
+  25/25; full backend 2219 passed / 181 skipped; frontend lint/typecheck;
+  1171 unit tests; Next build; E2E 26 passed / 13 skipped. Watcher, Telegram,
+  and live trading stay off. Do not merge or deploy.
 
 ### AT-068 — Durable setup lifetime + canonical AUTO_PAPER authority
 - Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-067, intelligence
