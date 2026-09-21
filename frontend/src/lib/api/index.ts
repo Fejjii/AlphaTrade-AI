@@ -73,6 +73,7 @@ import type {
   CanonicalExecutionReceiptRead,
   CanonicalLearningRecordRead,
   CanonicalLearningStatsRead,
+  CanonicalPaperEvaluationRead,
   CanonicalEvidenceRead,
   CanonicalMarketMonitorStatusRead,
   CanonicalTradePlanRevision,
@@ -529,6 +530,11 @@ export const api = {
       }),
     strategyStats: (params?: { learning_venue_mode?: string }) =>
       apiFetch<CanonicalLearningStatsRead>("/canonical/learning/strategy-stats", {
+        query: params,
+        auth: true,
+      }),
+    paperEvaluation: (params?: { learning_venue_mode?: string }) =>
+      apiFetch<CanonicalPaperEvaluationRead>("/canonical/paper-evaluation/summary", {
         query: params,
         auth: true,
       }),

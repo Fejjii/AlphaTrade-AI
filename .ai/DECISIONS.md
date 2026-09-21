@@ -1738,4 +1738,34 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Integration branch `cursor/watcher_integration-b74b`.
   Draft integration PR only; no merge, deploy, or Watcher activation.
 
+## AT-ADR-052 — Continuous paper evaluation is measurement, not a trading authority
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** After AT-072, Watcher, eligibility, paper execution, Journal, and
+  learning attribution exist as separate authorities. Operators need a
+  continuous paper evaluation layer (win rate, expectancy, drawdown, MFE/MAE,
+  conversion, false signals, blocked trades, human vs system, missed
+  opportunities, data quality, strategy-version comparison) without creating
+  another setup/Candidate/execution writer.
+- **Decision:**
+  1. `app.paper_evaluation` copies facts from existing authorities and rolls
+     them up at query time. It does not evaluate setups, mint Candidates,
+     authorize plans, or dispatch execution.
+  2. Deterministic facts and AI narrative are siblings. Narrative is excluded
+     from `content_hash`. Missed opportunities never invent counterfactual PnL.
+  3. AI may emit `RefinementSuggestion` with `activate=false` and
+     `auto_activate=false`. Activation is always forbidden.
+  4. Operator summary is `GET /canonical/paper-evaluation/summary`.
+     `watcher_activated` and `live_executable` stay false. Watcher, Telegram,
+     and live trading stay off.
+- **Alternatives considered:** Auto-promote a better strategy version (rejected:
+  AT-ADR-026 / learning is review-only); treat Watcher config as RUNNING to
+  populate metrics (rejected: AT-ADR-050); invent counterfactual missed PnL
+  (rejected: not a recorded fact).
+- **Safety impact:** Measurement only. Does not enable Watcher, Telegram, or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Alembic head `e3f4a5b6c7d8`. Draft PR only; no merge,
+  deploy, or Watcher activation.
+
+
 

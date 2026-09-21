@@ -184,6 +184,16 @@ export const DECISION_BACKEND_BINDINGS: readonly BackendBinding[] = [
     notes: "Candidate-scoped LearningQueryService attribution. Review-only; no auto-promotion.",
   },
   {
+    id: "canonical-paper-evaluation",
+    title: "Continuous paper evaluation",
+    status: "bound",
+    path: "GET /canonical/paper-evaluation/summary",
+    owner: "backend",
+    usedByFrontend: true,
+    notes:
+      "Measurement-only Watcher→outcome rollup. Facts stay separate from AI narrative. Refinements cannot activate. Watcher stays off.",
+  },
+  {
     id: "positions",
     title: "Paper positions",
     status: "bound",
