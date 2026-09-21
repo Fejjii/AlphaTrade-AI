@@ -27,7 +27,13 @@ from app.market_contracts.cvd import (
     first_slice_baseline_open,
     first_slice_cvd_window,
 )
-from app.market_contracts.enums import Finality, FreshnessState, MarketType, VenueId
+from app.market_contracts.enums import (
+    Finality,
+    FreshnessState,
+    MarketType,
+    ObservationType,
+    VenueId,
+)
 from app.market_contracts.errors import (
     FallbackForbiddenError,
     FormingCandleError,
@@ -54,6 +60,7 @@ from app.market_contracts.freshness import (
     live_confirmation_window_open,
 )
 from app.market_contracts.identity import binance_usdm_btcusdt, interval_timedelta
+from app.market_contracts.observation import PublicMarketObservation
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
 from app.market_contracts.trades import order_trades
 from app.schemas.common import Timeframe, TradeDirection
@@ -327,6 +334,17 @@ def _ordered_bars(bars: Sequence[OhlcvBar], timeframe: Timeframe) -> list[OhlcvB
     return sorted(matching, key=lambda bar: (bar.interval_start, bar.source_event_id, bar.revision))
 
 
+def _context_bar_for_trigger(trigger: OhlcvBar, bars_4h: Sequence[OhlcvBar]) -> OhlcvBar | None:
+    eligible = [
+        bar
+        for bar in _ordered_bars(bars_4h, Timeframe.H4)
+        if bar.interval_end <= trigger.interval_end
+    ]
+    if not eligible:
+        return None
+    return eligible[-1]
+
+
 def _evaluate_series(
     command: AssessmentCommand,
     evidence: FirstSliceEvidenceBundle,
@@ -534,6 +552,85 @@ def _select_resistance(
     return nearest, None
 
 
+def _observation_for_role(
+    command: AssessmentCommand, role: EvidenceRole
+) -> PublicMarketObservation | None:
+    for observation, selected in zip(
+        command.public_observations, command.selected_roles, strict=True
+    ):
+        if selected is role:
+            return observation
+    return None
+
+
+def _payload_matches(
+    observation: PublicMarketObservation | None,
+    *,
+    expected_type: ObservationType,
+    expected_payload_hash: str,
+) -> bool:
+    return (
+        observation is not None
+        and observation.observation_type is expected_type
+        and observation.payload_content_hash == expected_payload_hash
+    )
+
+
+def _bind_consumed_observations(
+    command: AssessmentCommand,
+    *,
+    trigger: OhlcvBar,
+    context: OhlcvBar | None,
+    cvd_hash: str,
+    flow_hash: str,
+    coverage_hash: str,
+    rules: dict[str, RuleResult],
+) -> bool:
+    """Require command observations to be the payloads evaluation consumes."""
+
+    trigger_obs = _observation_for_role(command, EvidenceRole.TRIGGER_OHLCV)
+    context_obs = _observation_for_role(command, EvidenceRole.CONTEXT_OHLCV)
+    cvd_obs = _observation_for_role(command, EvidenceRole.CVD_WINDOW)
+    flow_obs = _observation_for_role(command, EvidenceRole.SIGNED_FLOW)
+    coverage_obs = _observation_for_role(command, EvidenceRole.TRADE_EVENT)
+    bindings: list[tuple[PublicMarketObservation | None, ObservationType, str, EvidenceRole]] = [
+        (
+            trigger_obs,
+            ObservationType.OHLCV,
+            trigger.content_hash,
+            EvidenceRole.TRIGGER_OHLCV,
+        ),
+        (cvd_obs, ObservationType.CVD, cvd_hash, EvidenceRole.CVD_WINDOW),
+        (flow_obs, ObservationType.VOLUME, flow_hash, EvidenceRole.SIGNED_FLOW),
+        (coverage_obs, ObservationType.TRADE, coverage_hash, EvidenceRole.TRADE_EVENT),
+    ]
+    if context is not None:
+        bindings.insert(
+            1,
+            (
+                context_obs,
+                ObservationType.OHLCV,
+                context.content_hash,
+                EvidenceRole.CONTEXT_OHLCV,
+            ),
+        )
+    for observation, expected_type, expected_hash, role in bindings:
+        if _payload_matches(
+            observation,
+            expected_type=expected_type,
+            expected_payload_hash=expected_hash,
+        ):
+            continue
+        rules["market_identity"] = _rule(
+            "market_identity",
+            False,
+            "wrong_venue_or_market",
+            evidence_role=role,
+        )
+        return False
+    return True
+
+
 def _evaluate_freshness_and_flow(
     command: AssessmentCommand,
     evidence: FirstSliceEvidenceBundle,
@@ -587,7 +684,7 @@ def _evaluate_freshness_and_flow(
             closed_interval_end=trigger.interval_end,
             evaluated_at=evaluated,
         )
-        first_slice_cvd_window(
+        cvd = first_slice_cvd_window(
             identity=identity_15m,
             series_15m=closed,
             snapshot=snapshot,
@@ -644,6 +741,18 @@ def _evaluate_freshness_and_flow(
         return
     except MarketContractError:
         rules["complete_warmup"] = _rule("complete_warmup", False, "incomplete_warmup")
+        _fail_pattern_rules(rules, keep_existing=True)
+        return
+
+    if not _bind_consumed_observations(
+        command,
+        trigger=trigger,
+        context=_context_bar_for_trigger(trigger, evidence.bars_4h),
+        cvd_hash=cvd.content_hash,
+        flow_hash=flow.content_hash,
+        coverage_hash=snapshot.coverage.content_hash,
+        rules=rules,
+    ):
         _fail_pattern_rules(rules, keep_existing=True)
         return
 

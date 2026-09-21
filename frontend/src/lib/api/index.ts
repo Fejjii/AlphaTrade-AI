@@ -391,9 +391,9 @@ export const api = {
       body: {
         confirm: string;
         request_id?: string;
-        expected_content_hash?: string;
-        expected_parent_version_id?: string;
-        expected_target_strategy_id?: string;
+        expected_content_hash: string;
+        expected_parent_version_id?: string | null;
+        expected_target_strategy_id?: string | null;
       },
     ) =>
       apiFetch<StrategyProposalRecord>(
@@ -984,6 +984,24 @@ export const api = {
       }),
     listVersions: (id: string) =>
       apiFetch<PaginatedUserStrategyVersions>(`/strategies/${id}/versions`, { auth: true }),
+    compileVersion: (strategyId: string, versionId: string) =>
+      apiFetch<{
+        status: string;
+        compiled: { id: string; content_hash: string; compile_status: string } | null;
+        failures: Array<{ code?: string; message?: string }>;
+      }>(`/strategies/${strategyId}/versions/${versionId}/compile`, {
+        method: "POST",
+        auth: true,
+      }),
+    approveVersion: (strategyId: string, versionId: string, body: { confirm: string }) =>
+      apiFetch<{ id: string; new_state: string }>(
+        `/strategies/${strategyId}/versions/${versionId}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          auth: true,
+        },
+      ),
     paperEligibility: (id: string) =>
       apiFetch<PaperEligibilityReport>(`/strategies/${id}/paper-eligibility`, { auth: true }),
     startPaperValidation: (id: string, body?: Record<string, unknown>) =>

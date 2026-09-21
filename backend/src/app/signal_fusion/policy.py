@@ -35,6 +35,8 @@ def first_slice_role_timeframes() -> tuple[RoleTimeframeBinding, ...]:
         RoleTimeframeBinding(role=EvidenceRole.TRIGGER_OHLCV, timeframe=Timeframe.M15),
         RoleTimeframeBinding(role=EvidenceRole.CONTEXT_OHLCV, timeframe=Timeframe.H4),
         RoleTimeframeBinding(role=EvidenceRole.CVD_WINDOW, timeframe=Timeframe.M15),
+        RoleTimeframeBinding(role=EvidenceRole.SIGNED_FLOW, timeframe=Timeframe.M15),
+        RoleTimeframeBinding(role=EvidenceRole.TRADE_EVENT, timeframe=Timeframe.M15),
     )
 
 

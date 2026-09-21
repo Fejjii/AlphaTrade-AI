@@ -10,7 +10,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.market_contracts.cvd import CvdWindow
-from app.market_contracts.enums import DataCompleteness, FreshnessState, SourceFamily
+from app.market_contracts.enums import DataCompleteness, Finality, FreshnessState, SourceFamily
 from app.market_contracts.flow import SignedQuoteFlow
 from app.market_contracts.freshness import FreshnessEvaluation
 from app.market_contracts.identity import EvidenceMarketIdentity
@@ -41,6 +41,20 @@ class CompletenessReport(CanonicalModel):
     coverage_content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     cvd_content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     signed_flow_content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class EvidenceClockReport(CanonicalModel):
+    """Independent freshness/finality clocks. Quote age is never widened to pass."""
+
+    quote_source_time: datetime | None = None
+    quote_fresh: bool = False
+    trade_stream_event_time_max: datetime | None = None
+    live_confirmation_window_open: bool
+    trigger_finality: Finality
+    trigger_interval_end: datetime
+    historical_closed_evidence: bool
+    subsequent_final_15m_count: int = Field(ge=0)
+    setup_expired: bool = False
 
 
 class CurrentPriceQuote(CanonicalModel):
@@ -77,6 +91,7 @@ class AssembledCanonicalEvidence(CanonicalModel):
     current_price: CurrentPriceQuote | None
     completeness: CompletenessReport
     freshness_state: FreshnessState
+    clocks: EvidenceClockReport
     bundle: FirstSliceEvidenceBundle
     assessment_command: AssessmentCommand
     evidence_window: CanonicalEvidenceWindowV1

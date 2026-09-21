@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
 from app.core.errors import NotFoundError
 from app.db.models import CompiledSetupDefinition, UserStrategyVersion
+from app.evidence_pipeline.canonical import MANDATORY_ROLES
 from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
 from app.schemas.common import SetupCompileStatus, StrategyLifecycleState
 from app.schemas.strategy_library import StrategyCard
@@ -26,7 +27,7 @@ from app.services.setup_ast_compiler import compile_from_authored
 from app.services.strategy_versioning import CrossTenantStrategyError, StrategyVersioningService
 from app.signal_fusion.adapters import AssessmentCommand
 from app.signal_fusion.assessment import SetupAssessment
-from app.signal_fusion.enums import EvidenceRole, SetupIdentityKind
+from app.signal_fusion.enums import SetupIdentityKind
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.policy import (
@@ -204,11 +205,7 @@ def _fusion_policy_for_compiled(
         organization_id=organization_id,
         strategy_version_id=strategy_version_id,
         executable_setup=setup,
-        required_roles=(
-            EvidenceRole.TRIGGER_OHLCV,
-            EvidenceRole.CONTEXT_OHLCV,
-            EvidenceRole.CVD_WINDOW,
-        ),
+        required_roles=MANDATORY_ROLES,
         thresholds=FusionThresholds(
             confirmation_score=Decimal("1.0"),
             weights=(RuleWeight(rule_id="mandatory_evidence", weight=Decimal("1.0")),),

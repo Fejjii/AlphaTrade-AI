@@ -17,7 +17,7 @@ type Props = {
 };
 
 const COMPOSER_HINT =
-  "Discuss this strategy. Structured proposals stay drafts until you confirm. No Watcher, Telegram, or live activation.";
+  "Discuss this strategy. Confirm stores a draft. Compile and approve are separate. No Watcher, Telegram, or live activation.";
 
 export function StrategyConversationPanel({ strategyId }: Props) {
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -27,7 +27,8 @@ export function StrategyConversationPanel({ strategyId }: Props) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [compileStatus, setCompileStatus] = useState<string | null>(null);
+  const [lifecycleState, setLifecycleState] = useState<string | null>(null);
 
   const loadThread = useCallback(
     async (id: string) => {
@@ -101,9 +102,9 @@ export function StrategyConversationPanel({ strategyId }: Props) {
     try {
       const confirmed = await api.conversations.confirmProposal(conversationId, proposal.id, {
         confirm: "I confirm",
-        expected_content_hash: proposal.content_hash ?? undefined,
-        expected_parent_version_id: proposal.parent_version_id ?? undefined,
-        expected_target_strategy_id: proposal.target_strategy_id ?? undefined,
+        expected_content_hash: proposal.content_hash ?? "",
+        expected_parent_version_id: proposal.parent_version_id ?? null,
+        expected_target_strategy_id: proposal.target_strategy_id ?? null,
       });
       setProposal(confirmed);
       await loadThread(conversationId);
@@ -131,7 +132,44 @@ export function StrategyConversationPanel({ strategyId }: Props) {
     }
   }
 
+  async function compileVersion() {
+    if (!proposal?.resulting_version_id || busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const compiled = await api.strategies.compileVersion(strategyId, proposal.resulting_version_id);
+      setCompileStatus(compiled.status);
+      if (conversationId) {
+        await loadThread(conversationId);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Compile failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveVersion() {
+    if (!proposal?.resulting_version_id || busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const approved = await api.strategies.approveVersion(strategyId, proposal.resulting_version_id, {
+        confirm: "I confirm",
+      });
+      setLifecycleState(approved.new_state);
+      if (conversationId) {
+        await loadThread(conversationId);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Approval failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const draftOpen = proposal?.status === "draft";
+  const confirmedDraft = proposal?.status === "confirmed" && Boolean(proposal.resulting_version_id);
 
   return (
     <Card data-testid="strategy-conversation-panel">
@@ -188,11 +226,21 @@ export function StrategyConversationPanel({ strategyId }: Props) {
                 Stored version: {proposal.resulting_version_id}
               </p>
             ) : null}
+            {compileStatus ? (
+              <p className="text-sm text-zinc-300" data-testid="strategy-conversation-compile-status">
+                Compile: {compileStatus}
+              </p>
+            ) : null}
+            {lifecycleState ? (
+              <p className="text-sm text-zinc-300" data-testid="strategy-conversation-lifecycle">
+                Lifecycle: {lifecycleState}
+              </p>
+            ) : null}
             {draftOpen ? (
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !proposal.content_hash}
                   onClick={() => void confirmProposal()}
                   data-testid="strategy-conversation-confirm"
                 >
@@ -206,6 +254,26 @@ export function StrategyConversationPanel({ strategyId }: Props) {
                   data-testid="strategy-conversation-reject"
                 >
                   Reject proposal
+                </Button>
+              </div>
+            ) : null}
+            {confirmedDraft ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void compileVersion()}
+                  data-testid="strategy-conversation-compile"
+                >
+                  Compile for review
+                </Button>
+                <Button
+                  type="button"
+                  disabled={busy || compileStatus !== "executable"}
+                  onClick={() => void approveVersion()}
+                  data-testid="strategy-conversation-approve"
+                >
+                  Approve compiled policy
                 </Button>
               </div>
             ) : null}

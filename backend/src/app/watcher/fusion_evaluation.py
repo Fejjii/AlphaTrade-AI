@@ -110,6 +110,16 @@ class InMemoryWatcherScanEvidence:
         self._by_scope: dict[tuple[UUID, str], WatcherCanonicalScanEvidence] = {}
 
     def bind(self, snapshot: WatcherCanonicalScanEvidence, *, scan_scope: str) -> None:
+        from app.evidence_pipeline.canonical import is_first_slice_read_projection
+        from app.signal_fusion.errors import CandidateCreationAuthorityError
+
+        if is_first_slice_read_projection(
+            strategy_version_id=snapshot.executable_policy.strategy_version_id,
+            setup_definition_id=snapshot.executable_policy.compiled_setup_definition_id,
+        ):
+            raise CandidateCreationAuthorityError(
+                "Read projection placeholder IDs cannot become Watcher scan evidence."
+            )
         key = (snapshot.organization_id, scan_scope)
         with self._lock:
             self._by_scope[key] = snapshot

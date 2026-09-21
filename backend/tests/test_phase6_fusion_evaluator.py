@@ -293,7 +293,7 @@ def test_corrected_evidence_revision_changes_window() -> None:
 
 def test_evidence_order_does_not_change_assessment() -> None:
     left_world = make_world()
-    right_world = make_world(shuffle_bars=True, observation_order=(2, 0, 1))
+    right_world = make_world(shuffle_bars=True, observation_order=(4, 2, 0, 3, 1))
     left = evaluate_setup(
         policy=left_world.policy,
         command=left_world.command,

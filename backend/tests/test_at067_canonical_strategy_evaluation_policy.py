@@ -511,12 +511,17 @@ def test_draft_version_resolve_fail_closed(session: Session) -> None:
     created = _create_strategy(session)
     version = _attach_spec(session, created.id)
     session.flush()
-    CompiledSetupService(session).compile_version(version.id, organization_id=ORG_A, user_id=USER_A)
-    with pytest.raises(StrategyEvaluationPolicyError) as exc:
+    with pytest.raises(StrategyEvaluationPolicyError) as draft_exc:
         resolve_executable_strategy_policy(
             session, organization_id=ORG_A, strategy_version_id=version.id, user_id=USER_A
         )
-    assert exc.value.reason_code == "draft_not_executable"
+    assert draft_exc.value.reason_code == "draft_not_executable"
+    CompiledSetupService(session).compile_version(version.id, organization_id=ORG_A, user_id=USER_A)
+    with pytest.raises(StrategyEvaluationPolicyError) as review_exc:
+        resolve_executable_strategy_policy(
+            session, organization_id=ORG_A, strategy_version_id=version.id, user_id=USER_A
+        )
+    assert review_exc.value.reason_code == "strategy_not_approved"
 
 
 def test_tenant_isolation(session: Session) -> None:

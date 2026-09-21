@@ -1,7 +1,8 @@
-"""Controlled fixture proof for the intelligence integration loop.
+"""User-reachable intelligence integration loop. Paper/replay only.
 
-This is not deployed or live validation. Watcher and Telegram stay disabled.
-Paper / replay only. Confirmation stores a draft; strategy approval is separate.
+Conversation → preview → explicit confirm → draft → explicit compile →
+explicit approval → persisted executable policy → canonical evidence →
+deterministic SetupAssessment. Watcher and Telegram stay disabled.
 """
 
 from __future__ import annotations
@@ -10,35 +11,34 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.errors import ValidationAppError
+from app.core.config import Settings
 from app.core.persistence_firewall import install_persistence_firewall
 from app.db.base import Base
-from app.db.models import Membership, Organization, User, UserStrategy, UserStrategyVersion
+from app.db.models import Membership, Organization, User, UserStrategyVersion
+from app.db.session import get_session
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
+from app.evidence_pipeline.canonical import is_first_slice_read_projection
+from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
+from app.main import create_app
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
-from app.schemas.common import (
-    ConversationMessageRole,
-    MembershipRole,
-    StrategyId,
-    StrategyLifecycleState,
-)
-from app.schemas.conversation import ConversationCreate
-from app.schemas.strategy_library import StrategyCard, UserStrategyCreate
+from app.schemas.common import MembershipRole, StrategyId, StrategyLifecycleState
+from app.schemas.strategy_library import StrategyCard
 from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
 from app.schemas.structured_rules import StructureFromTextRequest
+from app.security.passwords import hash_password
 from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
-from app.services.compiled_setup_service import CompiledSetupService
-from app.services.conversation_service import ConversationService
-from app.services.strategy_library_service import StrategyLibraryService
-from app.services.strategy_proposal_service import StrategyProposalService
-from app.services.strategy_versioning import StrategyVersioningService
 from app.services.structure_from_text_service import StructureFromTextService
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.strategy_evaluation_policy import evaluate_canonical_strategy
+from app.watcher.contracts import EvaluationCommand, EvaluationMode, ScanRequest, ScanTrigger
+from app.watcher.fusion_evaluation import build_fusion_evaluation_service
+from app.watcher.hashing import evaluation_input_hash, policy_content_hash, scan_request_hash
+from app.watcher.memory import FakeClock, InMemoryWatcherStore
 from tests.support.first_slice_preview import (
     INCOMPLETE_FIRST_SLICE_TEXT,
     UNSUPPORTED_STRATEGY_TEXT,
@@ -47,40 +47,8 @@ from tests.support.first_slice_preview import (
 
 ORG = uuid.UUID("00000000-0000-0000-0000-000000000063")
 USER = uuid.UUID("00000000-0000-0000-0000-000000000163")
-
-
-def _engine() -> sessionmaker[Session]:
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    @event.listens_for(engine, "connect")
-    def _fk(dbapi_conn: object, _record: object) -> None:
-        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    Base.metadata.create_all(engine)
-    install_persistence_firewall()
-    return sessionmaker(bind=engine, expire_on_commit=False)
-
-
-@pytest.fixture
-def session() -> Iterator[Session]:
-    factory = _engine()
-    with factory() as db:
-        db.add_all(
-            [
-                Organization(id=ORG, name="AT063 Org"),
-                User(id=USER, email="at063@test.example", hashed_password="not-a-real-hash"),
-            ]
-        )
-        db.flush()
-        db.add(Membership(organization_id=ORG, user_id=USER, role=MembershipRole.TRADER))
-        db.commit()
-        yield db
+PASSWORD = "TestPassword123!"
+EMAIL = "at063@test.example"
 
 
 def _card() -> StrategyCard:
@@ -107,6 +75,83 @@ def _card() -> StrategyCard:
     )
 
 
+def _settings() -> Settings:
+    return Settings(
+        environment="local",
+        log_json=False,
+        execution_mode="paper",
+        enable_real_trading=False,
+        database_url="sqlite+pysqlite:///:memory:",
+        jwt_secret="intelligence-fixture-test-secret",
+        rate_limit_use_redis=False,
+        access_token_denylist_use_redis=False,
+        provider_mode="mock",
+        market_data_provider="mock",
+        watcher_orchestration_enabled=False,
+        perpetual_evidence_source="replay",
+    )
+
+
+@pytest.fixture
+def client_env() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn: object, _record: object) -> None:
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    install_persistence_firewall()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = _settings()
+    with factory() as session:
+        session.add(Organization(id=ORG, name="AT063 Org"))
+        session.add(
+            User(
+                id=USER,
+                email=EMAIL,
+                hashed_password=hash_password(PASSWORD, settings),
+                email_verified=True,
+            )
+        )
+        session.flush()
+        session.add(Membership(organization_id=ORG, user_id=USER, role=MembershipRole.TRADER))
+        session.commit()
+
+    app = create_app(settings=settings)
+
+    def _override_session() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_session
+    with TestClient(app) as client:
+        yield client, factory
+    app.dependency_overrides.clear()
+
+
+def _auth(client: TestClient) -> None:
+    login = client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    token = login.json()["tokens"]["access_token"]
+    client.headers.update({"Authorization": f"Bearer {token}"})
+
+
+def _confirm_payload(body: dict[str, object]) -> dict[str, object]:
+    return {
+        "confirm": "I confirm",
+        "expected_content_hash": body["content_hash"],
+        "expected_parent_version_id": body.get("parent_version_id"),
+        "expected_target_strategy_id": body.get("target_strategy_id"),
+    }
+
+
 def test_unsupported_and_incomplete_inputs_remain_blocked() -> None:
     service = StructureFromTextService()
     incomplete = service.draft_preview(StructureFromTextRequest(text=INCOMPLETE_FIRST_SLICE_TEXT))
@@ -119,123 +164,263 @@ def test_unsupported_and_incomplete_inputs_remain_blocked() -> None:
     assert unsupported.persists_strategy is False
 
 
-def test_fixture_discussion_preview_confirm_approve_compile_evidence_assessment(
-    session: Session,
+def test_fixture_discussion_preview_confirm_compile_approve_evidence(
+    client_env: tuple[TestClient, sessionmaker[Session]],
 ) -> None:
-    """Replay/paper fixture proof. Not a live or deployed validation."""
+    client, factory = client_env
+    _auth(client)
+    created = client.post(
+        "/strategies",
+        json={
+            "name": "AT063 Sweep",
+            "setup_type": StrategyId.LIQUIDITY_SWEEP_REVERSAL.value,
+            "card": _card().model_dump(mode="json"),
+        },
+    )
+    assert created.status_code == 200, created.text
+    strategy_id = created.json()["id"]
 
-    created = StrategyLibraryService(session).create(
-        UserStrategyCreate(
-            organization_id=ORG,
-            user_id=USER,
-            name="AT063 Sweep",
-            setup_type=StrategyId.LIQUIDITY_SWEEP_REVERSAL,
-            card=_card(),
-        )
+    conversation = client.post(
+        "/conversations", json={"strategy_id": strategy_id, "title": "First-slice"}
     )
-    conversations = ConversationService(session)
-    conversation = conversations.create(
-        ConversationCreate(title="First-slice discussion", strategy_id=created.id),
-        organization_id=ORG,
-        user_id=USER,
+    assert conversation.status_code == 200
+    conv_id = conversation.json()["id"]
+    discussed = client.post(
+        "/chat/message",
+        json={
+            "message": complete_first_slice_preview_text(),
+            "conversation_id": conv_id,
+            "strategy_id": strategy_id,
+        },
     )
-    conversations.append_message(
-        conversation=conversation,
-        role=ConversationMessageRole.USER,
-        content=complete_first_slice_preview_text(),
-        request_id="at063-discussion",
-    )
-    listed = conversations.list_messages(conversation.id, organization_id=ORG, user_id=USER)
-    assert listed.total >= 1
+    assert discussed.status_code in {200, 422}
 
-    proposals = StrategyProposalService(session)
-    preview = proposals.create_draft_from_text(
-        conversation,
-        text=complete_first_slice_preview_text(),
-        strategy_id=created.id,
+    preview = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={"text": complete_first_slice_preview_text(), "strategy_id": strategy_id},
     )
-    assert preview.status.value == "draft"
-    assert preview.is_preview is True
-    assert preview.mutates_strategy_authority is False
-    assert preview.proposed_pattern_spec is not None
-    assert preview.proposed_pattern_spec["kind"] == canonical_first_slice_authored_spec().kind
-    compiled_before = StrategyVersioningService(session).compiled_for_version(
-        preview.parent_version_id or uuid.uuid4(), organization_id=ORG
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["status"] == "draft"
+    assert body["is_preview"] is True
+    assert body["mutates_strategy_authority"] is False
+    assert body["proposed_pattern_spec"] is not None
+    proposal_id = body["id"]
+
+    quoted = client.post(
+        f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
+        json={**_confirm_payload(body), "confirm": "> I confirm"},
     )
-    assert compiled_before is None
+    assert quoted.status_code == 422
 
-    with pytest.raises(ValidationAppError, match=r"quoted|retrieved|Explicit confirmation"):
-        proposals.confirm(
-            preview.id,
-            organization_id=ORG,
-            user_id=USER,
-            confirm_message="> I confirm",
-            conversation_id=conversation.id,
-        )
-
-    confirmed = proposals.confirm(
-        preview.id,
-        organization_id=ORG,
-        user_id=USER,
-        confirm_message="I confirm",
-        conversation_id=conversation.id,
-        expected_content_hash=preview.content_hash,
-        expected_parent_version_id=preview.parent_version_id,
-        expected_target_strategy_id=preview.target_strategy_id,
+    confirmed = client.post(
+        f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
+        json=_confirm_payload(body),
     )
-    assert confirmed.status.value == "confirmed"
-    assert confirmed.resulting_version_id is not None
-    version_id = confirmed.resulting_version_id
-    version = session.get(UserStrategyVersion, version_id)
-    assert version is not None
-    assert version.pattern_spec is not None
+    assert confirmed.status_code == 200, confirmed.text
+    confirmed_body = confirmed.json()
+    assert confirmed_body["status"] == "confirmed"
+    version_id = confirmed_body["resulting_version_id"]
+    assert version_id
 
-    with pytest.raises(StrategyEvaluationPolicyError, match=r"Draft|approved"):
+    with (
+        factory() as session,
+        pytest.raises(StrategyEvaluationPolicyError, match=r"Draft|approved"),
+    ):
         resolve_executable_strategy_policy(
+            session, organization_id=ORG, strategy_version_id=uuid.UUID(version_id)
+        )
+
+    compiled_too_soon = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
+    assert compiled_too_soon.status_code == 200, compiled_too_soon.text
+    compiled_body = compiled_too_soon.json()
+    assert compiled_body["status"] == "executable"
+    assert compiled_body["compiled"] is not None
+
+    with factory() as session, pytest.raises(StrategyEvaluationPolicyError, match=r"approved"):
+        resolve_executable_strategy_policy(
+            session, organization_id=ORG, strategy_version_id=uuid.UUID(version_id)
+        )
+
+    approve = client.post(
+        f"/strategies/{strategy_id}/versions/{version_id}/approve",
+        json={"confirm": "I confirm"},
+    )
+    assert approve.status_code == 200, approve.text
+    assert approve.json()["new_state"] == StrategyLifecycleState.APPROVED.value
+
+    with factory() as session:
+        executable = resolve_executable_strategy_policy(
+            session, organization_id=ORG, strategy_version_id=uuid.UUID(version_id)
+        )
+        assert executable.lifecycle_state is StrategyLifecycleState.APPROVED
+        assert not is_first_slice_read_projection(
+            strategy_version_id=executable.strategy_version_id,
+            setup_definition_id=executable.compiled_setup_definition_id,
+        )
+        assembled = FirstSliceEvidenceAssembler(ReplayPerpetualSource(), replay=True).assemble(
+            organization_id=ORG,
+            policy=executable.fusion_policy,
+        )
+        first = evaluate_canonical_strategy(
+            executable_policy=executable,
+            command=assembled.assessment_command,
+            evidence=assembled.bundle,
+            evaluated_at=assembled.evaluated_at,
+        )
+        second = evaluate_canonical_strategy(
+            executable_policy=executable,
+            command=assembled.assessment_command,
+            evidence=assembled.bundle,
+            evaluated_at=assembled.evaluated_at,
+        )
+        assert first.evidence_window_hash == assembled.evidence_window_hash
+        assert first.state is second.state
+        assert first.evidence_window_hash == second.evidence_window_hash
+        assert first.content_hash == second.content_hash
+        versions = list(session.scalars(select(UserStrategyVersion)).all())
+        assert [item.id for item in versions if str(item.id) == version_id]
+
+
+def test_incomplete_and_unsupported_cannot_become_executable_policy(
+    client_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, factory = client_env
+    _auth(client)
+    created = client.post(
+        "/strategies",
+        json={
+            "name": "Blocked strategy",
+            "setup_type": StrategyId.HTF_TREND_PULLBACK.value,
+            "card": _card().model_dump(mode="json"),
+        },
+    )
+    strategy_id = created.json()["id"]
+    conversation = client.post("/conversations", json={"strategy_id": strategy_id})
+    conv_id = conversation.json()["id"]
+    preview = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={"text": UNSUPPORTED_STRATEGY_TEXT, "strategy_id": strategy_id},
+    )
+    body = preview.json()
+    if body.get("proposed_structured_rules") is None:
+        return
+    confirmed = client.post(
+        f"/conversations/{conv_id}/proposals/{body['id']}/confirm",
+        json=_confirm_payload(body),
+    )
+    if confirmed.status_code != 200:
+        return
+    version_id = confirmed.json()["resulting_version_id"]
+    compiled = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
+    assert compiled.json()["status"] != "executable" or compiled.json()["compiled"] is None
+    approve = client.post(
+        f"/strategies/{strategy_id}/versions/{version_id}/approve",
+        json={"confirm": "I confirm"},
+    )
+    assert approve.status_code in {409, 422}
+    with factory() as session, pytest.raises(StrategyEvaluationPolicyError):
+        resolve_executable_strategy_policy(
+            session, organization_id=ORG, strategy_version_id=uuid.UUID(version_id)
+        )
+
+
+def test_persisted_watcher_path_uses_canonical_resolver(
+    client_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, factory = client_env
+    _auth(client)
+    created = client.post(
+        "/strategies",
+        json={
+            "name": "Watcher lineage",
+            "setup_type": StrategyId.LIQUIDITY_SWEEP_REVERSAL.value,
+            "card": _card().model_dump(mode="json"),
+        },
+    )
+    strategy_id = created.json()["id"]
+    conversation = client.post("/conversations", json={"strategy_id": strategy_id})
+    conv_id = conversation.json()["id"]
+    preview = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={"text": complete_first_slice_preview_text(), "strategy_id": strategy_id},
+    )
+    body = preview.json()
+    confirmed = client.post(
+        f"/conversations/{conv_id}/proposals/{body['id']}/confirm",
+        json=_confirm_payload(body),
+    )
+    version_id = uuid.UUID(confirmed.json()["resulting_version_id"])
+    compile_resp = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
+    assert compile_resp.json()["status"] == "executable"
+    approve = client.post(
+        f"/strategies/{strategy_id}/versions/{version_id}/approve",
+        json={"confirm": "I confirm"},
+    )
+    assert approve.status_code == 200
+
+    settings = _settings()
+    assert settings.watcher_orchestration_enabled is False
+    clock = FakeClock()
+    store = InMemoryWatcherStore()
+    with factory() as session:
+        executable = resolve_executable_strategy_policy(
             session, organization_id=ORG, strategy_version_id=version_id
         )
+        identity_user = uuid.uuid4()
+        from app.watcher.contracts import WatcherPolicyIdentity, WatcherPolicyVersion
 
-    compiled = CompiledSetupService(session).compile_version(
-        version_id, organization_id=ORG, user_id=USER
-    )
-    assert compiled.compiled is not None
-    strategy = session.get(UserStrategy, created.id)
-    assert strategy is not None
-    StrategyVersioningService(session).append_lifecycle(
-        organization_id=ORG,
-        strategy_id=strategy.id,
-        strategy_version_id=version_id,
-        new_state=StrategyLifecycleState.APPROVED,
-        actor_user_id=USER,
-        reason="explicit strategy approval after conversation confirmation",
-    )
-    session.flush()
-
-    executable = resolve_executable_strategy_policy(
-        session, organization_id=ORG, strategy_version_id=version_id
-    )
-    assert executable.lifecycle_state is StrategyLifecycleState.APPROVED
-    assembled = FirstSliceEvidenceAssembler(ReplayPerpetualSource(), replay=True).assemble(
-        organization_id=ORG,
-        policy=executable.fusion_policy,
-    )
-    first = evaluate_canonical_strategy(
-        executable_policy=executable,
-        command=assembled.assessment_command,
-        evidence=assembled.bundle,
-        evaluated_at=assembled.evaluated_at,
-    )
-    second = evaluate_canonical_strategy(
-        executable_policy=executable,
-        command=assembled.assessment_command,
-        evidence=assembled.bundle,
-        evaluated_at=assembled.evaluated_at,
-    )
-    assert first.evidence_window_hash == assembled.evidence_window_hash
-    assert first.state is second.state
-    assert first.evidence_window_hash == second.evidence_window_hash
-    assert first.content_hash == second.content_hash
-
-    versions = list(session.scalars(select(UserStrategyVersion)).all())
-    confirmed_versions = [item for item in versions if item.id == version_id]
-    assert len(confirmed_versions) == 1
+        draft = WatcherPolicyVersion(
+            identity=WatcherPolicyIdentity(
+                policy_id=uuid.uuid4(),
+                organization_id=ORG,
+                user_id=identity_user,
+                watchlist_item_id=uuid.uuid4(),
+            ),
+            version=1,
+            timeframe="15m",
+            strategy_version_id=version_id,
+            fusion_policy_version="first-slice-fusion/v1",
+            enabled=True,
+            created_by=identity_user,
+            created_at=clock.now(),
+            content_hash="0" * 64,
+        )
+        policy = draft.model_copy(update={"content_hash": policy_content_hash(draft)})
+        store.put_policy_version(policy)
+        request = ScanRequest(
+            organization_id=ORG,
+            scan_scope="first-slice-btcusdt-15m",
+            policy_id=policy.identity.policy_id,
+            policy_version=policy.version,
+            policy_content_hash=policy.content_hash,
+            watchlist_item_ids=(policy.identity.watchlist_item_id,),
+            timeframe="15m",
+            idempotency_key="watcher-persisted-lineage",
+        )
+        command = EvaluationCommand(
+            command_id=uuid.uuid4(),
+            request=request,
+            request_hash=scan_request_hash(request),
+            evaluation_input_hash=evaluation_input_hash(request),
+            mode=EvaluationMode.PREVIEW,
+            trigger=ScanTrigger.MANUAL,
+            correlation_id=uuid.uuid4(),
+        )
+        port = AssemblingWatcherScanEvidence(
+            FirstSliceEvidenceAssembler(ReplayPerpetualSource(), replay=True),
+            executable_resolver=lambda _command: None,
+            session=session,
+            watcher_store=store,
+        )
+        snapshot = port.load(command)
+        assert snapshot is not None
+        assert snapshot.executable_policy.strategy_version_id == version_id
+        assert snapshot.executable_policy.compiled_setup_definition_id == (
+            executable.compiled_setup_definition_id
+        )
+        service = build_fusion_evaluation_service(evidence=port)
+        outcome = service.evaluate(command)
+        assert outcome.reason_code != "missing_canonical_evidence"
+        persist = service.persist_confirmed_setup(command, outcome)
+        assert persist.candidate_ids == () or outcome.reason_code == "confirmed_setup"

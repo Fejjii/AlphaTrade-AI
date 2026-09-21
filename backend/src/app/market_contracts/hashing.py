@@ -23,6 +23,7 @@ RECEIVE_AND_TRANSPORT_FIELDS = frozenset(
         "start_cursor_id",
         "end_cursor_id",
         "cvd_window_id",
+        "coverage_proof_id",
         "receive_time",
         "receive_timestamp",
         "receive_time_max",
@@ -34,6 +35,13 @@ RECEIVE_AND_TRANSPORT_FIELDS = frozenset(
         "trace_id",
         "correlation_id",
         "connected_at",
+        "observed_at",
+        "source_connection_id",
+        "connection_identity",
+        "connection_id",
+        "lineage_id",
+        "scan_id",
+        "action_id",
     }
 )
 CONTENT_HASH_EXCLUDE = frozenset({"content_hash"})

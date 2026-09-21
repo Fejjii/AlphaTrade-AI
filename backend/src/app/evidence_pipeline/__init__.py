@@ -20,6 +20,7 @@ from app.evidence_pipeline.types import (
     CompletenessReport,
     CurrentPricePresentation,
     CurrentPriceQuote,
+    EvidenceClockReport,
 )
 from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
 
@@ -33,6 +34,7 @@ __all__ = [
     "CompletenessReport",
     "CurrentPricePresentation",
     "CurrentPriceQuote",
+    "EvidenceClockReport",
     "FirstSliceEvidenceAssembler",
     "build_first_slice_assessment_command",
     "first_slice_read_policy",

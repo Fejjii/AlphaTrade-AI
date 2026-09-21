@@ -229,6 +229,15 @@ class CandidateLifecycleService:
             raise CandidateCreationAuthorityError(
                 "SetupAssessment evidence_window_hash must equal CanonicalEvidenceWindowV1."
             )
+        from app.evidence_pipeline.canonical import is_first_slice_read_projection
+
+        if is_first_slice_read_projection(
+            strategy_version_id=assessment.strategy_version_id,
+            setup_definition_id=setup.setup_definition_id,
+        ):
+            raise CandidateCreationAuthorityError(
+                "Read projection placeholder IDs cannot mint Candidates."
+            )
         _require_identity_matches_window(identity, window)
 
 

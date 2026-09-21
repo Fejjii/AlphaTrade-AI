@@ -15,12 +15,17 @@ from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
     CompletenessReport,
     CurrentPriceQuote,
+    EvidenceClockReport,
 )
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
 from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.cursor import TradeStreamAssembler
-from app.market_contracts.cvd import first_slice_baseline_open, first_slice_cvd_window
-from app.market_contracts.enums import DataCompleteness, MarketType
+from app.market_contracts.cvd import (
+    FIRST_SLICE_CVD_LOOKBACK_BARS,
+    first_slice_baseline_open,
+    first_slice_cvd_window,
+)
+from app.market_contracts.enums import DataCompleteness, Finality, MarketType
 from app.market_contracts.errors import (
     FallbackForbiddenError,
     FormingCandleError,
@@ -43,11 +48,11 @@ from app.market_contracts.freshness import (
     live_confirmation_window_open,
 )
 from app.market_contracts.identity import EvidenceMarketIdentity
-from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar
+from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
 from app.signal_fusion.enums import EvidenceAdapterKind
-from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
+from app.signal_fusion.first_slice_types import FIRST_SLICE_EXPIRY_BARS, FirstSliceEvidenceBundle
 from app.signal_fusion.observation import TenantExternalAssertion
 from app.signal_fusion.policy import FusionPolicy
 from app.signal_fusion.types import ManualLevelRevisionRef
@@ -80,6 +85,7 @@ class FirstSliceEvidenceAssembler:
         tenant_assertions: tuple[TenantExternalAssertion, ...] = (),
         manual_level_revision: ManualLevelRevisionRef | None = None,
         connection_id: UUID | None = None,
+        setup_trigger_end: datetime | None = None,
     ) -> AssembledCanonicalEvidence:
         instrument = self._catalog.require(symbol)
         clock = evaluated_at or self._default_clock()
@@ -92,13 +98,27 @@ class FirstSliceEvidenceAssembler:
         context_identity = timeframe_identity(trigger_identity, Timeframe.H4)
         self._assert_live_contract(trigger_identity)
 
-        series_15m = self._source.fetch_closed_ohlcv(
-            identity=trigger_identity,
-            instrument=instrument,
-            timeframe=Timeframe.M15,
-            min_final_bars=FIRST_SLICE_MIN_FINAL_15M,
-            evaluated_at=clock,
-        )
+        min_15m = FIRST_SLICE_MIN_FINAL_15M
+        if setup_trigger_end is not None:
+            min_15m = FIRST_SLICE_MIN_FINAL_15M + FIRST_SLICE_EXPIRY_BARS + 2
+        try:
+            series_15m = self._source.fetch_closed_ohlcv(
+                identity=trigger_identity,
+                instrument=instrument,
+                timeframe=Timeframe.M15,
+                min_final_bars=min_15m,
+                evaluated_at=clock,
+            )
+        except FormingCandleError:
+            if setup_trigger_end is None:
+                raise
+            series_15m = self._source.fetch_closed_ohlcv(
+                identity=trigger_identity,
+                instrument=instrument,
+                timeframe=Timeframe.M15,
+                min_final_bars=FIRST_SLICE_MIN_FINAL_15M,
+                evaluated_at=clock,
+            )
         series_4h = self._source.fetch_closed_ohlcv(
             identity=context_identity,
             instrument=instrument,
@@ -106,7 +126,12 @@ class FirstSliceEvidenceAssembler:
             min_final_bars=FIRST_SLICE_MIN_FINAL_4H,
             evaluated_at=clock,
         )
-        trigger = _last_final_bar(series_15m)
+        trigger, subsequent, series_15m = _trigger_and_subsequent(
+            series_15m,
+            identity=trigger_identity,
+            evaluated_at=clock,
+            setup_trigger_end=setup_trigger_end,
+        )
         context = _context_bar(series_4h, trigger)
         window_start = first_slice_baseline_open(trigger)
         window_end = trigger.interval_end
@@ -194,6 +219,7 @@ class FirstSliceEvidenceAssembler:
             bars_15m=tuple(series_15m.bars),
             bars_4h=tuple(series_4h.bars),
             snapshot=snapshot,
+            subsequent_final_15m=subsequent,
         )
         completeness = CompletenessReport(
             ohlcv_15m=DataCompleteness.COMPLETE,
@@ -203,6 +229,17 @@ class FirstSliceEvidenceAssembler:
             coverage_content_hash=snapshot.coverage.content_hash,
             cvd_content_hash=cvd.content_hash,
             signed_flow_content_hash=signed_flow.content_hash,
+        )
+        clocks = EvidenceClockReport(
+            quote_source_time=None if current is None else current.source_time,
+            quote_fresh=current is not None and current.usable_as_current_market_price,
+            trade_stream_event_time_max=cvd.event_time_max,
+            live_confirmation_window_open=live_window,
+            trigger_finality=trigger.finality,
+            trigger_interval_end=trigger.interval_end,
+            historical_closed_evidence=not live_window,
+            subsequent_final_15m_count=len(subsequent),
+            setup_expired=len(subsequent) >= FIRST_SLICE_EXPIRY_BARS,
         )
         return AssembledCanonicalEvidence(
             organization_id=organization_id,
@@ -218,6 +255,7 @@ class FirstSliceEvidenceAssembler:
             current_price=current,
             completeness=completeness,
             freshness_state=freshness.state,
+            clocks=clocks,
             bundle=bundle,
             assessment_command=command,
             evidence_window=window,
@@ -246,6 +284,48 @@ def _last_final_bar(series: ClosedOhlcvSeries) -> OhlcvBar:
     if not series.bars:
         raise FormingCandleError("Closed OHLCV series is empty.")
     return series.bars[-1]
+
+
+def _trigger_and_subsequent(
+    series: ClosedOhlcvSeries,
+    *,
+    identity: EvidenceMarketIdentity,
+    evaluated_at: datetime,
+    setup_trigger_end: datetime | None,
+) -> tuple[OhlcvBar, tuple[OhlcvBar, ...], ClosedOhlcvSeries]:
+    """Pin the setup trigger; later closed 15m bars are subsequent, not a new trigger."""
+
+    if not series.bars:
+        raise FormingCandleError("Closed OHLCV series is empty.")
+    if setup_trigger_end is None:
+        return series.bars[-1], (), series
+    wanted = setup_trigger_end.astimezone(UTC) if setup_trigger_end.tzinfo else setup_trigger_end
+    matches = [bar for bar in series.bars if bar.interval_end == wanted]
+    if not matches:
+        raise FormingCandleError("Pinned setup trigger bar is not in the closed 15m series.")
+    trigger = matches[-1]
+    index = series.bars.index(trigger)
+    subsequent = tuple(
+        bar
+        for bar in series.bars[index + 1 :]
+        if bar.finality is Finality.FINAL and bar.provider_complete
+    )
+    through_trigger = list(series.bars[: index + 1])
+    min_required = FIRST_SLICE_MIN_FINAL_15M
+    if len(through_trigger) < FIRST_SLICE_CVD_LOOKBACK_BARS + 1:
+        raise IncompleteWarmUpError(
+            "Pinned setup trigger does not retain the required closed 15m warmup."
+        )
+    if len(through_trigger) < min_required:
+        min_required = len(through_trigger)
+    pinned = require_closed_series(
+        through_trigger,
+        identity=identity,
+        timeframe=Timeframe.M15,
+        evaluated_at=evaluated_at,
+        min_bars=min_required,
+    )
+    return trigger, subsequent, pinned
 
 
 def _context_bar(series: ClosedOhlcvSeries, trigger: OhlcvBar) -> OhlcvBar:
