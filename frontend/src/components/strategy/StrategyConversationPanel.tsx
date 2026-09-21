@@ -106,6 +106,9 @@ export function StrategyConversationPanel({ strategyId }: Props) {
         expected_content_hash: proposal.content_hash ?? "",
         expected_parent_version_id: proposal.parent_version_id ?? null,
         expected_target_strategy_id: proposal.target_strategy_id ?? null,
+        expected_organization_id: proposal.organization_id,
+        expected_user_id: proposal.user_id,
+        expected_conversation_id: proposal.conversation_id,
       });
       setProposal(confirmed);
       await loadThread(conversationId);
@@ -217,6 +220,20 @@ export function StrategyConversationPanel({ strategyId }: Props) {
                 Challenge: {note}
               </p>
             ))}
+            {proposal.content_hash ? (
+              <dl
+                className="space-y-1 text-xs text-zinc-400"
+                data-testid="strategy-conversation-confirmation-identity"
+              >
+                <div>proposal_id: {proposal.id}</div>
+                <div>content_hash: {proposal.content_hash}</div>
+                <div>target_strategy_id: {proposal.target_strategy_id ?? "none"}</div>
+                <div>parent_version_id: {proposal.parent_version_id ?? "none"}</div>
+                <div>conversation_id: {proposal.conversation_id}</div>
+                <div>organization_id: {proposal.organization_id}</div>
+                <div>user_id: {proposal.user_id}</div>
+              </dl>
+            ) : null}
             {proposal.limitations.slice(0, 2).map((note) => (
               <p key={note} className="text-xs text-zinc-400">
                 {note}

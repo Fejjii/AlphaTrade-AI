@@ -44,8 +44,10 @@ from app.schemas.common import (
     PaperTradeStatus,
     PaperValidationRuntimeMode,
     PaperValidationStatus,
+    RuleEngineSource,
     StrategyValidationStatus,
     Timeframe,
+    TradeDirection,
 )
 from app.schemas.paper_validation import (
     PaginatedPaperSignals,
@@ -63,7 +65,10 @@ from app.schemas.paper_validation import (
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.structured_rules import StructuredRules
 from app.services.audit_service import AuditService
-from app.services.canonical_strategy_evaluation import evaluate_canonical_strategy_for_version
+from app.services.canonical_strategy_evaluation import (
+    evaluate_canonical_strategy_for_version,
+    resolve_executable_strategy_policy,
+)
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.journal_trade_service import JournalTradeService
 from app.services.paper_alert_service import PaperAlertService
@@ -79,7 +84,9 @@ from app.services.paper_validation_promotion import (
 from app.services.structured_rule_resolver import resolve_backtest_rules
 from app.signal_fusion.adapters import AssessmentCommand
 from app.signal_fusion.assessment import SetupAssessment
+from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
+from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
 
 logger = structlog.get_logger(__name__)
 
@@ -235,31 +242,70 @@ class PaperValidationRuntimeService:
         elif candle_rows:
             builder.data_freshness = "fresh"
 
-        resolved = resolve_backtest_rules(ctx.card, ctx.setup_type, ctx.structured)
-        rules = resolved.rules
-        engine_source = resolved.engine_source.value
-
-        blocked_filters = self._engine.evaluate_no_trade_filters(
-            rules,
-            no_trade_rules=ctx.no_trade_rules,
+        lineage = self._approved_compiled_lineage(
+            run, organization_id=organization_id, user_id=user_id
         )
-        evaluation = self._engine.evaluate_entry(rules, candle_rows, engine_source=engine_source)
-
-        signal_status = PaperSignalStatus.DETECTED
-        triggered = evaluation.triggered and not blocked_filters
+        triggered = False
+        engine_source = RuleEngineSource.UNSUPPORTED.value
+        blocked_filters: list[str] = []
         limitations = list(data_limitations)
+        evaluation_entry = None
+        evaluation_stop = None
+        evaluation_notes = ""
+        matched_blocks: list[str] = []
+        direction = TradeDirection.LONG
+        tp_plan = {"r_multiples": ["1"]}
+        runner_plan = None
+        rules = None
 
-        if not rules.machine_readable:
+        if lineage is None:
             signal_status = PaperSignalStatus.NOT_TESTABLE
-            triggered = False
-            run.blockers = list(set((run.blockers or []) + ["Rules not machine testable."]))
-            limitations.append("Improve structured rules before paper trades.")
-        elif blocked_filters:
-            signal_status = PaperSignalStatus.BLOCKED_FILTER
-            triggered = False
-
-        tp_plan = {"r_multiples": [str(m) for m in rules.tp_r_multiples]}
-        runner_plan = {"use_runner": rules.use_runner} if rules.use_runner else None
+            limitations.append(
+                "Automated paper evaluation requires an approved compiled strategy version."
+            )
+            run.blockers = list(
+                set(
+                    (run.blockers or [])
+                    + ["Approved compiled strategy lineage is required for paper-bot trades."]
+                )
+            )
+        else:
+            resolved = resolve_backtest_rules(ctx.card, ctx.setup_type, ctx.structured)
+            rules = resolved.rules
+            engine_source = resolved.engine_source.value
+            if resolved.engine_source in {
+                RuleEngineSource.DEFAULT_SETUP,
+                RuleEngineSource.UNSUPPORTED,
+            }:
+                signal_status = PaperSignalStatus.NOT_TESTABLE
+                limitations.append(
+                    "Paper-bot cannot invent setup-default rules; approved compiled "
+                    "lineage must supply machine-readable compatibility rules."
+                )
+            elif not rules.machine_readable:
+                signal_status = PaperSignalStatus.NOT_TESTABLE
+                run.blockers = list(set((run.blockers or []) + ["Rules not machine testable."]))
+                limitations.append("Improve structured rules before paper trades.")
+            else:
+                blocked_filters = self._engine.evaluate_no_trade_filters(
+                    rules,
+                    no_trade_rules=ctx.no_trade_rules,
+                )
+                evaluation = self._engine.evaluate_entry(
+                    rules, candle_rows, engine_source=engine_source
+                )
+                evaluation_entry = evaluation.entry_price
+                evaluation_stop = evaluation.stop_loss
+                evaluation_notes = evaluation.notes
+                matched_blocks = evaluation.matched_blocks
+                direction = rules.direction
+                tp_plan = {"r_multiples": [str(m) for m in rules.tp_r_multiples]}
+                runner_plan = {"use_runner": rules.use_runner} if rules.use_runner else None
+                signal_status = PaperSignalStatus.DETECTED
+                triggered = evaluation.triggered and not blocked_filters
+                if blocked_filters:
+                    signal_status = PaperSignalStatus.BLOCKED_FILTER
+                    triggered = False
 
         signal_row = PaperSignalModel(
             paper_validation_run_id=run.id,
@@ -270,18 +316,23 @@ class PaperValidationRuntimeService:
             symbol=config.symbol,
             exchange=config.exchange,
             timeframe=config.timeframe,
-            direction=rules.direction,
+            direction=direction,
             triggered=triggered,
             status=signal_status,
-            matched_entry_blocks=evaluation.matched_blocks,
+            matched_entry_blocks=matched_blocks,
             blocked_no_trade_filters=blocked_filters,
             confidence=0.75 if triggered else 0.0,
-            suggested_entry=evaluation.entry_price,
-            stop_loss=evaluation.stop_loss,
+            suggested_entry=evaluation_entry,
+            stop_loss=evaluation_stop,
             invalidation=ctx.card.invalidation[0] if ctx.card.invalidation else None,
             tp_plan=tp_plan,
             runner_plan=runner_plan,
-            reason=evaluation.notes,
+            reason=evaluation_notes
+            or (
+                "Approved compiled lineage is required."
+                if lineage is None
+                else "Paper compatibility scan."
+            ),
             limitations=limitations,
             rule_engine_source=engine_source,
         )
@@ -291,15 +342,18 @@ class PaperValidationRuntimeService:
         open_count = len(self._trades.list_open_for_run(run.id, organization_id=organization_id))
         if (
             run.runtime_mode == PaperValidationRuntimeMode.AUTO_PAPER
+            and lineage is not None
+            and rules is not None
             and triggered
             and signal_status == PaperSignalStatus.DETECTED
-            and evaluation.entry_price is not None
-            and evaluation.stop_loss is not None
+            and evaluation_entry is not None
+            and evaluation_stop is not None
+            and candle_rows
             and open_count < config.max_open_trades
         ):
             size = self._compute_size(
-                evaluation.entry_price,
-                evaluation.stop_loss,
+                evaluation_entry,
+                evaluation_stop,
                 config,
             )
             if size > 0:
@@ -308,8 +362,8 @@ class PaperValidationRuntimeService:
                 open_state = self._engine.open_trade_state(
                     direction=rules.direction,
                     entry_time=candle_rows[-1].close_time,
-                    entry_price=evaluation.entry_price,
-                    stop_loss=evaluation.stop_loss,
+                    entry_price=evaluation_entry,
+                    stop_loss=evaluation_stop,
                     size=size,
                     rules=rules,
                     fee_rate=fee_rate,
@@ -414,6 +468,8 @@ class PaperValidationRuntimeService:
             strategy_id=run.strategy_id,
             symbol=config.symbol,
         )
+        # Tick only monitors already-open paper trades. It does not evaluate
+        # conversation-invented StructuredRules or open AUTO_PAPER entries.
         prior_rec = run.recommendation
 
         lookback_days = self._engine.default_lookback_days(config.timeframe)
@@ -745,6 +801,26 @@ class PaperValidationRuntimeService:
             config=config,
             no_trade_rules=no_trade,
         )
+
+    def _approved_compiled_lineage(
+        self,
+        run: PaperValidationRunModel,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> ExecutableStrategyPolicy | None:
+        version_id = run.strategy_version_id
+        if version_id is None:
+            return None
+        try:
+            return resolve_executable_strategy_policy(
+                self._session,
+                organization_id=organization_id,
+                strategy_version_id=version_id,
+                user_id=user_id,
+            )
+        except (StrategyEvaluationPolicyError, NotFoundError):
+            return None
 
     def _get_active_run(
         self,
@@ -1172,8 +1248,8 @@ class PaperValidationRuntimeService:
     ) -> SetupAssessment:
         """Evaluate SetupAssessment via the canonical strategy policy boundary.
 
-        Paper-bot ``scan``/``tick`` remain compatibility simulation until a
-        canonical evidence assembler exists. This method is the SetupAssessment
+        Paper-bot ``scan``/``tick`` consume approved compiled lineage as a
+        compatibility path, or fail closed. This method is the SetupAssessment
         entry Watcher also uses. It does not mint Candidates or place orders.
         """
 

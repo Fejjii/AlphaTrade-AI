@@ -197,8 +197,33 @@ def build_trading_analysis(agent: AgentState, runtime: AgentRuntime) -> TradingA
             "human_vs_system_tool",
             "strategy_testability_tool",
             "structure_from_text_tool",
+            "strategy_proposal_tool",
+            "strategy_discussion_context_tool",
         }
     ]
+    if (
+        agent.intent
+        in {
+            Intent.STRATEGY_PROPOSAL_CONFIRM,
+            Intent.STRATEGY_PROPOSAL_REJECT,
+            Intent.STRATEGY_DISCUSSION,
+            Intent.STRUCTURE_STRATEGY,
+        }
+        and agent.final_answer
+    ):
+        return TradingAnalysisDetail(
+            summary=agent.final_answer.split("\n")[0][:500],
+            setup_type=_setup_type(agent),
+            evidence=_evidence(agent),
+            risk_level=agent.risk_level,
+            confidence=agent.confidence,
+            invalidation=None,
+            stop_loss_or_no_trade_reason="No trade — strategy conversation only.",
+            approval_status=approval_status,
+            next_decision_point="Confirm the presented proposal identity, or continue discussion.",
+            paper_mode_disclaimer=paper_disclaimer,
+            market_data_quality=market_quality,
+        )
     if strategy_tools and agent.final_answer and "SOURCE OF TRUTH" in agent.final_answer:
         summary_line = agent.final_answer.split("\n")[0]
         summary_line = summary_line.replace("SOURCE OF TRUTH (deterministic):", "").strip()

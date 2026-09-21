@@ -1526,6 +1526,17 @@ def _strategy_discussion_context_execute(args: dict[str, Any], session: Any | No
         )
 
 
+def _optional_uuid(value: object) -> Any:
+    import uuid as _uuid
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "none":
+        return None
+    return _uuid.UUID(text)
+
+
 def _strategy_proposal_execute(args: dict[str, Any], session: Any | None) -> ToolOutput:
     import uuid as _uuid
 
@@ -1548,18 +1559,30 @@ def _strategy_proposal_execute(args: dict[str, Any], session: Any | None) -> Too
         if action == "confirm":
             proposal_id = _uuid.UUID(str(args["proposal_id"]))
             conversation_id = args.get("conversation_id")
+            expected_hash = str(args.get("expected_content_hash") or "").strip().lower()
+            expected_org = _optional_uuid(args.get("expected_organization_id"))
+            expected_user = _optional_uuid(args.get("expected_user_id"))
+            expected_conversation = _optional_uuid(args.get("expected_conversation_id"))
             if conversation_id is None:
                 return ToolOutput(
                     tool_name="strategy_proposal_tool",
                     success=False,
                     error="Conversation id is required to confirm a proposal.",
                 )
-            presented = service.get(
-                proposal_id,
-                organization_id=org,
-                user_id=user,
-                conversation_id=_uuid.UUID(str(conversation_id)),
-            )
+            if (
+                len(expected_hash) != 64
+                or expected_org is None
+                or expected_user is None
+                or expected_conversation is None
+            ):
+                return ToolOutput(
+                    tool_name="strategy_proposal_tool",
+                    success=False,
+                    error=(
+                        "Presented confirmation identity is required. Server lookup of "
+                        "the pending draft cannot authorize confirmation."
+                    ),
+                )
             result = service.confirm(
                 proposal_id,
                 organization_id=org,
@@ -1567,9 +1590,12 @@ def _strategy_proposal_execute(args: dict[str, Any], session: Any | None) -> Too
                 confirm_message=user_message,
                 confirm_arg=bool(args.get("confirm")),
                 conversation_id=_uuid.UUID(str(conversation_id)),
-                expected_content_hash=presented.content_hash or "",
-                expected_parent_version_id=presented.parent_version_id,
-                expected_target_strategy_id=presented.target_strategy_id,
+                expected_content_hash=expected_hash,
+                expected_parent_version_id=_optional_uuid(args.get("expected_parent_version_id")),
+                expected_target_strategy_id=_optional_uuid(args.get("expected_target_strategy_id")),
+                expected_organization_id=expected_org,
+                expected_user_id=expected_user,
+                expected_conversation_id=expected_conversation,
             )
         elif action == "reject":
             proposal_id = _uuid.UUID(str(args["proposal_id"]))

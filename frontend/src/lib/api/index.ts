@@ -394,6 +394,9 @@ export const api = {
         expected_content_hash: string;
         expected_parent_version_id?: string | null;
         expected_target_strategy_id?: string | null;
+        expected_organization_id: string;
+        expected_user_id: string;
+        expected_conversation_id: string;
       },
     ) =>
       apiFetch<StrategyProposalRecord>(

@@ -6,8 +6,13 @@ import uuid
 
 from fastapi import APIRouter, Query
 
+from app.agents.confirmation_identity import (
+    format_presented_confirmation_identity,
+    identity_from_proposal,
+)
 from app.core.dependencies import SessionDep
-from app.schemas.common import StrategyProposalStatus
+from app.core.errors import ConflictError
+from app.schemas.common import ConversationMessageRole, StrategyProposalStatus
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationSummary,
@@ -151,6 +156,23 @@ async def create_conversation_proposal(
         text=body.text,
         strategy_id=body.strategy_id,
     )
+    if result.content_hash:
+        identity = identity_from_proposal(
+            result,
+            conversation_id=conversation.id,
+            organization_id=tenant.organization_id,
+            user_id=tenant.user_id,
+        )
+        _conversations(session).append_message(
+            conversation=conversation,
+            role=ConversationMessageRole.ASSISTANT,
+            content=format_presented_confirmation_identity(identity),
+            intent="structure_strategy",
+            payload={
+                "proposal_id": str(result.id),
+                "content_hash": result.content_hash,
+            },
+        )
     session.commit()
     return result
 
@@ -186,6 +208,15 @@ async def confirm_conversation_proposal(
     tenant: TraderDep,
     session: SessionDep,
 ) -> StrategyProposalRecord:
+    if (
+        body.expected_organization_id != tenant.organization_id
+        or body.expected_user_id != tenant.user_id
+        or body.expected_conversation_id != conversation_id
+    ):
+        raise ConflictError(
+            "Presented confirmation identity does not match this conversation, "
+            "organization, or user."
+        )
     result = _proposals(session).confirm(
         proposal_id,
         organization_id=tenant.organization_id,
@@ -196,6 +227,9 @@ async def confirm_conversation_proposal(
         expected_content_hash=body.expected_content_hash,
         expected_parent_version_id=body.expected_parent_version_id,
         expected_target_strategy_id=body.expected_target_strategy_id,
+        expected_organization_id=body.expected_organization_id,
+        expected_user_id=body.expected_user_id,
+        expected_conversation_id=body.expected_conversation_id,
     )
     session.commit()
     return result

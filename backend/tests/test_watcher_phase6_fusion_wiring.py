@@ -20,13 +20,12 @@ from app.market_contracts.cursor import TradeStreamSnapshot
 from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment
-from app.signal_fusion.enums import CandidateState, EvidenceAdapterKind, SetupAssessmentState
+from app.signal_fusion.enums import EvidenceAdapterKind, SetupAssessmentState
 from app.signal_fusion.errors import CandidateCreationAuthorityError
 from app.signal_fusion.evaluator import evaluate_setup
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.lifecycle import (
     CandidateLifecycleService,
-    deterministic_candidate_id,
     uniqueness_from_confirmed,
 )
 from app.signal_fusion.memory import InMemoryCandidateRepository
@@ -47,6 +46,7 @@ from app.watcher.contracts import (
 from app.watcher.errors import SimulatedWorkerCrashError
 from app.watcher.fusion_evaluation import (
     BoundEvaluationClock,
+    ExecutablePolicyAuthority,
     InMemoryWatcherScanEvidence,
     WatcherCanonicalScanEvidence,
     WatcherFusionEvaluationService,
@@ -219,6 +219,16 @@ def _assert_no_side_effects(probe: SideEffectProbe) -> None:
     assert probe.unused is True
 
 
+def _assert_in_memory_cannot_mint(
+    outcome: EvaluationOutcome | None, service: WatcherFusionEvaluationService
+) -> None:
+    assert outcome is not None
+    assert outcome.status is EvaluationStatus.FAILED
+    assert outcome.reason_code == "candidate_creation_failed"
+    assert outcome.candidate_ids == ()
+    assert service.published_candidate_ids == ()
+
+
 def test_watcher_and_market_watcher_remain_disabled_by_default() -> None:
     settings = Settings()
     assert settings.watcher_orchestration_enabled is False
@@ -238,19 +248,15 @@ def test_manual_and_worker_evaluation_parity() -> None:
     preview = orch.evaluate_manual(manual_request, mode=EvaluationMode.PREVIEW)
     worker = orch.run_worker(worker_request, worker_id="worker-1")
     assert preview.outcome.status is EvaluationStatus.SUCCEEDED
-    assert worker.outcome is not None
-    assert worker.outcome.status is EvaluationStatus.SUCCEEDED
     assert preview.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
-    assert worker.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
     assert preview.outcome.evidence_validity_token == manual_truth.evidence_window_hash
-    assert worker.outcome.evidence_validity_token == manual_truth.evidence_window_hash
+    assert preview.outcome.candidate_ids == ()
+    _assert_in_memory_cannot_mint(worker.outcome, service)
     assert evaluation_input_hash(manual_request) == evaluation_input_hash(worker_request)
     window = evidence_window_from_assessment_command(
         world.command.model_copy(update={"adapter_kind": EvidenceAdapterKind.DETECTOR})
     )
     assert window.content_hash == manual_truth.evidence_window_hash
-    assert preview.outcome.candidate_ids == ()
-    assert worker.outcome.candidate_ids == (service.published_candidate_ids[0],)
     _assert_no_side_effects(probe)
 
 
@@ -261,22 +267,11 @@ def test_confirmed_setup_creates_exactly_one_candidate() -> None:
     orch, _clock, _store, service, probe, _evidence, policy = _wired(world)
     first = orch.run_worker(_request(policy, key="scan-a"), worker_id="worker-1")
     second = orch.run_worker(_request(policy, key="scan-b"), worker_id="worker-1")
-    assert first.outcome is not None
-    assert second.outcome is not None
-    assert first.outcome.candidate_ids == second.outcome.candidate_ids
-    assert len(first.outcome.candidate_ids) == 1
-    candidate_id = first.outcome.candidate_ids[0]
+    _assert_in_memory_cannot_mint(first.outcome, service)
+    _assert_in_memory_cannot_mint(second.outcome, service)
     window = evidence_window_from_assessment_command(world.command)
-    expected = deterministic_candidate_id(
-        uniqueness_from_confirmed(assessment, window, world.command.executable_setup)
-    )
-    assert candidate_id == expected
-    stored = service.lifecycle.get_by_candidate_id(ORG_ID, candidate_id)
-    assert stored is not None
-    assert stored.state is CandidateState.ACTIVE
-    assert stored.evidence_window_hash == window.content_hash
-    assert stored.candidate_id == service.published_candidate_ids[0]
-    assert set(service.published_candidate_ids) == {candidate_id}
+    uniqueness = uniqueness_from_confirmed(assessment, window, world.command.executable_setup)
+    assert service.lifecycle.get_by_uniqueness(uniqueness) is None
     _assert_no_side_effects(probe)
 
 
@@ -292,11 +287,10 @@ def test_duplicate_semantic_scan_converges() -> None:
         _request(detector_policy, key="detector-scan", scan_scope="detector-scope"),
         worker_id="worker-2",
     )
-    assert left.outcome is not None
+    _assert_in_memory_cannot_mint(left.outcome, service)
     assert right.outcome is not None
-    assert left.outcome.candidate_ids == right.outcome.candidate_ids
+    assert right.outcome.candidate_ids == ()
     assert left.outcome.evidence_validity_token == right.outcome.evidence_validity_token
-    assert len(set(service.published_candidate_ids)) == 1
     _assert_no_side_effects(probe)
 
 
@@ -549,14 +543,8 @@ def test_stale_worker_fencing_cannot_publish() -> None:
         evaluator=inner,
         side_effects=SideEffectProbe(),
     ).run_worker(request, worker_id="worker-b")
-    assert winner.published is True
-    assert winner.outcome is not None
-    assert winner.outcome.status is EvaluationStatus.SUCCEEDED
-    assert winner.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
-    assert len(set(inner.published_candidate_ids)) == 1
-    refreshed = store.get_lineage(winner.lineage_id, request.organization_id)
-    assert refreshed is not None
-    assert refreshed.terminal_status is ScanAttemptStatus.SUCCEEDED
+    _assert_in_memory_cannot_mint(winner.outcome, inner)
+    assert winner.status.value == "failed"
 
 
 def test_organization_isolation() -> None:
@@ -588,16 +576,20 @@ def test_organization_isolation() -> None:
     store.put_policy_version(policy_b)
     left = orch.run_worker(_request(policy_a, key="org-a"), worker_id="worker-a")
     right = orch.run_worker(_request(policy_b, key="org-b"), worker_id="worker-b")
-    assert left.outcome is not None
+    _assert_in_memory_cannot_mint(left.outcome, service)
     assert right.outcome is not None
-    assert left.outcome.candidate_ids != right.outcome.candidate_ids
-    left_id = left.outcome.candidate_ids[0]
-    right_id = right.outcome.candidate_ids[0]
-    assert service.lifecycle.get_by_candidate_id(org_a, left_id) is not None
-    assert service.lifecycle.get_by_candidate_id(org_b, left_id) is None
-    assert service.lifecycle.get_by_candidate_id(org_b, right_id) is not None
-    assert service.lifecycle.get_by_candidate_id(org_a, right_id) is None
-    assert left.outcome.evidence_validity_token != right.outcome.evidence_validity_token
+    assert right.outcome.candidate_ids == ()
+    preview_a = orch.evaluate_manual(
+        _request(policy_a, key="org-a-preview", principal_id=policy_a.identity.user_id),
+        mode=EvaluationMode.PREVIEW,
+    )
+    preview_b = orch.evaluate_manual(
+        _request(policy_b, key="org-b-preview", principal_id=policy_b.identity.user_id),
+        mode=EvaluationMode.PREVIEW,
+    )
+    assert preview_a.outcome.evidence_validity_token != preview_b.outcome.evidence_validity_token
+    assert preview_a.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
+    assert preview_b.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
 
 
 def test_worker_crash_and_retry_preserves_semantic_convergence() -> None:
@@ -628,16 +620,12 @@ def test_worker_crash_and_retry_preserves_semantic_convergence() -> None:
         side_effects=SideEffectProbe(),
     )
     result = recovered.run_worker(request, worker_id="worker-1")
-    assert result.status.value == "succeeded"
-    assert result.published is True
-    assert result.outcome is not None
-    assert result.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
-    assert len(set(service.published_candidate_ids)) == 1
-    assert result.outcome.candidate_ids == (service.published_candidate_ids[0],)
+    _assert_in_memory_cannot_mint(result.outcome, service)
+    assert result.status.value == "failed"
     scheduled = store.get_schedule(policy.identity.organization_id, None, "crash-retry")
     assert scheduled is not None
     attempts = store.list_attempts(scheduled.lineage_id)
-    assert attempts[-1].status is ScanAttemptStatus.SUCCEEDED
+    assert attempts[-1].status is ScanAttemptStatus.FAILED
 
 
 def test_missing_evidence_is_failed_scan_not_setup_truth() -> None:
@@ -676,8 +664,7 @@ def test_preview_does_not_persist_candidate() -> None:
         mode=EvaluationMode.PERSIST_EVIDENCE,
     )
     assert preview.outcome.candidate_ids == ()
-    assert persist.outcome.candidate_ids == (service.published_candidate_ids[0],)
-    assert persist.outcome.evidence_validity_token == preview.outcome.evidence_validity_token
+    _assert_in_memory_cannot_mint(persist.outcome, service)
     _assert_no_side_effects(probe)
 
 
@@ -690,8 +677,8 @@ def test_manual_persist_and_worker_converge_on_one_candidate() -> None:
     )
     worker = orch.run_worker(_request(policy, key="worker-persist"), worker_id="worker-1")
     assert worker.outcome is not None
-    assert manual.outcome.candidate_ids == worker.outcome.candidate_ids
-    assert len(set(service.published_candidate_ids)) == 1
+    _assert_in_memory_cannot_mint(manual.outcome, service)
+    assert worker.outcome.candidate_ids == ()
     assert scan_request_hash(_request(policy, key="x", principal_id=policy.identity.user_id)) != (
         scan_request_hash(_request(policy, key="y"))
     )
@@ -757,7 +744,7 @@ def test_direct_manual_and_worker_commands_share_window() -> None:
     assert worker_assessed.candidate_ids == ()
     assert service.published_candidate_ids == ()
     worker = service.persist_confirmed_setup(worker_command, worker_assessed)
-    assert len(worker.candidate_ids) == 1
+    _assert_in_memory_cannot_mint(worker, service)
     assert evaluation_input_hash(manual_request) == evaluation_input_hash(worker_request)
 
 
@@ -804,17 +791,19 @@ def test_revision_change_creates_distinct_evidence_and_candidate() -> None:
     assert second.outcome is not None
     assert first.outcome.evidence_validity_token == first_direct.evidence_window_hash
     assert second.outcome.evidence_validity_token == second_direct.evidence_window_hash
-    assert first.outcome.candidate_ids != second.outcome.candidate_ids
-    assert len(set(service.published_candidate_ids)) == 2
+    _assert_in_memory_cannot_mint(first.outcome, service)
+    assert second.outcome.candidate_ids == ()
 
 
 def test_watcher_cannot_bypass_canonical_evaluator() -> None:
     world = make_world()
     orch, _clock, _store, _service, probe, _evidence, policy = _wired(world)
-    worker = orch.run_worker(_request(policy, key="canonical"), worker_id="worker-1")
-    assert worker.outcome is not None
-    assert worker.outcome.evidence_validity_token == _direct_assessment(world).evidence_window_hash
-    assert worker.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
+    preview = orch.evaluate_manual(
+        _request(policy, key="canonical", principal_id=policy.identity.user_id),
+        mode=EvaluationMode.PREVIEW,
+    )
+    assert preview.outcome.evidence_validity_token == _direct_assessment(world).evidence_window_hash
+    assert preview.outcome.reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
     _assert_no_side_effects(probe)
     text = FUSION_EVAL_SRC.read_text(encoding="utf-8")
     assert "def evaluate_setup" not in text
@@ -918,3 +907,13 @@ def test_assessment_command_tenant_mismatch_fails_closed() -> None:
     assert result.outcome.candidate_ids == ()
     assert service.published_candidate_ids == ()
     _assert_no_side_effects(probe)
+
+
+def test_in_memory_scan_evidence_cannot_claim_persisted_authority() -> None:
+    world = make_world()
+    snapshot = snapshot_from_world(world).model_copy(
+        update={"policy_authority": ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED}
+    )
+    evidence = InMemoryWatcherScanEvidence()
+    with pytest.raises(CandidateCreationAuthorityError, match="persisted compiled"):
+        evidence.bind(snapshot, scan_scope=SHARED_SCOPE)

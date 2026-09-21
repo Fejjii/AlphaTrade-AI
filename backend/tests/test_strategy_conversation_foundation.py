@@ -73,6 +73,9 @@ def _confirm_payload(body: dict[str, object], *, confirm: str = "I confirm") -> 
         "expected_content_hash": body["content_hash"],
         "expected_parent_version_id": body.get("parent_version_id"),
         "expected_target_strategy_id": body.get("target_strategy_id"),
+        "expected_organization_id": body["organization_id"],
+        "expected_user_id": body["user_id"],
+        "expected_conversation_id": body["conversation_id"],
     }
 
 
@@ -444,6 +447,8 @@ def test_chat_confirm_and_injection_do_not_silently_mutate(
         )
         conv_id = uuid.UUID(preview.conversation_id)
         assert preview.pending_proposal is not None
+        assert "confirmation identity" in (preview.reply or "").lower()
+        assert preview.pending_proposal.content_hash in (preview.reply or "")
         proposal_id = preview.pending_proposal.id
         versions_before = len(list(session.scalars(select(StrategyVersionConversationLink)).all()))
 
@@ -743,3 +748,181 @@ def test_concurrent_confirmation_converges_to_one_version(
     assert len(version_ids) == 1
     versions_after = client.get(f"/strategies/{strategy_id}/versions")
     assert len(versions_after.json()["items"]) == start_count + 1
+
+
+def test_http_preview_presents_confirmation_identity(
+    conv_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = conv_env
+    _auth(client, "conv-a@test.example")
+    strategy_id = _create_strategy(client, name="Identity strategy")
+    conversation = client.post("/conversations", json={"strategy_id": strategy_id})
+    conv_id = conversation.json()["id"]
+    draft = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={
+            "text": "HTF pullback long, 2% fixed stop, take profit 1R, skip high funding",
+            "strategy_id": strategy_id,
+        },
+    )
+    assert draft.status_code == 200, draft.text
+    body = draft.json()
+    messages = client.get(f"/conversations/{conv_id}/messages")
+    contents = "\n".join(item["content"] for item in messages.json()["items"])
+    assert "confirmation identity" in contents.lower()
+    assert body["id"] in contents
+    assert body["content_hash"] in contents
+
+
+def test_bare_confirm_without_presented_identity_fails_closed(
+    conv_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    from app.services.agent_service import AgentInvokeContext, build_agent_service
+
+    client, factory = conv_env
+    _auth(client, "conv-a@test.example")
+    strategy_id = _create_strategy(client, name="No identity strategy")
+    settings = _settings()
+    with factory() as session:
+        service = build_agent_service(settings=settings, session=session)
+        discussed = service.run(
+            "Discuss my strategy versus journal lessons and keep this as conversation only",
+            AgentInvokeContext(
+                request_id="conv-discuss",
+                user_id=USER_A,
+                organization_id=ORG_A,
+                strategy_id=uuid.UUID(strategy_id),
+            ),
+        )
+        conv_id = uuid.UUID(discussed.conversation_id)
+        confirmed = service.run(
+            "I confirm",
+            AgentInvokeContext(
+                request_id="conv-bare",
+                user_id=USER_A,
+                organization_id=ORG_A,
+                conversation_id=conv_id,
+                strategy_id=uuid.UUID(strategy_id),
+            ),
+        )
+        assert (
+            "cannot authorize whichever draft is currently pending"
+            in (confirmed.reply or "").lower()
+        )
+        assert confirmed.pending_proposal is None
+        versions = client.get(f"/strategies/{strategy_id}/versions")
+        assert versions.status_code == 200
+        assert versions.json()["total"] == 1
+
+
+def test_superseded_presented_identity_cannot_confirm_stale_draft(
+    conv_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    from app.services.agent_service import AgentInvokeContext, build_agent_service
+
+    client, factory = conv_env
+    _auth(client, "conv-a@test.example")
+    strategy_id = _create_strategy(client, name="Supersede strategy")
+    conversation = client.post("/conversations", json={"strategy_id": strategy_id})
+    conv_id = conversation.json()["id"]
+    first = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={
+            "text": "HTF pullback long, 2% fixed stop, take profit 1R, skip high funding",
+            "strategy_id": strategy_id,
+        },
+    )
+    assert first.status_code == 200, first.text
+    stale_id = first.json()["id"]
+    second = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={
+            "text": "HTF pullback long, 3% fixed stop, take profit 1R, skip high funding",
+            "strategy_id": strategy_id,
+        },
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["id"] != stale_id
+    stale_http = client.post(
+        f"/conversations/{conv_id}/proposals/{stale_id}/confirm",
+        json=_confirm_payload(first.json()),
+    )
+    assert stale_http.status_code in {409, 422}, stale_http.text
+    settings = _settings()
+    with factory() as session:
+        service = build_agent_service(settings=settings, session=session)
+        stale_confirm = service.run(
+            f"I confirm proposal {stale_id}",
+            AgentInvokeContext(
+                request_id="conv-stale",
+                user_id=USER_A,
+                organization_id=ORG_A,
+                conversation_id=uuid.UUID(conv_id),
+                strategy_id=uuid.UUID(strategy_id),
+            ),
+        )
+        reply = (stale_confirm.reply or "").lower()
+        assert any(
+            token in reply
+            for token in ("does not match", "failed", "superseded", "presented", "pending")
+        )
+        pending = stale_confirm.pending_proposal
+        assert pending is None or pending.id != stale_id
+        assert pending is None or pending.status in {"draft", "superseded"}
+        versions = client.get(f"/strategies/{strategy_id}/versions")
+        assert versions.json()["total"] == 1
+
+
+def test_chat_structure_request_supersedes_open_draft_identity(
+    conv_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    from app.services.agent_service import AgentInvokeContext, build_agent_service
+
+    client, factory = conv_env
+    _auth(client, "conv-a@test.example")
+    strategy_id = _create_strategy(client, name="Chat supersede strategy")
+    settings = _settings()
+    with factory() as session:
+        service = build_agent_service(settings=settings, session=session)
+        first = service.run(
+            "Convert this HTF pullback with a 2% stop and 1R take profit into structured rules",
+            AgentInvokeContext(
+                request_id="chat-first",
+                user_id=USER_A,
+                organization_id=ORG_A,
+                strategy_id=uuid.UUID(strategy_id),
+            ),
+        )
+        assert first.pending_proposal is not None
+        stale_id = first.pending_proposal.id
+        conv_id = uuid.UUID(first.conversation_id)
+        second = service.run(
+            "Convert this HTF pullback with a 3% stop and 1R take profit into structured rules",
+            AgentInvokeContext(
+                request_id="chat-second",
+                user_id=USER_A,
+                organization_id=ORG_A,
+                conversation_id=conv_id,
+                strategy_id=uuid.UUID(strategy_id),
+            ),
+        )
+        assert second.pending_proposal is not None
+        assert second.pending_proposal.id != stale_id
+        assert second.pending_proposal.status == "draft"
+        stale_confirm = service.run(
+            f"I confirm proposal {stale_id}",
+            AgentInvokeContext(
+                request_id="chat-stale",
+                user_id=USER_A,
+                organization_id=ORG_A,
+                conversation_id=conv_id,
+                strategy_id=uuid.UUID(strategy_id),
+            ),
+        )
+        reply = (stale_confirm.reply or "").lower()
+        assert any(
+            token in reply
+            for token in ("does not match", "failed", "superseded", "presented", "pending")
+        )
+        pending = stale_confirm.pending_proposal
+        assert pending is None or pending.id != stale_id

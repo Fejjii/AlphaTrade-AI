@@ -256,6 +256,9 @@ class StrategyProposalService:
         expected_content_hash: str,
         expected_parent_version_id: uuid.UUID | None,
         expected_target_strategy_id: uuid.UUID | None,
+        expected_organization_id: uuid.UUID,
+        expected_user_id: uuid.UUID,
+        expected_conversation_id: uuid.UUID,
     ) -> StrategyProposalRecord:
         del confirm_arg
         if not confirmation_authorizes_mutation(confirm_message):
@@ -287,6 +290,9 @@ class StrategyProposalService:
             expected_content_hash=expected_content_hash,
             expected_parent_version_id=expected_parent_version_id,
             expected_target_strategy_id=expected_target_strategy_id,
+            expected_organization_id=expected_organization_id,
+            expected_user_id=expected_user_id,
+            expected_conversation_id=expected_conversation_id,
         )
         try:
             with self._session.begin_nested():
@@ -445,6 +451,9 @@ class StrategyProposalService:
         expected_content_hash: str,
         expected_parent_version_id: uuid.UUID | None,
         expected_target_strategy_id: uuid.UUID | None,
+        expected_organization_id: uuid.UUID,
+        expected_user_id: uuid.UUID,
+        expected_conversation_id: uuid.UUID,
     ) -> None:
         recomputed = self._payload_hash(row)
         if row.content_hash is None or recomputed != row.content_hash:
@@ -455,6 +464,12 @@ class StrategyProposalService:
             raise ConflictError("Confirmation parent version does not match the proposal.")
         if expected_target_strategy_id != row.target_strategy_id:
             raise ConflictError("Confirmation target strategy does not match the proposal.")
+        if expected_organization_id != row.organization_id:
+            raise ConflictError("Confirmation organization does not match the proposal.")
+        if expected_user_id != row.user_id:
+            raise ConflictError("Confirmation user does not match the proposal.")
+        if expected_conversation_id != row.conversation_id:
+            raise ConflictError("Confirmation conversation does not match the proposal.")
 
     def _require_or_create_strategy(
         self,

@@ -125,6 +125,12 @@ describe("StrategyConversationPanel", () => {
     const proposal = screen.getByTestId("strategy-conversation-proposal");
     expect(proposal).toHaveAttribute("data-proposal-status", "draft");
     expect(proposal).toHaveTextContent(/preview only/i);
+    expect(screen.getByTestId("strategy-conversation-confirmation-identity")).toHaveTextContent(
+      "proposal_id: prop-1",
+    );
+    expect(screen.getByTestId("strategy-conversation-confirmation-identity")).toHaveTextContent(
+      "content_hash:",
+    );
     expect(screen.getByTestId("strategy-conversation-confirm")).toBeInTheDocument();
   });
 
@@ -164,6 +170,9 @@ describe("StrategyConversationPanel", () => {
         expected_content_hash: "ab".repeat(32),
         expected_parent_version_id: "parent-1",
         expected_target_strategy_id: "strat-1",
+        expected_organization_id: "org",
+        expected_user_id: "user",
+        expected_conversation_id: "conv-1",
       });
     });
   });

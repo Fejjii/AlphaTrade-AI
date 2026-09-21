@@ -6,6 +6,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
+from app.evidence_pipeline.setup_lifetime import SetupLifetimeStore
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
 from app.market_contracts.first_slice import CANONICAL_EVALUATED_AT, CANONICAL_TRIGGER_INTERVAL_END
 from app.market_contracts.freshness import FIRST_SLICE_TRADE_MAX_AGE_SECONDS
@@ -82,6 +83,10 @@ def test_quote_trade_and_setup_clocks_stay_separated() -> None:
     assert later.clocks.historical_closed_evidence is True
     assert later.clocks.subsequent_final_15m_count == 0
     assert later.clocks.setup_expired is False
+    assert later.clocks.closed_evidence_valid is True
+    assert later.clocks.setup_lifetime_remaining_bars == 2
+    assert close.clocks.quote_fresh or close.clocks.live_confirmation_window_open
+    assert later.clocks.market_stream_fresh or later.clocks.historical_closed_evidence
     assert close.trigger_bar.content_hash == later.trigger_bar.content_hash
     assert close.evidence_window_hash == later.evidence_window_hash
 
@@ -108,15 +113,21 @@ def test_subsequent_closed_bars_expire_setup_on_their_own_clock() -> None:
     assert expired.state is SetupAssessmentState.EXPIRED
     assert live.evidence_window_hash == expired.evidence_window_hash
 
+    policy = fusion_policy()
+    lifetime = SetupLifetimeStore()
     fixture = ReplayPerpetualSource()
+    FirstSliceEvidenceAssembler(fixture, replay=True, lifetime=lifetime).assemble(
+        organization_id=ORG_ID, policy=policy, evaluated_at=CANONICAL_EVALUATED_AT
+    )
     extra = subsequent_bars(fixture._bars_15m[-1], count=2, high=fixture._bars_15m[-1].high)
     source = ReplayPerpetualSource(bars_15m=list(fixture._bars_15m) + extra)
-    assembled = FirstSliceEvidenceAssembler(source, replay=True).assemble(
+    assembled = FirstSliceEvidenceAssembler(source, replay=True, lifetime=lifetime).assemble(
         organization_id=ORG_ID,
-        policy=fusion_policy(),
+        policy=policy,
         evaluated_at=extra[-1].interval_end + timedelta(seconds=5),
-        setup_trigger_end=CANONICAL_TRIGGER_INTERVAL_END,
     )
     assert assembled.clocks.subsequent_final_15m_count == 2
     assert assembled.clocks.setup_expired is True
     assert assembled.trigger_bar.interval_end == CANONICAL_TRIGGER_INTERVAL_END
+    assert assembled.clocks.closed_evidence_valid is True
+    assert assembled.clocks.setup_lifetime_remaining_bars == 0
