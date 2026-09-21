@@ -45,6 +45,7 @@ from app.schemas.common import (
     PaperValidationRuntimeMode,
     PaperValidationStatus,
     RuleEngineSource,
+    StrategyId,
     StrategyValidationStatus,
     Timeframe,
     TradeDirection,
@@ -94,7 +95,7 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class _RunContext:
     card: StrategyCard
-    setup_type: object
+    setup_type: StrategyId
     structured: StructuredRules | None
     config: PaperValidationConfig
     no_trade_rules: list[str]

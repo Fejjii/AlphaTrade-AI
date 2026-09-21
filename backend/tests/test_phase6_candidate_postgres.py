@@ -45,7 +45,8 @@ from app.watcher.contracts import EvaluationCommand, EvaluationOutcome, ScanAtte
 from app.watcher.errors import StaleFenceError
 from app.watcher.fusion_evaluation import (
     BoundEvaluationClock,
-    InMemoryWatcherScanEvidence,
+    ExecutablePolicyAuthority,
+    WatcherCanonicalScanEvidence,
     WatcherFusionEvaluationService,
 )
 from app.watcher.memory import FakeClock, SideEffectProbe
@@ -70,6 +71,24 @@ from tests.test_watcher_phase6_fusion_wiring import (
 )
 
 SCAN_SCOPE = SHARED_SCOPE
+
+
+class _LiteralPersistedScanEvidence:
+    """Explicit persisted-authority fixture for Postgres fencing tests.
+
+    ``InMemoryWatcherScanEvidence`` cannot claim persisted compiled authority.
+    """
+
+    def __init__(self) -> None:
+        self._by_scope: dict[str, WatcherCanonicalScanEvidence] = {}
+
+    def bind(self, snapshot: WatcherCanonicalScanEvidence, *, scan_scope: str) -> None:
+        if snapshot.policy_authority is not ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED:
+            raise AssertionError("Postgres fencing tests require persisted compiled authority.")
+        self._by_scope[scan_scope] = snapshot
+
+    def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
+        return self._by_scope.get(command.request.scan_scope)
 
 
 def _service(
@@ -481,8 +500,15 @@ def test_stale_worker_steal_during_persist_cannot_mint_candidate() -> None:
     eval_clock = BoundEvaluationClock()
     repository = build_postgres_candidate_repository(factory, clock=clock)
     lifecycle = CandidateLifecycleService(repository=repository, clock=eval_clock)
-    evidence = InMemoryWatcherScanEvidence()
-    evidence.bind(snapshot_from_world(world), scan_scope=SHARED_SCOPE)
+    evidence = _LiteralPersistedScanEvidence()
+    evidence.bind(
+        snapshot_from_world(world).model_copy(
+            update={
+                "policy_authority": ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED,
+            }
+        ),
+        scan_scope=SHARED_SCOPE,
+    )
     inner = WatcherFusionEvaluationService(
         evidence=evidence,
         lifecycle=lifecycle,
