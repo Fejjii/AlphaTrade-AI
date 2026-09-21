@@ -27,7 +27,7 @@ from app.main import create_app
 from app.security.rate_limit import reset_rate_limiter
 from tests.support.postgres_persistence import POSTGRES_URL, requires_postgres
 
-CURRENT_HEAD = "c8d9e0f1a2b3"
+CURRENT_HEAD = "d9e0f1a2b3c4"
 
 
 def _alembic_config() -> Config:

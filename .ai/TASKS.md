@@ -1516,4 +1516,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   https://github.com/Fejjii/AlphaTrade-AI/pull/121. Watcher, Telegram, and live trading
   stay off. Do not merge, deploy, or activate Watcher.
 
+### AT-073 — Telegram paper interaction layer
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-043, AT-072, candidate-alert
+  foundation · Risk: High (Telegram must never become trading authority)
+- Safety classification: Paper-only interaction; Telegram stays disabled by default;
+  no webhook; no Watcher activation; no live trading; no deploy; no merge
+- Goal: Watcher meaningful event → durable notification → Telegram alert → bound
+  discussion of evidence/strategy/Candidate/risk. Mutating paper actions stay
+  identity-bound confirmation gated. Support Watcher alerts, Candidate alerts,
+  strategy discussion, market context, paper trade status, journal outcome, and
+  learning summary. Deduplicate, persist delivery, retry safely, isolate tenants,
+  rate-limit, audit, recover after restart.
+- Branch: `cursor/telegram_paper_agent-aac1` (cloud suffix; requested
+  `cursor/telegram_paper_agent`)
+- Validation: pending focused + full backend pytest, ruff, scoped mypy, frontend,
+  evaluation, e2e, deployment-safety, GitHub CI. Draft PR only.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-052
+- Note: Does not enable `TELEGRAM_INTERACTION_ENABLED`, Watcher
+  `PERSIST_AND_NOTIFY`, or live trading. `EXECUTE_PAPER_PLAN` remains unavailable
+  on Telegram.
+
 

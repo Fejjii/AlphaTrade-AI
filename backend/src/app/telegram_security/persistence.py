@@ -67,6 +67,10 @@ class TelegramSecurityStore(Protocol):
 
     def get_nonce_by_hash(self, nonce_hash: str) -> ActionNonce | None: ...
 
+    def get_issued_nonce_for_payload(
+        self, *, binding_id: UUID, payload_hash: str
+    ) -> ActionNonce | None: ...
+
     def cas_nonce(
         self, *, nonce_hash: str, expected: ActionNonce, updated: ActionNonce
     ) -> bool: ...
