@@ -1517,7 +1517,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   stay off. Do not merge, deploy, or activate Watcher.
 
 ### AT-073 — Continuous paper evaluation and learning measurement
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-072 · Risk: Medium
+- Priority: P0 · Status: DONE · Dependencies: AT-072 · Risk: Medium
   (measurement honesty; must not become a second trading authority)
 - Safety classification: Paper-only measurement; Watcher/Telegram/live trading stay off;
   refinements cannot auto-activate
@@ -1526,8 +1526,16 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   suggestion. Operator-visible evaluation summaries. Deterministic facts stay separate
   from AI narrative. AI may suggest a refinement and must not activate it.
 - Branch: `cursor/continuous_paper_evaluation-80e2`
-- Validation: pending full pytest + frontend + evaluation + GitHub CI
+- Validation: GitHub CI run 35661040375 success on `416b61e` — backend 2480 passed /
+  0 skipped; frontend lint+typecheck+1195 tests+build; e2e-smoke 30 passed;
+  evaluation 16/16, 5/5, 7/7; deployment-safety; docker-build. Local full pytest
+  2298 passed / 181 skipped (Postgres unavailable). Strict mypy on paper_evaluation
+  and canonical reads. Alembic head `e3f4a5b6c7d8`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/122 — do not merge or deploy.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-052
+- Completion evidence: feat `a90ab93`, mypy `b1fdab9`, CI fix `416b61e`. Watcher,
+  Telegram, and live trading stay off. Refinements cannot auto-activate. Do not
+  merge, deploy, or activate Watcher.
 
 
