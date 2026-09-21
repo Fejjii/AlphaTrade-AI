@@ -7,11 +7,11 @@ import { api } from "@/lib/api";
 
 export function useWatcherMonitoring() {
   const loader = useCallback(() => api.marketWatcher.monitoring(), []);
-  const result = useAsyncData(loader, []);
+  const { data, loading, error, reload } = useAsyncData(loader, []);
 
   useEffect(() => {
     const onReconnect = () => {
-      void result.reload();
+      void reload();
     };
     window.addEventListener("focus", onReconnect);
     window.addEventListener("online", onReconnect);
@@ -19,7 +19,7 @@ export function useWatcherMonitoring() {
       window.removeEventListener("focus", onReconnect);
       window.removeEventListener("online", onReconnect);
     };
-  }, [result.reload]);
+  }, [reload]);
 
-  return result;
+  return { data, loading, error, reload };
 }

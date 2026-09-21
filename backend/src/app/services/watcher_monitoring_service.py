@@ -170,7 +170,6 @@ class WatcherMonitoringService:
             settings=settings,
             worker=worker,
             primary_lease=primary_lease,
-            now=now,
         )
         freshness = _market_freshness(
             observation=observation,
@@ -689,15 +688,23 @@ def _market_freshness(
             status="unknown",
             stale_after_minutes=stale_after_minutes,
         )
-    status = str(observation.status)
-    freshness_status = status if status in {"fresh", "stale", "unavailable"} else "unknown"
     return WatcherMarketFreshness(
-        status=freshness_status,  # type: ignore[arg-type]
+        status=_freshness_status(str(observation.status)),
         observed_at=_aware(observation.observed_at),
         symbol=observation.symbol,
         data_freshness=observation.data_freshness,
         stale_after_minutes=stale_after_minutes,
     )
+
+
+def _freshness_status(raw: str) -> Literal["fresh", "stale", "unavailable", "unknown"]:
+    if raw == "fresh":
+        return "fresh"
+    if raw == "stale":
+        return "stale"
+    if raw == "unavailable":
+        return "unavailable"
+    return "unknown"
 
 
 def _next_scan(
@@ -706,7 +713,6 @@ def _next_scan(
     settings: Settings,
     worker: WatcherWorkerHealth,
     primary_lease: WatcherLeaseHealth | None,
-    now: datetime,
 ) -> tuple[datetime | None, Literal["worker_interval", "lease_ttl", "bridge_interval"] | None]:
     if decision.state in {
         WatcherMonitoringRuntimeState.STOPPED,
@@ -740,5 +746,4 @@ def _next_scan(
             worker.last_beat_at + timedelta(seconds=settings.worker_scan_interval_seconds),
             "worker_interval",
         )
-    _ = now
     return None, None
