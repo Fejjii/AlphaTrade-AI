@@ -1470,3 +1470,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   failed on `test_concurrent_workers_single_lease` (StaticPool SQLite shared
   across worker threads). Follow-up isolates that test from SQLite and surfaces
   ThreadPoolExecutor exceptions; do not merge until that head is green.
+
+### AT-071 — Watcher PAPER MONITORING operator UX + observability
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-ADR-040, AT-ADR-022,
+  AT-067, AT-070 · Risk: Medium (honesty of runtime status; no authority change)
+- Safety classification: Paper-only observability; no Watcher enablement; no
+  Telegram; no live trading; no evaluator/strategy-authority change
+- Goal: Operator-facing Watcher paper-monitoring surface showing runtime
+  status (`RUNNING`/`STOPPED`/`DEGRADED`/`STALE`/`BLOCKED`), symbols,
+  approved strategies, last/next scan, market freshness, provider health,
+  SetupAssessment lineage, candidates, block reasons, lease/worker health,
+  recent errors, and paper-only posture. Typed API only; never infer
+  RUNNING from frontend config; no fake activity/prices/candidates.
+- Branch: `cursor/watcher_monitoring_ux-c026` (source); remapped from source AT-069
+- Validation: backend projection + `/market-watcher/monitoring` tests;
+  frontend card/panel/dashboard/attention tests for loading/empty/running/
+  stopped/degraded/stale/provider outage/no approved strategies/candidate
+  detected/mobile/refresh/paper-safety; frontend lint/typecheck/test/build;
+  e2e; CI. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-050
+- Note: Source PR #119 claimed AT-069 / AT-ADR-048; remapped because AT-069 is
+  the live market monitor (PR #118) and AT-070 is the paper runtime (PR #120).

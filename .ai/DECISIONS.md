@@ -1662,3 +1662,37 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   no live orders, no real exchange credentials.
 - **Consequences:** Status at `GET /watcher/paper-runtime/status`. Prometheus
   counters on the existing registry. Draft source PR only; no merge or deploy.
+
+## AT-ADR-050 — Watcher PAPER MONITORING is runtime evidence, not configuration
+- **Date:** 2026-09-21
+- **Status:** Accepted (source PR #119 claimed AT-ADR-048 / AT-069; remapped)
+- **Context:** Operators needed a truthful Watcher paper-monitoring surface.
+  Two stacks exist: the legacy market-watcher scanner/bridge (disabled by
+  default) and unused Phase 7 orchestration leases/health. Frontend flags
+  must not be treated as RUNNING. No market-data authority or strategy
+  evaluation authority belongs in this slice.
+- **Decision:**
+  1. `GET /market-watcher/monitoring` is a read-only aggregation of existing
+     stores. Operator state is `RUNNING` | `STOPPED` | `DEGRADED` | `STALE` |
+     `BLOCKED`.
+  2. `RUNNING` requires live runtime evidence: a fenced orchestration lease
+     with a fresh heartbeat, or a live watcher-worker heartbeat with both
+     scanner and worker flags enabled. Scanner-only flags remain `STOPPED`.
+     Orchestration enabled without a heartbeat is `STALE`. Kill switch and
+     non-paper/real-trading posture are `BLOCKED`. Provider outage overlays
+     `DEGRADED` only when runtime evidence already exists.
+  3. SetupAssessment shown on the card is lineage from persisted Candidates
+     (`CONFIRMED_SETUP`). This slice does not call `evaluate_setup` or mint
+     Candidates.
+  4. Dashboard, Decision (Plan), Strategy Lab, `/watcher`, and
+     `/market-watcher` reuse one monitoring card. No duplicate Watcher
+     workflow and no Watcher/Telegram/live-trading enablement.
+- **Alternatives considered:** Infer RUNNING from frontend config (rejected:
+  fake activity); create a second evaluator for SetupAssessment (rejected:
+  AT-ADR-045/047); activate Watcher to populate the card (rejected:
+  AT-ADR-040).
+- **Safety impact:** Paper only. Watcher and Telegram stay disabled. No
+  trades. No live trading. No canonical evaluator change.
+- **Consequences:** Source branch `cursor/watcher_monitoring_ux-c026`. Draft
+  source PR only; no merge or deploy.
+

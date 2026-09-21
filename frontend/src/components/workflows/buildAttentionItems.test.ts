@@ -91,4 +91,126 @@ describe("buildAttentionItems", () => {
     });
     expect(items).toEqual([]);
   });
+
+  it("does not surface STOPPED or RUNNING Watcher as attention", () => {
+    const stopped = buildAttentionItems({
+      executionMode: "paper",
+      realTradingEnabled: false,
+      paperOnlyConfirmed: true,
+      pendingApprovals: 0,
+      pendingProposals: 0,
+      unreadAlerts: 0,
+      unreviewedSetupAlerts: 0,
+      validatedSignalsNeedingReview: 0,
+      activeValidations: 0,
+      draftsReady: 0,
+      candidatesQueued: 0,
+      runPlansPending: 0,
+      openPaperPositions: 0,
+      riskAlertsActive: false,
+      lossLockActive: false,
+      greenDayProtectionActive: false,
+      overtradingWarningActive: false,
+      pendingLessons: 0,
+      watcherStatus: "STOPPED",
+    });
+    expect(stopped).toEqual([]);
+
+    const running = buildAttentionItems({
+      executionMode: "paper",
+      realTradingEnabled: false,
+      paperOnlyConfirmed: true,
+      pendingApprovals: 0,
+      pendingProposals: 0,
+      unreadAlerts: 0,
+      unreviewedSetupAlerts: 0,
+      validatedSignalsNeedingReview: 0,
+      activeValidations: 0,
+      draftsReady: 0,
+      candidatesQueued: 0,
+      runPlansPending: 0,
+      openPaperPositions: 0,
+      riskAlertsActive: false,
+      lossLockActive: false,
+      greenDayProtectionActive: false,
+      overtradingWarningActive: false,
+      pendingLessons: 0,
+      watcherStatus: "RUNNING",
+    });
+    expect(running).toEqual([]);
+  });
+
+  it("surfaces Watcher BLOCKED, DEGRADED, and STALE as safety attention", () => {
+    const blocked = buildAttentionItems({
+      executionMode: "paper",
+      realTradingEnabled: false,
+      paperOnlyConfirmed: true,
+      pendingApprovals: 0,
+      pendingProposals: 0,
+      unreadAlerts: 0,
+      unreviewedSetupAlerts: 0,
+      validatedSignalsNeedingReview: 0,
+      activeValidations: 0,
+      draftsReady: 0,
+      candidatesQueued: 0,
+      runPlansPending: 0,
+      openPaperPositions: 0,
+      riskAlertsActive: false,
+      lossLockActive: false,
+      greenDayProtectionActive: false,
+      overtradingWarningActive: false,
+      pendingLessons: 0,
+      watcherStatus: "BLOCKED",
+      watcherReason: "kill_switch_active",
+    });
+    expect(blocked[0]?.id).toBe("watcher-blocked");
+    expect(blocked[0]?.href).toBe("/watcher");
+
+    const degraded = buildAttentionItems({
+      executionMode: "paper",
+      realTradingEnabled: false,
+      paperOnlyConfirmed: true,
+      pendingApprovals: 0,
+      pendingProposals: 0,
+      unreadAlerts: 0,
+      unreviewedSetupAlerts: 0,
+      validatedSignalsNeedingReview: 0,
+      activeValidations: 0,
+      draftsReady: 0,
+      candidatesQueued: 0,
+      runPlansPending: 0,
+      openPaperPositions: 0,
+      riskAlertsActive: false,
+      lossLockActive: false,
+      greenDayProtectionActive: false,
+      overtradingWarningActive: false,
+      pendingLessons: 0,
+      watcherStatus: "DEGRADED",
+      watcherReason: "provider_unavailable",
+    });
+    expect(degraded[0]?.id).toBe("watcher-degraded");
+
+    const stale = buildAttentionItems({
+      executionMode: "paper",
+      realTradingEnabled: false,
+      paperOnlyConfirmed: true,
+      pendingApprovals: 0,
+      pendingProposals: 0,
+      unreadAlerts: 0,
+      unreviewedSetupAlerts: 0,
+      validatedSignalsNeedingReview: 0,
+      activeValidations: 0,
+      draftsReady: 0,
+      candidatesQueued: 0,
+      runPlansPending: 0,
+      openPaperPositions: 0,
+      riskAlertsActive: false,
+      lossLockActive: false,
+      greenDayProtectionActive: false,
+      overtradingWarningActive: false,
+      pendingLessons: 0,
+      watcherStatus: "STALE",
+    });
+    expect(stale[0]?.id).toBe("watcher-stale");
+  });
 });
