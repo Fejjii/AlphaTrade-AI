@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -27,6 +28,7 @@ from app.paper_evaluation.recorder import PaperEvaluationRecorder
 from app.paper_evaluation.refinement import refinement_suggestions, refuse_activation
 from app.persistence.paper_evaluation_postgres import PostgresPaperEvaluationStore
 from app.schemas.journal_statistics import SampleConfidence
+from app.services.canonical_reads import CanonicalReadService
 from app.signal_fusion.enums import EligibilityReasonCode, SetupAssessmentState
 from app.watcher.contracts import EvaluationStatus
 from app.watcher.fusion_evaluation import (
@@ -411,6 +413,32 @@ def test_query_narrative_is_sibling_not_fact() -> None:
     assert "auto-promote" in summary.narrative.text
     assert summary.facts.content_hash
     assert "auto-promote" not in summary.facts.content_hash
+
+
+def test_canonical_paper_evaluation_read_uses_request_session_only() -> None:
+    """Measurement reads must not open the process-wide engine (default /alphatrade)."""
+
+    session = MagicMock()
+    empty = MagicMock()
+    empty.all.return_value = []
+    empty.first.return_value = None
+    session.scalars.return_value = empty
+    session.get.return_value = None
+    runtime = MagicMock()
+    runtime.candidate_repository.list_for_organization.side_effect = RuntimeError(
+        "paper evaluation must not use runtime Candidate list"
+    )
+    runtime.eligibility_store.latest_for_candidate.side_effect = RuntimeError(
+        "paper evaluation must not use runtime eligibility store"
+    )
+    service = CanonicalReadService(session, runtime)
+    result = service.paper_evaluation(organization_id=ORG_ID, learning_venue_mode=None)
+    assert result.live_executable is False
+    assert result.watcher_activated is False
+    assert result.summary.facts.conversion.closed == 0
+    assert result.summary.facts.missed_opportunities.counterfactual_pnl is None
+    runtime.candidate_repository.list_for_organization.assert_not_called()
+    runtime.eligibility_store.latest_for_candidate.assert_not_called()
 
 
 def test_postgres_store_roundtrip_and_narrative_converge(
