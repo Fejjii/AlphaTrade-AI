@@ -9,6 +9,7 @@ const STATE_RANK: Record<FreshnessState, number> = {
   unavailable: 0,
   fallback: 1,
   replay: 1,
+  degraded: 1,
   stale: 2,
   delayed: 3,
   live: 4,
