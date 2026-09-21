@@ -397,6 +397,20 @@ def test_http_paper_plan_binding_and_legacy_isolation() -> None:
         stats = client.get("/canonical/learning/strategy-stats")
         assert stats.status_code == 200
         assert stats.json()["snapshot"]["human_vs_system"]["human_approvals"] == 1
+        evaluation = client.get("/canonical/paper-evaluation/summary")
+        assert evaluation.status_code == 200
+        evaluation_body = evaluation.json()
+        assert evaluation_body["authority"] == "canonical"
+        assert evaluation_body["live_executable"] is False
+        assert evaluation_body["watcher_activated"] is False
+        assert evaluation_body["summary"]["authority"] == "paper_evaluation_measurement"
+        assert evaluation_body["summary"]["live_executable"] is False
+        assert evaluation_body["summary"]["facts"]["watcher_orchestration_enabled"] is False
+        assert evaluation_body["summary"]["facts"]["telegram_interaction_enabled"] is False
+        assert all(
+            item["activate"] is False and item["auto_activate"] is False
+            for item in evaluation_body["summary"]["refinements"]
+        )
         legacy = client.post(
             "/execution/paper",
             json={

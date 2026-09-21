@@ -85,6 +85,11 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   `LearningQueryService` for strategy/pattern stats and RAG fact documents.
   See `docs/phase7_learning_attribution.md` and
   `docs/phase8_learning_persistence.md`.
+- `paper_evaluation/`: continuous paper measurement over Watcher →
+  SetupAssessment → Candidate → paper decision → Journal → attribution →
+  strategy statistics → refinement *suggestion*. Query-time merge; not a
+  second trading authority. AI may suggest a refinement and must not activate
+  it. Alembic `e3f4a5b6c7d8`. See `docs/phase8_paper_evaluation.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 
@@ -97,6 +102,7 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `POST /exchange/blofin/sync`, `GET /exchange/blofin/sync/latest` (AT-037 — BloFin demo read-only snapshots; no order mutation)
 - `GET/POST /paper-signal-orchestration/*` (AT-038 — deterministic paper-signal orchestration; paper-only; no order placement)
 - `GET /canonical/market-status` (AT-069 — live read-only perpetual monitor; replay default; never live_mark for fixtures)
+- `GET /canonical/paper-evaluation/summary` (AT-073 — continuous paper evaluation measurement; Watcher stays off; refinements cannot activate)
 - `GET /watcher/paper-runtime/status` (AT-070 — paper Watcher monitoring status; disabled by default; no scans from HTTP)
 - `GET /market-watcher/monitoring` (AT-071/AT-072 — operator paper-monitoring snapshot; RUNNING requires fenced lease + fresh heartbeat; replay never live_mark)
 

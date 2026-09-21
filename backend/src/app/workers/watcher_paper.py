@@ -39,6 +39,7 @@ from app.watcher.contracts import (
 from app.watcher.fusion_evaluation import (
     BoundEvaluationClock,
     CandidatePersistenceFence,
+    EvaluationOutcomeObserver,
     WatcherFusionEvaluationService,
     WatcherScanEvidencePort,
     build_fusion_evaluation_service,
@@ -420,6 +421,7 @@ class WatcherPaperRuntime:
             lifecycle=self._lifecycle,
             clock=self._eval_clock,
             persistence_fence=self._persistence_fence,
+            outcome_observer=self._evaluation_observer(session, target),
         )
         orchestrator = WatcherOrchestrator(
             store=self._store,
@@ -461,6 +463,22 @@ class WatcherPaperRuntime:
         if self._evidence_factory is None:
             raise RuntimeError("Paper Watcher evidence factory is required.")
         return self._evidence_factory(session, self._store, symbol)
+
+    def _evaluation_observer(
+        self, session: Session | None, target: PaperScanTarget
+    ) -> EvaluationOutcomeObserver | None:
+        if session is None:
+            return None
+        from app.paper_evaluation.recorder import PaperEvaluationRecorder
+        from app.paper_evaluation.watcher_observer import WatcherPaperEvaluationObserver
+        from app.persistence.paper_evaluation_postgres import PostgresPaperEvaluationStore
+
+        recorder = PaperEvaluationRecorder(PostgresPaperEvaluationStore(session))
+        return WatcherPaperEvaluationObserver(
+            recorder,
+            strategy_version_id=target.strategy_version_id,
+            setup_definition_id=target.compiled_setup_definition_id,
+        )
 
     def _materialize_policy(self, target: PaperScanTarget) -> WatcherPolicyVersion:
         identity = WatcherPolicyIdentity(

@@ -134,6 +134,7 @@ Worker containers skip entrypoint migrations and run `python -m app.workers.entr
 | Paper execution | pytest first ALLOW (frozen fixture clock) |
 | Journal | pytest `GET /journal/trades` |
 | Learning attribution | pytest `GET /canonical/learning/records/{id}` |
+| Paper evaluation | pytest `GET /canonical/paper-evaluation/summary` |
 | Strategy statistics | pytest + e2e + remote script |
 | Decision frontend | Playwright `/decision*` paper chrome + canonical API |
 | Kill switch | pytest activate → paper-plan BLOCKED |

@@ -21,6 +21,7 @@ from app.schemas.canonical_reads import (
     CanonicalExecutionReceiptRead,
     CanonicalLearningRecordRead,
     CanonicalLearningStatsRead,
+    CanonicalPaperEvaluationRead,
     CanonicalSetupAssessmentRead,
     PaginatedCanonicalCandidates,
 )
@@ -155,6 +156,25 @@ async def get_canonical_strategy_stats(
     learning_venue_mode: LearningVenueMode | None = Query(default=None),
 ) -> CanonicalLearningStatsRead:
     return _reads(session, runtime).strategy_stats(
+        organization_id=tenant.organization_id,
+        learning_venue_mode=learning_venue_mode,
+    )
+
+
+@router.get(
+    "/paper-evaluation/summary",
+    response_model=CanonicalPaperEvaluationRead,
+    summary="Continuous paper evaluation measurement summary",
+    dependencies=[_CANONICAL_READ_LIMIT],
+)
+async def get_canonical_paper_evaluation(
+    tenant: ReaderDep,
+    session: SessionDep,
+    runtime: CanonicalRuntimeDep,
+    learning_venue_mode: LearningVenueMode | None = Query(default=None),
+) -> CanonicalPaperEvaluationRead:
+    """Watcher→outcome measurement. Does not activate Watcher or refinements."""
+    return _reads(session, runtime).paper_evaluation(
         organization_id=tenant.organization_id,
         learning_venue_mode=learning_venue_mode,
     )

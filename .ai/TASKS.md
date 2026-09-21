@@ -1516,4 +1516,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   https://github.com/Fejjii/AlphaTrade-AI/pull/121. Watcher, Telegram, and live trading
   stay off. Do not merge, deploy, or activate Watcher.
 
+### AT-073 — Continuous paper evaluation and learning measurement
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-072 · Risk: Medium
+  (measurement honesty; must not become a second trading authority)
+- Safety classification: Paper-only measurement; Watcher/Telegram/live trading stay off;
+  refinements cannot auto-activate
+- Goal: Connect Watcher → SetupAssessment → Candidate → paper decision → paper trade →
+  outcome → Journal → attribution → strategy statistics → learning evidence → refinement
+  suggestion. Operator-visible evaluation summaries. Deterministic facts stay separate
+  from AI narrative. AI may suggest a refinement and must not activate it.
+- Branch: `cursor/continuous_paper_evaluation-80e2`
+- Validation: pending full pytest + frontend + evaluation + GitHub CI
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-052
+
 

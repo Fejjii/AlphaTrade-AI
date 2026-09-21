@@ -28,7 +28,7 @@ Screens:
 | `/decision/approvals/[approvalId]` | Explicit paper approval (authorization only) |
 | `/decision/executions/[executionId]` | Canonical receipt first; compatibility paper-order fallback |
 | `/decision/outcomes/[outcomeId]` | Journal + canonical learning record |
-| `/decision/strategy` | Canonical LearningQueryService stats plus compatibility analytics |
+| `/decision/strategy` | Canonical LearningQueryService stats, continuous paper evaluation, plus compatibility analytics |
 
 Legacy `/workspace`, `/proposals`, `/approvals`, and `/paper-validation/*`
 remain compatibility views and are labeled as such.
@@ -53,6 +53,7 @@ remain compatibility views and are labeled as such.
 - `GET /canonical/executions/{receipt_id}`
 - `GET /canonical/learning/records/{candidate_id}`
 - `GET /canonical/learning/strategy-stats`
+- `GET /canonical/paper-evaluation/summary`
 - `GET /journal/entries/{id}`, journal list/prefill
 - `GET /lessons/candidates`
 - `GET /strategy-quality/summary`

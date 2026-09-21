@@ -261,9 +261,12 @@ describe("backend bindings", () => {
     expect(missing).not.toContain("execution-receipts");
     expect(missing).not.toContain("paper-execution");
     expect(missing).not.toContain("canonical-learning-records");
+    expect(missing).not.toContain("canonical-paper-evaluation");
     expect(missing).not.toContain("canonical-evidence");
     const paperPlan = boundBindings().find((item) => item.id === "paper-execution");
     expect(paperPlan?.path).toBe("POST /execution/paper-plan");
+    const paperEval = boundBindings().find((item) => item.id === "canonical-paper-evaluation");
+    expect(paperEval?.path).toBe("GET /canonical/paper-evaluation/summary");
     const evidence = boundBindings().find((item) => item.id === "canonical-evidence");
     expect(evidence?.path).toBe("GET /canonical/evidence");
     const monitor = boundBindings().find((item) => item.id === "canonical-market-status");
