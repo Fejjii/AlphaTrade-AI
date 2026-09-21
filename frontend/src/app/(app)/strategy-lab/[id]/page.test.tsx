@@ -115,6 +115,18 @@ vi.mock("@/hooks/useAsyncData", () => ({
   },
 }));
 
+vi.mock("@/hooks/useWatcherMonitoring", async () => {
+  const { makeWatcherMonitoringSnapshot } = await import("@/lib/watcher-monitoring-fixtures");
+  return {
+    useWatcherMonitoring: () => ({
+      data: makeWatcherMonitoringSnapshot(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    }),
+  };
+});
+
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {

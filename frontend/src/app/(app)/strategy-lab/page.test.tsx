@@ -14,10 +14,24 @@ vi.mock("@/hooks/useAsyncData", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useWatcherMonitoring", async () => {
+  const { makeWatcherMonitoringSnapshot } = await import("@/lib/watcher-monitoring-fixtures");
+  return {
+    useWatcherMonitoring: () => ({
+      data: makeWatcherMonitoringSnapshot(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    }),
+  };
+});
+
 describe("StrategyLabPage", () => {
   it("renders strategy lab", () => {
     render(<StrategyLabPage />);
     expect(screen.getByText("Strategy Lab")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-card")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STOPPED");
     expect(screen.getByText("Create strategy")).toBeInTheDocument();
     expect(screen.getByText("Pullback")).toBeInTheDocument();
   });

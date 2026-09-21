@@ -25,6 +25,8 @@ export type AttentionBuildInput = {
   overtradingWarningActive: boolean | null;
   pendingLessons: number | null;
   nextAction?: { action: string; reason?: string; link?: string } | null;
+  watcherStatus?: "RUNNING" | "STOPPED" | "DEGRADED" | "STALE" | "BLOCKED" | null;
+  watcherReason?: string | null;
 };
 
 function positiveCount(value: number | null | undefined): value is number {
@@ -93,6 +95,42 @@ export function buildAttentionItems(input: AttentionBuildInput): AttentionItemMo
       summary: "Protective paper-trading signals are active for today.",
       href: "/risk",
       actionLabel: "Review risk",
+      tone: "warning",
+    });
+  }
+
+  if (input.watcherStatus === "BLOCKED") {
+    pushItem(items, {
+      id: "watcher-blocked",
+      section: "safety",
+      title: "Watcher paper monitoring is blocked",
+      summary: input.watcherReason
+        ? `Watcher status BLOCKED (${input.watcherReason.replace(/_/g, " ")}).`
+        : "Watcher status BLOCKED.",
+      href: "/watcher",
+      actionLabel: "Open Watcher",
+      tone: "danger",
+    });
+  } else if (input.watcherStatus === "DEGRADED") {
+    pushItem(items, {
+      id: "watcher-degraded",
+      section: "safety",
+      title: "Watcher paper monitoring is degraded",
+      summary: input.watcherReason
+        ? `Watcher status DEGRADED (${input.watcherReason.replace(/_/g, " ")}).`
+        : "Watcher status DEGRADED.",
+      href: "/watcher",
+      actionLabel: "Open Watcher",
+      tone: "warning",
+    });
+  } else if (input.watcherStatus === "STALE") {
+    pushItem(items, {
+      id: "watcher-stale",
+      section: "safety",
+      title: "Watcher paper monitoring is stale",
+      summary: "Heartbeat or market data is stale. No fabricated activity is shown.",
+      href: "/watcher",
+      actionLabel: "Open Watcher",
       tone: "warning",
     });
   }

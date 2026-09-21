@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/states";
+import { WatcherMonitoringPanel } from "@/components/WatcherMonitoringPanel";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { strategyStatusFor } from "@/lib/strategy-status";
@@ -141,6 +142,8 @@ export default function StrategyDetailPage() {
           </Button>
         </div>
       </div>
+
+      <WatcherMonitoringPanel compact />
 
       {loading ? <LoadingState label="Loading strategy…" /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}

@@ -15,6 +15,7 @@ const PRESENTATION_LABEL: Record<string, string> = {
   replay_fixture: "Replay fixture",
   stale: "Stale",
   incomplete: "Incomplete",
+  degraded: "Degraded",
   provider_unavailable: "Provider unavailable",
   spot_rejected: "Spot rejected",
   wrong_source: "Wrong source",

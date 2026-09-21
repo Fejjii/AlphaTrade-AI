@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.evidence_pipeline.service import CanonicalEvidenceService
+from app.market_monitor.factory import build_perpetual_market_monitor
+from app.market_monitor.monitor import PerpetualMarketMonitor
+from app.market_monitor.service import PerpetualMarketMonitorService
 from app.providers.exchange.factory import resolve_exchange_execution_provider
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
@@ -82,6 +85,7 @@ from app.services.structured_rules_service import StructuredRulesService
 from app.services.tradingview_signal_service import TradingViewSignalService
 from app.services.usage_service import UsageService
 from app.services.validation_priority import ValidationPriorityService
+from app.services.watcher_monitoring_service import WatcherMonitoringService
 from app.services.workflow_service import WorkflowService
 from app.strategies.registry import StrategyRegistry, get_strategy_registry
 from app.tools.registry import ToolRegistry, get_tool_registry
@@ -180,6 +184,28 @@ def get_canonical_evidence_service(
 
 CanonicalEvidenceServiceDep = Annotated[
     CanonicalEvidenceService, Depends(get_canonical_evidence_service)
+]
+
+
+def get_perpetual_market_monitor(request: Request, settings: SettingsDep) -> PerpetualMarketMonitor:
+    """Process-local USD-M monitor. Does not start Watcher."""
+    monitor = getattr(request.app.state, "market_monitor", None)
+    if not isinstance(monitor, PerpetualMarketMonitor):
+        monitor = build_perpetual_market_monitor(settings)
+        request.app.state.market_monitor = monitor
+    return monitor
+
+
+def get_perpetual_market_monitor_service(
+    monitor: Annotated[PerpetualMarketMonitor, Depends(get_perpetual_market_monitor)],
+    settings: SettingsDep,
+) -> PerpetualMarketMonitorService:
+    return PerpetualMarketMonitorService(monitor, settings=settings)
+
+
+PerpetualMarketMonitorDep = Annotated[PerpetualMarketMonitor, Depends(get_perpetual_market_monitor)]
+PerpetualMarketMonitorServiceDep = Annotated[
+    PerpetualMarketMonitorService, Depends(get_perpetual_market_monitor_service)
 ]
 
 
@@ -549,6 +575,25 @@ def get_market_watcher_service(session: SessionDep, settings: SettingsDep) -> Ma
     return MarketWatcherService(session, settings)
 
 
+def get_watcher_monitoring_service(
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    canonical_runtime: CanonicalRuntimeDep,
+    providers: ProviderRegistryDep,
+    monitor: PerpetualMarketMonitorDep,
+) -> WatcherMonitoringService:
+    paper_runtime = getattr(request.app.state, "watcher_paper_runtime", None)
+    return WatcherMonitoringService(
+        session,
+        settings,
+        providers=providers,
+        canonical_runtime=canonical_runtime,
+        monitor=monitor,
+        paper_runtime=paper_runtime,
+    )
+
+
 def get_paper_scheduler_service(
     session: SessionDep, settings: SettingsDep, audit_service: AuditServiceDep
 ) -> PaperSchedulerService:
@@ -625,6 +670,9 @@ AlertDeliveryServiceDep = Annotated[AlertDeliveryService, Depends(get_alert_deli
 MarketWatcherServiceDep = Annotated[MarketWatcherService, Depends(get_market_watcher_service)]
 MarketWatcherBridgeServiceDep = Annotated[
     MarketWatcherBridgeService, Depends(get_market_watcher_bridge_service)
+]
+WatcherMonitoringServiceDep = Annotated[
+    WatcherMonitoringService, Depends(get_watcher_monitoring_service)
 ]
 PaperSchedulerServiceDep = Annotated[PaperSchedulerService, Depends(get_paper_scheduler_service)]
 HistoricalCandleServiceDep = Annotated[

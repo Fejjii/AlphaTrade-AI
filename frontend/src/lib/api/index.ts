@@ -73,7 +73,9 @@ import type {
   CanonicalExecutionReceiptRead,
   CanonicalLearningRecordRead,
   CanonicalLearningStatsRead,
+  CanonicalPaperEvaluationRead,
   CanonicalEvidenceRead,
+  CanonicalMarketMonitorStatusRead,
   CanonicalTradePlanRevision,
   ProposalWorkflowView,
   ApprovalWorkflowView,
@@ -151,6 +153,7 @@ import type {
   NotificationTestResult,
   MarketWatcherStatus,
   MarketWatcherSummary,
+  WatcherMonitoringSnapshot,
   MarketWatcherScanRequest,
   MarketWatcherScanResult,
   PaginatedMarketWatcherRecentScans,
@@ -530,8 +533,18 @@ export const api = {
         query: params,
         auth: true,
       }),
+    paperEvaluation: (params?: { learning_venue_mode?: string }) =>
+      apiFetch<CanonicalPaperEvaluationRead>("/canonical/paper-evaluation/summary", {
+        query: params,
+        auth: true,
+      }),
     getEvidence: (params?: { symbol?: string }) =>
       apiFetch<CanonicalEvidenceRead>("/canonical/evidence", { query: params, auth: true }),
+    getMarketStatus: (params?: { symbol?: string }) =>
+      apiFetch<CanonicalMarketMonitorStatusRead>("/canonical/market-status", {
+        query: params,
+        auth: true,
+      }),
   },
   positions: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>
@@ -895,6 +908,8 @@ export const api = {
   marketWatcher: {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),
     summary: () => apiFetch<MarketWatcherSummary>("/market-watcher/summary", { auth: true }),
+    monitoring: () =>
+      apiFetch<WatcherMonitoringSnapshot>("/market-watcher/monitoring", { auth: true }),
     scan: (body: MarketWatcherScanRequest) =>
       apiFetch<MarketWatcherScanResult>("/market-watcher/scan", {
         method: "POST",

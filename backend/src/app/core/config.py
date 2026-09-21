@@ -159,13 +159,21 @@ class Settings(BaseSettings):
     )
 
     # --- Watcher orchestration foundation (Phase 7 worker; disabled by default) ---
-    # Isolated from the legacy scanner. Must stay false until a later integration
-    # review. Fusion wiring may persist a canonical candidate only when this flag
-    # is on and evaluate_setup returns CONFIRMED_SETUP. Does not enable Telegram,
+    # Isolated from the legacy scanner. Must stay false in staging/production.
+    # Local paper Watcher runtime (``python -m app.workers.watcher_paper``) may
+    # set true only when ENVIRONMENT=local and EXECUTION_MODE=paper. Fusion
+    # wiring may persist a canonical candidate only when this flag is on and
+    # evaluate_setup returns CONFIRMED_SETUP. Does not enable Telegram,
     # TradePlan, execution, journal, or live trading.
     watcher_orchestration_enabled: bool = False
     watcher_lease_ttl_seconds: int = Field(default=30, ge=1, le=3600)
     watcher_heartbeat_stale_after_seconds: int = Field(default=90, ge=5, le=3600)
+    watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["BTCUSDT"]
+    )
+    watcher_paper_poll_interval_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
+    watcher_paper_max_scopes_per_cycle: int = Field(default=20, ge=1, le=200)
+    watcher_paper_worker_id: str = Field(default="watcher-paper-1", min_length=1, max_length=80)
 
     # --- Market watcher bridge (Slice 42 — disabled by default, paper scan only) ---
     market_watcher_bridge_enabled: bool = False
@@ -250,6 +258,10 @@ class Settings(BaseSettings):
     # Never falls back to spot. Values: replay | binance_usdm
     perpetual_evidence_source: str = "replay"
     perpetual_evidence_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
+    # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
+    perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
+    perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)
+    perpetual_monitor_backoff_max_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
 
     # --- Observability ---
     langsmith_api_key: str = ""
@@ -431,6 +443,15 @@ class Settings(BaseSettings):
     def _split_paper_signal_timeframes(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("watcher_paper_symbols", mode="before")
+    @classmethod
+    def _split_watcher_paper_symbols(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip().upper() for item in value.split(",") if item.strip()]
+        if isinstance(value, list):
+            return [str(item).strip().upper() for item in value if str(item).strip()]
         return value
 
     @field_validator("redis_url", mode="before")

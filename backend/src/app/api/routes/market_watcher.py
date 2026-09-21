@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import MarketWatcherBridgeServiceDep, MarketWatcherServiceDep, SessionDep
+from app.core.dependencies import (
+    MarketWatcherBridgeServiceDep,
+    MarketWatcherServiceDep,
+    SessionDep,
+    WatcherMonitoringServiceDep,
+)
 from app.schemas.market_watcher import (
     MarketWatcherBridgeStatus,
     MarketWatcherBridgeTickResult,
@@ -17,6 +22,7 @@ from app.schemas.market_watcher import (
     PaginatedMarketWatcherObservations,
     PaginatedMarketWatcherRecentScans,
 )
+from app.schemas.watcher_monitoring import WatcherMonitoringSnapshot
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep
 
@@ -41,6 +47,23 @@ async def market_watcher_status(
     service: MarketWatcherServiceDep,
 ) -> MarketWatcherStatus:
     return service.get_status(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+
+
+@router.get(
+    "/monitoring",
+    response_model=WatcherMonitoringSnapshot,
+    summary="Watcher paper-monitoring snapshot (read-only)",
+    dependencies=[_MW_READ_LIMIT],
+)
+async def market_watcher_monitoring(
+    tenant: ReaderDep,
+    service: WatcherMonitoringServiceDep,
+) -> WatcherMonitoringSnapshot:
+    """Expose existing Watcher runtime evidence. Does not start Watcher."""
+    return service.get_snapshot(
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )

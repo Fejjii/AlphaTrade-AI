@@ -241,3 +241,24 @@ def _evaluation_from_row(row: ActionEligibilityEvaluationRow) -> ActionEligibili
             "Stored ActionEligibility uniqueness hash does not match canonical rebuild."
         )
     return rebuilt
+
+
+def latest_evaluations_for_organization(
+    session: Session, *, organization_id: UUID
+) -> tuple[ActionEligibilityEvaluation, ...]:
+    """Latest eligibility per Candidate on the caller's session. No second connection."""
+
+    rows = session.scalars(
+        select(ActionEligibilityEvaluationRow)
+        .where(ActionEligibilityEvaluationRow.organization_id == organization_id)
+        .order_by(
+            ActionEligibilityEvaluationRow.candidate_id,
+            ActionEligibilityEvaluationRow.evaluation_revision.desc(),
+        )
+    ).all()
+    latest: dict[UUID, ActionEligibilityEvaluation] = {}
+    for row in rows:
+        if row.candidate_id in latest:
+            continue
+        latest[row.candidate_id] = _evaluation_from_row(row)
+    return tuple(latest.values())

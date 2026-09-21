@@ -60,6 +60,26 @@ class InMemoryCandidateRepository:
         with self._lock:
             return self._scoped_get(organization_id, candidate_id)
 
+    def list_for_organization(
+        self,
+        organization_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[tuple[Candidate, ...], int]:
+        """Tenant-scoped Candidate reads. Same contract as the Postgres adapter."""
+
+        bounded = max(1, min(limit, 200))
+        skipped = max(0, offset)
+        with self._lock:
+            owned = [
+                candidate
+                for candidate in self._by_id.values()
+                if candidate.organization_id == organization_id
+            ]
+        owned.sort(key=lambda item: item.created_at, reverse=True)
+        return tuple(owned[skipped : skipped + bounded]), len(owned)
+
     def get_by_uniqueness(self, key: CandidateUniquenessTuple) -> Candidate | None:
         with self._lock:
             candidate_id = self._by_uniqueness.get(key.canonical_hash())

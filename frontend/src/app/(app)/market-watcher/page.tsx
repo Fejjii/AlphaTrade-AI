@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { ErrorState, LoadingState } from "@/components/states";
+import { WatcherMonitoringPanel } from "@/components/WatcherMonitoringPanel";
 import { Button } from "@/components/ui/button";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
@@ -90,6 +91,8 @@ export default function MarketWatcherPage() {
           Paper only — no broker or exchange execution.
         </p>
       </div>
+
+      <WatcherMonitoringPanel compact />
 
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}
