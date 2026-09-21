@@ -2,11 +2,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import MarketPage from "./page";
-import type { MarketAnalyzeResponse, MarketSnapshotResponse } from "@/lib/api/types";
+import type {
+  CanonicalMarketMonitorStatusRead,
+  MarketAnalyzeResponse,
+  MarketSnapshotResponse,
+} from "@/lib/api/types";
 
 const mockReload = vi.fn<() => Promise<void>>();
 const mockSnapshot = vi.fn();
 const mockAnalyze = vi.fn();
+const mockGetMarketStatus = vi.fn();
 
 let asyncState: {
   data: MarketSnapshotResponse | null;
@@ -29,8 +34,69 @@ vi.mock("@/lib/api", () => ({
       snapshot: (...args: unknown[]) => mockSnapshot(...args),
       analyze: (...args: unknown[]) => mockAnalyze(...args),
     },
+    canonical: {
+      getMarketStatus: (...args: unknown[]) => mockGetMarketStatus(...args),
+    },
   },
 }));
+
+const replayMonitor: CanonicalMarketMonitorStatusRead = {
+  authority: "canonical_market_monitor",
+  live_executable: false,
+  watcher_activated: false,
+  compatibility_price_used: false,
+  symbol: "BTCUSDT",
+  mode: "replay",
+  availability: "replay",
+  reason: "replay_fixture",
+  perpetual: true,
+  source: {
+    venue: "binance",
+    market_type: "perpetual",
+    instrument_id: "binance:usdm_futures:perpetual:BTCUSDT",
+    provider_symbol: "BTCUSDT",
+    provider_name: "binance-usdm-perpetual-replay",
+    source_family: "replay_fixture",
+    adapter_version: "binance-usdm-perpetual/v1",
+    is_live: false,
+    is_mock: true,
+    fallback_used: false,
+  },
+  current_price: {
+    usable_as_current_market_price: false,
+    presentation: "replay_fixture",
+    price: "91234.5",
+    source_time: "2026-01-15T16:15:04.000Z",
+    venue_trade_id: "agg-1",
+    is_live: false,
+    is_mock: true,
+    fallback_used: false,
+    freshness: {
+      policy_version: "first-slice-btc-usdt-usdm-freshness/v1",
+      state: "fresh",
+      evaluated_at: "2026-01-15T16:15:05.000Z",
+    },
+  },
+  last_update: "2026-01-15T16:15:04.000Z",
+  evaluated_at: "2026-01-15T16:15:05.000Z",
+  stream: {
+    reconnect_state: "continuous",
+    gap_state: "none",
+    warm_up_status: "complete",
+    reconnect_count: 0,
+  },
+  coverage: { completeness: "complete", gap_state: "none" },
+  cvd: { available: true, event_count: 2 },
+  ohlcv: { available: true, completeness_15m: "complete", completeness_4h: "complete" },
+  provider: {
+    name: "binance-usdm-perpetual-replay",
+    health: "healthy",
+    is_mock: true,
+    using_fallback: false,
+  },
+  backoff: { active: false, attempt: 0 },
+  content_hash: "ab".repeat(32),
+};
 
 function makeSnapshot(overrides: Partial<MarketSnapshotResponse> = {}): MarketSnapshotResponse {
   const meta = {
@@ -81,6 +147,7 @@ describe("MarketPage route honesty (FP2-129)", () => {
   beforeEach(() => {
     asyncState = { data: null, loading: true, error: null };
     mockReload.mockResolvedValue(undefined);
+    mockGetMarketStatus.mockResolvedValue(replayMonitor);
   });
 
   afterEach(() => {
@@ -130,6 +197,12 @@ describe("MarketPage route honesty (FP2-129)", () => {
     expect(
       screen.getByText(/Using mock fallback — prices are not live exchange data/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Compatibility last price/i)).toBeInTheDocument();
+    expect(screen.getByText(/Not a current live perpetual price/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("perpetual-market-status")).toBeInTheDocument());
+    expect(screen.getByTestId("monitor-current-price-label")).toHaveTextContent(
+      /not a current live perpetual price/i,
+    );
   });
 
   it("runs analyze as a user action without inventing prior analysis", async () => {

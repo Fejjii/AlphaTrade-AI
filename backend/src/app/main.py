@@ -158,6 +158,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.provider_registry = build_default_registry(settings)
+    from app.market_monitor.factory import build_perpetual_market_monitor
+
+    app.state.market_monitor = build_perpetual_market_monitor(settings)
     app.state.strategy_registry = build_strategy_registry()
     app.state.tool_registry = build_tool_registry(settings)
 

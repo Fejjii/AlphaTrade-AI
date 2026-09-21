@@ -44,6 +44,10 @@ test.describe("Canonical paper decision workflow", () => {
     await expect(price).toBeVisible();
     await expect(price).toContainText(/replay fixture/i);
     await expect(price.getByText("Live", { exact: true })).toHaveCount(0);
+    const monitor = page.getByTestId("perpetual-market-status");
+    await expect(monitor).toBeVisible();
+    await expect(monitor).toContainText(/replay fixture/i);
+    await expect(monitor.getByText("Live mark", { exact: true })).toHaveCount(0);
   });
 
   test("canonical HTTP reads require auth and stay tenant-empty without seed", async ({
@@ -107,6 +111,29 @@ test.describe("Canonical paper decision workflow", () => {
     expect(body.current_price?.presentation).not.toBe("live_mark");
     expect(body.current_price?.is_live).toBe(false);
     expect(body.source?.source_family).toBe("replay_fixture");
+
+    const status = await request.get(`${apiURL}/canonical/market-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(status.ok(), `canonical market-status HTTP ${status.status()}`).toBeTruthy();
+    const monitor = (await status.json()) as {
+      watcher_activated?: boolean;
+      live_executable?: boolean;
+      compatibility_price_used?: boolean;
+      availability?: string;
+      current_price?: {
+        usable_as_current_market_price?: boolean;
+        presentation?: string;
+        is_live?: boolean;
+      };
+    };
+    expect(monitor.watcher_activated).toBe(false);
+    expect(monitor.live_executable).toBe(false);
+    expect(monitor.compatibility_price_used).toBe(false);
+    expect(monitor.availability).toBe("replay");
+    expect(monitor.current_price?.usable_as_current_market_price).toBe(false);
+    expect(monitor.current_price?.presentation).not.toBe("live_mark");
+    expect(monitor.current_price?.is_live).toBe(false);
   });
 
   test("iPhone-width decision hub does not overflow and keeps Plan in the bottom nav", async ({

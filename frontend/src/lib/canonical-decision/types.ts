@@ -74,6 +74,7 @@ export type CanonicalFreshnessPillState =
   | "live"
   | "delayed"
   | "stale"
+  | "degraded"
   | "fallback"
   | "unavailable"
   | "replay";
@@ -138,6 +139,24 @@ export interface MarketQualityView {
   currentPrice: CurrentPriceHonesty | null;
   /** Market quality never implies permission to act. */
   doesNotGrantEligibility: true;
+}
+
+export interface PerpetualMarketStatusView {
+  symbol: string;
+  mode: string;
+  availability: "fresh" | "stale" | "degraded" | "unavailable" | "replay" | string;
+  reason: string;
+  lastUpdate: string | null;
+  sourceLabel: string;
+  providerName: string;
+  providerHealth: string;
+  perpetual: true;
+  watcherActivated: false;
+  currentPrice: CurrentPriceHonesty;
+  streamLabel: string;
+  ohlcvLabel: string;
+  cvdLabel: string;
+  summary: string;
 }
 
 export interface ActionEligibilityView {

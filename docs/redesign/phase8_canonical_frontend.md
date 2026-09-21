@@ -38,6 +38,7 @@ remain compatibility views and are labeled as such.
 - `GET /health`
 - `GET /risk/kill-switch`
 - `GET /canonical/evidence`
+- `GET /canonical/market-status` (continuous USD-M monitor; replay is never a live mark)
 - `GET /paper-validation/candidates` (compatibility)
 - `POST /market/analyze` (legacy `/market` monitor only; not canonical current price)
 - `GET /paper-validation/candidates` (compatibility)

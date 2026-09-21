@@ -140,3 +140,23 @@ Live unavailability does not substitute spot data.
 Canonical UI (`/decision/market`) reads this GET path. Compatibility
 `POST /market/analyze` snapshots are not canonical current prices.
 
+## Continuous live read-only monitor (AT-069)
+
+`app.market_monitor` ticks existing USD-M GET-only sources and the Phase 5
+trade-stream assembler. It does not enable Watcher, Telegram, or execution.
+
+| Piece | Behavior |
+|---|---|
+| Scope | BTCUSDT first; additional catalog symbols reuse the same runtime |
+| Current price | Last contracted perpetual trade in the 10s window. Replay is `replay_fixture`. Outage, gap, conflict, and wrong-source fail closed (`price=null`) |
+| Availability | `fresh` / `stale` / `degraded` / `unavailable` / `replay` — never show compatibility or demo-seed as live |
+| Stream | `INITIAL -> CONTINUOUS -> RECONNECTING -> RECOVERED`. New process = new connection epoch |
+| Rate limit | HTTP 429 is `RateLimitedError` with Retry-After backoff. Not a fabricated fallback |
+| Gaps | Sequence holes and out-of-order trades fail closed. Unrecoverable until restart |
+| Identity | Semantic hash excludes connection ids, receive times, and backoff. A later trade or price correction changes the hash |
+| HTTP | Authenticated `GET /canonical/market-status`. 422 unknown symbol. `watcher_activated=false` |
+| Default | `PERPETUAL_EVIDENCE_SOURCE=replay`. Live `binance_usdm` is opt-in read-only |
+
+Remaining Watcher work: wire the disabled worker to this monitor + AT-064 assembler
+and an approved compiled policy. Do not enable Watcher in this layer.
+

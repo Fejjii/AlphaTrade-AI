@@ -74,6 +74,7 @@ import type {
   CanonicalLearningRecordRead,
   CanonicalLearningStatsRead,
   CanonicalEvidenceRead,
+  CanonicalMarketMonitorStatusRead,
   CanonicalTradePlanRevision,
   ProposalWorkflowView,
   ApprovalWorkflowView,
@@ -532,6 +533,11 @@ export const api = {
       }),
     getEvidence: (params?: { symbol?: string }) =>
       apiFetch<CanonicalEvidenceRead>("/canonical/evidence", { query: params, auth: true }),
+    getMarketStatus: (params?: { symbol?: string }) =>
+      apiFetch<CanonicalMarketMonitorStatusRead>("/canonical/market-status", {
+        query: params,
+        auth: true,
+      }),
   },
   positions: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>

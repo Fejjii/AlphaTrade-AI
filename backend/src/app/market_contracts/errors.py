@@ -59,6 +59,14 @@ class RegionalProviderFailureError(MarketContractError):
     """The preferred perpetual source is unreachable in this runtime region."""
 
 
+class RateLimitedError(MarketContractError):
+    """Preferred source asked the client to back off (HTTP 429). Not an outage."""
+
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
 class NetworkMutationForbiddenError(MarketContractError):
     """The read-only adapter refused a non-GET or non-allowlisted path."""
 

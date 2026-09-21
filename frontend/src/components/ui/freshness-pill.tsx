@@ -3,7 +3,14 @@ import { Clock, CloudOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export type FreshnessState = "live" | "delayed" | "stale" | "fallback" | "unavailable" | "replay";
+export type FreshnessState =
+  | "live"
+  | "delayed"
+  | "stale"
+  | "degraded"
+  | "fallback"
+  | "unavailable"
+  | "replay";
 
 export interface FreshnessPillProps {
   state: FreshnessState;
@@ -16,6 +23,7 @@ const labels: Record<FreshnessState, string> = {
   live: "Live",
   delayed: "Delayed",
   stale: "Stale",
+  degraded: "Degraded",
   fallback: "Fallback source",
   unavailable: "Unavailable",
   replay: "Replay fixture",
@@ -24,8 +32,15 @@ const labels: Record<FreshnessState, string> = {
 /** Data freshness indicator — always pairs icon + text (AT-039 §7.4). */
 export function FreshnessPill({ state, ageLabel, className }: FreshnessPillProps) {
   const variant =
-    state === "live" ? "success" : state === "unavailable" || state === "replay" ? "muted" : "stale";
-  const Icon = state === "fallback" || state === "unavailable" || state === "replay" ? CloudOff : Clock;
+    state === "live"
+      ? "success"
+      : state === "unavailable" || state === "replay"
+        ? "muted"
+        : "stale";
+  const Icon =
+    state === "fallback" || state === "unavailable" || state === "replay" || state === "degraded"
+      ? CloudOff
+      : Clock;
   const text = ageLabel ? `${labels[state]} · ${ageLabel}` : labels[state];
 
   return (

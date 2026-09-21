@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.evidence_pipeline.service import CanonicalEvidenceService
+from app.market_monitor.factory import build_perpetual_market_monitor
+from app.market_monitor.monitor import PerpetualMarketMonitor
+from app.market_monitor.service import PerpetualMarketMonitorService
 from app.providers.exchange.factory import resolve_exchange_execution_provider
 from app.providers.factory import resolve_market_data_provider
 from app.providers.registry import ProviderRegistry, get_provider_registry
@@ -180,6 +183,30 @@ def get_canonical_evidence_service(
 
 CanonicalEvidenceServiceDep = Annotated[
     CanonicalEvidenceService, Depends(get_canonical_evidence_service)
+]
+
+
+def get_perpetual_market_monitor(request: Request, settings: SettingsDep) -> PerpetualMarketMonitor:
+    """Process-local USD-M monitor. Does not start Watcher."""
+    monitor = getattr(request.app.state, "market_monitor", None)
+    if not isinstance(monitor, PerpetualMarketMonitor):
+        monitor = build_perpetual_market_monitor(settings)
+        request.app.state.market_monitor = monitor
+    return monitor
+
+
+def get_perpetual_market_monitor_service(
+    monitor: Annotated[PerpetualMarketMonitor, Depends(get_perpetual_market_monitor)],
+    settings: SettingsDep,
+) -> PerpetualMarketMonitorService:
+    return PerpetualMarketMonitorService(monitor, settings=settings)
+
+
+PerpetualMarketMonitorDep = Annotated[
+    PerpetualMarketMonitor, Depends(get_perpetual_market_monitor)
+]
+PerpetualMarketMonitorServiceDep = Annotated[
+    PerpetualMarketMonitorService, Depends(get_perpetual_market_monitor_service)
 ]
 
 
