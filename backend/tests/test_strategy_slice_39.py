@@ -199,8 +199,12 @@ def test_auto_paper_mode_can_create_trade(slice39_client: tuple[TestClient, sess
     ).json()
     scan = client.post(f"/paper-validation/{run['id']}/scan")
     assert scan.status_code == 200
-    # Trade may or may not be created depending on mock candle signal — both valid
-    assert "trade_created" in scan.json()
+    body = scan.json()
+    assert body["trade_created"] is False
+    signals = client.get(f"/paper-validation/{run['id']}/signals")
+    assert signals.json()["total"] >= 1
+    latest = signals.json()["items"][0]
+    assert latest["status"] == "not_testable"
 
 
 def test_no_trade_filters_block(slice39_client: tuple[TestClient, sessionmaker]) -> None:

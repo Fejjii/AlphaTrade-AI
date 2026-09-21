@@ -36,7 +36,10 @@ from app.services.structure_from_text_service import StructureFromTextService
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.strategy_evaluation_policy import evaluate_canonical_strategy
 from app.watcher.contracts import EvaluationCommand, EvaluationMode, ScanRequest, ScanTrigger
-from app.watcher.fusion_evaluation import build_fusion_evaluation_service
+from app.watcher.fusion_evaluation import (
+    ExecutablePolicyAuthority,
+    build_fusion_evaluation_service,
+)
 from app.watcher.hashing import evaluation_input_hash, policy_content_hash, scan_request_hash
 from app.watcher.memory import FakeClock, InMemoryWatcherStore
 from tests.support.first_slice_preview import (
@@ -47,8 +50,11 @@ from tests.support.first_slice_preview import (
 
 ORG = uuid.UUID("00000000-0000-0000-0000-000000000063")
 USER = uuid.UUID("00000000-0000-0000-0000-000000000163")
+ORG_B = uuid.UUID("00000000-0000-0000-0000-000000000263")
+USER_B = uuid.UUID("00000000-0000-0000-0000-000000000363")
 PASSWORD = "TestPassword123!"
 EMAIL = "at063@test.example"
+EMAIL_B = "at063-b@test.example"
 
 
 def _card() -> StrategyCard:
@@ -112,6 +118,7 @@ def client_env() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
     settings = _settings()
     with factory() as session:
         session.add(Organization(id=ORG, name="AT063 Org"))
+        session.add(Organization(id=ORG_B, name="AT063 Org B"))
         session.add(
             User(
                 id=USER,
@@ -120,8 +127,17 @@ def client_env() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
                 email_verified=True,
             )
         )
+        session.add(
+            User(
+                id=USER_B,
+                email=EMAIL_B,
+                hashed_password=hash_password(PASSWORD, settings),
+                email_verified=True,
+            )
+        )
         session.flush()
         session.add(Membership(organization_id=ORG, user_id=USER, role=MembershipRole.TRADER))
+        session.add(Membership(organization_id=ORG_B, user_id=USER_B, role=MembershipRole.TRADER))
         session.commit()
 
     app = create_app(settings=settings)
@@ -136,8 +152,8 @@ def client_env() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
     app.dependency_overrides.clear()
 
 
-def _auth(client: TestClient) -> None:
-    login = client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
+def _auth(client: TestClient, email: str = EMAIL) -> None:
+    login = client.post("/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 200, login.text
     token = login.json()["tokens"]["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
@@ -149,6 +165,9 @@ def _confirm_payload(body: dict[str, object]) -> dict[str, object]:
         "expected_content_hash": body["content_hash"],
         "expected_parent_version_id": body.get("parent_version_id"),
         "expected_target_strategy_id": body.get("target_strategy_id"),
+        "expected_organization_id": body["organization_id"],
+        "expected_user_id": body["user_id"],
+        "expected_conversation_id": body["conversation_id"],
     }
 
 
@@ -262,6 +281,12 @@ def test_fixture_discussion_preview_confirm_compile_approve_evidence(
             organization_id=ORG,
             policy=executable.fusion_policy,
         )
+        assembled_again = FirstSliceEvidenceAssembler(
+            ReplayPerpetualSource(), replay=True
+        ).assemble(
+            organization_id=ORG,
+            policy=executable.fusion_policy,
+        )
         first = evaluate_canonical_strategy(
             executable_policy=executable,
             command=assembled.assessment_command,
@@ -270,11 +295,12 @@ def test_fixture_discussion_preview_confirm_compile_approve_evidence(
         )
         second = evaluate_canonical_strategy(
             executable_policy=executable,
-            command=assembled.assessment_command,
-            evidence=assembled.bundle,
-            evaluated_at=assembled.evaluated_at,
+            command=assembled_again.assessment_command,
+            evidence=assembled_again.bundle,
+            evaluated_at=assembled_again.evaluated_at,
         )
         assert first.evidence_window_hash == assembled.evidence_window_hash
+        assert first.evidence_window_hash == assembled_again.evidence_window_hash
         assert first.state is second.state
         assert first.evidence_window_hash == second.evidence_window_hash
         assert first.content_hash == second.content_hash
@@ -282,8 +308,10 @@ def test_fixture_discussion_preview_confirm_compile_approve_evidence(
         assert [item.id for item in versions if str(item.id) == version_id]
 
 
+@pytest.mark.parametrize("blocked_text", [INCOMPLETE_FIRST_SLICE_TEXT, UNSUPPORTED_STRATEGY_TEXT])
 def test_incomplete_and_unsupported_cannot_become_executable_policy(
     client_env: tuple[TestClient, sessionmaker[Session]],
+    blocked_text: str,
 ) -> None:
     client, factory = client_env
     _auth(client)
@@ -300,29 +328,53 @@ def test_incomplete_and_unsupported_cannot_become_executable_policy(
     conv_id = conversation.json()["id"]
     preview = client.post(
         f"/conversations/{conv_id}/proposals",
-        json={"text": UNSUPPORTED_STRATEGY_TEXT, "strategy_id": strategy_id},
+        json={"text": blocked_text, "strategy_id": strategy_id},
     )
+    assert preview.status_code == 200, preview.text
     body = preview.json()
-    if body.get("proposed_structured_rules") is None:
-        return
+    assert body["is_preview"] is True
+    assert body["mutates_strategy_authority"] is False
+    assert body.get("proposed_pattern_spec") is None
+    payload = {
+        "confirm": "I confirm",
+        "expected_content_hash": body.get("content_hash") or ("0" * 64),
+        "expected_parent_version_id": body.get("parent_version_id"),
+        "expected_target_strategy_id": body.get("target_strategy_id"),
+        "expected_organization_id": body["organization_id"],
+        "expected_user_id": body["user_id"],
+        "expected_conversation_id": body["conversation_id"],
+    }
     confirmed = client.post(
         f"/conversations/{conv_id}/proposals/{body['id']}/confirm",
-        json=_confirm_payload(body),
+        json=payload,
     )
-    if confirmed.status_code != 200:
-        return
-    version_id = confirmed.json()["resulting_version_id"]
-    compiled = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
-    assert compiled.json()["status"] != "executable" or compiled.json()["compiled"] is None
-    approve = client.post(
-        f"/strategies/{strategy_id}/versions/{version_id}/approve",
-        json={"confirm": "I confirm"},
-    )
-    assert approve.status_code in {409, 422}
-    with factory() as session, pytest.raises(StrategyEvaluationPolicyError):
-        resolve_executable_strategy_policy(
-            session, organization_id=ORG, strategy_version_id=uuid.UUID(version_id)
+    assert confirmed.status_code in {200, 409, 422}, confirmed.text
+    version_id = None
+    if confirmed.status_code == 200:
+        version_id = confirmed.json().get("resulting_version_id")
+    if version_id:
+        compiled = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
+        compiled_body = (
+            compiled.json()
+            if compiled.headers.get("content-type", "").startswith("application/json")
+            else {}
         )
+        assert not (
+            compiled.status_code == 200
+            and compiled_body.get("status") == "executable"
+            and compiled_body.get("compiled") is not None
+        )
+        approve = client.post(
+            f"/strategies/{strategy_id}/versions/{version_id}/approve",
+            json={"confirm": "I confirm"},
+        )
+        assert approve.status_code in {404, 409, 422}, approve.text
+        with factory() as session, pytest.raises(StrategyEvaluationPolicyError):
+            resolve_executable_strategy_policy(
+                session, organization_id=ORG, strategy_version_id=uuid.UUID(version_id)
+            )
+    else:
+        assert confirmed.status_code in {409, 422}, confirmed.text
 
 
 def test_persisted_watcher_path_uses_canonical_resolver(
@@ -415,12 +467,139 @@ def test_persisted_watcher_path_uses_canonical_resolver(
         )
         snapshot = port.load(command)
         assert snapshot is not None
+        assert snapshot.policy_authority is ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED
         assert snapshot.executable_policy.strategy_version_id == version_id
         assert snapshot.executable_policy.compiled_setup_definition_id == (
             executable.compiled_setup_definition_id
         )
+        injected = AssemblingWatcherScanEvidence(
+            FirstSliceEvidenceAssembler(ReplayPerpetualSource(), replay=True),
+            executable_resolver=lambda _command: executable,
+        )
+        injected_snapshot = injected.load(command)
+        assert injected_snapshot is not None
+        assert injected_snapshot.policy_authority is ExecutablePolicyAuthority.IN_MEMORY_TEST_HELPER
         service = build_fusion_evaluation_service(evidence=port)
         outcome = service.evaluate(command)
         assert outcome.reason_code != "missing_canonical_evidence"
-        persist = service.persist_confirmed_setup(command, outcome)
-        assert persist.candidate_ids == () or outcome.reason_code == "confirmed_setup"
+        preview_persist = service.persist_confirmed_setup(command, outcome)
+        assert preview_persist.candidate_ids == ()
+        persist_command = command.model_copy(update={"mode": EvaluationMode.PERSIST_EVIDENCE})
+        persist = service.persist_confirmed_setup(persist_command, outcome)
+        if outcome.reason_code == "confirmed_setup":
+            assert len(persist.candidate_ids) == 1
+            assert persist.status.value == "succeeded"
+        else:
+            assert persist.candidate_ids == ()
+        injected_service = build_fusion_evaluation_service(evidence=injected)
+        injected_outcome = injected_service.evaluate(persist_command)
+        injected_persist = injected_service.persist_confirmed_setup(
+            persist_command, injected_outcome
+        )
+        assert injected_persist.candidate_ids == ()
+        if injected_outcome.reason_code == "confirmed_setup":
+            assert injected_persist.reason_code == "candidate_creation_failed"
+
+
+def test_paper_bot_scan_without_approved_lineage_creates_no_trade(
+    client_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _factory = client_env
+    _auth(client)
+    created = client.post(
+        "/strategies",
+        json={
+            "name": "Paper lineage gate",
+            "setup_type": StrategyId.HTF_TREND_PULLBACK.value,
+            "card": _card().model_dump(mode="json"),
+        },
+    )
+    strategy_id = created.json()["id"]
+    client.patch(
+        f"/strategies/{strategy_id}/structured-rules",
+        json={
+            "primary_timeframe": "15m",
+            "entry_rules": [{"trigger_type": "ema_pullback"}],
+            "exit_rules": [
+                {"rule_type": "fixed_stop", "value": "2"},
+                {"rule_type": "tp_multiple", "r_multiple": "1"},
+            ],
+            "no_trade_rules": [],
+        },
+    )
+    client.post(
+        f"/strategies/{strategy_id}/backtests",
+        json={
+            "assumptions": {
+                "symbol": "BTCUSDT",
+                "timeframe": "15m",
+                "exchange": "mock",
+                "initial_capital": "10000",
+                "fees_bps": 10,
+                "slippage_bps": 5,
+                "risk_per_trade_pct": 1,
+            }
+        },
+    )
+    started = client.post(
+        f"/strategies/{strategy_id}/paper-validation/start",
+        json={"runtime_mode": "auto_paper"},
+    )
+    assert started.status_code == 200, started.text
+    scan = client.post(f"/paper-validation/{started.json()['id']}/scan")
+    assert scan.status_code == 200, scan.text
+    assert scan.json()["trade_created"] is False
+    signals = client.get(f"/paper-validation/{started.json()['id']}/signals")
+    assert signals.json()["total"] >= 1
+    assert signals.json()["items"][0]["status"] == "not_testable"
+    trades = client.get(f"/paper-validation/{started.json()['id']}/trades")
+    assert trades.json()["total"] == 0
+
+
+def test_cross_tenant_compile_and_approve_fail_closed(
+    client_env: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _factory = client_env
+    _auth(client)
+    created = client.post(
+        "/strategies",
+        json={
+            "name": "Tenant A compiled",
+            "setup_type": StrategyId.LIQUIDITY_SWEEP_REVERSAL.value,
+            "card": _card().model_dump(mode="json"),
+        },
+    )
+    strategy_id = created.json()["id"]
+    conversation = client.post("/conversations", json={"strategy_id": strategy_id})
+    conv_id = conversation.json()["id"]
+    preview = client.post(
+        f"/conversations/{conv_id}/proposals",
+        json={"text": complete_first_slice_preview_text(), "strategy_id": strategy_id},
+    )
+    confirmed = client.post(
+        f"/conversations/{conv_id}/proposals/{preview.json()['id']}/confirm",
+        json=_confirm_payload(preview.json()),
+    )
+    version_id = confirmed.json()["resulting_version_id"]
+    compile_ok = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
+    assert compile_ok.status_code == 200, compile_ok.text
+
+    _auth(client, EMAIL_B)
+    foreign_strategy = client.post(
+        "/strategies",
+        json={
+            "name": "Tenant B",
+            "setup_type": StrategyId.LIQUIDITY_SWEEP_REVERSAL.value,
+            "card": _card().model_dump(mode="json"),
+        },
+    )
+    foreign_id = foreign_strategy.json()["id"]
+    compile_foreign = client.post(f"/strategies/{foreign_id}/versions/{version_id}/compile")
+    assert compile_foreign.status_code in {403, 404, 409, 422}, compile_foreign.text
+    approve_foreign = client.post(
+        f"/strategies/{foreign_id}/versions/{version_id}/approve",
+        json={"confirm": "I confirm"},
+    )
+    assert approve_foreign.status_code in {403, 404, 409, 422}, approve_foreign.text
+    compile_a = client.post(f"/strategies/{strategy_id}/versions/{version_id}/compile")
+    assert compile_a.status_code in {403, 404, 409, 422}, compile_a.text

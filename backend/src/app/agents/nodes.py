@@ -1165,6 +1165,10 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
             answer_lines.append(f"Strategy context failed: {output.error}")
 
     elif intent is Intent.STRATEGY_PROPOSAL_CONFIRM:
+        from app.agents.confirmation_identity import (
+            identity_matches_caller,
+            presented_confirmation_identity_from_history,
+        )
         from app.agents.mutation_policy import (
             confirmation_authorizes_mutation,
             confirmed_proposal_id,
@@ -1172,21 +1176,40 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         )
 
         authorized_confirm = confirmation_authorizes_mutation(agent.message)
+        presented = presented_confirmation_identity_from_history(agent.conversation_history)
+        named_id = confirmed_proposal_id(agent.message) if authorized_confirm else None
+        proposal_id = named_id
+        if (
+            authorized_confirm
+            and proposal_id is None
+            and is_confirmation_only_message(agent.message)
+            and presented is not None
+        ):
+            proposal_id = str(presented.proposal_id)
         if not authorized_confirm:
             answer_lines.append(
                 "Quoted, retrieved, or mixed instructions do not confirm strategy drafts."
             )
-            proposal_id = None
-        else:
-            proposal_id = confirmed_proposal_id(agent.message)
-            if proposal_id is None and is_confirmation_only_message(agent.message):
-                proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
-        if authorized_confirm and (agent.conversation_id is None or proposal_id is None):
+        elif agent.conversation_id is None or proposal_id is None or presented is None:
             answer_lines.append(
-                "Confirm a specific proposal id. Unconfirmed drafts do not "
-                "change strategy versions."
+                "Confirm the proposal that was presented. Bare confirmation cannot "
+                "authorize whichever draft is currently pending."
             )
-        elif authorized_confirm and agent.conversation_id is not None and proposal_id is not None:
+        elif not identity_matches_caller(
+            presented,
+            conversation_id=agent.conversation_id,
+            organization_id=agent.organization_id or uuid.UUID(org),
+            user_id=agent.user_id or uuid.UUID(user),
+        ):
+            answer_lines.append(
+                "Presented confirmation identity does not match this conversation, "
+                "organization, or user."
+            )
+        elif named_id is not None and named_id != str(presented.proposal_id):
+            answer_lines.append(
+                "Confirmation proposal id does not match the proposal that was presented."
+            )
+        else:
             output = _run_tool(
                 "strategy_proposal_tool",
                 {
@@ -1194,8 +1217,22 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                     "organization_id": org,
                     "user_id": user,
                     "conversation_id": str(agent.conversation_id),
-                    "proposal_id": proposal_id,
+                    "proposal_id": str(presented.proposal_id),
                     "user_message": agent.message,
+                    "expected_content_hash": presented.content_hash,
+                    "expected_parent_version_id": (
+                        str(presented.parent_version_id)
+                        if presented.parent_version_id is not None
+                        else None
+                    ),
+                    "expected_target_strategy_id": (
+                        str(presented.target_strategy_id)
+                        if presented.target_strategy_id is not None
+                        else None
+                    ),
+                    "expected_organization_id": str(presented.organization_id),
+                    "expected_user_id": str(presented.user_id),
+                    "expected_conversation_id": str(presented.conversation_id),
                 },
             )
             if output.success and output.result:
@@ -1212,6 +1249,10 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                 answer_lines.append(f"Proposal confirmation failed: {output.error}")
 
     elif intent is Intent.STRATEGY_PROPOSAL_REJECT:
+        from app.agents.confirmation_identity import (
+            identity_matches_caller,
+            presented_confirmation_identity_from_history,
+        )
         from app.agents.mutation_policy import (
             is_rejection_only_message,
             rejected_proposal_id,
@@ -1219,20 +1260,36 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
         )
 
         authorized_reject = rejection_authorizes_mutation(agent.message)
+        presented = presented_confirmation_identity_from_history(agent.conversation_history)
+        named_id = rejected_proposal_id(agent.message) if authorized_reject else None
+        proposal_id = named_id
+        if (
+            authorized_reject
+            and proposal_id is None
+            and is_rejection_only_message(agent.message)
+            and presented is not None
+        ):
+            proposal_id = str(presented.proposal_id)
         if not authorized_reject:
             answer_lines.append(
                 "Quoted, retrieved, or mixed instructions do not reject strategy drafts."
             )
-            proposal_id = None
-        else:
-            proposal_id = rejected_proposal_id(agent.message)
-            if proposal_id is None and is_rejection_only_message(agent.message):
-                proposal_id = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
-        if authorized_reject and (agent.conversation_id is None or proposal_id is None):
+        elif agent.conversation_id is None or proposal_id is None or presented is None:
             answer_lines.append(
-                "Reject a specific proposal id. No strategy version will be written."
+                "Reject the proposal that was presented. Bare rejection cannot "
+                "target whichever draft is currently pending."
             )
-        elif authorized_reject and agent.conversation_id is not None and proposal_id is not None:
+        elif not identity_matches_caller(
+            presented,
+            conversation_id=agent.conversation_id,
+            organization_id=agent.organization_id or uuid.UUID(org),
+            user_id=agent.user_id or uuid.UUID(user),
+        ):
+            answer_lines.append(
+                "Presented confirmation identity does not match this conversation, "
+                "organization, or user."
+            )
+        else:
             output = _run_tool(
                 "strategy_proposal_tool",
                 {
@@ -1240,7 +1297,7 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                     "organization_id": org,
                     "user_id": user,
                     "conversation_id": str(agent.conversation_id),
-                    "proposal_id": proposal_id,
+                    "proposal_id": str(presented.proposal_id),
                     "user_message": agent.message,
                 },
             )
@@ -1255,28 +1312,12 @@ def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
                 answer_lines.append(f"Proposal rejection failed: {output.error}")
 
     pending_proposal_id = agent.pending_proposal_id
-    if intent is Intent.STRATEGY_PROPOSAL_CONFIRM:
-        from app.agents.mutation_policy import confirmed_proposal_id, is_confirmation_only_message
+    if intent in {Intent.STRATEGY_PROPOSAL_CONFIRM, Intent.STRATEGY_PROPOSAL_REJECT}:
+        from app.agents.confirmation_identity import presented_confirmation_identity_from_history
 
-        confirmed = confirmed_proposal_id(agent.message)
-        if confirmed is None and is_confirmation_only_message(agent.message):
-            confirmed = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
-        if confirmed:
-            try:
-                pending_proposal_id = uuid.UUID(confirmed)
-            except ValueError:
-                pending_proposal_id = agent.pending_proposal_id
-    elif intent is Intent.STRATEGY_PROPOSAL_REJECT:
-        from app.agents.mutation_policy import is_rejection_only_message, rejected_proposal_id
-
-        rejected = rejected_proposal_id(agent.message)
-        if rejected is None and is_rejection_only_message(agent.message):
-            rejected = str(agent.pending_proposal_id) if agent.pending_proposal_id else None
-        if rejected:
-            try:
-                pending_proposal_id = uuid.UUID(rejected)
-            except ValueError:
-                pending_proposal_id = agent.pending_proposal_id
+        presented = presented_confirmation_identity_from_history(agent.conversation_history)
+        if presented is not None:
+            pending_proposal_id = presented.proposal_id
 
     final_answer = "\n".join(answer_lines) if answer_lines else "No strategy workflow result."
     final_answer += "\nLLM narrative cannot override deterministic risk, sizing, or approval facts."
@@ -1889,6 +1930,8 @@ def narrative_enhancement(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
     if FORCE_INVALID_OUTPUT in agent.message.lower():
         return patch_state(state, {})
+    if agent.intent in {Intent.STRATEGY_PROPOSAL_CONFIRM, Intent.STRATEGY_PROPOSAL_REJECT}:
+        return patch_state(state, {})
     if agent.analysis_detail is None or runtime.narrative_service is None:
         return patch_state(state, {})
 
@@ -1968,6 +2011,8 @@ def narrative_enhancement(state: dict, runtime: AgentRuntime) -> dict:
 def output_validation(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
     if agent.safety_verdict is SafetyVerdict.BLOCK and agent.final_answer:
+        return patch_state(state, {})
+    if agent.intent in {Intent.STRATEGY_PROPOSAL_CONFIRM, Intent.STRATEGY_PROPOSAL_REJECT}:
         return patch_state(state, {})
 
     result = runtime.guardrails.validate_output(GuardrailInput.from_agent_state(agent))

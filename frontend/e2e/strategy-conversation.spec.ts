@@ -4,6 +4,48 @@ import { getSharedE2EAccessToken, installSharedE2ESession } from "./helpers/shar
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
 
+const FIRST_SLICE_PREVIEW = [
+  "kind: bearish_liquidity_sweep_cvd_sell_imbalance_at_4h_resistance/v1",
+  "name: Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance",
+  "symbol: BTCUSDT",
+  "trigger_timeframe: 15m",
+  "context_timeframe: 4h",
+  "direction: short",
+  "requires_manual_4h_resistance: true",
+  "requires_confirmed_swing: true",
+  "trigger_atr.feature_type: WILDER_ATR",
+  "trigger_atr.feature_version: wilder-atr/v1",
+  "trigger_atr.period: 14",
+  "context_atr.feature_type: WILDER_ATR",
+  "context_atr.feature_version: wilder-atr/v1",
+  "context_atr.period: 14",
+  "resistance_distance_atr_threshold: 0.50",
+  "sweep_threshold_atr: 0.25",
+  "close_below_swing: true",
+  "bearish_candle_close_below_open: true",
+  "volume_lookback_bars: 20",
+  "volume_ratio_threshold: 1.50",
+  "requires_cvd_divergence: true",
+  "aggressive_sell_imbalance_threshold: -0.10",
+  "required_finality: true",
+  "required_freshness: true",
+  "required_no_gap: true",
+  "invalidation.atr_multiple: 0.10",
+  "invalidation.tick_multiple: 2",
+  "expiry_final_bars: 2",
+  "htf_resistance_context",
+  "ltf_liquidity_sweep",
+  "htf_min_offset: 0",
+  "htf_max_offset: 0",
+  "ltf_min_offset: 0",
+  "ltf_max_offset: 2",
+  "overlap_policy: disallow",
+  "reset_semantics: none",
+  "invalidation_semantics: none",
+  "finality_requirement: final_only",
+  "liquidity sweep cvd bearish imbalance",
+].join("\n");
+
 const SAMPLE_CARD = {
   strategy_name: "Conversation E2E Pullback",
   market_type: "crypto_perp",
@@ -79,5 +121,54 @@ test.describe("Strategy Lab conversation", () => {
     expect(versions.ok()).toBeTruthy();
     const versionPage = (await versions.json()) as { total: number };
     expect(versionPage.total).toBe(1);
+  });
+
+  test("preview confirm compile approve stays on the explicit ladder", async ({ page, request }) => {
+    const token = await getSharedE2EAccessToken(request);
+    const headers = { Authorization: `Bearer ${token}` };
+    const created = await request.post(`${API_URL}/strategies`, {
+      headers,
+      data: {
+        name: "Conversation E2E Sweep",
+        setup_type: "liquidity_sweep_reversal",
+        card: {
+          ...SAMPLE_CARD,
+          strategy_name: "Conversation E2E Sweep",
+          timeframes: ["15m", "4h"],
+        },
+      },
+    });
+    expect(created.ok(), `create strategy HTTP ${created.status()}`).toBeTruthy();
+    const strategy = (await created.json()) as { id: string };
+    const conversation = await request.post(`${API_URL}/conversations`, {
+      headers,
+      data: { strategy_id: strategy.id, title: "E2E preview" },
+    });
+    expect(conversation.ok()).toBeTruthy();
+    const conv = (await conversation.json()) as { id: string };
+    const preview = await request.post(`${API_URL}/conversations/${conv.id}/proposals`, {
+      headers,
+      data: { text: FIRST_SLICE_PREVIEW, strategy_id: strategy.id },
+    });
+    expect(preview.ok(), `preview HTTP ${preview.status()}: ${await preview.text()}`).toBeTruthy();
+
+    await installSharedE2ESession(page, request);
+    await page.goto(`/strategy-lab/${strategy.id}`);
+    await expect(page.getByTestId("strategy-conversation-panel")).toBeVisible();
+    await expect(page.getByTestId("strategy-conversation-confirmation-identity")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("strategy-conversation-confirm")).toBeVisible();
+    await page.getByTestId("strategy-conversation-confirm").click();
+    await expect(page.getByTestId("strategy-conversation-compile")).toBeVisible({ timeout: 60_000 });
+    await page.getByTestId("strategy-conversation-compile").click();
+    await expect(page.getByTestId("strategy-conversation-compile-status")).toContainText(
+      /executable/i,
+      { timeout: 60_000 },
+    );
+    await page.getByTestId("strategy-conversation-approve").click();
+    await expect(page.getByTestId("strategy-conversation-lifecycle")).toContainText(/approved/i, {
+      timeout: 60_000,
+    });
   });
 });

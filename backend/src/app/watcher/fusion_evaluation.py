@@ -17,6 +17,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from threading import RLock
 from typing import Protocol, cast
 from uuid import UUID
@@ -71,6 +72,17 @@ class BoundEvaluationClock:
         return self._now
 
 
+class ExecutablePolicyAuthority(StrEnum):
+    """How the scan's executable policy was obtained.
+
+    In-memory helpers may evaluate setup truth in tests. They cannot mint
+    Candidate persistence authority.
+    """
+
+    PERSISTED_APPROVED_COMPILED = "persisted_approved_compiled"
+    IN_MEMORY_TEST_HELPER = "in_memory_test_helper"
+
+
 class WatcherCanonicalScanEvidence(FrozenModel):
     """Canonical first-slice inputs for one tenant-scoped scan.
 
@@ -86,6 +98,7 @@ class WatcherCanonicalScanEvidence(FrozenModel):
     evidence: FirstSliceEvidenceBundle
     evaluated_at: datetime
     previous_assessment: SetupAssessment | None = None
+    policy_authority: ExecutablePolicyAuthority = ExecutablePolicyAuthority.IN_MEMORY_TEST_HELPER
 
 
 class WatcherScanEvidencePort(Protocol):
@@ -119,6 +132,10 @@ class InMemoryWatcherScanEvidence:
         ):
             raise CandidateCreationAuthorityError(
                 "Read projection placeholder IDs cannot become Watcher scan evidence."
+            )
+        if snapshot.policy_authority is ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED:
+            raise CandidateCreationAuthorityError(
+                "In-memory Watcher scan evidence cannot claim persisted compiled authority."
             )
         key = (snapshot.organization_id, scan_scope)
         with self._lock:
@@ -236,6 +253,7 @@ class WatcherFusionEvaluationService:
                 bound_command=prepared.bound_command,
                 assessment=prepared.assessment,
                 window=prepared.window,
+                policy_authority=prepared.snapshot.policy_authority,
             )
         except StaleFenceError:
             raise
@@ -394,6 +412,7 @@ class WatcherFusionEvaluationService:
         bound_command: AssessmentCommand,
         assessment: SetupAssessment,
         window: CanonicalEvidenceWindowV1 | None,
+        policy_authority: ExecutablePolicyAuthority,
     ) -> tuple[UUID, ...]:
         if assessment.state is not SetupAssessmentState.CONFIRMED_SETUP:
             return ()
@@ -411,6 +430,10 @@ class WatcherFusionEvaluationService:
         ):
             raise CandidateCreationAuthorityError(
                 "Read projection placeholder IDs cannot mint Candidates."
+            )
+        if policy_authority is not ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED:
+            raise CandidateCreationAuthorityError(
+                "In-memory or injected executable policies cannot mint Candidates."
             )
         with _persistence_fence_context(self._persistence_fence, command):
             created = self._lifecycle.create_from_confirmed_setup(
@@ -435,7 +458,9 @@ def build_fusion_evaluation_service(
     clock: BoundEvaluationClock | None = None,
     persistence_fence: CandidatePersistenceFence | None = None,
 ) -> WatcherFusionEvaluationService:
-    """Compose the fusion evaluation boundary with in-memory candidate authority."""
+    """Compose the fusion evaluation boundary. Candidate persistence still
+    requires persisted approved compiled policy authority.
+    """
 
     bound_clock = clock if clock is not None else BoundEvaluationClock()
     resolved_repository = repository
@@ -535,6 +560,7 @@ def _outcome(
 __all__ = [
     "BoundEvaluationClock",
     "CandidatePersistenceFence",
+    "ExecutablePolicyAuthority",
     "InMemoryWatcherScanEvidence",
     "WatcherCanonicalScanEvidence",
     "WatcherFusionEvaluationService",

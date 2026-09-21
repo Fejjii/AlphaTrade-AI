@@ -17,7 +17,13 @@ from app.observability.context import bind_identity, get_or_create_trace_id, set
 from app.providers.factory import resolve_market_data_provider
 from app.schemas.agent import AgentState
 from app.schemas.chat import AgentMessageResponse
-from app.schemas.common import ConversationMessageRole, RiskAction, SafetyVerdict, Timeframe
+from app.schemas.common import (
+    ConversationMessageRole,
+    RiskAction,
+    SafetyVerdict,
+    StrategyProposalStatus,
+    Timeframe,
+)
 from app.services.indicator_service import IndicatorService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
@@ -161,22 +167,57 @@ class AgentService:
                     user_id=context.user_id,
                 )
                 pending = None
+                proposal_service = StrategyProposalService(self._runtime.session)
                 if (
-                    agent.pending_proposal_id is None
-                    and agent.intent.value == "structure_strategy"
+                    agent.intent.value == "structure_strategy"
                     and agent.safety_verdict is not SafetyVerdict.BLOCK
                 ):
-                    pending = StrategyProposalService(self._runtime.session).create_draft_from_text(
+                    # A later structure request supersedes any open draft so confirmation
+                    # cannot bind to a stale presented identity.
+                    pending = proposal_service.create_draft_from_text(
                         conversation,
                         text=self._structure_text(agent),
                         strategy_id=bound_strategy_id,
                         source_message_id=user_message_id,
                     )
                     agent = agent.model_copy(update={"pending_proposal_id": pending.id})
+                elif agent.pending_proposal_id is not None:
+                    try:
+                        pending = proposal_service.get(
+                            agent.pending_proposal_id,
+                            organization_id=context.organization_id,
+                            user_id=context.user_id,
+                            conversation_id=conversation.id,
+                        )
+                    except Exception:
+                        pending = None
+                content = agent.final_answer or "No response generated."
+                if (
+                    pending is not None
+                    and pending.status is StrategyProposalStatus.DRAFT
+                    and pending.content_hash
+                ):
+                    from app.agents.confirmation_identity import (
+                        IDENTITY_BEGIN,
+                        format_presented_confirmation_identity,
+                        identity_from_proposal,
+                    )
+
+                    if IDENTITY_BEGIN not in content:
+                        footer = format_presented_confirmation_identity(
+                            identity_from_proposal(
+                                pending,
+                                conversation_id=conversation.id,
+                                organization_id=context.organization_id,
+                                user_id=context.user_id,
+                            )
+                        )
+                        content = f"{content.rstrip()}\n\n{footer}"
+                        agent = agent.model_copy(update={"final_answer": content})
                 conv_service.append_message(
                     conversation=conversation,
                     role=ConversationMessageRole.ASSISTANT,
-                    content=agent.final_answer or "No response generated.",
+                    content=content,
                     request_id=context.request_id,
                     intent=agent.intent.value,
                     payload=self._safe_payload(agent),

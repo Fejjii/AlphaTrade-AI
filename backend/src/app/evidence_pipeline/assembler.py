@@ -11,6 +11,12 @@ from app.evidence_pipeline.canonical import (
     timeframe_identity,
 )
 from app.evidence_pipeline.current_price import quote_current_price
+from app.evidence_pipeline.setup_lifetime import (
+    SetupLifetimeKey,
+    SetupLifetimeStore,
+    SetupTriggerPin,
+    utc_trigger_end,
+)
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
     CompletenessReport,
@@ -25,7 +31,7 @@ from app.market_contracts.cvd import (
     first_slice_baseline_open,
     first_slice_cvd_window,
 )
-from app.market_contracts.enums import DataCompleteness, Finality, MarketType
+from app.market_contracts.enums import DataCompleteness, Finality, FreshnessState, MarketType
 from app.market_contracts.errors import (
     FallbackForbiddenError,
     FormingCandleError,
@@ -69,10 +75,12 @@ class FirstSliceEvidenceAssembler:
         *,
         replay: bool,
         catalog: PerpetualInstrumentCatalog | None = None,
+        lifetime: SetupLifetimeStore | None = None,
     ) -> None:
         self._source = source
         self._replay = replay
         self._catalog = catalog if catalog is not None else default_perpetual_catalog()
+        self._lifetime = lifetime if lifetime is not None else SetupLifetimeStore()
 
     def assemble(
         self,
@@ -89,6 +97,19 @@ class FirstSliceEvidenceAssembler:
     ) -> AssembledCanonicalEvidence:
         instrument = self._catalog.require(symbol)
         clock = evaluated_at or self._default_clock()
+        bound_policy = policy or first_slice_read_policy(organization_id)
+        if bound_policy.organization_id != organization_id:
+            raise WrongSourceError(
+                "Fusion policy organization_id does not match the caller tenant."
+            )
+        lifetime_key = SetupLifetimeKey(
+            organization_id=organization_id,
+            symbol=instrument.provider_symbol,
+            strategy_version_id=bound_policy.strategy_version_id,
+        )
+        pin = setup_trigger_end
+        if pin is None:
+            pin = self._lifetime.active_trigger_end(lifetime_key)
         trigger_identity = first_slice_identity(
             timeframe=Timeframe.M15,
             replay=self._replay,
@@ -99,7 +120,7 @@ class FirstSliceEvidenceAssembler:
         self._assert_live_contract(trigger_identity)
 
         min_15m = FIRST_SLICE_MIN_FINAL_15M
-        if setup_trigger_end is not None:
+        if pin is not None:
             min_15m = FIRST_SLICE_MIN_FINAL_15M + FIRST_SLICE_EXPIRY_BARS + 2
         try:
             series_15m = self._source.fetch_closed_ohlcv(
@@ -110,7 +131,7 @@ class FirstSliceEvidenceAssembler:
                 evaluated_at=clock,
             )
         except FormingCandleError:
-            if setup_trigger_end is None:
+            if pin is None:
                 raise
             series_15m = self._source.fetch_closed_ohlcv(
                 identity=trigger_identity,
@@ -130,7 +151,7 @@ class FirstSliceEvidenceAssembler:
             series_15m,
             identity=trigger_identity,
             evaluated_at=clock,
-            setup_trigger_end=setup_trigger_end,
+            setup_trigger_end=pin,
         )
         context = _context_bar(series_4h, trigger)
         window_start = first_slice_baseline_open(trigger)
@@ -193,11 +214,6 @@ class FirstSliceEvidenceAssembler:
             if live_window:
                 raise
             current = None
-        bound_policy = policy or first_slice_read_policy(organization_id)
-        if bound_policy.organization_id != organization_id:
-            raise WrongSourceError(
-                "Fusion policy organization_id does not match the caller tenant."
-            )
         command = build_first_slice_assessment_command(
             organization_id=organization_id,
             policy=bound_policy,
@@ -230,17 +246,36 @@ class FirstSliceEvidenceAssembler:
             cvd_content_hash=cvd.content_hash,
             signed_flow_content_hash=signed_flow.content_hash,
         )
+        remaining = max(0, FIRST_SLICE_EXPIRY_BARS - len(subsequent))
+        expired = len(subsequent) >= FIRST_SLICE_EXPIRY_BARS
+        stream_fresh = freshness.state in {FreshnessState.FRESH, FreshnessState.AGING}
+        if not live_window:
+            stream_fresh = bool(snapshot.coverage.content_hash)
         clocks = EvidenceClockReport(
             quote_source_time=None if current is None else current.source_time,
             quote_fresh=current is not None and current.usable_as_current_market_price,
             trade_stream_event_time_max=cvd.event_time_max,
+            market_stream_fresh=stream_fresh,
             live_confirmation_window_open=live_window,
             trigger_finality=trigger.finality,
             trigger_interval_end=trigger.interval_end,
             historical_closed_evidence=not live_window,
+            closed_evidence_valid=trigger.finality is Finality.FINAL,
             subsequent_final_15m_count=len(subsequent),
-            setup_expired=len(subsequent) >= FIRST_SLICE_EXPIRY_BARS,
+            setup_expired=expired,
+            setup_lifetime_remaining_bars=remaining,
+            setup_trigger_bar_hash=trigger.content_hash,
         )
+        if expired:
+            self._lifetime.clear(lifetime_key)
+        else:
+            self._lifetime.remember(
+                lifetime_key,
+                SetupTriggerPin(
+                    trigger_end=utc_trigger_end(trigger.interval_end),
+                    trigger_bar_hash=trigger.content_hash,
+                ),
+            )
         return AssembledCanonicalEvidence(
             organization_id=organization_id,
             replay=self._replay,

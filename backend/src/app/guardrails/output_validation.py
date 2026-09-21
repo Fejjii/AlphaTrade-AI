@@ -71,6 +71,11 @@ class OutputValidationGuardrail:
             return True
         intent = str(data.metadata.get("intent") or "")
         if intent in {
+            "strategy_proposal_confirm",
+            "strategy_proposal_reject",
+        }:
+            return False
+        if intent in {
             "market_analysis",
             "setup_analysis",
             "plan_trade",

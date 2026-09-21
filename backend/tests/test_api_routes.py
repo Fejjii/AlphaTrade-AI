@@ -123,7 +123,11 @@ def test_strategies_list_and_evaluate(client_with_db: tuple[TestClient, object])
         },
     )
     assert response.status_code == 200
-    assert response.json()["signal"] is not None
+    body = response.json()
+    assert body["signal"] is not None
+    assert body["research_only"] is True
+    assert body["mutates_strategy_authority"] is False
+    assert any("research-only" in note.lower() for note in body["limitations"])
 
 
 def test_tools_list(client_with_db: tuple[TestClient, object]) -> None:

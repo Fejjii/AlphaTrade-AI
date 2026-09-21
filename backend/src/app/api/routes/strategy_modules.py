@@ -21,12 +21,23 @@ async def list_strategy_modules(
     return service.list_strategy_ids()
 
 
-@router.post("/evaluate", response_model=StrategyEvaluateResponse, summary="Evaluate a strategy")
+@router.post(
+    "/evaluate",
+    response_model=StrategyEvaluateResponse,
+    summary="Research-only strategy module evaluation",
+)
 async def evaluate_strategy(
     body: StrategyEvaluateRequest,
     service: StrategyServiceDep,
     _tenant: TraderDep,
 ) -> StrategyEvaluateResponse:
+    """Evaluate a registered strategy *module* against supplied indicators.
+
+    Research-only. This endpoint is not compiled-policy evaluation, does not
+    mint Watcher Candidates, and does not open paper or live trades.
+    Automated paper and Watcher evaluation require approved compiled lineage.
+    """
+
     data = StrategyEvaluationInput(
         symbol=body.symbol,
         timeframe=body.timeframe,

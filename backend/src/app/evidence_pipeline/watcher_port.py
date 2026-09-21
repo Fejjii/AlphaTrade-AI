@@ -19,7 +19,7 @@ from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
 from app.watcher.contracts import EvaluationCommand
 from app.watcher.errors import WatcherTenantMismatchError
-from app.watcher.fusion_evaluation import WatcherCanonicalScanEvidence
+from app.watcher.fusion_evaluation import ExecutablePolicyAuthority, WatcherCanonicalScanEvidence
 from app.watcher.ports import WatcherStore
 
 ExecutableResolver = Callable[[EvaluationCommand], ExecutableStrategyPolicy | None]
@@ -76,6 +76,11 @@ class AssemblingWatcherScanEvidence:
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
         executable = self._resolve_executable(command)
+        authority = (
+            ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED
+            if self._session is not None and self._store is not None
+            else ExecutablePolicyAuthority.IN_MEMORY_TEST_HELPER
+        )
         if executable is None:
             return None
         if executable.organization_id != organization_id:
@@ -116,6 +121,7 @@ class AssemblingWatcherScanEvidence:
             assessment_command=assembled.assessment_command,
             evidence=assembled.bundle,
             evaluated_at=assembled.evaluated_at,
+            policy_authority=authority,
         )
 
     def _resolve_executable(self, command: EvaluationCommand) -> ExecutableStrategyPolicy | None:
@@ -123,6 +129,7 @@ class AssemblingWatcherScanEvidence:
             return resolve_watcher_scan_policy(self._session, command, store=self._store)
         if self._executable_resolver is None:
             return None
+        # Injected resolvers are test helpers. They never become persisted authority.
         resolved = self._executable_resolver(command)
         if resolved is None:
             return None

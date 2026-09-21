@@ -44,17 +44,26 @@ class CompletenessReport(CanonicalModel):
 
 
 class EvidenceClockReport(CanonicalModel):
-    """Independent freshness/finality clocks. Quote age is never widened to pass."""
+    """Independent freshness/finality clocks. Quote age is never widened to pass.
+
+    Quote freshness, market-stream freshness, closed-evidence validity, and
+    setup lifetime are separate. Elapsed wall time without later final bars
+    does not expire a setup.
+    """
 
     quote_source_time: datetime | None = None
     quote_fresh: bool = False
     trade_stream_event_time_max: datetime | None = None
+    market_stream_fresh: bool = False
     live_confirmation_window_open: bool
     trigger_finality: Finality
     trigger_interval_end: datetime
     historical_closed_evidence: bool
+    closed_evidence_valid: bool = False
     subsequent_final_15m_count: int = Field(ge=0)
     setup_expired: bool = False
+    setup_lifetime_remaining_bars: int = Field(default=0, ge=0)
+    setup_trigger_bar_hash: str | None = None
 
 
 class CurrentPriceQuote(CanonicalModel):

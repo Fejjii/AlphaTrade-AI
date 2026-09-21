@@ -88,9 +88,19 @@ class StrategyEvaluateRequest(StrictModel):
     stress_score: int | None = Field(default=None, ge=0, le=10)
 
 
+_EVALUATE_LIMITATIONS = (
+    "POST /strategies/evaluate is research-only.",
+    "It does not compile, approve, or mint Watcher Candidates.",
+    "Automated paper and Watcher evaluation require approved compiled lineage.",
+)
+
+
 class StrategyEvaluateResponse(ORMModel):
     strategy_id: StrategyId
     signal: StrategySignal | None
+    research_only: bool = True
+    mutates_strategy_authority: bool = False
+    limitations: list[str] = Field(default_factory=lambda: list(_EVALUATE_LIMITATIONS))
 
 
 class SetupPerformance(ORMModel):
