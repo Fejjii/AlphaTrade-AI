@@ -1421,3 +1421,26 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   mypy; full backend; frontend; e2e; exact-head CI. Draft PR only; no merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-047
+
+### AT-069 — Paper-only continuous Watcher runtime
+- Priority: P0 · Status: DONE · Dependencies: AT-042, AT-064, AT-067, AT-068
+  · Risk: High (continuous worker, leases, Candidate persist)
+- Safety classification: Paper monitoring only; staging/production Watcher flags stay
+  false; no Telegram; no live orders; no real exchange credentials
+- Goal: Wire the missing continuous worker: tenant-scoped approved compiled strategy
+  → live read-only market evidence → `WatcherOrchestrator` scan →
+  `evaluate_canonical_strategy` → persist Candidate only on `CONFIRMED_SETUP`.
+  Reuse existing orchestrator, Postgres store, leases/fencing, canonical assembler,
+  `resolve_executable_strategy_policy`, CandidateLifecycleService, and durable
+  setup lifetime. BTCUSDT first; configurable symbols; bounded polling; single
+  active worker per scan scope.
+- Branch: `cursor/watcher_paper_runtime-5455`
+- Validation: 22 paper-runtime tests (concurrent, lease takeover, restart replay,
+  duplicate scan, stale, outage, wrong tenant, wrong lineage, CONFIRMED_SETUP,
+  WATCH/NO_SETUP, expiry, kill switch); ruff check/format; full backend pytest
+  exit 0 (Postgres-backed tests skipped locally — no local Postgres; GitHub CI
+  has the service); frontend lint/typecheck/test/build; evaluation 16/16, 5/5,
+  7/7. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-048
+- Completion evidence: local validation on this branch; GitHub CI on draft PR.

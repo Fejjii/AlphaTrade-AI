@@ -59,6 +59,7 @@ from app.api.routes import (
     tradingview,
     usage,
     validation_priority,
+    watcher_paper,
     worker,
 )
 from app.core.config import Environment, Settings, get_settings
@@ -112,9 +113,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     worker_driver = _maybe_start_in_process_worker(settings)
     app.state.worker_driver = worker_driver
+    paper_runtime = _maybe_start_watcher_paper_runtime(settings)
+    app.state.watcher_paper_runtime = paper_runtime
 
     yield
 
+    if paper_runtime is not None:
+        paper_runtime.stop()
     if worker_driver is not None:
         worker_driver.stop()
     # TODO(slice-18): close Qdrant client gracefully when using live vector store.
@@ -135,6 +140,24 @@ def _maybe_start_in_process_worker(settings: Settings):
     driver.start_background_thread()
     logger.info("worker_in_process_enabled", worker_name=settings.worker_name)
     return driver
+
+
+def _maybe_start_watcher_paper_runtime(settings: Settings):
+    """Start the paper Watcher loop locally when orchestration is explicitly on.
+
+    Staging/production cannot enable ``WATCHER_ORCHESTRATION_ENABLED``. Dedicated
+    process ``python -m app.workers.watcher_paper`` is the normal worker.
+    """
+
+    from app.db.session import get_session_factory
+    from app.workers.watcher_paper import build_watcher_paper_runtime, paper_runtime_enabled
+
+    if not paper_runtime_enabled(settings):
+        return None
+    runtime = build_watcher_paper_runtime(settings, get_session_factory())
+    runtime.start_background_thread()
+    logger.info("watcher_paper_runtime_in_process", worker_id=settings.watcher_paper_worker_id)
+    return runtime
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -229,6 +252,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         demo.router,
         tools.router,
         worker.router,
+        watcher_paper.router,
     ):
         app.include_router(r)
     return app
