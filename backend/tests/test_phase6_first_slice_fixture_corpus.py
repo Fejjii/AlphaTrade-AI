@@ -138,7 +138,8 @@ from tests.fixtures.phase6_first_slice.factory import (
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "phase6_first_slice"
 ATR_REVISION_NAMESPACE = UUID("df85c21d-99dc-43cb-8fe9-7a5c48ec0b1f")
 EXPECTED_CORPUS_SHA256 = "651d4d62f94040f93a5cf794210c49361685138fb2e5e18128f40b0259ba2e42"
-EXPECTED_CONFIRMED_WINDOW_HASH = "abbd30146b1db555ea33dfbae0218241b8dcf12c6fcee5a1789015522327a674"
+# Semantic observation hashes exclude receive/transport clocks such as observed_at.
+EXPECTED_CONFIRMED_WINDOW_HASH = "0647d7610649533c7fde6c19bbafa17207dabb02437c2b95277a9eef5c087194"
 FIXTURE_COUNT = 25
 CANDIDATE_FIXTURE_IDS = frozenset(
     {
