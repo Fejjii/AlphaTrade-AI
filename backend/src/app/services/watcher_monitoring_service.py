@@ -142,7 +142,7 @@ class WatcherMonitoringService:
         )
         paper_attempt = _latest_paper_attempt(self._session, organization_id)
         last_scan_at = summary.last_scan_at
-        last_scan_status = summary.last_scan_status
+        last_scan_status: str | None = summary.last_scan_status
         last_scan_error = summary.last_scan_error
         if paper_attempt is not None:
             last_scan_at = paper_attempt.finished_at or paper_attempt.started_at
@@ -517,10 +517,12 @@ class WatcherMonitoringService:
         try:
             latest = getattr(monitor, "latest", None)
             if callable(latest):
-                return latest(FIRST_SLICE_SYMBOL)
+                loaded: object = latest(FIRST_SLICE_SYMBOL)
+                return loaded
             snapshot = getattr(monitor, "snapshot", None)
             if callable(snapshot):
-                return snapshot(FIRST_SLICE_SYMBOL, force=True)
+                loaded_snapshot: object = snapshot(FIRST_SLICE_SYMBOL, force=True)
+                return loaded_snapshot
         except Exception:
             logger.warning("watcher_monitoring_monitor_snapshot_failed", exc_info=True)
             return None
@@ -806,7 +808,9 @@ def _market_freshness(
             symbol=monitor_snapshot.symbol,
             data_freshness=monitor_snapshot.reason.value,
             stale_after_minutes=stale_after_minutes,
-            quote_fresh=bool(quote is not None and quote.freshness.state.value in {"fresh", "aging"}),
+            quote_fresh=bool(
+                quote is not None and quote.freshness.state.value in {"fresh", "aging"}
+            ),
             trade_stream_fresh=stream.reconnect_state.value in {"continuous", "recovered"}
             and stream.gap_state.value == "none",
             closed_candle_final=monitor_snapshot.ohlcv.available,

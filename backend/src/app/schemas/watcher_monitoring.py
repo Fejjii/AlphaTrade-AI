@@ -167,9 +167,9 @@ class WatcherMonitoringSnapshot(StrictModel):
     last_scan_at: datetime | None = None
     last_scan_status: str | None = None
     next_scan_at: datetime | None = None
-    next_scan_basis: Literal[
-        "worker_interval", "lease_ttl", "bridge_interval", "paper_poll"
-    ] | None = None
+    next_scan_basis: (
+        Literal["worker_interval", "lease_ttl", "bridge_interval", "paper_poll"] | None
+    ) = None
     market_freshness: WatcherMarketFreshness
     provider_health: list[WatcherProviderHealthItem] = Field(default_factory=list)
     setup_assessments: list[WatcherSetupAssessmentSummary] = Field(default_factory=list)

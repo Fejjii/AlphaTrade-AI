@@ -393,7 +393,10 @@ class WatcherPaperRuntime:
         bind_session = getattr(self._persistence_fence, "bind_session", None)
         if session is None or not callable(bind_session):
             return nullcontext()
-        return bind_session(session)
+        bound: object = bind_session(session)
+        if isinstance(bound, AbstractContextManager):
+            return bound
+        return nullcontext()
 
     def _scan_target(
         self, session: Session | None, target: PaperScanTarget

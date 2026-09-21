@@ -34,6 +34,7 @@ from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
 from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.schemas.common import MembershipRole
 from app.schemas.watcher_monitoring import WatcherMonitoringRuntimeState
+from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.services.watcher_monitoring_service import WatcherMonitoringService
 from app.signal_fusion.enums import SetupAssessmentState
 from app.signal_fusion.lifecycle import CandidateLifecycleService
@@ -53,7 +54,6 @@ from app.watcher.fusion_evaluation import (
 from app.workers.watcher_paper_targets import PaperScanTarget, list_paper_scan_targets
 from tests.support.live_market_monitor import ScriptedPerpetualSource
 from tests.support.phase5_market import consecutive_bars, trade
-from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from tests.support.phase6_evaluator import EvaluatorWorld, make_world, subsequent_bars
 from tests.test_live_evidence_pipeline import _evaluation_command, _non_placeholder_executable
 from tests.test_watcher_paper_runtime import (
@@ -523,6 +523,7 @@ def test_monitoring_projects_integrated_worker_candidate_and_replay_honesty(
                 created_at=NOW,
             )
         )
+        session.flush()
         session.add(
             WatcherScanAttemptRow(
                 attempt_id=uuid4(),
@@ -561,12 +562,13 @@ def test_monitoring_projects_integrated_worker_candidate_and_replay_honesty(
     assert snapshot.market_freshness.status == "replay"
     assert snapshot.market_freshness.usable_as_current_market_price is False
     assert snapshot.market_freshness.presentation in {None, "replay_fixture"}
-    assert snapshot.market_freshness.setup_lifetime_expired is False
+    assert snapshot.setup_assessments
+    assert snapshot.setup_assessments[0].valid_until < NOW
+    assert snapshot.market_freshness.setup_lifetime_expired is True
     assert "BTCUSDT" in snapshot.symbols_monitored
     assert snapshot.last_scan_status == ScanAttemptStatus.SUCCEEDED.value
     assert snapshot.next_scan_basis == "paper_poll"
     assert any(item.candidate_id == candidate_id for item in snapshot.canonical_candidates)
-    assert snapshot.setup_assessments
     assert snapshot.setup_assessments[0].state is SetupAssessmentState.CONFIRMED_SETUP
     assert snapshot.leases[0].fenced is True
     assert snapshot.leases[0].heartbeat_fresh is True

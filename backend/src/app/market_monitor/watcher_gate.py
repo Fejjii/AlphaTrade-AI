@@ -41,12 +41,18 @@ def watcher_evidence_error_for_monitor(
         return None
     if snapshot.availability is MarketAvailability.FRESH:
         return None
-    if snapshot.availability is MarketAvailability.STALE or snapshot.reason is MonitorReason.STALE_STREAM:
+    if (
+        snapshot.availability is MarketAvailability.STALE
+        or snapshot.reason is MonitorReason.STALE_STREAM
+    ):
         return WatcherEvidenceUnavailableError(
             "Canonical scan evidence is stale.",
             reason_code="stale_evidence",
         )
-    if snapshot.availability is MarketAvailability.UNAVAILABLE or snapshot.reason in _OUTAGE_REASONS:
+    if (
+        snapshot.availability is MarketAvailability.UNAVAILABLE
+        or snapshot.reason in _OUTAGE_REASONS
+    ):
         if snapshot.reason in _OUTAGE_REASONS:
             return WatcherEvidenceUnavailableError(
                 "Perpetual market provider is unavailable.",

@@ -178,11 +178,7 @@ class AssemblingWatcherScanEvidence:
     def _monitor_snapshot(self) -> SymbolMonitorSnapshot | None:
         if self._monitor is None:
             return None
-        latest = getattr(self._monitor, "latest", None)
-        if callable(latest):
-            snapshot = latest(self._symbol)
-        else:
-            snapshot = self._monitor.snapshot(self._symbol, force=True)
+        snapshot = self._monitor.latest(self._symbol)
         if not isinstance(snapshot, SymbolMonitorSnapshot):
             raise WatcherEvidenceUnavailableError(
                 "Canonical scan evidence is unavailable.",

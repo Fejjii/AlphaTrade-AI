@@ -23,9 +23,9 @@ from app.evidence_pipeline.watcher_port import (
     AssemblingWatcherScanEvidence,
     resolve_watcher_scan_policy,
 )
-from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.main import create_app
 from app.market_contracts.errors import RegionalProviderFailureError, StaleEvidenceError
+from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.schemas.common import MembershipRole, StrategyId, StrategyLifecycleState
 from app.schemas.strategy_library import StrategyCard, UserStrategyCreate
 from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
@@ -797,4 +797,4 @@ def test_default_evidence_factory_uses_canonical_port() -> None:
     factory = default_paper_evidence_factory(_settings())
     port = factory(None, InMemoryWatcherStore(), FIRST_SLICE_SYMBOL)
     assert isinstance(port, AssemblingWatcherScanEvidence)
-    assert isinstance(getattr(port, "_monitor"), MarketMonitorWatcherPort)
+    assert isinstance(port._monitor, MarketMonitorWatcherPort)
