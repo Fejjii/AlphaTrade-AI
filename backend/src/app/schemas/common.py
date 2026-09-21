@@ -981,6 +981,7 @@ class RuleEngineSource(StrEnum):
     ADAPTER = "adapter"
     DEFAULT_SETUP = "default_setup"
     UNSUPPORTED = "unsupported"
+    CANONICAL_SETUP = "canonical_setup"
 
 
 class EntryTriggerType(StrEnum):

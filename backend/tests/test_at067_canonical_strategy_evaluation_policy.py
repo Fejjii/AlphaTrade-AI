@@ -467,6 +467,8 @@ def test_watcher_and_paper_validation_call_the_boundary() -> None:
     assert "evaluate_canonical_strategy(" in watcher
     assert "evaluate_setup(" not in watcher
     assert "evaluate_canonical_strategy_for_version" in paper
+    assert "evaluate_canonical_strategy(" in paper
+    assert "evaluate_entry(" not in paper
     assert "WATCHER_ORCHESTRATION_ENABLED" not in watcher
 
 

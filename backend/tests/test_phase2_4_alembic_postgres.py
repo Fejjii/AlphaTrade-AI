@@ -31,7 +31,8 @@ CANONICAL_TRADE_PLAN_ELIGIBILITY = "c9e2b4a1d078"
 LEARNING_ATTRIBUTION_PERSISTENCE = "d4f7a2c8e901"
 JOURNAL_TRADES_ACCOUNT_ID = "e8f1c4a9b702"
 STRATEGY_CONVERSATION_PERSISTENCE = "b7c8d9e0f1a2"
-CURRENT_HEAD = STRATEGY_CONVERSATION_PERSISTENCE
+SETUP_LIFETIME_PINS = "c8d9e0f1a2b3"
+CURRENT_HEAD = SETUP_LIFETIME_PINS
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -58,6 +59,7 @@ _NEW_TABLES = (
     "conversation_messages",
     "strategy_conversation_proposals",
     "strategy_version_conversation_links",
+    "setup_lifetime_pins",
 )
 
 
@@ -368,4 +370,60 @@ def test_canonical_trade_plan_alembic_upgrade_downgrade() -> None:
             )
         ).scalar()
         assert pvc_fk is None
+    engine.dispose()
+
+
+@requires_postgres
+def test_setup_lifetime_alembic_upgrade_downgrade() -> None:
+    engine = create_engine(POSTGRES_URL, poolclass=NullPool, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    config = _alembic_config()
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CURRENT_HEAD
+        present = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'setup_lifetime_pins'"
+            )
+        ).scalar()
+        assert present == 1
+        unique = conn.execute(
+            text("SELECT 1 FROM pg_constraint WHERE conname = 'uq_setup_lifetime_semantic_key'")
+        ).scalar()
+        assert unique == 1
+
+    command.downgrade(config, STRATEGY_CONVERSATION_PERSISTENCE)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == STRATEGY_CONVERSATION_PERSISTENCE
+        missing = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'setup_lifetime_pins'"
+            )
+        ).scalar()
+        assert missing is None
+        conversations = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'conversations'"
+            )
+        ).scalar()
+        assert conversations == 1
+
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == CURRENT_HEAD
+        present = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'setup_lifetime_pins'"
+            )
+        ).scalar()
+        assert present == 1
     engine.dispose()

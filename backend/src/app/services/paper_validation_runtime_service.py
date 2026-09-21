@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -17,6 +18,16 @@ from app.db.models import PaperTrade as PaperTradeModel
 from app.db.models import PaperTradeEvent as PaperTradeEventModel
 from app.db.models import PaperValidationMetricSnapshot as MetricSnapshotModel
 from app.db.models import PaperValidationRun as PaperValidationRunModel
+from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
+from app.evidence_pipeline.canonical import is_first_slice_read_projection
+from app.evidence_pipeline.setup_lifetime import SetupLifetimePort
+from app.evidence_pipeline.types import AssembledCanonicalEvidence
+from app.market_contracts.adapters.factory import (
+    perpetual_source_is_replay,
+    resolve_perpetual_evidence_source,
+)
+from app.market_contracts.errors import MarketContractError
+from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 from app.providers.factory import resolve_market_data_provider
 from app.repositories.backtest import BacktestRunRepository
 from app.repositories.paper_runtime import (
@@ -73,23 +84,40 @@ from app.services.canonical_strategy_evaluation import (
 from app.services.historical_candle_service import HistoricalCandleService
 from app.services.journal_trade_service import JournalTradeService
 from app.services.paper_alert_service import PaperAlertService
-from app.services.paper_bot_engine import PaperBotEngine, _OpenPaperTrade
+from app.services.paper_bot_engine import CloseEvaluation, PaperBotEngine, _OpenPaperTrade
 from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_observability_service import PaperObservabilityService
 from app.services.paper_sample_window_service import PaperSampleWindowService
 from app.services.paper_validation_promotion import (
+    PaperPromotionDecision,
     compute_max_drawdown,
     evaluate_paper_promotion,
     sort_closed_trades_chronologically,
 )
-from app.services.structured_rule_resolver import resolve_backtest_rules
 from app.signal_fusion.adapters import AssessmentCommand
 from app.signal_fusion.assessment import SetupAssessment
+from app.signal_fusion.enums import SetupAssessmentState
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
-from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
-from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
+from app.signal_fusion.first_slice_types import FIRST_SLICE_EXPIRY_BARS, FirstSliceEvidenceBundle
+from app.signal_fusion.strategy_evaluation_policy import (
+    ExecutableStrategyPolicy,
+    evaluate_canonical_strategy,
+)
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class CanonicalPaperEvidence:
+    """Canonical evidence consumed by paper scan. Not a second SetupAssessment."""
+
+    command: AssessmentCommand
+    evidence: FirstSliceEvidenceBundle
+    evaluated_at: datetime
+    assembled: AssembledCanonicalEvidence | None = None
+
+
+CanonicalPaperEvidenceLoader = Callable[[ExecutableStrategyPolicy], CanonicalPaperEvidence]
 
 
 @dataclass
@@ -108,6 +136,9 @@ class PaperValidationRuntimeService:
         settings: Settings | None = None,
         *,
         audit_service: AuditService | None = None,
+        lifetime: SetupLifetimePort | None = None,
+        assembler: FirstSliceEvidenceAssembler | None = None,
+        evidence_loader: CanonicalPaperEvidenceLoader | None = None,
     ) -> None:
         self._session = session
         self._settings = settings or get_settings()
@@ -124,6 +155,9 @@ class PaperValidationRuntimeService:
         self._alerts = PaperAlertService(session)
         self._sample_windows = PaperSampleWindowService(session)
         self._audit = audit_service or AuditService(session)
+        self._lifetime = lifetime if lifetime is not None else SqlAlchemySetupLifetimeStore(session)
+        self._assembler = assembler
+        self._evidence_loader = evidence_loader
 
     def start(
         self,
@@ -257,7 +291,8 @@ class PaperValidationRuntimeService:
         direction = TradeDirection.LONG
         tp_plan = {"r_multiples": ["1"]}
         runner_plan = None
-        rules = None
+        assessment: SetupAssessment | None = None
+        loaded_evidence: CanonicalPaperEvidence | None = None
 
         if lineage is None:
             signal_status = PaperSignalStatus.NOT_TESTABLE
@@ -267,46 +302,52 @@ class PaperValidationRuntimeService:
             run.blockers = list(
                 set(
                     (run.blockers or [])
-                    + ["Approved compiled strategy lineage is required for paper-bot trades."]
+                    + ["Approved compiled strategy lineage is required for paper trades."]
                 )
             )
         else:
-            resolved = resolve_backtest_rules(ctx.card, ctx.setup_type, ctx.structured)
-            rules = resolved.rules
-            engine_source = resolved.engine_source.value
-            if resolved.engine_source in {
-                RuleEngineSource.DEFAULT_SETUP,
-                RuleEngineSource.UNSUPPORTED,
-            }:
+            try:
+                loaded_evidence = self._load_canonical_paper_evidence(lineage, symbol=config.symbol)
+                if is_first_slice_read_projection(
+                    strategy_version_id=lineage.strategy_version_id,
+                    setup_definition_id=lineage.compiled_setup_definition_id,
+                ):
+                    raise StrategyEvaluationPolicyError(
+                        "Read-projection placeholders cannot authorize paper trades.",
+                        reason_code="strategy_evidence_mismatch",
+                    )
+                assessment = evaluate_canonical_strategy(
+                    executable_policy=lineage,
+                    command=loaded_evidence.command,
+                    evidence=loaded_evidence.evidence,
+                    evaluated_at=loaded_evidence.evaluated_at,
+                )
+                expired = self._canonical_setup_expired(assessment, loaded_evidence)
+                fail_reason = self._canonical_paper_fail_reason(assessment, expired)
+                if fail_reason is None:
+                    levels = self._levels_from_confirmed(loaded_evidence)
+                    direction, evaluation_entry, evaluation_stop, _entry_time = levels
+                    evaluation_notes = assessment.explanation
+                    matched_blocks = [
+                        SetupAssessmentState.CONFIRMED_SETUP.value,
+                        "evaluate_canonical_strategy",
+                    ]
+                    engine_source = RuleEngineSource.CANONICAL_SETUP.value
+                    signal_status = PaperSignalStatus.DETECTED
+                    triggered = True
+                else:
+                    signal_status = PaperSignalStatus.NOT_TESTABLE
+                    limitations.append(fail_reason)
+                    evaluation_notes = fail_reason
+                    engine_source = RuleEngineSource.CANONICAL_SETUP.value
+            except (StrategyEvaluationPolicyError, MarketContractError, NotFoundError) as exc:
                 signal_status = PaperSignalStatus.NOT_TESTABLE
-                limitations.append(
-                    "Paper-bot cannot invent setup-default rules; approved compiled "
-                    "lineage must supply machine-readable compatibility rules."
+                reason = getattr(exc, "reason_code", None) or type(exc).__name__
+                limitations.append(f"Canonical paper authority failed closed ({reason}).")
+                evaluation_notes = str(exc)
+                run.blockers = list(
+                    set((run.blockers or []) + ["Canonical paper authority failed closed."])
                 )
-            elif not rules.machine_readable:
-                signal_status = PaperSignalStatus.NOT_TESTABLE
-                run.blockers = list(set((run.blockers or []) + ["Rules not machine testable."]))
-                limitations.append("Improve structured rules before paper trades.")
-            else:
-                blocked_filters = self._engine.evaluate_no_trade_filters(
-                    rules,
-                    no_trade_rules=ctx.no_trade_rules,
-                )
-                evaluation = self._engine.evaluate_entry(
-                    rules, candle_rows, engine_source=engine_source
-                )
-                evaluation_entry = evaluation.entry_price
-                evaluation_stop = evaluation.stop_loss
-                evaluation_notes = evaluation.notes
-                matched_blocks = evaluation.matched_blocks
-                direction = rules.direction
-                tp_plan = {"r_multiples": [str(m) for m in rules.tp_r_multiples]}
-                runner_plan = {"use_runner": rules.use_runner} if rules.use_runner else None
-                signal_status = PaperSignalStatus.DETECTED
-                triggered = evaluation.triggered and not blocked_filters
-                if blocked_filters:
-                    signal_status = PaperSignalStatus.BLOCKED_FILTER
-                    triggered = False
 
         signal_row = PaperSignalModel(
             paper_validation_run_id=run.id,
@@ -344,45 +385,25 @@ class PaperValidationRuntimeService:
         if (
             run.runtime_mode == PaperValidationRuntimeMode.AUTO_PAPER
             and lineage is not None
-            and rules is not None
+            and assessment is not None
+            and loaded_evidence is not None
             and triggered
             and signal_status == PaperSignalStatus.DETECTED
             and evaluation_entry is not None
             and evaluation_stop is not None
-            and candle_rows
             and open_count < config.max_open_trades
         ):
-            size = self._compute_size(
-                evaluation_entry,
-                evaluation_stop,
-                config,
+            trade_created = self._mint_auto_paper_from_confirmed(
+                run,
+                policy=lineage,
+                assessment=assessment,
+                loaded=loaded_evidence,
+                signal_row=signal_row,
+                organization_id=organization_id,
+                user_id=user_id,
+                config=config,
+                engine_source=engine_source,
             )
-            if size > 0:
-                fee_rate = config.fees_bps / Decimal("10000")
-                slip_rate = config.slippage_bps / Decimal("10000")
-                open_state = self._engine.open_trade_state(
-                    direction=rules.direction,
-                    entry_time=candle_rows[-1].close_time,
-                    entry_price=evaluation_entry,
-                    stop_loss=evaluation_stop,
-                    size=size,
-                    rules=rules,
-                    fee_rate=fee_rate,
-                    slip_rate=slip_rate,
-                )
-                trade_row = self._create_trade_from_state(
-                    run,
-                    open_state,
-                    signal_row=signal_row,
-                    rules=rules,
-                    engine_source=engine_source,
-                    organization_id=organization_id,
-                    user_id=user_id,
-                    config=config,
-                )
-                signal_row.status = PaperSignalStatus.CONSUMED
-                self._record_event(trade_row.id, "opened", {"mode": "auto_paper"})
-                trade_created = True
 
         scan_result = {
             "triggered": triggered,
@@ -494,7 +515,7 @@ class PaperValidationRuntimeService:
         closed_count = 0
 
         open_trades = self._trades.list_open_for_run(run.id, organization_id=organization_id)
-        closed_details: list[tuple[PaperTradeModel, object]] = []
+        closed_details: list[tuple[PaperTradeModel, CloseEvaluation]] = []
         for trade_row in open_trades:
             open_state = self._trade_to_open_state(trade_row, config)
             close = self._engine.monitor_bar(
@@ -750,7 +771,7 @@ class PaperValidationRuntimeService:
         user_id: uuid.UUID,
         run_id: uuid.UUID,
         action: str,
-        metadata: dict,
+        metadata: dict[str, object],
     ) -> None:
         self._audit.record(
             AuditRecordCreate(
@@ -823,6 +844,152 @@ class PaperValidationRuntimeService:
         except (StrategyEvaluationPolicyError, NotFoundError):
             return None
 
+    def _load_canonical_paper_evidence(
+        self,
+        policy: ExecutableStrategyPolicy,
+        *,
+        symbol: str,
+    ) -> CanonicalPaperEvidence:
+        if self._evidence_loader is not None:
+            return self._evidence_loader(policy)
+        assembler = self._assembler
+        if assembler is None:
+            source = resolve_perpetual_evidence_source(self._settings)
+            assembler = FirstSliceEvidenceAssembler(
+                source,
+                replay=perpetual_source_is_replay(self._settings),
+                lifetime=self._lifetime,
+            )
+            self._assembler = assembler
+        assembled = assembler.assemble(
+            organization_id=policy.organization_id,
+            symbol=symbol,
+            policy=policy.fusion_policy,
+        )
+        return CanonicalPaperEvidence(
+            command=assembled.assessment_command,
+            evidence=assembled.bundle,
+            evaluated_at=assembled.evaluated_at,
+            assembled=assembled,
+        )
+
+    @staticmethod
+    def _canonical_setup_expired(
+        assessment: SetupAssessment, loaded: CanonicalPaperEvidence
+    ) -> bool:
+        if assessment.state is SetupAssessmentState.EXPIRED:
+            return True
+        if loaded.assembled is not None:
+            return loaded.assembled.clocks.setup_expired
+        return len(loaded.evidence.subsequent_final_15m) >= FIRST_SLICE_EXPIRY_BARS
+
+    @staticmethod
+    def _canonical_paper_fail_reason(assessment: SetupAssessment, expired: bool) -> str | None:
+        if expired:
+            return "Expired setup cannot authorize a paper trade."
+        if assessment.state is SetupAssessmentState.INVALIDATED:
+            return "Invalidated setup cannot authorize a paper trade."
+        if assessment.state is not SetupAssessmentState.CONFIRMED_SETUP:
+            codes = ",".join(code.value for code in assessment.reason_codes) or "none"
+            return (
+                "Canonical setup is "
+                f"{assessment.state.value}; paper mint requires CONFIRMED_SETUP ({codes})."
+            )
+        return None
+
+    @staticmethod
+    def _levels_from_confirmed(
+        loaded: CanonicalPaperEvidence,
+    ) -> tuple[TradeDirection, Decimal, Decimal, datetime]:
+        command = loaded.command
+        if loaded.assembled is not None:
+            trigger = loaded.assembled.trigger_bar
+        else:
+            matches = [
+                bar for bar in loaded.evidence.bars_15m if bar.interval_end == command.interval.end
+            ]
+            trigger = matches[-1] if matches else loaded.evidence.bars_15m[-1]
+        entry = trigger.close
+        stop = trigger.high if command.direction is TradeDirection.SHORT else trigger.low
+        return command.direction, entry, stop, trigger.interval_end
+
+    def _mint_auto_paper_from_confirmed(
+        self,
+        run: PaperValidationRunModel,
+        *,
+        policy: ExecutableStrategyPolicy,
+        assessment: SetupAssessment,
+        loaded: CanonicalPaperEvidence,
+        signal_row: PaperSignalModel,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        config: PaperValidationConfig,
+        engine_source: str,
+    ) -> bool:
+        resolved = self._approved_compiled_lineage(
+            run, organization_id=organization_id, user_id=user_id
+        )
+        if resolved is None or resolved.content_hash != policy.content_hash:
+            return False
+        if is_first_slice_read_projection(
+            strategy_version_id=resolved.strategy_version_id,
+            setup_definition_id=resolved.compiled_setup_definition_id,
+        ):
+            return False
+        if assessment.state is not SetupAssessmentState.CONFIRMED_SETUP:
+            return False
+        if self._canonical_setup_expired(assessment, loaded):
+            return False
+        direction, entry, stop, entry_time = self._levels_from_confirmed(loaded)
+        size = self._compute_size(entry, stop, config)
+        if size <= 0:
+            return False
+        from app.services.strategy_rule_adapter import ParsedStrategyRules
+
+        accounting = ParsedStrategyRules(
+            machine_readable=True,
+            limitation=None,
+            direction=direction,
+            entry_mode="canonical_confirmed_setup",
+            stop_pct=Decimal("0"),
+            tp_r_multiples=(Decimal("1"),),
+            use_runner=False,
+            matched_tokens=("confirmed_setup",),
+        )
+        fee_rate = config.fees_bps / Decimal("10000")
+        slip_rate = config.slippage_bps / Decimal("10000")
+        open_state = self._engine.open_trade_state(
+            direction=direction,
+            entry_time=entry_time,
+            entry_price=entry,
+            stop_loss=stop,
+            size=size,
+            rules=accounting,
+            fee_rate=fee_rate,
+            slip_rate=slip_rate,
+        )
+        trade_row = self._create_trade_from_state(
+            run,
+            open_state,
+            signal_row=signal_row,
+            rules=accounting,
+            engine_source=engine_source,
+            organization_id=organization_id,
+            user_id=user_id,
+            config=config,
+        )
+        signal_row.status = PaperSignalStatus.CONSUMED
+        self._record_event(
+            trade_row.id,
+            "opened",
+            {
+                "mode": "auto_paper",
+                "authority": "evaluate_canonical_strategy",
+                "assessment_state": assessment.state.value,
+            },
+        )
+        return True
+
     def _get_active_run(
         self,
         run_id: uuid.UUID,
@@ -871,10 +1038,12 @@ class PaperValidationRuntimeService:
         from app.services.strategy_rule_adapter import ParsedStrategyRules
 
         parsed = rules if isinstance(rules, ParsedStrategyRules) else None
-        tp_plan = {"r_multiples": [str(m) for m in (parsed.tp_r_multiples if parsed else ())]}
-        runner_plan = {"use_runner": parsed.use_runner} if parsed and parsed.use_runner else {}
-        if not isinstance(runner_plan, dict):
-            runner_plan = {}
+        tp_plan: dict[str, object] = {
+            "r_multiples": [str(m) for m in (parsed.tp_r_multiples if parsed else ())]
+        }
+        runner_plan: dict[str, object] = (
+            {"use_runner": parsed.use_runner} if parsed and parsed.use_runner else {}
+        )
         runner_plan.setdefault("bars_open", 0)
         row = PaperTradeModel(
             paper_validation_run_id=run.id,
@@ -909,7 +1078,7 @@ class PaperValidationRuntimeService:
     ) -> _OpenPaperTrade:
         from app.services.strategy_rule_adapter import ParsedStrategyRules
 
-        tp_multiples = (Decimal("1"), Decimal("2"))
+        tp_multiples: tuple[Decimal, ...] = (Decimal("1"), Decimal("2"))
         use_runner = False
         if trade_row.tp_plan and "r_multiples" in trade_row.tp_plan:
             tp_multiples = tuple(Decimal(v) for v in trade_row.tp_plan["r_multiples"])
@@ -975,7 +1144,7 @@ class PaperValidationRuntimeService:
         self,
         trade_id: uuid.UUID,
         event_type: str,
-        payload: dict | None,
+        payload: dict[str, object] | None,
     ) -> None:
         self._session.add(
             PaperTradeEventModel(
@@ -987,7 +1156,7 @@ class PaperValidationRuntimeService:
 
     def _auto_journal_closed_trades(
         self,
-        closed_details: list[tuple[PaperTradeModel, object]],
+        closed_details: list[tuple[PaperTradeModel, CloseEvaluation]],
         run: PaperValidationRunModel,
     ) -> None:
         """Opt-in AT-033 hook: journal every trade closed this tick.
@@ -1100,7 +1269,7 @@ class PaperValidationRuntimeService:
         user_id: uuid.UUID,
         *,
         data_stale: bool = False,
-    ):
+    ) -> PaperPromotionDecision:
         eligibility = PaperEligibilityService(self._session, self._settings).evaluate(
             run.strategy_id,
             organization_id=organization_id,
@@ -1249,9 +1418,9 @@ class PaperValidationRuntimeService:
     ) -> SetupAssessment:
         """Evaluate SetupAssessment via the canonical strategy policy boundary.
 
-        Paper-bot ``scan``/``tick`` consume approved compiled lineage as a
-        compatibility path, or fail closed. This method is the SetupAssessment
-        entry Watcher also uses. It does not mint Candidates or place orders.
+        Automated ``scan`` minting also goes through
+        ``evaluate_canonical_strategy`` after a persisted APPROVED/ACTIVE
+        compiled resolve. This method does not mint Candidates or place orders.
         """
 
         return evaluate_canonical_strategy_for_version(

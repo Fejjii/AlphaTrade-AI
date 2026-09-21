@@ -1570,3 +1570,30 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. No deploy. No real exchange mutation.
 - **Consequences:** Branch `cursor/intelligence_integration-1ea1`. Draft
   integration PR only; stop for independent review.
+
+## AT-ADR-047 — Durable setup lifetime and canonical paper-trade authority
+- **Date:** 2026-09-21
+- **Status:** Accepted (remediation; draft PR only; do not merge or deploy)
+- **Context:** Final independent acceptance review left two P1s open. Setup
+  lifetime pins lived in process memory, so restart reset the original trigger.
+  Paper-validation `scan` used a boolean approved-lineage gate, then
+  `PaperBotEngine` plus invented StructuredRules to mint AUTO_PAPER trades.
+- **Decision:**
+  1. Persist setup-lifetime identity in `setup_lifetime_pins` keyed by tenant,
+     symbol, timeframe, strategy version, and compiled setup id/hash. Pins store
+     original trigger interval end, trigger bar hash, expiry state, and a
+     semantic lineage hash. Transport metadata is excluded. Duplicate writes
+     converge. An expired pin cannot resurrect after restart.
+  2. Automated paper minting consumes only persisted APPROVED/ACTIVE compiled
+     policy → canonical evidence → `evaluate_canonical_strategy` →
+     `CONFIRMED_SETUP`. `PaperBotEngine.evaluate_entry` is not an AUTO_PAPER
+     authority. Draft, `REVIEW_REQUIRED`, unsupported, incomplete, stale,
+     expired, wrong-source, and mismatched-lineage inputs fail closed.
+  3. `evaluate_setup` remains the sole SetupAssessment function.
+     `CandidateLifecycleService` remains the sole Candidate authority.
+     Watcher, Telegram, and live trading stay disabled.
+- **Alternatives considered:** Keep in-memory pins and document restart
+  (rejected: P1); invent a second paper SetupAssessment (rejected).
+- **Safety impact:** Paper only. No Watcher/Telegram/live-trading flag change.
+- **Consequences:** Alembic head `c8d9e0f1a2b3`. Draft PR only; no merge or
+  deploy.

@@ -1406,3 +1406,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Completion evidence: feat commit `4d5bfb9`; source PR #109; remapped from
   source AT-ADR-043. Source PR #111 left AT-067 as TODO; closed by integrating
   PR #109.
+
+### AT-068 — Durable setup lifetime + canonical AUTO_PAPER authority
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-067, intelligence
+  acceptance review P1s · Risk: High (lifetime identity + paper mint authority)
+- Safety classification: Paper-only; no Watcher enablement; no Telegram; no live trading
+- Goal: Persist setup-lifetime pins so restart reconstructs the same trigger
+  and expiry; remove `PaperBotEngine` as AUTO_PAPER minting authority. Automated
+  paper trades consume persisted APPROVED/ACTIVE compiled policy → canonical
+  evidence → `evaluate_canonical_strategy` → `CONFIRMED_SETUP` only.
+- Branch: `cursor/intelligence-acceptance-final-fix-5138`
+- Validation: PostgreSQL restart/migration tests; non-vacuous CONFIRMED_SETUP
+  paper mint; fail-closed draft/stale/expired/wrong-tenant/wrong-hash; ruff;
+  mypy; full backend; frontend; e2e; exact-head CI. Draft PR only; no merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-047
