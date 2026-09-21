@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketWatcherScannerCard } from "@/components/MarketWatcherScannerCard";
+import { WatcherMonitoringPanel } from "@/components/WatcherMonitoringPanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -146,6 +147,8 @@ export default function WatcherPage() {
           automation.
         </p>
       </div>
+
+      <WatcherMonitoringPanel compact />
 
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={() => void reload()} /> : null}

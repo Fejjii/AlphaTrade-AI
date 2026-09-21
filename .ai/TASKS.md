@@ -1421,3 +1421,24 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   mypy; full backend; frontend; e2e; exact-head CI. Draft PR only; no merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-047
+
+### AT-069 — Watcher PAPER MONITORING operator UX + observability
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-ADR-040, AT-ADR-022,
+  AT-067 · Risk: Medium (honesty of runtime status; no authority change)
+- Safety classification: Paper-only observability; no Watcher enablement; no
+  Telegram; no live trading; no evaluator/strategy-authority change
+- Goal: Operator-facing Watcher paper-monitoring surface showing runtime
+  status (`RUNNING`/`STOPPED`/`DEGRADED`/`STALE`/`BLOCKED`), symbols,
+  approved strategies, last/next scan, market freshness, provider health,
+  SetupAssessment lineage, candidates, block reasons, lease/worker health,
+  recent errors, and paper-only posture. Typed API only; never infer
+  RUNNING from frontend config; no fake activity/prices/candidates.
+- Branch: `cursor/watcher_monitoring_ux-c026`
+- Validation: backend projection + `/market-watcher/monitoring` tests;
+  frontend card/panel/dashboard/attention tests for loading/empty/running/
+  stopped/degraded/stale/provider outage/no approved strategies/candidate
+  detected/mobile/refresh/paper-safety; frontend lint/typecheck/test/build;
+  e2e; CI. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-048
+

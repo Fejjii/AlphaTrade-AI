@@ -626,7 +626,7 @@ Exact current write/read routes that Phase 6 may **adapt behind**, not remove.
 
 **Market watcher** (`market_watcher.py`)
 
-- `GET /market-watcher/status`, `/summary`
+- `GET /market-watcher/status`, `/summary`, `/monitoring`
 - `POST /market-watcher/scan`
 - `GET /market-watcher/scans/recent`, `/observations`, `/history`
 - `GET /market-watcher/bridge/status`, `POST /bridge/tick`, `GET /bridge/history`
