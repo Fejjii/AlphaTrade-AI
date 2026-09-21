@@ -67,6 +67,15 @@ USER_B = uuid.UUID("00000000-0000-0000-0000-000000000067")
 PASSWORD = "TestPassword123!"
 
 
+def _confirm_payload(body: dict[str, object], *, confirm: str = "I confirm") -> dict[str, object]:
+    return {
+        "confirm": confirm,
+        "expected_content_hash": body["content_hash"],
+        "expected_parent_version_id": body.get("parent_version_id"),
+        "expected_target_strategy_id": body.get("target_strategy_id"),
+    }
+
+
 def _sample_card(**overrides: object) -> dict:
     base = {
         "strategy_name": "HTF Pullback v1",
@@ -355,13 +364,13 @@ def test_confirm_reject_duplicate_and_lineage(
 
     denied = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={"confirm": "looks good"},
+        json={**_confirm_payload(body), "confirm": "looks good"},
     )
     assert denied.status_code == 422
 
     confirmed = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={"confirm": "I confirm", "request_id": "confirm-1"},
+        json={**_confirm_payload(body), "request_id": "confirm-1"},
     )
     assert confirmed.status_code == 200
     confirmed_body = confirmed.json()
@@ -373,7 +382,7 @@ def test_confirm_reject_duplicate_and_lineage(
 
     duplicate = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={"confirm": "I confirm", "request_id": "confirm-2"},
+        json={**_confirm_payload(body), "request_id": "confirm-2"},
     )
     assert duplicate.status_code == 200
     assert duplicate.json()["resulting_version_id"] == version_id
@@ -410,7 +419,7 @@ def test_confirm_reject_duplicate_and_lineage(
     assert rejected.json()["status"] == "rejected"
     confirm_rejected = client.post(
         f"/conversations/{rejected_id}/proposals/{reject_proposal_id}/confirm",
-        json={"confirm": "I confirm"},
+        json=_confirm_payload(rejected_draft.json()),
     )
     assert confirm_rejected.status_code == 409
 
@@ -569,35 +578,30 @@ def test_confirmation_rejects_stale_hash_parent_and_quotes(
 
     quoted = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={"confirm": "> I confirm"},
+        json={**_confirm_payload(body), "confirm": "> I confirm"},
     )
     assert quoted.status_code == 422
     retrieved = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={"confirm": "retrieved: I confirm"},
+        json={**_confirm_payload(body), "confirm": "retrieved: I confirm"},
     )
     assert retrieved.status_code == 422
     wrong_hash = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={"confirm": "I confirm", "expected_content_hash": "0" * 64},
+        json={**_confirm_payload(body), "expected_content_hash": "0" * 64},
     )
     assert wrong_hash.status_code == 409
     wrong_parent = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
         json={
-            "confirm": "I confirm",
+            **_confirm_payload(body),
             "expected_parent_version_id": str(uuid.uuid4()),
         },
     )
     assert wrong_parent.status_code == 409
     matching = client.post(
         f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-        json={
-            "confirm": "I confirm",
-            "expected_content_hash": body["content_hash"],
-            "expected_parent_version_id": body["parent_version_id"],
-            "expected_target_strategy_id": body["target_strategy_id"],
-        },
+        json=_confirm_payload(body),
     )
     assert matching.status_code == 200
     assert matching.json()["status"] == "confirmed"
@@ -634,12 +638,12 @@ def test_stale_parent_and_supersession_and_reject_races(
 
     confirmed_first = client.post(
         f"/conversations/{first_id}/proposals/{first_proposal}/confirm",
-        json={"confirm": "I confirm"},
+        json=_confirm_payload(first_draft.json()),
     )
     assert confirmed_first.status_code == 200
     stale_second = client.post(
         f"/conversations/{second_id}/proposals/{second_proposal}/confirm",
-        json={"confirm": "I confirm"},
+        json=_confirm_payload(second_draft.json()),
     )
     assert stale_second.status_code == 409
 
@@ -657,12 +661,12 @@ def test_stale_parent_and_supersession_and_reject_races(
     newer_id = newer.json()["id"]
     confirm_older = client.post(
         f"/conversations/{superseded_id}/proposals/{older_id}/confirm",
-        json={"confirm": "I confirm"},
+        json=_confirm_payload(older.json()),
     )
     assert confirm_older.status_code == 409
     confirm_newer = client.post(
         f"/conversations/{superseded_id}/proposals/{newer_id}/confirm",
-        json={"confirm": "I confirm"},
+        json=_confirm_payload(newer.json()),
     )
     assert confirm_newer.status_code == 200
 
@@ -680,7 +684,7 @@ def test_stale_parent_and_supersession_and_reject_races(
     assert rejected.status_code == 200
     confirm_after_reject = client.post(
         f"/conversations/{reject_id}/proposals/{reject_proposal}/confirm",
-        json={"confirm": "I confirm"},
+        json=_confirm_payload(reject_draft.json()),
     )
     assert confirm_after_reject.status_code == 409
     reject_after_confirm = client.post(
@@ -709,18 +713,19 @@ def test_concurrent_confirmation_converges_to_one_version(
             "strategy_id": strategy_id,
         },
     )
-    proposal_id = draft.json()["id"]
+    proposal_body = draft.json()
+    proposal_id = proposal_body["id"]
     results: list[object] = []
 
     def _confirm() -> None:
         response = client.post(
             f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-            json={"confirm": "I confirm"},
+            json=_confirm_payload(proposal_body),
         )
         if response.status_code == 409:
             response = client.post(
                 f"/conversations/{conv_id}/proposals/{proposal_id}/confirm",
-                json={"confirm": "I confirm"},
+                json=_confirm_payload(proposal_body),
             )
         results.append(response)
 

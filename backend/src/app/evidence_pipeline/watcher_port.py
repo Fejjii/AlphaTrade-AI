@@ -36,6 +36,8 @@ def resolve_watcher_scan_policy(
     version = store.get_policy_version(command.request.policy_id, command.request.policy_version)
     if version is None or version.strategy_version_id is None:
         return None
+    if not version.enabled:
+        return None
     if version.identity.organization_id != command.request.organization_id:
         raise WatcherTenantMismatchError(
             "Watcher policy organization_id does not match the scan tenant."
@@ -117,8 +119,16 @@ class AssemblingWatcherScanEvidence:
         )
 
     def _resolve_executable(self, command: EvaluationCommand) -> ExecutableStrategyPolicy | None:
-        if self._executable_resolver is not None:
-            return self._executable_resolver(command)
         if self._session is not None and self._store is not None:
             return resolve_watcher_scan_policy(self._session, command, store=self._store)
-        return None
+        if self._executable_resolver is None:
+            return None
+        resolved = self._executable_resolver(command)
+        if resolved is None:
+            return None
+        if is_first_slice_read_projection(
+            strategy_version_id=resolved.strategy_version_id,
+            setup_definition_id=resolved.compiled_setup_definition_id,
+        ):
+            return None
+        return resolved

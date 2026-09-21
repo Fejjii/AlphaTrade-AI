@@ -115,6 +115,7 @@ class CanonicalEvidenceService:
         setup_read, setup_reason = self._setup(
             organization_id=organization_id,
             symbol=instrument.provider_symbol,
+            evaluated_at=evaluated_at,
         )
         unavailable = None
         if not price_read.usable_as_current_market_price:
@@ -176,11 +177,13 @@ class CanonicalEvidenceService:
         *,
         organization_id: UUID,
         symbol: str,
+        evaluated_at: datetime,
     ) -> tuple[CanonicalSetupEvidenceRead, str | None]:
         try:
             assembled = self._assembler.assemble(
                 organization_id=organization_id,
                 symbol=symbol,
+                evaluated_at=evaluated_at,
                 policy=first_slice_read_policy(organization_id),
             )
             return _setup_from_assembly(assembled), None

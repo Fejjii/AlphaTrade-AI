@@ -125,3 +125,9 @@ class CompileOutcome(StrictModel):
     document: CompiledAstDocument | None = None
     failures: list[CompileFailure] = Field(default_factory=list)
     features: list[FeatureRef] = Field(default_factory=list)
+
+
+class StrategyVersionApproveRequest(StrictModel):
+    """Explicit approval of an already compiled version. Not conversational confirm."""
+
+    confirm: str = Field(min_length=1, max_length=200)

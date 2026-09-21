@@ -7,18 +7,27 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+from app.evidence_pipeline.canonical import build_first_slice_assessment_command
 from app.market_contracts.cursor import TradeStreamSnapshot
-from app.market_contracts.cvd import FIRST_SLICE_CVD_LOOKBACK_BARS, first_slice_baseline_open
+from app.market_contracts.cvd import (
+    FIRST_SLICE_CVD_LOOKBACK_BARS,
+    first_slice_baseline_open,
+    first_slice_cvd_window,
+)
 from app.market_contracts.enums import FreshnessState, MarketType, VenueId
 from app.market_contracts.first_slice import (
     FIRST_SLICE_MIN_FINAL_4H,
     FIRST_SLICE_MIN_FINAL_15M,
     first_slice_identity,
 )
-from app.market_contracts.freshness import first_slice_freshness_policy
+from app.market_contracts.flow import bar_signed_quote_flow
+from app.market_contracts.freshness import (
+    first_slice_freshness_policy,
+    live_confirmation_window_open,
+)
 from app.market_contracts.identity import ADAPTER_VERSION, binance_usdm_btcusdt, interval_timedelta
 from app.market_contracts.observation import PublicMarketObservation, observation_from_ohlcv
-from app.market_contracts.ohlcv import OhlcvBar, build_ohlcv_bar
+from app.market_contracts.ohlcv import OhlcvBar, build_ohlcv_bar, require_closed_series
 from app.market_contracts.replay_fixtures import build_closed_bars
 from app.market_contracts.trades import TradeEvent, build_trade_event
 from app.schemas.common import Timeframe, TradeDirection
@@ -235,45 +244,98 @@ def make_command(
     resistance: ManualResistanceEvidence | None,
     stale: bool = False,
     observation_order: tuple[int, ...] | None = None,
+    snapshot: TradeStreamSnapshot | None = None,
+    series_15m: list[OhlcvBar] | None = None,
 ) -> AssessmentCommand:
     policy = fusion_policy()
-    trigger_obs = _observation(trigger, Timeframe.M15)
-    context_obs = _observation(context, Timeframe.H4)
-    cvd_obs = _observation(trigger, Timeframe.M15)
+    if snapshot is not None and series_15m is not None:
+        identity = first_slice_identity(timeframe=Timeframe.M15, replay=True)
+        closed = require_closed_series(
+            list(series_15m),
+            identity=identity,
+            timeframe=Timeframe.M15,
+            evaluated_at=EVALUATED_AT,
+            min_bars=min(len(series_15m), FIRST_SLICE_MIN_FINAL_15M),
+        )
+        live_window = live_confirmation_window_open(
+            closed_interval_end=trigger.interval_end,
+            evaluated_at=EVALUATED_AT,
+        )
+        cvd = first_slice_cvd_window(
+            identity=identity,
+            series_15m=closed,
+            snapshot=snapshot,
+            created_at=EVALUATED_AT,
+            require_live_freshness=live_window,
+        )
+        signed_flow = bar_signed_quote_flow(
+            identity=identity,
+            bar=trigger,
+            snapshot=snapshot,
+            evaluated_at=EVALUATED_AT,
+            require_live_freshness=live_window,
+        )
+        command = build_first_slice_assessment_command(
+            organization_id=ORG_ID,
+            policy=policy,
+            trigger=trigger,
+            context=context,
+            trigger_identity=identity,
+            context_identity=first_slice_identity(timeframe=Timeframe.H4, replay=True),
+            evaluated_at=EVALUATED_AT,
+            freshness_state=FreshnessState.FRESH,
+            adapter_kind=adapter_kind,
+            cvd=cvd,
+            signed_flow=signed_flow,
+            coverage=snapshot.coverage,
+            manual_level_revision=None if resistance is None else resistance.ref,
+        )
+    else:
+        trigger_obs = _observation(trigger, Timeframe.M15)
+        context_obs = _observation(context, Timeframe.H4)
+        cvd_obs = _observation(trigger, Timeframe.M15)
+        command = AssessmentCommand(
+            organization_id=ORG_ID,
+            strategy_version_id=STRATEGY_VERSION_ID,
+            executable_setup=policy.executable_setup,
+            fusion_policy_version=policy.policy_version,
+            finality_policy_version=policy.finality_policy_version,
+            freshness_policy_version=policy.freshness_policy_version,
+            direction=TradeDirection.SHORT,
+            evidence_identity=first_slice_identity(timeframe=Timeframe.M15, replay=True),
+            interval=HalfOpenInterval(start=trigger.interval_start, end=trigger.interval_end),
+            trigger=TriggerIdentity(
+                natural_event_id=trigger.source_event_id, revision=trigger.revision
+            ),
+            mandatory_evidence_roles=(
+                EvidenceRole.TRIGGER_OHLCV,
+                EvidenceRole.CONTEXT_OHLCV,
+                EvidenceRole.CVD_WINDOW,
+            ),
+            public_observations=(trigger_obs, context_obs, cvd_obs),
+            selected_roles=(
+                EvidenceRole.TRIGGER_OHLCV,
+                EvidenceRole.CONTEXT_OHLCV,
+                EvidenceRole.CVD_WINDOW,
+            ),
+            source_set=semantic_sources(),
+            manual_level_revision=None if resistance is None else resistance.ref,
+            adapter_kind=adapter_kind,
+        )
     if stale:
-        trigger_obs = trigger_obs.model_copy(update={"freshness_state": FreshnessState.STALE})
-    pairs = [
-        (trigger_obs, EvidenceRole.TRIGGER_OHLCV),
-        (context_obs, EvidenceRole.CONTEXT_OHLCV),
-        (cvd_obs, EvidenceRole.CVD_WINDOW),
-    ]
+        observations = list(command.public_observations)
+        observations[0] = observations[0].model_copy(
+            update={"freshness_state": FreshnessState.STALE}
+        )
+        command = command.model_copy(update={"public_observations": tuple(observations)})
     if observation_order is not None:
-        pairs = [pairs[index] for index in observation_order]
-    observations, roles = zip(*pairs, strict=True)
-    return AssessmentCommand(
-        organization_id=ORG_ID,
-        strategy_version_id=STRATEGY_VERSION_ID,
-        executable_setup=policy.executable_setup,
-        fusion_policy_version=policy.policy_version,
-        finality_policy_version=policy.finality_policy_version,
-        freshness_policy_version=policy.freshness_policy_version,
-        direction=TradeDirection.SHORT,
-        evidence_identity=first_slice_identity(timeframe=Timeframe.M15, replay=True),
-        interval=HalfOpenInterval(start=trigger.interval_start, end=trigger.interval_end),
-        trigger=TriggerIdentity(
-            natural_event_id=trigger.source_event_id, revision=trigger.revision
-        ),
-        mandatory_evidence_roles=(
-            EvidenceRole.TRIGGER_OHLCV,
-            EvidenceRole.CONTEXT_OHLCV,
-            EvidenceRole.CVD_WINDOW,
-        ),
-        public_observations=tuple(observations),
-        selected_roles=tuple(roles),
-        source_set=semantic_sources(),
-        manual_level_revision=None if resistance is None else resistance.ref,
-        adapter_kind=adapter_kind,
-    )
+        pairs = list(zip(command.public_observations, command.selected_roles, strict=True))
+        reordered = [pairs[index] for index in observation_order]
+        observations, roles = zip(*reordered, strict=True)
+        command = command.model_copy(
+            update={"public_observations": tuple(observations), "selected_roles": tuple(roles)}
+        )
+    return command
 
 
 def subsequent_bars(trigger: OhlcvBar, *, count: int, high: Decimal) -> list[OhlcvBar]:
@@ -363,6 +425,8 @@ def make_world(
         resistance=resistance,
         stale=stale_command,
         observation_order=observation_order,
+        snapshot=snapshot,
+        series_15m=bars_15m,
     )
     evidence = FirstSliceEvidenceBundle(
         bars_15m=tuple(stored_15m),

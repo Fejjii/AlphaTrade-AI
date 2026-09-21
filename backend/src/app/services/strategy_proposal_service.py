@@ -253,9 +253,9 @@ class StrategyProposalService:
         confirm_arg: bool | None = None,
         request_id: str | None = None,
         conversation_id: uuid.UUID | None = None,
-        expected_content_hash: str | None = None,
-        expected_parent_version_id: uuid.UUID | None = None,
-        expected_target_strategy_id: uuid.UUID | None = None,
+        expected_content_hash: str,
+        expected_parent_version_id: uuid.UUID | None,
+        expected_target_strategy_id: uuid.UUID | None,
     ) -> StrategyProposalRecord:
         del confirm_arg
         if not confirmation_authorizes_mutation(confirm_message):
@@ -442,24 +442,18 @@ class StrategyProposalService:
         self,
         row: StrategyConversationProposal,
         *,
-        expected_content_hash: str | None,
+        expected_content_hash: str,
         expected_parent_version_id: uuid.UUID | None,
         expected_target_strategy_id: uuid.UUID | None,
     ) -> None:
         recomputed = self._payload_hash(row)
         if row.content_hash is None or recomputed != row.content_hash:
             raise ConflictError("Proposal content hash does not match the captured draft.")
-        if expected_content_hash is not None and expected_content_hash != row.content_hash:
+        if expected_content_hash != row.content_hash:
             raise ConflictError("Confirmation content hash does not match the proposal.")
-        if (
-            expected_parent_version_id is not None
-            and expected_parent_version_id != row.parent_version_id
-        ):
+        if expected_parent_version_id != row.parent_version_id:
             raise ConflictError("Confirmation parent version does not match the proposal.")
-        if (
-            expected_target_strategy_id is not None
-            and expected_target_strategy_id != row.target_strategy_id
-        ):
+        if expected_target_strategy_id != row.target_strategy_id:
             raise ConflictError("Confirmation target strategy does not match the proposal.")
 
     def _require_or_create_strategy(

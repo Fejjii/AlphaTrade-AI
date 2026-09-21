@@ -52,6 +52,8 @@ MANDATORY_ROLES: tuple[EvidenceRole, ...] = (
     EvidenceRole.TRIGGER_OHLCV,
     EvidenceRole.CONTEXT_OHLCV,
     EvidenceRole.CVD_WINDOW,
+    EvidenceRole.SIGNED_FLOW,
+    EvidenceRole.TRADE_EVENT,
 )
 
 

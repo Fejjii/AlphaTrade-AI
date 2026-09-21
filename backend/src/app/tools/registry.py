@@ -1547,15 +1547,29 @@ def _strategy_proposal_execute(args: dict[str, Any], session: Any | None) -> Too
         user_message = str(args.get("user_message") or "")
         if action == "confirm":
             proposal_id = _uuid.UUID(str(args["proposal_id"]))
+            conversation_id = args.get("conversation_id")
+            if conversation_id is None:
+                return ToolOutput(
+                    tool_name="strategy_proposal_tool",
+                    success=False,
+                    error="Conversation id is required to confirm a proposal.",
+                )
+            presented = service.get(
+                proposal_id,
+                organization_id=org,
+                user_id=user,
+                conversation_id=_uuid.UUID(str(conversation_id)),
+            )
             result = service.confirm(
                 proposal_id,
                 organization_id=org,
                 user_id=user,
                 confirm_message=user_message,
                 confirm_arg=bool(args.get("confirm")),
-                conversation_id=_uuid.UUID(str(args["conversation_id"]))
-                if args.get("conversation_id")
-                else None,
+                conversation_id=_uuid.UUID(str(conversation_id)),
+                expected_content_hash=presented.content_hash or "",
+                expected_parent_version_id=presented.parent_version_id,
+                expected_target_strategy_id=presented.target_strategy_id,
             )
         elif action == "reject":
             proposal_id = _uuid.UUID(str(args["proposal_id"]))

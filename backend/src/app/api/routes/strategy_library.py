@@ -34,6 +34,11 @@ from app.schemas.strategy_library import (
     UserStrategyVersion,
     UserStrategyVersionCreate,
 )
+from app.schemas.strategy_lifecycle import (
+    CompileOutcome,
+    StrategyLifecycleEventRecord,
+    StrategyVersionApproveRequest,
+)
 from app.schemas.strategy_testability import StrategyTestability
 from app.schemas.structured_rules import (
     StructuredRules,
@@ -359,3 +364,51 @@ async def structure_from_text(
     _ = strategy_id
     _ = tenant
     return service.draft(body)
+
+
+@router.post(
+    "/{strategy_id}/versions/{version_id}/compile",
+    response_model=CompileOutcome,
+    summary="Explicit compile/review of a confirmed strategy version",
+)
+async def compile_strategy_version(
+    strategy_id: uuid.UUID,
+    version_id: uuid.UUID,
+    tenant: TraderDep,
+    session: SessionDep,
+) -> CompileOutcome:
+    from app.services.compiled_setup_service import CompiledSetupService
+
+    result = CompiledSetupService(session).compile_version(
+        version_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        strategy_id=strategy_id,
+    )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/{strategy_id}/versions/{version_id}/approve",
+    response_model=StrategyLifecycleEventRecord,
+    summary="Explicit approval of an executable compiled strategy version",
+)
+async def approve_strategy_version(
+    strategy_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: StrategyVersionApproveRequest,
+    tenant: TraderDep,
+    session: SessionDep,
+) -> StrategyLifecycleEventRecord:
+    from app.services.compiled_setup_service import CompiledSetupService
+
+    result = CompiledSetupService(session).approve_version(
+        version_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        confirm_message=body.confirm,
+        strategy_id=strategy_id,
+    )
+    session.commit()
+    return result

@@ -10,6 +10,8 @@ const {
   confirmMock,
   rejectMock,
   chatMock,
+  compileMock,
+  approveMock,
 } = vi.hoisted(() => ({
   listMock: vi.fn(),
   listMessagesMock: vi.fn(),
@@ -17,6 +19,8 @@ const {
   confirmMock: vi.fn(),
   rejectMock: vi.fn(),
   chatMock: vi.fn(),
+  compileMock: vi.fn(),
+  approveMock: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -30,6 +34,10 @@ vi.mock("@/lib/api", () => ({
     },
     chat: {
       message: (...args: unknown[]) => chatMock(...args),
+    },
+    strategies: {
+      compileVersion: (...args: unknown[]) => compileMock(...args),
+      approveVersion: (...args: unknown[]) => approveMock(...args),
     },
   },
 }));
@@ -46,6 +54,9 @@ const draftProposal = {
   validation: { valid: true, errors: [], warnings: [] },
   limitations: ["This is a structured preview only."],
   challenge_notes: ["Consider an explicit no-trade filter."],
+  content_hash: "ab".repeat(32),
+  parent_version_id: "parent-1",
+  target_strategy_id: "strat-1",
   created_at: "2026-09-20T10:00:00.000Z",
   updated_at: "2026-09-20T10:00:00.000Z",
   is_preview: true,
@@ -103,6 +114,8 @@ describe("StrategyConversationPanel", () => {
       resulting_version_id: "ver-2",
     });
     rejectMock.mockResolvedValue({ ...draftProposal, status: "rejected", is_preview: false });
+    compileMock.mockResolvedValue({ status: "executable", compiled: { id: "c1" }, failures: [] });
+    approveMock.mockResolvedValue({ id: "life-1", new_state: "approved" });
   });
 
   it("loads the durable thread and keeps proposals as drafts until confirm", async () => {
@@ -148,9 +161,9 @@ describe("StrategyConversationPanel", () => {
     await waitFor(() => {
       expect(confirmMock).toHaveBeenCalledWith("conv-1", "prop-1", {
         confirm: "I confirm",
-        expected_content_hash: undefined,
-        expected_parent_version_id: undefined,
-        expected_target_strategy_id: undefined,
+        expected_content_hash: "ab".repeat(32),
+        expected_parent_version_id: "parent-1",
+        expected_target_strategy_id: "strat-1",
       });
     });
   });
@@ -161,6 +174,39 @@ describe("StrategyConversationPanel", () => {
     fireEvent.click(screen.getByTestId("strategy-conversation-reject"));
     await waitFor(() => {
       expect(rejectMock).toHaveBeenCalledWith("conv-1", "prop-1", { confirm: "I reject" });
+    });
+  });
+
+  it("compiles then approves only after an explicit confirmed draft", async () => {
+    const confirmed = {
+      ...draftProposal,
+      status: "confirmed" as const,
+      is_preview: false,
+      mutates_strategy_authority: true,
+      resulting_version_id: "ver-2",
+    };
+    confirmMock.mockImplementation(async () => {
+      listProposalsMock.mockResolvedValue({
+        items: [confirmed],
+        total: 1,
+        limit: 10,
+        offset: 0,
+      });
+      return confirmed;
+    });
+    render(<StrategyConversationPanel strategyId="strat-1" />);
+    await screen.findByTestId("strategy-conversation-confirm");
+    fireEvent.click(screen.getByTestId("strategy-conversation-confirm"));
+    await screen.findByTestId("strategy-conversation-compile");
+    expect(screen.queryByTestId("strategy-conversation-confirm")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("strategy-conversation-compile"));
+    await waitFor(() => {
+      expect(compileMock).toHaveBeenCalledWith("strat-1", "ver-2");
+    });
+    await screen.findByTestId("strategy-conversation-compile-status");
+    fireEvent.click(screen.getByTestId("strategy-conversation-approve"));
+    await waitFor(() => {
+      expect(approveMock).toHaveBeenCalledWith("strat-1", "ver-2", { confirm: "I confirm" });
     });
   });
 });

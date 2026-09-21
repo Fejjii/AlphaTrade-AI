@@ -46,7 +46,7 @@ test.describe("Strategy Lab conversation", () => {
     await page.goto(`/strategy-lab/${strategy.id}`);
     await expect(page.getByTestId("strategy-conversation-panel")).toBeVisible();
     await expect(
-      page.getByText(/Structured proposals stay drafts until you confirm/i),
+      page.getByText(/Confirm stores a draft. Compile and approve are separate/i),
     ).toBeVisible();
 
     await page.getByTestId("strategy-conversation-composer").fill(marker);
