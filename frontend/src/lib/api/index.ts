@@ -17,6 +17,11 @@ import type {
   JournalStatsParams,
   JournalStatsResponse,
   PaginatedJournalImportBatches,
+  PaginatedConversations,
+  PaginatedConversationMessages,
+  PaginatedStrategyProposals,
+  ConversationSummary,
+  StrategyProposalRecord,
   RiskBehaviorAnalytics,
   SetupAnalyticsResponse,
   TradeReviewAnalytics,
@@ -68,6 +73,7 @@ import type {
   CanonicalExecutionReceiptRead,
   CanonicalLearningRecordRead,
   CanonicalLearningStatsRead,
+  CanonicalEvidenceRead,
   CanonicalTradePlanRevision,
   ProposalWorkflowView,
   ApprovalWorkflowView,
@@ -333,11 +339,76 @@ export const api = {
       ),
   },
   chat: {
-    message: (body: { message: string; conversation_id?: string; symbol?: string; timeframe?: string }) =>
+    message: (body: {
+      message: string;
+      conversation_id?: string;
+      strategy_id?: string;
+      symbol?: string;
+      timeframe?: string;
+    }) =>
       apiFetch<AgentMessageResponse>("/chat/message", {
         method: "POST",
         body: JSON.stringify(body),
       }),
+  },
+  conversations: {
+    list: (params?: { strategy_id?: string; limit?: number; offset?: number }) =>
+      apiFetch<PaginatedConversations>("/conversations", { query: params, auth: true }),
+    create: (body: { title?: string; strategy_id?: string }) =>
+      apiFetch<ConversationSummary>("/conversations", {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    get: (id: string) => apiFetch<ConversationSummary>(`/conversations/${id}`, { auth: true }),
+    listMessages: (id: string, params?: { limit?: number; offset?: number }) =>
+      apiFetch<PaginatedConversationMessages>(`/conversations/${id}/messages`, {
+        query: params,
+        auth: true,
+      }),
+    listProposals: (
+      id: string,
+      params?: { status?: string; limit?: number; offset?: number },
+    ) =>
+      apiFetch<PaginatedStrategyProposals>(`/conversations/${id}/proposals`, {
+        query: params,
+        auth: true,
+      }),
+    createProposal: (id: string, body: { text: string; strategy_id?: string }) =>
+      apiFetch<StrategyProposalRecord>(`/conversations/${id}/proposals`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        auth: true,
+      }),
+    getProposal: (conversationId: string, proposalId: string) =>
+      apiFetch<StrategyProposalRecord>(
+        `/conversations/${conversationId}/proposals/${proposalId}`,
+        { auth: true },
+      ),
+    confirmProposal: (
+      conversationId: string,
+      proposalId: string,
+      body: {
+        confirm: string;
+        request_id?: string;
+        expected_content_hash?: string;
+        expected_parent_version_id?: string;
+        expected_target_strategy_id?: string;
+      },
+    ) =>
+      apiFetch<StrategyProposalRecord>(
+        `/conversations/${conversationId}/proposals/${proposalId}/confirm`,
+        { method: "POST", body: JSON.stringify(body), auth: true },
+      ),
+    rejectProposal: (
+      conversationId: string,
+      proposalId: string,
+      body: { confirm: string },
+    ) =>
+      apiFetch<StrategyProposalRecord>(
+        `/conversations/${conversationId}/proposals/${proposalId}/reject`,
+        { method: "POST", body: JSON.stringify(body), auth: true },
+      ),
   },
   watchlist: {
     list: (params?: { limit?: number; offset?: number }) =>
@@ -456,6 +527,8 @@ export const api = {
         query: params,
         auth: true,
       }),
+    getEvidence: (params?: { symbol?: string }) =>
+      apiFetch<CanonicalEvidenceRead>("/canonical/evidence", { query: params, auth: true }),
   },
   positions: {
     list: (params?: { limit?: number; offset?: number; status?: string }) =>

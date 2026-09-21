@@ -1540,6 +1540,86 @@ export interface AgentMessageResponse {
   analysis?: TradingAnalysisDetail | null;
   narrative?: TradingNarrativeDetail | null;
   narrative_meta?: NarrativeMetadata | null;
+  pending_proposal?: StrategyProposalRecord | null;
+  history_injected?: number;
+}
+
+export type ConversationStatus = "active" | "archived";
+export type ConversationMessageRole = "user" | "assistant" | "system";
+export type StrategyProposalStatus = "draft" | "confirmed" | "rejected" | "superseded";
+
+export interface ConversationSummary {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  title?: string | null;
+  status: ConversationStatus;
+  strategy_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessageRecord {
+  id: string;
+  conversation_id: string;
+  organization_id: string;
+  user_id: string;
+  role: ConversationMessageRole;
+  content: string;
+  request_id?: string | null;
+  intent?: string | null;
+  payload?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PaginatedConversations {
+  items: ConversationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaginatedConversationMessages {
+  items: ConversationMessageRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface StrategyProposalRecord {
+  id: string;
+  conversation_id: string;
+  organization_id: string;
+  user_id: string;
+  source_message_id?: string | null;
+  target_strategy_id?: string | null;
+  parent_version_id?: string | null;
+  status: StrategyProposalStatus;
+  proposed_structured_rules?: Record<string, unknown> | null;
+  proposed_pattern_spec?: Record<string, unknown> | null;
+  proposed_card?: Record<string, unknown> | null;
+  validation: { valid: boolean; errors: string[]; warnings: string[] };
+  limitations: string[];
+  challenge_notes: string[];
+  context_refs?: Record<string, unknown>;
+  content_hash?: string | null;
+  resulting_strategy_id?: string | null;
+  resulting_version_id?: string | null;
+  resulting_content_hash?: string | null;
+  confirmation_request_id?: string | null;
+  confirmed_at?: string | null;
+  rejected_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  is_preview: boolean;
+  mutates_strategy_authority: boolean;
+}
+
+export interface PaginatedStrategyProposals {
+  items: StrategyProposalRecord[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface PaperOrder {
@@ -1618,6 +1698,75 @@ export interface CanonicalCandidate {
   created_at?: string;
   content_hash: string;
   confidence?: number | null;
+}
+
+export interface CanonicalEvidenceSource {
+  venue: string;
+  market_type: string;
+  instrument_id: string;
+  provider_symbol: string;
+  provider_name: string;
+  source_family: string;
+  adapter_version: string;
+  is_live: boolean;
+  is_mock: boolean;
+  fallback_used: false;
+}
+
+export interface CanonicalEvidenceFreshness {
+  policy_version: string;
+  state: string;
+  evaluated_at: string;
+  source_time?: string | null;
+  age_seconds?: string | null;
+  valid_until?: string | null;
+}
+
+export interface CanonicalEvidenceCompleteness {
+  ohlcv_15m: string;
+  ohlcv_4h: string;
+  cvd: string;
+  signed_flow: string;
+  coverage_content_hash?: string | null;
+  cvd_content_hash?: string | null;
+  signed_flow_content_hash?: string | null;
+}
+
+export interface CanonicalCurrentPriceRead {
+  usable_as_current_market_price: boolean;
+  presentation: string;
+  price?: string | null;
+  source_time?: string | null;
+  venue_trade_id?: string | null;
+  is_live: boolean;
+  is_mock: boolean;
+  fallback_used: false;
+  freshness: CanonicalEvidenceFreshness;
+}
+
+export interface CanonicalSetupEvidenceRead {
+  available: boolean;
+  evidence_window_hash?: string | null;
+  trigger_interval_start?: string | null;
+  trigger_interval_end?: string | null;
+  evaluated_at?: string | null;
+  cvd_signed_quote_delta?: string | null;
+  signed_flow_ratio?: string | null;
+  completeness: CanonicalEvidenceCompleteness;
+  reason?: string | null;
+}
+
+export interface CanonicalEvidenceRead {
+  authority: "canonical";
+  live_executable: false;
+  watcher_activated: false;
+  organization_id: string;
+  symbol: string;
+  source: CanonicalEvidenceSource;
+  current_price: CanonicalCurrentPriceRead;
+  setup_evidence: CanonicalSetupEvidenceRead;
+  timestamps: Record<string, string | null>;
+  unavailable_reason?: string | null;
 }
 
 export interface CanonicalCandidateRead {

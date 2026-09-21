@@ -1305,3 +1305,104 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   do not deploy. Report `docs/FINAL_RELEASE_READINESS.md`.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-041
+
+### AT-063 — Intelligence integration of PR109, PR110, and PR111
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: PR #109, PR #110, PR #111
+  on `main@20d2cac` · Risk: High (evaluation, evidence identity, confirmation)
+- Safety classification: Paper-only integration; Watcher, Telegram, and live
+  trading remain disabled; no deploy; no merge to main
+- Goal: Independently review and integrate PR109 (canonical strategy policy),
+  PR110 (canonical evidence pipeline), and PR111 (strategy conversations).
+  Close verified correctness gaps: evidence identity, Watcher
+  `executable_policy`, freshness vs candle close, conversation-to-pattern
+  preview, confirmation safety. Keep one Alembic head. Preserve journal
+  `account_id` from PR #106.
+- Branch: `cursor/intelligence_integration-1ea1`
+- Validation: focused regressions, then full backend/frontend suites, lint,
+  types, build, Alembic/PostgreSQL, safety, evaluations, relevant browser
+  tests, exact-HEAD GitHub CI. Draft PR only; do not merge; do not deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-046
+
+### AT-064 — Canonical live read-only USD-M evidence pipeline
+- Priority: P0 · Status: DONE · Dependencies: PR #108 market contracts on
+  `main@20d2cac` · Risk: Medium (freshness honesty)
+- Safety classification: Paper-only read path; Watcher, Telegram, and live
+  trading remain disabled; no exchange mutation; no merge
+- Goal: Assemble CanonicalEvidenceWindowV1 from existing Binance USD-M contracts
+  (BTCUSDT first, multi-symbol catalog). Expose truthful current price +
+  freshness on GET `/canonical/evidence`. Stop canonical UI from presenting
+  frozen compatibility prices as live marks. Preserve replay fixtures.
+  Do not activate Watcher.
+- Branch: `cursor/live_evidence_pipeline-5b0d` (source); integrated on
+  `cursor/intelligence_integration-1ea1`
+- Deliverables: `app.evidence_pipeline`, catalog, canonical evidence HTTP,
+  `/decision/market` honesty, fail-closed tests (fresh/stale/partial/outage/
+  wrong-symbol/duplicate/restart/source/CVD/tenant).
+- Validation: source PR #110 exact-head CI run 35527904094 SUCCESS at `afd4d2a`.
+  Draft source PR https://github.com/Fejjii/AlphaTrade-AI/pull/110 — do not merge.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-042
+- Note: Source PR #110 claimed AT-064 / AT-ADR-042; kept. Source PR #111 also
+  claimed AT-064 / AT-ADR-042; remapped to AT-065 / AT-ADR-043.
+
+### AT-065 — Persistent strategy conversation + discussion context
+- Priority: P0 · Status: DONE · Dependencies: PR #107 audit · Risk: Medium
+  (transcript vs strategy authority)
+- Safety classification: Paper-only; no Watcher, Telegram, live trading, or
+  autonomous activation
+- Goal: Durable tenant-scoped conversations and messages. History survives
+  restart. Chat must not become a second memory authority. Discussions may
+  reference strategies, versions, journal, lessons, learning attribution, and
+  statistics via existing services + RAG.
+- Branch: `cursor/strategy-conversation-foundation-5d46` (source); integrated on
+  `cursor/intelligence_integration-1ea1`
+- Validation: `backend/tests/test_strategy_conversation_foundation.py`;
+  persistence + restart + tenant 404; RAG source-type boundary tests.
+  Source PR #111 exact-head CI run 35529286291 SUCCESS at `057b89b`.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-043
+- Note: Source PR #111 claimed AT-064 (persistence) and AT-065 (discussion
+  context); remapped to AT-065 on integration because AT-064 is the evidence
+  pipeline.
+
+### AT-066 — Structured proposals stay drafts until explicit confirmation
+- Priority: P0 · Status: DONE · Dependencies: AT-065 · Risk: High
+  (silent mutation of strategy authority)
+- Safety classification: Confirmation-gated version fork; no compile/activation
+  on confirm
+- Goal: AI may explain, challenge, compare, and propose. Every mutation needs
+  explicit confirmation. Provenance links conversation → proposal → version.
+  Strategy Lab conversational UI + API. Confirmation safety must check proposal
+  identity, content hash, target strategy, and captured parent version.
+- Branch: `cursor/strategy-conversation-foundation-5d46` (source); integrated on
+  `cursor/intelligence_integration-1ea1`
+- Validation: confirm, reject, duplicate confirm, lineage, prompt-injection
+  mutation attempts; concurrent confirmation races.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-044
+- Note: Source PR #111 claimed AT-066 / AT-ADR-042; ADR remapped to AT-ADR-044.
+
+### AT-067 — Canonical strategy evaluation policy (first-slice adapter)
+- Priority: P0 · Status: DONE · Dependencies: AT-066, PR #107, PR #108
+  · Risk: High (evaluation authority)
+- Safety classification: Paper-only; no Watcher enablement; no Telegram; no live trading
+- Goal: One deterministic evaluation policy boundary: approved immutable
+  `UserStrategyVersion` → `CompiledSetupDefinition` → canonical evidence →
+  `evaluate_canonical_strategy` → `SetupAssessment`. `evaluate_setup` remains
+  sole market-truth function. First-slice predicates become a compatibility
+  adapter. Drafts and unsupported rules fail closed. Watcher (disabled) and
+  paper-validation canonical entry call the same boundary. No Candidate mint
+  from read-projection placeholder IDs.
+- Branch: `cursor/canonical-strategy-policy-82f1` (source); integrated on
+  `cursor/intelligence_integration-1ea1`
+- Validation: 18 AT-067 tests (determinism, version change, unsupported rule,
+  stale evidence, strategy/evidence mismatch, duplicate evaluation, lineage,
+  compatibility parity, tenant isolation, no-LLM, Watcher/paper boundary).
+  Source PR #109 exact-head CI run 35528565992 SUCCESS at `872f5de`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/109 — do not merge independently.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-045
+- Completion evidence: feat commit `4d5bfb9`; source PR #109; remapped from
+  source AT-ADR-043. Source PR #111 left AT-067 as TODO; closed by integrating
+  PR #109.

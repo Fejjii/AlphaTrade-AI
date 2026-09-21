@@ -54,6 +54,7 @@ def bar_signed_quote_flow(
     bar: OhlcvBar,
     snapshot: TradeStreamSnapshot,
     evaluated_at: datetime,
+    require_live_freshness: bool = True,
 ) -> SignedQuoteFlow:
     """Compute signed flow only from proven, complete, fresh trigger-bar evidence."""
     if identity != snapshot.cursor.identity:
@@ -86,7 +87,7 @@ def bar_signed_quote_flow(
         source_time=terminal.event_timestamp,
         evaluated_at=evaluated_at,
         policy=first_slice_freshness_policy(),
-        require_fresh=True,
+        require_fresh=require_live_freshness,
     )
     buy = Decimal("0")
     sell = Decimal("0")

@@ -60,7 +60,8 @@ LangGraph nodes in `backend/src/app/agents/nodes.py` orchestrate:
 - `GET /providers/status` — provider health and fallback transparency
 - `POST /chat/message` — agent workspace (structured `analysis` field in response)
 - `GET /market/ticker`, `/market/ohlcv`, `/market/snapshots` — read-only market data with provenance metadata
-- `POST /market/analyze` — market data + indicators + strategy signals
+- `POST /market/analyze` — compatibility market snapshot + indicators + strategy signals (not a canonical current price)
+- `GET /canonical/evidence` — canonical USD-M first-slice evidence and current-price honesty (replay default; fail closed)
 - Protected domain routes require JWT + tenant context (see `docs/security.md`)
 - Auth modes: bearer tokens (local dev) or httpOnly refresh cookie + short-lived access JWT (Docker/production demo)
 - Access token denylist (Redis) revokes sessions on logout; refresh rotation detects reuse
@@ -91,6 +92,7 @@ Human-in-the-loop path:
 6. Journal entries optionally sync to RAG (`trade_journal`)
 7. **Analytics services** (Slice 31) — deterministic setup stats, trade review, discipline score, risk behavior (`GET /analytics/*`); agent uses `analytics_summary_tool`
 8. **Strategy library & pre-trade** (Slice 33) — user strategy cards, manual levels, pre-trade analysis, position sizing v2, loss acceptance, human-vs-system groundwork; agent tools: `strategy_library_tool`, `pretrade_analysis_tool`, `position_sizing_tool`, `manual_levels_tool`, `human_vs_system_tool`
+9. **Strategy conversation** (AT-065–066) — persistent discussion and confirm-gated drafts. Approval, compile, and canonical evaluation (AT-067) remain separate. Watcher stays off.
 
 ## Account lifecycle (Slice 25)
 

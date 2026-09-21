@@ -99,6 +99,7 @@ class PersistenceKind(StrEnum):
     JOURNAL = "journal"
     RISK_CONFIG = "risk_config"
     NOTIFICATION = "notification"
+    STRATEGY_DRAFT = "strategy_draft"
     OTHER = "other"
 
 
@@ -108,8 +109,14 @@ _READ_ONLY_ALLOWED_KINDS = frozenset(
         PersistenceKind.QUOTA,
         PersistenceKind.USAGE,
         PersistenceKind.NON_DOMAIN_MEMORY,
+        PersistenceKind.STRATEGY_DRAFT,
     }
 )
+
+
+def read_only_kind_allowed(kind: PersistenceKind) -> bool:
+    """True when a READ_ONLY IntentDecision may persist this kind."""
+    return kind in _READ_ONLY_ALLOWED_KINDS
 
 
 def write_allowed(kind: PersistenceKind, decision: IntentDecision | None = None) -> bool:

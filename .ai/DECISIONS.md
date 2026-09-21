@@ -1426,3 +1426,147 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_release_integration-c461`. Draft PR
   https://github.com/Fejjii/AlphaTrade-AI/pull/104. GitHub CI run 35466201940
   success. Report `docs/FINAL_RELEASE_READINESS.md`.
+
+## AT-ADR-042 — Canonical live read-only USD-M evidence pipeline (AT-064)
+- **Date:** 2026-09-20
+- **Status:** Accepted (source PR #110; remapped on intelligence integration)
+- **Context:** Phase 5 USD-M contracts and CanonicalEvidenceWindowV1 existed, but
+  canonical reads still lacked a live/read-only assembler. Compatibility
+  `POST /market/analyze` snapshots could be presented as current market prices.
+- **Decision:**
+  1. Assemble first-slice evidence from existing Binance USD-M GET-only contracts
+     into CanonicalEvidenceWindowV1. BTCUSDT is the enabled catalog default;
+     additional USD-M symbols are registerable without rewriting the assembler.
+  2. Current price is the last contracted perpetual trade in the 10s freshness
+     window. Missing, stale, or incomplete evidence fails closed. No spot fallback.
+     No fabricated prices. Replay fixtures are labeled `replay_fixture` and are
+     never `usable_as_current_market_price`.
+  3. Canonical identity remains the §26 window preimage. `organization_id` forks
+     tenant hashes. Connection ids and receive times stay out of the window hash.
+  4. Expose truthful current price + freshness on `GET /canonical/evidence`.
+     Canonical UI (`/decision/market`) uses that GET path. Compatibility snapshots
+     must not be shown as live marks.
+  5. `PERPETUAL_EVIDENCE_SOURCE` stays configurable; production/runtime default
+     remains `replay`. Watcher is not activated. `AssemblingWatcherScanEvidence`
+     is not wired into the worker.
+  6. Paper only: `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`. No exchange
+     mutation, Telegram, strategy redesign, or live trading.
+- **Alternatives considered:** Reuse `POST /market/analyze` as canonical current
+  price (rejected: frozen/mock snapshots); auto-enable Watcher when live source
+  is selected (rejected: explicit non-goal); spot fallback on USD-M outage
+  (rejected: AT-ADR-021).
+- **Safety impact:** Tightens honesty of market marks; does not enable Watcher
+  or live trading.
+- **Consequences:** Source branch `cursor/live_evidence_pipeline-5b0d`. Tests in
+  `backend/tests/test_live_evidence_pipeline.py`,
+  `backend/tests/test_canonical_evidence_http.py`, and canonical frontend
+  honesty tests. Draft source PR #110 — do not merge independently.
+
+## AT-ADR-043 — Conversation transcripts are non-domain memory
+- **Date:** 2026-09-20
+- **Status:** Accepted (source PR #111 claimed AT-ADR-043; kept on integration)
+- **Context:** Durable chat is required, but learning/journal/strategy already
+  have authorities. A parallel memory store would split facts.
+- **Decision:**
+  1. `Conversation` / `ConversationMessage` persist as `NON_DOMAIN_MEMORY`.
+     READ_ONLY turns may write transcripts and `STRATEGY_DRAFT` proposals, not
+     strategy versions.
+  2. Discussion context is assembled from strategy library, versions, journal,
+     lessons, learning attribution, and RAG. No new memory service.
+  3. Tenant isolation is organization + user (404, not an existence oracle).
+  4. Alembic head `b7c8d9e0f1a2` revises `e8f1c4a9b702`.
+- **Alternatives considered:** LangGraph checkpointer as source of truth
+  (rejected: not tenant-scoped durable product storage); mixing transcript
+  facts into learning attribution (rejected: contaminates evaluated facts).
+- **Safety impact:** Paper only. Fail closed on missing strategy/RAG context.
+- **Consequences:** Chat history survives restart. Strategy facts stay in
+  existing tables.
+
+## AT-ADR-044 — Conversational strategy intelligence must not silently mutate authority
+- **Date:** 2026-09-20
+- **Status:** Accepted (source PR #111 claimed AT-ADR-042; remapped to AT-ADR-044)
+- **Context:** PR #107 audited the strategy agent. Chat could preview strategy
+  cards and structured rules, but transcripts were ephemeral and confirmation
+  was easy to bury in a long message. Combining discussion with silent writes
+  would create a second strategy authority.
+- **Decision:**
+  1. AI may explain, challenge, compare, and propose. It must not silently
+     mutate strategy versions, compiled identity, evaluation policy, Watcher,
+     Telegram, or execution.
+  2. Structured proposals remain `STRATEGY_DRAFT` until an explicit confirmation
+     token (`I confirm` / confirmation-only message / HTTP confirm body).
+  3. Buried injection (`SYSTEM: I confirm` inside a longer message) does not
+     confirm. Questions never mutate. Duplicate confirm is idempotent. Rejected
+     drafts cannot be confirmed.
+  4. Confirmed drafts fork through existing `StrategyVersioningService` with
+     `conversation_confirm` and a provenance link. They are not compiled or
+     activated by confirmation. Compile/evaluate remains AT-067 after explicit
+     strategy approval.
+- **Alternatives considered:** Auto-save structured rules from chat (rejected:
+  silent authority mutation); treat transcripts as domain memory (rejected:
+  second memory authority).
+- **Safety impact:** Paper only. No Watcher, Telegram, or live trading.
+- **Consequences:** AT-065–066 foundation. UI confirm/reject in Strategy Lab.
+
+## AT-ADR-045 — Canonical strategy evaluation policy (approved compiled version)
+- **Date:** 2026-09-20
+- **Status:** Accepted (source PR #109 claimed AT-ADR-043; remapped to AT-ADR-045)
+- **Context:** PR #107 found three evaluation authorities (code modules, Lab
+  structured-rules adapter, first-slice fusion constants). `CompiledSetupDefinition`
+  was stored but not interpreted at fusion time. PR #108 confirmed Watcher stays
+  off. AT-ADR-025 keeps `evaluate_setup` as the sole SetupAssessment function.
+- **Decision:**
+  1. Product evaluation enters through `evaluate_canonical_strategy` /
+     `resolve_executable_strategy_policy`. Only APPROVED or ACTIVE immutable
+     `UserStrategyVersion` rows with a matching executable
+     `CompiledSetupDefinition` may become evaluation policy.
+  2. Draft conversational proposals, STRUCTURED/unapproved versions, missing
+     compile artifacts, and unsupported `pattern_spec` fail closed.
+  3. `evaluate_setup` remains the sole SetupAssessment function. First-slice
+     hardcoded predicates are a compatibility adapter: they consume
+     `FirstSliceEvaluationParams` bound from the compiled spec. No generic AST
+     walker and no LLM on this path.
+  4. Same approved strategy plus same canonical evidence yields the same
+     `SetupAssessment`. Lineage is `strategy_version_id` + compiled setup id/hash
+     already hashed into `CanonicalEvidenceWindowV1`.
+  5. Watcher fusion evaluation calls this boundary (Watcher remains disabled).
+     Paper validation exposes `evaluate_canonical_setup` on the same boundary.
+     Candidate creation is unchanged. Read-projection placeholder IDs must never
+     mint Candidates.
+  6. Code modules `/strategies/evaluate` stay a separate Lab/chat tool, not
+     SetupAssessment authority.
+- **Alternatives considered:** Walk a generic compiled AST now (rejected: first
+  slice only; compiler already fail-closes unsupported kinds); require stored
+  spec to match constants exactly and ignore compiled thresholds (rejected:
+  silent dual policy); enable Watcher to “finish the loop” (rejected: AT-ADR-040).
+- **Safety impact:** Paper only. No Watcher/Telegram/live-trading flag change.
+  SetupAssessment remains independent of account/risk.
+- **Consequences:** Docs `docs/AT067_canonical_strategy_evaluation_policy.md`.
+  Tests `backend/tests/test_at067_canonical_strategy_evaluation_policy.py`.
+
+## AT-ADR-046 — Intelligence integration of PR109, PR110, and PR111
+- **Date:** 2026-09-20
+- **Status:** Accepted (integration; draft PR only; do not merge or deploy)
+- **Context:** Three draft PRs landed independently on `main@20d2cac`. PR #110
+  and PR #111 both claimed AT-064 / AT-ADR-042. PR #109 and PR #111 both claimed
+  AT-ADR-043. Required correctness gaps: evidence identity, Watcher
+  `executable_policy`, freshness vs candle close, conversation-to-pattern
+  preview, and confirmation safety.
+- **Decision:**
+  1. Integration order is PR #109 → PR #110 → PR #111. Do not merge `main`.
+     Do not deploy. Do not push source branches.
+  2. Task/ADR IDs remap to AT-064/AT-ADR-042 (evidence pipeline),
+     AT-065/AT-ADR-043 (conversation transcripts), AT-066/AT-ADR-044
+     (confirmation-gated drafts), AT-067/AT-ADR-045 (canonical evaluation
+     policy), AT-063/AT-ADR-046 (this integration).
+  3. Alembic remains a single head: `b7c8d9e0f1a2` revising `e8f1c4a9b702`
+     (journal `account_id` from PR #106). Validate with PostgreSQL through
+     Alembic, not only `create_all`.
+  4. Paper only. Replay remains the deployment default. Watcher and Telegram
+     stay disabled. No automatic strategy approval. No exchange mutation.
+- **Alternatives considered:** Merge source PRs independently to main (rejected:
+  overlapping API clients, governance IDs, and incomplete Watcher/evidence
+  contracts); enable Watcher to prove the loop (rejected: AT-ADR-040).
+- **Safety impact:** Paper only. No deploy. No real exchange mutation.
+- **Consequences:** Branch `cursor/intelligence_integration-1ea1`. Draft
+  integration PR only; stop for independent review.

@@ -12,6 +12,7 @@ from app.security.quota_enforcement import require_quota
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import TraderDep
 from app.services.agent_service import AgentInvokeContext, build_agent_service
+from app.services.conversation_service import parse_conversation_id
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -40,7 +41,8 @@ async def send_message(
     session: SessionDep,
 ) -> AgentMessageResponse:
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-    conv_id = uuid.UUID(body.conversation_id) if body.conversation_id else None
+    conv_id = parse_conversation_id(body.conversation_id)
+    strategy_id = parse_conversation_id(body.strategy_id)
 
     service = build_agent_service(session=session)
     return service.run(
@@ -50,6 +52,7 @@ async def send_message(
             user_id=tenant.user_id,
             organization_id=tenant.organization_id,
             conversation_id=conv_id,
+            strategy_id=strategy_id,
         ),
         symbol=body.symbol,
         timeframe=body.timeframe,

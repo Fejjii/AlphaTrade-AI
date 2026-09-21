@@ -1,8 +1,10 @@
 """Deterministic Phase 6 fusion evaluator (setup truth only).
 
 Consumes frozen ``FusionPolicy`` + ``AssessmentCommand`` + Phase 5 payloads and
-emits an immutable ``SetupAssessment``. It does not create candidates, evaluate
-eligibility, persist rows, call exchanges, or send Telegram.
+emits an immutable ``SetupAssessment``. Optional ``evaluation_params`` are the
+first-slice compatibility adapter bound from an approved compiled spec. This
+module does not create candidates, evaluate eligibility, persist rows, call
+exchanges, send Telegram, or invoke an LLM.
 """
 
 from __future__ import annotations
@@ -46,12 +48,15 @@ from app.market_contracts.first_slice import (
     FIRST_SLICE_TRIGGER_TIMEFRAME,
 )
 from app.market_contracts.flow import bar_signed_quote_flow
-from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
+from app.market_contracts.freshness import (
+    evaluate_freshness,
+    first_slice_freshness_policy,
+    live_confirmation_window_open,
+)
 from app.market_contracts.identity import binance_usdm_btcusdt, interval_timedelta
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
 from app.market_contracts.trades import order_trades
 from app.schemas.common import Timeframe, TradeDirection
-from app.schemas.strategy_pattern_spec import FIRST_SLICE_ATR_PERIOD
 from app.services.canonical_serialization import canonical_sha256
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment, build_setup_assessment
@@ -63,17 +68,13 @@ from app.signal_fusion.errors import (
     SignalFusionContractError,
     TenantAssertionSelectionError,
 )
+from app.signal_fusion.first_slice_adapter import (
+    FirstSliceEvaluationParams,
+    resolve_evaluation_params,
+)
 from app.signal_fusion.first_slice_types import (
-    FIRST_SLICE_EXPIRY_BARS,
-    FIRST_SLICE_INVALIDATION_ATR,
-    FIRST_SLICE_INVALIDATION_TICKS,
     FIRST_SLICE_RULE_IDS,
     FIRST_SLICE_RULE_WEIGHT,
-    FIRST_SLICE_SELL_IMBALANCE,
-    FIRST_SLICE_SWEEP_ATR,
-    FIRST_SLICE_SWING_ATR_DISTANCE,
-    FIRST_SLICE_VOLUME_LOOKBACK,
-    FIRST_SLICE_VOLUME_RATIO,
     QUALITY_RULE_IDS,
     FirstSliceEvidenceBundle,
     ManualResistanceEvidence,
@@ -100,9 +101,16 @@ def evaluate_setup(
     evaluated_at: datetime,
     previous_assessment: SetupAssessment | None = None,
     account_context: object | None = None,
+    evaluation_params: FirstSliceEvaluationParams | None = None,
 ) -> SetupAssessment:
-    """Evaluate first-slice setup truth. Account/risk context is ignored."""
+    """Evaluate first-slice setup truth. Account/risk context is ignored.
+
+    ``evaluation_params`` are the first-slice compatibility adapter. Product
+    callers must pass params bound from an approved compiled spec; omitting
+    them keeps adapter-level tests on the canonical first-slice constants.
+    """
     del account_context
+    params = resolve_evaluation_params(evaluation_params)
     evaluated = evaluated_at.astimezone(UTC)
     rules = {rule_id: _pending_rule(rule_id) for rule_id in FIRST_SLICE_RULE_IDS}
     window_hash: str | None = None
@@ -134,9 +142,19 @@ def evaluate_setup(
     _evaluate_market_identity(command, rules, identity_reason)
     series_15m, series_4h = _evaluate_series(command, evidence, evaluated, rules)
     atr_15m = _evaluate_atr(
-        series_15m, timeframe=Timeframe.M15, rule_id="wilder_atr_15m", rules=rules
+        series_15m,
+        timeframe=Timeframe.M15,
+        rule_id="wilder_atr_15m",
+        rules=rules,
+        period=params.atr_period,
     )
-    atr_4h = _evaluate_atr(series_4h, timeframe=Timeframe.H4, rule_id="wilder_atr_4h", rules=rules)
+    atr_4h = _evaluate_atr(
+        series_4h,
+        timeframe=Timeframe.H4,
+        rule_id="wilder_atr_4h",
+        rules=rules,
+        period=params.atr_period,
+    )
     trigger = series_15m[-1] if series_15m else None
     _evaluate_trigger_binding(command, trigger, rules)
     _evaluate_freshness_and_flow(
@@ -148,6 +166,7 @@ def evaluate_setup(
         rules,
         atr_15m=atr_15m,
         atr_4h=atr_4h,
+        params=params,
     )
 
     quality_ok = all(rules[rule_id].passed for rule_id in QUALITY_RULE_IDS)
@@ -171,6 +190,7 @@ def evaluate_setup(
         trigger=trigger,
         previous=previous_assessment,
         subsequent=evidence.subsequent_final_15m,
+        params=params,
     )
 
 
@@ -410,13 +430,14 @@ def _evaluate_atr(
     timeframe: Timeframe,
     rule_id: str,
     rules: dict[str, RuleResult],
+    period: int,
 ) -> WilderAtrFeatureV1 | None:
     if not bars or any(bar.finality is not Finality.FINAL for bar in bars):
         rules[rule_id] = _rule(rule_id, False, "incomplete_warmup")
         return None
     feature = compute_wilder_atr_v1(
         _atr_bars(bars),
-        period=FIRST_SLICE_ATR_PERIOD,
+        period=period,
         timeframe=timeframe.value,
     )
     if feature.status is not WilderAtrStatus.VALUE or feature.value is None:
@@ -523,6 +544,7 @@ def _evaluate_freshness_and_flow(
     *,
     atr_15m: WilderAtrFeatureV1 | None,
     atr_4h: WilderAtrFeatureV1 | None,
+    params: FirstSliceEvaluationParams,
 ) -> None:
     stale_obs = any(
         observation.freshness_state
@@ -561,24 +583,31 @@ def _evaluate_freshness_and_flow(
             evaluated_at=evaluated,
             min_bars=FIRST_SLICE_MIN_FINAL_15M,
         )
+        live_window = live_confirmation_window_open(
+            closed_interval_end=trigger.interval_end,
+            evaluated_at=evaluated,
+        )
         first_slice_cvd_window(
             identity=identity_15m,
             series_15m=closed,
             snapshot=snapshot,
             created_at=evaluated,
+            require_live_freshness=live_window,
         )
         flow = bar_signed_quote_flow(
             identity=identity_15m,
             bar=trigger,
             snapshot=snapshot,
             evaluated_at=evaluated,
+            require_live_freshness=live_window,
         )
-        evaluate_freshness(
-            source_time=max(trade.event_timestamp for trade in snapshot.trades),
-            evaluated_at=evaluated,
-            policy=first_slice_freshness_policy(),
-            require_fresh=True,
-        )
+        if live_window:
+            evaluate_freshness(
+                source_time=max(trade.event_timestamp for trade in snapshot.trades),
+                evaluated_at=evaluated,
+                policy=first_slice_freshness_policy(),
+                require_fresh=True,
+            )
     except StaleEvidenceError:
         rules["freshness"] = _rule(
             "freshness", False, "required_source_stale", evidence_role=EvidenceRole.TRADE_EVENT
@@ -641,7 +670,7 @@ def _evaluate_freshness_and_flow(
             evidence_role=EvidenceRole.SWING,
         )
         _fail_remaining_pattern(rules)
-        _evaluate_expiry_invalidation(trigger, evidence, atr_15m.value, rules)
+        _evaluate_expiry_invalidation(trigger, evidence, atr_15m.value, rules, params=params)
         return
     rules["confirmed_swing_high"] = _rule(
         "confirmed_swing_high", True, None, evidence_role=EvidenceRole.SWING
@@ -658,13 +687,13 @@ def _evaluate_freshness_and_flow(
             evidence_role=EvidenceRole.STRUCTURE,
         )
         _fail_remaining_pattern(rules)
-        _evaluate_expiry_invalidation(trigger, evidence, atr_15m.value, rules)
+        _evaluate_expiry_invalidation(trigger, evidence, atr_15m.value, rules, params=params)
         return
     rules["manual_4h_resistance"] = _rule(
         "manual_4h_resistance", True, None, evidence_role=EvidenceRole.STRUCTURE
     )
 
-    htf_ok = abs(swing.price - resistance.price) <= FIRST_SLICE_SWING_ATR_DISTANCE * atr_4h.value
+    htf_ok = abs(swing.price - resistance.price) <= params.swing_atr_distance * atr_4h.value
     rules["htf_resistance_context"] = _rule(
         "htf_resistance_context",
         htf_ok,
@@ -672,7 +701,7 @@ def _evaluate_freshness_and_flow(
         evidence_role=EvidenceRole.STRUCTURE,
     )
 
-    sweep_ok = trigger.high >= swing.price + FIRST_SLICE_SWEEP_ATR * atr_15m.value
+    sweep_ok = trigger.high >= swing.price + params.sweep_atr * atr_15m.value
     close_ok = trigger.close < swing.price and trigger.close < trigger.open
     ltf_ok = sweep_ok and close_ok
     ltf_reason = None if ltf_ok else ("sweep_failed" if not sweep_ok else "close_failed")
@@ -683,21 +712,21 @@ def _evaluate_freshness_and_flow(
         evidence_role=EvidenceRole.TRIGGER,
     )
 
-    prior = list(series_15m[-(FIRST_SLICE_VOLUME_LOOKBACK + 1) : -1])
-    if len(prior) != FIRST_SLICE_VOLUME_LOOKBACK:
+    prior = list(series_15m[-(params.volume_lookback + 1) : -1])
+    if len(prior) != params.volume_lookback:
         rules["volume_spike"] = _rule(
             "volume_spike", False, "missing_required_evidence", evidence_role=EvidenceRole.VOLUME
         )
     else:
         mean_volume = sum((bar.base_volume for bar in prior), start=Decimal("0")) / Decimal(
-            FIRST_SLICE_VOLUME_LOOKBACK
+            params.volume_lookback
         )
         if mean_volume == 0:
             rules["volume_spike"] = _rule(
                 "volume_spike", False, "volume_failure", evidence_role=EvidenceRole.VOLUME
             )
         else:
-            volume_ok = trigger.base_volume / mean_volume >= FIRST_SLICE_VOLUME_RATIO
+            volume_ok = trigger.base_volume / mean_volume >= params.volume_ratio
             rules["volume_spike"] = _rule(
                 "volume_spike",
                 volume_ok,
@@ -720,14 +749,14 @@ def _evaluate_freshness_and_flow(
         evidence_role=EvidenceRole.CVD_WINDOW,
     )
 
-    imbalance_ok = flow.signed_flow_ratio <= FIRST_SLICE_SELL_IMBALANCE
+    imbalance_ok = flow.signed_flow_ratio <= params.sell_imbalance
     rules["aggressive_sell_imbalance"] = _rule(
         "aggressive_sell_imbalance",
         imbalance_ok,
         None if imbalance_ok else "aggressive_sell_imbalance_failure",
         evidence_role=EvidenceRole.SIGNED_FLOW,
     )
-    _evaluate_expiry_invalidation(trigger, evidence, atr_15m.value, rules)
+    _evaluate_expiry_invalidation(trigger, evidence, atr_15m.value, rules, params=params)
 
 
 def _fail_pattern_rules(rules: dict[str, RuleResult], *, keep_existing: bool = False) -> None:
@@ -766,15 +795,17 @@ def _evaluate_expiry_invalidation(
     evidence: FirstSliceEvidenceBundle,
     atr_15m: Decimal,
     rules: dict[str, RuleResult],
+    *,
+    params: FirstSliceEvaluationParams,
 ) -> None:
     subsequent = _contiguous_subsequent(trigger, evidence.subsequent_final_15m)
     buffer = max(
-        FIRST_SLICE_INVALIDATION_ATR * atr_15m,
-        FIRST_SLICE_INVALIDATION_TICKS * evidence.tick_size,
+        params.invalidation_atr * atr_15m,
+        params.invalidation_ticks * evidence.tick_size,
     )
     invalidation_price = trigger.high + buffer
     invalidated = any(bar.high > invalidation_price for bar in subsequent)
-    expired = len(subsequent) >= FIRST_SLICE_EXPIRY_BARS
+    expired = len(subsequent) >= params.expiry_bars
     rules["not_invalidated"] = _rule(
         "not_invalidated",
         not invalidated,
@@ -860,8 +891,10 @@ def _explanation(state: SetupAssessmentState, rules: dict[str, RuleResult]) -> s
     return text[:500]
 
 
-def _valid_until(evaluated: datetime, trigger: OhlcvBar | None) -> datetime:
-    expiry_delta = interval_timedelta(Timeframe.M15) * FIRST_SLICE_EXPIRY_BARS
+def _valid_until(
+    evaluated: datetime, trigger: OhlcvBar | None, *, params: FirstSliceEvaluationParams
+) -> datetime:
+    expiry_delta = interval_timedelta(Timeframe.M15) * params.expiry_bars
     natural = (trigger.interval_end if trigger is not None else evaluated) + expiry_delta
     minimum = evaluated + timedelta(seconds=1)
     return max(natural, minimum)
@@ -880,6 +913,7 @@ def _build_assessment(
     trigger: OhlcvBar | None,
     previous: SetupAssessment | None,
     subsequent: tuple[OhlcvBar, ...],
+    params: FirstSliceEvaluationParams,
 ) -> SetupAssessment:
     ordered_rules = tuple(rules[rule_id] for rule_id in FIRST_SLICE_RULE_IDS)
     subsequent_digest = ",".join(
@@ -908,7 +942,7 @@ def _build_assessment(
         explanation=_explanation(state, rules),
         evidence_window_hash=window_hash,
         assessed_at=evaluated_at,
-        valid_until=_valid_until(evaluated_at, trigger),
+        valid_until=_valid_until(evaluated_at, trigger, params=params),
         correlation_id=correlation_id,
         presentation_evidence=(),
     )

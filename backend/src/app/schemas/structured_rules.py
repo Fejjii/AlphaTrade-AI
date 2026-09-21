@@ -103,3 +103,8 @@ class StructureFromTextResponse(StrictModel):
     validation: StructuredRulesValidation
     source: str = "keyword_draft"
     limitations: list[str] = Field(default_factory=list)
+    pattern_spec_draft: dict | None = None
+    pattern_spec_errors: list[str] = Field(default_factory=list)
+    challenge_notes: list[str] = Field(default_factory=list)
+    is_preview: bool = True
+    persists_strategy: bool = False

@@ -17,6 +17,7 @@ import pytest
 
 from app.core.config import Settings
 from app.market_contracts.cursor import TradeStreamSnapshot
+from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.enums import CandidateState, EvidenceAdapterKind, SetupAssessmentState
@@ -30,6 +31,7 @@ from app.signal_fusion.lifecycle import (
 )
 from app.signal_fusion.memory import InMemoryCandidateRepository
 from app.signal_fusion.policy import build_fusion_policy
+from app.signal_fusion.strategy_evaluation_policy import executable_policy_from_fusion_policy
 from app.watcher.composition import build_orchestrator
 from app.watcher.contracts import (
     EvaluationCommand,
@@ -57,7 +59,12 @@ from app.watcher.ports import NamedCrashBarrier
 from app.watcher.settings import runtime_config_from_settings
 from tests.support.phase5_market import spot_identity
 from tests.support.phase6_evaluator import EvaluatorWorld, make_world, subsequent_bars
-from tests.support.phase6_fusion import ORG_ID, blofin_evidence_identity, eth_evidence_identity
+from tests.support.phase6_fusion import (
+    ORG_ID,
+    STRATEGY_ID,
+    blofin_evidence_identity,
+    eth_evidence_identity,
+)
 
 WATCHER_SRC = Path(__file__).resolve().parents[1] / "src" / "app" / "watcher"
 FUSION_EVAL_SRC = WATCHER_SRC / "fusion_evaluation.py"
@@ -74,9 +81,16 @@ def snapshot_from_world(
     command = world.command if assessment_command is None else assessment_command
     payload = world.evidence if bundle is None else bundle
     moment = world.evaluated_at if evaluated_at is None else evaluated_at
+    executable_policy = executable_policy_from_fusion_policy(
+        world.policy,
+        strategy_id=STRATEGY_ID,
+        strategy_version_content_hash=world.policy.executable_setup.content_hash,
+        authored_spec=canonical_first_slice_authored_spec(),
+    )
     return WatcherCanonicalScanEvidence(
         organization_id=command.organization_id,
         policy=world.policy,
+        executable_policy=executable_policy,
         assessment_command=command,
         evidence=payload,
         evaluated_at=moment,
@@ -693,7 +707,8 @@ def test_fusion_wiring_does_not_hash_or_mint_identity() -> None:
     assert "account_context=None" in text
     assert "ActionEligibility" not in text
     assert "TradePlan" not in text
-    assert "evaluate_setup" in text
+    assert "evaluate_canonical_strategy" in text
+    assert "evaluate_setup(" not in text
     assert "evidence_window_from_assessment_command" in text
     assert "create_from_confirmed_setup" in text
     assert "persist_confirmed_setup" in text
@@ -803,7 +818,8 @@ def test_watcher_cannot_bypass_canonical_evaluator() -> None:
     _assert_no_side_effects(probe)
     text = FUSION_EVAL_SRC.read_text(encoding="utf-8")
     assert "def evaluate_setup" not in text
-    assert text.count("evaluate_setup(") == 1
+    assert text.count("evaluate_canonical_strategy(") == 1
+    assert "evaluate_setup(" not in text
 
 
 def test_candidate_creation_failure_is_failed_scan() -> None:

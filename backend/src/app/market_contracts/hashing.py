@@ -20,6 +20,8 @@ RECEIVE_AND_TRANSPORT_FIELDS = frozenset(
         "observation_id",
         "trade_event_id",
         "cursor_id",
+        "start_cursor_id",
+        "end_cursor_id",
         "cvd_window_id",
         "receive_time",
         "receive_timestamp",

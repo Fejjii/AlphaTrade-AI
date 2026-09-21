@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from pydantic import AwareDatetime, Field
 
+from app.market_contracts.coverage import TradeWindowCoverageProof
+from app.market_contracts.cvd import CvdWindow
 from app.market_contracts.enums import Finality, FreshnessState, ObservationType, PrivacyClass
+from app.market_contracts.flow import SignedQuoteFlow
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import EvidenceMarketIdentity
 from app.market_contracts.models import CanonicalModel
@@ -93,6 +96,102 @@ def observation_from_trade(
         revision=1,
         freshness_state=freshness_state,
         payload_content_hash=trade.content_hash,
+        content_hash="0" * 64,
+        recorded_at=observed_at.astimezone(UTC),
+    )
+    return with_content_hash(envelope)
+
+
+_FLOW_OBSERVATION_NAMESPACE = UUID("c0de0000-f100-4000-8000-000000000064")
+
+
+def observation_from_cvd(
+    window: CvdWindow,
+    *,
+    observed_at: datetime,
+    receive_time: datetime,
+    freshness_state: FreshnessState,
+) -> PublicMarketObservation:
+    """Bind a hashed CvdWindow through the public observation envelope."""
+
+    source_event_id = f"cvd:{window.content_hash}"
+    envelope = PublicMarketObservation(
+        observation_id=observation_id_for(source_event_id, finality=Finality.FINAL, revision=1),
+        identity=window.identity,
+        observation_type=ObservationType.CVD,
+        source_event_id=source_event_id,
+        interval_start=window.window_start,
+        interval_end=window.window_end,
+        event_time=window.window_start,
+        source_time=window.event_time_max or window.window_end,
+        observed_at=observed_at.astimezone(UTC),
+        receive_time=receive_time.astimezone(UTC),
+        finality=Finality.FINAL,
+        revision=1,
+        freshness_state=freshness_state,
+        payload_content_hash=window.content_hash,
+        content_hash="0" * 64,
+        recorded_at=observed_at.astimezone(UTC),
+    )
+    return with_content_hash(envelope)
+
+
+def observation_from_signed_flow(
+    flow: SignedQuoteFlow,
+    *,
+    observed_at: datetime,
+    receive_time: datetime,
+    freshness_state: FreshnessState,
+) -> PublicMarketObservation:
+    """Bind hashed signed quote flow through the public observation envelope."""
+
+    source_event_id = f"signed-flow:{flow.content_hash}"
+    envelope = PublicMarketObservation(
+        observation_id=uuid5(_FLOW_OBSERVATION_NAMESPACE, source_event_id),
+        identity=flow.identity,
+        observation_type=ObservationType.VOLUME,
+        source_event_id=source_event_id,
+        interval_start=flow.interval_start,
+        interval_end=flow.interval_end,
+        event_time=flow.interval_start,
+        source_time=flow.event_time_max,
+        observed_at=observed_at.astimezone(UTC),
+        receive_time=receive_time.astimezone(UTC),
+        finality=Finality.FINAL,
+        revision=1,
+        freshness_state=freshness_state,
+        payload_content_hash=flow.content_hash,
+        content_hash="0" * 64,
+        recorded_at=observed_at.astimezone(UTC),
+    )
+    return with_content_hash(envelope)
+
+
+def observation_from_coverage(
+    proof: TradeWindowCoverageProof,
+    *,
+    observed_at: datetime,
+    receive_time: datetime,
+    freshness_state: FreshnessState,
+) -> PublicMarketObservation:
+    """Bind required trade-window coverage through the public observation envelope."""
+
+    source_event_id = f"coverage:{proof.content_hash}"
+    envelope = PublicMarketObservation(
+        observation_id=observation_id_for(source_event_id, finality=Finality.FINAL, revision=1),
+        identity=proof.identity,
+        observation_type=ObservationType.TRADE,
+        source_event_id=source_event_id,
+        interval_start=proof.requested_start,
+        interval_end=proof.requested_end,
+        event_time=proof.requested_start,
+        source_time=proof.actual_covered_end or proof.requested_end,
+        observed_at=observed_at.astimezone(UTC),
+        receive_time=receive_time.astimezone(UTC),
+        finality=Finality.FINAL,
+        revision=1,
+        freshness_state=freshness_state,
+        payload_content_hash=proof.content_hash,
         content_hash="0" * 64,
         recorded_at=observed_at.astimezone(UTC),
     )

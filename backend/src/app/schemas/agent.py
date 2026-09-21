@@ -8,6 +8,7 @@ testable. Fields are optional and filled progressively as nodes execute.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -96,6 +97,9 @@ class Intent(StrEnum):
     BACKTEST_PREP = "backtest_prep"
     PAPER_VALIDATION_START = "paper_validation_start"
     PAPER_VALIDATION_SCAN = "paper_validation_scan"
+    STRATEGY_PROPOSAL_CONFIRM = "strategy_proposal_confirm"
+    STRATEGY_PROPOSAL_REJECT = "strategy_proposal_reject"
+    STRATEGY_DISCUSSION = "strategy_discussion"
     PAPER_VALIDATION_QUERY = "paper_validation_query"
     PAPER_VALIDATION_RECOMMEND = "paper_validation_recommend"
     PAPER_SCHEDULER_QUERY = "paper_scheduler_query"
@@ -208,6 +212,15 @@ class IntentDecision(BaseModel):
         )
 
 
+class ConversationTurn(BaseModel):
+    """Prior transcript turn injected into graph state. Not domain memory."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class AgentState(BaseModel):
     """Mutable workflow state passed between graph nodes."""
 
@@ -218,6 +231,9 @@ class AgentState(BaseModel):
     user_id: UUID | None = None
     organization_id: UUID | None = None
     conversation_id: UUID | None = None
+    bound_strategy_id: UUID | None = None
+    pending_proposal_id: UUID | None = None
+    conversation_history: list[ConversationTurn] = Field(default_factory=list)
 
     # Request context
     symbol: Symbol | None = None

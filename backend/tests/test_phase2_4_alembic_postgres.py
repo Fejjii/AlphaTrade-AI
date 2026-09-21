@@ -30,7 +30,8 @@ CANONICAL_CANDIDATE_PERSISTENCE = "4fd8c1a90b27"
 CANONICAL_TRADE_PLAN_ELIGIBILITY = "c9e2b4a1d078"
 LEARNING_ATTRIBUTION_PERSISTENCE = "d4f7a2c8e901"
 JOURNAL_TRADES_ACCOUNT_ID = "e8f1c4a9b702"
-CURRENT_HEAD = JOURNAL_TRADES_ACCOUNT_ID
+STRATEGY_CONVERSATION_PERSISTENCE = "b7c8d9e0f1a2"
+CURRENT_HEAD = STRATEGY_CONVERSATION_PERSISTENCE
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -53,6 +54,10 @@ _NEW_TABLES = (
     "canonical_trade_plan_idempotency_keys",
     "learning_attribution_records",
     "learning_attribution_events",
+    "conversations",
+    "conversation_messages",
+    "strategy_conversation_proposals",
+    "strategy_version_conversation_links",
 )
 
 

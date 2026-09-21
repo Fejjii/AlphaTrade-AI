@@ -60,6 +60,27 @@ def _require_utc(value: datetime, *, label: str) -> datetime:
     return value.astimezone(UTC)
 
 
+def live_confirmation_window_open(
+    *,
+    closed_interval_end: datetime,
+    evaluated_at: datetime,
+    policy: FreshnessPolicy | None = None,
+) -> bool:
+    """True while consumer time is still inside the post-close live-trade window.
+
+    Inside this window the 10s last-trade policy applies to live confirmation.
+    After it elapses, the closed bar is historical evidence. Current price and
+    setup expiry stay on their own clocks. The 10s threshold is not widened.
+    """
+
+    resolved = policy if policy is not None else first_slice_freshness_policy()
+    end = _require_utc(closed_interval_end, label="closed_interval_end")
+    evaluated = _require_utc(evaluated_at, label="evaluated_at")
+    if evaluated < end:
+        return True
+    return (evaluated - end).total_seconds() <= resolved.trade_max_age_seconds
+
+
 def evaluate_freshness(
     *,
     source_time: datetime,

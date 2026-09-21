@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { boundBindings, missingBindings } from "@/lib/canonical-decision/bindings";
-import { composeDecisionCases, deriveProposalStage } from "@/lib/canonical-decision/compose";
+import { boundBindings, missingBindings, partialBindings } from "@/lib/canonical-decision/bindings";
+import {
+  composeDecisionCases,
+  canonicalPriceFreshnessState,
+  deriveProposalStage,
+  marketQualityFromAnalysis,
+  marketQualityFromCanonicalEvidence,
+} from "@/lib/canonical-decision/compose";
 import { projectActionEligibility, projectCanonicalEligibility } from "@/lib/canonical-decision/eligibility";
 import { buildDecisionSteps } from "@/lib/canonical-decision/steps";
 import { mapPaperExecutionStatus, tradePlanFromProposal } from "@/lib/canonical-decision/trade-plan";
@@ -9,6 +15,8 @@ import type {
   ApprovalRequest,
   CanonicalCandidateRead,
   CanonicalEligibilityRead,
+  CanonicalEvidenceRead,
+  MarketAnalyzeResponse,
   PaperValidationCandidateItem,
   TradeProposal,
 } from "@/lib/api/types";
@@ -194,6 +202,7 @@ describe("composeDecisionCases", () => {
     expect(snapshot.missingBindings).not.toContain("canonical-candidates");
     expect(snapshot.missingBindings).not.toContain("action-eligibility");
     expect(snapshot.missingBindings).not.toContain("canonical-learning-records");
+    expect(snapshot.missingBindings).not.toContain("canonical-evidence");
   });
 
   it("advances a proposal to approval then paper execution", () => {
@@ -250,9 +259,157 @@ describe("backend bindings", () => {
     expect(missing).not.toContain("execution-receipts");
     expect(missing).not.toContain("paper-execution");
     expect(missing).not.toContain("canonical-learning-records");
+    expect(missing).not.toContain("canonical-evidence");
     const paperPlan = boundBindings().find((item) => item.id === "paper-execution");
     expect(paperPlan?.path).toBe("POST /execution/paper-plan");
+    const evidence = boundBindings().find((item) => item.id === "canonical-evidence");
+    expect(evidence?.path).toBe("GET /canonical/evidence");
     const legacyPaper = boundBindings().find((item) => item.id === "legacy-paper-execution");
     expect(legacyPaper).toBeUndefined();
+    const analyze = boundBindings().find((item) => item.id === "market-analyze");
+    expect(analyze).toBeUndefined();
+    expect(partialBindings().some((item) => item.id === "market-analyze")).toBe(true);
+  });
+});
+
+const replayEvidence: CanonicalEvidenceRead = {
+  authority: "canonical",
+  live_executable: false,
+  watcher_activated: false,
+  organization_id: "org",
+  symbol: "BTCUSDT",
+  source: {
+    venue: "binance",
+    market_type: "perpetual",
+    instrument_id: "binance:usdm_futures:perpetual:BTCUSDT",
+    provider_symbol: "BTCUSDT",
+    provider_name: "binance-usdm-perpetual-replay",
+    source_family: "replay_fixture",
+    adapter_version: "binance-usdm-perpetual/v1",
+    is_live: false,
+    is_mock: true,
+    fallback_used: false,
+  },
+  current_price: {
+    usable_as_current_market_price: false,
+    presentation: "replay_fixture",
+    price: "91234.5",
+    source_time: "2026-01-15T16:15:04.000Z",
+    venue_trade_id: "agg-1",
+    is_live: false,
+    is_mock: true,
+    fallback_used: false,
+    freshness: {
+      policy_version: "first-slice-btc-usdt-usdm-freshness/v1",
+      state: "fresh",
+      evaluated_at: "2026-01-15T16:15:05.000Z",
+      source_time: "2026-01-15T16:15:04.000Z",
+      age_seconds: "1",
+    },
+  },
+  setup_evidence: {
+    available: true,
+    evidence_window_hash: "ab".repeat(32),
+    trigger_interval_start: "2026-01-15T16:00:00.000Z",
+    trigger_interval_end: "2026-01-15T16:15:00.000Z",
+    evaluated_at: "2026-01-15T16:15:05.000Z",
+    cvd_signed_quote_delta: "-1000",
+    signed_flow_ratio: "-0.4",
+    completeness: {
+      ohlcv_15m: "complete",
+      ohlcv_4h: "complete",
+      cvd: "complete",
+      signed_flow: "complete",
+    },
+  },
+  timestamps: {
+    evaluated_at: "2026-01-15T16:15:05.000Z",
+    current_price_source_time: "2026-01-15T16:15:04.000Z",
+  },
+  unavailable_reason: "replay_fixture",
+};
+
+describe("canonical evidence honesty", () => {
+  it("never treats replay fixture prices as live marks", () => {
+    const view = marketQualityFromCanonicalEvidence(replayEvidence);
+    expect(view.authority).toBe("canonical");
+    expect(view.currentPrice?.usableAsCurrentMarketPrice).toBe(false);
+    expect(view.currentPrice?.presentation).toBe("replay_fixture");
+    expect(view.currentPrice?.freshnessState).toBe("replay");
+    expect(view.currentPrice?.price).toBe("91234.5");
+    expect(view.doesNotGrantEligibility).toBe(true);
+    expect(view.grade).toBe("unknown");
+    expect(canonicalPriceFreshnessState(replayEvidence.current_price)).toBe("replay");
+  });
+
+  it("labels a usable live mark only when the API says it is usable", () => {
+    const live: CanonicalEvidenceRead = {
+      ...replayEvidence,
+      source: {
+        ...replayEvidence.source,
+        is_live: true,
+        is_mock: false,
+        source_family: "binance_usdm_futures_public",
+        provider_name: "binance-usdm-perpetual",
+      },
+      current_price: {
+        ...replayEvidence.current_price,
+        usable_as_current_market_price: true,
+        presentation: "live_mark",
+        is_live: true,
+        is_mock: false,
+      },
+      unavailable_reason: null,
+    };
+    const view = marketQualityFromCanonicalEvidence(live);
+    expect(view.currentPrice?.usableAsCurrentMarketPrice).toBe(true);
+    expect(view.currentPrice?.freshnessState).toBe("live");
+    expect(view.grade).toBe("watch");
+  });
+
+  it("does not present compatibility snapshot prices as current market prices", () => {
+    const analysis: MarketAnalyzeResponse = {
+      snapshot: {
+        meta: {
+          symbol: "BTCUSDT",
+          exchange: "binance",
+          timeframe: "1h",
+          timestamp: "2026-09-20T00:00:00.000Z",
+          source: "mock",
+          is_live: false,
+          is_stale: false,
+          provider_name: "mock-market-data",
+          fallback_used: false,
+          retrieved_at: "2026-09-20T00:00:00.000Z",
+        },
+        ticker: {
+          meta: {
+            symbol: "BTCUSDT",
+            exchange: "binance",
+            timestamp: "2026-09-20T00:00:00.000Z",
+            source: "mock",
+            is_live: false,
+            is_stale: false,
+            provider_name: "mock-market-data",
+            fallback_used: false,
+            retrieved_at: "2026-09-20T00:00:00.000Z",
+          },
+          last_price: "65000",
+        },
+      },
+      indicators: {
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        timestamp: "2026-09-20T00:00:00.000Z",
+      },
+      strategy_signals: [],
+      data_quality: "ok",
+      confidence_penalty_applied: false,
+    };
+    const view = marketQualityFromAnalysis(analysis, "BTCUSDT", "1h");
+    expect(view.currentPrice).toBeNull();
+    expect(view.authority).toBe("compatibility_projection");
+    expect(view.evidence[0]?.freshnessState).toBe("unavailable");
+    expect(view.evidence[0]?.isLive).toBe(false);
   });
 });

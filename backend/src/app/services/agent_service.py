@@ -17,7 +17,7 @@ from app.observability.context import bind_identity, get_or_create_trace_id, set
 from app.providers.factory import resolve_market_data_provider
 from app.schemas.agent import AgentState
 from app.schemas.chat import AgentMessageResponse
-from app.schemas.common import RiskAction, SafetyVerdict, Timeframe
+from app.schemas.common import ConversationMessageRole, RiskAction, SafetyVerdict, Timeframe
 from app.services.indicator_service import IndicatorService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
@@ -36,6 +36,7 @@ class AgentInvokeContext:
     user_id: uuid.UUID
     organization_id: uuid.UUID
     conversation_id: uuid.UUID | None = None
+    strategy_id: uuid.UUID | None = None
     trace_id: str | None = None
 
 
@@ -89,11 +90,48 @@ class AgentService:
             organization_id=str(context.organization_id),
         )
 
+        conversation_id = context.conversation_id
+        bound_strategy_id = context.strategy_id
+        history: list = []
+        user_message_id = None
+        pending_proposal_id = None
+        if self._runtime.session is not None:
+            from app.services.conversation_service import ConversationService
+
+            conv_service = ConversationService(self._runtime.session)
+            conversation = conv_service.get_or_create(
+                organization_id=context.organization_id,
+                user_id=context.user_id,
+                conversation_id=context.conversation_id,
+                strategy_id=context.strategy_id,
+            )
+            conversation_id = conversation.id
+            bound_strategy_id = conversation.strategy_id
+            history = conv_service.history_turns(conversation)
+            user_row = conv_service.append_message(
+                conversation=conversation,
+                role=ConversationMessageRole.USER,
+                content=message,
+                request_id=context.request_id,
+            )
+            user_message_id = user_row.id
+            from app.services.strategy_proposal_service import StrategyProposalService
+
+            latest_draft = StrategyProposalService(self._runtime.session).latest_draft(
+                conversation.id,
+                organization_id=context.organization_id,
+                user_id=context.user_id,
+            )
+            pending_proposal_id = latest_draft.id if latest_draft is not None else None
+
         initial = AgentState(
             request_id=context.request_id,
             user_id=context.user_id,
             organization_id=context.organization_id,
-            conversation_id=context.conversation_id,
+            conversation_id=conversation_id,
+            bound_strategy_id=bound_strategy_id,
+            pending_proposal_id=pending_proposal_id,
+            conversation_history=history,
             message=message,
             symbol=symbol,  # type: ignore[arg-type]
             timeframe=Timeframe(timeframe) if timeframe else None,
@@ -112,17 +150,63 @@ class AgentService:
                     agent = agent.model_copy(update={"proposal_id": persisted.proposal_id})
                 if persisted.approval_id is not None:
                     agent = agent.model_copy(update={"approval_id": persisted.approval_id})
-                self._runtime.session.commit()  # type: ignore[union-attr]
+            if self._runtime.session is not None and conversation_id is not None:
+                from app.services.conversation_service import ConversationService
+                from app.services.strategy_proposal_service import StrategyProposalService
+
+                conv_service = ConversationService(self._runtime.session)
+                conversation = conv_service.require(
+                    conversation_id,
+                    organization_id=context.organization_id,
+                    user_id=context.user_id,
+                )
+                pending = None
+                if (
+                    agent.pending_proposal_id is None
+                    and agent.intent.value == "structure_strategy"
+                    and agent.safety_verdict is not SafetyVerdict.BLOCK
+                ):
+                    pending = StrategyProposalService(self._runtime.session).create_draft_from_text(
+                        conversation,
+                        text=self._structure_text(agent),
+                        strategy_id=bound_strategy_id,
+                        source_message_id=user_message_id,
+                    )
+                    agent = agent.model_copy(update={"pending_proposal_id": pending.id})
+                conv_service.append_message(
+                    conversation=conversation,
+                    role=ConversationMessageRole.ASSISTANT,
+                    content=agent.final_answer or "No response generated.",
+                    request_id=context.request_id,
+                    intent=agent.intent.value,
+                    payload=self._safe_payload(agent),
+                )
+                self._runtime.session.commit()
+            elif self._runtime.session is not None:
+                self._runtime.session.commit()
         finally:
             reset_operation_decision()
 
-        return self._to_response(agent, context)
+        return self._to_response(
+            agent,
+            context,
+            conversation_id=conversation_id,
+            history_injected=len(history),
+        )
 
-    def _to_response(self, agent: AgentState, ctx: AgentInvokeContext) -> AgentMessageResponse:
+    def _to_response(
+        self,
+        agent: AgentState,
+        ctx: AgentInvokeContext,
+        *,
+        conversation_id: uuid.UUID | None,
+        history_injected: int,
+    ) -> AgentMessageResponse:
         limitations = [
             "Analysis and education only — not financial advice.",
             "Real exchange execution is disabled by default.",
             "Deterministic risk engine is the final authority.",
+            "Structured strategy proposals remain drafts until explicit confirmation.",
         ]
         approval_status = "blocked"
         if agent.safety_verdict is not SafetyVerdict.BLOCK:
@@ -133,11 +217,25 @@ class AgentService:
             else:
                 approval_status = "not_required"
 
-        conversation_id = (
-            str(ctx.conversation_id) if ctx.conversation_id else f"conv-{ctx.request_id[:8]}"
-        )
+        resolved_conversation = conversation_id or ctx.conversation_id or uuid.uuid4()
+        pending = None
+        if (
+            agent.pending_proposal_id is not None
+            and self._runtime.session is not None
+            and ctx.user_id is not None
+        ):
+            from app.services.strategy_proposal_service import StrategyProposalService
+
+            try:
+                pending = StrategyProposalService(self._runtime.session).get(
+                    agent.pending_proposal_id,
+                    organization_id=ctx.organization_id,
+                    user_id=ctx.user_id,
+                )
+            except Exception:
+                pending = None
         return AgentMessageResponse(
-            conversation_id=conversation_id,
+            conversation_id=str(resolved_conversation),
             request_id=agent.request_id,
             reply=agent.final_answer or "No response generated.",
             risk_level=agent.risk_level,
@@ -155,7 +253,38 @@ class AgentService:
             analysis=agent.analysis_detail,
             narrative=agent.narrative_detail,
             narrative_meta=agent.narrative_metadata,
+            pending_proposal=pending,
+            history_injected=history_injected,
         )
+
+    def _structure_text(self, agent: AgentState) -> str:
+        prior = [
+            turn.content
+            for turn in agent.conversation_history
+            if turn.role == "user" and turn.content.strip()
+        ]
+        parts = [*prior[-6:], agent.message]
+        return "\n".join(parts)[:8000]
+
+    def _safe_payload(self, agent: AgentState) -> dict[str, object]:
+        tool_names = [item.tool_name for item in agent.tool_outputs[:12]]
+        source_types = [
+            (
+                citation.source_type.value
+                if hasattr(citation.source_type, "value")
+                else str(citation.source_type)
+            )
+            for citation in agent.citations[:12]
+        ]
+        return {
+            "intent": agent.intent.value,
+            "tool_names": tool_names,
+            "citation_source_types": source_types,
+            "pending_proposal_id": str(agent.pending_proposal_id)
+            if agent.pending_proposal_id
+            else None,
+            "bound_strategy_id": str(agent.bound_strategy_id) if agent.bound_strategy_id else None,
+        }
 
 
 def build_agent_service(

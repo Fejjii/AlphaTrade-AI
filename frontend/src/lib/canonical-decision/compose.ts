@@ -1,7 +1,9 @@
 import type {
   ApprovalRequest,
   CanonicalCandidateRead,
+  CanonicalCurrentPriceRead,
   CanonicalEligibilityRead,
+  CanonicalEvidenceRead,
   CanonicalLearningRecordRead,
   CanonicalSetupAssessmentRead,
   JournalEntry,
@@ -18,8 +20,10 @@ import {
   tradePlanFromProposal,
 } from "@/lib/canonical-decision/trade-plan";
 import type {
+  CanonicalFreshnessPillState,
   CandidateLifecycleState,
   CandidateWorkspaceView,
+  CurrentPriceHonesty,
   DecisionCase,
   DecisionQueueSnapshot,
   DecisionStage,
@@ -55,6 +59,130 @@ function emptyStageCounts(): Record<DecisionStage, number> {
   >;
 }
 
+export function canonicalPriceFreshnessState(
+  price: CanonicalCurrentPriceRead,
+): CanonicalFreshnessPillState {
+  if (price.fallback_used) return "fallback";
+  if (price.presentation === "replay_fixture" || price.is_mock) return "replay";
+  if (!price.usable_as_current_market_price) {
+    if (price.presentation === "stale" || price.freshness.state === "stale") return "stale";
+    return "unavailable";
+  }
+  if (price.freshness.state === "aging") return "delayed";
+  if (price.freshness.state === "fresh" || price.presentation === "live_mark") return "live";
+  return "unavailable";
+}
+
+export function currentPriceHonestyFromCanonical(
+  price: CanonicalCurrentPriceRead,
+): CurrentPriceHonesty {
+  const replayPrice = price.presentation === "replay_fixture";
+  return {
+    usableAsCurrentMarketPrice: price.usable_as_current_market_price,
+    presentation: price.presentation,
+    price:
+      price.usable_as_current_market_price || replayPrice ? (price.price ?? null) : null,
+    sourceTime: price.source_time ?? null,
+    venueTradeId: price.venue_trade_id ?? null,
+    isLive: price.is_live,
+    isMock: price.is_mock,
+    fallbackUsed: false,
+    freshnessState: canonicalPriceFreshnessState(price),
+    freshnessPolicyVersion: price.freshness.policy_version,
+    ageSeconds: price.freshness.age_seconds ?? null,
+  };
+}
+
+export function marketQualityFromCanonicalEvidence(
+  read: CanonicalEvidenceRead,
+): MarketQualityView {
+  const price = currentPriceHonestyFromCanonical(read.current_price);
+  const setup = read.setup_evidence;
+  const completeness = setup.completeness;
+  const complete =
+    setup.available &&
+    completeness.ohlcv_15m === "complete" &&
+    completeness.ohlcv_4h === "complete" &&
+    completeness.cvd === "complete" &&
+    completeness.signed_flow === "complete";
+  const replay = read.source.is_mock || read.current_price.presentation === "replay_fixture";
+  const grade: MarketQualityGrade = !setup.available || !complete
+    ? "poor"
+    : replay
+      ? "unknown"
+      : "watch";
+  const setupState: SetupAssessmentState = grade === "watch" ? "watch" : "unknown";
+  const evidence: EvidenceFact[] = [
+    {
+      label: "Source",
+      detail: `${read.source.venue} · ${read.source.market_type} · ${read.source.provider_symbol} · ${read.source.source_family}`,
+      isLive: read.source.is_live,
+      fallbackUsed: read.source.fallback_used,
+      stale: false,
+      freshnessState: replay ? "replay" : read.source.is_live ? "live" : "unavailable",
+    },
+    {
+      label: "Current price",
+      detail: price.usableAsCurrentMarketPrice
+        ? `${price.price ?? "—"} · ${price.presentation}`
+        : `${price.presentation} — not a current market price`,
+      freshness: price.sourceTime,
+      isLive: price.usableAsCurrentMarketPrice && price.isLive,
+      fallbackUsed: false,
+      stale: price.freshnessState === "stale",
+      freshnessState: price.freshnessState,
+    },
+    {
+      label: "OHLCV",
+      detail: `15m ${completeness.ohlcv_15m} · 4h ${completeness.ohlcv_4h}`,
+    },
+    {
+      label: "CVD",
+      detail: setup.available
+        ? `${completeness.cvd} · Δ ${setup.cvd_signed_quote_delta ?? "—"}`
+        : completeness.cvd,
+    },
+    {
+      label: "Aggressive signed flow",
+      detail: setup.available
+        ? `${completeness.signed_flow} · ratio ${setup.signed_flow_ratio ?? "—"}`
+        : completeness.signed_flow,
+    },
+  ];
+  if (setup.evidence_window_hash) {
+    evidence.push({
+      label: "Evidence window",
+      detail: setup.evidence_window_hash,
+    });
+  }
+  if (read.unavailable_reason) {
+    evidence.push({
+      label: "Unavailable",
+      detail: read.unavailable_reason,
+      freshnessState: price.freshnessState === "stale" ? "stale" : "unavailable",
+    });
+  }
+  return {
+    authority: "canonical",
+    grade,
+    setupState,
+    dataQuality: complete ? "complete" : completeness.cvd,
+    confidence: null,
+    confidencePenaltyApplied: false,
+    symbol: read.symbol,
+    timeframe: "15m",
+    direction: null,
+    evidence,
+    summary: replay
+      ? "Replay fixture evidence. Prices here are not live market marks and do not grant eligibility."
+      : setup.available
+        ? "Canonical USD-M evidence. Completeness and freshness are independent of action eligibility."
+        : "Canonical evidence failed closed. Missing, stale, or incomplete perpetual data is not replaced.",
+    currentPrice: price,
+    doesNotGrantEligibility: true,
+  };
+}
+
 export function marketQualityFromAnalysis(
   analysis: MarketAnalyzeResponse,
   symbol: string,
@@ -62,14 +190,22 @@ export function marketQualityFromAnalysis(
 ): MarketQualityView {
   const meta = analysis.snapshot.meta;
   const best = analysis.strategy_signals[0];
+  const snapshotFreshness: CanonicalFreshnessPillState = meta.is_stale
+    ? "stale"
+    : meta.fallback_used
+      ? "fallback"
+      : meta.is_live
+        ? "live"
+        : "unavailable";
   const evidence: EvidenceFact[] = [
     {
       label: "Market data",
-      detail: `${meta.source} · ${meta.provider_name}`,
+      detail: `${meta.source} · ${meta.provider_name} (compatibility snapshot, not a canonical current price)`,
       freshness: meta.retrieved_at,
       isLive: meta.is_live,
       fallbackUsed: meta.fallback_used,
       stale: meta.is_stale,
+      freshnessState: snapshotFreshness,
     },
     ...analysis.strategy_signals.flatMap((signal) =>
       signal.evidence.map((item) => ({
@@ -102,8 +238,9 @@ export function marketQualityFromAnalysis(
     evidence,
     summary:
       grade === "poor"
-        ? "Market quality is degraded. This does not by itself decide eligibility."
-        : "Market quality is independent of account, risk, and kill-switch eligibility.",
+        ? "Compatibility market snapshot is degraded. It is not a canonical current price and does not decide eligibility."
+        : "Compatibility market snapshot only. Canonical current price lives on GET /canonical/evidence.",
+    currentPrice: null,
     doesNotGrantEligibility: true,
   };
 }
@@ -133,6 +270,7 @@ export function marketQualityFromCandidate(candidate: PaperValidationCandidateIt
     evidence,
     summary:
       "Compatibility projection from the paper-validation queue. Not canonical SetupAssessment.",
+    currentPrice: null,
     doesNotGrantEligibility: true,
   };
 }
@@ -283,6 +421,7 @@ export function marketQualityFromSetupAssessment(
     ],
     summary:
       "Canonical SetupAssessment lineage. Market/setup truth does not grant action eligibility.",
+    currentPrice: null,
     doesNotGrantEligibility: true,
   };
 }
@@ -311,6 +450,7 @@ export function workspaceFromCanonicalCandidate(
         evidence: [{ label: "Evidence window", detail: candidate.evidence_window_hash }],
         summary:
           "Canonical Candidate. SetupAssessment was not loaded on this queue row; market truth still does not grant eligibility.",
+        currentPrice: null,
         doesNotGrantEligibility: true as const,
       };
   const eligibility = extras?.eligibility
@@ -462,6 +602,7 @@ export function composeDecisionCases(input: DecisionComposeInput): DecisionQueue
         direction: proposal.direction,
         evidence: [{ label: "Proposal rationale", detail: proposal.rationale }],
         summary: "Proposal-derived market notes. Not canonical SetupAssessment.",
+        currentPrice: null,
         doesNotGrantEligibility: true,
       },
       eligibility,
