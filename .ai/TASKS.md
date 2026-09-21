@@ -1407,6 +1407,22 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   source AT-ADR-043. Source PR #111 left AT-067 as TODO; closed by integrating
   PR #109.
 
+### AT-069 — Live read-only perpetual market monitoring
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-064, Phase 5 contracts
+  · Risk: Medium (freshness honesty + stream identity)
+- Safety classification: Paper-only read path; Watcher, Telegram, and live
+  trading remain disabled; no exchange mutation; no merge
+- Goal: Continuously provide trustworthy Binance USD-M perpetual evidence
+  (BTCUSDT first, catalog-extensible) with current price, OHLCV, trade stream,
+  CVD, coverage, freshness, source identity, provider status, reconnect/backoff,
+  rate-limit handling, and gap detection. Never present replay, demo-seed, or
+  compatibility snapshots as the current live price.
+- Branch: `cursor/live-market-monitoring-cc4d`
+- Deliverables: `app.market_monitor`, `GET /canonical/market-status`,
+  decision/market + /market honesty, fail-closed stream tests.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-048
+
 ### AT-068 — Durable setup lifetime + canonical AUTO_PAPER authority
 - Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-067, intelligence
   acceptance review P1s · Risk: High (lifetime identity + paper mint authority)

@@ -250,6 +250,10 @@ class Settings(BaseSettings):
     # Never falls back to spot. Values: replay | binance_usdm
     perpetual_evidence_source: str = "replay"
     perpetual_evidence_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
+    # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
+    perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
+    perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)
+    perpetual_monitor_backoff_max_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
 
     # --- Observability ---
     langsmith_api_key: str = ""

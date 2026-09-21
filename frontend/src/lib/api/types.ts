@@ -1769,6 +1769,70 @@ export interface CanonicalEvidenceRead {
   unavailable_reason?: string | null;
 }
 
+export interface CanonicalMarketMonitorStatusRead {
+  authority: "canonical_market_monitor";
+  live_executable: false;
+  watcher_activated: false;
+  compatibility_price_used: false;
+  symbol: string;
+  mode: "live_perpetual" | "replay" | string;
+  availability: "fresh" | "stale" | "degraded" | "unavailable" | "replay" | string;
+  reason: string;
+  perpetual: true;
+  source: CanonicalEvidenceSource;
+  current_price: CanonicalCurrentPriceRead;
+  last_update: string | null;
+  evaluated_at: string;
+  stream: {
+    reconnect_state: string;
+    gap_state: string;
+    warm_up_status: string;
+    last_sequence?: number | null;
+    last_event_id?: string | null;
+    last_event_at?: string | null;
+    reconnect_count: number;
+  };
+  coverage: {
+    completeness: string;
+    gap_state: string;
+    content_hash?: string | null;
+    first_trade_id?: string | null;
+    last_trade_id?: string | null;
+  };
+  cvd: {
+    available: boolean;
+    signed_quote_delta?: string | null;
+    total_quote_volume?: string | null;
+    signed_flow_ratio?: string | null;
+    event_count: number;
+    event_set_hash?: string | null;
+    reason?: string | null;
+  };
+  ohlcv: {
+    available: boolean;
+    completeness_15m: string;
+    completeness_4h: string;
+    latest_15m_close?: string | null;
+    latest_15m_end?: string | null;
+    reason?: string | null;
+  };
+  provider: {
+    name: string;
+    health: string;
+    is_mock: boolean;
+    using_fallback: boolean;
+    detail?: string | null;
+  };
+  backoff: {
+    active: boolean;
+    attempt: number;
+    next_retry_at?: string | null;
+    last_error_class?: string | null;
+  };
+  content_hash: string;
+  unavailable_reason?: string | null;
+}
+
 export interface CanonicalCandidateRead {
   authority: "canonical";
   candidate: CanonicalCandidate;

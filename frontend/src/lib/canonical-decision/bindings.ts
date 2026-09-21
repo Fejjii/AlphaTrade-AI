@@ -45,6 +45,16 @@ export const DECISION_BACKEND_BINDINGS: readonly BackendBinding[] = [
       "Read-only first-slice perpetual evidence + current price honesty. Replay is never a live mark. Fail-closed on missing/stale/incomplete. Does not start Watcher.",
   },
   {
+    id: "canonical-market-status",
+    title: "Continuous USD-M market status",
+    status: "bound",
+    path: "GET /canonical/market-status",
+    owner: "backend",
+    usedByFrontend: true,
+    notes:
+      "Tick-on-read perpetual monitor: current price, freshness, source, reconnect/backoff, coverage, CVD. Replay and compatibility snapshots are never live marks. Does not start Watcher.",
+  },
+  {
     id: "market-analyze",
     title: "Compatibility market snapshot",
     status: "partial",
