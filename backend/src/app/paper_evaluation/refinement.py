@@ -28,6 +28,7 @@ def refinement_suggestions(
 ) -> tuple[RefinementSuggestion, ...]:
     """Map measurement facts to review suggestions. activate is always false."""
 
+    labeled: str | None
     if narrative is not None and not narrative.startswith(NARRATIVE_NOT_FACT_BANNER[:18]):
         labeled = f"{NARRATIVE_NOT_FACT_BANNER}\n{narrative}"
     else:
