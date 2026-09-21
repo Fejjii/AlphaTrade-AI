@@ -1517,7 +1517,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   stay off. Do not merge, deploy, or activate Watcher.
 
 ### AT-073 — Telegram paper interaction layer
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-043, AT-072, candidate-alert
+- Priority: P0 · Status: DONE · Dependencies: AT-043, AT-072, candidate-alert
   foundation · Risk: High (Telegram must never become trading authority)
 - Safety classification: Paper-only interaction; Telegram stays disabled by default;
   no webhook; no Watcher activation; no live trading; no deploy; no merge
@@ -1529,10 +1529,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   rate-limit, audit, recover after restart.
 - Branch: `cursor/telegram_paper_agent-aac1` (cloud suffix; requested
   `cursor/telegram_paper_agent`)
-- Validation: pending focused + full backend pytest, ruff, scoped mypy, frontend,
-  evaluation, e2e, deployment-safety, GitHub CI. Draft PR only.
+- Validation: focused Telegram/paper-agent + protocol + Candidate-alert tests
+  passed; full backend pytest 2497 passed / 0 skipped; ruff check/format;
+  strict mypy 21 affected files; frontend lint+typecheck+1193 tests+build;
+  evaluation 16/16, 5/5, 7/7; Chromium E2E 30 passed / 13 skipped;
+  deployment-safety 60 passed; smoke-gate self-checks; GitHub CI run
+  35658947838 success on `aa75c04`. Alembic single head `d9e0f1a2b3c4`.
+  Draft PR only; do not merge or deploy.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-052
+- Completion evidence: feat `aa75c04`; draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/124. Telegram, Watcher, and live
+  trading stay off. Do not merge, deploy, or enable Telegram.
 - Note: Does not enable `TELEGRAM_INTERACTION_ENABLED`, Watcher
   `PERSIST_AND_NOTIFY`, or live trading. `EXECUTE_PAPER_PLAN` remains unavailable
   on Telegram.
