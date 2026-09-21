@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.errors import ValidationAppError
@@ -21,6 +22,7 @@ from app.evidence_pipeline.http_schemas import (
     CanonicalSetupEvidenceRead,
     CanonicalSourceIdentityRead,
 )
+from app.evidence_pipeline.setup_lifetime import SetupLifetimePort
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
     CurrentPricePresentation,
@@ -45,6 +47,7 @@ from app.market_contracts.errors import (
 from app.market_contracts.first_slice import canonical_first_slice_clock, first_slice_identity
 from app.market_contracts.freshness import first_slice_freshness_policy
 from app.market_contracts.identity import ADAPTER_VERSION
+from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 from app.schemas.common import Timeframe
 
 Clock = Callable[[], datetime]
@@ -65,6 +68,8 @@ class CanonicalEvidenceService:
         catalog: PerpetualInstrumentCatalog | None = None,
         clock: Clock | None = None,
         transport: httpx.BaseTransport | None = None,
+        session: Session | None = None,
+        lifetime: SetupLifetimePort | None = None,
     ) -> None:
         self._settings = settings
         self._catalog = catalog if catalog is not None else default_perpetual_catalog()
@@ -73,8 +78,17 @@ class CanonicalEvidenceService:
             settings, transport=transport, catalog=self._catalog
         )
         self._clock = clock or _clock_now
+        store: SetupLifetimePort
+        if lifetime is not None:
+            store = lifetime
+        elif session is not None:
+            store = SqlAlchemySetupLifetimeStore(session)
+        else:
+            from app.evidence_pipeline.setup_lifetime import SetupLifetimeStore
+
+            store = SetupLifetimeStore()
         self._assembler = FirstSliceEvidenceAssembler(
-            self._source, replay=self._replay, catalog=self._catalog
+            self._source, replay=self._replay, catalog=self._catalog, lifetime=store
         )
 
     def read(

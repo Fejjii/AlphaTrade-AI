@@ -79,6 +79,7 @@ from app.db.learning_attribution import (  # noqa: F401
 from app.db.learning_attribution import (
     register_learning_attribution_immutability as _register_learning_attribution_immutability,
 )
+from app.db.setup_lifetime import SetupLifetimePin  # noqa: F401
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )

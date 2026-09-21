@@ -35,6 +35,7 @@ _MODEL_KIND: dict[str, PersistenceKind] = {
     "SetupDefinition": PersistenceKind.SETUP,
     "GlobalSetupTemplate": PersistenceKind.SETUP,
     "CompiledSetupDefinition": PersistenceKind.SETUP,
+    "SetupLifetimePin": PersistenceKind.SETUP,
     "SetupMigrationRun": PersistenceKind.SETUP,
     "ManualChartLevel": PersistenceKind.STRATEGY,
     "ManualLevelRevision": PersistenceKind.STRATEGY,

@@ -52,7 +52,12 @@ class CloseEvaluation:
 
 
 class PaperBotEngine:
-    """Deterministic paper signal and trade lifecycle — no exchange APIs."""
+    """Research/backtest paper accounting. Not an AUTO_PAPER minting authority.
+
+    Automated paper entries must come from persisted APPROVED/ACTIVE compiled
+    policy → canonical evidence → ``evaluate_canonical_strategy`` →
+    ``CONFIRMED_SETUP``. ``evaluate_entry`` cannot authorize a paper trade.
+    """
 
     WARMUP_BARS = 25
 

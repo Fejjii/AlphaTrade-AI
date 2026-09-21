@@ -171,9 +171,11 @@ def get_canonical_runtime(
 CanonicalRuntimeDep = Annotated[ProductionCanonicalRuntime, Depends(get_canonical_runtime)]
 
 
-def get_canonical_evidence_service(settings: SettingsDep) -> CanonicalEvidenceService:
+def get_canonical_evidence_service(
+    settings: SettingsDep, session: SessionDep
+) -> CanonicalEvidenceService:
     """Read-only USD-M evidence assembler. Does not start Watcher."""
-    return CanonicalEvidenceService(settings)
+    return CanonicalEvidenceService(settings, session=session)
 
 
 CanonicalEvidenceServiceDep = Annotated[

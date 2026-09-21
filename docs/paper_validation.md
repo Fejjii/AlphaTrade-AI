@@ -78,18 +78,31 @@ Optional in-process background loop is **not implemented** — only manual `POST
 
 ## Paper bot engine v1
 
-`PaperBotEngine` / `PaperValidationRuntimeService`:
+Automated paper **scan** minting is not `PaperBotEngine` authority. The only
+AUTO_PAPER entry chain is:
 
-1. Load paper-eligible strategy + structured rules
-2. Fetch recent OHLCV candles (mock or stored)
-3. Evaluate entry via structured rules (same resolver as backtest)
-4. Apply no-trade filters
-5. Create paper signal
-6. In `auto_paper`, open simulated trade with fees/slippage
-7. On tick, monitor open trades — stop, TP, runner, timeout
-8. Update metrics and promotion recommendation
+1. persisted APPROVED/ACTIVE strategy version
+2. executable `CompiledSetupDefinition`
+3. canonical evidence
+4. `evaluate_canonical_strategy`
+5. `SetupAssessment` state `CONFIRMED_SETUP`
 
-Non-machine-testable rules → `not_testable` signal + blocker (no fake trades).
+`PaperBotEngine` remains for research/backtest compatibility and for tick
+accounting of already-open paper trades. It cannot independently decide that a
+setup is tradable. Draft, `REVIEW_REQUIRED`, unsupported, incomplete, stale,
+expired, wrong-source, and mismatched-lineage inputs fail closed.
+
+`PaperValidationRuntimeService.scan`:
+
+1. Resolve approved compiled lineage or fail closed
+2. Assemble or inject canonical evidence
+3. Evaluate through `evaluate_canonical_strategy`
+4. Create a paper signal
+5. In `auto_paper`, open a simulated trade only from `CONFIRMED_SETUP`
+6. On tick, monitor already-open trades — stop, TP, runner, timeout
+7. Update metrics and promotion recommendation
+
+Non-confirmed canonical states → `not_testable` signal (no fake trades).
 
 ## Metrics
 

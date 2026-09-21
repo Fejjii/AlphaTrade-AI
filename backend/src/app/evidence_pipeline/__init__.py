@@ -15,6 +15,11 @@ from app.evidence_pipeline.canonical import (
 )
 from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.service import CanonicalEvidenceService
+from app.evidence_pipeline.setup_lifetime import (
+    SetupLifetimeKey,
+    SetupLifetimeStore,
+    SetupTriggerPin,
+)
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
     CompletenessReport,
@@ -36,6 +41,9 @@ __all__ = [
     "CurrentPriceQuote",
     "EvidenceClockReport",
     "FirstSliceEvidenceAssembler",
+    "SetupLifetimeKey",
+    "SetupLifetimeStore",
+    "SetupTriggerPin",
     "build_first_slice_assessment_command",
     "first_slice_read_policy",
     "is_first_slice_read_projection",

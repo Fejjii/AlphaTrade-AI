@@ -12,9 +12,10 @@ from app.evidence_pipeline.canonical import (
 )
 from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.setup_lifetime import (
-    SetupLifetimeKey,
+    SetupLifetimePort,
     SetupLifetimeStore,
     SetupTriggerPin,
+    lifetime_key_from_policy,
     utc_trigger_end,
 )
 from app.evidence_pipeline.types import (
@@ -75,12 +76,14 @@ class FirstSliceEvidenceAssembler:
         *,
         replay: bool,
         catalog: PerpetualInstrumentCatalog | None = None,
-        lifetime: SetupLifetimeStore | None = None,
+        lifetime: SetupLifetimePort | None = None,
     ) -> None:
         self._source = source
         self._replay = replay
         self._catalog = catalog if catalog is not None else default_perpetual_catalog()
-        self._lifetime = lifetime if lifetime is not None else SetupLifetimeStore()
+        self._lifetime: SetupLifetimePort = (
+            lifetime if lifetime is not None else SetupLifetimeStore()
+        )
 
     def assemble(
         self,
@@ -102,14 +105,17 @@ class FirstSliceEvidenceAssembler:
             raise WrongSourceError(
                 "Fusion policy organization_id does not match the caller tenant."
             )
-        lifetime_key = SetupLifetimeKey(
+        lifetime_key = lifetime_key_from_policy(
             organization_id=organization_id,
             symbol=instrument.provider_symbol,
+            timeframe=Timeframe.M15,
             strategy_version_id=bound_policy.strategy_version_id,
+            compiled_setup_definition_id=bound_policy.executable_setup.setup_definition_id,
+            compiled_content_hash=bound_policy.executable_setup.content_hash,
         )
-        pin = setup_trigger_end
-        if pin is None:
-            pin = self._lifetime.active_trigger_end(lifetime_key)
+        pinned_trigger_end = setup_trigger_end
+        if pinned_trigger_end is None:
+            pinned_trigger_end = self._lifetime.active_trigger_end(lifetime_key)
         trigger_identity = first_slice_identity(
             timeframe=Timeframe.M15,
             replay=self._replay,
@@ -120,7 +126,7 @@ class FirstSliceEvidenceAssembler:
         self._assert_live_contract(trigger_identity)
 
         min_15m = FIRST_SLICE_MIN_FINAL_15M
-        if pin is not None:
+        if pinned_trigger_end is not None:
             min_15m = FIRST_SLICE_MIN_FINAL_15M + FIRST_SLICE_EXPIRY_BARS + 2
         try:
             series_15m = self._source.fetch_closed_ohlcv(
@@ -131,7 +137,7 @@ class FirstSliceEvidenceAssembler:
                 evaluated_at=clock,
             )
         except FormingCandleError:
-            if pin is None:
+            if pinned_trigger_end is None:
                 raise
             series_15m = self._source.fetch_closed_ohlcv(
                 identity=trigger_identity,
@@ -151,7 +157,7 @@ class FirstSliceEvidenceAssembler:
             series_15m,
             identity=trigger_identity,
             evaluated_at=clock,
-            setup_trigger_end=pin,
+            setup_trigger_end=pinned_trigger_end,
         )
         context = _context_bar(series_4h, trigger)
         window_start = first_slice_baseline_open(trigger)
@@ -266,16 +272,14 @@ class FirstSliceEvidenceAssembler:
             setup_lifetime_remaining_bars=remaining,
             setup_trigger_bar_hash=trigger.content_hash,
         )
+        stored_pin = SetupTriggerPin(
+            trigger_end=utc_trigger_end(trigger.interval_end),
+            trigger_bar_hash=trigger.content_hash,
+            expired=expired,
+        )
+        self._lifetime.remember(lifetime_key, stored_pin)
         if expired:
-            self._lifetime.clear(lifetime_key)
-        else:
-            self._lifetime.remember(
-                lifetime_key,
-                SetupTriggerPin(
-                    trigger_end=utc_trigger_end(trigger.interval_end),
-                    trigger_bar_hash=trigger.content_hash,
-                ),
-            )
+            self._lifetime.expire(lifetime_key)
         return AssembledCanonicalEvidence(
             organization_id=organization_id,
             replay=self._replay,
