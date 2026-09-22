@@ -1652,4 +1652,35 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `docs/live_market_staging_activation.md`. Do not enable Watcher, Telegram,
   or live trading.
 
+### AT-078 — Prepare controlled staging Watcher paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-076 · Risk: High
+  (activation path must stay disarmed and paper-only)
+- Safety classification: Paper monitoring only; Telegram off; live trading off;
+  no deploy; no staging environment edits; no activation
+- Goal: Smallest safe arm on the existing Watcher. Preflight, runtime health
+  gate, rollback plan, post-activation smoke, and monitoring checklist.
+  Prove the worker cannot start on replay evidence, provider outage, invalid
+  lineage, real trading, or an unhealthy migration.
+- Branch: `cursor/activation-watcher-paper-5263`
+- Base: `main` `894e9e4`
+- Alembic: unchanged single head `d9e0f1a2b3c4`. No new revision.
+- Validation: local PostgreSQL pytest 2567 passed / 0 skipped (exit 0);
+  `tests/test_watcher_postgres_store.py`, ownership, product proof, final paper
+  loop, Alembic postgres, and activation tests included. `ruff check` and
+  `ruff format --check` clean. Strict mypy clean on the activation modules.
+  Evaluation 16/16, 5/5, 7/7. Frontend lint, typecheck, 1195 tests, and build
+  passed. Activation, rollback, health, and smoke self-checks passed.
+  `WATCHER_PAPER_STAGING_ACTIVATION` remains false. Not armed. Staging env files
+  unchanged. GitHub CI run 35744229457 success on `557ce32` (backend,
+  deployment-safety, docker-build, frontend, e2e-smoke, evaluation, and the
+  existing Vercel preview checks). Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/130. Do not merge, deploy, or
+  activate.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-057
+- Note: Preparation only. Source PR #130 labeled this AT-077 / AT-ADR-056.
+  The integration branch assigns AT-078 / AT-ADR-057 because AT-077 is the
+  live-market workstream. `WATCHER_PAPER_STAGING_ACTIVATION` stays false.
+  Do not deploy or activate.
+
 

@@ -81,6 +81,7 @@ export interface HealthResponse {
   market_watcher_enabled?: boolean;
   market_watcher_bridge_enabled?: boolean;
   watcher_orchestration_enabled?: boolean;
+  watcher_paper_staging_activation?: boolean;
   telegram_alerts_enabled?: boolean;
   telegram_interaction_enabled?: boolean;
   automatic_telegram_delivery_enabled?: boolean;

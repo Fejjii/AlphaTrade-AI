@@ -44,7 +44,6 @@ if exchange_mode not in (None, "paper_internal", "paper_exchange_demo"):
 disabled_flags = (
     "market_watcher_enabled",
     "market_watcher_bridge_enabled",
-    "watcher_orchestration_enabled",
     "telegram_alerts_enabled",
     "telegram_interaction_enabled",
     "automatic_telegram_delivery_enabled",
@@ -72,6 +71,18 @@ if payload.get("spot_fallback_permitted") not in (None, False):
     sys.exit(1)
 if payload.get("exchange_credentials_used_for_market_evidence") not in (None, False):
     print("FAIL: market evidence reported credentials", file=sys.stderr)
+    sys.exit(1)
+orchestration = bool(payload.get("watcher_orchestration_enabled"))
+armed = bool(payload.get("watcher_paper_staging_activation"))
+if "watcher_orchestration_enabled" in payload and orchestration != armed:
+    print(
+        "FAIL: watcher paper activation pair "
+        f"orchestration={orchestration} armed={armed}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if orchestration and env == "production":
+    print("FAIL: production watcher is forbidden", file=sys.stderr)
     sys.exit(1)
 print(
     f"  health: execution_mode=paper, real_trading_enabled=false, "

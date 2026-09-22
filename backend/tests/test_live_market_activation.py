@@ -226,6 +226,19 @@ def test_market_credentials_and_exchange_credentials_fail_closed(
     assert "demo-secret" not in str(demo.value)
 
 
+def test_staging_paper_watcher_arm_may_select_live_evidence() -> None:
+    settings = Settings(
+        **{
+            **_STAGING,
+            "watcher_orchestration_enabled": True,
+            "watcher_paper_staging_activation": True,
+        }
+    )
+    assert live_market_activation_violations(settings) == []
+    assert activation_state(settings) == "active"
+    assert settings.telegram_alerts_enabled is False
+
+
 def test_live_source_rejects_watcher_telegram_and_real_trading() -> None:
     with pytest.raises(ValidationError, match="watcher_orchestration_enabled"):
         _local(watcher_orchestration_enabled=True)

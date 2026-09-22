@@ -2,8 +2,9 @@
 
 Replay stays the process default so deterministic tests do not need the
 network. Staging's intended evidence source is the public USD-M adapter.
-Selecting that source refuses credentials, spot hosts, Watcher, Telegram,
-and live trading. Rollback is ``PERPETUAL_EVIDENCE_SOURCE=replay``.
+Selecting that source refuses credentials, spot hosts, the legacy scanner,
+legacy Telegram delivery, and live trading. The staging paper Watcher arm
+may select it. Rollback is ``PERPETUAL_EVIDENCE_SOURCE=replay``.
 """
 
 from __future__ import annotations
@@ -116,6 +117,25 @@ def _invariant_errors() -> list[str]:
     return errors
 
 
+def controlled_watcher_arm(settings: Settings) -> bool:
+    """True for the staging paper-monitoring pair on public USD-M evidence."""
+
+    return (
+        settings.environment is Environment.STAGING
+        and settings.watcher_paper_staging_activation
+        and settings.watcher_orchestration_enabled
+        and settings.execution_mode is ExecutionMode.PAPER
+        and not settings.enable_real_trading
+        and not settings.real_trading_enabled
+        and settings.exchange_mode is ExchangeMode.PAPER_INTERNAL
+        and not settings.market_watcher_enabled
+        and not settings.market_watcher_bridge_enabled
+        and not settings.market_watcher_bridge_auto_tick
+        and not settings.telegram_alerts_enabled
+        and not settings.automatic_telegram_delivery_enabled
+    )
+
+
 def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list[str]:
     errors = _futures_origin_errors(settings.market_data_futures_base_url)
     if settings.enable_real_trading or settings.real_trading_enabled:
@@ -151,9 +171,15 @@ def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list
         errors.append(
             "market_watcher_bridge_auto_tick must be false while live USD-M evidence is on."
         )
-    if settings.watcher_orchestration_enabled:
+    if settings.watcher_orchestration_enabled and not controlled_watcher_arm(settings):
         errors.append(
-            "watcher_orchestration_enabled must be false while live USD-M evidence is on."
+            "watcher_orchestration_enabled must be false while live USD-M evidence is on "
+            "unless the staging paper-monitoring arm is set."
+        )
+    if settings.watcher_paper_staging_activation and not settings.watcher_orchestration_enabled:
+        errors.append(
+            "watcher_paper_staging_activation requires watcher_orchestration_enabled "
+            "for paper monitoring only."
         )
     if settings.telegram_alerts_enabled:
         errors.append("telegram_alerts_enabled must be false while live USD-M evidence is on.")

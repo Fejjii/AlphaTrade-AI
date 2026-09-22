@@ -62,7 +62,6 @@ if settings.environment.value in ("staging", "production"):
         "billing_enabled": (False, settings.billing_enabled),
         "market_watcher_enabled": (False, settings.market_watcher_enabled),
         "market_watcher_bridge_enabled": (False, settings.market_watcher_bridge_enabled),
-        "watcher_orchestration_enabled": (False, settings.watcher_orchestration_enabled),
         "telegram_alerts_enabled": (False, settings.telegram_alerts_enabled),
         "telegram_interaction_enabled": (False, settings.telegram_interaction_enabled),
         "automatic_telegram_delivery_enabled": (False, settings.automatic_telegram_delivery_enabled),
@@ -74,6 +73,15 @@ if settings.environment.value in ("staging", "production"):
         else:
             print(f"  [FAIL] {name}={actual} (required {expected})", file=sys.stderr)
             failed = True
+    # Deployment safety already rejects an unpaired Watcher flag and replay
+    # evidence while the paper arm is set. Do not require the arm to be false
+    # after that check: a cleared staging paper pair is the controlled path.
+    print(
+        "  watcher_orchestration_enabled="
+        f"{settings.watcher_orchestration_enabled} "
+        "watcher_paper_staging_activation="
+        f"{settings.watcher_paper_staging_activation}"
+    )
     print(f"  provider_mode={settings.provider_mode} (staging recommended: fallback)")
     from app.market_activation.profile import perpetual_evidence_health
 

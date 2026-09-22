@@ -82,27 +82,9 @@ auth_header() {
 echo "Canonical synthetic smoke — BASE_URL=${BASE_URL}"
 echo "This script does not enable real trading (ENABLE_REAL_TRADING stays false)."
 
-echo "1/10 — /health paper + watcher/telegram disabled"
+echo "1/10 — /health paper posture (Watcher disarmed, or armed paper pair only)"
 health_json="$(curl_api "${BASE_URL}/health")"
-python3 - <<'PY' "$health_json"
-import json, sys
-payload = json.loads(sys.argv[1])
-assert payload.get("execution_mode") == "paper", payload
-assert payload.get("real_trading_enabled") is False, payload
-exchange_mode = payload.get("exchange_mode")
-assert exchange_mode in (None, "paper_internal", "paper_exchange_demo"), payload
-for flag in (
-    "market_watcher_enabled",
-    "market_watcher_bridge_enabled",
-    "watcher_orchestration_enabled",
-    "telegram_alerts_enabled",
-    "telegram_interaction_enabled",
-    "automatic_telegram_delivery_enabled",
-):
-    if flag in payload:
-        assert payload.get(flag) is False, payload
-print("  OK")
-PY
+python3 "${ROOT_DIR}/scripts/lib/watcher_paper_health.py" "$health_json"
 
 echo "2/10 — unauthenticated canonical reads are 401"
 unauth="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/canonical/candidates")"

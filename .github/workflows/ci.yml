@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
       - name: Deployment safety tests
-        run: uv run pytest tests/test_deployment_safety.py tests/test_deployment_scripts.py tests/test_config.py -q
+        run: uv run pytest tests/test_deployment_safety.py tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py -q
       - name: Deployment scripts are executable
         working-directory: .
         run: |
@@ -66,6 +66,9 @@ jobs:
           test -x scripts/canonical-staging-smoke.sh
           test -x scripts/validate-live-market-staging.sh
           test -x scripts/run-migrations.sh
+          test -x scripts/watcher-paper-rollback.sh
+          test -x scripts/watcher-paper-activation-smoke.sh
+          test -x scripts/lib/watcher_paper_health.py
       - name: Post-deploy smoke gate self-check
         working-directory: .
         run: ./scripts/post-deploy-smoke-gate.sh --self-check
@@ -75,6 +78,15 @@ jobs:
       - name: Live market staging validation self-check
         working-directory: .
         run: ./scripts/validate-live-market-staging.sh --self-check
+      - name: Watcher paper activation self-checks
+        working-directory: .
+        run: |
+          ./scripts/watcher-paper-rollback.sh --self-check
+          ./scripts/watcher-paper-activation-smoke.sh --self-check
+          python3 scripts/lib/watcher_paper_health.py --self-check
+      - name: Watcher paper activation module self-check
+        working-directory: backend
+        run: uv run python -m app.workers.watcher_activation --self-check
 
   frontend:
     runs-on: ubuntu-latest

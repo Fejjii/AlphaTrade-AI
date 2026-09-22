@@ -16,6 +16,7 @@ def test_health_ok(client: TestClient) -> None:
     assert body["exchange_mode"] == "paper_internal"
     assert body["market_watcher_enabled"] is False
     assert body["watcher_orchestration_enabled"] is False
+    assert body["watcher_paper_staging_activation"] is False
     assert body["telegram_alerts_enabled"] is False
     assert body["telegram_interaction_enabled"] is False
     assert body["perpetual_evidence_source"] == "replay"

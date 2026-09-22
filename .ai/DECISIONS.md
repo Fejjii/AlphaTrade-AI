@@ -1936,4 +1936,38 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   Do not merge, deploy, or activate Watcher or Telegram. Operators follow
   `docs/live_market_staging_activation.md`.
 
+## AT-ADR-057 — Staging Watcher paper activation is a disarmed, fail-closed arm
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** The validated Watcher can scan locally in paper mode. Staging
+  and production reject `WATCHER_ORCHESTRATION_ENABLED`. A controlled staging
+  path is required for paper monitoring only, without Telegram, without live
+  trading, and without turning the worker on in this change.
+- **Decision:**
+  1. `WATCHER_PAPER_STAGING_ACTIVATION` defaults false. Production rejects it.
+     Staging rejects `WATCHER_ORCHESTRATION_ENABLED` unless this arm is set.
+     The armed pair still requires live perpetual evidence. Replay, Telegram,
+     the legacy scanner, and real trading still fail settings load.
+  2. The API process does not autostart staging. Only
+     `python -m app.workers.watcher_paper` calls preflight, and it scans only
+     when every pin holds: unique worker id, PostgreSQL leases, fencing,
+     restart recovery, idempotency, approved compiled lineage, canonical live
+     evidence, freshness fail-closed, `CONFIRMED_SETUP` as the only Candidate
+     authority, risk `BLOCK` final, paper execution, and the kill switch.
+  3. The runtime health gate repeats those pins each cycle and stops the
+     process on failure. Rollback prints an operator plan and does not deploy,
+     edit environment files, clear the kill switch, or enable Telegram.
+  4. This decision does not arm staging and does not modify staging environment
+     values. Templates keep Watcher and Telegram false.
+- **Alternatives considered:** Flip `WATCHER_ORCHESTRATION_ENABLED` in
+  `render.yaml` (rejected: that is activation); allow replay evidence on the
+  arm (rejected: live canonical evidence is required); autostart inside the
+  API (rejected: the dedicated worker is the only start path).
+- **Safety impact:** Paper only. `ENABLE_REAL_TRADING` stays permanently
+  rejected. Default staging posture is unchanged until a human sets the arm.
+- **Consequences:** Branch `cursor/activation-watcher-paper-5263`. Do not
+  deploy or activate from this change. Source PR #130 recorded this decision as
+  AT-ADR-056 before the live-market decision took that id. The accepted id
+  on the integration branch is AT-ADR-057.
+
 

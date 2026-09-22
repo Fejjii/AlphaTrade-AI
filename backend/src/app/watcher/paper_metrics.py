@@ -41,6 +41,7 @@ _SCAN_RESULTS = frozenset(
         "organization_mismatch",
         "candidate_creation_failed",
         "watcher_disabled",
+        "activation_refused",
         "lease_held",
         "lease_renewal_lost",
         "expired",

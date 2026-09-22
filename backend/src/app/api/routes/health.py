@@ -36,6 +36,7 @@ async def health(settings: SettingsDep) -> HealthResponse:
         market_watcher_enabled=settings.market_watcher_enabled,
         market_watcher_bridge_enabled=settings.market_watcher_bridge_enabled,
         watcher_orchestration_enabled=settings.watcher_orchestration_enabled,
+        watcher_paper_staging_activation=settings.watcher_paper_staging_activation,
         telegram_alerts_enabled=settings.telegram_alerts_enabled,
         telegram_interaction_enabled=settings.telegram_interaction_enabled,
         automatic_telegram_delivery_enabled=settings.automatic_telegram_delivery_enabled,

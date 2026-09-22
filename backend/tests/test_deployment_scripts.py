@@ -22,6 +22,9 @@ SCRIPTS = (
     "scripts/provider-validation-smoke.sh",
     "scripts/canonical-staging-smoke.sh",
     "scripts/validate-live-market-staging.sh",
+    "scripts/watcher-paper-rollback.sh",
+    "scripts/watcher-paper-activation-smoke.sh",
+    "scripts/lib/watcher_paper_health.py",
     "scripts/recreate-rag-collection.sh",
     "scripts/reingest-knowledge-base.sh",
 )
@@ -109,6 +112,42 @@ def test_post_deploy_smoke_gate_rejects_placeholder_base_url() -> None:
     assert "placeholder" in result.stderr.lower()
 
 
+def test_watcher_paper_activation_scripts_self_check() -> None:
+    for relative in (
+        "scripts/watcher-paper-rollback.sh",
+        "scripts/watcher-paper-activation-smoke.sh",
+        "scripts/lib/watcher_paper_health.py",
+    ):
+        result = subprocess.run(
+            [str(ROOT / relative), "--self-check"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+        assert "self-check passed" in result.stdout
+
+
+def test_watcher_paper_activation_smoke_refuses_without_target() -> None:
+    script = ROOT / "scripts/watcher-paper-activation-smoke.sh"
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"BASE_URL", "WATCHER_ACTIVATION_SMOKE_JSON"}
+    }
+    result = subprocess.run(
+        [str(script)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 2
+    assert "does not activate" in result.stderr
+
+
 def test_canonical_staging_smoke_self_check() -> None:
     script = ROOT / "scripts/canonical-staging-smoke.sh"
     result = subprocess.run(
@@ -135,6 +174,7 @@ def test_staging_env_example_requires_hosted_qdrant() -> None:
     assert "TELEGRAM_ALERTS_ENABLED=false" in text
     assert "WATCHER_ORCHESTRATION_ENABLED=false" in text
     assert "MARKET_WATCHER_ENABLED=false" in text
+    assert "WATCHER_PAPER_STAGING_ACTIVATION=true" not in text
 
 
 def test_post_deploy_smoke_gate_mandates_verify_safety() -> None:

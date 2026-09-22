@@ -221,6 +221,43 @@ def test_staging_rejects_watcher_orchestration_enabled() -> None:
         Settings(**{**_STAGING_BASE, "watcher_orchestration_enabled": True})
 
 
+def test_staging_rejects_activation_arm_without_orchestration() -> None:
+    with pytest.raises(ValidationError, match="watcher_paper_staging_activation"):
+        Settings(**{**_STAGING_BASE, "watcher_paper_staging_activation": True})
+
+
+def test_staging_armed_replay_evidence_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="replay evidence"):
+        Settings(
+            **{
+                **_STAGING_BASE,
+                "watcher_orchestration_enabled": True,
+                "watcher_paper_staging_activation": True,
+                "perpetual_evidence_source": "replay",
+            }
+        )
+
+
+def test_staging_armed_live_evidence_can_construct_settings() -> None:
+    settings = Settings(
+        **{
+            **_STAGING_BASE,
+            "watcher_orchestration_enabled": True,
+            "watcher_paper_staging_activation": True,
+            "perpetual_evidence_source": "binance_usdm",
+        }
+    )
+    assert settings.watcher_paper_staging_activation is True
+    assert settings.enable_real_trading is False
+    assert settings.real_trading_enabled is False
+    assert settings.telegram_alerts_enabled is False
+
+
+def test_production_rejects_paper_activation_arm() -> None:
+    with pytest.raises(ValidationError, match="watcher_paper_staging_activation"):
+        Settings(**{**_PRODUCTION_BASE, "watcher_paper_staging_activation": True})
+
+
 def test_staging_rejects_telegram_alerts_enabled() -> None:
     with pytest.raises(ValidationError, match="telegram_alerts_enabled"):
         Settings(**{**_STAGING_BASE, "telegram_alerts_enabled": True})
