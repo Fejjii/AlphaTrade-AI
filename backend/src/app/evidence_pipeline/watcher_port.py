@@ -28,8 +28,8 @@ from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
 from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.signal_fusion.enums import EvidenceAdapterKind
-from app.signal_fusion.first_slice_types import ManualResistanceEvidence
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
+from app.signal_fusion.first_slice_types import ManualResistanceEvidence
 from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
 from app.watcher.contracts import EvaluationCommand
 from app.watcher.errors import WatcherEvidenceUnavailableError, WatcherTenantMismatchError
