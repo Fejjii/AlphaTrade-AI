@@ -2059,4 +2059,57 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   Branch `cursor/controlled_paper_activation_integration`. Do not merge and
   do not deploy from this change.
 
+## AT-ADR-060 — Frontier paper runtime remediation
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** The Frontier AT-080 audit on `070169c` found the paper package
+  could not run a production-shaped Telegram process, could leak a bot token
+  through HTTP client logs, and could repeat the same Binance aggTrade window.
+  Staging also lacked a disarmed Watcher service, a single activation order,
+  a kill-switch contract that matches Candidate and Telegram behavior, and
+  health that reports the worker rather than only API flags.
+- **Decision:**
+  1. A dedicated process, `python -m app.telegram_activation run`, drains the
+     durable outbox and polls. The Watcher only enqueues. Staging inbound is
+     polling. Webhook remains for local tests and is not a staging activation
+     path. `create_app` does not mount a webhook.
+  2. Enrollment is `POST /telegram-paper/enrollment/start` plus a private-chat
+     poll. The one-time token is not logged. The polling cursor is durable and
+     does not move to another tenant. Restart resumes from the outbox and
+     cursor. A Postgres runtime lease stops a second replica from sending.
+  3. httpx and httpcore stay at WARNING. A stdlib redaction filter and
+     formatter, plus the existing structlog processor, redact Telegram bot
+     tokens in log lines, exception text, and trace-bound events. Application
+     log level is unchanged.
+  4. One closed aggTrade window is reused for evaluate and Candidate
+     persistence. Public Binance reads use request weight, a sliding budget,
+     Retry-After, bounded backoff, and process-local metrics. 418 and 451 are
+     not retried. The Watcher lease TTL for `binance_usdm` is at least
+     `timeout * 4 + max_backoff + 15` seconds, capped at 3600, and the lease
+     heartbeats during a long read.
+  5. `render.yaml` adds disarmed `alphatrade-watcher-paper-staging` and
+     `alphatrade-telegram-paper-staging`. Flags stay false. No bot token is
+     in the blueprint. This does not deploy.
+  6. Armed Telegram projection requires polling, network permission, and a bot
+     token together. Enrollment is the prior step and does not arm projection.
+     An intermediate armed projection with network off fails Settings
+     validation. A refused Watcher gate idles and heartbeats. It does not exit.
+  7. For controlled automated paper operation the kill switch stops new
+     Candidate mints, Watcher-started paper workflows, new Telegram enqueues,
+     and delivery of queued automated messages. Monitoring continues.
+     An unreadable switch is active. Rollback does not clear it.
+  8. `GET /health` includes `worker_runtime` from `controlled_runtime_status`.
+     A failed status read leaves liveness HTTP 200 with `available=false`.
+  9. Alembic head `f1a2b3c4d5e6` revises `e0f1a2b3c4d5`. Live trading stays
+     impossible.
+- **Alternatives considered:** Keep delivery inside the Watcher (rejected:
+  the Watcher would become the Telegram authority); use webhook on staging
+  (rejected: the API does not mount it); cache evidence across tenants
+  (rejected: the snapshot cache key includes organization id).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`. `ENABLE_REAL_TRADING`
+  stays false. `EXCHANGE_MODE` stays non-live. Telegram stays advisory.
+- **Consequences:** Operator procedure remains
+  `docs/controlled_paper_activation.md`. Branch
+  `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
+
 

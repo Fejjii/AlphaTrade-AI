@@ -69,11 +69,12 @@ from app.signal_fusion.enums import ActionEligibilityState, CandidateState, Setu
 from app.signal_fusion.memory import FrozenClock as PlanClock
 from app.signal_fusion.memory import UtcClock
 from app.telegram_activation.errors import TelegramActivationError
-from app.telegram_activation.intake import RecordedUpdateSource
-from app.telegram_paper_agent.gateway import TelegramPaperAgent
+from app.telegram_activation.intake import ParsedTelegramUpdate, RecordedUpdateSource
+from app.telegram_activation.runtime import TelegramPaperRuntime
 from app.telegram_paper_agent.identity import PAPER_NOTIFY_IDENTITY_NAMESPACE
 from app.telegram_paper_agent.memory import InMemoryPaperContext
 from app.telegram_security.clock import FrozenClock as TelegramClock
+from app.telegram_security.contracts import ChatType
 from app.telegram_security.protocol import TelegramSecurityProtocol
 from app.telegram_security.transport import FakeTelegramTransport
 from app.workers.watcher_activation import run_staging_activation
@@ -107,9 +108,9 @@ from tests.support.postgres_persistence import phase7_plan_session_factory, requ
 from tests.support.telegram_security import (
     BOT,
     CHAT,
+    TG_USER,
     TokenSeq,
     enroll,
-    inbound_message,
     message_identity,
 )
 from tests.test_watcher_paper_activation import _observations
@@ -146,14 +147,41 @@ _STAGING: dict[str, object] = {
     "telegram_inbound_mode": "polling",
     "telegram_bot_id": BOT,
     "telegram_chat_id": CHAT,
+    "telegram_bot_token": "123456789:AAHtestTokenValueForStagingPackage",
     "telegram_alerts_enabled": False,
     "automatic_telegram_delivery_enabled": False,
-    "telegram_network_permitted": False,
+    "telegram_network_permitted": True,
 }
 
 
 def _package_settings() -> Settings:
     return Settings(**_STAGING)
+
+
+def _discussion_updates() -> tuple[ParsedTelegramUpdate, ...]:
+    rows = (
+        (90, "pkg-discuss", "Explain the candidate evidence and risk"),
+        (91, "pkg-learn", "show learning attribution"),
+        (92, "pkg-no-92", "place order"),
+        (93, "pkg-no-93", "override risk"),
+        (94, "pkg-no-94", "override assessment"),
+        (95, "pkg-no-95", "activate strategy"),
+        (96, "pkg-no-96", "mint candidate"),
+        (97, "pkg-no-97", "enable live trading"),
+    )
+    return tuple(
+        ParsedTelegramUpdate(
+            update_id=update_id,
+            body_size=len(text.encode("utf-8")),
+            kind="message",
+            chat_type=ChatType.PRIVATE,
+            chat_id=CHAT,
+            telegram_user_id=TG_USER,
+            message_id=message_id,
+            text=text,
+        )
+        for update_id, message_id, text in rows
+    )
 
 
 class RepeatingLivePerpetualSource(ScriptedPerpetualSource):
@@ -286,11 +314,12 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
     account_id = _account_id_for(binding_id)
     _add_account(factory, account_id)
     transport = FakeTelegramTransport()
+    discussion = RecordedUpdateSource(_discussion_updates())
     projection = build_controlled_scan_hook(
         settings,
         factory,
         transport=transport,
-        update_source=RecordedUpdateSource(()),
+        update_source=discussion,
         clock=TelegramClock(EVALUATED_AT),
     )
     assert projection is not None
@@ -339,19 +368,6 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
     candidate = scan.discussion.candidate
     assessment = scan.discussion.assessment
     window = scan.discussion.window
-
-    delivered = projection.controller.deliver()
-    assert delivered and delivered[0].accepted is True
-    discussed = projection.agent.handle_inbound_message(
-        identity=message_identity(update_id=97, message_id="pkg-discuss"),
-        inbound=inbound_message(),
-        text="Explain the candidate evidence and risk",
-        candidate=candidate,
-        assessment=assessment,
-        window=window,
-    )
-    assert discussed.executed is False
-    assert discussed.candidate_minted is False
 
     decision_runtime = build_production_canonical_runtime(
         factory, settings=settings, clock=PlanClock(EVALUATED_AT)
@@ -464,49 +480,34 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
                 session, organization_id=organization_id
             ),
         )
-        discussing = TelegramPaperAgent(
-            protocol=projection.agent.protocol,
-            candidates=projection.agent.candidates,
+        projection.agent._context = context
+        candidates_before = _count(factory, CanonicalCandidateRow)
+        telegram = TelegramPaperRuntime(
+            settings=settings,
+            session_factory=factory,
             clock=TelegramClock(EVALUATED_AT),
-            store=projection.agent.store,
-            context=context,
-            enabled=True,
+            worker_id="telegram-paper:rehearsal01",
+            posture="projection",
+            controller=projection.controller,
         )
-        learning = discussing.handle_inbound_message(
-            identity=message_identity(update_id=90, message_id="pkg-learn"),
-            inbound=inbound_message(),
-            text="show learning attribution",
-            candidate=candidate,
-            assessment=assessment,
-            window=window,
-        )
-        assert learning.executed is False
-        assert learning.candidate_minted is False
-        assert learning.reply_outbox is not None
-        assert "activate=false" in learning.reply_outbox.text
-        for update_id, text, needle in (
-            (91, "place order", "cannot place an order"),
-            (92, "override risk", "BLOCK remains final"),
-            (93, "override assessment", "cannot override SetupAssessment"),
-            (94, "activate strategy", "cannot approve or activate"),
-            (95, "mint candidate", "cannot mint a Candidate"),
-            (96, "enable live trading", "cannot enable live trading"),
+        telegram_cycle = telegram.run_cycle()
+        assert telegram_cycle.delivered >= 1
+        assert telegram_cycle.poll_applied >= 8
+        assert telegram_cycle.kill_switch_active is False
+        assert transport.send_count >= 1
+        assert _count(factory, CanonicalCandidateRow) == candidates_before
+        with factory() as fresh:
+            texts = "\n".join(fresh.scalars(select(TelegramOutboxRow.text)).all())
+        assert "activate=false" in texts
+        for needle in (
+            "cannot place an order",
+            "BLOCK remains final",
+            "cannot override SetupAssessment",
+            "cannot approve or activate",
+            "cannot mint a Candidate",
+            "cannot enable live trading",
         ):
-            refused = discussing.handle_inbound_message(
-                identity=message_identity(update_id=update_id, message_id=f"pkg-no-{update_id}"),
-                inbound=inbound_message(),
-                text=text,
-                candidate=candidate,
-                assessment=assessment,
-                window=window,
-            )
-            assert refused.refused is True
-            assert refused.executed is False
-            assert refused.candidate_minted is False
-            assert refused.risk_overridden is False
-            assert refused.live_trading_enabled is False
-            assert refused.reply_outbox is not None
-            assert needle in refused.reply_outbox.text
+            assert needle in texts
 
     before = (
         _count(factory, CanonicalCandidateRow),

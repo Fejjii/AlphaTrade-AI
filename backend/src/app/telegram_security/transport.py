@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +17,7 @@ class TransportSendResult(BaseModel):
     error_code: str | None = None
 
 
+@runtime_checkable
 class TelegramTransport(Protocol):
     """Outbound private-chat transport. Implementations must not place orders."""
 

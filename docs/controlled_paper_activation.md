@@ -21,13 +21,13 @@ and every later flag below, is a human action.
 | Exchange credentials | unset. No Binance or BloFin key is added. |
 | Exchange mutation | none. Public `GET` on `https://fapi.binance.com` only. |
 | Risk | `BLOCK` remains final. |
-| Kill switch | remains final. Rollback does not clear it. |
+| Kill switch | Monitoring continues: the process stays up, heartbeats, and health still reports source and freshness. New automated paper actions stop: no Candidate mint, no Watcher-started paper workflow, no new Telegram outbox enqueue, and no delivery of queued automated messages. An unreadable switch is active. Rollback does not clear it. |
 | Evidence | `binance_usdm`, BTCUSDT first, quote freshness 10 seconds. No spot fallback and no fabricated fallback. |
 | Replay | rollback and test mode. It cannot start the Watcher arm. |
 | Watcher | dedicated process `python -m app.workers.watcher_paper`. Unique worker id. PostgreSQL leases and fencing. Approved compiled strategy only. `CONFIRMED_SETUP` is the only Candidate authority. |
 | Telegram | verified private binding, idempotent outbox, retry/backoff, restart recovery, audit, explicit confirmation. |
 | Telegram authority | cannot mint a Candidate, override SetupAssessment, override risk, activate a strategy, place an order, or enable live trading. |
-| Migration head | `e0f1a2b3c4d5` (revises `d9e0f1a2b3c4`). Do not downgrade Alembic as part of rollback. |
+| Migration head | `f1a2b3c4d5e6` (revises `e0f1a2b3c4d5`). Do not downgrade Alembic as part of rollback. |
 
 Production refuses `binance_usdm`, the Watcher arm, and every Telegram arming
 flag. Defaults stay disarmed.
@@ -55,7 +55,7 @@ disarmed (`NOT_ARMED`).
 
 ### 2. Migrations
 
-Apply Alembic through head `e0f1a2b3c4d5` on the staging database. Confirm a
+Apply Alembic through head `f1a2b3c4d5e6` on the staging database. Confirm a
 single head. Do not downgrade.
 
 ### 3. Live market activation
@@ -120,42 +120,60 @@ id plus a unique suffix. Legacy `MARKET_WATCHER_*` flags stay false.
 
 Confirm the worker log shows a cleared preflight and scans, and that
 `GET /health` still has `execution_mode=paper` and `real_trading_enabled=false`.
-Confirm monitoring shows a lease owned by that unique worker id. A replay
-source, provider outage, stale quote, invalid strategy lineage, or migration
-mismatch must refuse the scan. No order is placed.
+API flag fields are the API process configuration. Observed worker state is
+`worker_runtime`: heartbeat, lease, last scan, market source, freshness, and
+activation state. A replay source, provider outage, stale quote, invalid
+strategy lineage, or migration mismatch skips the scan and backs off. The
+process stays up. No order is placed. An active kill switch keeps that
+monitoring and blocks new Candidates and Telegram actions.
 
 `./scripts/validate-live-market-staging.sh --remote` still expects Watcher and
 Telegram off. After this step, use `./scripts/verify-safety.sh` instead.
 
-### 7. Telegram activation
+### 7. Telegram enrollment
 
-Only after step 6. On the worker that runs the Watcher (the projection hook is
-installed there):
+Only after step 6. Change the Telegram process only. Leave the Watcher
+environment unchanged so it does not restart.
 
 | Variable | Value |
 | --- | --- |
 | `TELEGRAM_INTERACTION_ENABLED` | `true` |
-| `TELEGRAM_PAPER_ACTIVATION_ARMED` | `true` |
-| `TELEGRAM_INBOUND_MODE` | `polling`, or `webhook` with `TELEGRAM_WEBHOOK_SECRET` length at least 32 |
-| `TELEGRAM_BOT_ID` | bot id of an already verified private binding |
-| `TELEGRAM_CHAT_ID` | chat id of that same binding |
+| `TELEGRAM_NETWORK_PERMITTED` | `true` |
+| `TELEGRAM_INBOUND_MODE` | `polling` |
+| `TELEGRAM_PAPER_ACTIVATION_ARMED` | `false` |
+| `TELEGRAM_BOT_ID` | bot id |
 | `TELEGRAM_ALERTS_ENABLED` | `false` |
 | `AUTOMATIC_TELEGRAM_DELIVERY_ENABLED` | `false` |
-| `TELEGRAM_NETWORK_PERMITTED` | `false` until step 8 |
+| `TELEGRAM_WEBHOOK_SECRET` | empty |
 
-The bot token comes from the secret store as `TELEGRAM_BOT_TOKEN`. Do not log
-it, do not commit it, and do not put it in `render.yaml`. A missing binding
-refuses the worker start. Telegram does not mint a Candidate.
+Staging does not use a webhook. `TELEGRAM_BOT_TOKEN` comes from the secret
+store on the Telegram process only. Do not log it, do not commit it, and do
+not put it in `render.yaml`. Set `TELEGRAM_BOT_ID` on the API as well so an
+authenticated operator can start enrollment. Do not put the token on the API.
 
-Restart the dedicated worker after the flags change.
+Start `python -m app.telegram_activation run`. Call
+`POST /telegram-paper/enrollment/start` as the tenant. The response token is
+shown once and is not logged. Send that token in a private chat. The Telegram
+process completes the binding and advances the durable cursor. The Watcher
+keeps scanning. There is no configuration in which projection is armed and
+the network is off: that combination fails Settings validation and does not
+boot.
 
-### 8. Safe test notification
+### 8. Atomic projection
 
-Set `TELEGRAM_NETWORK_PERMITTED=true` only for this step, restart the worker,
-and send one paper notification to the bound private chat. Confirm one outbox
-row, one accepted delivery, and a matching audit. A retry must not create a
-second send for the same idempotency key. Then discussion stays inside the
-paper agent. It cannot place an order.
+Set these on the Watcher and the Telegram process together, then restart both:
+
+| Variable | Value |
+| --- | --- |
+| `TELEGRAM_PAPER_ACTIVATION_ARMED` | `true` |
+| `TELEGRAM_CHAT_ID` | the verified private chat |
+| `TELEGRAM_NETWORK_PERMITTED` | `true` (already true) |
+| `TELEGRAM_INBOUND_MODE` | `polling` |
+| `TELEGRAM_BOT_TOKEN` | secret store, not logs |
+
+The Watcher installs an enqueue-only scan hook. The Telegram process drains
+the outbox and polls. A retry must not create a second send for the same
+idempotency key. Discussion stays advisory. It cannot place an order.
 
 ### 9. Observe the full paper loop
 
@@ -199,18 +217,20 @@ Print the checklist without applying it:
 8. Set `WATCHER_PAPER_STAGING_ACTIVATION=false`.
 9. Set `WATCHER_ORCHESTRATION_ENABLED=false`.
 10. Keep `MARKET_WATCHER_ENABLED=false` and both bridge flags false.
-11. Set `PERPETUAL_EVIDENCE_SOURCE=replay`.
+11. Set `PERPETUAL_EVIDENCE_SOURCE=replay` only after both Watcher flags are false. Replay while the Watcher is still armed fails Settings validation.
 12. Keep `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, and `EXCHANGE_MODE=paper_internal`.
 13. Do not add exchange credentials.
 14. Leave outbox, audit, cursor, send-ledger, Candidate, Journal, and lease rows in place.
 15. Do not downgrade Alembic.
 16. Leave the kill switch unchanged.
 17. Restart the API and worker.
-18. Confirm `GET /health` shows `execution_mode=paper`, `real_trading_enabled=false`, `perpetual_evidence_source=replay`, `perpetual_evidence_activation=inactive`, Watcher flags false, and Telegram flags disarmed.
+18. Confirm `GET /health` shows `execution_mode=paper`, `real_trading_enabled=false`, `perpetual_evidence_source=replay`, `perpetual_evidence_activation=inactive`, and `worker_runtime` for the disarmed workers. API flag fields are configuration, not a substitute for `worker_runtime`.
 19. Confirm `GET /health/telegram-paper-activation` shows `NOT_ARMED`.
 
 ## What is not in the blueprint
 
-`render.yaml` and `.env.staging.example` keep Watcher and Telegram disarmed.
-`TELEGRAM_BOT_ID` and `TELEGRAM_CHAT_ID` are empty in the examples. They are
-not activation.
+`render.yaml` adds `alphatrade-watcher-paper-staging` (`python -m app.workers.watcher_paper`)
+and `alphatrade-telegram-paper-staging` (`python -m app.telegram_activation run`).
+Both stay disarmed: Watcher flags false, Telegram flags false, inbound `off`,
+network false, and no bot token. Adding the services to the blueprint does not
+deploy or activate them. `.env.staging.example` keeps the same disarmed posture.

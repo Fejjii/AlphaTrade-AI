@@ -206,9 +206,12 @@ def _telegram_activation_errors(settings: Settings) -> list[str]:
         errors.append("telegram_alerts_enabled must be false in staging/production")
     if settings.automatic_telegram_delivery_enabled:
         errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
-    from app.controlled_activation.profile import controlled_telegram_projection
+    from app.controlled_activation.profile import (
+        controlled_telegram_projection,
+        telegram_enrollment_runtime,
+    )
 
-    if controlled_telegram_projection(settings):
+    if controlled_telegram_projection(settings) or telegram_enrollment_runtime(settings):
         return errors
     if settings.telegram_interaction_enabled:
         errors.append("telegram_interaction_enabled must be false in staging/production")

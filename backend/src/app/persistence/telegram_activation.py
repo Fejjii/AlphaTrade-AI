@@ -13,7 +13,7 @@ from app.db.telegram_activation import (
     TelegramActivationCursorRow,
     TelegramActivationSendLedgerRow,
 )
-from app.telegram_activation.cursor import InboundCursor
+from app.telegram_activation.cursor import InboundCursor, enrollment_cursor_owner
 from app.telegram_activation.errors import TelegramActivationError
 from app.telegram_activation.transport import SendLedgerRecord
 
@@ -59,6 +59,44 @@ class PostgresActivationCursorStore:
                 )
             current.last_update_id = row.last_update_id
             current.updated_at = row.updated_at
+
+
+def advance_bot_cursor(
+    session_factory: sessionmaker[Session],
+    *,
+    bot_id: str,
+    organization_id: UUID,
+    update_id: int,
+    now: datetime,
+) -> None:
+    """Advance one bot offset. A sentinel owner may be rebound to the enrollee.
+
+    A cursor already owned by another real organization keeps that owner and
+    still moves the offset, so one shared bot does not re-read the same update.
+    """
+
+    sentinel = enrollment_cursor_owner(bot_id)
+    with session_factory() as session, session.begin():
+        current = session.get(TelegramActivationCursorRow, bot_id, with_for_update=True)
+        if current is None:
+            session.add(
+                TelegramActivationCursorRow(
+                    bot_id=bot_id,
+                    organization_id=organization_id,
+                    last_update_id=update_id,
+                    updated_at=now,
+                )
+            )
+            return
+        if update_id < current.last_update_id:
+            raise TelegramActivationError(
+                "Inbound cursor cannot move backwards.",
+                reason="cursor_regression",
+            )
+        if current.organization_id in (organization_id, sentinel):
+            current.organization_id = organization_id
+        current.last_update_id = update_id
+        current.updated_at = now
 
 
 class PostgresActivationSendLedger:

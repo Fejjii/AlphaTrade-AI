@@ -45,6 +45,11 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),
         _REDACTED,
     ),
+    (
+        re.compile(r"bot\d{6,12}:[A-Za-z0-9_-]{20,}", re.IGNORECASE),
+        "bot" + _REDACTED,
+    ),
+    (re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{20,}\b"), _REDACTED),
 ]
 
 _SENSITIVE_KEYS = frozenset(
@@ -74,6 +79,8 @@ _SENSITIVE_KEYS = frozenset(
         "stripe_webhook_secret",
         "stripe_signature",
         "webhook_signature",
+        "telegram_bot_token",
+        "bot_token",
     }
 )
 

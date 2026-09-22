@@ -31,6 +31,10 @@ def resolve_perpetual_evidence_source(
             timeout_seconds=settings.perpetual_evidence_timeout_seconds,
             transport=transport,
             catalog=catalog,
+            max_retries=settings.binance_request_max_retries,
+            weight_per_minute=settings.binance_request_weight_per_minute,
+            max_backoff_seconds=settings.binance_request_max_backoff_seconds,
+            trade_cache_entries=settings.binance_evidence_cache_entries,
         )
     raise FallbackForbiddenError(
         f"Unknown perpetual_evidence_source={mode}; refusing silent fallback."

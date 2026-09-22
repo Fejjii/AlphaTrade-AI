@@ -35,7 +35,8 @@ SETUP_LIFETIME_PINS = "c8d9e0f1a2b3"
 PAPER_EVALUATION_OBSERVATIONS = "e3f4a5b6c7d8"
 TELEGRAM_PAPER_AGENT = "d9e0f1a2b3c4"
 TELEGRAM_PAPER_ACTIVATION = "e0f1a2b3c4d5"
-CURRENT_HEAD = TELEGRAM_PAPER_ACTIVATION
+CONTROLLED_RUNTIME_STATUS = "f1a2b3c4d5e6"
+CURRENT_HEAD = CONTROLLED_RUNTIME_STATUS
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -68,6 +69,7 @@ _NEW_TABLES = (
     "telegram_paper_threads",
     "telegram_paper_messages",
     "telegram_paper_confirmations",
+    "controlled_runtime_status",
 )
 
 
@@ -188,7 +190,7 @@ def test_alembic_single_head() -> None:
     assert script.get_heads() == [CURRENT_HEAD]
     head = script.get_revision(CURRENT_HEAD)
     assert head is not None
-    assert head.down_revision == TELEGRAM_PAPER_AGENT
+    assert head.down_revision == TELEGRAM_PAPER_ACTIVATION
     revisions = {rev.revision for rev in script.walk_revisions()}
     assert LEARNING_ATTRIBUTION_PERSISTENCE in revisions
     assert TELEGRAM_PAPER_ACTIVATION in revisions

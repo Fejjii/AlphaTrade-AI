@@ -391,7 +391,7 @@ def test_migration_reader_fails_closed_without_one_revision() -> None:
         session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('other')"))
         session.commit()
         assert read_migration_revision(session) is None
-    assert expected_migration_head() == "e0f1a2b3c4d5"
+    assert expected_migration_head() == "f1a2b3c4d5e6"
 
 
 def test_runtime_gate_stops_before_scan() -> None:
@@ -418,7 +418,10 @@ def test_runtime_gate_stops_before_scan() -> None:
     assert report.reason_code == "provider_unavailable"
     assert report.scans == ()
     assert report.candidates_created == 0
-    assert runtime.snapshot().stopping is True
+    assert runtime.snapshot().stopping is False
+    again = runtime.run_cycle()
+    assert again.reason_code == "provider_unavailable"
+    assert again.scans == ()
 
 
 def test_post_activation_smoke_rejects_the_five_failures() -> None:

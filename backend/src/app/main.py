@@ -56,6 +56,7 @@ from app.api.routes import (
     strategy_library,
     strategy_modules,
     strategy_quality,
+    telegram_enrollment,
     tools,
     tradingview,
     usage,
@@ -271,6 +272,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tools.router,
         worker.router,
         watcher_paper.router,
+        telegram_enrollment.router,
     ):
         app.include_router(r)
     return app

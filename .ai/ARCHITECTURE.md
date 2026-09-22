@@ -112,7 +112,7 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   `docs/telegram_evaluation_integration.md` and `docs/final_paper_system.md`.
 - `telegram_activation/`: controlled paper activation preflight, outbox
   delivery, polling/webhook intake, and rollback. Disarmed by default.
-  `create_app` does not mount a webhook. Alembic head `e0f1a2b3c4d5`. See
+  `create_app` does not mount a webhook. Alembic head `f1a2b3c4d5e6`. See
   `docs/telegram_paper_activation.md`.
 
 ## Endpoints of note (backward-compatibility anchors)

@@ -12,12 +12,15 @@ See also: [telegram_paper_agent.md](./telegram_paper_agent.md) ·
 
 ## Verdict
 
-**READY FOR CONTROLLED ACTIVATION** after the preflight and smoke in this
-repository pass. The running process remains `NOT_ARMED` until a human sets
-the local paper flags and calls `TelegramPaperActivation.arm()`.
+Local paper can still arm through `TelegramPaperActivation.arm()` after
+preflight. The running default process remains `NOT_ARMED`.
 
-Staging and production still reject every arming flag in
-`validate_deployment_settings`. `render.yaml` is unchanged.
+Staging uses one polling package, documented in
+[controlled_paper_activation.md](./controlled_paper_activation.md). Webhook is
+not a staging activation path. `create_app` does not mount a Telegram webhook.
+A partial staging flag set, including projection armed without
+`TELEGRAM_NETWORK_PERMITTED=true`, fails Settings validation. Production
+rejects the package. The Render blueprint services stay disarmed.
 
 ## What a human must do later
 
@@ -29,7 +32,7 @@ Staging and production still reject every arming flag in
    `ENABLE_REAL_TRADING=false`, set:
    - `TELEGRAM_INTERACTION_ENABLED=true`
    - `TELEGRAM_PAPER_ACTIVATION_ARMED=true`
-   - `TELEGRAM_INBOUND_MODE=polling` or `webhook` (one of them)
+   - `TELEGRAM_INBOUND_MODE=polling` (staging does not activate webhook)
    - `TELEGRAM_NETWORK_PERMITTED=true` only when a real send is intended
 4. Enroll a private-chat binding through the existing challenge. A chat id
    alone is not a binding.
@@ -38,7 +41,7 @@ Staging and production still reject every arming flag in
 6. Pass `paper_scan_hook()` into the paper worker yourself. `main()` does not
    install it. Watcher `PERSIST_AND_NOTIFY` stays `notify_disabled`.
 
-Do not set those flags in staging or production. Do not deploy from this work.
+Staging follows the controlled runbook. Do not deploy from this work. Production stays rejected.
 
 ## Safety gates
 
@@ -83,7 +86,7 @@ The script does not edit environment files, `render.yaml`, or a deployment.
 
 ## Schema
 
-Alembic `e0f1a2b3c4d5` revises `d9e0f1a2b3c4` and adds:
+Alembic `e0f1a2b3c4d5` revises `d9e0f1a2b3c4` and adds the activation cursor and send ledger. Current head `f1a2b3c4d5e6` adds `controlled_runtime_status`. The earlier revision adds:
 
 - `telegram_activation_inbound_cursors`
 - `telegram_activation_send_ledger`

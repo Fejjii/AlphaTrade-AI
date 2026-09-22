@@ -50,7 +50,7 @@ def _persistence_tables() -> list[object]:
         table
         for table in Base.metadata.sorted_tables
         if table.name.startswith(
-            ("watcher_", "telegram_", "canonical_candidate", "action_eligibility")
+            ("watcher_", "telegram_", "canonical_candidate", "action_eligibility", "controlled_")
         )
     ]
 
