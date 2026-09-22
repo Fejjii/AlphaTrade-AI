@@ -140,10 +140,12 @@ export function WatcherMonitoringCard({
                     ? "valid"
                     : "invalid"
               } · setup ${
-                snapshot.market_freshness.setup_lifetime_expired
-                  ? "expired"
-                  : "open"
-              }`}
+                snapshot.market_freshness.setup_lifetime_expired == null
+                  ? "unknown"
+                  : snapshot.market_freshness.setup_lifetime_expired
+                    ? "expired"
+                    : "open"
+              } · quote policy ${snapshot.market_freshness.quote_max_age_seconds ?? 10}s`}
             </dd>
           </div>
           <div>
@@ -163,14 +165,32 @@ export function WatcherMonitoringCard({
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-text-muted">Candidates detected</dt>
+            <dt className="text-xs text-text-muted">Scanner candidates</dt>
             <dd data-testid="watcher-monitoring-candidates">
               {snapshot.scanner_candidates.count > 0
                 ? `${snapshot.scanner_candidates.count} · ${snapshot.scanner_candidates.conditions.join(", ")}`
                 : "None"}
             </dd>
           </div>
+          <div>
+            <dt className="text-xs text-text-muted">Canonical candidates</dt>
+            <dd data-testid="watcher-monitoring-canonical-candidates">
+              {snapshot.canonical_candidates.length
+                ? snapshot.canonical_candidates
+                    .map((item) => `${item.candidate_id} · ${item.state}`)
+                    .join(", ")
+                : "None"}
+            </dd>
+          </div>
         </dl>
+
+        {snapshot.limitations.length ? (
+          <ul className="text-xs text-text-muted" data-testid="watcher-monitoring-limitations">
+            {snapshot.limitations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : null}
 
         {snapshot.block_reasons.length ? (
           <ul className="text-xs text-danger" data-testid="watcher-monitoring-block-reasons">

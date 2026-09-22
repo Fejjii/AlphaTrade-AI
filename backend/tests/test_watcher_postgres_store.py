@@ -835,16 +835,19 @@ def test_postgres_orchestrator_stale_fence_cannot_publish() -> None:
     policy = _policy(clock)
     request = _request(policy)
 
+    held_token: dict[str, int] = {}
+
     class StealOnEvaluate(ScriptedEvaluationBoundary):
         def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
             clock.advance(31)
-            store.claim_lease(
+            _acquired, lease, _reason = store.claim_lease(
                 scan_scope=request.scan_scope,
                 organization_id=request.organization_id,
                 owner_id="worker-b",
                 ttl_seconds=30,
                 now=clock.now(),
             )
+            held_token["worker-b"] = lease.fencing_token
             return super().evaluate(command)
 
     stolen = _orch(store, clock, evaluator=StealOnEvaluate(), lease_ttl_seconds=30).run_worker(
@@ -856,7 +859,11 @@ def test_postgres_orchestrator_stale_fence_cannot_publish() -> None:
     assert scheduled is not None
     stale_attempts = store.list_attempts(scheduled.lineage_id)
     assert stale_attempts[0].status is ScanAttemptStatus.REJECTED_STALE_FENCE
-    winner = _orch(store, clock).run_worker(request, worker_id="worker-b")
+    winner = _orch(store, clock).run_worker(
+        request,
+        worker_id="worker-b",
+        held_fencing_token=held_token["worker-b"],
+    )
     assert winner.status.value == "succeeded"
     assert winner.published is True
     assert winner.fencing_token == 2

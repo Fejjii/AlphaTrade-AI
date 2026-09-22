@@ -101,7 +101,15 @@ class WatcherStore(Protocol):
         owner_id: str,
         ttl_seconds: int,
         now: datetime,
-    ) -> tuple[bool, WorkerLease, str]: ...
+        fencing_token: int | None = None,
+    ) -> tuple[bool, WorkerLease, str]:
+        """Claim or renew one scope lease.
+
+        An active lease renews only when ``fencing_token`` is the current token
+        held by ``owner_id``. Same-owner callers without that token are
+        ``lease_held``. Expired leases may be taken over without a token.
+        """
+        ...
 
     def renew_lease(
         self,

@@ -498,16 +498,19 @@ def test_stale_worker_fencing_cannot_publish() -> None:
     store.put_policy_version(policy)
     request = _request(policy, key="fenced")
 
+    held_token: dict[str, int] = {}
+
     class _StealOnEvaluate:
         def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
             clock.advance(31)
-            store.claim_lease(
+            _acquired, lease, _reason = store.claim_lease(
                 scan_scope=request.scan_scope,
                 organization_id=request.organization_id,
                 owner_id="worker-b",
                 ttl_seconds=30,
                 now=clock.now(),
             )
+            held_token["worker-b"] = lease.fencing_token
             return inner.evaluate(command)
 
     stolen = build_orchestrator(
@@ -542,7 +545,11 @@ def test_stale_worker_fencing_cannot_publish() -> None:
         clock=clock,
         evaluator=inner,
         side_effects=SideEffectProbe(),
-    ).run_worker(request, worker_id="worker-b")
+    ).run_worker(
+        request,
+        worker_id="worker-b",
+        held_fencing_token=held_token["worker-b"],
+    )
     _assert_in_memory_cannot_mint(winner.outcome, inner)
     assert winner.status.value == "failed"
 
@@ -619,6 +626,7 @@ def test_worker_crash_and_retry_preserves_semantic_convergence() -> None:
         evaluator=service,
         side_effects=SideEffectProbe(),
     )
+    clock.advance(31)
     result = recovered.run_worker(request, worker_id="worker-1")
     _assert_in_memory_cannot_mint(result.outcome, service)
     assert result.status.value == "failed"

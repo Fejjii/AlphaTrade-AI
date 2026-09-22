@@ -160,7 +160,7 @@ def _maybe_start_watcher_paper_runtime(settings: Settings, *, monitor: object | 
     resolved_monitor = monitor if isinstance(monitor, PerpetualMarketMonitor) else None
     runtime = build_watcher_paper_runtime(settings, get_session_factory(), monitor=resolved_monitor)
     runtime.start_background_thread()
-    logger.info("watcher_paper_runtime_in_process", worker_id=settings.watcher_paper_worker_id)
+    logger.info("watcher_paper_runtime_in_process", worker_id=runtime.snapshot().worker_id)
     return runtime
 
 

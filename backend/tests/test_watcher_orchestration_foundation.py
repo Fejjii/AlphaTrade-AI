@@ -378,16 +378,19 @@ def test_stale_fence_cannot_publish_valid_results() -> None:
     policy = _policy(clock)
     request = _request(policy)
 
+    held_token: dict[str, int] = {}
+
     class _StealOnEvaluate(ScriptedEvaluationBoundary):
         def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
             clock.advance(31)
-            store.claim_lease(
+            _acquired, lease, _reason = store.claim_lease(
                 scan_scope=request.scan_scope,
                 organization_id=request.organization_id,
                 owner_id="worker-b",
                 ttl_seconds=30,
                 now=clock.now(),
             )
+            held_token["worker-b"] = lease.fencing_token
             return super().evaluate(command)
 
     orch_a = build_orchestrator(
@@ -417,7 +420,11 @@ def test_stale_fence_cannot_publish_valid_results() -> None:
         evaluator=ScriptedEvaluationBoundary(),
         side_effects=SideEffectProbe(),
     )
-    winner = orch_b.run_worker(request, worker_id="worker-b")
+    winner = orch_b.run_worker(
+        request,
+        worker_id="worker-b",
+        held_fencing_token=held_token["worker-b"],
+    )
     assert winner.status.value == "succeeded"
     assert winner.published is True
     assert winner.fencing_token != stolen.fencing_token
@@ -473,12 +480,16 @@ def test_retry_after_crash_completes_same_lineage() -> None:
         evaluator=evaluator,
         side_effects=SideEffectProbe(),
     )
+    # A new process does not hold the fencing token. Restart is takeover after TTL.
+    clock.advance(31)
     result = recovered.run_worker(request, worker_id="worker-1")
     assert result.status.value == "succeeded"
     scheduled = store.get_schedule(policy.identity.organization_id, None, "scan-1")
     assert scheduled is not None
     attempts = store.list_attempts(scheduled.lineage_id)
-    assert attempts[0].status is ScanAttemptStatus.SUCCEEDED
+    assert attempts[0].status is ScanAttemptStatus.STARTED
+    assert attempts[-1].status is ScanAttemptStatus.SUCCEEDED
+    assert attempts[-1].recovered_from_attempt_id == attempts[0].attempt_id
     assert evaluator.call_count == 1
     assert result.lineage_id == scheduled.lineage_id
 

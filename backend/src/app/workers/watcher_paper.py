@@ -13,12 +13,11 @@ from __future__ import annotations
 import signal
 import threading
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import FrameType
 from typing import TYPE_CHECKING
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import select
@@ -125,6 +124,15 @@ def last_closed_interval_end(moment: datetime, *, minutes: int = 15) -> datetime
     return floored - timedelta(minutes=remainder)
 
 
+def new_worker_instance_id(configured_id: str) -> str:
+    """Unique process identity. Autostart and the dedicated worker never share one."""
+
+    prefix = configured_id.strip()
+    if not prefix:
+        raise ValueError("watcher worker id is required")
+    return f"{prefix[:80]}:{uuid4().hex[:16]}"
+
+
 def paper_runtime_enabled(settings: Settings) -> bool:
     """True only for local paper monitoring. Staging/production stay dark."""
 
@@ -189,6 +197,7 @@ class WatcherPaperRuntime:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._status_lock = threading.Lock()
+        self._held_fencing_tokens: dict[str, int] = {}
         self._status = WatcherPaperStatusState(
             enabled=enabled,
             worker_id=worker_id,
@@ -360,8 +369,10 @@ class WatcherPaperRuntime:
 
     def _scan_one(self, session: Session | None, target: PaperScanTarget) -> WatcherPaperScanReport:
         try:
-            with self._candidate_session_bind(session):
-                report = self._scan_target(session, target)
+            # Candidate writes lock watcher_worker_leases in their own transaction
+            # and commit before the orchestrator heartbeats that same row. Binding
+            # this scan session across run_worker holds that lock and deadlocks.
+            report = self._scan_target(session, target)
             if session is not None:
                 session.commit()
             return report
@@ -388,15 +399,6 @@ class WatcherPaperRuntime:
                 candidate_ids=(),
                 kill_switch_active=self._kill_switch_is_active(session, target.organization_id),
             )
-
-    def _candidate_session_bind(self, session: Session | None) -> AbstractContextManager[object]:
-        bind_session = getattr(self._persistence_fence, "bind_session", None)
-        if session is None or not callable(bind_session):
-            return nullcontext()
-        bound: object = bind_session(session)
-        if isinstance(bound, AbstractContextManager):
-            return bound
-        return nullcontext()
 
     def _scan_target(
         self, session: Session | None, target: PaperScanTarget
@@ -432,7 +434,13 @@ class WatcherPaperRuntime:
             ),
             side_effects=self._side_effects,
         )
-        result = orchestrator.run_worker(request, worker_id=self._worker_id)
+        result = orchestrator.run_worker(
+            request,
+            worker_id=self._worker_id,
+            held_fencing_token=self._held_fencing_tokens.get(target.scan_scope),
+        )
+        if result.fencing_token is not None:
+            self._held_fencing_tokens[target.scan_scope] = result.fencing_token
         report = _report_from_cycle(
             target=target,
             result=result,
@@ -651,6 +659,7 @@ def build_watcher_paper_runtime(
     persistence_fence: CandidatePersistenceFence | None = None,
     side_effects: SideEffectPorts | None = None,
     monitor: PerpetualMarketMonitor | None = None,
+    worker_id: str | None = None,
 ) -> WatcherPaperRuntime:
     """Compose the paper runtime. Does not enable staging/production flags."""
 
@@ -678,7 +687,9 @@ def build_watcher_paper_runtime(
         lifecycle=resolved_lifecycle,
         clock=resolved_clock,
         enabled=paper_runtime_enabled(settings),
-        worker_id=settings.watcher_paper_worker_id,
+        worker_id=worker_id
+        if worker_id is not None
+        else new_worker_instance_id(settings.watcher_paper_worker_id),
         symbols=settings.watcher_paper_symbols,
         poll_interval_seconds=settings.watcher_paper_poll_interval_seconds,
         max_scopes_per_cycle=settings.watcher_paper_max_scopes_per_cycle,

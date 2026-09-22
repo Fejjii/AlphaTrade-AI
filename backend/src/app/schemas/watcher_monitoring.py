@@ -62,7 +62,12 @@ class WatcherApprovedStrategy(StrictModel):
 
 
 class WatcherSetupAssessmentSummary(StrictModel):
-    """Lineage projection from persisted Candidates. Not a second evaluator."""
+    """Origin of a persisted Candidate. Not a stored SetupAssessment re-read.
+
+    Candidates are minted only from ``CONFIRMED_SETUP``. This projection reports
+    that mint invariant. It does not invent an assessment the evaluator did not
+    return, and it is not a second evaluation.
+    """
 
     assessment_id: UUID
     candidate_id: UUID
@@ -72,6 +77,7 @@ class WatcherSetupAssessmentSummary(StrictModel):
     timeframe: str
     valid_until: datetime
     live_executable: Literal[False] = False
+    projection: Literal["candidate_mint_invariant"] = "candidate_mint_invariant"
 
 
 class WatcherDetectedCandidateSummary(StrictModel):
@@ -94,13 +100,20 @@ class WatcherCanonicalCandidateSummary(StrictModel):
 
 
 class WatcherMarketFreshness(StrictModel):
-    """Separated freshness clocks. Replay is never a live perpetual mark."""
+    """Separated freshness clocks. Replay is never a live perpetual mark.
+
+    ``quote_max_age_seconds`` is the canonical live-quote policy (10s).
+    ``legacy_scanner_stale_after_minutes`` is the disabled scanner threshold
+    and is not a quote, candle, or historical-evidence clock.
+    """
 
     status: Literal["fresh", "stale", "degraded", "unavailable", "replay", "unknown"] = "unknown"
     observed_at: datetime | None = None
     symbol: str | None = None
     data_freshness: str | None = None
-    stale_after_minutes: int
+    quote_max_age_seconds: int = 10
+    stale_after_minutes: int | None = None
+    legacy_scanner_stale_after_minutes: int | None = None
     quote_fresh: bool = False
     trade_stream_fresh: bool = False
     closed_candle_final: bool | None = None
