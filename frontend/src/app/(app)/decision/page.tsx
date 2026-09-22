@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { DecisionCaseCard } from "@/components/canonical-decision/DecisionCaseCard";
 import { DecisionChrome } from "@/components/canonical-decision/DecisionChrome";
+import { WatcherMonitoringPanel } from "@/components/WatcherMonitoringPanel";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { buttonVariants } from "@/components/ui/button";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
@@ -67,6 +68,7 @@ export default function DecisionHubPage() {
       current="candidate"
       eligibilityBlocked={killSwitchActive}
     >
+      <WatcherMonitoringPanel compact />
       <div className="flex flex-wrap gap-2">
         <Link href="/decision/market" className={cn(buttonVariants({ variant: "secondary" }), "min-h-11")}>
           Market assessment

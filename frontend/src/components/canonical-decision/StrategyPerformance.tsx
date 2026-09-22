@@ -1,9 +1,11 @@
 import Link from "next/link";
 
+import { PaperEvaluationSummaryCard } from "@/components/canonical-decision/PaperEvaluationSummaryCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
   CanonicalLearningStatsRead,
+  CanonicalPaperEvaluationRead,
   LearningAnalyticsSummaryResponse,
   SetupAnalyticsResponse,
   StrategyQualitySummaryResponse,
@@ -14,14 +16,18 @@ export function StrategyPerformance({
   learning,
   setups,
   canonical,
+  evaluation,
 }: {
   quality: StrategyQualitySummaryResponse | null;
   learning: LearningAnalyticsSummaryResponse | null;
   setups: SetupAnalyticsResponse | null;
   canonical?: CanonicalLearningStatsRead | null;
+  evaluation?: CanonicalPaperEvaluationRead | null;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-4" data-testid="strategy-performance">
+    <div className="space-y-4">
+      <PaperEvaluationSummaryCard evaluation={evaluation ?? null} />
+      <div className="grid gap-4 xl:grid-cols-4" data-testid="strategy-performance">
       <Card data-testid="canonical-learning-stats">
         <CardHeader>
           <CardTitle>Canonical learning</CardTitle>
@@ -112,6 +118,7 @@ export function StrategyPerformance({
           </Link>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

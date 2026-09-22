@@ -149,6 +149,18 @@ vi.mock("@/hooks/useAsyncData", () => ({
   useAsyncData: () => asyncState,
 }));
 
+vi.mock("@/hooks/useWatcherMonitoring", async () => {
+  const { makeWatcherMonitoringSnapshot } = await import("@/lib/watcher-monitoring-fixtures");
+  return {
+    useWatcherMonitoring: () => ({
+      data: makeWatcherMonitoringSnapshot(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    }),
+  };
+});
+
 describe("Decision hub", () => {
   beforeEach(() => {
     asyncState = { ...asyncState, loading: false, error: null };
@@ -158,6 +170,8 @@ describe("Decision hub", () => {
   it("renders the paper decision spine and forbids live execution copy", () => {
     render(<DecisionHubPage />);
     expect(screen.getByRole("heading", { level: 1, name: "Decision" })).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-card")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STOPPED");
     expect(screen.getByTestId("decision-stepper")).toBeInTheDocument();
     expect(screen.getByTestId("decision-safety-rail")).toBeInTheDocument();
     expect(screen.getByTestId("decision-human-approval-copy")).toHaveTextContent(

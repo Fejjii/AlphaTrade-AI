@@ -60,14 +60,25 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   (redaction-safe; booleans only for secrets).
 - `core/exchange_safety.py`: exchange-mode gating; `trade_live` refuses startup.
 - `core/config.py`: trading-mode validators (`execution_mode=trade` requires explicit enable).
-  `telegram_interaction_enabled` defaults false (AT-043; inbound Telegram protocol not wired).
+  `telegram_interaction_enabled` defaults false (AT-043/AT-074; inbound Telegram
+  protocol is not mounted on HTTP).
 - `telegram_security/`: isolated enrollment/nonce/receipt/outbox protocol. No execution path.
-  Persistence interfaces + in-memory test store; no Alembic. Exact replay binds an inbound
-  semantic fingerprint (`REPLAY_CONFLICT` on mismatch). Inbound size uses
-  `TelegramInboundUpdate.body_size`. See `docs/telegram_security_protocol.md`.
+  Persistence interfaces + in-memory test store; PostgreSQL adapter + Alembic from later
+  slices. Exact replay binds an inbound semantic fingerprint (`REPLAY_CONFLICT` on mismatch).
+  Bound private-chat messages use `receive_private_message`. See `docs/telegram_security_protocol.md`.
 - `candidate_alerts/`: composes canonical Phase 6 `Candidate` onto that protocol. Candidate is
   the only alert authority. APPROVE never executes. Telegram remains disabled. No webhook.
   See `docs/phase6_candidate_telegram_alerts.md`.
+- `telegram_paper_agent/` (AT-074): paper-only Watcher/Candidate/journal notifications and
+  bound discussion. Mutating paper actions require identity-bound confirmation. Telegram
+  never executes, never mints a Candidate, never overrides SetupAssessment or risk, and
+  never enables live trading. See `docs/telegram_paper_agent.md`.
+- Paper Watcher runtime (`app.workers.watcher_paper`): continuous paper-only
+  monitoring. Approved compiled strategy → live/read-only evidence →
+  `WatcherOrchestrator` → `evaluate_canonical_strategy` → Candidate only on
+  `CONFIRMED_SETUP`. `WATCHER_ORCHESTRATION_ENABLED` stays false in staging and
+  production. Dedicated process `python -m app.workers.watcher_paper`; local
+  autostart only when paper_runtime_enabled. No Telegram, no orders.
 - Canonical TradePlanRevision: `CanonicalTradePlanService` is the only first-slice
   plan authority. PostgreSQL binding uses `plan_authority` so legacy PVC-backed
   rows stay distinct from canonical Candidate ids. See
@@ -79,6 +90,16 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   `LearningQueryService` for strategy/pattern stats and RAG fact documents.
   See `docs/phase7_learning_attribution.md` and
   `docs/phase8_learning_persistence.md`.
+- `paper_evaluation/`: continuous paper measurement over Watcher →
+  SetupAssessment → Candidate → paper decision → Journal → attribution →
+  strategy statistics → refinement *suggestion*. Query-time merge; not a
+  second trading authority. AI may suggest a refinement and must not activate
+  it. Alembic `e3f4a5b6c7d8`. See `docs/phase8_paper_evaluation.md`.
+- `paper_interaction/`: composes those measurement facts into Telegram learning
+  text and turns a Watcher scan report into an optional durable notification.
+  The paper worker does not install the hook. Telegram cannot write market
+  truth or strategy authority. Alembic head `d9e0f1a2b3c4` revises
+  `e3f4a5b6c7d8`. See `docs/telegram_evaluation_integration.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 
@@ -90,6 +111,10 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `POST /webhooks/tradingview`, `GET /tradingview/signals`, `POST /tradingview/signals/{id}/create-candidate` (AT-037 — signed intake + optional paper candidate; paper-only)
 - `POST /exchange/blofin/sync`, `GET /exchange/blofin/sync/latest` (AT-037 — BloFin demo read-only snapshots; no order mutation)
 - `GET/POST /paper-signal-orchestration/*` (AT-038 — deterministic paper-signal orchestration; paper-only; no order placement)
+- `GET /canonical/market-status` (AT-069 — live read-only perpetual monitor; replay default; never live_mark for fixtures)
+- `GET /canonical/paper-evaluation/summary` (AT-073 — continuous paper evaluation measurement; Watcher stays off; refinements cannot activate)
+- `GET /watcher/paper-runtime/status` (AT-070 — paper Watcher monitoring status; disabled by default; no scans from HTTP)
+- `GET /market-watcher/monitoring` (AT-071/AT-072 — operator paper-monitoring snapshot; RUNNING requires fenced lease + fresh heartbeat; replay never live_mark)
 
 ## CI jobs
 

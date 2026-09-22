@@ -15,6 +15,7 @@ import httpx
 
 from app.market_contracts.errors import (
     NetworkMutationForbiddenError,
+    RateLimitedError,
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
     UnapprovedEvidenceHostError,
@@ -100,6 +101,11 @@ class ReadOnlyHttpGetClient:
             raise RegionalProviderFailureError(
                 "Preferred Binance USD-M perpetual source is unreachable."
             ) from exc
+        if response.status_code == 429:
+            raise RateLimitedError(
+                "Preferred Binance USD-M source rate-limited the read-only client.",
+                retry_after_seconds=_retry_after_seconds(response),
+            )
         if response.status_code in REGIONAL_STATUS_CODES:
             raise RegionalProviderFailureError(
                 f"Preferred Binance USD-M source rejected the runtime region "
@@ -165,3 +171,19 @@ class ReadOnlyHttpGetClient:
             raise UnapprovedEvidenceHostError(
                 f"Host {host} is not an approved Binance USD-M HTTPS evidence identity."
             )
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    token = raw.strip()
+    if not token:
+        return None
+    try:
+        parsed = float(token)
+    except ValueError:
+        return None
+    if parsed < 0:
+        return None
+    return parsed

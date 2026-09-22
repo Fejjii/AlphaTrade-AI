@@ -79,6 +79,10 @@ from app.db.learning_attribution import (  # noqa: F401
 from app.db.learning_attribution import (
     register_learning_attribution_immutability as _register_learning_attribution_immutability,
 )
+from app.db.paper_evaluation import PaperEvaluationObservationRow  # noqa: F401
+from app.db.paper_evaluation import (
+    register_paper_evaluation_immutability as _register_paper_evaluation_immutability,
+)
 from app.db.setup_lifetime import SetupLifetimePin  # noqa: F401
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
@@ -3656,3 +3660,4 @@ _register_canonical_candidate_immutability()
 _register_canonical_eligibility_immutability()
 _register_canonical_trade_plan_immutability()
 _register_learning_attribution_immutability()
+_register_paper_evaluation_immutability()

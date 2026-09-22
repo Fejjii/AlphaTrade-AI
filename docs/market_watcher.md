@@ -51,6 +51,7 @@ Bridge decisions stored in `market_watcher_bridge_decisions` with decision type,
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/market-watcher/status` | Env flag, watched symbols, last scan |
+| GET | `/market-watcher/monitoring` | Read-only Watcher PAPER MONITORING snapshot |
 | POST | `/market-watcher/scan` | Manual read-only scan (owner) |
 | GET | `/market-watcher/history` | Recent scan summaries |
 | GET | `/market-watcher/observations` | Persisted observations |
@@ -58,9 +59,31 @@ Bridge decisions stored in `market_watcher_bridge_decisions` with decision type,
 | POST | `/market-watcher/bridge/tick` | Manual bridge tick (owner, paper scan only) |
 | GET | `/market-watcher/bridge/history` | Bridge decision history |
 
+## Paper monitoring (operator observability)
+
+`GET /market-watcher/monitoring` projects existing runtime evidence into
+`RUNNING` | `STOPPED` | `DEGRADED` | `STALE` | `BLOCKED`.
+
+Operator rules:
+
+- `RUNNING` requires a live fenced lease + fresh heartbeat, or a live
+  watcher-worker heartbeat with both scanner and worker flags enabled.
+- Configuration flags alone are never treated as `RUNNING`.
+- The endpoint does not start Watcher, evaluate strategies, send Telegram,
+  or place trades.
+- The snapshot includes symbols, approved compiled strategies, last/next scan,
+  market freshness, provider health, persisted SetupAssessment lineage,
+  scanner candidates, rejection/block reasons, lease/worker health, recent
+  errors, and paper-only posture.
+- Candidates, SetupAssessments, and prices are omitted unless they already
+  exist in persisted stores. Missing values render as empty/`—`, never as
+  fabricated activity.
+
 ## UI
 
-**Market Watcher** (`/market-watcher`) — watcher status, bridge status, observations, bridge decisions, manual scan and bridge tick (when enabled), paper-only disclaimer.
+**Market Watcher** (`/market-watcher`) — watcher status, bridge status, observations, bridge decisions, manual scan and bridge tick (when enabled), paper-only disclaimer, plus the shared Watcher paper-monitoring card.
+
+**Dashboard / Decision / Strategy Lab / Watcher scanner** reuse the same monitoring card. They do not start Watcher.
 
 ## Agent
 

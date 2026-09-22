@@ -4,6 +4,7 @@ import type {
   CanonicalCurrentPriceRead,
   CanonicalEligibilityRead,
   CanonicalEvidenceRead,
+  CanonicalMarketMonitorStatusRead,
   CanonicalLearningRecordRead,
   CanonicalSetupAssessmentRead,
   JournalEntry,
@@ -32,6 +33,7 @@ import type {
   MarketQualityGrade,
   MarketQualityView,
   OutcomeView,
+  PerpetualMarketStatusView,
   PaperApprovalView,
   SetupAssessmentState,
 } from "@/lib/canonical-decision/types";
@@ -66,6 +68,7 @@ export function canonicalPriceFreshnessState(
   if (price.presentation === "replay_fixture" || price.is_mock) return "replay";
   if (!price.usable_as_current_market_price) {
     if (price.presentation === "stale" || price.freshness.state === "stale") return "stale";
+    if (price.presentation === "degraded") return "degraded";
     return "unavailable";
   }
   if (price.freshness.state === "aging") return "delayed";
@@ -90,6 +93,46 @@ export function currentPriceHonestyFromCanonical(
     freshnessState: canonicalPriceFreshnessState(price),
     freshnessPolicyVersion: price.freshness.policy_version,
     ageSeconds: price.freshness.age_seconds ?? null,
+  };
+}
+
+export function availabilityFreshnessState(
+  availability: string,
+): CanonicalFreshnessPillState {
+  if (availability === "fresh") return "live";
+  if (availability === "stale") return "stale";
+  if (availability === "degraded") return "degraded";
+  if (availability === "replay") return "replay";
+  return "unavailable";
+}
+
+export function perpetualMarketStatusFromCanonical(
+  read: CanonicalMarketMonitorStatusRead,
+): PerpetualMarketStatusView {
+  const price = currentPriceHonestyFromCanonical(read.current_price);
+  const replay = read.mode === "replay" || read.availability === "replay" || read.source.is_mock;
+  return {
+    symbol: read.symbol,
+    mode: read.mode,
+    availability: read.availability,
+    reason: read.reason,
+    lastUpdate: read.last_update,
+    sourceLabel: `${read.source.venue} USD-M ${read.source.market_type} · ${read.source.provider_symbol}`,
+    providerName: read.provider.name,
+    providerHealth: read.provider.health,
+    perpetual: true,
+    watcherActivated: false,
+    currentPrice: price,
+    streamLabel: `${read.stream.reconnect_state} · gap ${read.stream.gap_state} · warm-up ${read.stream.warm_up_status}`,
+    ohlcvLabel: `15m ${read.ohlcv.completeness_15m} · 4h ${read.ohlcv.completeness_4h}`,
+    cvdLabel: read.cvd.available
+      ? `complete · Δ ${read.cvd.signed_quote_delta ?? "—"}`
+      : `unavailable · ${read.cvd.reason ?? read.reason}`,
+    summary: replay
+      ? "Replay fixture stream. This price is not a current live perpetual mark."
+      : read.availability === "fresh" && price.usableAsCurrentMarketPrice
+        ? "Live Binance USD-M perpetual mark from contracted trades. Watcher stays off."
+        : "Perpetual monitor failed closed or is degraded. Replay, demo-seed, and compatibility prices are not used.",
   };
 }
 

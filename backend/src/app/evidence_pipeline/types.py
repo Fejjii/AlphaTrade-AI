@@ -26,6 +26,7 @@ class CurrentPricePresentation(StrEnum):
     REPLAY_FIXTURE = "replay_fixture"
     STALE = "stale"
     INCOMPLETE = "incomplete"
+    DEGRADED = "degraded"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     SPOT_REJECTED = "spot_rejected"
     WRONG_SOURCE = "wrong_source"

@@ -7,6 +7,7 @@ import {
   deriveProposalStage,
   marketQualityFromAnalysis,
   marketQualityFromCanonicalEvidence,
+  perpetualMarketStatusFromCanonical,
 } from "@/lib/canonical-decision/compose";
 import { projectActionEligibility, projectCanonicalEligibility } from "@/lib/canonical-decision/eligibility";
 import { buildDecisionSteps } from "@/lib/canonical-decision/steps";
@@ -16,6 +17,7 @@ import type {
   CanonicalCandidateRead,
   CanonicalEligibilityRead,
   CanonicalEvidenceRead,
+  CanonicalMarketMonitorStatusRead,
   MarketAnalyzeResponse,
   PaperValidationCandidateItem,
   TradeProposal,
@@ -259,11 +261,16 @@ describe("backend bindings", () => {
     expect(missing).not.toContain("execution-receipts");
     expect(missing).not.toContain("paper-execution");
     expect(missing).not.toContain("canonical-learning-records");
+    expect(missing).not.toContain("canonical-paper-evaluation");
     expect(missing).not.toContain("canonical-evidence");
     const paperPlan = boundBindings().find((item) => item.id === "paper-execution");
     expect(paperPlan?.path).toBe("POST /execution/paper-plan");
+    const paperEval = boundBindings().find((item) => item.id === "canonical-paper-evaluation");
+    expect(paperEval?.path).toBe("GET /canonical/paper-evaluation/summary");
     const evidence = boundBindings().find((item) => item.id === "canonical-evidence");
     expect(evidence?.path).toBe("GET /canonical/evidence");
+    const monitor = boundBindings().find((item) => item.id === "canonical-market-status");
+    expect(monitor?.path).toBe("GET /canonical/market-status");
     const legacyPaper = boundBindings().find((item) => item.id === "legacy-paper-execution");
     expect(legacyPaper).toBeUndefined();
     const analyze = boundBindings().find((item) => item.id === "market-analyze");
@@ -411,5 +418,47 @@ describe("canonical evidence honesty", () => {
     expect(view.authority).toBe("compatibility_projection");
     expect(view.evidence[0]?.freshnessState).toBe("unavailable");
     expect(view.evidence[0]?.isLive).toBe(false);
+  });
+});
+
+describe("perpetual market monitor honesty", () => {
+  it("never treats replay monitor prices as live marks", () => {
+    const read: CanonicalMarketMonitorStatusRead = {
+      authority: "canonical_market_monitor",
+      live_executable: false,
+      watcher_activated: false,
+      compatibility_price_used: false,
+      symbol: "BTCUSDT",
+      mode: "replay",
+      availability: "replay",
+      reason: "replay_fixture",
+      perpetual: true,
+      source: replayEvidence.source,
+      current_price: replayEvidence.current_price,
+      last_update: "2026-01-15T16:15:04.000Z",
+      evaluated_at: "2026-01-15T16:15:05.000Z",
+      stream: {
+        reconnect_state: "continuous",
+        gap_state: "none",
+        warm_up_status: "complete",
+        reconnect_count: 0,
+      },
+      coverage: { completeness: "complete", gap_state: "none" },
+      cvd: { available: true, event_count: 2 },
+      ohlcv: { available: true, completeness_15m: "complete", completeness_4h: "complete" },
+      provider: {
+        name: "binance-usdm-perpetual-replay",
+        health: "healthy",
+        is_mock: true,
+        using_fallback: false,
+      },
+      backoff: { active: false, attempt: 0 },
+      content_hash: "ab".repeat(32),
+    };
+    const view = perpetualMarketStatusFromCanonical(read);
+    expect(view.currentPrice.usableAsCurrentMarketPrice).toBe(false);
+    expect(view.currentPrice.freshnessState).toBe("replay");
+    expect(view.watcherActivated).toBe(false);
+    expect(view.summary).toMatch(/not a current live perpetual mark/i);
   });
 });

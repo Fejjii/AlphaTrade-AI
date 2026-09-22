@@ -7,7 +7,7 @@ import { installSharedE2ESession, paperModeActive } from "./helpers/shared-e2e-a
  * Emulation only — does NOT replace physical iPhone Safari validation.
  */
 
-const ROUTES = ["/", "/portfolio", "/analytics", "/positions", "/journal", "/decision", "/login"] as const;
+const ROUTES = ["/", "/portfolio", "/analytics", "/positions", "/journal", "/decision", "/watcher", "/login"] as const;
 
 async function collectConsoleAndNetwork(page: Page) {
   const consoleErrors: string[] = [];

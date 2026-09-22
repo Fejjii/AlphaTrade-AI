@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
+import { makeWatcherMonitoringSnapshot } from "@/lib/watcher-monitoring-fixtures";
 
 const safetyPosture = {
   executionMode: "paper" as string | null,
@@ -117,8 +118,8 @@ function failed<T = null>(error = "boom") {
   return { data: null as T | null, available: false, error, fallbackUsed: false };
 }
 
-let asyncState = {
-  data: {
+function defaultDashboardData() {
+  return {
     summary: ok(summary),
     approvals: ok({
       items: [{ id: "a1", status: "pending", proposal_id: "p1" }],
@@ -151,10 +152,15 @@ let asyncState = {
     paperRunSessions: ok({ items: [], total: 0 }),
     alertRouting: ok({ generated_at: "2026-06-28T12:00:00Z" }),
     watcherSummary: ok({ last_scan_at: "2026-06-28T12:00:00Z", generated_at: "2026-06-28T12:00:00Z" }),
+    watcherMonitoring: ok(makeWatcherMonitoringSnapshot()),
     discipline: failed(),
     risk: failed(),
     tradeReview: failed(),
-  } as unknown,
+  };
+}
+
+let asyncState = {
+  data: defaultDashboardData() as unknown,
   loading: false,
   error: null as string | null,
   reload: vi.fn(),
@@ -169,9 +175,10 @@ afterEach(() => {
   safetyPosture.executionMode = "paper";
   safetyPosture.realTradingEnabled = false;
   asyncState = {
-    ...asyncState,
+    data: defaultDashboardData() as unknown,
     loading: false,
     error: null,
+    reload: vi.fn(),
   };
 });
 
@@ -226,6 +233,41 @@ describe("DashboardPage Phase C1 safety and availability", () => {
     expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
       "Runtime posture unverified",
     );
+  });
+
+  it("renders Watcher paper monitoring from the typed API snapshot", () => {
+    render(<DashboardPage />);
+    expect(screen.getByTestId("watcher-monitoring-card")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STOPPED");
+    expect(screen.getByTestId("watcher-monitoring-paper-only")).toHaveTextContent("Paper only");
+    expect(screen.getByTestId("watcher-monitoring-real-trading")).toHaveTextContent(
+      "Real trading OFF",
+    );
+    expect(screen.queryByText("RUNNING")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /watcher monitoring/i })).toHaveAttribute(
+      "href",
+      "/watcher",
+    );
+  });
+
+  it("surfaces Watcher BLOCKED in the attention queue", () => {
+    asyncState = {
+      ...asyncState,
+      data: {
+        ...(asyncState.data as Record<string, unknown>),
+        watcherMonitoring: ok(
+          makeWatcherMonitoringSnapshot({
+            watcher_status: "BLOCKED",
+            paper_monitoring_status: "BLOCKED",
+            reason_code: "kill_switch_active",
+            block_reasons: ["kill_switch_active"],
+          }),
+        ),
+      },
+    };
+    render(<DashboardPage />);
+    expect(screen.getByRole("link", { name: /open watcher/i })).toHaveAttribute("href", "/watcher");
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("BLOCKED");
   });
 
   it("renders attention queue with prioritized actionable links", () => {
