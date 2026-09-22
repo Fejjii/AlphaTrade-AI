@@ -7,13 +7,18 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 WATCHER_PAPER_ACTIVATION_REQUIREMENTS: tuple[str, ...] = (
-    "WATCHER_ORCHESTRATION_ENABLED remains false in staging and production",
-    "Local paper enablement only (ENVIRONMENT=local, EXECUTION_MODE=paper)",
-    "ENABLE_REAL_TRADING stays false; no real exchange credentials",
-    "At least one tenant-scoped APPROVED or ACTIVE compiled strategy",
-    "Read-only perpetual evidence (replay default, or binance_usdm)",
-    "Dedicated paper Watcher process or local autostart",
-    "Telegram stays disabled; Watcher never places orders",
+    "Default disarmed: WATCHER_PAPER_STAGING_ACTIVATION is false",
+    "Local paper monitoring stays ENVIRONMENT=local with WATCHER_ORCHESTRATION_ENABLED",
+    "Production rejects Watcher orchestration and the staging activation arm",
+    "API process does not autostart staging; dedicated worker only, after preflight",
+    "Live canonical evidence is required; replay while live is required cannot start",
+    "Provider must be available; stale or degraded evidence fails closed",
+    "Approved compiled strategy lineage only; empty or invalid lineage cannot start",
+    "Alembic revision must match the single head",
+    "PostgreSQL leases, unique worker identity, fencing, restart recovery, idempotency",
+    "Candidate authority is CONFIRMED_SETUP only; risk BLOCK is final",
+    "Kill switch stays in force; paper execution only; Telegram stays disabled",
+    "ENABLE_REAL_TRADING stays false; runtime health gate stops the worker without deploying",
 )
 
 

@@ -6,6 +6,7 @@ Unknown catalog symbols fail closed later at assembly time.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID, uuid5
@@ -25,6 +26,7 @@ from app.watcher.hashing import derive_scan_scope
 FIRST_SLICE_SYMBOL = "BTCUSDT"
 FIRST_SLICE_TIMEFRAME = Timeframe.M15.value
 PAPER_POLICY_NAMESPACE = UUID("a0690000-1111-4000-8000-000000000069")
+_COMPILED_HASH = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +77,29 @@ def paper_policy_id(
         f"{organization_id}:{strategy_version_id}:{compiled_content_hash}:"
         f"{symbol.strip().upper()}:{timeframe}",
     )
+
+
+def lineage_targets_are_valid(targets: Sequence[PaperScanTarget]) -> bool:
+    """True when every target is a hashed approved-compiled lineage.
+
+    An empty target list is invalid: paper activation has nothing it may scan.
+    """
+
+    if not targets:
+        return False
+    for target in targets:
+        if _COMPILED_HASH.fullmatch(target.compiled_content_hash) is None:
+            return False
+        expected = paper_policy_id(
+            organization_id=target.organization_id,
+            strategy_version_id=target.strategy_version_id,
+            compiled_content_hash=target.compiled_content_hash,
+            symbol=target.symbol,
+            timeframe=target.timeframe,
+        )
+        if target.policy_id != expected:
+            return False
+    return True
 
 
 def normalize_paper_symbols(symbols: Sequence[str]) -> tuple[str, ...]:

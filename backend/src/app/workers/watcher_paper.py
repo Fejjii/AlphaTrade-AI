@@ -3,9 +3,10 @@
 Approved compiled strategy → read-only market evidence → WatcherOrchestrator
 scan → evaluate_canonical_strategy → Candidate only on CONFIRMED_SETUP.
 
-Never places orders, never starts Telegram, and never enables staging or
-production Watcher flags. Candidate persistence still requires persisted
-approved compiled authority.
+Never places orders and never starts Telegram. Local paper monitoring stays
+opt-in. Staging scans only after the paper-activation preflight clears, and
+production stays dark. Candidate persistence still requires persisted approved
+compiled authority.
 """
 
 from __future__ import annotations
@@ -69,6 +70,7 @@ logger = structlog.get_logger("workers.watcher_paper")
 PaperEvidenceFactory = Callable[[Session | None, WatcherStore, str], WatcherScanEvidencePort]
 PaperTargetLoader = Callable[[Session | None], tuple[PaperScanTarget, ...]]
 KillSwitchProbe = Callable[[UUID], bool]
+ActivationGate = Callable[[], object]
 EvaluationObserverFactory = Callable[
     [Session | None, PaperScanTarget], EvaluationOutcomeObserver | None
 ]
@@ -143,7 +145,7 @@ def new_worker_instance_id(configured_id: str) -> str:
 
 
 def paper_runtime_enabled(settings: Settings) -> bool:
-    """True only for local paper monitoring. Staging/production stay dark."""
+    """True only for local paper monitoring. Staging uses the activation gate."""
 
     return (
         bool(settings.watcher_orchestration_enabled)
@@ -152,6 +154,25 @@ def paper_runtime_enabled(settings: Settings) -> bool:
         and not settings.enable_real_trading
         and not settings.real_trading_enabled
     )
+
+
+def resolve_runtime_enabled(
+    settings: Settings,
+    *,
+    enabled: bool | None = None,
+    activation_cleared: bool = False,
+) -> bool:
+    """Local override stays explicit. Staging scans only after preflight clearance."""
+
+    if settings.environment is Environment.STAGING:
+        if not enabled or not activation_cleared:
+            return False
+        from app.workers.watcher_activation import staging_static_arm_ok
+
+        return staging_static_arm_ok(settings)
+    if enabled is not None:
+        return enabled
+    return paper_runtime_enabled(settings)
 
 
 class WatcherPaperRuntime:
@@ -180,6 +201,7 @@ class WatcherPaperRuntime:
         evaluation_clock: BoundEvaluationClock | None = None,
         scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
         evaluation_observer_factory: EvaluationObserverFactory | None = None,
+        activation_gate: ActivationGate | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -200,6 +222,7 @@ class WatcherPaperRuntime:
         self._settings = settings
         self._eval_clock = _shared_evaluation_clock(lifecycle, evaluation_clock)
         self._scan_notification_hook = scan_notification_hook
+        self._activation_gate = activation_gate
         self._observer_factory = (
             self._evaluation_observer
             if evaluation_observer_factory is None
@@ -321,6 +344,9 @@ class WatcherPaperRuntime:
         return self.run_loop()
 
     def run_cycle(self) -> WatcherPaperCycleReport:
+        refused = self._activation_refusal()
+        if refused is not None:
+            return refused
         if not self._enabled:
             report = WatcherPaperCycleReport(
                 reason_code="watcher_disabled",
@@ -370,6 +396,41 @@ class WatcherPaperRuntime:
             candidates_created=created,
             kill_switch_active=any_kill,
             reason_code=reason,
+        )
+        return report
+
+    def _activation_refusal(self) -> WatcherPaperCycleReport | None:
+        gate = self._activation_gate
+        if gate is None:
+            return None
+        try:
+            decision = gate()
+        except Exception:
+            logger.error(
+                "watcher_paper_activation_gate_error",
+                worker_id=self._worker_id,
+            )
+            reason = "activation_gate_error"
+        else:
+            reason_or_none = _gate_refusal_reason(decision)
+            if reason_or_none is None:
+                return None
+            reason = reason_or_none
+        self.stop()
+        report = WatcherPaperCycleReport(
+            reason_code=reason,
+            enabled=False,
+            scans=(),
+            candidates_created=0,
+            kill_switch_active=False,
+        )
+        observe_cycle("activation_refused")
+        self._remember_cycle(report)
+        logger.warning(
+            "watcher_paper_activation_rollback",
+            worker_id=self._worker_id,
+            reason_code=reason,
+            paper_only=True,
         )
         return report
 
@@ -594,6 +655,16 @@ class WatcherPaperRuntime:
             self._status.last_scans = report.scans
 
 
+def _gate_refusal_reason(decision: object) -> str | None:
+    allowed = getattr(decision, "allowed", None)
+    if allowed is True:
+        return None
+    reason = getattr(decision, "primary_reason", None)
+    if isinstance(reason, str) and reason and reason != "cleared":
+        return reason
+    return "activation_gate_error"
+
+
 def _report_from_cycle(
     *,
     target: PaperScanTarget,
@@ -720,6 +791,9 @@ def build_watcher_paper_runtime(
     worker_id: str | None = None,
     scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
     evaluation_observer_factory: EvaluationObserverFactory | None = None,
+    enabled: bool | None = None,
+    activation_cleared: bool = False,
+    activation_gate: ActivationGate | None = None,
 ) -> WatcherPaperRuntime:
     """Compose the paper runtime. Does not enable staging/production flags.
 
@@ -752,7 +826,9 @@ def build_watcher_paper_runtime(
         store=resolved_store,
         lifecycle=resolved_lifecycle,
         clock=resolved_clock,
-        enabled=paper_runtime_enabled(settings),
+        enabled=resolve_runtime_enabled(
+            settings, enabled=enabled, activation_cleared=activation_cleared
+        ),
         worker_id=worker_id
         if worker_id is not None
         else new_worker_instance_id(settings.watcher_paper_worker_id),
@@ -772,6 +848,7 @@ def build_watcher_paper_runtime(
         evaluation_clock=eval_clock,
         scan_notification_hook=scan_notification_hook,
         evaluation_observer_factory=evaluation_observer_factory,
+        activation_gate=activation_gate,
     )
 
 
@@ -784,12 +861,17 @@ def main() -> None:
     settings = get_settings()
     configure_logging(log_level=settings.log_level, json_logs=settings.log_json)
     assert_execution_capable_composition_root(settings)
+    if settings.environment is Environment.STAGING:
+        from app.workers.watcher_activation import run_staging_activation
+
+        run_staging_activation(settings)
+        return
     if not paper_runtime_enabled(settings):
         logger.warning(
             "watcher_paper_runtime_disabled",
             watcher_orchestration_enabled=settings.watcher_orchestration_enabled,
             environment=settings.environment.value,
-            hint="local paper only; staging/production flags stay false",
+            hint="local paper only; staging starts only after the paper activation preflight",
         )
         return
     runtime = build_watcher_paper_runtime(settings, get_session_factory())

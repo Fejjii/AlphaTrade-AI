@@ -22,23 +22,7 @@ done
 
 echo "Checking /health safety posture..."
 health_json="$(curl -fsS "${BASE_URL}/health")"
-python3 - <<'PY' "$health_json"
-import json
-import sys
-
-payload = json.loads(sys.argv[1])
-assert payload.get("execution_mode") == "paper", payload
-assert payload.get("real_trading_enabled") is False, payload
-for flag in (
-    "market_watcher_enabled",
-    "watcher_orchestration_enabled",
-    "telegram_alerts_enabled",
-    "telegram_interaction_enabled",
-):
-    if flag in payload:
-        assert payload.get(flag) is False, payload
-print("  execution_mode=paper, real_trading_enabled=false")
-PY
+python3 "${ROOT_DIR}/scripts/lib/watcher_paper_health.py" "$health_json"
 
 echo "Checking /health/ready..."
 ready_json="$(curl -fsS "${BASE_URL}/health/ready")"

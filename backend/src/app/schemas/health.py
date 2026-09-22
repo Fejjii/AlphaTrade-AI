@@ -26,6 +26,7 @@ class HealthResponse(BaseModel):
     market_watcher_enabled: bool = False
     market_watcher_bridge_enabled: bool = False
     watcher_orchestration_enabled: bool = False
+    watcher_paper_staging_activation: bool = False
     telegram_alerts_enabled: bool = False
     telegram_interaction_enabled: bool = False
     automatic_telegram_delivery_enabled: bool = False

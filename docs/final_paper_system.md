@@ -80,10 +80,13 @@ Single Alembic head:
 
 ## Still off
 
-`WATCHER_ORCHESTRATION_ENABLED`, `MARKET_WATCHER_ENABLED`,
+`WATCHER_PAPER_STAGING_ACTIVATION` defaults false. Staging and production
+templates keep `WATCHER_ORCHESTRATION_ENABLED`, `MARKET_WATCHER_ENABLED`,
 `TELEGRAM_INTERACTION_ENABLED`, `TELEGRAM_ALERTS_ENABLED`, and
-`ENABLE_REAL_TRADING` stay false. Staging and production still reject Watcher
-and Telegram activation flags. Real exchange mutation stays unavailable.
+`ENABLE_REAL_TRADING` false. Production still rejects Watcher and Telegram
+flags. Staging rejects Watcher orchestration unless the paper-monitoring arm
+is set and preflight passes. This repository does not set that arm, does not
+edit staging environment variables, and does not start the worker.
 
-Turning any of those on requires a separate authorized safety, risk, approval,
-and rollback program. This task does not start that program.
+Telegram and real trading stay out of that arm. The controlled procedure is
+`docs/watcher_paper_activation.md`. Running it is a separate human action.

@@ -1622,4 +1622,29 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Does not enable Watcher, Telegram, or live trading. Do not merge, deploy,
   or activate. Source PRs #125 and #126 stay unmerged.
 
+### AT-077 — Prepare controlled staging Watcher paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-076 · Risk: High
+  (activation path must stay disarmed and paper-only)
+- Safety classification: Paper monitoring only; Telegram off; live trading off;
+  no deploy; no staging environment edits; no activation
+- Goal: Smallest safe arm on the existing Watcher. Preflight, runtime health
+  gate, rollback plan, post-activation smoke, and monitoring checklist.
+  Prove the worker cannot start on replay evidence, provider outage, invalid
+  lineage, real trading, or an unhealthy migration.
+- Branch: `cursor/activation-watcher-paper-5263`
+- Base: `main` `894e9e4`
+- Alembic: unchanged single head `d9e0f1a2b3c4`. No new revision.
+- Validation: local PostgreSQL pytest 2567 passed / 0 skipped (exit 0);
+  `tests/test_watcher_postgres_store.py`, ownership, product proof, final paper
+  loop, Alembic postgres, and activation tests included. `ruff check` and
+  `ruff format --check` clean. Strict mypy clean on the activation modules.
+  Evaluation 16/16, 5/5, 7/7. Frontend lint, typecheck, 1195 tests, and build
+  passed. Activation, rollback, health, and smoke self-checks passed.
+  `WATCHER_PAPER_STAGING_ACTIVATION` remains false. Not deployed. Not activated.
+  GitHub CI is the remaining gate on the pull request.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-056
+- Note: Preparation only. `WATCHER_PAPER_STAGING_ACTIVATION` stays false.
+  Do not deploy or activate.
+
 

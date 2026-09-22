@@ -8,6 +8,7 @@ unaffected unless ``ENVIRONMENT`` is set to ``staging`` or ``production``.
 from __future__ import annotations
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
+from app.market_contracts.adapters.factory import REPLAY_MODES
 
 _LOCALHOST_MARKERS = ("localhost", "127.0.0.1")
 _WEAK_JWT_SECRETS = frozenset(
@@ -48,17 +49,16 @@ def validate_deployment_settings(settings: Settings) -> None:
     if settings.execution_mode is not ExecutionMode.PAPER:
         errors.append("execution_mode must be paper in staging/production")
 
-    # Staging/production remain paper-readiness environments: Watcher and Telegram
-    # stay off until a separately authorized enablement task. Accidental real
-    # trading remains impossible via the pins above plus paper/exchange safety.
+    # Legacy scanner, bridge, and Telegram stay off. Production Watcher stays off.
+    # Staging may construct an armed paper-monitoring pair; preflight still
+    # refuses to scan until live evidence, lineage, and migrations are healthy.
     if settings.market_watcher_enabled:
         errors.append("market_watcher_enabled must be false in staging/production")
     if settings.market_watcher_bridge_enabled:
         errors.append("market_watcher_bridge_enabled must be false in staging/production")
     if settings.market_watcher_bridge_auto_tick:
         errors.append("market_watcher_bridge_auto_tick must be false in staging/production")
-    if settings.watcher_orchestration_enabled:
-        errors.append("watcher_orchestration_enabled must be false in staging/production")
+    errors.extend(_watcher_activation_errors(settings))
     if settings.telegram_alerts_enabled:
         errors.append("telegram_alerts_enabled must be false in staging/production")
     if settings.telegram_interaction_enabled:
@@ -189,4 +189,34 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "market_watcher_enabled": settings.market_watcher_enabled,
         "market_watcher_bridge_enabled": settings.market_watcher_bridge_enabled,
         "watcher_orchestration_enabled": settings.watcher_orchestration_enabled,
+        "watcher_paper_staging_activation": settings.watcher_paper_staging_activation,
     }
+
+
+def _watcher_activation_errors(settings: Settings) -> list[str]:
+    """Refuse every Watcher arm except disarmed, or staging paper with live evidence."""
+
+    errors: list[str] = []
+    armed = settings.watcher_paper_staging_activation
+    orchestration = settings.watcher_orchestration_enabled
+    if settings.environment is Environment.PRODUCTION:
+        if armed:
+            errors.append("watcher_paper_staging_activation must be false in production")
+        if orchestration:
+            errors.append("watcher_orchestration_enabled must be false in staging/production")
+        return errors
+    if orchestration and not armed:
+        errors.append("watcher_orchestration_enabled must be false in staging/production")
+    elif armed and not orchestration:
+        errors.append(
+            "watcher_paper_staging_activation requires watcher_orchestration_enabled "
+            "for paper monitoring only"
+        )
+    elif armed and orchestration:
+        source = settings.perpetual_evidence_source.strip().lower()
+        if source in REPLAY_MODES:
+            errors.append(
+                "watcher paper activation refuses replay evidence while live canonical "
+                "evidence is required"
+            )
+    return errors

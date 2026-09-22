@@ -73,6 +73,7 @@ Do **not** treat these as product defects. They are the exact human/ops boundary
 - [ ] `MARKET_WATCHER_ENABLED=false`
 - [ ] `MARKET_WATCHER_BRIDGE_ENABLED=false`
 - [ ] `WATCHER_ORCHESTRATION_ENABLED=false`
+- [ ] `WATCHER_PAPER_STAGING_ACTIVATION` unset or false (see `docs/watcher_paper_activation.md`; do not arm it on this checklist)
 - [ ] `TELEGRAM_ALERTS_ENABLED=false`
 - [ ] `TELEGRAM_INTERACTION_ENABLED=false`
 - [ ] `AUTOMATIC_TELEGRAM_DELIVERY_ENABLED=false`
