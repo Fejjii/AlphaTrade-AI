@@ -64,6 +64,9 @@ jobs:
           test -x scripts/staging-live-smoke.sh
           test -x scripts/post-deploy-smoke-gate.sh
           test -x scripts/canonical-staging-smoke.sh
+          test -x scripts/telegram-paper-activation-preflight.sh
+          test -x scripts/telegram-paper-activation-smoke.sh
+          test -x scripts/telegram-paper-activation-rollback.sh
           test -x scripts/run-migrations.sh
       - name: Post-deploy smoke gate self-check
         working-directory: .

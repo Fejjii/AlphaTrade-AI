@@ -76,14 +76,17 @@ Single Alembic head:
 
 `c8d9e0f1a2b3` (setup-lifetime pins)
 → `e3f4a5b6c7d8` (paper evaluation observations)
-→ `d9e0f1a2b3c4` (paper Telegram notification, thread, message, confirmation).
+→ `d9e0f1a2b3c4` (paper Telegram notification, thread, message, confirmation)
+→ `e0f1a2b3c4d5` (paper Telegram activation cursor and send ledger).
 
 ## Still off
 
 `WATCHER_ORCHESTRATION_ENABLED`, `MARKET_WATCHER_ENABLED`,
-`TELEGRAM_INTERACTION_ENABLED`, `TELEGRAM_ALERTS_ENABLED`, and
-`ENABLE_REAL_TRADING` stay false. Staging and production still reject Watcher
-and Telegram activation flags. Real exchange mutation stays unavailable.
+`TELEGRAM_INTERACTION_ENABLED`, `TELEGRAM_ALERTS_ENABLED`,
+`TELEGRAM_PAPER_ACTIVATION_ARMED`, `TELEGRAM_NETWORK_PERMITTED`, and
+`ENABLE_REAL_TRADING` stay false. `TELEGRAM_INBOUND_MODE` stays `off`.
+Staging and production still reject Watcher and Telegram activation flags.
+Real exchange mutation stays unavailable.
 
 Turning any of those on requires a separate authorized safety, risk, approval,
 and rollback program. This task does not start that program.

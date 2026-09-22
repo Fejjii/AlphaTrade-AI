@@ -84,6 +84,9 @@ export interface HealthResponse {
   telegram_alerts_enabled?: boolean;
   telegram_interaction_enabled?: boolean;
   automatic_telegram_delivery_enabled?: boolean;
+  telegram_paper_activation_armed?: boolean;
+  telegram_inbound_mode?: "off" | "polling" | "webhook";
+  telegram_network_permitted?: boolean;
   git_sha?: string | null;
   timestamp: string;
 }
@@ -3402,6 +3405,9 @@ export interface WatcherConfigFlags {
   telegram_alerts_enabled: boolean;
   telegram_interaction_enabled: boolean;
   automatic_telegram_delivery_enabled: boolean;
+  telegram_paper_activation_armed?: boolean;
+  telegram_inbound_mode?: string;
+  telegram_network_permitted?: boolean;
 }
 
 export interface PaperMonitoringPosture {

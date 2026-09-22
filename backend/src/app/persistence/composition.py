@@ -53,6 +53,7 @@ from app.services.canonical_trade_plan import CanonicalTradePlanService
 from app.signal_fusion.action_eligibility import ActionEligibilityService
 from app.signal_fusion.lifecycle import CandidateLifecycleService
 from app.signal_fusion.ports import Clock as CandidateClock
+from app.telegram_security.backoff import DeliveryBackoff
 from app.telegram_security.clock import Clock, FrozenClock
 from app.telegram_security.protocol import TelegramSecurityProtocol
 from app.telegram_security.rate_limit import ProtocolRateLimiter, RateLimitPolicy
@@ -210,6 +211,7 @@ def build_postgres_telegram_security_protocol(
     outbox_max_attempts: int = 3,
     outbox_lease: timedelta = timedelta(seconds=30),
     lease_owner: str = "telegram-security-protocol",
+    retry_backoff: DeliveryBackoff | None = None,
 ) -> TelegramSecurityProtocol:
     """Isolated protocol backed by PostgreSQL. Remains disabled unless enabled=True."""
 
@@ -231,6 +233,7 @@ def build_postgres_telegram_security_protocol(
         outbox_max_attempts=outbox_max_attempts,
         outbox_lease=outbox_lease,
         lease_owner=lease_owner,
+        retry_backoff=retry_backoff,
     )
 
 

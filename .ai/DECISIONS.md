@@ -1899,4 +1899,43 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_paper_system_integration`. Draft PR
   only. Do not merge, deploy, or activate Watcher or Telegram.
 
+## AT-ADR-056 — Paper Telegram activation is armed only by an explicit local preflight
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** AT-074 and AT-076 can project a Watcher or Candidate event into
+  the Telegram outbox and discuss it, but the production-shaped intake,
+  backoff, health, and rollback path was still absent. Operators need that
+  path before any controlled activation. Watcher and live trading stay off.
+  Staging environment variables stay unchanged.
+- **Decision:**
+  1. `app.telegram_activation` is the only paper activation controller.
+     `TelegramPaperActivation.arm` fails closed unless preflight passes.
+     Default settings are not armable. `create_app` does not mount a webhook
+     and does not start polling.
+  2. Inbound mode is `off`, `polling`, or `webhook`, never both. Webhook
+     requests must present `X-Telegram-Bot-Api-Secret-Token`. Polling uses an
+     injected update source. HTTP clients refuse unless
+     `TELEGRAM_NETWORK_PERMITTED=true`.
+  3. Recipient binding, tenant isolation, outbox idempotency, send-ledger
+     dedupe, retry backoff, expired-lease recovery, inbound and outbound rate
+     limits, audit events, and delivery status stay on the existing security
+     protocol plus the activation cursor and ledger.
+  4. Paper mutations still require an explicit confirmation identity.
+     Telegram cannot mint a Candidate, override SetupAssessment, override
+     risk, activate a strategy, place an order, or enable live trading.
+  5. Staging and production reject `TELEGRAM_PAPER_ACTIVATION_ARMED`,
+     non-off `TELEGRAM_INBOUND_MODE`, `TELEGRAM_NETWORK_PERMITTED`, and a
+     non-empty webhook secret. `render.yaml` is not modified.
+  6. Rollback is a printed human checklist. The rollback command refuses
+     `--apply` and does not edit environment files or deploy.
+- **Alternatives considered:** Mount the webhook from `create_app` (rejected:
+  activation must be explicit); enable Watcher `PERSIST_AND_NOTIFY` (rejected:
+  notify stays blocked); send a real Telegram message during implementation
+  (rejected: no test recipient was authorized for live delivery).
+- **Safety impact:** Machinery only. Does not enable Watcher, Telegram, or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Alembic `e0f1a2b3c4d5` revises `d9e0f1a2b3c4`. Branch
+  `cursor/activation_telegram_paper-a361`. Draft PR only. Do not deploy or
+  activate.
+
 

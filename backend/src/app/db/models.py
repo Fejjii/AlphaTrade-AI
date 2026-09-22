@@ -87,6 +87,10 @@ from app.db.setup_lifetime import SetupLifetimePin  # noqa: F401
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )
+from app.db.telegram_activation import (  # noqa: F401
+    TelegramActivationCursorRow,
+    TelegramActivationSendLedgerRow,
+)
 from app.db.telegram_security import (  # noqa: F401
     TelegramActionNonceRow,
     TelegramActionReceiptRow,

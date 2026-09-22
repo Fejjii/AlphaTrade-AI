@@ -184,6 +184,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=_lifespan,
     )
     app.state.settings = settings
+    app.state.telegram_paper_activation = None
+    app.state.telegram_webhook_mounted = False
     app.state.provider_registry = build_default_registry(settings)
     from app.market_monitor.factory import build_perpetual_market_monitor
 

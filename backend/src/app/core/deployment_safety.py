@@ -65,6 +65,14 @@ def validate_deployment_settings(settings: Settings) -> None:
         errors.append("telegram_interaction_enabled must be false in staging/production")
     if settings.automatic_telegram_delivery_enabled:
         errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
+    if settings.telegram_paper_activation_armed:
+        errors.append("telegram_paper_activation_armed must be false in staging/production")
+    if settings.telegram_inbound_mode.value != "off":
+        errors.append("telegram_inbound_mode must be off in staging/production")
+    if settings.telegram_network_permitted:
+        errors.append("telegram_network_permitted must be false in staging/production")
+    if settings.telegram_webhook_secret.strip():
+        errors.append("telegram_webhook_secret must be empty in staging/production")
 
     # The demo exchange is allowed in staging only (for validation), never in
     # production. ``trade_live`` is rejected globally by exchange_safety.
@@ -186,6 +194,10 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "telegram_alerts_enabled": settings.telegram_alerts_enabled,
         "telegram_interaction_enabled": settings.telegram_interaction_enabled,
         "automatic_telegram_delivery_enabled": settings.automatic_telegram_delivery_enabled,
+        "telegram_paper_activation_armed": settings.telegram_paper_activation_armed,
+        "telegram_inbound_mode": settings.telegram_inbound_mode.value,
+        "telegram_network_permitted": settings.telegram_network_permitted,
+        "telegram_webhook_secret_configured": bool(settings.telegram_webhook_secret.strip()),
         "market_watcher_enabled": settings.market_watcher_enabled,
         "market_watcher_bridge_enabled": settings.market_watcher_bridge_enabled,
         "watcher_orchestration_enabled": settings.watcher_orchestration_enabled,

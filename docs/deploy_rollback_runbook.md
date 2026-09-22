@@ -171,7 +171,8 @@ Current Alembic head is a single linear chain:
 → `b7c8d9e0f1a2` (strategy conversations, proposals, provenance links)
 → `c8d9e0f1a2b3` (durable setup-lifetime pins)
 → `e3f4a5b6c7d8` (paper evaluation observations)
-→ `d9e0f1a2b3c4` (paper Telegram notification/thread identity).
+→ `d9e0f1a2b3c4` (paper Telegram notification/thread identity)
+→ `e0f1a2b3c4d5` (paper Telegram activation cursor and send ledger).
 
 These revisions ship non-empty `downgrade()`. Prefer leaving additive schema
 forward when rolling back the API image: old paper code can typically read the
@@ -180,6 +181,8 @@ an explicit restore plan.
 
 | Head to reverse | Safer action |
 |-----------------|--------------|
+| App-only defect after `e0f1a2b3c4d5` applied | Roll back the Render image; leave DB at head |
+| Need to undo paper Telegram activation cursor/ledger only | `alembic downgrade d9e0f1a2b3c4` after written approval |
 | App-only defect after `d9e0f1a2b3c4` applied | Roll back the Render image; leave DB at head |
 | Need to undo paper Telegram identity tables only | `alembic downgrade e3f4a5b6c7d8` after written approval |
 | App-only defect after `e3f4a5b6c7d8` applied | Roll back the Render image; leave DB at head |

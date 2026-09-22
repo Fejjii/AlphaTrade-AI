@@ -17,6 +17,10 @@ def test_defaults_are_safe() -> None:
     assert settings.observability_strict_mode is False
     assert settings.telegram_alerts_enabled is False
     assert settings.telegram_interaction_enabled is False
+    assert settings.telegram_paper_activation_armed is False
+    assert settings.telegram_inbound_mode.value == "off"
+    assert settings.telegram_network_permitted is False
+    assert settings.telegram_webhook_secret == ""
 
 
 def test_cors_origins_accepts_comma_separated_string() -> None:

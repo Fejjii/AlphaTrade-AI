@@ -21,6 +21,9 @@ SCRIPTS = (
     "scripts/run-migrations.sh",
     "scripts/provider-validation-smoke.sh",
     "scripts/canonical-staging-smoke.sh",
+    "scripts/telegram-paper-activation-preflight.sh",
+    "scripts/telegram-paper-activation-smoke.sh",
+    "scripts/telegram-paper-activation-rollback.sh",
     "scripts/recreate-rag-collection.sh",
     "scripts/reingest-knowledge-base.sh",
 )

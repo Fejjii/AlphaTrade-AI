@@ -76,6 +76,9 @@ Do **not** treat these as product defects. They are the exact human/ops boundary
 - [ ] `TELEGRAM_ALERTS_ENABLED=false`
 - [ ] `TELEGRAM_INTERACTION_ENABLED=false`
 - [ ] `AUTOMATIC_TELEGRAM_DELIVERY_ENABLED=false`
+- [ ] `TELEGRAM_PAPER_ACTIVATION_ARMED=false`
+- [ ] `TELEGRAM_INBOUND_MODE=off`
+- [ ] `TELEGRAM_NETWORK_PERMITTED=false`
 - [ ] `BILLING_ENABLED=false`
 - [ ] Hosted `DATABASE_URL`, `REDIS_URL`, `QDRANT_URL` (not localhost)
 - [ ] `OPENAI_API_KEY` set (value never logged)
