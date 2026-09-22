@@ -20,6 +20,7 @@ from app.paper_evaluation.contracts import (
     PaperEvaluationSummary,
 )
 from app.paper_evaluation.query import PaperEvaluationQueryService
+from app.signal_fusion.action_eligibility import ActionEligibilityEvaluation
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.candidate import Candidate
 from app.signal_fusion.evidence_window import CanonicalEvidenceWindowV1
@@ -156,9 +157,16 @@ def evaluation_fact_lines(summary: PaperEvaluationSummary) -> tuple[str, ...] | 
 class EvaluationLearningContext:
     """Read-only Telegram context. Learning text comes from paper-evaluation facts."""
 
-    def __init__(self, inner: PaperContextPort, query: PaperEvaluationQueryService) -> None:
+    def __init__(
+        self,
+        inner: PaperContextPort,
+        query: PaperEvaluationQueryService,
+        *,
+        eligibility_loader: Callable[[UUID], tuple[ActionEligibilityEvaluation, ...]] | None = None,
+    ) -> None:
         self._inner = inner
         self._query = query
+        self._eligibility_loader = eligibility_loader
 
     def paper_trade_status(self, *, organization_id: UUID, user_id: UUID) -> PaperTradeStatusView:
         return self._inner.paper_trade_status(organization_id=organization_id, user_id=user_id)
@@ -181,7 +189,14 @@ class EvaluationLearningContext:
         self, *, organization_id: UUID, user_id: UUID, candidate_id: UUID | None
     ) -> LearningSummaryView | None:
         del user_id
-        summary = self._query.summary(organization_id=organization_id, narrative=None)
+        eligibility = (
+            () if self._eligibility_loader is None else self._eligibility_loader(organization_id)
+        )
+        summary = self._query.summary(
+            organization_id=organization_id,
+            narrative=None,
+            eligibility=eligibility,
+        )
         lines = evaluation_fact_lines(summary)
         if lines is None:
             return None

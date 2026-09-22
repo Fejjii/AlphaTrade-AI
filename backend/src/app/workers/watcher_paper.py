@@ -718,15 +718,23 @@ def build_watcher_paper_runtime(
     side_effects: SideEffectPorts | None = None,
     monitor: PerpetualMarketMonitor | None = None,
     worker_id: str | None = None,
+    scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
+    evaluation_observer_factory: EvaluationObserverFactory | None = None,
 ) -> WatcherPaperRuntime:
-    """Compose the paper runtime. Does not enable staging/production flags."""
+    """Compose the paper runtime. Does not enable staging/production flags.
+
+    The scan hook stays unset unless the caller supplies one. Telegram and
+    live trading are not started here.
+    """
 
     from app.persistence.composition import build_postgres_watcher_store
     from app.runtime.canonical import build_production_canonical_runtime
     from app.signal_fusion.memory import UtcClock
 
     resolved_clock = clock if clock is not None else UtcClock()
-    canonical = build_production_canonical_runtime(session_factory, settings=settings)
+    canonical = build_production_canonical_runtime(
+        session_factory, settings=settings, clock=resolved_clock
+    )
     resolved_store = store if store is not None else build_postgres_watcher_store(session_factory)
     eval_clock = BoundEvaluationClock()
     resolved_lifecycle = (
@@ -762,7 +770,8 @@ def build_watcher_paper_runtime(
         side_effects=side_effects,
         settings=settings,
         evaluation_clock=eval_clock,
-        scan_notification_hook=None,
+        scan_notification_hook=scan_notification_hook,
+        evaluation_observer_factory=evaluation_observer_factory,
     )
 
 

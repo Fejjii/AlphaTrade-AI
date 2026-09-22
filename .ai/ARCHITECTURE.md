@@ -76,9 +76,17 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - Paper Watcher runtime (`app.workers.watcher_paper`): continuous paper-only
   monitoring. Approved compiled strategy → live/read-only evidence →
   `WatcherOrchestrator` → `evaluate_canonical_strategy` → Candidate only on
-  `CONFIRMED_SETUP`. `WATCHER_ORCHESTRATION_ENABLED` stays false in staging and
-  production. Dedicated process `python -m app.workers.watcher_paper`; local
-  autostart only when paper_runtime_enabled. No Telegram, no orders.
+  `CONFIRMED_SETUP`. PR126 freshness contracts stay authoritative: quote,
+  trade-stream, closed-candle finality, historical evidence validity, and
+  setup lifetime are separate clocks. OHLCV availability is not closed-candle
+  finality. Trade coverage is not historical validity. Live quote stale is
+  10 seconds; the 60-minute scanner stale window is legacy, not Watcher.
+  Worker instance ids are unique. Renewing a lease requires the current
+  fencing token. Missing monitor and live/replay mismatch fail closed.
+  `build_watcher_paper_runtime` shares the worker clock with the candidate
+  fence. The scan hook stays unset unless a caller supplies one. `main()`
+  does not install Telegram. `WATCHER_ORCHESTRATION_ENABLED` stays false in
+  staging and production. No orders.
 - Canonical TradePlanRevision: `CanonicalTradePlanService` is the only first-slice
   plan authority. PostgreSQL binding uses `plan_authority` so legacy PVC-backed
   rows stay distinct from canonical Candidate ids. See
@@ -98,8 +106,10 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `paper_interaction/`: composes those measurement facts into Telegram learning
   text and turns a Watcher scan report into an optional durable notification.
   The paper worker does not install the hook. Telegram cannot write market
-  truth or strategy authority. Alembic head `d9e0f1a2b3c4` revises
-  `e3f4a5b6c7d8`. See `docs/telegram_evaluation_integration.md`.
+  truth or strategy authority. Learning replies can load the same eligibility
+  rows the canonical summary uses; the loader defaults to none.
+  Alembic head `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`. See
+  `docs/telegram_evaluation_integration.md` and `docs/final_paper_system.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

@@ -1845,4 +1845,58 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Draft integration PR only. Do not merge, deploy, or
   activate Watcher or Telegram.
 
+## AT-ADR-055 — Final paper system keeps one authority per decision
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** PR #126 remediates Watcher freshness, product proof, unique
+  worker identity, fencing, and live/replay mismatch on top of AT-072. PR #125
+  adds paper evaluation and Telegram discussion on the pre-remediation Watcher.
+  The final paper loop must use the remediated Watcher as the scan authority
+  and attach evaluation and Telegram as advisory layers. Source PRs stay
+  unmerged. Watcher and Telegram stay off. Live trading stays off.
+- **Decision:**
+  1. This composition is AT-076 / AT-ADR-055. Base is PR #126
+     `75bee6d74c71edb39a73a5965784b6d388b7772d`. PR #125
+     `189d9752ec3daaa512fbde42127ed321f11f5f61` is applied semantically. Neither
+     source PR is merged.
+  2. One market-evidence authority: the live monitor gates current quote and
+     trade-stream freshness; `FirstSliceEvidenceAssembler` is the only
+     `CanonicalEvidenceWindowV1` producer. PR #126 freshness contracts remain
+     authoritative. Missing monitor is `missing_monitor`. Live/replay mismatch
+     is `wrong_source`. Stale evidence and provider outage still fail closed
+     before assembly.
+  3. One strategy authority: persisted approved compiled policy
+     (`ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED`). In-memory
+     policy cannot mint a Candidate.
+  4. One SetupAssessment authority: `evaluate_canonical_strategy`. One
+     Candidate authority: `CandidateLifecycleService`, and only on a genuine
+     `CONFIRMED_SETUP`. Unique worker instance ids stay intact. The same owner
+     cannot renew a lease without the current fencing token. The worker clock
+     and the candidate-repository fence clock are the same clock passed to
+     `build_production_canonical_runtime`.
+  5. One automated paper-decision authority: ActionEligibility, then
+     `CanonicalTradePlanService`, then paper execution, Journal, and
+     attribution. Risk `BLOCK` is final. `paper_evaluation` reads deterministic
+     facts only. AI refinement stays a suggestion (`activate=false`,
+     `auto_activate=false`) and `refuse_activation` rejects activation.
+  6. Telegram is an advisory interaction layer. `main()` does not install
+     `telegram_scan_hook`. Telegram cannot mint a Candidate, override
+     SetupAssessment, override risk, activate a strategy, place an order, or
+     enable live trading. Learning discussion may load eligibility so the
+     Telegram fact hash matches the canonical summary. Default loader is none.
+  7. Alembic stays one chain: `c8d9e0f1a2b3` → `e3f4a5b6c7d8` →
+     `d9e0f1a2b3c4`. No new revision.
+  8. Watcher, Telegram, and live trading remain disabled. No exchange
+     mutation, no real credentials, no deployment.
+- **Alternatives considered:** Merge PR #125 and PR #126 (rejected: explicit
+  do-not); let Telegram or evaluation write Candidates or strategy state
+  (rejected: two authorities); weaken `wrong_source` into `stale_evidence`
+  (rejected: PR #126 source gate stays authoritative); share a wall clock for
+  the fence while the worker uses evidence time (rejected: the lease expires
+  before Candidate persist).
+- **Safety impact:** Composition only. Does not enable Watcher, Telegram, or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Branch `cursor/final_paper_system_integration`. Draft PR
+  only. Do not merge, deploy, or activate Watcher or Telegram.
+
 

@@ -1569,7 +1569,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `EXECUTE_PAPER_PLAN` remains unavailable on Telegram.
 
 ### AT-075 — Integrate continuous evaluation and Telegram paper interaction
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-072, AT-073, AT-074 · Risk: High
+- Priority: P0 · Status: DONE · Dependencies: AT-072, AT-073, AT-074 · Risk: High
   (one trading authority; Telegram and evaluation must not mutate it)
 - Safety classification: Paper-only composition; Watcher/Telegram/live trading stay off;
   no deploy; no source-PR merge; no strategy auto-activation; no Telegram orders
@@ -1586,6 +1586,31 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-054
 - Note: Does not enable Watcher, Telegram, or live trading. Do not merge or deploy.
-  Source PRs #122 and #124 stay unmerged.
+  Source PRs #122 and #124 stay unmerged. The final paper loop on the remediated
+  Watcher is AT-076; this task's source PR #125 stays unmerged.
+
+### AT-076 — Final integrated intelligent paper system
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-072, AT-073, AT-074, AT-075,
+  PR #126 Watcher remediation · Risk: High (one authority per decision; no activation)
+- Safety classification: Paper-only composition; Watcher/Telegram/live trading stay off;
+  no deploy; no source-PR merge; no strategy auto-activation; no Telegram orders
+- Goal: Integrate PR #125 evaluation and Telegram onto PR #126 Watcher remediation.
+  Live read-only market → approved compiled strategy → Watcher → canonical
+  SetupAssessment → Candidate → paper decision / TradePlan → paper execution →
+  Journal → attribution → evaluation → learning suggestion, with a parallel
+  durable Telegram notification and discussion. Preserve one authority each for
+  market evidence, strategy, SetupAssessment, Candidate, and automated paper
+  decision. Telegram and AI stay advisory.
+- Branch: `cursor/final_paper_system_integration`
+- Base: PR #126 `75bee6d74c71edb39a73a5965784b6d388b7772d`. Semantic source:
+  PR #125 `189d9752ec3daaa512fbde42127ed321f11f5f61`. Neither source PR is merged.
+- Alembic: single head `d9e0f1a2b3c4` via `c8d9e0f1a2b3` → `e3f4a5b6c7d8` →
+  `d9e0f1a2b3c4`. No new revision.
+- Validation: recorded after this task's validation run. Draft PR only; do not
+  merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-055
+- Note: Does not enable Watcher, Telegram, or live trading. Do not merge, deploy,
+  or activate. Source PRs #125 and #126 stay unmerged.
 
 
