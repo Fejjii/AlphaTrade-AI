@@ -95,6 +95,11 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   strategy statistics → refinement *suggestion*. Query-time merge; not a
   second trading authority. AI may suggest a refinement and must not activate
   it. Alembic `e3f4a5b6c7d8`. See `docs/phase8_paper_evaluation.md`.
+- `paper_interaction/`: composes those measurement facts into Telegram learning
+  text and turns a Watcher scan report into an optional durable notification.
+  The paper worker does not install the hook. Telegram cannot write market
+  truth or strategy authority. Alembic head `d9e0f1a2b3c4` revises
+  `e3f4a5b6c7d8`. See `docs/telegram_evaluation_integration.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 

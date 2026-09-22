@@ -24,6 +24,7 @@ from uuid import UUID
 
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment
+from app.signal_fusion.candidate import Candidate
 from app.signal_fusion.enums import EvidenceAdapterKind, SetupAssessmentState
 from app.signal_fusion.errors import (
     CandidateCreationAuthorityError,
@@ -167,6 +168,15 @@ class InMemoryWatcherScanEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class WatcherDiscussionSnapshot:
+    """Copies of one persisted scan for notification. Not a second evaluator."""
+
+    candidate: Candidate
+    assessment: SetupAssessment
+    window: CanonicalEvidenceWindowV1
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedScan:
     """Canonical assessor output. Does not persist Candidate state."""
 
@@ -194,6 +204,7 @@ class WatcherFusionEvaluationService:
         self._persistence_fence = persistence_fence
         self._outcome_observer = outcome_observer
         self._published_candidate_ids: list[UUID] = []
+        self._discussion_snapshot: WatcherDiscussionSnapshot | None = None
 
     @property
     def lifecycle(self) -> CandidateLifecycleService:
@@ -203,9 +214,16 @@ class WatcherFusionEvaluationService:
     def published_candidate_ids(self) -> tuple[UUID, ...]:
         return tuple(self._published_candidate_ids)
 
+    @property
+    def discussion_snapshot(self) -> WatcherDiscussionSnapshot | None:
+        """Last persisted CONFIRMED_SETUP triple. Empty until persist succeeds."""
+
+        return self._discussion_snapshot
+
     def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
         """Evaluate setup truth only. Candidate persistence is fence-gated."""
 
+        self._discussion_snapshot = None
         if command.mode is EvaluationMode.PERSIST_AND_NOTIFY:
             return self._observe(
                 command,
@@ -484,6 +502,12 @@ class WatcherFusionEvaluationService:
                 )
             )
         self._published_candidate_ids.append(created.candidate_id)
+        if window is not None:
+            self._discussion_snapshot = WatcherDiscussionSnapshot(
+                candidate=created,
+                assessment=assessment,
+                window=window,
+            )
         return (created.candidate_id,)
 
 

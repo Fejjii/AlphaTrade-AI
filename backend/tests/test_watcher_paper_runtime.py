@@ -295,6 +295,8 @@ def _runtime(
     target_loader: object | None = None,
     evidence_factory: object | None = None,
     bind_session: bool = True,
+    scan_notification_hook: object | None = None,
+    evaluation_observer_factory: object | None = None,
 ) -> tuple[WatcherPaperRuntime, FakeClock, SideEffectProbe, InMemoryWatcherStore]:
     resolved_clock = clock if clock is not None else FakeClock()
     resolved_store = store if store is not None else InMemoryWatcherStore()
@@ -326,6 +328,8 @@ def _runtime(
         poll_interval_seconds=0.05,
         settings=_settings(),
         evaluation_clock=eval_clock,
+        scan_notification_hook=scan_notification_hook,  # type: ignore[arg-type]
+        evaluation_observer_factory=evaluation_observer_factory,  # type: ignore[arg-type]
     )
     return runtime, resolved_clock, probe, resolved_store
 

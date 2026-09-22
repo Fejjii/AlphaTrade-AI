@@ -39,6 +39,7 @@ from app.watcher.fusion_evaluation import (
     BoundEvaluationClock,
     CandidatePersistenceFence,
     EvaluationOutcomeObserver,
+    WatcherDiscussionSnapshot,
     WatcherFusionEvaluationService,
     WatcherScanEvidencePort,
     build_fusion_evaluation_service,
@@ -68,6 +69,9 @@ logger = structlog.get_logger("workers.watcher_paper")
 PaperEvidenceFactory = Callable[[Session | None, WatcherStore, str], WatcherScanEvidencePort]
 PaperTargetLoader = Callable[[Session | None], tuple[PaperScanTarget, ...]]
 KillSwitchProbe = Callable[[UUID], bool]
+EvaluationObserverFactory = Callable[
+    [Session | None, PaperScanTarget], EvaluationOutcomeObserver | None
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +87,10 @@ class WatcherPaperScanReport:
     kill_switch_active: bool
     lease_owner: str | None = None
     health_state: str = "unknown"
+    user_id: UUID | None = None
+    request_hash: str | None = None
+    lineage_id: UUID | None = None
+    discussion: WatcherDiscussionSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +179,7 @@ class WatcherPaperRuntime:
         settings: Settings | None = None,
         evaluation_clock: BoundEvaluationClock | None = None,
         scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
+        evaluation_observer_factory: EvaluationObserverFactory | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -191,6 +200,11 @@ class WatcherPaperRuntime:
         self._settings = settings
         self._eval_clock = _shared_evaluation_clock(lifecycle, evaluation_clock)
         self._scan_notification_hook = scan_notification_hook
+        self._observer_factory = (
+            self._evaluation_observer
+            if evaluation_observer_factory is None
+            else evaluation_observer_factory
+        )
         if self._eval_clock is not getattr(lifecycle, "_clock", None):
             repository = getattr(lifecycle, "_repository", None)
             if repository is not None:
@@ -401,6 +415,7 @@ class WatcherPaperRuntime:
                 published=False,
                 candidate_ids=(),
                 kill_switch_active=self._kill_switch_is_active(session, target.organization_id),
+                user_id=target.user_id,
             )
 
     def _scan_target(
@@ -425,7 +440,7 @@ class WatcherPaperRuntime:
             lifecycle=self._lifecycle,
             clock=self._eval_clock,
             persistence_fence=self._persistence_fence,
-            outcome_observer=self._evaluation_observer(session, target),
+            outcome_observer=self._observer_factory(session, target),
         )
         orchestrator = WatcherOrchestrator(
             store=self._store,
@@ -538,6 +553,8 @@ class WatcherPaperRuntime:
             return False
 
     def _notify_scan(self, report: WatcherPaperScanReport) -> None:
+        """Optional paper notification. Default hook is unset, so scans do not send."""
+
         hook = self._scan_notification_hook
         if hook is None:
             return
@@ -584,7 +601,6 @@ def _report_from_cycle(
     kill_switch_active: bool,
     evaluator: WatcherFusionEvaluationService,
 ) -> WatcherPaperScanReport:
-    del evaluator
     outcome = result.outcome
     candidate_ids = () if outcome is None else outcome.candidate_ids
     reason = result.reason_code
@@ -605,6 +621,9 @@ def _report_from_cycle(
     elif result.status is WorkerCycleStatus.FAILED:
         status = "failed"
     health = result.health
+    discussion = evaluator.discussion_snapshot
+    if discussion is not None and discussion.candidate.candidate_id not in candidate_ids:
+        discussion = None
     return WatcherPaperScanReport(
         organization_id=target.organization_id,
         scan_scope=target.scan_scope,
@@ -617,6 +636,10 @@ def _report_from_cycle(
         kill_switch_active=kill_switch_active,
         lease_owner=None if health is None else health.lease_owner,
         health_state=status if health is None else health.state.value,
+        user_id=target.user_id,
+        request_hash=result.request_hash,
+        lineage_id=result.lineage_id,
+        discussion=discussion,
     )
 
 
@@ -739,6 +762,7 @@ def build_watcher_paper_runtime(
         side_effects=side_effects,
         settings=settings,
         evaluation_clock=eval_clock,
+        scan_notification_hook=None,
     )
 
 

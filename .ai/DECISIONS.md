@@ -1809,4 +1809,40 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   continuous paper evaluation. Branch `cursor/telegram_paper_agent-aac1`.
   Draft PR only; no merge, deploy, or Telegram activation.
 
+## AT-ADR-054 — Evaluation and Telegram share one paper chain and no trading authority
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** PR #122 (continuous paper evaluation) and PR #124 (Telegram paper
+  interaction) both sit on PR #121 and both claimed AT-073 / AT-ADR-052. Their
+  Alembic revisions both revise `c8d9e0f1a2b3`. Operators need one linear
+  schema and one path from a Watcher scan to measurement and to discussion.
+- **Decision:**
+  1. AT-073 / AT-ADR-052 remain continuous paper evaluation. Telegram paper
+     interaction is AT-074 / AT-ADR-053. This integration is AT-075 / AT-ADR-054.
+  2. Alembic is one chain: `c8d9e0f1a2b3` → `e3f4a5b6c7d8` (paper evaluation
+     observations) → `d9e0f1a2b3c4` (paper Telegram identity).
+  3. `WatcherPaperRuntime` records evaluation through the existing observer and
+     then calls an optional scan hook. `build_paper_runtime` leaves that hook
+     unset. `telegram_scan_hook` is the only composer from a scan report to
+     `TelegramPaperAgent.project_watcher_notice`.
+  4. Confirmed-setup discussion uses the evaluator's `WatcherDiscussionSnapshot`
+     (the Candidate, SetupAssessment, and evidence window just persisted). It
+     does not re-evaluate setup truth.
+  5. `EvaluationLearningContext` reads `PaperEvaluationQueryService` and copies
+     deterministic fact lines only. Narrative is excluded. Refinement lines
+     keep `activate=false` and `auto_activate=false`.
+  6. Telegram still cannot place orders, mint Candidates, override
+     SetupAssessment or risk, approve or activate a strategy, or enable live
+     trading. Evaluation still cannot activate a refinement. Risk BLOCK stays
+     final. Watcher, Telegram, and live trading stay disabled.
+- **Alternatives considered:** Two Alembic heads (rejected: deploy cannot pick
+  one); install the Telegram hook inside `build_paper_runtime` (rejected:
+  Telegram stays off and a recipient binding is not configuration); let
+  Telegram text rewrite evaluation hashes (rejected: facts and narrative stay
+  siblings).
+- **Safety impact:** Measurement and discussion only. Does not enable Watcher,
+  Telegram, or live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Draft integration PR only. Do not merge, deploy, or
+  activate Watcher or Telegram.
+
 
