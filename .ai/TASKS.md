@@ -1640,8 +1640,12 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `ruff format --check` clean. Strict mypy clean on the activation modules.
   Evaluation 16/16, 5/5, 7/7. Frontend lint, typecheck, 1195 tests, and build
   passed. Activation, rollback, health, and smoke self-checks passed.
-  `WATCHER_PAPER_STAGING_ACTIVATION` remains false. Not deployed. Not activated.
-  GitHub CI is the remaining gate on the pull request.
+  `WATCHER_PAPER_STAGING_ACTIVATION` remains false. Not armed. Staging env files
+  unchanged. GitHub CI run 35744229457 success on `557ce32` (backend,
+  deployment-safety, docker-build, frontend, e2e-smoke, evaluation, and the
+  existing Vercel preview checks). Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/130. Do not merge, deploy, or
+  activate.
 - Recommended model: Grok 4.6 Extra High
 - ADR: AT-ADR-056
 - Note: Preparation only. `WATCHER_PAPER_STAGING_ACTIVATION` stays false.
