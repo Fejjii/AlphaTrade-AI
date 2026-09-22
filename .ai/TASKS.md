@@ -1712,4 +1712,42 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   branch assigns AT-079 / AT-ADR-058. Does not enable Watcher, Telegram, or
   live trading. Does not change `render.yaml`. Do not deploy or activate.
 
+### AT-080 — Integrate controlled paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-077, AT-078, AT-079 · Risk: High
+  (one staging package must stay paper-only and fail closed)
+- Safety classification: Paper execution; public read-only USD-M evidence;
+  no exchange credentials; no exchange mutation; Telegram cannot trade;
+  no deploy; no live staging environment edits
+- Goal: One package from real read-only Binance USD-M evidence through the
+  Watcher, canonical SetupAssessment, Candidate, paper workflow,
+  Journal/evaluation/learning, and a verified Telegram projection, with one
+  activation order and one fail-closed rollback.
+- Branch: `cursor/controlled_paper_activation_integration`
+- Base: `main` `894e9e4`
+- Head: `9535a10`
+- Alembic: single head `e0f1a2b3c4d5` (revises `d9e0f1a2b3c4`)
+- Inputs not merged: PR #128 `fe705a2`, PR #129 `4f244d6`, PR #130 `99af425`
+- Validation: `uv run ruff check .` and `uv run ruff format --check .` exit 0.
+  Strict mypy on the 12 affected modules exit 0. `uv run pytest -q --tb=line`
+  exit 0: 2613 passed, 0 failed, 0 skipped (progress marks match
+  `pytest --collect-only` of 2613; the short summary line was absent from the
+  redirected log). That run includes Alembic upgrade/downgrade tests and
+  `test_alembic_single_head`. Offline `alembic heads` prints `e0f1a2b3c4d5 (head)`.
+  Evaluation agent 16/16, RAG 5/5, guardrails 7/7. Frontend lint, typecheck,
+  1196 unit tests, and build exit 0. Chromium Playwright `CI=true npm run test:e2e`
+  exit 0 (30 passed, 13 skipped; the skips are staging specs that require a
+  staging demo password). Local `docker build -t alphatrade-backend:ci ./backend`
+  exit 0. Rollback `--self-check` exit 0 and `--apply` exit 2. Telegram
+  preflight `--expect-disabled` exit 0, verdict `NOT_ARMED`. Watcher health,
+  live-market staging, and watcher-rollback self-checks exit 0. GitHub CI run
+  35756546952 success on `9535a10dd09b873b66118eb94ad06f3e181734f6`
+  (backend, deployment-safety, docker-build, frontend, e2e-smoke, evaluation).
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/131.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-059
+- Note: Verdict is READY FOR FINAL ACTIVATION AUDIT. Do not merge, do not
+  deploy, and do not edit the live staging environment. `render.yaml` is still
+  the step-3 evidence blueprint only. Procedures are in
+  `docs/controlled_paper_activation.md`.
+
 
