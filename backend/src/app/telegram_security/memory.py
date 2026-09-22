@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from threading import RLock
 from uuid import UUID
 
+from app.telegram_security.backoff import DeliveryBackoff
 from app.telegram_security.contracts import (
     ActionNonce,
     ActionReceipt,
@@ -223,6 +224,7 @@ class InMemoryTelegramSecurityStore:
         lease_owner: str,
         lease_for: timedelta,
         retryable_reasons: frozenset[TelegramSecurityReason] | None = None,
+        retry_backoff: DeliveryBackoff | None = None,
     ) -> list[OutboxRecord]:
         _ = retryable_reasons
         claimed: list[OutboxRecord] = []
@@ -230,7 +232,7 @@ class InMemoryTelegramSecurityStore:
             for row in sorted(self._outbox.values(), key=lambda item: item.created_at):
                 if len(claimed) >= limit:
                     break
-                if not _is_claimable(row, now=now):
+                if not _is_claimable(row, now=now, retry_backoff=retry_backoff):
                     continue
                 updated = row.model_copy(
                     update={
@@ -243,6 +245,22 @@ class InMemoryTelegramSecurityStore:
                 self._outbox[row.outbox_id] = updated
                 claimed.append(updated)
         return claimed
+
+    def list_outbox(
+        self,
+        *,
+        organization_id: UUID,
+        state: OutboxState | None = None,
+        limit: int = 100,
+    ) -> list[OutboxRecord]:
+        with self._lock:
+            rows = [
+                row
+                for row in self._outbox.values()
+                if row.organization_id == organization_id and (state is None or row.state is state)
+            ]
+        rows.sort(key=lambda item: (item.created_at, str(item.outbox_id)))
+        return rows[:limit]
 
     def append_audit(self, event: ProtocolAuditEvent) -> None:
         with self._lock:
@@ -257,9 +275,19 @@ class InMemoryTelegramSecurityStore:
             return list(self._intents.values())
 
 
-def _is_claimable(row: OutboxRecord, *, now: datetime) -> bool:
-    if row.state is OutboxState.PENDING or row.state is OutboxState.RETRYABLE:
+def _is_claimable(
+    row: OutboxRecord,
+    *,
+    now: datetime,
+    retry_backoff: DeliveryBackoff | None = None,
+) -> bool:
+    if row.state is OutboxState.PENDING:
         return True
+    if row.state is OutboxState.RETRYABLE:
+        if retry_backoff is None:
+            return True
+        delay = retry_backoff.retry_delay(attempt=row.attempt, last_error=row.last_error)
+        return row.updated_at + delay <= now
     if row.state is OutboxState.CLAIMED:
         return row.lease_until is None or row.lease_until <= now
     return False

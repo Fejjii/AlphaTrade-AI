@@ -236,6 +236,9 @@ class WatcherMonitoringService:
                 telegram_alerts_enabled=settings.telegram_alerts_enabled,
                 telegram_interaction_enabled=settings.telegram_interaction_enabled,
                 automatic_telegram_delivery_enabled=settings.automatic_telegram_delivery_enabled,
+                telegram_paper_activation_armed=settings.telegram_paper_activation_armed,
+                telegram_inbound_mode=settings.telegram_inbound_mode.value,
+                telegram_network_permitted=settings.telegram_network_permitted,
             ),
             symbols_monitored=_symbols_monitored(
                 settings=settings,
@@ -617,6 +620,9 @@ def _telegram_enabled(settings: Settings) -> bool:
         settings.telegram_alerts_enabled
         or settings.telegram_interaction_enabled
         or settings.automatic_telegram_delivery_enabled
+        or settings.telegram_paper_activation_armed
+        or settings.telegram_network_permitted
+        or settings.telegram_inbound_mode.value != "off"
     )
 
 

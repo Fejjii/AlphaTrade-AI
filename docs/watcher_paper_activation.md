@@ -106,7 +106,7 @@ do those steps.
 - [ ] Telegram flags false: alerts, interaction, automatic delivery
 - [ ] `MARKET_WATCHER_ENABLED=false` and bridge flags false
 - [ ] `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` (not `replay`)
-- [ ] Alembic is the single head `d9e0f1a2b3c4` and `alembic_version` matches it
+- [ ] Alembic is the single head `e0f1a2b3c4d5` and `alembic_version` matches it
 - [ ] At least one tenant has an approved or active compiled strategy
 - [ ] Live USD-M provider answers for `BTCUSDT` and the quote is fresh
 - [ ] `WATCHER_PAPER_STAGING_ACTIVATION=true` and `WATCHER_ORCHESTRATION_ENABLED=true` on the **dedicated worker only**

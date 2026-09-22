@@ -19,6 +19,9 @@ def test_health_ok(client: TestClient) -> None:
     assert body["watcher_paper_staging_activation"] is False
     assert body["telegram_alerts_enabled"] is False
     assert body["telegram_interaction_enabled"] is False
+    assert body["telegram_paper_activation_armed"] is False
+    assert body["telegram_inbound_mode"] == "off"
+    assert body["telegram_network_permitted"] is False
     assert body["perpetual_evidence_source"] == "replay"
     assert body["perpetual_evidence_activation"] == "inactive"
     assert body["perpetual_evidence_intended_staging_source"] == "binance_usdm"
@@ -30,6 +33,17 @@ def test_health_ok(client: TestClient) -> None:
     assert body["live_quote_freshness_seconds"] == 10
     assert body["first_perpetual_symbol"] == "BTCUSDT"
     assert body["version"]
+    activation = client.get("/health/telegram-paper-activation")
+    assert activation.status_code == 200
+    posture = activation.json()
+    assert posture["verdict"] == "NOT_ARMED"
+    assert posture["runtime_armable"] is False
+    assert posture["real_trading_enabled"] is False
+    assert posture["webhook_mounted"] is False
+    assert posture["forbidden"]["mint_candidate"] is False
+    assert posture["forbidden"]["create_live_order"] is False
+    assert "telegram_webhook_secret" not in posture
+    assert "telegram_bot_token" not in posture
 
 
 def test_health_sets_request_id_header(client: TestClient) -> None:

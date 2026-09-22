@@ -3,7 +3,7 @@
 Enrollment, nonce, receipt, authorization-boundary, outbox, and delivery
 acknowledgement live here. The protocol never imports execution services, never
 invokes ``EXECUTE_PAPER_PLAN``, and is disabled until the caller passes
-``enabled=True``. HTTP webhook wiring is intentionally absent.
+``enabled=True``. This module does not mount an HTTP webhook.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from app.telegram_security.actions import (
     effect_kind_for,
     is_telegram_action_available,
 )
+from app.telegram_security.backoff import RATE_LIMITED_ERROR, DeliveryBackoff
 from app.telegram_security.clock import Clock, FrozenClock
 from app.telegram_security.contracts import (
     ActionNonce,
@@ -83,6 +84,7 @@ class TelegramSecurityProtocol:
         outbox_max_attempts: int = 3,
         outbox_lease: timedelta = timedelta(seconds=30),
         lease_owner: str = "telegram-security-protocol",
+        retry_backoff: DeliveryBackoff | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -95,6 +97,7 @@ class TelegramSecurityProtocol:
         self._outbox_max_attempts = outbox_max_attempts
         self._outbox_lease = outbox_lease
         self._lease_owner = lease_owner
+        self._backoff = retry_backoff or DeliveryBackoff()
 
     @classmethod
     def in_memory(
@@ -105,6 +108,7 @@ class TelegramSecurityProtocol:
         transport: TelegramTransport | None = None,
         token_factory: TokenFactory | None = None,
         rate_limit_policy: RateLimitPolicy | None = None,
+        retry_backoff: DeliveryBackoff | None = None,
     ) -> TelegramSecurityProtocol:
         resolved_clock = clock or FrozenClock()
         limiter = (
@@ -119,6 +123,7 @@ class TelegramSecurityProtocol:
             enabled=enabled,
             token_factory=token_factory,
             rate_limiter=limiter,
+            retry_backoff=retry_backoff,
         )
 
     @property
@@ -867,6 +872,7 @@ class TelegramSecurityProtocol:
                 limit=limit,
                 lease_owner=self._lease_owner,
                 lease_for=self._outbox_lease,
+                retry_backoff=self._backoff,
             )
         for row in claimed:
             result = self._transport.send_private_message(
@@ -895,6 +901,26 @@ class TelegramSecurityProtocol:
                         accepted=True,
                         retryable=False,
                         transport_message_id=result.transport_message_id,
+                    )
+                )
+                continue
+            if result.error_code == RATE_LIMITED_ERROR:
+                deferred = row.model_copy(
+                    update={
+                        "state": OutboxState.RETRYABLE,
+                        "lease_owner": None,
+                        "lease_until": None,
+                        "last_error": RATE_LIMITED_ERROR,
+                        "updated_at": now,
+                    }
+                )
+                self._store.save_outbox(deferred)
+                attempts.append(
+                    DeliveryAttempt(
+                        outbox=deferred,
+                        accepted=False,
+                        retryable=True,
+                        error_code=RATE_LIMITED_ERROR,
                     )
                 )
                 continue

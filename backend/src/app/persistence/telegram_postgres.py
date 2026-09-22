@@ -38,6 +38,7 @@ from app.db.telegram_security import (
 )
 from app.persistence.unique import is_unique_violation
 from app.telegram_security.actions import ActionEffectKind, TelegramRemoteAction
+from app.telegram_security.backoff import RATE_LIMITED_ERROR, DeliveryBackoff
 from app.telegram_security.contracts import (
     ActionNonce,
     ActionReceipt,
@@ -466,6 +467,7 @@ class PostgresTelegramSecurityStore:
         lease_owner: str,
         lease_for: timedelta,
         retryable_reasons: frozenset[TelegramSecurityReason] | None = None,
+        retry_backoff: DeliveryBackoff | None = None,
     ) -> list[OutboxRecord]:
         _ = retryable_reasons
 
@@ -473,7 +475,7 @@ class PostgresTelegramSecurityStore:
             rows = list(
                 session.scalars(
                     select(TelegramOutboxRow)
-                    .where(_outbox_claimable(now))
+                    .where(_outbox_claimable(now, retry_backoff))
                     .order_by(TelegramOutboxRow.created_at, TelegramOutboxRow.outbox_id)
                     .with_for_update(skip_locked=True)
                     .limit(limit)
@@ -489,6 +491,26 @@ class PostgresTelegramSecurityStore:
                 claimed.append(_outbox_from_row(row))
             session.flush()
             return claimed
+
+        return self._run(work)
+
+    def list_outbox(
+        self,
+        *,
+        organization_id: UUID,
+        state: OutboxState | None = None,
+        limit: int = 100,
+    ) -> list[OutboxRecord]:
+        def work(session: Session) -> list[OutboxRecord]:
+            stmt = (
+                select(TelegramOutboxRow)
+                .where(TelegramOutboxRow.organization_id == organization_id)
+                .order_by(TelegramOutboxRow.created_at, TelegramOutboxRow.outbox_id)
+                .limit(limit)
+            )
+            if state is not None:
+                stmt = stmt.where(TelegramOutboxRow.state == state.value)
+            return [_outbox_from_row(row) for row in session.scalars(stmt)]
 
         return self._run(work)
 
@@ -552,14 +574,54 @@ def _active_binding_stmt() -> Select[tuple[TelegramBindingRow]]:
     )
 
 
-def _outbox_claimable(now: datetime) -> ColumnElement[bool]:
-    return or_(
-        TelegramOutboxRow.state.in_(_CLAIMABLE_STATES),
-        and_(
-            TelegramOutboxRow.state == OutboxState.CLAIMED.value,
-            or_(TelegramOutboxRow.lease_until.is_(None), TelegramOutboxRow.lease_until <= now),
-        ),
+def _outbox_claimable(
+    now: datetime, retry_backoff: DeliveryBackoff | None = None
+) -> ColumnElement[bool]:
+    pending = TelegramOutboxRow.state == OutboxState.PENDING.value
+    expired_claim = and_(
+        TelegramOutboxRow.state == OutboxState.CLAIMED.value,
+        or_(TelegramOutboxRow.lease_until.is_(None), TelegramOutboxRow.lease_until <= now),
     )
+    if retry_backoff is None:
+        return or_(TelegramOutboxRow.state.in_(_CLAIMABLE_STATES), expired_claim)
+    return or_(pending, _retryable_ready(now, retry_backoff), expired_claim)
+
+
+def _retryable_ready(now: datetime, backoff: DeliveryBackoff) -> ColumnElement[bool]:
+    """RETRYABLE rows wait out the durable attempt/updated_at backoff."""
+    delays = backoff.delays if backoff.delays else (timedelta(0),)
+    rate_delay = backoff.rate_limit_delay()
+    not_rate_limited = or_(
+        TelegramOutboxRow.last_error.is_(None),
+        TelegramOutboxRow.last_error != RATE_LIMITED_ERROR,
+    )
+    ready: list[ColumnElement[bool]] = [
+        and_(
+            TelegramOutboxRow.last_error == RATE_LIMITED_ERROR,
+            TelegramOutboxRow.updated_at <= now - rate_delay,
+        ),
+        and_(
+            TelegramOutboxRow.attempt <= 0,
+            not_rate_limited,
+            TelegramOutboxRow.updated_at <= now,
+        ),
+    ]
+    for attempt, delay in enumerate(delays, start=1):
+        ready.append(
+            and_(
+                TelegramOutboxRow.attempt == attempt,
+                not_rate_limited,
+                TelegramOutboxRow.updated_at <= now - delay,
+            )
+        )
+    ready.append(
+        and_(
+            TelegramOutboxRow.attempt > len(delays),
+            not_rate_limited,
+            TelegramOutboxRow.updated_at <= now - delays[-1],
+        )
+    )
+    return and_(TelegramOutboxRow.state == OutboxState.RETRYABLE.value, or_(*ready))
 
 
 def _locked_nonce_hash(session: Session, nonce_hash: str) -> TelegramActionNonceRow | None:

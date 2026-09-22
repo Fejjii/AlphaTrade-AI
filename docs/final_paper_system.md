@@ -76,17 +76,22 @@ Single Alembic head:
 
 `c8d9e0f1a2b3` (setup-lifetime pins)
 → `e3f4a5b6c7d8` (paper evaluation observations)
-→ `d9e0f1a2b3c4` (paper Telegram notification, thread, message, confirmation).
+→ `d9e0f1a2b3c4` (paper Telegram notification, thread, message, confirmation)
+→ `e0f1a2b3c4d5` (paper Telegram activation cursor and send ledger).
 
 ## Still off
 
-`WATCHER_PAPER_STAGING_ACTIVATION` defaults false. Staging and production
-templates keep `WATCHER_ORCHESTRATION_ENABLED`, `MARKET_WATCHER_ENABLED`,
-`TELEGRAM_INTERACTION_ENABLED`, `TELEGRAM_ALERTS_ENABLED`, and
-`ENABLE_REAL_TRADING` false. Production still rejects Watcher and Telegram
-flags. Staging rejects Watcher orchestration unless the paper-monitoring arm
-is set and preflight passes. This repository does not set that arm, does not
-edit staging environment variables, and does not start the worker.
+`WATCHER_PAPER_STAGING_ACTIVATION`, `WATCHER_ORCHESTRATION_ENABLED`,
+`MARKET_WATCHER_ENABLED`, `TELEGRAM_INTERACTION_ENABLED`,
+`TELEGRAM_ALERTS_ENABLED`, `TELEGRAM_PAPER_ACTIVATION_ARMED`,
+`TELEGRAM_NETWORK_PERMITTED`, and `ENABLE_REAL_TRADING` stay false in the
+committed templates. `TELEGRAM_INBOUND_MODE` stays `off`. Production rejects
+Watcher and Telegram flags. Staging rejects Watcher orchestration unless the
+paper-monitoring arm is set with live USD-M evidence and preflight passes.
+Staging still rejects Telegram arming flags. This repository does not set
+those arms, does not edit a live platform environment, and does not start
+the worker. Real exchange mutation stays unavailable.
 
-Telegram and real trading stay out of that arm. The controlled procedure is
-`docs/watcher_paper_activation.md`. Running it is a separate human action.
+The controlled procedures are `docs/live_market_staging_activation.md`,
+`docs/watcher_paper_activation.md`, and `docs/telegram_paper_activation.md`.
+Running them is a separate human action.

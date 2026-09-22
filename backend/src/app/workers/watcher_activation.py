@@ -519,7 +519,7 @@ def _self_check() -> int:
     from app.workers.watcher_paper import new_worker_instance_id
 
     head = expected_migration_head()
-    if head != "d9e0f1a2b3c4":
+    if head != "e0f1a2b3c4d5":
         print(f"FAIL: migration head {head!r}", file=sys.stderr)
         return 1
     config = _sample_config()

@@ -31,6 +31,9 @@ class HealthResponse(BaseModel):
     telegram_alerts_enabled: bool = False
     telegram_interaction_enabled: bool = False
     automatic_telegram_delivery_enabled: bool = False
+    telegram_paper_activation_armed: bool = False
+    telegram_inbound_mode: str = "off"
+    telegram_network_permitted: bool = False
     perpetual_evidence_source: Literal["replay", "binance_usdm"]
     perpetual_evidence_activation: Literal["inactive", "active", "refused"]
     perpetual_evidence_intended_staging_source: Literal["binance_usdm"] = "binance_usdm"

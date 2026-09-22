@@ -1683,4 +1683,33 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   live-market workstream. `WATCHER_PAPER_STAGING_ACTIVATION` stays false.
   Do not deploy or activate.
 
+### AT-079 — Controlled Telegram paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-074, AT-076 · Risk: High
+  (Telegram must never become trading authority)
+- Safety classification: Paper-only activation machinery; Watcher stays off;
+  Telegram stays disarmed; no live trading; no staging env changes; no deploy
+- Goal: Production-shaped path from a Watcher/Candidate event through the durable
+  outbox to a Telegram alert and an identity-bound paper discussion, plus
+  preflight, smoke, and rollback. Do not activate.
+- Branch: `cursor/activation_telegram_paper-a361` (requested
+  `cursor/activation_telegram_paper`)
+- Validation: `uv run ruff check .` and `uv run ruff format --check .` passed.
+  `uv run pytest -q --tb=line` failed only
+  `test_blackbox_telegram_cannot_place_orders` and
+  `test_no_inbound_telegram_route_exists` because
+  `GET /health/telegram-paper-activation` was outside the known route set.
+  Those allowlists were updated and the two tests plus
+  `tests/test_telegram_paper_activation.py`,
+  `tests/test_telegram_paper_activation_postgres.py`, and
+  `tests/test_phase2_4_alembic_postgres.py` passed (20). Frontend lint,
+  typecheck, 1195 unit tests, and build passed. Evaluation 16/16, RAG 5/5,
+  guardrails 7/7. Preflight `--expect-disabled` exit 0 (`NOT_ARMED`).
+  Rollback `--apply` exit 2. Docker image build was not run (no Docker daemon).
+  No live Telegram send. Not deployed. Not activated.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-058
+- Note: Source PR #129 labeled this AT-077 / AT-ADR-056. The integration
+  branch assigns AT-079 / AT-ADR-058. Does not enable Watcher, Telegram, or
+  live trading. Does not change `render.yaml`. Do not deploy or activate.
+
 

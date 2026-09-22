@@ -25,6 +25,9 @@ SCRIPTS = (
     "scripts/watcher-paper-rollback.sh",
     "scripts/watcher-paper-activation-smoke.sh",
     "scripts/lib/watcher_paper_health.py",
+    "scripts/telegram-paper-activation-preflight.sh",
+    "scripts/telegram-paper-activation-smoke.sh",
+    "scripts/telegram-paper-activation-rollback.sh",
     "scripts/recreate-rag-collection.sh",
     "scripts/reingest-knowledge-base.sh",
 )

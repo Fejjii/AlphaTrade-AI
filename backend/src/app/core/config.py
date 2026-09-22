@@ -37,6 +37,14 @@ class ExecutionMode(StrEnum):
     TRADE = "trade"
 
 
+class TelegramInboundMode(StrEnum):
+    """How paper Telegram receives updates. Off is the only default."""
+
+    OFF = "off"
+    POLLING = "polling"
+    WEBHOOK = "webhook"
+
+
 class ExchangeMode(StrEnum):
     """Exchange connectivity for paper flows.
 
@@ -145,6 +153,14 @@ class Settings(BaseSettings):
     automatic_telegram_delivery_enabled: bool = False
     # Isolated inbound interaction protocol (AT-043). Not wired to HTTP or execution.
     telegram_interaction_enabled: bool = False
+    # Controlled paper activation (AT-077). Default disarmed. Staging/production
+    # reject every arming flag. Network delivery stays off unless explicitly permitted.
+    telegram_paper_activation_armed: bool = False
+    telegram_inbound_mode: TelegramInboundMode = TelegramInboundMode.OFF
+    telegram_webhook_secret: str = ""
+    telegram_network_permitted: bool = False
+    telegram_outbound_per_chat: int = Field(default=20, ge=1, le=100)
+    telegram_outbound_window_seconds: int = Field(default=60, ge=1, le=3600)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     telegram_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
@@ -479,6 +495,13 @@ class Settings(BaseSettings):
     def _normalize_log_level(cls, value: object) -> object:
         if isinstance(value, str):
             return value.upper()
+        return value
+
+    @field_validator("telegram_inbound_mode", mode="before")
+    @classmethod
+    def _normalize_telegram_inbound_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
         return value
 
     @field_validator("perpetual_evidence_source")

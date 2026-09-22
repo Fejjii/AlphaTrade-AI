@@ -38,7 +38,8 @@ Single Alembic head:
 
 `c8d9e0f1a2b3` (setup-lifetime pins)
 → `e3f4a5b6c7d8` (paper evaluation observations)
-→ `d9e0f1a2b3c4` (paper Telegram notification, thread, message, confirmation).
+→ `d9e0f1a2b3c4` (paper Telegram notification, thread, message, confirmation)
+→ `e0f1a2b3c4d5` (paper Telegram activation cursor and send ledger).
 
 ## Still disabled
 

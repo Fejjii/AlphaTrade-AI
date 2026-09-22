@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app import __version__
 from app.core.dependencies import ProviderRegistryDep, SettingsDep
@@ -17,6 +17,9 @@ from app.core.deploy_info import resolve_git_sha
 from app.market_activation.profile import perpetual_evidence_health
 from app.providers.base import ProviderHealth
 from app.schemas.health import HealthResponse, ReadinessResponse
+from app.telegram_activation.contracts import PreflightReport
+from app.telegram_activation.controller import TelegramPaperActivation
+from app.telegram_activation.preflight import run_preflight
 
 router = APIRouter(tags=["health"])
 
@@ -40,6 +43,9 @@ async def health(settings: SettingsDep) -> HealthResponse:
         telegram_alerts_enabled=settings.telegram_alerts_enabled,
         telegram_interaction_enabled=settings.telegram_interaction_enabled,
         automatic_telegram_delivery_enabled=settings.automatic_telegram_delivery_enabled,
+        telegram_paper_activation_armed=settings.telegram_paper_activation_armed,
+        telegram_inbound_mode=settings.telegram_inbound_mode.value,
+        telegram_network_permitted=settings.telegram_network_permitted,
         perpetual_evidence_source=evidence["perpetual_evidence_source"],
         perpetual_evidence_activation=evidence["perpetual_evidence_activation"],
         perpetual_evidence_intended_staging_source=evidence[
@@ -57,6 +63,23 @@ async def health(settings: SettingsDep) -> HealthResponse:
         git_sha=resolve_git_sha(),
         timestamp=datetime.now(UTC),
     )
+
+
+@router.get(
+    "/health/telegram-paper-activation",
+    response_model=PreflightReport,
+    summary="Paper Telegram activation posture",
+)
+async def telegram_paper_activation(settings: SettingsDep, request: Request) -> PreflightReport:
+    """Read-only posture. This route does not arm Telegram or send a message."""
+    controller = getattr(request.app.state, "telegram_paper_activation", None)
+    mounted = bool(getattr(request.app.state, "telegram_webhook_mounted", False))
+    if not isinstance(controller, TelegramPaperActivation):
+        return run_preflight(settings=settings, webhook_mounted=mounted)
+    status = controller.preflight()
+    if mounted and not status.webhook_mounted:
+        return status.model_copy(update={"webhook_mounted": True})
+    return status
 
 
 @router.get("/health/ready", response_model=ReadinessResponse, summary="Readiness probe")

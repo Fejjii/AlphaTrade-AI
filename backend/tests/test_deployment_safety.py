@@ -268,6 +268,31 @@ def test_staging_rejects_telegram_interaction_enabled() -> None:
         Settings(**{**_STAGING_BASE, "telegram_interaction_enabled": True})
 
 
+def test_staging_rejects_telegram_paper_activation_armed() -> None:
+    with pytest.raises(ValidationError, match="telegram_paper_activation_armed"):
+        Settings(**{**_STAGING_BASE, "telegram_paper_activation_armed": True})
+
+
+def test_staging_rejects_telegram_inbound_mode() -> None:
+    with pytest.raises(ValidationError, match="telegram_inbound_mode"):
+        Settings(**{**_STAGING_BASE, "telegram_inbound_mode": "polling"})
+
+
+def test_staging_rejects_telegram_network_permitted() -> None:
+    with pytest.raises(ValidationError, match="telegram_network_permitted"):
+        Settings(**{**_STAGING_BASE, "telegram_network_permitted": True})
+
+
+def test_staging_rejects_telegram_webhook_secret() -> None:
+    with pytest.raises(ValidationError, match="telegram_webhook_secret"):
+        Settings(**{**_STAGING_BASE, "telegram_webhook_secret": "x" * 32})
+
+
+def test_production_rejects_telegram_paper_activation() -> None:
+    with pytest.raises(ValidationError, match="telegram_paper_activation_armed"):
+        Settings(**{**_PRODUCTION_BASE, "telegram_paper_activation_armed": True})
+
+
 def test_staging_rejects_automatic_telegram_delivery_enabled() -> None:
     with pytest.raises(ValidationError, match="automatic_telegram_delivery_enabled"):
         Settings(**{**_STAGING_BASE, "automatic_telegram_delivery_enabled": True})

@@ -51,8 +51,9 @@ invented (`counterfactual_pnl=null`).
 ## Persistence
 
 Alembic revision `e3f4a5b6c7d8` (after `c8d9e0f1a2b3`) adds
-`paper_evaluation_observations`. The linear head continues at `d9e0f1a2b3c4`
-for paper Telegram identity. Duplicate source identity converges.
+`paper_evaluation_observations`. The linear head continues through `d9e0f1a2b3c4`
+(paper Telegram identity) to `e0f1a2b3c4d5` (activation cursor and send ledger).
+Duplicate source identity converges.
 Identity columns cannot be rewritten. Narrative may be attached later.
 
 ## HTTP

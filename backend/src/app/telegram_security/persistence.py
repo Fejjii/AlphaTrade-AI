@@ -11,12 +11,14 @@ from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
+from app.telegram_security.backoff import DeliveryBackoff
 from app.telegram_security.contracts import (
     ActionNonce,
     ActionReceipt,
     AuthorizationIntent,
     EnrollmentChallenge,
     OutboxRecord,
+    OutboxState,
     ProtocolAuditEvent,
     TelegramBinding,
 )
@@ -103,6 +105,15 @@ class TelegramSecurityStore(Protocol):
         lease_owner: str,
         lease_for: timedelta,
         retryable_reasons: frozenset[TelegramSecurityReason] | None = None,
+        retry_backoff: DeliveryBackoff | None = None,
+    ) -> list[OutboxRecord]: ...
+
+    def list_outbox(
+        self,
+        *,
+        organization_id: UUID,
+        state: OutboxState | None = None,
+        limit: int = 100,
     ) -> list[OutboxRecord]: ...
 
     def append_audit(self, event: ProtocolAuditEvent) -> None: ...

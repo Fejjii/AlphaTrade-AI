@@ -391,7 +391,7 @@ def test_migration_reader_fails_closed_without_one_revision() -> None:
         session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('other')"))
         session.commit()
         assert read_migration_revision(session) is None
-    assert expected_migration_head() == "d9e0f1a2b3c4"
+    assert expected_migration_head() == "e0f1a2b3c4d5"
 
 
 def test_runtime_gate_stops_before_scan() -> None:

@@ -108,8 +108,12 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   The paper worker does not install the hook. Telegram cannot write market
   truth or strategy authority. Learning replies can load the same eligibility
   rows the canonical summary uses; the loader defaults to none.
-  Alembic head `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`. See
+  Alembic `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`. See
   `docs/telegram_evaluation_integration.md` and `docs/final_paper_system.md`.
+- `telegram_activation/`: controlled paper activation preflight, outbox
+  delivery, polling/webhook intake, and rollback. Disarmed by default.
+  `create_app` does not mount a webhook. Alembic head `e0f1a2b3c4d5`. See
+  `docs/telegram_paper_activation.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 
