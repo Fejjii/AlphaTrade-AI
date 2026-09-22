@@ -1590,7 +1590,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Watcher is AT-076; this task's source PR #125 stays unmerged.
 
 ### AT-076 — Final integrated intelligent paper system
-- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-072, AT-073, AT-074, AT-075,
+- Priority: P0 · Status: DONE · Dependencies: AT-072, AT-073, AT-074, AT-075,
   PR #126 Watcher remediation · Risk: High (one authority per decision; no activation)
 - Safety classification: Paper-only composition; Watcher/Telegram/live trading stay off;
   no deploy; no source-PR merge; no strategy auto-activation; no Telegram orders
@@ -1606,8 +1606,17 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   PR #125 `189d9752ec3daaa512fbde42127ed321f11f5f61`. Neither source PR is merged.
 - Alembic: single head `d9e0f1a2b3c4` via `c8d9e0f1a2b3` → `e3f4a5b6c7d8` →
   `d9e0f1a2b3c4`. No new revision.
-- Validation: recorded after this task's validation run. Draft PR only; do not
-  merge or deploy.
+- Validation: implementation `9b1d8e1`. Local PostgreSQL pytest 2532 passed /
+  0 skipped; ruff check and format clean; strict mypy 29 affected files clean;
+  Alembic single head `d9e0f1a2b3c4`, upgrade / downgrade base / upgrade on
+  `alphatrade_migrate`; evaluation 16/16, 5/5, 7/7; frontend lint, typecheck,
+  1195 tests, build; Chromium E2E 30 passed / 13 skipped (optional staging and
+  browser tours; `PLAYWRIGHT_STAGING_*` and `PLAYWRIGHT_BROWSER_E2E` unset);
+  deployment-safety pytest 60 passed plus smoke self-checks; Docker image
+  `alphatrade-backend:ci` built. GitHub CI run 35711151145 success on `9b1d8e1`
+  (backend 2532 passed, e2e 30 passed / 13 skipped, evaluation, deployment-safety,
+  frontend, docker-build). Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/127.
+  Do not merge or deploy.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-055
 - Note: Does not enable Watcher, Telegram, or live trading. Do not merge, deploy,
