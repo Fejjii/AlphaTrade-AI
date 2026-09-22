@@ -1568,4 +1568,24 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `TELEGRAM_INTERACTION_ENABLED`, Watcher `PERSIST_AND_NOTIFY`, or live trading.
   `EXECUTE_PAPER_PLAN` remains unavailable on Telegram.
 
+### AT-075 — Integrate continuous evaluation and Telegram paper interaction
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-072, AT-073, AT-074 · Risk: High
+  (one trading authority; Telegram and evaluation must not mutate it)
+- Safety classification: Paper-only composition; Watcher/Telegram/live trading stay off;
+  no deploy; no source-PR merge; no strategy auto-activation; no Telegram orders
+- Goal: One linear Alembic chain. Watcher scan → durable notification → Telegram
+  discussion, and Watcher/Candidate/paper outcome → Journal → attribution →
+  evaluation → refinement suggestion. Facts stay separate from AI narrative.
+- Branch: `cursor/telegram_evaluation_integration-b2d5`
+- Validation: local backend pytest 2517 passed / 0 skipped / 0 failed with
+  PostgreSQL; ruff check and format; strict mypy on paper_interaction, watcher
+  paper worker, and fusion evaluation; frontend lint, typecheck, 1195 tests,
+  and build; evaluation 16/16, 5/5, 7/7; deployment-safety 60 passed; smoke-gate
+  and canonical staging smoke self-checks. Alembic single head `d9e0f1a2b3c4`.
+  GitHub CI pending on this integration HEAD. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-054
+- Note: Does not enable Watcher, Telegram, or live trading. Do not merge or deploy.
+  Source PRs #122 and #124 stay unmerged.
+
 

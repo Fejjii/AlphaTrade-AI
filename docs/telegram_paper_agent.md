@@ -1,4 +1,4 @@
-# Telegram paper interaction layer (AT-073)
+# Telegram paper interaction layer (AT-074)
 
 Paper-mode Telegram interaction on top of the existing Telegram security
 protocol, PostgreSQL Telegram store, and Candidate alert gateway.
@@ -67,7 +67,7 @@ Bare `I confirm` is not mutation authority when multiple actions were presented.
 - Retry: existing `deliver_pending` claim + transport idempotency.
 - Restart: re-projecting the same semantic event converges on the outbox key.
   Paper identity/threads/confirmations also persist in
-  `telegram_paper_*` (Alembic `d9e0f1a2b3c4`).
+  `telegram_paper_*` (Alembic `d9e0f1a2b3c4`, which revises `e3f4a5b6c7d8`).
 - Tenant isolation: organization + binding + account on every mutation.
 - Rate limits: existing protocol callback/user/chat windows apply to inbound
   private messages.
