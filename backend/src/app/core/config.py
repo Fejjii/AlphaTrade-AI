@@ -153,8 +153,10 @@ class Settings(BaseSettings):
     automatic_telegram_delivery_enabled: bool = False
     # Isolated inbound interaction protocol (AT-043). Not wired to HTTP or execution.
     telegram_interaction_enabled: bool = False
-    # Controlled paper activation (AT-077). Default disarmed. Staging/production
-    # reject every arming flag. Network delivery stays off unless explicitly permitted.
+    # Controlled paper activation. Default disarmed. Production rejects every
+    # arming flag. Staging accepts the arm only as the full paper package
+    # (Watcher arm + binance_usdm + verified bot/chat + inbound). Network
+    # delivery stays off unless that package explicitly permits it.
     telegram_paper_activation_armed: bool = False
     telegram_inbound_mode: TelegramInboundMode = TelegramInboundMode.OFF
     telegram_webhook_secret: str = ""
@@ -162,6 +164,7 @@ class Settings(BaseSettings):
     telegram_outbound_per_chat: int = Field(default=20, ge=1, le=100)
     telegram_outbound_window_seconds: int = Field(default=60, ge=1, le=3600)
     telegram_bot_token: str = ""
+    telegram_bot_id: str = Field(default="", max_length=64)
     telegram_chat_id: str = ""
     telegram_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
     telegram_max_retries: int = Field(default=2, ge=0, le=5)

@@ -41,16 +41,45 @@ exchange_mode = payload.get("exchange_mode")
 if exchange_mode not in (None, "paper_internal", "paper_exchange_demo"):
     print(f"FAIL: exchange_mode={exchange_mode!r}", file=sys.stderr)
     sys.exit(1)
-disabled_flags = (
+always_false = (
     "market_watcher_enabled",
     "market_watcher_bridge_enabled",
     "telegram_alerts_enabled",
-    "telegram_interaction_enabled",
     "automatic_telegram_delivery_enabled",
 )
-for flag in disabled_flags:
+for flag in always_false:
     if flag in payload and payload.get(flag) is not False:
         print(f"FAIL: {flag}={payload.get(flag)!r} (expected false)", file=sys.stderr)
+        sys.exit(1)
+controlled = (
+    env != "production"
+    and mode == "paper"
+    and real is False
+    and payload.get("perpetual_evidence_source") == "binance_usdm"
+    and payload.get("watcher_orchestration_enabled") is True
+    and payload.get("watcher_paper_staging_activation") is True
+    and payload.get("telegram_interaction_enabled") is True
+    and payload.get("telegram_paper_activation_armed") is True
+    and payload.get("telegram_inbound_mode") in ("polling", "webhook")
+    and payload.get("telegram_alerts_enabled") is not True
+    and payload.get("automatic_telegram_delivery_enabled") is not True
+)
+if not controlled:
+    for flag in ("telegram_interaction_enabled", "telegram_paper_activation_armed"):
+        if flag in payload and payload.get(flag) is not False:
+            print(f"FAIL: {flag}={payload.get(flag)!r} (expected false)", file=sys.stderr)
+            sys.exit(1)
+    if "telegram_inbound_mode" in payload and payload.get("telegram_inbound_mode") not in (
+        None,
+        "off",
+    ):
+        print(
+            f"FAIL: telegram_inbound_mode={payload.get('telegram_inbound_mode')!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if payload.get("telegram_network_permitted") is True:
+        print("FAIL: telegram_network_permitted=true without the paper package", file=sys.stderr)
         sys.exit(1)
 source = payload.get("perpetual_evidence_source")
 activation = payload.get("perpetual_evidence_activation")

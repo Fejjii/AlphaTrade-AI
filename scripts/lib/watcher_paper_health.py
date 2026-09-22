@@ -14,13 +14,42 @@ import json
 import sys
 from collections.abc import Mapping
 
-_TELEGRAM_AND_LEGACY = (
+_ALWAYS_FALSE = (
     "market_watcher_enabled",
     "market_watcher_bridge_enabled",
     "telegram_alerts_enabled",
-    "telegram_interaction_enabled",
     "automatic_telegram_delivery_enabled",
 )
+_PARTIAL_TELEGRAM = (
+    "telegram_interaction_enabled",
+    "telegram_paper_activation_armed",
+)
+
+
+def _controlled_projection(payload: Mapping[str, object]) -> bool:
+    """Health shape of the staging paper package. Production cannot match."""
+
+    if payload.get("environment") == "production":
+        return False
+    if payload.get("execution_mode") != "paper":
+        return False
+    if payload.get("real_trading_enabled") is not False:
+        return False
+    if payload.get("perpetual_evidence_source") != "binance_usdm":
+        return False
+    if payload.get("watcher_orchestration_enabled") is not True:
+        return False
+    if payload.get("watcher_paper_staging_activation") is not True:
+        return False
+    if payload.get("telegram_alerts_enabled") is True:
+        return False
+    if payload.get("automatic_telegram_delivery_enabled") is True:
+        return False
+    if payload.get("telegram_interaction_enabled") is not True:
+        return False
+    if payload.get("telegram_paper_activation_armed") is not True:
+        return False
+    return payload.get("telegram_inbound_mode") in {"polling", "webhook"}
 
 
 def health_payload_errors(payload: Mapping[str, object]) -> tuple[str, ...]:
@@ -32,9 +61,21 @@ def health_payload_errors(payload: Mapping[str, object]) -> tuple[str, ...]:
     exchange_mode = payload.get("exchange_mode")
     if exchange_mode not in (None, "paper_internal", "paper_exchange_demo"):
         errors.append("exchange_mode")
-    for flag in _TELEGRAM_AND_LEGACY:
+    controlled = _controlled_projection(payload)
+    for flag in _ALWAYS_FALSE:
         if flag in payload and payload.get(flag) is not False:
             errors.append(flag)
+    if not controlled:
+        for flag in _PARTIAL_TELEGRAM:
+            if flag in payload and payload.get(flag) is not False:
+                errors.append(flag)
+        if "telegram_inbound_mode" in payload and payload.get("telegram_inbound_mode") not in (
+            None,
+            "off",
+        ):
+            errors.append("telegram_inbound_mode")
+        if payload.get("telegram_network_permitted") is True:
+            errors.append("telegram_network_permitted")
     if "watcher_orchestration_enabled" in payload or "watcher_paper_staging_activation" in payload:
         orchestration = bool(payload.get("watcher_orchestration_enabled"))
         armed = bool(payload.get("watcher_paper_staging_activation"))
@@ -75,6 +116,23 @@ def _self_check() -> int:
         return 1
     if "production_watcher" not in health_payload_errors(production):
         print("FAIL: production arm was accepted", file=sys.stderr)
+        return 1
+    package = {
+        **armed,
+        "perpetual_evidence_source": "binance_usdm",
+        "telegram_interaction_enabled": True,
+        "telegram_paper_activation_armed": True,
+        "telegram_inbound_mode": "polling",
+        "telegram_alerts_enabled": False,
+        "automatic_telegram_delivery_enabled": False,
+        "telegram_network_permitted": True,
+    }
+    interaction_only = {**disarmed, "telegram_interaction_enabled": True}
+    if health_payload_errors(package):
+        print("FAIL: controlled telegram package was rejected", file=sys.stderr)
+        return 1
+    if "telegram_interaction_enabled" not in health_payload_errors(interaction_only):
+        print("FAIL: interaction without the package was accepted", file=sys.stderr)
         return 1
     print("watcher paper health self-check passed")
     return 0

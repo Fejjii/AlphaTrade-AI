@@ -303,6 +303,45 @@ def test_production_rejects_watcher_orchestration_enabled() -> None:
         Settings(**{**_PRODUCTION_BASE, "watcher_orchestration_enabled": True})
 
 
+def test_staging_controlled_package_can_construct() -> None:
+    settings = Settings(
+        **{
+            **_STAGING_BASE,
+            "perpetual_evidence_source": "binance_usdm",
+            "watcher_orchestration_enabled": True,
+            "watcher_paper_staging_activation": True,
+            "telegram_interaction_enabled": True,
+            "telegram_paper_activation_armed": True,
+            "telegram_inbound_mode": "polling",
+            "telegram_bot_id": "bot-100",
+            "telegram_chat_id": "tg-chat-1",
+            "telegram_network_permitted": True,
+        }
+    )
+    assert settings.telegram_paper_activation_armed is True
+    assert settings.enable_real_trading is False
+    assert settings.real_trading_enabled is False
+    assert settings.telegram_alerts_enabled is False
+    validate_deployment_settings(settings)
+
+
+def test_production_rejects_controlled_package() -> None:
+    with pytest.raises(ValidationError, match="telegram_interaction_enabled"):
+        Settings(
+            **{
+                **_PRODUCTION_BASE,
+                "perpetual_evidence_source": "replay",
+                "watcher_orchestration_enabled": True,
+                "watcher_paper_staging_activation": True,
+                "telegram_interaction_enabled": True,
+                "telegram_paper_activation_armed": True,
+                "telegram_inbound_mode": "polling",
+                "telegram_bot_id": "bot-100",
+                "telegram_chat_id": "tg-chat-1",
+            }
+        )
+
+
 def test_production_rejects_telegram_interaction_enabled() -> None:
     with pytest.raises(ValidationError, match="telegram_interaction_enabled"):
         Settings(**{**_PRODUCTION_BASE, "telegram_interaction_enabled": True})

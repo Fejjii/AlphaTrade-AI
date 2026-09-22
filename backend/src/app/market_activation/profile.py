@@ -183,12 +183,29 @@ def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list
         )
     if settings.telegram_alerts_enabled:
         errors.append("telegram_alerts_enabled must be false while live USD-M evidence is on.")
-    if settings.telegram_interaction_enabled:
-        errors.append("telegram_interaction_enabled must be false while live USD-M evidence is on.")
     if settings.automatic_telegram_delivery_enabled:
         errors.append(
             "automatic_telegram_delivery_enabled must be false while live USD-M evidence is on."
         )
+    from app.controlled_activation.profile import controlled_telegram_projection
+
+    if not controlled_telegram_projection(settings):
+        if settings.telegram_interaction_enabled:
+            errors.append(
+                "telegram_interaction_enabled must be false while live USD-M evidence is on."
+            )
+        if settings.telegram_paper_activation_armed:
+            errors.append(
+                "telegram_paper_activation_armed must be false while live USD-M evidence is on."
+            )
+        if settings.telegram_inbound_mode.value != "off":
+            errors.append("telegram_inbound_mode must be off while live USD-M evidence is on.")
+        if settings.telegram_network_permitted:
+            errors.append(
+                "telegram_network_permitted must be false while live USD-M evidence is on."
+            )
+        if settings.telegram_webhook_secret.strip():
+            errors.append("telegram_webhook_secret must be empty while live USD-M evidence is on.")
     if settings.environment is Environment.PRODUCTION:
         errors.append(
             "binance_usdm evidence activation is staging-only; production stays on replay."

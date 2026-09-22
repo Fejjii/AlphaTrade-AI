@@ -2009,5 +2009,54 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `cursor/activation_telegram_paper-a361`. Draft PR only. Do not deploy or
   activate. Source PR #129 recorded this decision as AT-ADR-056. The
   integration branch assigns AT-ADR-058.
+  AT-ADR-059 narrows staging rejection to incomplete arming flags. The
+  historical source-PR validation claims are unchanged.
+
+## AT-ADR-059 — One controlled paper activation package
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** PR #128 (live USD-M evidence), PR #129 (Telegram paper
+  activation), and PR #130 (Watcher paper activation) were each validated
+  separately. Their settings disagree: live evidence refused Watcher and
+  Telegram, Watcher required live evidence with Telegram off, and Telegram
+  preflight refused every non-local environment. Staging needs one package
+  that can be armed in a fixed order and rolled back without deleting rows.
+- **Decision:**
+  1. Production still refuses `binance_usdm`, the Watcher arm, and every
+     Telegram arming flag. Defaults stay disarmed. Replay remains the
+     rollback and test source.
+  2. Staging may select public `binance_usdm` evidence alone. The Watcher
+     pair (`WATCHER_PAPER_STAGING_ACTIVATION` and
+     `WATCHER_ORCHESTRATION_ENABLED`) may be set only with that live source,
+     paper execution, `paper_internal`, and legacy scanner flags off.
+  3. Staging may arm Telegram only as the full projection: the Watcher pair,
+     `binance_usdm`, `TELEGRAM_PAPER_ACTIVATION_ARMED`,
+     `TELEGRAM_INTERACTION_ENABLED`, inbound polling with an empty webhook
+     secret or webhook with a secret of at least 32 characters, and non-empty
+     `TELEGRAM_BOT_ID` and `TELEGRAM_CHAT_ID`. Alerts and automatic delivery
+     stay false. `TELEGRAM_NETWORK_PERMITTED` is allowed only with that
+     package. A partial flag is still rejected.
+  4. The dedicated Watcher process installs the projection hook only when
+     that package is on and a verified private binding exists. A missing
+     binding refuses the start. The API does not autostart the worker.
+  5. Telegram still cannot mint a Candidate, override SetupAssessment,
+     override risk, activate a strategy, place an order, or enable live
+     trading. Risk `BLOCK` and the kill switch stay final.
+  6. Rollback is one printed checklist. It returns to paper execution, replay
+     evidence, and no automated monitoring. It does not delete database rows,
+     downgrade Alembic, edit env, or deploy. `--apply` exits 2.
+  7. Alembic stays a single head: `e0f1a2b3c4d5` revises `d9e0f1a2b3c4`.
+  8. `render.yaml` keeps the step-3 evidence blueprint and does not arm
+     Watcher or Telegram. This decision does not deploy and does not change
+     the live staging environment.
+- **Alternatives considered:** Keep Telegram local-only (rejected: the
+  package must project scans on staging); allow interaction without the
+  Watcher arm (rejected: Telegram must not become a second scan authority);
+  delete rows on rollback (rejected: audit and journal history stay).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`. `ENABLE_REAL_TRADING`
+  stays false. No exchange credentials. No exchange mutation.
+- **Consequences:** Operator procedure is `docs/controlled_paper_activation.md`.
+  Branch `cursor/controlled_paper_activation_integration`. Do not merge and
+  do not deploy from this change.
 
 

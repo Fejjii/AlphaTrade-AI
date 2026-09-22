@@ -1,9 +1,10 @@
 """Controlled staging activation for paper Watcher monitoring.
 
 The arm defaults off. This module does not deploy, does not edit environment
-files, does not start Telegram, and does not enable real trading. The dedicated
-worker calls :func:`run_staging_activation` and scans only after preflight
-clears. The API process never autostarts this path.
+files, and does not enable real trading. The dedicated worker calls
+:func:`run_staging_activation` and scans only after preflight clears. When the
+controlled paper package is armed, that path installs the Telegram projection
+hook. The API process never autostarts this path.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
-from app.market_contracts.adapters.factory import REPLAY_MODES, perpetual_source_is_replay
+from app.market_activation.profile import REPLAY_MODES
+from app.market_contracts.adapters.factory import perpetual_source_is_replay
 
 logger = structlog.get_logger("workers.watcher_activation")
 
@@ -31,6 +33,7 @@ REASON_PRIORITY: tuple[str, ...] = (
     "production_forbidden",
     "staging_only",
     "telegram_forbidden",
+    "telegram_projection_refused",
     "legacy_watcher_forbidden",
     "activation_disarmed",
     "activation_probe_failed",
@@ -99,6 +102,8 @@ class WatcherPaperActivationConfig:
     evidence_source: str
     exchange_mode: str
     configured_worker_id: str
+    telegram_paper_activation_armed: bool = False
+    telegram_inbound_mode: str = "off"
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +192,8 @@ def activation_config_from_settings(settings: Settings) -> WatcherPaperActivatio
         evidence_source=settings.perpetual_evidence_source.strip().lower(),
         exchange_mode=settings.exchange_mode.value,
         configured_worker_id=settings.watcher_paper_worker_id,
+        telegram_paper_activation_armed=bool(settings.telegram_paper_activation_armed),
+        telegram_inbound_mode=settings.telegram_inbound_mode.value,
     )
 
 
@@ -490,7 +497,24 @@ def run_staging_activation(
     if start is not None:
         start()
         return decision
-    _run_cleared_runtime(settings, config, instance_id, session_factory)
+    from app.telegram_activation.errors import TelegramActivationError
+
+    try:
+        _run_cleared_runtime(settings, config, instance_id, session_factory)
+    except TelegramActivationError as exc:
+        logger.warning(
+            "watcher_paper_activation_refused",
+            reasons=["telegram_projection_refused"],
+            primary_reason="telegram_projection_refused",
+            projection_reason=exc.reason,
+            paper_only=True,
+        )
+        return ActivationDecision(
+            allowed=False,
+            reason_codes=("telegram_projection_refused",),
+            primary_reason="telegram_projection_refused",
+            phase="preflight",
+        )
     return decision
 
 
@@ -529,6 +553,15 @@ def _self_check() -> int:
     if not cleared.allowed:
         print(f"FAIL: healthy preflight {cleared.reason_codes}", file=sys.stderr)
         return 1
+    pair = _replace_config(
+        config,
+        telegram_paper_activation_armed=True,
+        telegram_interaction_enabled=True,
+        telegram_inbound_mode="polling",
+    )
+    if not evaluate_activation(pair, healthy).allowed:
+        print("FAIL: controlled telegram pair was refused", file=sys.stderr)
+        return 1
     proofs = (
         (
             "replay",
@@ -548,6 +581,18 @@ def _self_check() -> int:
             _replace_config(config, enable_real_trading=True),
             healthy,
             "real_trading_enabled",
+        ),
+        (
+            "legacy_telegram",
+            _replace_config(config, telegram_alerts_enabled=True),
+            healthy,
+            "telegram_forbidden",
+        ),
+        (
+            "partial_telegram",
+            _replace_config(config, telegram_interaction_enabled=True),
+            healthy,
+            "telegram_forbidden",
         ),
         (
             "migration",
@@ -614,6 +659,9 @@ def _run_cleared_runtime(
     from app.workers.watcher_paper import build_watcher_paper_runtime
 
     factory = session_factory if session_factory is not None else _default_session_factory()
+    from app.controlled_activation.projection import build_controlled_scan_hook
+
+    projection = build_controlled_scan_hook(settings, factory)
     runtime_box: dict[str, object] = {}
 
     def gate() -> ActivationDecision:
@@ -638,6 +686,7 @@ def _run_cleared_runtime(
         activation_cleared=True,
         worker_id=instance_id,
         activation_gate=gate,
+        scan_notification_hook=None if projection is None else projection.hook,
     )
     runtime_box["runtime"] = runtime
     runtime.run_forever()
@@ -878,11 +927,27 @@ def _runtime_reasons(observations: ActivationObservations) -> set[str]:
     return set()
 
 
+def _controlled_telegram_pair(config: WatcherPaperActivationConfig) -> bool:
+    """Paper projection. Legacy alerts and automatic delivery stay forbidden."""
+
+    return (
+        config.telegram_paper_activation_armed
+        and config.telegram_interaction_enabled
+        and config.telegram_inbound_mode in {"polling", "webhook"}
+        and not config.telegram_alerts_enabled
+        and not config.automatic_telegram_delivery_enabled
+    )
+
+
 def _telegram_enabled(config: WatcherPaperActivationConfig) -> bool:
+    if config.telegram_alerts_enabled or config.automatic_telegram_delivery_enabled:
+        return True
+    if _controlled_telegram_pair(config):
+        return False
     return bool(
-        config.telegram_alerts_enabled
-        or config.telegram_interaction_enabled
-        or config.automatic_telegram_delivery_enabled
+        config.telegram_interaction_enabled
+        or config.telegram_paper_activation_armed
+        or config.telegram_inbound_mode != "off"
     )
 
 

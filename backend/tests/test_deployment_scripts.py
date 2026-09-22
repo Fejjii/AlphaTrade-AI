@@ -28,6 +28,7 @@ SCRIPTS = (
     "scripts/telegram-paper-activation-preflight.sh",
     "scripts/telegram-paper-activation-smoke.sh",
     "scripts/telegram-paper-activation-rollback.sh",
+    "scripts/controlled-paper-activation-rollback.sh",
     "scripts/recreate-rag-collection.sh",
     "scripts/reingest-knowledge-base.sh",
 )
@@ -54,6 +55,7 @@ def test_staging_deployment_docs_exist() -> None:
         "docs/staging_execution_checklist.md",
         "docs/staging_deployment.md",
         "docs/deploy_rollback_runbook.md",
+        "docs/controlled_paper_activation.md",
         "docs/RELEASE_READINESS.md",
         "docs/slice_66b_demo_venue_validation.md",
         "render.yaml",

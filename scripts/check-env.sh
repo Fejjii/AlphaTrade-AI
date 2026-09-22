@@ -63,9 +63,15 @@ if settings.environment.value in ("staging", "production"):
         "market_watcher_enabled": (False, settings.market_watcher_enabled),
         "market_watcher_bridge_enabled": (False, settings.market_watcher_bridge_enabled),
         "telegram_alerts_enabled": (False, settings.telegram_alerts_enabled),
-        "telegram_interaction_enabled": (False, settings.telegram_interaction_enabled),
         "automatic_telegram_delivery_enabled": (False, settings.automatic_telegram_delivery_enabled),
     }
+    from app.controlled_activation.profile import controlled_telegram_projection
+
+    if not controlled_telegram_projection(settings):
+        required["telegram_interaction_enabled"] = (
+            False,
+            settings.telegram_interaction_enabled,
+        )
     print("Staging/production safety checks:")
     for name, (expected, actual) in required.items():
         if actual == expected:

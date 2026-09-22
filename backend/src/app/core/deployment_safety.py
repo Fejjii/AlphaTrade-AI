@@ -8,8 +8,7 @@ unaffected unless ``ENVIRONMENT`` is set to ``staging`` or ``production``.
 from __future__ import annotations
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
-from app.market_activation.profile import perpetual_evidence_health
-from app.market_contracts.adapters.factory import REPLAY_MODES
+from app.market_activation.profile import REPLAY_MODES, perpetual_evidence_health
 
 _LOCALHOST_MARKERS = ("localhost", "127.0.0.1")
 _WEAK_JWT_SECRETS = frozenset(
@@ -60,20 +59,7 @@ def validate_deployment_settings(settings: Settings) -> None:
     if settings.market_watcher_bridge_auto_tick:
         errors.append("market_watcher_bridge_auto_tick must be false in staging/production")
     errors.extend(_watcher_activation_errors(settings))
-    if settings.telegram_alerts_enabled:
-        errors.append("telegram_alerts_enabled must be false in staging/production")
-    if settings.telegram_interaction_enabled:
-        errors.append("telegram_interaction_enabled must be false in staging/production")
-    if settings.automatic_telegram_delivery_enabled:
-        errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
-    if settings.telegram_paper_activation_armed:
-        errors.append("telegram_paper_activation_armed must be false in staging/production")
-    if settings.telegram_inbound_mode.value != "off":
-        errors.append("telegram_inbound_mode must be off in staging/production")
-    if settings.telegram_network_permitted:
-        errors.append("telegram_network_permitted must be false in staging/production")
-    if settings.telegram_webhook_secret.strip():
-        errors.append("telegram_webhook_secret must be empty in staging/production")
+    errors.extend(_telegram_activation_errors(settings))
 
     # The demo exchange is allowed in staging only (for validation), never in
     # production. ``trade_live`` is rejected globally by exchange_safety.
@@ -205,6 +191,36 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "watcher_paper_staging_activation": settings.watcher_paper_staging_activation,
         **dict(perpetual_evidence_health(settings)),
     }
+
+
+def _telegram_activation_errors(settings: Settings) -> list[str]:
+    """Refuse Telegram except the staging paper projection on the Watcher package.
+
+    Alerts and automatic delivery stay refused in every deployed environment.
+    Incomplete arming flags keep the original error text so a partial flag
+    cannot start. Production cannot select the package.
+    """
+
+    errors: list[str] = []
+    if settings.telegram_alerts_enabled:
+        errors.append("telegram_alerts_enabled must be false in staging/production")
+    if settings.automatic_telegram_delivery_enabled:
+        errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
+    from app.controlled_activation.profile import controlled_telegram_projection
+
+    if controlled_telegram_projection(settings):
+        return errors
+    if settings.telegram_interaction_enabled:
+        errors.append("telegram_interaction_enabled must be false in staging/production")
+    if settings.telegram_paper_activation_armed:
+        errors.append("telegram_paper_activation_armed must be false in staging/production")
+    if settings.telegram_inbound_mode.value != "off":
+        errors.append("telegram_inbound_mode must be off in staging/production")
+    if settings.telegram_network_permitted:
+        errors.append("telegram_network_permitted must be false in staging/production")
+    if settings.telegram_webhook_secret.strip():
+        errors.append("telegram_webhook_secret must be empty in staging/production")
+    return errors
 
 
 def _watcher_activation_errors(settings: Settings) -> list[str]:

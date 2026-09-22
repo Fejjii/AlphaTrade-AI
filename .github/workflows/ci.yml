@@ -68,6 +68,7 @@ jobs:
           test -x scripts/telegram-paper-activation-preflight.sh
           test -x scripts/telegram-paper-activation-smoke.sh
           test -x scripts/telegram-paper-activation-rollback.sh
+          test -x scripts/controlled-paper-activation-rollback.sh
           test -x scripts/run-migrations.sh
           test -x scripts/watcher-paper-rollback.sh
           test -x scripts/watcher-paper-activation-smoke.sh
@@ -90,6 +91,18 @@ jobs:
       - name: Watcher paper activation module self-check
         working-directory: backend
         run: uv run python -m app.workers.watcher_activation --self-check
+      - name: Telegram paper activation stays disarmed by default
+        working-directory: .
+        run: ./scripts/telegram-paper-activation-preflight.sh
+      - name: Controlled paper activation rollback self-check
+        working-directory: .
+        run: |
+          ./scripts/controlled-paper-activation-rollback.sh --self-check
+          set +e
+          ./scripts/controlled-paper-activation-rollback.sh --apply
+          code=$?
+          set -e
+          test "$code" -eq 2
 
   frontend:
     runs-on: ubuntu-latest

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid5
 
@@ -82,10 +83,12 @@ class FirstSliceEvidenceAssembler:
         replay: bool,
         catalog: PerpetualInstrumentCatalog | None = None,
         lifetime: SetupLifetimePort | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._source = source
         self._replay = replay
         self._catalog = catalog if catalog is not None else default_perpetual_catalog()
+        self._clock = clock
         self._lifetime: SetupLifetimePort = (
             lifetime if lifetime is not None else SetupLifetimeStore()
         )
@@ -317,6 +320,8 @@ class FirstSliceEvidenceAssembler:
         )
 
     def _default_clock(self) -> datetime:
+        if self._clock is not None:
+            return self._clock()
         if self._replay:
             return canonical_first_slice_clock().evaluated_at
         return datetime.now(UTC)

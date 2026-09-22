@@ -39,10 +39,23 @@ def defaults_are_safe(settings: Settings) -> bool:
 
 
 def configuration_blockers(settings: Settings) -> tuple[str, ...]:
-    """Settings gates. Staging and production stay locked by deployment safety."""
+    """Settings gates.
+
+    Local arming is unchanged. Staging may arm only the controlled paper
+    package. Production stays forbidden. A partial staging flag set is not
+    armable.
+    """
+    from app.controlled_activation.profile import controlled_telegram_projection
+
     blockers: list[str] = []
-    if settings.environment is not Environment.LOCAL:
-        blockers.append("environment_not_local")
+    projection = controlled_telegram_projection(settings)
+    if settings.environment is Environment.PRODUCTION:
+        blockers.append("environment_forbidden")
+    elif settings.environment is not Environment.LOCAL and not projection:
+        if settings.environment is Environment.STAGING:
+            blockers.append("staging_package_incomplete")
+        else:
+            blockers.append("environment_not_local")
     if settings.execution_mode is not ExecutionMode.PAPER:
         blockers.append("execution_mode_not_paper")
     if settings.enable_real_trading or settings.real_trading_enabled:
@@ -64,7 +77,11 @@ def configuration_blockers(settings: Settings) -> tuple[str, ...]:
         and len(settings.telegram_webhook_secret) < WEBHOOK_SECRET_MIN_LENGTH
     ):
         blockers.append("webhook_secret_too_short")
-    if settings.telegram_network_permitted and settings.environment is not Environment.LOCAL:
+    if (
+        settings.telegram_network_permitted
+        and settings.environment is not Environment.LOCAL
+        and not projection
+    ):
         blockers.append("network_not_local")
     return tuple(blockers)
 

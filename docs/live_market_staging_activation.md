@@ -1,7 +1,8 @@
 # Staging live USD-M market evidence activation
 
 Controlled, read-only Binance USD-M market evidence for staging.
-This does not activate Watcher, Telegram, or live trading, and it does not
+This page is step 3 of the package in `docs/controlled_paper_activation.md`.
+Applying it does not by itself activate Watcher or Telegram, and it does not
 place, cancel, or authenticate exchange requests.
 
 Public REST only: `GET https://fapi.binance.com` `/fapi/v1/klines` and

@@ -24,7 +24,7 @@ process does not autostart it. Production rejects the arm.
 | Risk | `BLOCK` outranks warn and allow. Paper execution cannot override it. |
 | Paper | `EXECUTION_MODE=paper`. Real trading cannot be constructed. |
 | Kill switch | The global and tenant kill switches still block scans. Rollback does not clear them. |
-| Telegram | Alerts, interaction, and automatic delivery stay false. |
+| Telegram | Legacy alerts and automatic delivery stay false. The controlled paper projection is armed only by `docs/controlled_paper_activation.md` after scans are verified. |
 
 ## Activation configuration
 

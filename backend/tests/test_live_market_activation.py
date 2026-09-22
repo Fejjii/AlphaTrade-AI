@@ -239,6 +239,24 @@ def test_staging_paper_watcher_arm_may_select_live_evidence() -> None:
     assert settings.telegram_alerts_enabled is False
 
 
+def test_staging_controlled_package_selects_live_evidence() -> None:
+    settings = Settings(
+        **{
+            **_STAGING,
+            "watcher_orchestration_enabled": True,
+            "watcher_paper_staging_activation": True,
+            "telegram_interaction_enabled": True,
+            "telegram_paper_activation_armed": True,
+            "telegram_inbound_mode": "polling",
+            "telegram_bot_id": "bot-100",
+            "telegram_chat_id": "tg-chat-1",
+        }
+    )
+    assert live_market_activation_violations(settings) == []
+    assert activation_state(settings) == "active"
+    assert isinstance(resolve_perpetual_evidence_source(settings), BinanceUsdmPerpetualSource)
+
+
 def test_live_source_rejects_watcher_telegram_and_real_trading() -> None:
     with pytest.raises(ValidationError, match="watcher_orchestration_enabled"):
         _local(watcher_orchestration_enabled=True)

@@ -694,6 +694,8 @@ def _reject_or_converge_outbox(existing: TelegramOutboxRow, incoming: OutboxReco
 
 
 def _bound_identity_conflict(stored: object, incoming: object) -> bool:
+    """A null column may be filled once. A stored value must not change."""
+
     if stored is None:
         return False
     return stored != incoming
@@ -710,12 +712,12 @@ def _reject_conflicting_receipt_binding(
         or existing.message_id != incoming.message_id
         or existing.telegram_user_id != incoming.telegram_user_id
         or existing.chat_id != incoming.chat_id
-        or existing.organization_id != incoming.organization_id
-        or existing.user_id != incoming.user_id
-        or existing.account_id != incoming.account_id
-        or existing.payload_hash != incoming.payload_hash
+        or _bound_identity_conflict(existing.organization_id, incoming.organization_id)
+        or _bound_identity_conflict(existing.user_id, incoming.user_id)
+        or _bound_identity_conflict(existing.account_id, incoming.account_id)
+        or _bound_identity_conflict(existing.payload_hash, incoming.payload_hash)
         or existing.replay_fingerprint != incoming.replay_fingerprint
-        or existing.action != incoming_action
+        or _bound_identity_conflict(existing.action, incoming_action)
         or _aware(existing.created_at) != _aware(incoming.created_at)
         or _bound_identity_conflict(existing.nonce_hash, incoming.nonce_hash)
         or _bound_identity_conflict(existing.binding_id, incoming.binding_id)
@@ -1012,6 +1014,16 @@ def _apply_receipt_lifecycle(current: TelegramActionReceiptRow, row: ActionRecei
         current.nonce_hash = row.nonce_hash
     if current.binding_id is None:
         current.binding_id = row.binding_id
+    if current.organization_id is None:
+        current.organization_id = row.organization_id
+    if current.user_id is None:
+        current.user_id = row.user_id
+    if current.account_id is None:
+        current.account_id = row.account_id
+    if current.payload_hash is None:
+        current.payload_hash = row.payload_hash
+    if current.action is None and row.action is not None:
+        current.action = row.action.value
     current.state = row.state.value
     current.reason_code = row.reason_code
     current.authorization_intent_id = row.authorization_intent_id

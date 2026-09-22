@@ -3,7 +3,8 @@
 PR #126 Watcher remediation is the scan base. PR #125 paper evaluation and
 Telegram discussion are applied on that base. This slice does not merge those
 source PRs, does not deploy, and does not enable Watcher, Telegram, or live
-trading.
+trading. The later controlled package that may arm those paths together is
+`docs/controlled_paper_activation.md`. This page does not arm that package.
 
 ## Authority map
 
