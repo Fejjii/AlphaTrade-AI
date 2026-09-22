@@ -1633,14 +1633,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   Expose activation on health/market status and add a staging validator.
 - Branch: `cursor/activation_live_market`
 - Base: `main@894e9e4`
-- Validation: activation suite 17 passed; `uv run pytest -q` exit 0
-  (2549 collected, lastfailed empty, 1109.9s; Postgres was not listening so
-  postgres-gated tests skipped and the retained log dropped the pass/skip
-  split). Ruff check and format clean. Strict mypy on the activation,
-  health, monitor, deployment-safety, factory, and config modules clean.
-  Frontend lint, typecheck, 1196 tests, and build passed. Evaluation
-  16/16, 5/5, 7/7. GitHub CI is the Postgres-backed confirmation. Draft PR
-  only. Do not merge or deploy.
+- Validation: implementation `ed17355`. Local activation suite 17 passed.
+  Local `uv run pytest -q` exit 0 (2549 collected; Postgres was not
+  listening, so postgres-gated tests skipped and the retained log dropped
+  the pass/skip split). Local ruff check and format clean. Strict mypy on
+  the activation, health, monitor, deployment-safety, factory, and config
+  modules clean. Local frontend lint, typecheck, 1196 tests, and build
+  passed. Local evaluation 16/16, 5/5, 7/7. GitHub CI run 35740379070
+  success on `ed17355`: backend 2549 passed, 236 warnings, 1693.63s;
+  deployment-safety 60 tests at 100% plus live-market staging self-check;
+  frontend 1196 passed and build; evaluation 16/16, 5/5, 7/7; e2e 30 passed
+  / 13 skipped; docker image `alphatrade-backend:ci` built. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/128. Do not merge or deploy.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-056
 - Note: Does not modify the live staging environment and does not deploy.
