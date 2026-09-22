@@ -14,6 +14,7 @@ from pydantic import Field
 
 from app.learning_attribution.adapters.analytics import AttributionAnalyticsSnapshot
 from app.learning_attribution.contracts import AttributionRecord, LearningVenueMode
+from app.paper_evaluation.contracts import PaperEvaluationSummary
 from app.schemas.common import StrictModel
 from app.schemas.execution_protocol import ExecutionProjectionView, ExecutionReceiptView
 from app.signal_fusion.action_eligibility import ActionEligibilityEvaluation
@@ -71,3 +72,12 @@ class CanonicalLearningStatsRead(StrictModel):
     authority: Literal["canonical"] = "canonical"
     venue_mode: LearningVenueMode | None = None
     snapshot: AttributionAnalyticsSnapshot
+
+
+class CanonicalPaperEvaluationRead(StrictModel):
+    """Operator-visible paper evaluation. Not a trading or activation authority."""
+
+    authority: Literal["canonical"] = "canonical"
+    live_executable: Literal[False] = False
+    watcher_activated: Literal[False] = False
+    summary: PaperEvaluationSummary

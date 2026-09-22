@@ -199,6 +199,27 @@ class CandidateAlertGateway:
             presented_payload=presented_payload,
             inbound=inbound,
         )
+        return self.handle_callback_outcome(presented_payload=presented_payload, outcome=outcome)
+
+    def apply_telegram_outcome(
+        self,
+        *,
+        presented_payload: ActionPayload,
+        outcome: ActionOutcome,
+    ) -> CandidateAlertActionResult:
+        """Apply Candidate-alert effects after the Telegram protocol already authorized.
+
+        Used by callback handling and identity-bound private-message confirmation.
+        Never executes. Never mints a Candidate.
+        """
+        return self.handle_callback_outcome(presented_payload=presented_payload, outcome=outcome)
+
+    def handle_callback_outcome(
+        self,
+        *,
+        presented_payload: ActionPayload,
+        outcome: ActionOutcome,
+    ) -> CandidateAlertActionResult:
         revision_id = presented_payload.revision_id
         intent = None
         if revision_id is not None:

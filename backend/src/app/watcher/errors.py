@@ -40,6 +40,17 @@ class WatcherTenantMismatchError(ConflictError):
     code = "watcher_tenant_mismatch"
 
 
+class WatcherEvidenceUnavailableError(WatcherError):
+    """Canonical scan evidence could not be assembled. Fail closed."""
+
+    code = "canonical_evidence_unavailable"
+    status_code = 503
+
+    def __init__(self, message: str, *, reason_code: str, details: dict[str, object] | None = None):
+        super().__init__(message, details=details)
+        self.reason_code = reason_code
+
+
 class WatcherContractError(WatcherError):
     """Evaluation outcome violated orchestration honesty invariants."""
 

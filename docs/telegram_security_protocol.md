@@ -111,13 +111,18 @@ disabled (`real_trading_enabled` is always false).
 
 - HTTPS webhook adapter / Telegram secret-token header verification
 - FastAPI routes
-- PostgreSQL / Alembic
 - RemoteActionGateway delegation to ApprovalService / ExecutionService
 - `EXECUTE_PAPER_PLAN`
 - `CLOSE` confirmation nonces
 - Frontend enrollment UI
 
+Bound private-chat messages are accepted by
+`TelegramSecurityProtocol.receive_private_message` for a later paper interaction
+layer. Discussion is read-only unless an exact issued nonce payload is presented.
+HTTP webhook wiring remains out of scope; Telegram stays disabled by default.
+
 Candidate alert composition lives in `app.candidate_alerts` and is documented in
-[phase6_candidate_telegram_alerts.md](./phase6_candidate_telegram_alerts.md). That
-package uses this protocol's public store/outbox/action APIs. It does not add a
-second Telegram persistence model, webhook, or execution path.
+[phase6_candidate_telegram_alerts.md](./phase6_candidate_telegram_alerts.md). Paper
+discussion and Watcher/journal notifications live in `app.telegram_paper_agent`
+([telegram_paper_agent.md](./telegram_paper_agent.md)). Those packages use this
+protocol's public store/outbox/action APIs. They do not add a second execution path.

@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { PaperModeIndicator } from "@/components/ui/paper-mode-indicator";
+import { WatcherMonitoringCard } from "@/components/WatcherMonitoringCard";
 import { ErrorState, LoadingState } from "@/components/states";
 import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -40,6 +41,7 @@ type DashboardData = {
   paperRunSessions: SourceResult<Awaited<ReturnType<typeof api.strategies.runSessions>>>;
   alertRouting: SourceResult<Awaited<ReturnType<typeof api.alerts.routingSummary>>>;
   watcherSummary: SourceResult<Awaited<ReturnType<typeof api.marketWatcher.summary>>>;
+  watcherMonitoring: SourceResult<Awaited<ReturnType<typeof api.marketWatcher.monitoring>>>;
   discipline: SourceResult<Awaited<ReturnType<typeof api.analytics.discipline>>>;
   risk: SourceResult<Awaited<ReturnType<typeof api.analytics.riskBehavior>>>;
   tradeReview: SourceResult<Awaited<ReturnType<typeof api.analytics.tradeReview>>>;
@@ -70,6 +72,7 @@ export default function DashboardPage() {
       paperRunSessions,
       alertRouting,
       watcherSummary,
+      watcherMonitoring,
       discipline,
       risk,
       tradeReview,
@@ -85,6 +88,7 @@ export default function DashboardPage() {
       loadSource(api.strategies.runSessions({ limit: 50 })),
       loadSource(api.alerts.routingSummary()),
       loadSource(api.marketWatcher.summary()),
+      loadSource(api.marketWatcher.monitoring()),
       loadSource(api.analytics.discipline()),
       loadSource(api.analytics.riskBehavior()),
       loadSource(api.analytics.tradeReview()),
@@ -102,6 +106,7 @@ export default function DashboardPage() {
       paperRunSessions,
       alertRouting,
       watcherSummary,
+      watcherMonitoring,
       discipline,
       risk,
       tradeReview,
@@ -134,6 +139,7 @@ export default function DashboardPage() {
       { name: "Run sessions", available: data.paperRunSessions.available, required: false },
       { name: "Alert routing", available: data.alertRouting.available, required: false },
       { name: "Watcher", available: data.watcherSummary.available, required: false },
+      { name: "Watcher monitoring", available: data.watcherMonitoring.available, required: false },
       { name: "Discipline fallback", available: data.discipline.available, required: false },
       { name: "Risk fallback", available: data.risk.available, required: false },
     ];
@@ -224,6 +230,12 @@ export default function DashboardPage() {
         summary?.alerts_lessons?.pending_lessons,
       ),
       nextAction: data.summary.available ? summary?.next_recommended_action ?? null : null,
+      watcherStatus: data.watcherMonitoring.available
+        ? (data.watcherMonitoring.data?.watcher_status ?? null)
+        : null,
+      watcherReason: data.watcherMonitoring.available
+        ? (data.watcherMonitoring.data?.reason_code ?? null)
+        : null,
     });
   }, [data, summary, executionMode, realTradingEnabled, posture.paperConfirmed]);
 
@@ -290,6 +302,7 @@ export default function DashboardPage() {
         available: data.watcherSummary.available || data.summary.available,
         required: false as const,
         timestamp:
+          data.watcherMonitoring.data?.last_scan_at ??
           data.watcherSummary.data?.last_scan_at ??
           summary?.market_watcher?.last_scan_at ??
           null,
@@ -390,6 +403,19 @@ export default function DashboardPage() {
         ) : null}
       </section>
 
+      {data?.watcherMonitoring.available && data.watcherMonitoring.data ? (
+        <WatcherMonitoringCard
+          snapshot={data.watcherMonitoring.data}
+          compact
+          onRefresh={() => void reload()}
+        />
+      ) : data?.watcherMonitoring && !data.watcherMonitoring.available ? (
+        <p className="text-xs text-amber-500/80" data-testid="watcher-monitoring-unavailable">
+          Watcher monitoring unavailable
+          {data.watcherMonitoring.error ? `: ${data.watcherMonitoring.error}` : "."}
+        </p>
+      ) : null}
+
       <AttentionQueue
         items={attentionItems}
         error={null}
@@ -467,6 +493,11 @@ export default function DashboardPage() {
           <li>
             <Link className="underline" href="/alerts/review">
               Setup alert review
+            </Link>
+          </li>
+          <li>
+            <Link className="underline" href="/watcher">
+              Watcher monitoring
             </Link>
           </li>
           <li>

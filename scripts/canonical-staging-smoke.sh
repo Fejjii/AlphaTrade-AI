@@ -240,12 +240,40 @@ PY
   curl_api -H "$(auth_header "$token_a")" \
     "${BASE_URL}/canonical/learning/strategy-stats" >/dev/null
   echo "  OK: strategy stats"
+  eval_json="$(curl_api -H "$(auth_header "$token_a")" \
+    "${BASE_URL}/canonical/paper-evaluation/summary")"
+  python3 - <<'PY' "$eval_json"
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload.get("watcher_activated") is False, payload
+assert payload.get("live_executable") is False, payload
+summary = payload.get("summary") or {}
+assert summary.get("authority") == "paper_evaluation_measurement", payload
+assert summary.get("live_executable") is False, payload
+facts = summary.get("facts") or {}
+assert facts.get("watcher_orchestration_enabled") is False, payload
+assert facts.get("telegram_interaction_enabled") is False, payload
+assert (facts.get("missed_opportunities") or {}).get("counterfactual_pnl") is None, payload
+for item in summary.get("refinements") or []:
+    assert item.get("activate") is False, item
+    assert item.get("auto_activate") is False, item
+print("  OK: paper evaluation summary (measurement only)")
+PY
 else
   echo "9/10 — seeded canonical happy path skipped (set CANONICAL_CANDIDATE_ID for reads)"
 fi
 
-echo "10/10 — strategy statistics + journal list"
+echo "10/10 — strategy statistics + paper evaluation + journal list"
 curl_api -H "$(auth_header "$token_a")" "${BASE_URL}/canonical/learning/strategy-stats" >/dev/null
+eval_json="$(curl_api -H "$(auth_header "$token_a")" "${BASE_URL}/canonical/paper-evaluation/summary")"
+python3 - <<'PY' "$eval_json"
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload.get("watcher_activated") is False
+assert payload.get("live_executable") is False
+assert (payload.get("summary") or {}).get("authority") == "paper_evaluation_measurement"
+print("  OK: paper evaluation empty-tenant summary")
+PY
 curl_api -H "$(auth_header "$token_a")" "${BASE_URL}/journal/trades" >/dev/null
 echo "  OK"
 

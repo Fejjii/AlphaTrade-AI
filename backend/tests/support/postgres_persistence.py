@@ -14,6 +14,8 @@ from app.db.canonical_candidates import CanonicalCandidateRow  # noqa: F401
 from app.db.canonical_eligibility import ActionEligibilityEvaluationRow  # noqa: F401
 from app.db.canonical_trade_plans import CanonicalTradePlanRootRow  # noqa: F401
 from app.db.models import Organization  # noqa: F401  — register metadata
+from app.db.paper_evaluation import PaperEvaluationObservationRow  # noqa: F401
+from app.db.telegram_paper_agent import TelegramPaperNotificationRow  # noqa: F401
 from app.db.telegram_security import TelegramBindingRow  # noqa: F401
 from app.db.watcher_orchestration import WatcherWorkerLeaseRow  # noqa: F401
 
@@ -48,7 +50,7 @@ def _persistence_tables() -> list[object]:
         table
         for table in Base.metadata.sorted_tables
         if table.name.startswith(
-            ("watcher_", "telegram_security_", "canonical_candidate", "action_eligibility")
+            ("watcher_", "telegram_", "canonical_candidate", "action_eligibility")
         )
     ]
 

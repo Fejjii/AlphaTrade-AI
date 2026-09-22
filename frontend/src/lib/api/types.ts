@@ -1769,6 +1769,70 @@ export interface CanonicalEvidenceRead {
   unavailable_reason?: string | null;
 }
 
+export interface CanonicalMarketMonitorStatusRead {
+  authority: "canonical_market_monitor";
+  live_executable: false;
+  watcher_activated: false;
+  compatibility_price_used: false;
+  symbol: string;
+  mode: "live_perpetual" | "replay" | string;
+  availability: "fresh" | "stale" | "degraded" | "unavailable" | "replay" | string;
+  reason: string;
+  perpetual: true;
+  source: CanonicalEvidenceSource;
+  current_price: CanonicalCurrentPriceRead;
+  last_update: string | null;
+  evaluated_at: string;
+  stream: {
+    reconnect_state: string;
+    gap_state: string;
+    warm_up_status: string;
+    last_sequence?: number | null;
+    last_event_id?: string | null;
+    last_event_at?: string | null;
+    reconnect_count: number;
+  };
+  coverage: {
+    completeness: string;
+    gap_state: string;
+    content_hash?: string | null;
+    first_trade_id?: string | null;
+    last_trade_id?: string | null;
+  };
+  cvd: {
+    available: boolean;
+    signed_quote_delta?: string | null;
+    total_quote_volume?: string | null;
+    signed_flow_ratio?: string | null;
+    event_count: number;
+    event_set_hash?: string | null;
+    reason?: string | null;
+  };
+  ohlcv: {
+    available: boolean;
+    completeness_15m: string;
+    completeness_4h: string;
+    latest_15m_close?: string | null;
+    latest_15m_end?: string | null;
+    reason?: string | null;
+  };
+  provider: {
+    name: string;
+    health: string;
+    is_mock: boolean;
+    using_fallback: boolean;
+    detail?: string | null;
+  };
+  backoff: {
+    active: boolean;
+    attempt: number;
+    next_retry_at?: string | null;
+    last_error_class?: string | null;
+  };
+  content_hash: string;
+  unavailable_reason?: string | null;
+}
+
 export interface CanonicalCandidateRead {
   authority: "canonical";
   candidate: CanonicalCandidate;
@@ -1862,6 +1926,97 @@ export interface CanonicalLearningStatsRead {
       executed_outcomes: number;
       setup_confirmed_count: number;
     };
+  };
+}
+
+export interface PaperEvaluationRefinement {
+  suggestion_id: string;
+  category: string;
+  summary: string;
+  severity: string;
+  activate: false;
+  auto_activate: false;
+  banner: string;
+  narrative_explanation?: string | null;
+}
+
+export interface CanonicalPaperEvaluationRead {
+  authority: "canonical";
+  live_executable: false;
+  watcher_activated: false;
+  summary: {
+    organization_id: string;
+    authority: "paper_evaluation_measurement";
+    live_executable: false;
+    facts: {
+      watcher: {
+        scan_count: number;
+        confirmed_setup_count: number;
+        candidates_published: number;
+        stale_evidence_count: number;
+        provider_outage_count: number;
+      };
+      conversion: {
+        scans: number;
+        assessments: number;
+        confirmed_setups: number;
+        candidates: number;
+        eligible: number;
+        blocked: number;
+        approved: number;
+        rejected: number;
+        skipped: number;
+        filled: number;
+        closed: number;
+      };
+      false_signals: {
+        confirmed_losses: number;
+        executed_outcomes: number;
+        false_signal_rate?: string | null;
+      };
+      strategy_overall: {
+        win_rate?: string | null;
+        expectancy?: string | null;
+        max_drawdown?: string | null;
+        average_mfe?: string | null;
+        average_mae?: string | null;
+        executed_outcome_count: number;
+        confidence: string;
+      };
+      rule_adherence: {
+        risk_adhered_count: number;
+        stop_violation_count: number;
+        adherence_rate?: string | null;
+      };
+      blocked: {
+        blocked_count: number;
+        by_reason: Array<[string, number]>;
+      };
+      human_vs_system: {
+        human_reject_or_skip: number;
+        human_approvals: number;
+        paper_system_executions: number;
+        executed_outcomes: number;
+      };
+      missed_opportunities: {
+        rejected_confirmed: number;
+        skipped_confirmed: number;
+        eligible_not_approved: number;
+        blocked_after_confirmation: number;
+        counterfactual_pnl: null;
+        warning: string;
+      };
+      data_quality: {
+        fresh_count: number;
+        stale_count: number;
+        unavailable_count: number;
+        replay_count: number;
+        stale_or_unavailable_rate?: string | null;
+      };
+      warnings: Array<{ code: string; message: string }>;
+    };
+    refinements: PaperEvaluationRefinement[];
+    narrative?: { banner: string; text: string } | null;
   };
 }
 
@@ -3229,6 +3384,157 @@ export interface MarketWatcherStatus {
   last_scan_at?: string | null;
   paper_only: boolean;
   real_trading_enabled: boolean;
+}
+
+export type WatcherMonitoringRuntimeState =
+  | "RUNNING"
+  | "STOPPED"
+  | "DEGRADED"
+  | "STALE"
+  | "BLOCKED";
+
+export interface WatcherConfigFlags {
+  market_watcher_enabled: boolean;
+  watcher_orchestration_enabled: boolean;
+  worker_enabled: boolean;
+  market_watcher_bridge_enabled: boolean;
+  market_watcher_bridge_auto_tick: boolean;
+  telegram_alerts_enabled: boolean;
+  telegram_interaction_enabled: boolean;
+  automatic_telegram_delivery_enabled: boolean;
+}
+
+export interface PaperMonitoringPosture {
+  paper_only: true;
+  execution_mode: string;
+  real_trading_enabled: boolean;
+  kill_switch_blocked: boolean;
+  kill_switch_reason_code?: string | null;
+  telegram_enabled: boolean;
+  watcher_config_enabled: boolean;
+  runtime_evidence: boolean;
+}
+
+export interface WatcherApprovedStrategy {
+  strategy_id: string;
+  strategy_version_id: string;
+  name: string;
+  lifecycle_state: string;
+  compiled: boolean;
+}
+
+export interface WatcherSetupAssessmentSummary {
+  assessment_id: string;
+  candidate_id: string;
+  state: string;
+  strategy_version_id: string;
+  instrument: string;
+  timeframe: string;
+  valid_until: string;
+  live_executable: false;
+}
+
+export interface WatcherDetectedCandidateSummary {
+  count: number;
+  conditions: string[];
+  last_scan_at?: string | null;
+  source: "market_watcher_scan";
+}
+
+export interface WatcherCanonicalCandidateSummary {
+  candidate_id: string;
+  assessment_id: string;
+  state: string;
+  instrument: string;
+  timeframe: string;
+  strategy_version_id: string;
+  created_at: string;
+}
+
+export interface WatcherMarketFreshness {
+  status: "fresh" | "stale" | "degraded" | "unavailable" | "replay" | "unknown";
+  observed_at?: string | null;
+  symbol?: string | null;
+  data_freshness?: string | null;
+  quote_max_age_seconds?: number;
+  stale_after_minutes?: number | null;
+  legacy_scanner_stale_after_minutes?: number | null;
+  quote_fresh?: boolean;
+  trade_stream_fresh?: boolean;
+  closed_candle_final?: boolean | null;
+  historical_evidence_valid?: boolean | null;
+  setup_lifetime_expired?: boolean | null;
+  usable_as_current_market_price?: boolean;
+  presentation?: string | null;
+  availability?: string | null;
+}
+
+export interface WatcherProviderHealthItem {
+  name: string;
+  kind: string;
+  health: string;
+  using_fallback: boolean;
+  is_mock: boolean;
+  detail?: string | null;
+  error_message?: string | null;
+}
+
+export interface WatcherLeaseHealth {
+  scan_scope: string;
+  owner_id?: string | null;
+  lease_epoch: number;
+  fencing_token: number;
+  expires_at?: string | null;
+  last_beat_at?: string | null;
+  seconds_since_beat?: number | null;
+  fenced: boolean;
+  heartbeat_fresh: boolean;
+  orchestration_state?: string | null;
+  reason_code?: string | null;
+}
+
+export interface WatcherWorkerHealth {
+  name: string;
+  worker_enabled: boolean;
+  heartbeat_live: boolean;
+  last_beat_at?: string | null;
+  status?: string | null;
+  paused?: boolean | null;
+  detail?: string | null;
+}
+
+export interface WatcherRecentError {
+  source: string;
+  message: string;
+  at?: string | null;
+  reason_code?: string | null;
+}
+
+export interface WatcherMonitoringSnapshot {
+  watcher_status: WatcherMonitoringRuntimeState;
+  paper_monitoring_status: WatcherMonitoringRuntimeState;
+  reason_code: string;
+  block_reasons: string[];
+  warnings: string[];
+  paper_posture: PaperMonitoringPosture;
+  config_flags: WatcherConfigFlags;
+  symbols_monitored: string[];
+  approved_strategies: WatcherApprovedStrategy[];
+  last_scan_at?: string | null;
+  last_scan_status?: string | null;
+  next_scan_at?: string | null;
+  next_scan_basis?: "worker_interval" | "lease_ttl" | "bridge_interval" | "paper_poll" | null;
+  market_freshness: WatcherMarketFreshness;
+  provider_health: WatcherProviderHealthItem[];
+  setup_assessments: WatcherSetupAssessmentSummary[];
+  scanner_candidates: WatcherDetectedCandidateSummary;
+  canonical_candidates: WatcherCanonicalCandidateSummary[];
+  leases: WatcherLeaseHealth[];
+  worker: WatcherWorkerHealth;
+  recent_errors: WatcherRecentError[];
+  limitations: string[];
+  generated_at: string;
+  paper_only: true;
 }
 
 export interface MarketWatcherSummary {

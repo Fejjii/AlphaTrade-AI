@@ -59,6 +59,7 @@ from app.api.routes import (
     tradingview,
     usage,
     validation_priority,
+    watcher_paper,
     worker,
 )
 from app.core.config import Environment, Settings, get_settings
@@ -112,9 +113,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     worker_driver = _maybe_start_in_process_worker(settings)
     app.state.worker_driver = worker_driver
+    paper_runtime = _maybe_start_watcher_paper_runtime(
+        settings, monitor=getattr(app.state, "market_monitor", None)
+    )
+    app.state.watcher_paper_runtime = paper_runtime
 
     yield
 
+    if paper_runtime is not None:
+        paper_runtime.stop()
     if worker_driver is not None:
         worker_driver.stop()
     # TODO(slice-18): close Qdrant client gracefully when using live vector store.
@@ -135,6 +142,26 @@ def _maybe_start_in_process_worker(settings: Settings):
     driver.start_background_thread()
     logger.info("worker_in_process_enabled", worker_name=settings.worker_name)
     return driver
+
+
+def _maybe_start_watcher_paper_runtime(settings: Settings, *, monitor: object | None = None):
+    """Start the paper Watcher loop locally when orchestration is explicitly on.
+
+    Staging/production cannot enable ``WATCHER_ORCHESTRATION_ENABLED``. Dedicated
+    process ``python -m app.workers.watcher_paper`` is the normal worker.
+    """
+
+    from app.db.session import get_session_factory
+    from app.market_monitor.monitor import PerpetualMarketMonitor
+    from app.workers.watcher_paper import build_watcher_paper_runtime, paper_runtime_enabled
+
+    if not paper_runtime_enabled(settings):
+        return None
+    resolved_monitor = monitor if isinstance(monitor, PerpetualMarketMonitor) else None
+    runtime = build_watcher_paper_runtime(settings, get_session_factory(), monitor=resolved_monitor)
+    runtime.start_background_thread()
+    logger.info("watcher_paper_runtime_in_process", worker_id=runtime.snapshot().worker_id)
+    return runtime
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -158,6 +185,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.provider_registry = build_default_registry(settings)
+    from app.market_monitor.factory import build_perpetual_market_monitor
+
+    app.state.market_monitor = build_perpetual_market_monitor(settings)
     app.state.strategy_registry = build_strategy_registry()
     app.state.tool_registry = build_tool_registry(settings)
 
@@ -229,6 +259,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         demo.router,
         tools.router,
         worker.router,
+        watcher_paper.router,
     ):
         app.include_router(r)
     return app

@@ -1407,6 +1407,27 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   source AT-ADR-043. Source PR #111 left AT-067 as TODO; closed by integrating
   PR #109.
 
+### AT-069 — Live read-only perpetual market monitoring
+- Priority: P0 · Status: DONE · Dependencies: AT-064, Phase 5 contracts
+  · Risk: Medium (freshness honesty + stream identity)
+- Safety classification: Paper-only read path; Watcher, Telegram, and live
+  trading remain disabled; no exchange mutation; no merge
+- Goal: Continuously provide trustworthy Binance USD-M perpetual evidence
+  (BTCUSDT first, catalog-extensible) with current price, OHLCV, trade stream,
+  CVD, coverage, freshness, source identity, provider status, reconnect/backoff,
+  rate-limit handling, and gap detection. Never present replay, demo-seed, or
+  compatibility snapshots as the current live price.
+- Branch: `cursor/live-market-monitoring-cc4d`
+- Deliverables: `app.market_monitor`, `GET /canonical/market-status`,
+  decision/market + /market honesty, fail-closed stream tests.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-048
+- Completion evidence: HEAD `69371ee` on `cursor/live-market-monitoring-cc4d`;
+  draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/118. Local: monitor
+  25/25; full backend 2219 passed / 181 skipped; frontend lint/typecheck;
+  1171 unit tests; Next build; E2E 26 passed / 13 skipped. Watcher, Telegram,
+  and live trading stay off. Do not merge or deploy.
+
 ### AT-068 — Durable setup lifetime + canonical AUTO_PAPER authority
 - Priority: P1 · Status: IN_PROGRESS · Dependencies: AT-067, intelligence
   acceptance review P1s · Risk: High (lifetime identity + paper mint authority)
@@ -1421,3 +1442,184 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   mypy; full backend; frontend; e2e; exact-head CI. Draft PR only; no merge.
 - Recommended model: Cursor Grok 4.6 Extra High
 - ADR: AT-ADR-047
+
+### AT-070 — Paper-only continuous Watcher runtime
+- Priority: P0 · Status: DONE · Dependencies: AT-042, AT-064, AT-067, AT-068, AT-069
+  · Risk: High (continuous worker, leases, Candidate persist)
+- Safety classification: Paper monitoring only; staging/production Watcher flags stay
+  false; no Telegram; no live orders; no real exchange credentials
+- Goal: Wire the missing continuous worker: tenant-scoped approved compiled strategy
+  → live read-only market evidence → `WatcherOrchestrator` scan →
+  `evaluate_canonical_strategy` → persist Candidate only on `CONFIRMED_SETUP`.
+  Reuse existing orchestrator, Postgres store, leases/fencing, canonical assembler,
+  `resolve_executable_strategy_policy`, CandidateLifecycleService, and durable
+  setup lifetime. BTCUSDT first; configurable symbols; bounded polling; single
+  active worker per scan scope.
+- Branch: `cursor/watcher_paper_runtime-5455` (source); remapped from source AT-069
+- Validation: 22 paper-runtime tests (concurrent, lease takeover, restart replay,
+  duplicate scan, stale, outage, wrong tenant, wrong lineage, CONFIRMED_SETUP,
+  WATCH/NO_SETUP, expiry, kill switch); ruff check/format; full backend pytest
+  exit 0 (Postgres-backed tests skipped locally — no local Postgres; GitHub CI
+  has the service); frontend lint/typecheck/test/build; evaluation 16/16, 5/5,
+  7/7. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-049
+- Note: Source PR #120 claimed AT-069 / AT-ADR-048; remapped because AT-069 is
+  the live market monitor (PR #118).
+- Completion evidence: feat `1de8b60`; draft PR #120. GitHub CI run 35614998968
+  failed on `test_concurrent_workers_single_lease` (StaticPool SQLite shared
+  across worker threads). Follow-up isolates that test from SQLite and surfaces
+  ThreadPoolExecutor exceptions; do not merge until that head is green.
+
+### AT-071 — Watcher PAPER MONITORING operator UX + observability
+- Priority: P1 · Status: DONE · Dependencies: AT-ADR-040, AT-ADR-022,
+  AT-067, AT-070 · Risk: Medium (honesty of runtime status; no authority change)
+- Safety classification: Paper-only observability; no Watcher enablement; no
+  Telegram; no live trading; no evaluator/strategy-authority change
+- Goal: Operator-facing Watcher paper-monitoring surface showing runtime
+  status (`RUNNING`/`STOPPED`/`DEGRADED`/`STALE`/`BLOCKED`), symbols,
+  approved strategies, last/next scan, market freshness, provider health,
+  SetupAssessment lineage, candidates, block reasons, lease/worker health,
+  recent errors, and paper-only posture. Typed API only; never infer
+  RUNNING from frontend config; no fake activity/prices/candidates.
+- Branch: `cursor/watcher_monitoring_ux-c026` (source); remapped from source AT-069
+- Validation: backend projection + `/market-watcher/monitoring` 27 tests passed;
+  frontend lint+typecheck+1189 tests+build pass; Watcher monitoring E2E 4/4;
+  full Chromium E2E 30 passed / 13 skipped; mypy on new modules clean.
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/119 — do not merge
+  or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-050
+- Note: Source PR #119 claimed AT-069 / AT-ADR-048; remapped because AT-069 is
+  the live market monitor (PR #118) and AT-070 is the paper runtime (PR #120).
+- Completion evidence: feat `6572f71`, fix `9d36ee1`; Watcher stays disabled.
+
+### AT-072 — Integrate paper Watcher stack (live market → runtime → monitoring UX)
+- Priority: P0 · Status: DONE · Dependencies: AT-069, AT-070, AT-071 · Risk: High
+  (evidence authority, worker safety, monitoring honesty)
+- Safety classification: Paper-only integration; Watcher/Telegram/live trading stay off;
+  no deploy; no source-PR merge; no Watcher activation
+- Goal: Reconcile PR #118 live monitor, PR #120 paper runtime, and PR #119 monitoring UX
+  onto `main@b4244f0` without merging those PRs. One evidence authority (monitor gate +
+  canonical assembler). One evaluator path to CONFIRMED_SETUP Candidates. Monitoring
+  reports real heartbeat/lease evidence. Freshness clocks stay separated. Fail closed on
+  stale, outage, wrong tenant, wrong lineage, expired setup, and in-memory policy.
+- Branch: `cursor/watcher_integration-b74b`
+- Validation: focused stack 115 passed; full backend with PostgreSQL 2464 passed / 0 skipped;
+  frontend lint+typecheck+1193 tests+build; Ruff check/format; strict mypy on affected
+  modules; Alembic single head `c8d9e0f1a2b3`; evaluation 16/16, 5/5, 7/7; Chromium E2E
+  30 passed / 13 skipped; deployment safety 60 passed; Docker image build; GitHub CI
+  run 35627618727 success on `cc226f7`. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-051
+- Completion evidence: feat `2bb9c40`, fix `cc226f7`; draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/121. Watcher, Telegram, and live trading
+  stay off. Do not merge, deploy, or activate Watcher.
+
+### AT-073 — Continuous paper evaluation and learning measurement
+- Priority: P0 · Status: DONE · Dependencies: AT-072 · Risk: Medium
+  (measurement honesty; must not become a second trading authority)
+- Safety classification: Paper-only measurement; Watcher/Telegram/live trading stay off;
+  refinements cannot auto-activate
+- Goal: Connect Watcher → SetupAssessment → Candidate → paper decision → paper trade →
+  outcome → Journal → attribution → strategy statistics → learning evidence → refinement
+  suggestion. Operator-visible evaluation summaries. Deterministic facts stay separate
+  from AI narrative. AI may suggest a refinement and must not activate it.
+- Branch: `cursor/continuous_paper_evaluation-80e2`
+- Validation: GitHub CI run 35661040375 success on `416b61e` — backend 2480 passed /
+  0 skipped; frontend lint+typecheck+1195 tests+build; e2e-smoke 30 passed;
+  evaluation 16/16, 5/5, 7/7; deployment-safety; docker-build. Local full pytest
+  2298 passed / 181 skipped (Postgres unavailable). Strict mypy on paper_evaluation
+  and canonical reads. Alembic head `e3f4a5b6c7d8`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/122 — do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-052
+- Completion evidence: feat `a90ab93`, mypy `b1fdab9`, CI fix `416b61e`. Watcher,
+  Telegram, and live trading stay off. Refinements cannot auto-activate. Do not
+  merge, deploy, or activate Watcher.
+
+### AT-074 — Telegram paper interaction layer
+- Priority: P0 · Status: DONE · Dependencies: AT-043, AT-072, candidate-alert
+  foundation · Risk: High (Telegram must never become trading authority)
+- Safety classification: Paper-only interaction; Telegram stays disabled by default;
+  no webhook; no Watcher activation; no live trading; no deploy; no merge
+- Goal: Watcher meaningful event → durable notification → Telegram alert → bound
+  discussion of evidence/strategy/Candidate/risk. Mutating paper actions stay
+  identity-bound confirmation gated. Support Watcher alerts, Candidate alerts,
+  strategy discussion, market context, paper trade status, journal outcome, and
+  learning summary. Deduplicate, persist delivery, retry safely, isolate tenants,
+  rate-limit, audit, recover after restart.
+- Branch: `cursor/telegram_paper_agent-aac1` (cloud suffix; requested
+  `cursor/telegram_paper_agent`)
+- Validation: focused Telegram/paper-agent + protocol + Candidate-alert tests
+  passed; full backend pytest 2497 passed / 0 skipped; ruff check/format;
+  strict mypy 21 affected files; frontend lint+typecheck+1193 tests+build;
+  evaluation 16/16, 5/5, 7/7; Chromium E2E 30 passed / 13 skipped;
+  deployment-safety 60 passed; smoke-gate self-checks; GitHub CI run
+  35658947838 success on `aa75c04`. Source Alembic head was `d9e0f1a2b3c4`
+  directly after `c8d9e0f1a2b3`. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/124 — do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-053
+- Completion evidence: feat `aa75c04`. Telegram, Watcher, and live trading stay
+  off. Do not merge, deploy, or enable Telegram.
+- Note: Source PR #124 claimed AT-073 / AT-ADR-052. Remapped because AT-073 is
+  continuous paper evaluation (PR #122). Does not enable
+  `TELEGRAM_INTERACTION_ENABLED`, Watcher `PERSIST_AND_NOTIFY`, or live trading.
+  `EXECUTE_PAPER_PLAN` remains unavailable on Telegram.
+
+### AT-075 — Integrate continuous evaluation and Telegram paper interaction
+- Priority: P0 · Status: DONE · Dependencies: AT-072, AT-073, AT-074 · Risk: High
+  (one trading authority; Telegram and evaluation must not mutate it)
+- Safety classification: Paper-only composition; Watcher/Telegram/live trading stay off;
+  no deploy; no source-PR merge; no strategy auto-activation; no Telegram orders
+- Goal: One linear Alembic chain. Watcher scan → durable notification → Telegram
+  discussion, and Watcher/Candidate/paper outcome → Journal → attribution →
+  evaluation → refinement suggestion. Facts stay separate from AI narrative.
+- Branch: `cursor/telegram_evaluation_integration-b2d5`
+- Validation: local backend pytest 2517 passed / 0 skipped / 0 failed with
+  PostgreSQL; ruff check and format; strict mypy on paper_interaction, watcher
+  paper worker, and fusion evaluation; frontend lint, typecheck, 1195 tests,
+  and build; evaluation 16/16, 5/5, 7/7; deployment-safety 60 passed; smoke-gate
+  and canonical staging smoke self-checks. Alembic single head `d9e0f1a2b3c4`.
+  GitHub CI pending on this integration HEAD. Draft PR only; do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-054
+- Note: Does not enable Watcher, Telegram, or live trading. Do not merge or deploy.
+  Source PRs #122 and #124 stay unmerged. The final paper loop on the remediated
+  Watcher is AT-076; this task's source PR #125 stays unmerged.
+
+### AT-076 — Final integrated intelligent paper system
+- Priority: P0 · Status: DONE · Dependencies: AT-072, AT-073, AT-074, AT-075,
+  PR #126 Watcher remediation · Risk: High (one authority per decision; no activation)
+- Safety classification: Paper-only composition; Watcher/Telegram/live trading stay off;
+  no deploy; no source-PR merge; no strategy auto-activation; no Telegram orders
+- Goal: Integrate PR #125 evaluation and Telegram onto PR #126 Watcher remediation.
+  Live read-only market → approved compiled strategy → Watcher → canonical
+  SetupAssessment → Candidate → paper decision / TradePlan → paper execution →
+  Journal → attribution → evaluation → learning suggestion, with a parallel
+  durable Telegram notification and discussion. Preserve one authority each for
+  market evidence, strategy, SetupAssessment, Candidate, and automated paper
+  decision. Telegram and AI stay advisory.
+- Branch: `cursor/final_paper_system_integration`
+- Base: PR #126 `75bee6d74c71edb39a73a5965784b6d388b7772d`. Semantic source:
+  PR #125 `189d9752ec3daaa512fbde42127ed321f11f5f61`. Neither source PR is merged.
+- Alembic: single head `d9e0f1a2b3c4` via `c8d9e0f1a2b3` → `e3f4a5b6c7d8` →
+  `d9e0f1a2b3c4`. No new revision.
+- Validation: implementation `9b1d8e1`. Local PostgreSQL pytest 2532 passed /
+  0 skipped; ruff check and format clean; strict mypy 29 affected files clean;
+  Alembic single head `d9e0f1a2b3c4`, upgrade / downgrade base / upgrade on
+  `alphatrade_migrate`; evaluation 16/16, 5/5, 7/7; frontend lint, typecheck,
+  1195 tests, build; Chromium E2E 30 passed / 13 skipped (optional staging and
+  browser tours; `PLAYWRIGHT_STAGING_*` and `PLAYWRIGHT_BROWSER_E2E` unset);
+  deployment-safety pytest 60 passed plus smoke self-checks; Docker image
+  `alphatrade-backend:ci` built. GitHub CI run 35711151145 success on `9b1d8e1`
+  (backend 2532 passed, e2e 30 passed / 13 skipped, evaluation, deployment-safety,
+  frontend, docker-build). Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/127.
+  Do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-055
+- Note: Does not enable Watcher, Telegram, or live trading. Do not merge, deploy,
+  or activate. Source PRs #125 and #126 stay unmerged.
+
+

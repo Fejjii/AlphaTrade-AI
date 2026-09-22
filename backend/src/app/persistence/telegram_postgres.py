@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, and_, or_, select, text
+from sqlalchemy import ColumnElement, Select, and_, desc, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -307,6 +307,24 @@ class PostgresTelegramSecurityStore:
                 select(TelegramActionNonceRow).where(
                     TelegramActionNonceRow.nonce_hash == nonce_hash
                 )
+            ).first()
+            return None if current is None else _nonce_from_row(current)
+
+        return self._run(work)
+
+    def get_issued_nonce_for_payload(
+        self, *, binding_id: UUID, payload_hash: str
+    ) -> ActionNonce | None:
+        def work(session: Session) -> ActionNonce | None:
+            current = session.scalars(
+                select(TelegramActionNonceRow)
+                .where(
+                    TelegramActionNonceRow.binding_id == binding_id,
+                    TelegramActionNonceRow.payload_hash == payload_hash,
+                    TelegramActionNonceRow.state == NonceState.ISSUED.value,
+                )
+                .order_by(desc(TelegramActionNonceRow.created_at))
+                .with_for_update()
             ).first()
             return None if current is None else _nonce_from_row(current)
 

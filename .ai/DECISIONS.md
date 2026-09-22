@@ -1597,3 +1597,306 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Safety impact:** Paper only. No Watcher/Telegram/live-trading flag change.
 - **Consequences:** Alembic head `c8d9e0f1a2b3`. Draft PR only; no merge or
   deploy.
+
+## AT-ADR-048 — Continuous live read-only USD-M market monitor (AT-069)
+- **Date:** 2026-09-21
+- **Status:** Accepted (source PR #118; remapped on Watcher integration)
+- **Context:** AT-064 assembles first-slice evidence on demand. Watcher still
+  needs a continuous, honest perpetual feed. Compatibility `/market` snapshots
+  and replay fixtures must never be shown as current live prices.
+- **Decision:**
+  1. Add `app.market_monitor` on existing Binance USD-M GET-only adapters and
+     Phase 5 cursor/CVD/freshness contracts. BTCUSDT is the catalog default.
+  2. Current price is the last contracted perpetual trade in the 10s window.
+     Provider outage, symbol mismatch, conflicting duplicates, out-of-order
+     trades, and unresolved gaps fail closed. No spot substitution.
+  3. HTTP 429 is a distinct `RateLimitedError` with bounded Retry-After backoff.
+     Reconnect starts a new connection epoch. Transport metadata (connection
+     ids, receive times, backoff) is excluded from the semantic hash.
+  4. Expose `GET /canonical/market-status` with availability
+     `fresh|stale|degraded|unavailable|replay`. Replay remains the default
+     source and is never `live_mark`.
+  5. Watcher, Telegram, and live trading stay disabled by default. Source PR
+     #118 left the monitor port unwired; AT-072 binds it as the Watcher
+     current-quote/stream gate without a second evidence authority.
+- **Alternatives considered:** Background websocket (rejected for this slice:
+  reuse existing REST capabilities); treat 429 as regional outage (rejected:
+  recoverable backoff); show last-good price during outage (rejected: fail closed).
+- **Safety impact:** Tightens market-mark honesty. Does not enable Watcher or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Source branch `cursor/live-market-monitoring-cc4d`. Tests in
+  `backend/tests/test_live_market_monitor.py` and
+  `backend/tests/test_live_market_monitor_http.py`. Draft source PR only.
+
+## AT-ADR-049 — Paper-only continuous Watcher runtime (AT-070)
+- **Date:** 2026-09-21
+- **Status:** Accepted (source PR #120 claimed AT-ADR-048 / AT-069; remapped)
+- **Context:** Canonical Watcher evaluation, Postgres leases/fencing, live
+  read-only evidence assembly, and CandidateLifecycleService already exist on
+  main. The missing piece is a continuous paper worker that polls approved
+  compiled strategies without enabling staging/production flags, Telegram, or
+  live orders.
+- **Decision:**
+  1. Dedicated process `python -m app.workers.watcher_paper` is the canonical
+     worker. The API may autostart a daemon thread only when
+     `paper_runtime_enabled`: local + paper + `WATCHER_ORCHESTRATION_ENABLED`
+     + real trading false. Staging/production still reject the flag.
+  2. One scan unit is tenant x approved compiled version x symbol. BTCUSDT is
+     always first. `resolve_executable_strategy_policy` is the only target
+     filter. Drafts, other tenants, and missing compiles never become targets.
+  3. Evidence comes from `AssemblingWatcherScanEvidence`. Stale data and
+     provider outages fail closed (`stale_evidence` / `provider_outage`). No
+     second evaluator: `WatcherFusionEvaluationService` →
+     `evaluate_canonical_strategy` → `evaluate_setup`.
+  4. Candidate persist requires `ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED`
+     and the Watcher evaluation clock bound to evidence time. Kill switch does
+     not block monitoring or Candidate persist; it must not invoke execution or
+     Telegram.
+  5. Idempotency key is `watcher-paper:{policy_id}:{symbol}:{closed_15m_end}` so
+     subsequent bars can re-evaluate expiry. `WatcherOrchestrator` leases remain
+     the single-active-worker fence.
+- **Alternatives considered:** Enable staging Watcher flags (rejected: explicit
+  do-not); put DB model imports in `app.watcher` (rejected: foundation isolation);
+  invent a second setup evaluator (rejected).
+- **Safety impact:** Paper monitoring only. Defaults stay disabled. No Telegram,
+  no live orders, no real exchange credentials.
+- **Consequences:** Status at `GET /watcher/paper-runtime/status`. Prometheus
+  counters on the existing registry. Draft source PR only; no merge or deploy.
+
+## AT-ADR-050 — Watcher PAPER MONITORING is runtime evidence, not configuration
+- **Date:** 2026-09-21
+- **Status:** Accepted (source PR #119 claimed AT-ADR-048 / AT-069; remapped)
+- **Context:** Operators needed a truthful Watcher paper-monitoring surface.
+  Two stacks exist: the legacy market-watcher scanner/bridge (disabled by
+  default) and unused Phase 7 orchestration leases/health. Frontend flags
+  must not be treated as RUNNING. No market-data authority or strategy
+  evaluation authority belongs in this slice.
+- **Decision:**
+  1. `GET /market-watcher/monitoring` is a read-only aggregation of existing
+     stores. Operator state is `RUNNING` | `STOPPED` | `DEGRADED` | `STALE` |
+     `BLOCKED`.
+  2. `RUNNING` requires live runtime evidence: a fenced orchestration lease
+     with a fresh heartbeat, or a live watcher-worker heartbeat with both
+     scanner and worker flags enabled. Scanner-only flags remain `STOPPED`.
+     Orchestration enabled without a heartbeat is `STALE`. Kill switch and
+     non-paper/real-trading posture are `BLOCKED`. Provider outage overlays
+     `DEGRADED` only when runtime evidence already exists.
+  3. SetupAssessment shown on the card is lineage from persisted Candidates
+     (`CONFIRMED_SETUP`). This slice does not call `evaluate_setup` or mint
+     Candidates.
+  4. Dashboard, Decision (Plan), Strategy Lab, `/watcher`, and
+     `/market-watcher` reuse one monitoring card. No duplicate Watcher
+     workflow and no Watcher/Telegram/live-trading enablement.
+- **Alternatives considered:** Infer RUNNING from frontend config (rejected:
+  fake activity); create a second evaluator for SetupAssessment (rejected:
+  AT-ADR-045/047); activate Watcher to populate the card (rejected:
+  AT-ADR-040).
+- **Safety impact:** Paper only. Watcher and Telegram stay disabled. No
+  trades. No live trading. No canonical evaluator change.
+- **Consequences:** Source branch `cursor/watcher_monitoring_ux-c026`. Draft
+  source PR only; no merge or deploy.
+
+## AT-ADR-051 — Paper Watcher stack has one evidence authority and one evaluator
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** PR #118 (live monitor), PR #120 (paper Watcher runtime), and
+  PR #119 (monitoring UX) landed as independent slices on overlapping IDs.
+  Integration must not merge those source PRs, must not deploy, and must not
+  activate Watcher. Dual market fetches and config-as-RUNNING were the
+  remaining honesty risks.
+- **Decision:**
+  1. The live/read-only monitor is the current-quote and trade-stream gate
+     (`watcher_evidence_error_for_monitor`). `FirstSliceEvidenceAssembler`
+     remains the sole `CanonicalEvidenceWindowV1` producer. Shared source:
+     replay monitor with replay assembler, live monitor with live assembler.
+     Mode mismatch is `wrong_source`. Replay is allowed for deterministic
+     tests and is never a live perpetual mark.
+  2. Canonical authority is exactly: persisted APPROVED/ACTIVE strategy →
+     executable compiled definition → gated canonical evidence →
+     `evaluate_canonical_strategy` → SetupAssessment → `CONFIRMED_SETUP`
+     only → Candidate. No second evaluator. In-memory policy authority
+     cannot mint.
+  3. Freshness clocks stay separate and fail closed: current quote, trade
+     stream, closed-candle finality, historical evidence validity, setup
+     lifetime. Existing safety thresholds are not weakened. No spot
+     fallback. No fabricated prices. Provider outage and stale evidence
+     refuse Candidate mint.
+  4. Monitoring RUNNING requires fenced lease + fresh heartbeat. Paper poll
+     is the next-scan basis when the paper worker is the live evidence.
+     Configuration flags never project RUNNING. Replay/demo prices never
+     appear as current live perpetual marks.
+  5. Watcher, Telegram, and live trading stay off. Staging/production still
+     reject Watcher activation flags. Dedicated activation remains a
+     separate authorized task.
+- **Alternatives considered:** Merge source PRs 118/119/120 (rejected:
+  explicit do-not); dual assembler+monitor evidence windows (rejected: two
+  authorities); treat config as RUNNING (rejected: AT-ADR-050); enable
+  Watcher to populate monitoring (rejected: AT-ADR-040).
+- **Safety impact:** Tightens fail-closed wiring. Does not enable Watcher,
+  Telegram, or live trading. `EXECUTION_MODE=paper`,
+  `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Integration branch `cursor/watcher_integration-b74b`.
+  Draft integration PR only; no merge, deploy, or Watcher activation.
+
+## AT-ADR-052 — Continuous paper evaluation is measurement, not a trading authority
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** After AT-072, Watcher, eligibility, paper execution, Journal, and
+  learning attribution exist as separate authorities. Operators need a
+  continuous paper evaluation layer (win rate, expectancy, drawdown, MFE/MAE,
+  conversion, false signals, blocked trades, human vs system, missed
+  opportunities, data quality, strategy-version comparison) without creating
+  another setup/Candidate/execution writer.
+- **Decision:**
+  1. `app.paper_evaluation` copies facts from existing authorities and rolls
+     them up at query time. It does not evaluate setups, mint Candidates,
+     authorize plans, or dispatch execution.
+  2. Deterministic facts and AI narrative are siblings. Narrative is excluded
+     from `content_hash`. Missed opportunities never invent counterfactual PnL.
+  3. AI may emit `RefinementSuggestion` with `activate=false` and
+     `auto_activate=false`. Activation is always forbidden.
+  4. Operator summary is `GET /canonical/paper-evaluation/summary`.
+     `watcher_activated` and `live_executable` stay false. Watcher, Telegram,
+     and live trading stay off.
+- **Alternatives considered:** Auto-promote a better strategy version (rejected:
+  AT-ADR-026 / learning is review-only); treat Watcher config as RUNNING to
+  populate metrics (rejected: AT-ADR-050); invent counterfactual missed PnL
+  (rejected: not a recorded fact).
+- **Safety impact:** Measurement only. Does not enable Watcher, Telegram, or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Alembic revision `e3f4a5b6c7d8` (parent of the Telegram
+  identity revision). Draft PR only; no merge, deploy, or Watcher activation.
+
+## AT-ADR-053 — Telegram paper interaction is discussion, never trading authority
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** After AT-072 the paper Watcher can persist CONFIRMED_SETUP
+  Candidates, but operators still cannot discuss those events in Telegram
+  without a paper-only interaction layer. Telegram security, Candidate alerts,
+  and conversation foundations already exist and must be reused. A Telegram
+  message must never become trading authority.
+- **Decision:**
+  1. `app.telegram_paper_agent` composes `TelegramSecurityProtocol` and
+     `CandidateAlertGateway`. Watcher `PERSIST_AND_NOTIFY` stays
+     `notify_disabled`. The paper worker may take an optional scan hook;
+     default is no hook and no Telegram send.
+  2. Meaningful alerts are CONFIRMED_SETUP with a persisted Candidate and
+     fail-closed blocked scans (`stale_evidence`, `provider_outage`,
+     `wrong_source`, `candidate_creation_failed`). Empty successful scans are
+     not alerts. Journal outcomes use the same durable identity/outbox path.
+  3. Inbound private-chat messages are authorized by
+     `receive_private_message`. Discussion is read-only unless an exact issued
+     nonce payload is presented. Bare `I confirm` is not mutation authority
+     when multiple actions were presented.
+  4. Telegram refuses: implicit strategy approval/compile/activate, SetupAssessment
+     override, risk override, Candidate mint, live or paper order placement,
+     live-trading enablement, `CLOSE`, `EXECUTE_PAPER_PLAN`. `APPROVE` remains
+     protocol `AuthorizationIntent` only (`executes=false`).
+  5. Dedup uses deterministic identity hashes and existing outbox idempotency
+     (`paper-notify:`, `paper-thread:`, `candidate-alert:`). Delivery, retry,
+     rate limits, and audit stay on the Telegram security store. Paper identity
+     recovers from `telegram_paper_*` (Alembic `d9e0f1a2b3c4`).
+  6. `TELEGRAM_INTERACTION_ENABLED` defaults false. Staging/production still
+     reject the flag. No FastAPI webhook. No deploy. No merge.
+- **Alternatives considered:** Enable Watcher `PERSIST_AND_NOTIFY` (rejected:
+  AT-040/051; notify remains blocked); mount a Telegram webhook (rejected:
+  HTTP adapter is a later slice); treat chat text as strategy or risk
+  authority (rejected: Telegram is never trading authority).
+- **Safety impact:** Paper discussion only. Does not enable Telegram, Watcher,
+  or live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Alembic revision `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`.
+  Source PR #124 claimed AT-073 / AT-ADR-052; remapped because AT-073 is
+  continuous paper evaluation. Branch `cursor/telegram_paper_agent-aac1`.
+  Draft PR only; no merge, deploy, or Telegram activation.
+
+## AT-ADR-054 — Evaluation and Telegram share one paper chain and no trading authority
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** PR #122 (continuous paper evaluation) and PR #124 (Telegram paper
+  interaction) both sit on PR #121 and both claimed AT-073 / AT-ADR-052. Their
+  Alembic revisions both revise `c8d9e0f1a2b3`. Operators need one linear
+  schema and one path from a Watcher scan to measurement and to discussion.
+- **Decision:**
+  1. AT-073 / AT-ADR-052 remain continuous paper evaluation. Telegram paper
+     interaction is AT-074 / AT-ADR-053. This integration is AT-075 / AT-ADR-054.
+  2. Alembic is one chain: `c8d9e0f1a2b3` → `e3f4a5b6c7d8` (paper evaluation
+     observations) → `d9e0f1a2b3c4` (paper Telegram identity).
+  3. `WatcherPaperRuntime` records evaluation through the existing observer and
+     then calls an optional scan hook. `build_paper_runtime` leaves that hook
+     unset. `telegram_scan_hook` is the only composer from a scan report to
+     `TelegramPaperAgent.project_watcher_notice`.
+  4. Confirmed-setup discussion uses the evaluator's `WatcherDiscussionSnapshot`
+     (the Candidate, SetupAssessment, and evidence window just persisted). It
+     does not re-evaluate setup truth.
+  5. `EvaluationLearningContext` reads `PaperEvaluationQueryService` and copies
+     deterministic fact lines only. Narrative is excluded. Refinement lines
+     keep `activate=false` and `auto_activate=false`.
+  6. Telegram still cannot place orders, mint Candidates, override
+     SetupAssessment or risk, approve or activate a strategy, or enable live
+     trading. Evaluation still cannot activate a refinement. Risk BLOCK stays
+     final. Watcher, Telegram, and live trading stay disabled.
+- **Alternatives considered:** Two Alembic heads (rejected: deploy cannot pick
+  one); install the Telegram hook inside `build_paper_runtime` (rejected:
+  Telegram stays off and a recipient binding is not configuration); let
+  Telegram text rewrite evaluation hashes (rejected: facts and narrative stay
+  siblings).
+- **Safety impact:** Measurement and discussion only. Does not enable Watcher,
+  Telegram, or live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Draft integration PR only. Do not merge, deploy, or
+  activate Watcher or Telegram.
+
+## AT-ADR-055 — Final paper system keeps one authority per decision
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** PR #126 remediates Watcher freshness, product proof, unique
+  worker identity, fencing, and live/replay mismatch on top of AT-072. PR #125
+  adds paper evaluation and Telegram discussion on the pre-remediation Watcher.
+  The final paper loop must use the remediated Watcher as the scan authority
+  and attach evaluation and Telegram as advisory layers. Source PRs stay
+  unmerged. Watcher and Telegram stay off. Live trading stays off.
+- **Decision:**
+  1. This composition is AT-076 / AT-ADR-055. Base is PR #126
+     `75bee6d74c71edb39a73a5965784b6d388b7772d`. PR #125
+     `189d9752ec3daaa512fbde42127ed321f11f5f61` is applied semantically. Neither
+     source PR is merged.
+  2. One market-evidence authority: the live monitor gates current quote and
+     trade-stream freshness; `FirstSliceEvidenceAssembler` is the only
+     `CanonicalEvidenceWindowV1` producer. PR #126 freshness contracts remain
+     authoritative. Missing monitor is `missing_monitor`. Live/replay mismatch
+     is `wrong_source`. Stale evidence and provider outage still fail closed
+     before assembly.
+  3. One strategy authority: persisted approved compiled policy
+     (`ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED`). In-memory
+     policy cannot mint a Candidate.
+  4. One SetupAssessment authority: `evaluate_canonical_strategy`. One
+     Candidate authority: `CandidateLifecycleService`, and only on a genuine
+     `CONFIRMED_SETUP`. Unique worker instance ids stay intact. The same owner
+     cannot renew a lease without the current fencing token. The worker clock
+     and the candidate-repository fence clock are the same clock passed to
+     `build_production_canonical_runtime`.
+  5. One automated paper-decision authority: ActionEligibility, then
+     `CanonicalTradePlanService`, then paper execution, Journal, and
+     attribution. Risk `BLOCK` is final. `paper_evaluation` reads deterministic
+     facts only. AI refinement stays a suggestion (`activate=false`,
+     `auto_activate=false`) and `refuse_activation` rejects activation.
+  6. Telegram is an advisory interaction layer. `main()` does not install
+     `telegram_scan_hook`. Telegram cannot mint a Candidate, override
+     SetupAssessment, override risk, activate a strategy, place an order, or
+     enable live trading. Learning discussion may load eligibility so the
+     Telegram fact hash matches the canonical summary. Default loader is none.
+  7. Alembic stays one chain: `c8d9e0f1a2b3` → `e3f4a5b6c7d8` →
+     `d9e0f1a2b3c4`. No new revision.
+  8. Watcher, Telegram, and live trading remain disabled. No exchange
+     mutation, no real credentials, no deployment.
+- **Alternatives considered:** Merge PR #125 and PR #126 (rejected: explicit
+  do-not); let Telegram or evaluation write Candidates or strategy state
+  (rejected: two authorities); weaken `wrong_source` into `stale_evidence`
+  (rejected: PR #126 source gate stays authoritative); share a wall clock for
+  the fence while the worker uses evidence time (rejected: the lease expires
+  before Candidate persist).
+- **Safety impact:** Composition only. Does not enable Watcher, Telegram, or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Branch `cursor/final_paper_system_integration`. Draft PR
+  only. Do not merge, deploy, or activate Watcher or Telegram.
+
+

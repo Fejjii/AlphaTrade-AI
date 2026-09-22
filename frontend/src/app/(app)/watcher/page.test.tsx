@@ -51,6 +51,18 @@ vi.mock("@/hooks/useAsyncData", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useWatcherMonitoring", async () => {
+  const { makeWatcherMonitoringSnapshot } = await import("@/lib/watcher-monitoring-fixtures");
+  return {
+    useWatcherMonitoring: () => ({
+      data: makeWatcherMonitoringSnapshot(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    }),
+  };
+});
+
 vi.mock("@/lib/api", () => ({
   api: {
     marketWatcher: {
@@ -76,6 +88,11 @@ describe("WatcherPage Slice 72/73/74/75/76", () => {
 
   it("renders watcher scanner panel with dry-run default on", () => {
     render(<WatcherPage />);
+    expect(screen.getByTestId("watcher-monitoring-card")).toBeInTheDocument();
+    expect(screen.getByTestId("paper-evaluation-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STOPPED");
+    expect(screen.getByTestId("watcher-monitoring-paper-only")).toHaveTextContent("Paper only");
+    expect(screen.queryByText("RUNNING")).not.toBeInTheDocument();
     expect(screen.getByTestId("market-watcher-scanner-card")).toBeInTheDocument();
     expect(screen.getByTestId("watcher-scan-panel")).toBeInTheDocument();
     expect(screen.getByTestId("watcher-dry-run-toggle").querySelector("input")).toBeChecked();

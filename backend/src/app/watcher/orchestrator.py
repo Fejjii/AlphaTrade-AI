@@ -85,6 +85,7 @@ class WatcherOrchestrator:
         self._side_effects = side_effects
         self._crash = crash if crash is not None else NoCrashBarrier()
         self._id_factory = id_factory or uuid4
+        self._held_fencing_tokens: dict[tuple[UUID, str, str], int] = {}
 
     @property
     def store(self) -> WatcherStore:
@@ -320,7 +321,13 @@ class WatcherOrchestrator:
             reason_code=outcome.reason_code,
         )
 
-    def run_worker(self, request: ScanRequest, *, worker_id: str) -> WorkerCycleResult:
+    def run_worker(
+        self,
+        request: ScanRequest,
+        *,
+        worker_id: str,
+        held_fencing_token: int | None = None,
+    ) -> WorkerCycleResult:
         now = self._clock.now()
         if not self._config.enabled:
             health = self.health(request.organization_id, request.scan_scope)
@@ -348,13 +355,20 @@ class WatcherOrchestrator:
 
         scheduled = self.schedule(request)
         self._crash.checkpoint("after_schedule")
+        fence_key = (request.organization_id, request.scan_scope, worker_id)
+        presented_token = held_fencing_token
+        if presented_token is None:
+            presented_token = self._held_fencing_tokens.get(fence_key)
         acquired, lease, claim_reason = self._store.claim_lease(
             scan_scope=request.scan_scope,
             organization_id=request.organization_id,
             owner_id=worker_id,
             ttl_seconds=self._config.lease_ttl_seconds,
             now=self._clock.now(),
+            fencing_token=presented_token,
         )
+        if acquired:
+            self._held_fencing_tokens[fence_key] = lease.fencing_token
         if not acquired:
             emit(
                 self._store,

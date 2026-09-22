@@ -3,6 +3,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import MarketWatcherPage from "./page";
 
+vi.mock("@/hooks/useWatcherMonitoring", async () => {
+  const { makeWatcherMonitoringSnapshot } = await import("@/lib/watcher-monitoring-fixtures");
+  return {
+    useWatcherMonitoring: () => ({
+      data: makeWatcherMonitoringSnapshot(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    }),
+  };
+});
+
 let hookIndex = 0;
 
 vi.mock("@/hooks/useAsyncData", () => ({
@@ -77,6 +89,8 @@ describe("MarketWatcherPage Slice 42", () => {
 
   it("renders market watcher status", () => {
     render(<MarketWatcherPage />);
+    expect(screen.getByTestId("watcher-monitoring-card")).toBeInTheDocument();
+    expect(screen.getByTestId("watcher-monitoring-status-row")).toHaveTextContent("STOPPED");
     expect(screen.getByTestId("market-watcher-status")).toBeInTheDocument();
     expect(screen.getByTestId("market-watcher-env-enabled")).toHaveTextContent("false");
   });

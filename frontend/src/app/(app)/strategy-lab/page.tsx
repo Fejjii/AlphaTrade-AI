@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { WatcherMonitoringPanel } from "@/components/WatcherMonitoringPanel";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import { SETUP_TYPE_OPTIONS } from "@/lib/setup-types";
@@ -27,6 +28,8 @@ export default function StrategyLabPage() {
           Build and version strategy cards for paper-only pre-trade workflows.
         </p>
       </div>
+
+      <WatcherMonitoringPanel compact />
 
       <div>
         <Link

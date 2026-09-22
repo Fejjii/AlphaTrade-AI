@@ -62,6 +62,7 @@ LangGraph nodes in `backend/src/app/agents/nodes.py` orchestrate:
 - `GET /market/ticker`, `/market/ohlcv`, `/market/snapshots` — read-only market data with provenance metadata
 - `POST /market/analyze` — compatibility market snapshot + indicators + strategy signals (not a canonical current price)
 - `GET /canonical/evidence` — canonical USD-M first-slice evidence and current-price honesty (replay default; fail closed)
+- `GET /canonical/market-status` — continuous USD-M perpetual monitor (price, freshness, stream, CVD, provider). Replay is never a live mark. Watcher stays off
 - Protected domain routes require JWT + tenant context (see `docs/security.md`)
 - Auth modes: bearer tokens (local dev) or httpOnly refresh cookie + short-lived access JWT (Docker/production demo)
 - Access token denylist (Redis) revokes sessions on logout; refresh rotation detects reuse

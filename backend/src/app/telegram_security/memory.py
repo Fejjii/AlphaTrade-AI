@@ -18,6 +18,7 @@ from app.telegram_security.contracts import (
     ActionReceipt,
     AuthorizationIntent,
     EnrollmentChallenge,
+    NonceState,
     OutboxRecord,
     OutboxState,
     ProtocolAuditEvent,
@@ -141,6 +142,21 @@ class InMemoryTelegramSecurityStore:
     def get_nonce_by_hash(self, nonce_hash: str) -> ActionNonce | None:
         with self._lock:
             return self._nonces.get(nonce_hash)
+
+    def get_issued_nonce_for_payload(
+        self, *, binding_id: UUID, payload_hash: str
+    ) -> ActionNonce | None:
+        with self._lock:
+            matches = [
+                row
+                for row in self._nonces.values()
+                if row.binding_id == binding_id
+                and row.payload_hash == payload_hash
+                and row.state is NonceState.ISSUED
+            ]
+            if not matches:
+                return None
+            return max(matches, key=lambda row: row.created_at)
 
     def cas_nonce(self, *, nonce_hash: str, expected: ActionNonce, updated: ActionNonce) -> bool:
         with self._lock:

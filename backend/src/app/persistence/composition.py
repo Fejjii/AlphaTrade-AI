@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.persistence.candidate_postgres import PostgresCandidateRepository
 from app.persistence.eligibility_postgres import PostgresActionEligibilityStore
+from app.persistence.telegram_paper_agent import PostgresPaperAgentStore
 from app.persistence.telegram_postgres import PostgresTelegramSecurityStore
 from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
 from app.persistence.watcher_postgres import PostgresWatcherStore
@@ -159,6 +160,14 @@ def build_postgres_telegram_security_store(
     """Construct a PostgreSQL TelegramSecurityStore. Callers must inject it explicitly."""
 
     return PostgresTelegramSecurityStore(session_factory)
+
+
+def build_postgres_paper_agent_store(
+    session_factory: sessionmaker[Session],
+) -> PostgresPaperAgentStore:
+    """Paper Telegram identity store. Callers must inject it explicitly. Disabled by default."""
+
+    return PostgresPaperAgentStore(session_factory)
 
 
 def build_postgres_watcher_orchestrator(

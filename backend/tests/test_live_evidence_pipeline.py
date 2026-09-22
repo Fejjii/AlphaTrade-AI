@@ -67,6 +67,7 @@ from app.watcher.contracts import (
     ScanRequest,
     ScanTrigger,
 )
+from app.watcher.errors import WatcherEvidenceUnavailableError
 from app.watcher.hashing import evaluation_input_hash as hash_evaluation_input
 from app.watcher.hashing import scan_request_hash
 from tests.support.phase5_market import (
@@ -590,13 +591,18 @@ def test_watcher_port_refuses_read_projection_placeholders() -> None:
     assert port.load(_evaluation_command(ORG_ID)) is None
 
 
-def test_watcher_port_returns_none_on_stale_evidence() -> None:
+def test_watcher_port_fails_closed_on_stale_evidence() -> None:
     class _StaleAssembler(FirstSliceEvidenceAssembler):
         def assemble(self, **_kwargs: object) -> object:  # type: ignore[override]
             raise StaleEvidenceError("stale")
 
-    port = AssemblingWatcherScanEvidence(_StaleAssembler(ReplayPerpetualSource(), replay=True))
-    assert port.load(_evaluation_command(ORG_ID)) is None
+    port = AssemblingWatcherScanEvidence(
+        _StaleAssembler(ReplayPerpetualSource(), replay=True),
+        executable_resolver=lambda _command: _non_placeholder_executable(ORG_ID),
+    )
+    with pytest.raises(WatcherEvidenceUnavailableError) as exc:
+        port.load(_evaluation_command(ORG_ID))
+    assert exc.value.reason_code == "stale_evidence"
 
 
 def test_defaults_stay_replay_and_paper() -> None:
