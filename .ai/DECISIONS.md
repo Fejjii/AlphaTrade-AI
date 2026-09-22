@@ -1899,4 +1899,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_paper_system_integration`. Draft PR
   only. Do not merge, deploy, or activate Watcher or Telegram.
 
+## AT-ADR-056 — Staging USD-M evidence is public read-only, rollback is replay
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** The Binance USD-M public adapter, 10-second freshness rule, and
+  canonical trade/CVD/OHLCV/coverage contracts already exist. Staging still
+  intends `PERPETUAL_EVIDENCE_SOURCE=replay`, so operators have no controlled
+  path to real read-only market evidence.
+- **Decision:**
+  1. The process default stays `replay` for local, CI, production, and
+     rollback. Staging's intended source is `binance_usdm` on
+     `https://fapi.binance.com`, declared in `.env.staging.example` and
+     `render.yaml`. Applying it is a human environment change. This task does
+     not edit a live platform environment and does not deploy.
+  2. Selecting `binance_usdm` fails closed unless the profile holds: public
+     USD-M origin only, no Binance or BloFin credentials, `exchange_mode`
+     `paper_internal`, Watcher and Telegram flags false, paper execution, and
+     not production. Spot, Coin-M, and plain HTTP are rejected. No fabricated
+     fallback. BTCUSDT stays the default catalog symbol. Live quote freshness
+     stays 10 seconds.
+  3. `GET /health` and `GET /canonical/market-status` report the configured
+     source, activation (`inactive` replay or `active` live), freshness, and
+     that credentials and spot fallback are not used. Replay prices stay
+     `replay_fixture`.
+  4. Rollback is `PERPETUAL_EVIDENCE_SOURCE=replay` plus a restart.
+     `scripts/validate-live-market-staging.sh` checks the profile offline and
+     the running health payload. It does not write environment variables.
+- **Alternatives considered:** Flip the code default to live (rejected: CI and
+  deterministic tests would need the network); allow production to select the
+  live source in the same change (rejected: activation is staging-only);
+  keep a last price during outage (rejected: fail closed).
+- **Safety impact:** Read-only public market data when a human applies the
+  staging env change. Does not enable Watcher, Telegram, or live trading.
+  `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Branch `cursor/activation_live_market`. Draft PR only.
+  Do not merge, deploy, or activate Watcher or Telegram. Operators follow
+  `docs/live_market_staging_activation.md`.
+
 

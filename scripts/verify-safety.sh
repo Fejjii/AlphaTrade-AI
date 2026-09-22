@@ -53,9 +53,31 @@ for flag in disabled_flags:
     if flag in payload and payload.get(flag) is not False:
         print(f"FAIL: {flag}={payload.get(flag)!r} (expected false)", file=sys.stderr)
         sys.exit(1)
+source = payload.get("perpetual_evidence_source")
+activation = payload.get("perpetual_evidence_activation")
+if source is not None and source not in ("replay", "binance_usdm"):
+    print(f"FAIL: perpetual_evidence_source={source!r}", file=sys.stderr)
+    sys.exit(1)
+if activation is not None and activation not in ("inactive", "active"):
+    print(f"FAIL: perpetual_evidence_activation={activation!r}", file=sys.stderr)
+    sys.exit(1)
+if source == "binance_usdm" and activation not in (None, "active"):
+    print(f"FAIL: live source activation={activation!r}", file=sys.stderr)
+    sys.exit(1)
+if payload.get("live_quote_freshness_seconds") not in (None, 10):
+    print("FAIL: live_quote_freshness_seconds is not 10", file=sys.stderr)
+    sys.exit(1)
+if payload.get("spot_fallback_permitted") not in (None, False):
+    print("FAIL: spot_fallback_permitted is not false", file=sys.stderr)
+    sys.exit(1)
+if payload.get("exchange_credentials_used_for_market_evidence") not in (None, False):
+    print("FAIL: market evidence reported credentials", file=sys.stderr)
+    sys.exit(1)
 print(
     f"  health: execution_mode=paper, real_trading_enabled=false, "
-    f"environment={env}, exchange_mode={exchange_mode or 'unset'}"
+    f"environment={env}, exchange_mode={exchange_mode or 'unset'}, "
+    f"perpetual_evidence_source={source or 'unset'}, "
+    f"activation={activation or 'unset'}"
 )
 PY
 

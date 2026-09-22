@@ -14,6 +14,7 @@ from fastapi import APIRouter
 from app import __version__
 from app.core.dependencies import ProviderRegistryDep, SettingsDep
 from app.core.deploy_info import resolve_git_sha
+from app.market_activation.profile import perpetual_evidence_health
 from app.providers.base import ProviderHealth
 from app.schemas.health import HealthResponse, ReadinessResponse
 
@@ -22,6 +23,7 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health", response_model=HealthResponse, summary="Liveness probe")
 async def health(settings: SettingsDep) -> HealthResponse:
+    evidence = perpetual_evidence_health(settings)
     return HealthResponse(
         app=settings.app_name,
         version=__version__,
@@ -37,6 +39,20 @@ async def health(settings: SettingsDep) -> HealthResponse:
         telegram_alerts_enabled=settings.telegram_alerts_enabled,
         telegram_interaction_enabled=settings.telegram_interaction_enabled,
         automatic_telegram_delivery_enabled=settings.automatic_telegram_delivery_enabled,
+        perpetual_evidence_source=evidence["perpetual_evidence_source"],
+        perpetual_evidence_activation=evidence["perpetual_evidence_activation"],
+        perpetual_evidence_intended_staging_source=evidence[
+            "perpetual_evidence_intended_staging_source"
+        ],
+        perpetual_evidence_rollback_source=evidence["perpetual_evidence_rollback_source"],
+        live_market_read_only=evidence["live_market_read_only"],
+        exchange_credentials_used_for_market_evidence=evidence[
+            "exchange_credentials_used_for_market_evidence"
+        ],
+        spot_fallback_permitted=evidence["spot_fallback_permitted"],
+        fabricated_fallback_permitted=evidence["fabricated_fallback_permitted"],
+        live_quote_freshness_seconds=evidence["live_quote_freshness_seconds"],
+        first_perpetual_symbol=evidence["first_perpetual_symbol"],
         git_sha=resolve_git_sha(),
         timestamp=datetime.now(UTC),
     )

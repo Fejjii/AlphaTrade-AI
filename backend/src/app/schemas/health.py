@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,6 +30,16 @@ class HealthResponse(BaseModel):
     telegram_alerts_enabled: bool = False
     telegram_interaction_enabled: bool = False
     automatic_telegram_delivery_enabled: bool = False
+    perpetual_evidence_source: Literal["replay", "binance_usdm"]
+    perpetual_evidence_activation: Literal["inactive", "active", "refused"]
+    perpetual_evidence_intended_staging_source: Literal["binance_usdm"] = "binance_usdm"
+    perpetual_evidence_rollback_source: Literal["replay"] = "replay"
+    live_market_read_only: Literal[True] = True
+    exchange_credentials_used_for_market_evidence: Literal[False] = False
+    spot_fallback_permitted: Literal[False] = False
+    fabricated_fallback_permitted: Literal[False] = False
+    live_quote_freshness_seconds: Literal[10] = 10
+    first_perpetual_symbol: Literal["BTCUSDT"] = "BTCUSDT"
     git_sha: str | None = None
     timestamp: datetime
 

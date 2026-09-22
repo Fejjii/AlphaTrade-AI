@@ -11,9 +11,11 @@ from app.evidence_pipeline.http_schemas import (
     CanonicalSourceIdentityRead,
 )
 from app.evidence_pipeline.types import CurrentPricePresentation, CurrentPriceQuote
+from app.market_activation.profile import market_activation_public
 from app.market_contracts.freshness import first_slice_freshness_policy
 from app.market_contracts.identity import ADAPTER_VERSION
 from app.market_monitor.http_schemas import (
+    MarketMonitorActivationRead,
     MarketMonitorBackoffRead,
     MarketMonitorCoverageRead,
     MarketMonitorCvdRead,
@@ -33,10 +35,14 @@ class PerpetualMarketMonitorService:
 
     def read(self, *, symbol: str = "BTCUSDT") -> MarketMonitorStatusRead:
         snapshot = self._monitor.snapshot(symbol)
-        return status_from_snapshot(snapshot)
+        return status_from_snapshot(snapshot, settings=self._settings)
 
 
-def status_from_snapshot(snapshot: SymbolMonitorSnapshot) -> MarketMonitorStatusRead:
+def status_from_snapshot(
+    snapshot: SymbolMonitorSnapshot,
+    *,
+    settings: Settings,
+) -> MarketMonitorStatusRead:
     price = _price_read(snapshot)
     unavailable = None
     non_fresh = snapshot.availability in {
@@ -115,6 +121,7 @@ def status_from_snapshot(snapshot: SymbolMonitorSnapshot) -> MarketMonitorStatus
         ),
         content_hash=snapshot.content_hash,
         unavailable_reason=unavailable,
+        activation=MarketMonitorActivationRead.model_validate(market_activation_public(settings)),
     )
 
 

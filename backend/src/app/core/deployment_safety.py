@@ -8,6 +8,7 @@ unaffected unless ``ENVIRONMENT`` is set to ``staging`` or ``production``.
 from __future__ import annotations
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
+from app.market_activation.profile import perpetual_evidence_health
 
 _LOCALHOST_MARKERS = ("localhost", "127.0.0.1")
 _WEAK_JWT_SECRETS = frozenset(
@@ -189,4 +190,5 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "market_watcher_enabled": settings.market_watcher_enabled,
         "market_watcher_bridge_enabled": settings.market_watcher_bridge_enabled,
         "watcher_orchestration_enabled": settings.watcher_orchestration_enabled,
+        **dict(perpetual_evidence_health(settings)),
     }

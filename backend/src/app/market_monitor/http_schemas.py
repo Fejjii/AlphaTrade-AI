@@ -66,6 +66,21 @@ class MarketMonitorBackoffRead(StrictModel):
     last_error_class: str | None = None
 
 
+class MarketMonitorActivationRead(StrictModel):
+    """Configured evidence source. Does not start Watcher or trading."""
+
+    state: Literal["inactive", "active", "refused"]
+    configured_source: Literal["replay", "binance_usdm"]
+    intended_staging_source: Literal["binance_usdm"] = "binance_usdm"
+    rollback_source: Literal["replay"] = "replay"
+    read_only: Literal[True] = True
+    exchange_credentials_used: Literal[False] = False
+    spot_fallback_permitted: Literal[False] = False
+    fabricated_fallback_permitted: Literal[False] = False
+    first_symbol: Literal["BTCUSDT"] = "BTCUSDT"
+    trade_freshness_seconds: Literal[10] = 10
+
+
 class MarketMonitorStatusRead(StrictModel):
     authority: Literal["canonical_market_monitor"] = "canonical_market_monitor"
     live_executable: Literal[False] = False
@@ -88,3 +103,4 @@ class MarketMonitorStatusRead(StrictModel):
     backoff: MarketMonitorBackoffRead
     content_hash: str = Field(min_length=64, max_length=64)
     unavailable_reason: str | None = None
+    activation: MarketMonitorActivationRead

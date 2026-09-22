@@ -84,6 +84,16 @@ export interface HealthResponse {
   telegram_alerts_enabled?: boolean;
   telegram_interaction_enabled?: boolean;
   automatic_telegram_delivery_enabled?: boolean;
+  perpetual_evidence_source?: "replay" | "binance_usdm";
+  perpetual_evidence_activation?: "inactive" | "active" | "refused";
+  perpetual_evidence_intended_staging_source?: "binance_usdm";
+  perpetual_evidence_rollback_source?: "replay";
+  live_market_read_only?: true;
+  exchange_credentials_used_for_market_evidence?: false;
+  spot_fallback_permitted?: false;
+  fabricated_fallback_permitted?: false;
+  live_quote_freshness_seconds?: 10;
+  first_perpetual_symbol?: "BTCUSDT";
   git_sha?: string | null;
   timestamp: string;
 }
@@ -1831,6 +1841,18 @@ export interface CanonicalMarketMonitorStatusRead {
   };
   content_hash: string;
   unavailable_reason?: string | null;
+  activation?: {
+    state: "inactive" | "active" | "refused";
+    configured_source: "replay" | "binance_usdm";
+    intended_staging_source: "binance_usdm";
+    rollback_source: "replay";
+    read_only: true;
+    exchange_credentials_used: false;
+    spot_fallback_permitted: false;
+    fabricated_fallback_permitted: false;
+    first_symbol: "BTCUSDT";
+    trade_freshness_seconds: 10;
+  };
 }
 
 export interface CanonicalCandidateRead {

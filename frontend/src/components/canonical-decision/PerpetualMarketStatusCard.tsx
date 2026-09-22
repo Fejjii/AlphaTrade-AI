@@ -77,6 +77,11 @@ export function PerpetualMarketStatusCard({ status }: { status: PerpetualMarketS
             <p className="mt-1 text-text-secondary">{status.cvdLabel}</p>
           </li>
         </ul>
+        {status.activationLabel ? (
+          <p className="text-caption text-text-muted" data-testid="monitor-activation">
+            Evidence activation: {status.activationLabel}. No exchange credentials. No spot fallback.
+          </p>
+        ) : null}
         <p className="text-caption text-text-muted" data-testid="monitor-watcher-off">
           Watcher is not activated. Compatibility and demo-seed prices are not current live marks.
         </p>

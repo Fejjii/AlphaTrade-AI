@@ -261,6 +261,7 @@ Full env checklist: [staging_deployment_checklist.md](staging_deployment_checkli
 | `BILLING_ENABLED` | `false` |
 | `PROVIDER_MODE` | `fallback` (staging default) |
 | Alert / Telegram delivery | disabled unless separately approved |
+| `PERPETUAL_EVIDENCE_SOURCE` | `replay` to roll market evidence back; `binance_usdm` is staging read-only only |
 | Mode D real execution | **out of scope** — not enabled by this runbook |
 
 ---
@@ -277,4 +278,9 @@ COOKIE_MODE=true FRONTEND_URL=https://YOUR-APP.vercel.app \
 
 # Gate self-check (no network; used in CI)
 ./scripts/post-deploy-smoke-gate.sh --self-check
+
+# Live USD-M evidence activation / rollback (no platform writes)
+./scripts/validate-live-market-staging.sh --self-check
+BASE_URL=https://YOUR-API.onrender.com \
+  ./scripts/validate-live-market-staging.sh --remote --expect inactive
 ```

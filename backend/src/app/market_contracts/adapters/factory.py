@@ -5,13 +5,11 @@ from __future__ import annotations
 import httpx
 
 from app.core.config import Settings
+from app.market_activation.profile import LIVE_MODES, REPLAY_MODES
 from app.market_contracts.adapters.binance_usdm import BinanceUsdmPerpetualSource
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
 from app.market_contracts.catalog import PerpetualInstrumentCatalog
 from app.market_contracts.errors import FallbackForbiddenError
-
-REPLAY_MODES = frozenset({"replay", "mock", "fixture"})
-LIVE_MODES = frozenset({"binance_usdm", "binance-usdm", "usdm"})
 
 
 def perpetual_source_is_replay(settings: Settings) -> bool:

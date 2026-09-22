@@ -133,7 +133,7 @@ assert "items" in payload and "total" in payload, payload
 print(f"  OK: total={payload.get('total')}")
 PY
 
-echo "4b/10 — canonical evidence is replay/fail-closed, never a live mark"
+echo "4b/10 — canonical evidence is read-only and fail-closed"
 ev_json="$(curl_api -H "$(auth_header "$token_a")" "${BASE_URL}/canonical/evidence")"
 python3 - <<'PY' "$ev_json"
 import json, sys
@@ -142,10 +142,21 @@ assert payload.get("authority") == "canonical", payload
 assert payload.get("live_executable") is False, payload
 assert payload.get("watcher_activated") is False, payload
 price = payload.get("current_price") or {}
-assert price.get("usable_as_current_market_price") is False, payload
-assert price.get("presentation") != "live_mark", payload
 assert price.get("fallback_used") is False, payload
-print("  OK: presentation=%s" % price.get("presentation"))
+presentation = price.get("presentation")
+source = payload.get("source") or {}
+assert source.get("fallback_used") is False, payload
+if presentation == "live_mark":
+    assert price.get("usable_as_current_market_price") is True, payload
+    assert price.get("is_live") is True, payload
+    assert price.get("is_mock") is False, payload
+    assert source.get("source_family") == "binance_usdm_futures_public", payload
+elif presentation == "replay_fixture":
+    assert price.get("usable_as_current_market_price") is False, payload
+    assert price.get("is_live") is False, payload
+else:
+    assert price.get("usable_as_current_market_price") is False, payload
+print("  OK: presentation=%s" % presentation)
 PY
 
 echo "5/10 — paper-plan rejects executable fields (422)"

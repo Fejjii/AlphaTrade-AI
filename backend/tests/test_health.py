@@ -18,6 +18,16 @@ def test_health_ok(client: TestClient) -> None:
     assert body["watcher_orchestration_enabled"] is False
     assert body["telegram_alerts_enabled"] is False
     assert body["telegram_interaction_enabled"] is False
+    assert body["perpetual_evidence_source"] == "replay"
+    assert body["perpetual_evidence_activation"] == "inactive"
+    assert body["perpetual_evidence_intended_staging_source"] == "binance_usdm"
+    assert body["perpetual_evidence_rollback_source"] == "replay"
+    assert body["live_market_read_only"] is True
+    assert body["exchange_credentials_used_for_market_evidence"] is False
+    assert body["spot_fallback_permitted"] is False
+    assert body["fabricated_fallback_permitted"] is False
+    assert body["live_quote_freshness_seconds"] == 10
+    assert body["first_perpetual_symbol"] == "BTCUSDT"
     assert body["version"]
 
 

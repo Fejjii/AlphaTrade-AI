@@ -21,6 +21,7 @@ SCRIPTS = (
     "scripts/run-migrations.sh",
     "scripts/provider-validation-smoke.sh",
     "scripts/canonical-staging-smoke.sh",
+    "scripts/validate-live-market-staging.sh",
     "scripts/recreate-rag-collection.sh",
     "scripts/reingest-knowledge-base.sh",
 )

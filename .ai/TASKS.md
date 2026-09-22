@@ -1622,4 +1622,30 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Does not enable Watcher, Telegram, or live trading. Do not merge, deploy,
   or activate. Source PRs #125 and #126 stay unmerged.
 
+### AT-077 — Controlled staging read-only Binance USD-M evidence
+- Priority: P0 · Status: DONE · Dependencies: AT-064, AT-069 · Risk: High
+  (market-evidence honesty; must not become trading or Watcher activation)
+- Safety classification: Public read-only USD-M evidence configuration;
+  Watcher/Telegram/live trading stay off; no credentials; no deploy
+- Goal: Make `binance_usdm` the intended staging evidence source through the
+  existing read-only provider. Preserve replay for tests and rollback. Fail
+  closed on outage, stale evidence, gaps, wrong symbol, and wrong source.
+  Expose activation on health/market status and add a staging validator.
+- Branch: `cursor/activation_live_market`
+- Base: `main@894e9e4`
+- Validation: activation suite 17 passed; `uv run pytest -q` exit 0
+  (2549 collected, lastfailed empty, 1109.9s; Postgres was not listening so
+  postgres-gated tests skipped and the retained log dropped the pass/skip
+  split). Ruff check and format clean. Strict mypy on the activation,
+  health, monitor, deployment-safety, factory, and config modules clean.
+  Frontend lint, typecheck, 1196 tests, and build passed. Evaluation
+  16/16, 5/5, 7/7. GitHub CI is the Postgres-backed confirmation. Draft PR
+  only. Do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-056
+- Note: Does not modify the live staging environment and does not deploy.
+  Exact env changes, activation, and rollback are in
+  `docs/live_market_staging_activation.md`. Do not enable Watcher, Telegram,
+  or live trading.
+
 

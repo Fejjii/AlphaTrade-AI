@@ -479,14 +479,9 @@ class Settings(BaseSettings):
     @field_validator("perpetual_evidence_source")
     @classmethod
     def _validate_perpetual_evidence_source(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        allowed = {"replay", "mock", "fixture", "binance_usdm", "binance-usdm", "usdm"}
-        if normalized not in allowed:
-            raise ValueError(
-                "perpetual_evidence_source must be replay or binance_usdm "
-                "(spot fallback is not a legal value)."
-            )
-        return normalized
+        from app.market_activation.profile import canonicalize_perpetual_evidence_source
+
+        return canonicalize_perpetual_evidence_source(value)
 
     @model_validator(mode="after")
     def _enforce_trading_safety(self) -> Settings:
@@ -544,6 +539,14 @@ class Settings(BaseSettings):
         from app.core.deployment_safety import validate_deployment_settings
 
         validate_deployment_settings(self)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_live_market_activation(self) -> Settings:
+        """Refuse an unsafe Binance USD-M evidence selection in every environment."""
+        from app.market_activation.profile import validate_live_market_activation
+
+        validate_live_market_activation(self)
         return self
 
     @property

@@ -133,6 +133,9 @@ export function perpetualMarketStatusFromCanonical(
       : read.availability === "fresh" && price.usableAsCurrentMarketPrice
         ? "Live Binance USD-M perpetual mark from contracted trades. Watcher stays off."
         : "Perpetual monitor failed closed or is degraded. Replay, demo-seed, and compatibility prices are not used.",
+    activationLabel: read.activation
+      ? `${read.activation.state} · ${read.activation.configured_source} · ${read.activation.trade_freshness_seconds}s freshness · read-only`
+      : undefined,
   };
 }
 

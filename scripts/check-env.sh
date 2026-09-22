@@ -75,6 +75,16 @@ if settings.environment.value in ("staging", "production"):
             print(f"  [FAIL] {name}={actual} (required {expected})", file=sys.stderr)
             failed = True
     print(f"  provider_mode={settings.provider_mode} (staging recommended: fallback)")
+    from app.market_activation.profile import perpetual_evidence_health
+
+    evidence = perpetual_evidence_health(settings)
+    print(
+        "  perpetual_evidence_source="
+        f"{evidence['perpetual_evidence_source']} "
+        f"activation={evidence['perpetual_evidence_activation']} "
+        f"freshness_seconds={evidence['live_quote_freshness_seconds']} "
+        "credentials_used=false spot_fallback=false"
+    )
     print(
         f"  openai_configured={bool(settings.openai_api_key.strip())} "
         f"qdrant_api_key_configured={bool(settings.qdrant_api_key.strip())} "

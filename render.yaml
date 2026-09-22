@@ -61,6 +61,14 @@ services:
         value: false
       - key: MARKET_DATA_ENABLED
         value: true
+      # Controlled public USD-M evidence. No API key. Apply with the runbook;
+      # this blueprint is not a deploy by itself.
+      - key: PERPETUAL_EVIDENCE_SOURCE
+        value: binance_usdm
+      - key: MARKET_DATA_FUTURES_BASE_URL
+        value: https://fapi.binance.com
+      - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
+        value: "10"
       - key: DEBUG
         value: false
       - key: LOG_JSON
@@ -147,6 +155,12 @@ services:
         value: fallback
       - key: MARKET_DATA_ENABLED
         value: true
+      - key: PERPETUAL_EVIDENCE_SOURCE
+        value: binance_usdm
+      - key: MARKET_DATA_FUTURES_BASE_URL
+        value: https://fapi.binance.com
+      - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
+        value: "10"
       - key: LOG_JSON
         value: true
       - key: RATE_LIMIT_USE_REDIS

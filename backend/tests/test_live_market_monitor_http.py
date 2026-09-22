@@ -116,6 +116,14 @@ def test_replay_market_status_is_not_a_live_mark(monitor_client: TestClient) -> 
     assert body["ohlcv"]["available"] is True
     assert body["provider"]["is_mock"] is True
     assert body["provider"]["using_fallback"] is False
+    assert body["activation"]["state"] == "inactive"
+    assert body["activation"]["configured_source"] == "replay"
+    assert body["activation"]["rollback_source"] == "replay"
+    assert body["activation"]["read_only"] is True
+    assert body["activation"]["exchange_credentials_used"] is False
+    assert body["activation"]["spot_fallback_permitted"] is False
+    assert body["activation"]["trade_freshness_seconds"] == 10
+    assert body["activation"]["first_symbol"] == "BTCUSDT"
 
 
 def test_market_status_rejects_unknown_symbol(monitor_client: TestClient) -> None:
@@ -135,6 +143,9 @@ def test_health_posture_unchanged(monitor_client: TestClient) -> None:
     body = response.json()
     assert body["execution_mode"] == "paper"
     assert body["real_trading_enabled"] is False
+    assert body["perpetual_evidence_source"] == "replay"
+    assert body["perpetual_evidence_activation"] == "inactive"
+    assert body["live_quote_freshness_seconds"] == 10
     if "market_watcher_enabled" in body:
         assert body["market_watcher_enabled"] is False
     if "watcher_orchestration_enabled" in body:

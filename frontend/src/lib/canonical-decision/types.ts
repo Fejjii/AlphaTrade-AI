@@ -157,6 +157,7 @@ export interface PerpetualMarketStatusView {
   ohlcvLabel: string;
   cvdLabel: string;
   summary: string;
+  activationLabel?: string;
 }
 
 export interface ActionEligibilityView {
