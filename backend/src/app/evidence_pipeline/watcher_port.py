@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
 from app.evidence_pipeline.canonical import is_first_slice_read_projection
+from app.evidence_pipeline.manual_resistance import persisted_resistance_evidence
+from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
     MarketContractError,
     RegionalProviderFailureError,
@@ -27,6 +29,7 @@ from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.signal_fusion.enums import EvidenceAdapterKind
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
+from app.signal_fusion.first_slice_types import ManualResistanceEvidence
 from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
 from app.watcher.contracts import EvaluationCommand
 from app.watcher.errors import WatcherEvidenceUnavailableError, WatcherTenantMismatchError
@@ -91,6 +94,12 @@ class AssemblingWatcherScanEvidence:
 
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
+        production_authority = self._session is not None and self._store is not None
+        if production_authority and self._monitor is None:
+            raise WatcherEvidenceUnavailableError(
+                "Production Watcher Candidate authority requires a market monitor.",
+                reason_code="missing_monitor",
+            )
         monitor_snapshot = self._monitor_snapshot()
         if monitor_snapshot is not None:
             gated = watcher_evidence_error_for_monitor(monitor_snapshot)
@@ -118,12 +127,20 @@ class AssemblingWatcherScanEvidence:
             raise WatcherTenantMismatchError(
                 "Fusion policy organization_id does not match the scan tenant."
             )
+        resistances: tuple[ManualResistanceEvidence, ...] = ()
+        if self._session is not None:
+            resistances = persisted_resistance_evidence(
+                self._session,
+                organization_id=organization_id,
+                symbol=self._symbol,
+            )
         try:
             assembled = self._assembler.assemble(
                 organization_id=organization_id,
                 symbol=self._symbol,
                 policy=policy,
                 adapter_kind=EvidenceAdapterKind.WATCHER,
+                resistances=resistances,
             )
         except StaleEvidenceError as exc:
             raise WatcherEvidenceUnavailableError(
@@ -196,7 +213,12 @@ def _reconcile_monitor_and_assembled(
     if monitor_snapshot is None:
         return
     monitor_replay = monitor_snapshot.mode is MarketMode.REPLAY
-    if monitor_replay != assembled_replay:
+    family_matches = (
+        monitor_snapshot.source_family is SourceFamily.REPLAY_FIXTURE
+        if monitor_replay
+        else monitor_snapshot.source_family is SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
+    )
+    if monitor_replay != assembled_replay or not family_matches:
         raise WatcherEvidenceUnavailableError(
             "Watcher monitor mode does not match canonical evidence replay flag.",
             reason_code="wrong_source",

@@ -3365,7 +3365,9 @@ export interface WatcherMarketFreshness {
   observed_at?: string | null;
   symbol?: string | null;
   data_freshness?: string | null;
-  stale_after_minutes: number;
+  quote_max_age_seconds?: number;
+  stale_after_minutes?: number | null;
+  legacy_scanner_stale_after_minutes?: number | null;
   quote_fresh?: boolean;
   trade_stream_fresh?: boolean;
   closed_candle_final?: boolean | null;

@@ -26,6 +26,8 @@ from app.evidence_pipeline.canonical import is_first_slice_read_projection
 from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
 from app.main import create_app
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
+from app.market_monitor.backoff import BackoffPolicy
+from app.market_monitor.monitor import PerpetualMarketMonitor
 from app.schemas.common import MembershipRole, StrategyId, StrategyLifecycleState
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.strategy_pattern_spec import canonical_first_slice_authored_spec
@@ -459,11 +461,18 @@ def test_persisted_watcher_path_uses_canonical_resolver(
             trigger=ScanTrigger.MANUAL,
             correlation_id=uuid.uuid4(),
         )
+        replay_monitor = PerpetualMarketMonitor(
+            ReplayPerpetualSource(),
+            replay=True,
+            backoff=BackoffPolicy(initial_seconds=0.25, max_seconds=4.0),
+            poll_seconds=0.01,
+        )
         port = AssemblingWatcherScanEvidence(
             FirstSliceEvidenceAssembler(ReplayPerpetualSource(), replay=True),
             executable_resolver=lambda _command: None,
             session=session,
             watcher_store=store,
+            monitor=replay_monitor,
         )
         snapshot = port.load(command)
         assert snapshot is not None

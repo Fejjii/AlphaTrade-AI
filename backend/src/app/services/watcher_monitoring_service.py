@@ -791,30 +791,31 @@ def _market_freshness(
     assessments: list[WatcherSetupAssessmentSummary] | None = None,
     now: datetime | None = None,
 ) -> WatcherMarketFreshness:
+    from app.market_contracts.freshness import first_slice_freshness_policy
     from app.market_monitor.types import MarketAvailability, SymbolMonitorSnapshot
 
+    policy = first_slice_freshness_policy()
     setup_expired = _setup_lifetime_expired(assessments or [], now)
     if isinstance(monitor_snapshot, SymbolMonitorSnapshot):
         quote = monitor_snapshot.current_price
-        stream = monitor_snapshot.stream
         status = _freshness_status(monitor_snapshot.availability.value)
         if monitor_snapshot.availability is MarketAvailability.REPLAY:
             status = "replay"
         elif monitor_snapshot.availability is MarketAvailability.DEGRADED:
             status = "degraded"
+        closed_final, historical_valid = _candle_clocks(monitor_snapshot)
         return WatcherMarketFreshness(
             status=status,
             observed_at=monitor_snapshot.last_update or monitor_snapshot.evaluated_at,
             symbol=monitor_snapshot.symbol,
             data_freshness=monitor_snapshot.reason.value,
-            stale_after_minutes=stale_after_minutes,
-            quote_fresh=bool(
-                quote is not None and quote.freshness.state.value in {"fresh", "aging"}
-            ),
-            trade_stream_fresh=stream.reconnect_state.value in {"continuous", "recovered"}
-            and stream.gap_state.value == "none",
-            closed_candle_final=monitor_snapshot.ohlcv.available,
-            historical_evidence_valid=monitor_snapshot.coverage.completeness.value == "complete",
+            quote_max_age_seconds=policy.trade_max_age_seconds,
+            stale_after_minutes=None,
+            legacy_scanner_stale_after_minutes=None,
+            quote_fresh=bool(quote is not None and quote.usable_as_current_market_price),
+            trade_stream_fresh=_trade_stream_fresh(monitor_snapshot),
+            closed_candle_final=closed_final,
+            historical_evidence_valid=historical_valid,
             setup_lifetime_expired=setup_expired,
             usable_as_current_market_price=bool(
                 quote is not None and quote.usable_as_current_market_price
@@ -825,7 +826,9 @@ def _market_freshness(
     if observation is None:
         return WatcherMarketFreshness(
             status="unknown",
-            stale_after_minutes=stale_after_minutes,
+            quote_max_age_seconds=policy.trade_max_age_seconds,
+            stale_after_minutes=None,
+            legacy_scanner_stale_after_minutes=stale_after_minutes,
             setup_lifetime_expired=setup_expired,
         )
     return WatcherMarketFreshness(
@@ -833,9 +836,59 @@ def _market_freshness(
         observed_at=_aware(observation.observed_at),
         symbol=observation.symbol,
         data_freshness=observation.data_freshness,
-        stale_after_minutes=stale_after_minutes,
+        quote_max_age_seconds=policy.trade_max_age_seconds,
+        stale_after_minutes=None,
+        legacy_scanner_stale_after_minutes=stale_after_minutes,
         setup_lifetime_expired=setup_expired,
     )
+
+
+def _trade_stream_fresh(monitor_snapshot: object) -> bool:
+    """10s stream age. Reconnect and trade-coverage completeness are not this clock."""
+
+    from app.market_contracts.enums import FreshnessState
+    from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
+    from app.market_monitor.types import SymbolMonitorSnapshot
+
+    if not isinstance(monitor_snapshot, SymbolMonitorSnapshot):
+        return False
+    event_time = monitor_snapshot.stream.last_event_at
+    if event_time is None:
+        return False
+    evaluated = evaluate_freshness(
+        source_time=event_time,
+        evaluated_at=monitor_snapshot.evaluated_at,
+        policy=first_slice_freshness_policy(),
+        require_fresh=False,
+    )
+    return evaluated.state in {FreshnessState.FRESH, FreshnessState.AGING}
+
+
+def _candle_clocks(monitor_snapshot: object) -> tuple[bool | None, bool | None]:
+    """Closed-candle finality and historical validity. Not OHLCV availability or coverage."""
+
+    from app.market_contracts.enums import DataCompleteness
+    from app.market_contracts.freshness import live_confirmation_window_open
+    from app.market_monitor.types import SymbolMonitorSnapshot
+
+    if not isinstance(monitor_snapshot, SymbolMonitorSnapshot):
+        return None, None
+    ohlcv = monitor_snapshot.ohlcv
+    complete = (
+        ohlcv.completeness_15m is DataCompleteness.COMPLETE
+        and ohlcv.completeness_4h is DataCompleteness.COMPLETE
+    )
+    if ohlcv.latest_15m_final is not True or not complete:
+        if ohlcv.latest_15m_final is None and not ohlcv.available:
+            return None, None
+        return False, False
+    if ohlcv.latest_15m_end is None:
+        return True, None
+    historical = not live_confirmation_window_open(
+        closed_interval_end=ohlcv.latest_15m_end,
+        evaluated_at=monitor_snapshot.evaluated_at,
+    )
+    return True, historical
 
 
 def _setup_lifetime_expired(

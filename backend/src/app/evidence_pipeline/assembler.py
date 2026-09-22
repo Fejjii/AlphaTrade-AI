@@ -59,9 +59,14 @@ from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_clos
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
 from app.signal_fusion.enums import EvidenceAdapterKind
-from app.signal_fusion.first_slice_types import FIRST_SLICE_EXPIRY_BARS, FirstSliceEvidenceBundle
+from app.signal_fusion.first_slice_types import (
+    FIRST_SLICE_EXPIRY_BARS,
+    FirstSliceEvidenceBundle,
+    ManualResistanceEvidence,
+)
 from app.signal_fusion.observation import TenantExternalAssertion
 from app.signal_fusion.policy import FusionPolicy
+from app.signal_fusion.swings import most_recent_confirmed_swing_high
 from app.signal_fusion.types import ManualLevelRevisionRef
 
 _CONNECTION_NAMESPACE = UUID("a0640000-1111-4000-8000-000000000064")
@@ -95,6 +100,7 @@ class FirstSliceEvidenceAssembler:
         adapter_kind: EvidenceAdapterKind = EvidenceAdapterKind.DETECTOR,
         tenant_assertions: tuple[TenantExternalAssertion, ...] = (),
         manual_level_revision: ManualLevelRevisionRef | None = None,
+        resistances: tuple[ManualResistanceEvidence, ...] = (),
         connection_id: UUID | None = None,
         setup_trigger_end: datetime | None = None,
     ) -> AssembledCanonicalEvidence:
@@ -220,6 +226,12 @@ class FirstSliceEvidenceAssembler:
             if live_window:
                 raise
             current = None
+        selected_revision = manual_level_revision or _nearest_resistance_ref(
+            series_15m=series_15m,
+            trigger=trigger,
+            identity=trigger_identity,
+            resistances=resistances,
+        )
         command = build_first_slice_assessment_command(
             organization_id=organization_id,
             policy=bound_policy,
@@ -234,7 +246,7 @@ class FirstSliceEvidenceAssembler:
             signed_flow=signed_flow,
             coverage=snapshot.coverage,
             tenant_assertions=tenant_assertions,
-            manual_level_revision=manual_level_revision,
+            manual_level_revision=selected_revision,
         )
         window = evidence_window_from_assessment_command(command)
         bundle = FirstSliceEvidenceBundle(
@@ -242,6 +254,7 @@ class FirstSliceEvidenceAssembler:
             bars_4h=tuple(series_4h.bars),
             snapshot=snapshot,
             subsequent_final_15m=subsequent,
+            resistances=resistances,
         )
         completeness = CompletenessReport(
             ohlcv_15m=DataCompleteness.COMPLETE,
@@ -317,6 +330,47 @@ class FirstSliceEvidenceAssembler:
             raise WrongSourceError("Replay assembly cannot claim live provenance.")
         if not self._replay and (identity.provenance.is_mock or not identity.provenance.is_live):
             raise WrongSourceError("Live assembly cannot use mock or non-live provenance.")
+
+
+def _nearest_resistance_ref(
+    *,
+    series_15m: ClosedOhlcvSeries,
+    trigger: OhlcvBar,
+    identity: EvidenceMarketIdentity,
+    resistances: tuple[ManualResistanceEvidence, ...],
+) -> ManualLevelRevisionRef | None:
+    """Bind the command to the same nearest 4h resistance the evaluator will select."""
+
+    if not resistances:
+        return None
+    window_start = first_slice_baseline_open(trigger, FIRST_SLICE_CVD_LOOKBACK_BARS)
+    swing = most_recent_confirmed_swing_high(
+        series_15m.bars,
+        window_start=window_start,
+        before_bar=trigger,
+    )
+    if swing is None:
+        return None
+    eligible = [
+        item
+        for item in resistances
+        if item.valid
+        and item.timeframe is Timeframe.H4
+        and item.effective_at < trigger.interval_start
+        and item.venue is identity.venue
+        and item.market_type is identity.market_type
+        and item.instrument_id == identity.instrument.instrument_id
+    ]
+    if not eligible:
+        return None
+    eligible.sort(
+        key=lambda item: (
+            abs(item.price - swing.price),
+            str(item.ref.level_id),
+            item.ref.revision_number,
+        )
+    )
+    return eligible[0].ref
 
 
 def _last_final_bar(series: ClosedOhlcvSeries) -> OhlcvBar:

@@ -1,7 +1,8 @@
-"""AT-072 Watcher stack integration: monitor gate → canonical evaluate → Candidate.
+"""AT-072 Watcher stack fail-closed checks.
 
-Proves one evidence authority, CONFIRMED_SETUP minting, fail-closed refusals,
-and monitoring projection of integrated worker state. Watcher stays off by default.
+Stale evidence, provider outage, wrong tenant, wrong lineage, and in-memory
+policy cannot mint a Candidate. The PostgreSQL product proof lives in
+``test_watcher_product_proof_postgres.py``. Watcher stays off by default.
 """
 
 from __future__ import annotations
@@ -17,12 +18,6 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.models import Membership, Organization, User
-from app.db.watcher_orchestration import (
-    WatcherHeartbeatRow,
-    WatcherScanAttemptRow,
-    WatcherScanLineageRow,
-    WatcherWorkerLeaseRow,
-)
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
 from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
@@ -39,12 +34,6 @@ from app.services.watcher_monitoring_service import WatcherMonitoringService
 from app.signal_fusion.enums import SetupAssessmentState
 from app.signal_fusion.lifecycle import CandidateLifecycleService
 from app.signal_fusion.memory import InMemoryCandidateRepository
-from app.watcher.contracts import (
-    EvaluationMode,
-    RecoveryDisposition,
-    ScanAttemptStatus,
-    ScanTrigger,
-)
 from app.watcher.errors import WatcherEvidenceUnavailableError
 from app.watcher.fusion_evaluation import (
     BoundEvaluationClock,
@@ -119,11 +108,6 @@ class _SpyAssembler(FirstSliceEvidenceAssembler):
     def assemble(self, **kwargs: object) -> object:  # type: ignore[override]
         self.called = True
         return super().assemble(**kwargs)
-
-
-class _CandidateRuntime:
-    def __init__(self, repository: InMemoryCandidateRepository) -> None:
-        self.candidate_repository = repository
 
 
 def _replay_monitor() -> PerpetualMarketMonitor:
@@ -264,35 +248,6 @@ def test_provider_outage_monitor_blocks_assembler() -> None:
         port.load(_evaluation_command(ORG))
     assert exc.value.reason_code == "provider_outage"
     assert spy.called is False
-
-
-def test_confirmed_setup_from_gated_evidence_persists_candidate(
-    session_factory: sessionmaker[Session],
-) -> None:
-    world = make_world()
-    monitor = _replay_monitor()
-    assert watcher_evidence_error_for_monitor(monitor.tick("BTCUSDT")) is None
-    with session_factory() as session:
-        _seed_approved_compiled(session)
-    repo = InMemoryCandidateRepository()
-    lifecycle = CandidateLifecycleService(repository=repo, clock=BoundEvaluationClock())
-    runtime, _clock, probe, _store = _runtime(
-        session_factory,
-        world=world,
-        lifecycle=lifecycle,
-        evidence_factory=_gated_world_factory(world, monitor),
-    )
-    report = runtime.run_cycle()
-    assert len(report.scans) == 1
-    assert report.scans[0].reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
-    assert len(report.scans[0].candidate_ids) == 1
-    candidate_id = report.scans[0].candidate_ids[0]
-    assert repo.get_by_id(ORG, candidate_id) is not None
-    listed, total = repo.list_for_organization(ORG)
-    assert total == 1
-    assert listed[0].candidate_id == candidate_id
-    assert probe.execution == []
-    assert probe.telegram == []
 
 
 def test_stale_monitor_cannot_mint_candidate(session_factory: sessionmaker[Session]) -> None:
@@ -463,116 +418,6 @@ def test_expired_setup_cannot_mint_candidate(session_factory: sessionmaker[Sessi
     assert report.scans[0].reason_code == SetupAssessmentState.EXPIRED.value
     assert report.scans[0].candidate_ids == ()
     assert probe.execution == []
-
-
-def test_monitoring_projects_integrated_worker_candidate_and_replay_honesty(
-    session_factory: sessionmaker[Session],
-) -> None:
-    world = make_world()
-    monitor = _replay_monitor()
-    with session_factory() as session:
-        _seed_approved_compiled(session)
-    repo = InMemoryCandidateRepository()
-    lifecycle = CandidateLifecycleService(repository=repo, clock=BoundEvaluationClock())
-    runtime, _clock, probe, _store = _runtime(
-        session_factory,
-        world=world,
-        lifecycle=lifecycle,
-        evidence_factory=_gated_world_factory(world, monitor),
-    )
-    report = runtime.run_cycle()
-    assert len(report.scans[0].candidate_ids) == 1
-    candidate_id = report.scans[0].candidate_ids[0]
-    lineage_id = uuid4()
-    with session_factory() as session:
-        session.add(
-            WatcherWorkerLeaseRow(
-                id=uuid4(),
-                organization_id=ORG,
-                scan_scope=report.scans[0].scan_scope,
-                owner_id="watcher-paper-a",
-                lease_epoch=1,
-                fencing_token=1,
-                acquired_at=NOW,
-                renewed_at=NOW,
-                expires_at=NOW + timedelta(seconds=30),
-            )
-        )
-        session.add(
-            WatcherHeartbeatRow(
-                id=uuid4(),
-                organization_id=ORG,
-                scan_scope=report.scans[0].scan_scope,
-                owner_id="watcher-paper-a",
-                lease_epoch=1,
-                fencing_token=1,
-                last_beat_at=NOW,
-                detail="healthy",
-            )
-        )
-        session.add(
-            WatcherScanLineageRow(
-                lineage_id=lineage_id,
-                organization_id=ORG,
-                scan_scope=report.scans[0].scan_scope,
-                request_hash="ab" * 32,
-                policy_id=uuid4(),
-                policy_version=1,
-                policy_content_hash="cd" * 32,
-                trigger_created_by=ScanTrigger.WORKER.value,
-                created_at=NOW,
-            )
-        )
-        session.flush()
-        session.add(
-            WatcherScanAttemptRow(
-                attempt_id=uuid4(),
-                lineage_id=lineage_id,
-                organization_id=ORG,
-                scan_scope=report.scans[0].scan_scope,
-                attempt_number=1,
-                worker_id="watcher-paper-a",
-                lease_epoch=1,
-                fencing_token=1,
-                trigger=ScanTrigger.WORKER.value,
-                mode=EvaluationMode.PERSIST_EVIDENCE.value,
-                status=ScanAttemptStatus.SUCCEEDED.value,
-                started_at=NOW,
-                heartbeat_at=NOW,
-                finished_at=NOW,
-                sanitized_error=None,
-                recovery_disposition=RecoveryDisposition.NONE.value,
-                outcome_reason_code=SetupAssessmentState.CONFIRMED_SETUP.value,
-                evaluation_input_hash="ab" * 32,
-            )
-        )
-        session.commit()
-        snapshot = WatcherMonitoringService(
-            session,
-            _settings(watcher_orchestration_enabled=True),
-            now=NOW,
-            monitor=monitor,
-            paper_runtime=runtime,
-            canonical_runtime=_CandidateRuntime(repo),  # type: ignore[arg-type]
-        ).get_snapshot(organization_id=ORG, user_id=USER)
-    assert snapshot.watcher_status is WatcherMonitoringRuntimeState.RUNNING
-    assert snapshot.paper_monitoring_status is WatcherMonitoringRuntimeState.RUNNING
-    assert snapshot.paper_posture.runtime_evidence is True
-    assert snapshot.paper_posture.real_trading_enabled is False
-    assert snapshot.market_freshness.status == "replay"
-    assert snapshot.market_freshness.usable_as_current_market_price is False
-    assert snapshot.market_freshness.presentation in {None, "replay_fixture"}
-    assert snapshot.setup_assessments
-    assert snapshot.setup_assessments[0].valid_until < NOW
-    assert snapshot.market_freshness.setup_lifetime_expired is True
-    assert "BTCUSDT" in snapshot.symbols_monitored
-    assert snapshot.last_scan_status == ScanAttemptStatus.SUCCEEDED.value
-    assert snapshot.next_scan_basis == "paper_poll"
-    assert any(item.candidate_id == candidate_id for item in snapshot.canonical_candidates)
-    assert snapshot.setup_assessments[0].state is SetupAssessmentState.CONFIRMED_SETUP
-    assert snapshot.leases[0].fenced is True
-    assert snapshot.leases[0].heartbeat_fresh is True
-    assert probe.telegram == []
 
 
 def test_config_alone_never_shows_running(session_factory: sessionmaker[Session]) -> None:

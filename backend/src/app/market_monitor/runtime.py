@@ -12,6 +12,7 @@ from app.market_contracts.cursor import TradeStreamAssembler, TradeStreamSnapsho
 from app.market_contracts.cvd import accumulate_signed_quote, event_set_hash
 from app.market_contracts.enums import (
     DataCompleteness,
+    Finality,
     GapState,
     ReconnectState,
     WarmUpStatus,
@@ -476,12 +477,18 @@ class SymbolMonitorRuntime:
             else DataCompleteness.UNKNOWN
         )
         latest = series_15.bars[-1] if series_15 is not None and series_15.bars else None
+        latest_final = (
+            None
+            if latest is None
+            else latest.finality is Finality.FINAL and latest.provider_complete
+        )
         return OhlcvHealth(
             available=series_15 is not None or series_4h is not None,
             completeness_15m=complete_15,
             completeness_4h=complete_4h,
             latest_15m_close=str(latest.close) if latest is not None else None,
             latest_15m_end=latest.interval_end if latest is not None else None,
+            latest_15m_final=latest_final,
             series_15m_hash=series_15.content_hash if series_15 is not None else None,
             series_4h_hash=series_4h.content_hash if series_4h is not None else None,
             reason=self._ohlcv_reason,

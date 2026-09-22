@@ -343,6 +343,7 @@ class PostgresWatcherStore:
         owner_id: str,
         ttl_seconds: int,
         now: datetime,
+        fencing_token: int | None = None,
     ) -> tuple[bool, WorkerLease, str]:
         tenant_scope_key(organization_id, scan_scope)
 
@@ -371,7 +372,11 @@ class PostgresWatcherStore:
             self._reject_mismatch(current.organization_id, organization_id, record="lease")
             active = _lease_is_active(current, now)
             if active:
-                if current.owner_id == owner_id:
+                if (
+                    current.owner_id == owner_id
+                    and fencing_token is not None
+                    and current.fencing_token == fencing_token
+                ):
                     current.renewed_at = now
                     current.expires_at = now + timedelta(seconds=ttl_seconds)
                     session.flush()

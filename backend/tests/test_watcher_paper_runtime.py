@@ -451,6 +451,7 @@ def test_restart_recovers_same_candidate(session_factory: sessionmaker[Session])
     created = first.run_cycle()
     assert len(created.scans[0].candidate_ids) == 1
     created_id = created.scans[0].candidate_ids[0]
+    clock.advance(31)
     restarted, _c2, probe2, _s2 = _runtime(
         session_factory,
         world=world,

@@ -519,6 +519,8 @@ def test_stale_worker_steal_during_persist_cannot_mint_candidate() -> None:
     store.put_policy_version(policy)
     request = _request(policy, key="fenced-persist")
 
+    held_token: dict[str, int] = {}
+
     class _StealOnPersist:
         def evaluate(self, command: EvaluationCommand) -> EvaluationOutcome:
             return inner.evaluate(command)
@@ -527,13 +529,14 @@ def test_stale_worker_steal_during_persist_cannot_mint_candidate() -> None:
             self, command: EvaluationCommand, outcome: EvaluationOutcome
         ) -> EvaluationOutcome:
             clock.advance(31)
-            store.claim_lease(
+            _acquired, lease, _reason = store.claim_lease(
                 scan_scope=request.scan_scope,
                 organization_id=request.organization_id,
                 owner_id="worker-b",
                 ttl_seconds=30,
                 now=clock.now(),
             )
+            held_token["worker-b"] = lease.fencing_token
             return inner.persist_confirmed_setup(command, outcome)
 
     stolen = build_orchestrator(
@@ -564,7 +567,11 @@ def test_stale_worker_steal_during_persist_cannot_mint_candidate() -> None:
         clock=clock,
         evaluator=inner,
         side_effects=SideEffectProbe(),
-    ).run_worker(request, worker_id="worker-b")
+    ).run_worker(
+        request,
+        worker_id="worker-b",
+        held_fencing_token=held_token["worker-b"],
+    )
     assert winner.published is True
     assert winner.outcome is not None
     assert len(set(inner.published_candidate_ids)) == 1

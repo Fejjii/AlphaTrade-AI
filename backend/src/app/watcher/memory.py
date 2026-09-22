@@ -288,6 +288,7 @@ class InMemoryWatcherStore:
         owner_id: str,
         ttl_seconds: int,
         now: datetime,
+        fencing_token: int | None = None,
     ) -> tuple[bool, WorkerLease, str]:
         key = tenant_scope_key(organization_id, scan_scope)
         with self._lock:
@@ -301,7 +302,11 @@ class InMemoryWatcherStore:
                 and current.expires_at > now
             )
             if active and current is not None:
-                if current.owner_id == owner_id:
+                if (
+                    current.owner_id == owner_id
+                    and fencing_token is not None
+                    and current.fencing_token == fencing_token
+                ):
                     renewed = current.model_copy(
                         update={
                             "renewed_at": now,

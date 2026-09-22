@@ -88,6 +88,9 @@ class OhlcvHealth(CanonicalModel):
     completeness_4h: DataCompleteness
     latest_15m_close: str | None = None
     latest_15m_end: datetime | None = None
+    # True only when the latest 15m bar is provider-complete and FINAL.
+    # Series presence (including PARTIAL) is not candle finality.
+    latest_15m_final: bool | None = None
     series_15m_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     series_4h_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     reason: str | None = None
