@@ -1793,4 +1793,53 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Staging inbound is polling. Webhook is not a staging activation path.
   Do not merge, deploy, or activate.
 
+### AT-082 — Close the three open PR132 activation findings
+- Priority: P0 · Status: DONE · Dependencies: AT-081 · Risk: High
+  (shared market cache and worker health must stay paper-only)
+- Safety classification: Paper execution; public read-only USD-M evidence;
+  no exchange credentials; no exchange mutation; workers stay disarmed;
+  no deploy; no activation; live trading remains impossible
+- Goal: Close Binance evidence reuse, Render worker Settings boot, and
+  worker heartbeat freshness. No redesign.
+- Branch: `cursor/final_three_activation_fixes`
+- Base: PR #132 head `d4e4e8daff9e42d2d8c7efb541ab57e52d05092d`
+- Behavior commit: `d778a4f2ade94a62a9a3081e8b6d11862ad53f65`
+- Alembic: single head `f1a2b3c4d5e6` (unchanged; no new revision)
+- Validation recorded on this run, against `d778a4f` unless noted:
+  - `uv run pytest tests/test_final_three_activation_fixes.py -q --tb=short`
+    exit 0: 12 passed, including PostgreSQL lease takeover and worker
+    health freshness.
+  - `uv run ruff check .` and `uv run ruff format --check .` exit 0
+    (913 files).
+  - Strict mypy on the 12 affected modules exit 0 after the idle-lock fix.
+  - `uv run alembic heads` prints `f1a2b3c4d5e6 (head)`.
+  - `uv run pytest -q --tb=line` exit 0. Progress marks: 2641 passed,
+    0 failed, 0 skipped. PostgreSQL was accepting connections at
+    `postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test`.
+    The short summary line was absent from the redirected log.
+  - Deployment-safety pytest
+    `tests/test_deployment_safety.py tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py -q --tb=line`
+    exit 0: 102 passed, 0 failed, 0 skipped.
+  - Script self-checks exit 0: post-deploy smoke gate, canonical staging
+    smoke, live-market staging validation, watcher rollback, watcher
+    activation smoke, watcher paper health, watcher activation module,
+    Telegram preflight verdict `NOT_ARMED`, controlled rollback
+    `--self-check`. Controlled rollback `--apply` exit 2.
+  - Evaluation: agent 16/16, RAG 5/5, guardrails 7/7.
+  - Frontend `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test`
+    (200 files, 1196 tests), and `npm run build` exit 0.
+  - Chromium `CI=true npm run test:e2e` exit 0: 30 passed, 13 skipped.
+  - Local `sudo docker build -t alphatrade-backend:ci ./backend` exit 0
+    (image `8b8a7bff546e`).
+  - Exact-head GitHub CI run 35837052105 success on
+    `d778a4f2ade94a62a9a3081e8b6d11862ad53f65`: backend,
+    deployment-safety, docker-build, frontend, evaluation, e2e-smoke.
+    https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35837052105
+  - Not deployed. Not activated. Live Binance aggTrade weight from
+    Frankfurt remains UNKNOWN.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-061
+- Note: Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/133 targets
+  `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
+
 
