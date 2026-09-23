@@ -184,6 +184,7 @@ services:
 
   # Paper Watcher. Disarmed. This blueprint does not activate or deploy it.
   # Command is the validated paper entrypoint. Flags stay false.
+  # Cookie, CORS, and denylist values are the staging Settings contract. No secrets.
   - type: worker
     name: alphatrade-watcher-paper-staging
     runtime: docker
@@ -218,7 +219,7 @@ services:
       - key: TELEGRAM_PAPER_ACTIVATION_ARMED
         value: false
       - key: TELEGRAM_INBOUND_MODE
-        value: off
+        value: "off"
       - key: TELEGRAM_NETWORK_PERMITTED
         value: false
       - key: PROVIDER_MODE
@@ -231,8 +232,26 @@ services:
         value: https://fapi.binance.com
       - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
         value: "10"
+      - key: DEBUG
+        value: false
       - key: LOG_JSON
         value: true
+      - key: AUTH_REFRESH_COOKIE_ENABLED
+        value: true
+      - key: AUTH_OMIT_REFRESH_FROM_BODY
+        value: true
+      - key: AUTH_COOKIE_SECURE
+        value: true
+      - key: AUTH_COOKIE_SAMESITE
+        value: none
+      - key: ACCESS_TOKEN_DENYLIST_ENABLED
+        value: true
+      - key: ACCESS_TOKEN_DENYLIST_USE_REDIS
+        value: true
+      - key: ACCESS_TOKEN_DENYLIST_FAIL_CLOSED
+        value: true
+      - key: CORS_ORIGINS
+        value: https://alpha-trade-ai-eight.vercel.app,https://alpha-trade-ai-alphatrade-ai.vercel.app,https://alpha-trade-ai-git-main-alphatrade-ai.vercel.app
       - key: RATE_LIMIT_USE_REDIS
         value: true
       - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
@@ -252,6 +271,7 @@ services:
 
   # Paper Telegram process. Disarmed. Polling is the staging inbound mode.
   # No bot token in this blueprint. The process heartbeats and does not trade.
+  # Cookie, CORS, and denylist values match the Watcher contract. Flags stay false.
   - type: worker
     name: alphatrade-telegram-paper-staging
     runtime: docker
@@ -286,7 +306,7 @@ services:
       - key: TELEGRAM_PAPER_ACTIVATION_ARMED
         value: false
       - key: TELEGRAM_INBOUND_MODE
-        value: off
+        value: "off"
       - key: TELEGRAM_NETWORK_PERMITTED
         value: false
       - key: PROVIDER_MODE
@@ -299,8 +319,26 @@ services:
         value: https://fapi.binance.com
       - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
         value: "10"
+      - key: DEBUG
+        value: false
       - key: LOG_JSON
         value: true
+      - key: AUTH_REFRESH_COOKIE_ENABLED
+        value: true
+      - key: AUTH_OMIT_REFRESH_FROM_BODY
+        value: true
+      - key: AUTH_COOKIE_SECURE
+        value: true
+      - key: AUTH_COOKIE_SAMESITE
+        value: none
+      - key: ACCESS_TOKEN_DENYLIST_ENABLED
+        value: true
+      - key: ACCESS_TOKEN_DENYLIST_USE_REDIS
+        value: true
+      - key: ACCESS_TOKEN_DENYLIST_FAIL_CLOSED
+        value: true
+      - key: CORS_ORIGINS
+        value: https://alpha-trade-ai-eight.vercel.app,https://alpha-trade-ai-alphatrade-ai.vercel.app,https://alpha-trade-ai-git-main-alphatrade-ai.vercel.app
       - key: RATE_LIMIT_USE_REDIS
         value: true
       - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK

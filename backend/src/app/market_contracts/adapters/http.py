@@ -7,6 +7,7 @@ hosts, and plain HTTP cannot be labelled as USD-M perpetual evidence.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -29,6 +30,7 @@ from app.market_contracts.errors import (
     UnapprovedEvidenceHostError,
     WrongMarketError,
 )
+from app.market_contracts.request_progress import current_progress_hook
 
 ALLOWED_PATHS = frozenset(
     {
@@ -52,6 +54,7 @@ COINM_HOST_MARKERS = ("dapi.binance.com",)
 SPOT_PATH_PREFIXES = ("/api/v3/", "/api/v1/")
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE"})
 REGIONAL_STATUS_CODES = frozenset({401, 403, 418, 451})
+_PROGRESS_INTERVAL_SECONDS = 5.0
 
 
 class ReadOnlyHttpGetClient:
@@ -70,6 +73,7 @@ class ReadOnlyHttpGetClient:
         max_backoff_seconds: float = 30.0,
         sleeper: Callable[[float], None] | None = None,
         budget: SlidingWeightBudget | None = None,
+        progress_interval_seconds: float = _PROGRESS_INTERVAL_SECONDS,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._allowed_hosts = allowed_hosts or APPROVED_BINANCE_USDM_REST_HOSTS
@@ -78,6 +82,7 @@ class ReadOnlyHttpGetClient:
         self._max_retries = max_retries
         self._max_backoff_seconds = max_backoff_seconds
         self._sleep = sleeper if sleeper is not None else time.sleep
+        self._progress_interval_seconds = max(progress_interval_seconds, 0.01)
         self._budget = budget or SlidingWeightBudget(
             limit=weight_per_minute,
             max_wait_seconds=max(max_backoff_seconds, 60.0),
@@ -89,6 +94,10 @@ class ReadOnlyHttpGetClient:
             follow_redirects=False,
             headers={"User-Agent": "AlphaTradeAI-perpetual-evidence/read-only"},
         )
+
+    @property
+    def budget(self) -> SlidingWeightBudget:
+        return self._budget
 
     def close(self) -> None:
         if self._owns_client:
@@ -121,7 +130,7 @@ class ReadOnlyHttpGetClient:
         for attempt in range(attempts):
             self._budget.acquire(weight, sleeper=self._sleep)
             try:
-                response = self._client.get(url, params=dict(params or {}))
+                response = self._exchange_get(url, params)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
                 record_request(weight=weight, retry=attempt > 0)
                 if attempt + 1 >= attempts:
@@ -169,6 +178,34 @@ class ReadOnlyHttpGetClient:
             "Preferred Binance USD-M source rate-limited the read-only client.",
             retry_after_seconds=last_retry_after,
         )
+
+    def _exchange_get(
+        self,
+        url: str,
+        params: Mapping[str, str | int] | None,
+    ) -> httpx.Response:
+        """GET while a bound lease hook can beat during the call, not only backoff."""
+
+        hook = current_progress_hook()
+        query = dict(params or {})
+        if hook is None:
+            return self._client.get(url, params=query)
+        stop = threading.Event()
+
+        def _pulse() -> None:
+            # The hook is captured on the caller thread. A new thread does not
+            # inherit the contextvar that bind_market_request_progress set.
+            while not stop.wait(self._progress_interval_seconds):
+                hook()
+
+        hook()
+        thread = threading.Thread(target=_pulse, name="binance-read-heartbeat", daemon=True)
+        thread.start()
+        try:
+            return self._client.get(url, params=query)
+        finally:
+            stop.set()
+            thread.join(timeout=self._progress_interval_seconds)
 
     def _normalize_path(self, path: str) -> str:
         if path.startswith("http://") or path.startswith("https://"):

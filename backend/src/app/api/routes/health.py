@@ -12,14 +12,15 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request
 
 from app import __version__
+from app.core.config import Settings
 from app.core.dependencies import ProviderRegistryDep, SettingsDep
 from app.core.deploy_info import resolve_git_sha
 from app.market_activation.profile import perpetual_evidence_health
+from app.persistence.runtime_health import project_worker_component
 from app.providers.base import ProviderHealth
 from app.schemas.health import (
     HealthResponse,
     ReadinessResponse,
-    WorkerComponentObservation,
     WorkerRuntimeObservation,
 )
 from app.telegram_activation.contracts import PreflightReport
@@ -29,9 +30,19 @@ from app.telegram_activation.preflight import run_preflight
 router = APIRouter(tags=["health"])
 
 
-def _read_worker_runtime() -> WorkerRuntimeObservation:
-    """Best-effort read of worker rows. A database error leaves liveness intact."""
+def _read_worker_runtime(
+    settings: Settings,
+    *,
+    now: datetime | None = None,
+) -> WorkerRuntimeObservation:
+    """Best-effort read of worker rows. A database error leaves liveness intact.
 
+    Component ``available`` follows heartbeat freshness. A stored row alone is
+    not ``RUNNING``.
+    """
+
+    observed_at = now or datetime.now(UTC)
+    limit = settings.watcher_heartbeat_stale_after_seconds
     try:
         from app.db.session import get_session_factory
         from app.persistence.runtime_status import (
@@ -43,42 +54,23 @@ def _read_worker_runtime() -> WorkerRuntimeObservation:
         with get_session_factory()() as session:
             rows = load_runtime_rows(session)
     except Exception:
-        return WorkerRuntimeObservation(available=False)
+        return WorkerRuntimeObservation(
+            available=False,
+            watcher=project_worker_component(None, now=observed_at, stale_after_seconds=limit),
+            telegram=project_worker_component(None, now=observed_at, stale_after_seconds=limit),
+        )
     return WorkerRuntimeObservation(
         available=True,
-        watcher=_component(rows.get(WATCHER_COMPONENT)),
-        telegram=_component(rows.get(TELEGRAM_COMPONENT)),
-    )
-
-
-def _component(row: object | None) -> WorkerComponentObservation:
-    if row is None:
-        return WorkerComponentObservation(available=False)
-    return WorkerComponentObservation(
-        available=True,
-        worker_id=str(getattr(row, "worker_id", "")),
-        heartbeat_at=getattr(row, "heartbeat_at", None),
-        activation_state=str(getattr(row, "activation_state", "unknown")),
-        lease_owner=str(getattr(row, "lease_owner", "")),
-        lease_epoch=int(getattr(row, "lease_epoch", 0)),
-        lease_expires_at=getattr(row, "lease_expires_at", None),
-        fence_held=bool(getattr(row, "fence_held", False)),
-        last_scan_at=getattr(row, "last_scan_at", None),
-        last_scan_reason=str(getattr(row, "last_scan_reason", "")),
-        market_source=str(getattr(row, "market_source", "")),
-        freshness_seconds=getattr(row, "freshness_seconds", None),
-        telegram_runtime_state=str(getattr(row, "telegram_runtime_state", "absent")),
-        inbound_mode=str(getattr(row, "inbound_mode", "off")),
-        outbox_pending=int(getattr(row, "outbox_pending", 0)),
-        outbox_retryable=int(getattr(row, "outbox_retryable", 0)),
-        outbox_dead_letter=int(getattr(row, "outbox_dead_letter", 0)),
-        last_delivery_at=getattr(row, "last_delivery_at", None),
-        last_error_code=str(getattr(row, "last_error_code", "")),
-        kill_switch_active=bool(getattr(row, "kill_switch_active", False)),
-        request_count=int(getattr(row, "request_count", 0)),
-        request_weight=int(getattr(row, "request_weight", 0)),
-        rate_limited_count=int(getattr(row, "rate_limited_count", 0)),
-        cache_hits=int(getattr(row, "cache_hits", 0)),
+        watcher=project_worker_component(
+            rows.get(WATCHER_COMPONENT),
+            now=observed_at,
+            stale_after_seconds=limit,
+        ),
+        telegram=project_worker_component(
+            rows.get(TELEGRAM_COMPONENT),
+            now=observed_at,
+            stale_after_seconds=limit,
+        ),
     )
 
 
@@ -119,7 +111,7 @@ async def health(settings: SettingsDep) -> HealthResponse:
         live_quote_freshness_seconds=evidence["live_quote_freshness_seconds"],
         first_perpetual_symbol=evidence["first_perpetual_symbol"],
         git_sha=resolve_git_sha(),
-        worker_runtime=_read_worker_runtime(),
+        worker_runtime=_read_worker_runtime(settings),
         timestamp=datetime.now(UTC),
     )
 

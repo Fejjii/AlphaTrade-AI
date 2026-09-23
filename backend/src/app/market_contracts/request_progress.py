@@ -25,10 +25,16 @@ def reset_market_request_progress(token: Token[ProgressHook | None]) -> None:
     _HOOK.reset(token)
 
 
+def current_progress_hook() -> ProgressHook | None:
+    """Return the hook bound on this thread. New threads do not inherit it."""
+
+    return _HOOK.get()
+
+
 def notify_market_request_progress() -> None:
     """Invoke the bound hook. Missing hooks are a no-op."""
 
-    hook = _HOOK.get()
+    hook = current_progress_hook()
     if hook is None:
         return
     hook()

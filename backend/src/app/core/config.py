@@ -289,6 +289,9 @@ class Settings(BaseSettings):
     binance_request_max_retries: int = Field(default=3, ge=0, le=8)
     binance_request_max_backoff_seconds: float = Field(default=30.0, ge=0.0, le=120.0)
     binance_evidence_cache_entries: int = Field(default=8, ge=1, le=64)
+    # Closed aggTrade windows are reused only until this TTL. A later payload
+    # with a different fingerprint replaces the entry (exchange correction).
+    binance_evidence_cache_ttl_seconds: float = Field(default=120.0, gt=0.0, le=3600.0)
     # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
     perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
     perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)

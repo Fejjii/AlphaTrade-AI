@@ -2112,4 +2112,53 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `docs/controlled_paper_activation.md`. Branch
   `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
 
+## AT-ADR-061 — Shared Binance evidence, disarmed worker boot, heartbeat health
+- **Date:** 2026-09-23
+- **Status:** Accepted
+- **Context:** The independent review of PR #132 left three findings open.
+  Canonical API reads built a new aggTrade cache and request-weight budget
+  per HTTP request. Dedicated staging workers in `render.yaml` did not carry
+  the Settings contract required to boot. Worker health treated a persisted
+  runtime row as live without considering heartbeat age.
+- **Decision:**
+  1. Canonical API evidence reads use one process pool per Binance
+     configuration: one bounded closed-window aggTrade cache and one sliding
+     request-weight budget. The cache key is retrieval policy, symbol, and
+     the UTC window. It does not include a tenant. Same-key fetches
+     single-flight. A different semantic fingerprint replaces the rows and
+     counts as a correction. Age equal to the TTL is still fresh. Age past
+     the TTL is a miss and is not served. Failures are not cached, and an
+     idle lock from a failed fetch is released. A process restart drops the
+     pool. The default `resolve_perpetual_evidence_source` stays isolated;
+     sharing is opt-in for the API process.
+  2. While a market-request progress hook is bound, a slow GET pulses that
+     hook during the HTTP call, including a successful call, a 429, and a
+     network timeout. The hook is captured on the caller thread. Backoff
+     still uses the existing progress sleep. A Watcher lease can be renewed
+     only while its fence is still active.
+  3. `alphatrade-watcher-paper-staging` and
+     `alphatrade-telegram-paper-staging` include the staging cookie, CORS,
+     denylist, rate-limit, and trusted-proxy settings. `TELEGRAM_INBOUND_MODE`
+     is the quoted string `off`. Secrets stay `sync: false`. Both workers
+     stay disarmed. This blueprint change does not deploy.
+  4. Worker component health is `RUNNING` only when the heartbeat age is
+     within `watcher_heartbeat_stale_after_seconds` (default 90, inclusive).
+     A missing heartbeat is `UNAVAILABLE`. A future, naive, or older
+     heartbeat is `STALE`. `available` on the component is true only for
+     `RUNNING`. A persisted activation state of `running` is not reported as
+     running when the heartbeat is not fresh. The parent
+     `worker_runtime.available` flag still means the status read succeeded.
+     Post-activation smoke checks `health_state`, age, and the threshold.
+  5. No Alembic revision. Head remains `f1a2b3c4d5e6`. Live trading stays
+     impossible.
+- **Alternatives considered:** Share the cache by default for every
+  `resolve_perpetual_evidence_source` call (rejected: existing isolated
+  reads and tests must stay isolated); treat any persisted row as RUNNING
+  (rejected: that was the finding).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. `EXCHANGE_MODE` stays `paper_internal`
+  in the worker blueprint. Neither worker is armed.
+- **Consequences:** Branch `cursor/final_three_activation_fixes`. Do not
+  merge, deploy, or activate.
+
 

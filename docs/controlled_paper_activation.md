@@ -121,8 +121,12 @@ id plus a unique suffix. Legacy `MARKET_WATCHER_*` flags stay false.
 Confirm the worker log shows a cleared preflight and scans, and that
 `GET /health` still has `execution_mode=paper` and `real_trading_enabled=false`.
 API flag fields are the API process configuration. Observed worker state is
-`worker_runtime`: heartbeat, lease, last scan, market source, freshness, and
-activation state. A replay source, provider outage, stale quote, invalid
+`worker_runtime`: heartbeat age against `watcher_heartbeat_stale_after_seconds`
+(default 90 seconds; age equal to the threshold is fresh). A missing heartbeat
+is `UNAVAILABLE`. A future or older heartbeat is `STALE` with `available=false`
+and is never `RUNNING`. A persisted row alone is not liveness. Lease, last
+scan, market source, market freshness, and activation state are also reported.
+A replay source, provider outage, stale quote, invalid
 strategy lineage, or migration mismatch skips the scan and backs off. The
 process stays up. No order is placed. An active kill switch keeps that
 monitoring and blocks new Candidates and Telegram actions.
@@ -231,6 +235,9 @@ Print the checklist without applying it:
 
 `render.yaml` adds `alphatrade-watcher-paper-staging` (`python -m app.workers.watcher_paper`)
 and `alphatrade-telegram-paper-staging` (`python -m app.telegram_activation run`).
+Both include the staging Settings contract required to boot (secure refresh
+cookie, `SameSite=none`, HTTPS `CORS_ORIGINS`, Redis rate limit and access-token
+denylist, trusted proxy hop) and stay disarmed. Secrets stay out of the blueprint.
 Both stay disarmed: Watcher flags false, Telegram flags false, inbound `off`,
 network false, and no bot token. Adding the services to the blueprint does not
 deploy or activate them. `.env.staging.example` keeps the same disarmed posture.

@@ -6,6 +6,7 @@ paths. The budget fails closed when a wait would exceed the configured bound.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
@@ -59,29 +60,33 @@ class MarketRequestSnapshot:
 
 
 _METRICS = RequestMetrics()
+_METRICS_LOCK = threading.Lock()
 
 
 def market_request_metrics() -> MarketRequestSnapshot:
-    return MarketRequestSnapshot(
-        requests=_METRICS.requests,
-        weight_used=_METRICS.weight_used,
-        retries=_METRICS.retries,
-        rate_limited=_METRICS.rate_limited,
-        cache_hits=_METRICS.cache_hits,
-    )
+    with _METRICS_LOCK:
+        return MarketRequestSnapshot(
+            requests=_METRICS.requests,
+            weight_used=_METRICS.weight_used,
+            retries=_METRICS.retries,
+            rate_limited=_METRICS.rate_limited,
+            cache_hits=_METRICS.cache_hits,
+        )
 
 
 def record_cache_hit() -> None:
-    _METRICS.cache_hits += 1
+    with _METRICS_LOCK:
+        _METRICS.cache_hits += 1
 
 
 def record_request(*, weight: int, rate_limited: bool = False, retry: bool = False) -> None:
-    _METRICS.requests += 1
-    _METRICS.weight_used += weight
-    if rate_limited:
-        _METRICS.rate_limited += 1
-    if retry:
-        _METRICS.retries += 1
+    with _METRICS_LOCK:
+        _METRICS.requests += 1
+        _METRICS.weight_used += weight
+        if rate_limited:
+            _METRICS.rate_limited += 1
+        if retry:
+            _METRICS.retries += 1
 
 
 @dataclass
@@ -93,11 +98,11 @@ class SlidingWeightBudget:
     max_wait_seconds: float = 60.0
     _events: deque[tuple[float, int]] = field(default_factory=deque)
     _clock: Callable[[], float] = time.monotonic
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def used(self, now: float | None = None) -> int:
-        current = self._clock() if now is None else now
-        self._evict(current)
-        return sum(weight for _stamp, weight in self._events)
+        with self._lock:
+            return self._used_unlocked(now)
 
     def acquire(
         self,
@@ -116,12 +121,13 @@ class SlidingWeightBudget:
             )
         waited = 0.0
         while True:
-            now = self._clock()
-            self._evict(now)
-            if self.used(now) + weight <= self.limit:
-                self._events.append((now, weight))
-                return
-            delay = self._wait_step(now)
+            with self._lock:
+                now = self._clock()
+                self._evict(now)
+                if self._used_unlocked(now) + weight <= self.limit:
+                    self._events.append((now, weight))
+                    return
+                delay = self._wait_step(now)
             if waited + delay > self.max_wait_seconds:
                 raise RateLimitedError(
                     "Binance request-weight budget is exhausted.",
@@ -129,6 +135,11 @@ class SlidingWeightBudget:
                 )
             sleep_with_progress(delay, sleeper=sleeper)
             waited += delay
+
+    def _used_unlocked(self, now: float | None = None) -> int:
+        current = self._clock() if now is None else now
+        self._evict(current)
+        return sum(weight for _stamp, weight in self._events)
 
     def _wait_step(self, now: float) -> float:
         if not self._events:
