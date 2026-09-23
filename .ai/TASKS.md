@@ -1843,7 +1843,7 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
 
 ### AT-083 — Disarmed Render workers boot without operational secrets
-- Priority: P0 · Status: IN PROGRESS · Dependencies: AT-082 · Risk: High
+- Priority: P0 · Status: DONE · Dependencies: AT-082 · Risk: High
   (staging validation must stay fail-closed for the API and for armed workers)
 - Safety classification: Paper execution; workers stay disarmed; no exchange
   credentials; no deploy; no activation; live trading remains impossible
@@ -1869,7 +1869,14 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
     PostgreSQL tests; PostgreSQL was not reachable in this environment.
   - Deployment-safety script self-checks exit 0. Telegram preflight verdict
     `NOT_ARMED`. Controlled rollback `--apply` exit 2.
-  - Exact-head GitHub CI: not yet recorded.
+  - Exact-head GitHub CI run 35851723888 success on
+    `d6d5492e08621a8c7be13f043eeaa3bb3781eb3e`: backend, deployment-safety,
+    docker-build, frontend, evaluation, e2e-smoke. Vercel and Vercel Preview
+    Comments also succeeded. 0 failed.
+    https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35851723888
+  - Not deployed. Not activated. Draft PR
+    https://github.com/Fejjii/AlphaTrade-AI/pull/134 targets
+    `cursor/final_three_activation_fixes`. Do not merge.
 - Recommended model: Grok 4.6 Extra High
 - ADR: AT-ADR-062
 - Note: Do not merge, deploy, or activate.
