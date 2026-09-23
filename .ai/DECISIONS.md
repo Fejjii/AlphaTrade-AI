@@ -2197,4 +2197,41 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `5ff0eb8c4a7d171118dfde921259a6da13b60abb`. Do not merge, deploy, or
   activate.
 
+## AT-ADR-063 — Staging Blueprint omits the Slice 59 worker
+- **Date:** 2026-09-23
+- **Status:** Accepted
+- **Context:** The paper runtime is the Vercel frontend plus three Render
+  processes: `alphatrade-api-staging`, `alphatrade-watcher-paper-staging`,
+  and `alphatrade-telegram-paper-staging`. `render.yaml` also defined
+  `alphatrade-worker-staging` (`python -m app.workers.entrypoint`).
+- **Decision:** Remove `alphatrade-worker-staging` from `render.yaml`. The
+  application module stays. Nothing in the paper runtime starts that Render
+  service.
+  1. `app.workers.entrypoint` scans with the legacy setup detector, records
+     `SetupDetectionRecord`, drains one queued backtest, and emits
+     `WorkerNotifier` alerts. It does not start Watcher or Telegram.
+  2. The paper scan authority is `python -m app.workers.watcher_paper`.
+     It evaluates the approved compiled strategy and can mint a Candidate.
+     Its evaluation observer records paper-evaluation facts. Legacy
+     `MARKET_WATCHER_*` flags stay false.
+  3. The paper Telegram authority is `python -m app.telegram_activation run`.
+     It drains the outbox and polls. It does not mint Candidates.
+  4. Paper execution, Journal projection, and learning attribution run
+     through `ExecutionService` / `CanonicalPaperExecutionService` and
+     `JournalLifecycleProjector`. The Slice 59 entrypoint does not call
+     them. Watcher orchestration ports do not invoke execution or journal.
+  5. `ENABLE_PAPER_SCHEDULER` stays false. The paper scheduler has no
+     background loop. The Slice 59 entrypoint does not tick it.
+  6. With `WORKER_ENABLED` false, queued backtests drain in the API via
+     FastAPI `BackgroundTasks`. The API blueprint does not enable the worker.
+- **Alternatives considered:** Keep the disarmed Slice 59 service in the
+  Blueprint (rejected: it has no unique paper-runtime responsibility and
+  adds a paid worker). Delete `app.workers.entrypoint` (rejected: this
+  change is the Blueprint only).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Watcher and Telegram stay disarmed.
+  No secrets are added. No deploy and no activation.
+- **Consequences:** Branch `cursor/render_blueprint_final_cleanup`, based on
+  `6314a2021441384b9a1bb20f6c0b82916b15f6bd`. Do not deploy or activate.
+
 

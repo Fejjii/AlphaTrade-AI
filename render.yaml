@@ -114,73 +114,9 @@ services:
       - key: OPENAI_API_KEY
         sync: false
 
-  # Background worker (Slice 59) — separate always-on process; never trades.
-  # Disabled by default; flip WORKER_ENABLED to true to activate.
-  - type: worker
-    name: alphatrade-worker-staging
-    runtime: docker
-    plan: starter
-    region: frankfurt
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    dockerCommand: python -m app.workers.entrypoint
-    envVars:
-      - key: ENVIRONMENT
-        value: staging
-      - key: EXECUTION_MODE
-        value: paper
-      - key: ENABLE_REAL_TRADING
-        value: false
-      - key: EXCHANGE_MODE
-        value: paper_internal
-      - key: WORKER_ENABLED
-        value: false
-      - key: WORKER_MODE
-        value: process
-      - key: WORKER_SCAN_INTERVAL_SECONDS
-        value: 60
-      - key: MARKET_WATCHER_ENABLED
-        value: false
-      - key: MARKET_WATCHER_BRIDGE_ENABLED
-        value: false
-      - key: WATCHER_ORCHESTRATION_ENABLED
-        value: false
-      - key: TELEGRAM_ALERTS_ENABLED
-        value: false
-      - key: TELEGRAM_INTERACTION_ENABLED
-        value: false
-      - key: AUTOMATIC_TELEGRAM_DELIVERY_ENABLED
-        value: false
-      - key: PROVIDER_MODE
-        value: fallback
-      - key: MARKET_DATA_ENABLED
-        value: true
-      - key: PERPETUAL_EVIDENCE_SOURCE
-        value: binance_usdm
-      - key: MARKET_DATA_FUTURES_BASE_URL
-        value: https://fapi.binance.com
-      - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
-        value: "10"
-      - key: LOG_JSON
-        value: true
-      - key: RATE_LIMIT_USE_REDIS
-        value: true
-      # AT-018: Redis is required outside local; no in-memory fallback.
-      - key: RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK
-        value: false
-      # AT-018: settings invariant; the worker serves no HTTP but shares Settings.
-      - key: TRUSTED_PROXY_HOPS
-        value: 1
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: QDRANT_URL
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
+  # Slice 59 `alphatrade-worker-staging` (`python -m app.workers.entrypoint`) is
+  # not a Blueprint service. The paper runtime is the API plus the disarmed
+  # Watcher and Telegram workers below. See AT-ADR-063.
 
   # Paper Watcher. Disarmed. This blueprint does not activate or deploy it.
   # Command is the validated paper entrypoint. Flags stay false.

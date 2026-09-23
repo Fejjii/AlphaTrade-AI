@@ -233,9 +233,11 @@ Print the checklist without applying it:
 
 ## What is not in the blueprint
 
-`render.yaml` adds `alphatrade-watcher-paper-staging` (`python -m app.workers.watcher_paper`)
-and `alphatrade-telegram-paper-staging` (`python -m app.telegram_activation run`).
-Both include the staging Settings contract required to boot (secure refresh
+`render.yaml` defines `alphatrade-api-staging`, `alphatrade-watcher-paper-staging`
+(`python -m app.workers.watcher_paper`), and `alphatrade-telegram-paper-staging`
+(`python -m app.telegram_activation run`). It does not define
+`alphatrade-worker-staging`. That Slice 59 process is not the paper runtime.
+The Watcher and Telegram workers include the staging Settings contract required to boot (secure refresh
 cookie, `SameSite=none`, HTTPS `CORS_ORIGINS`, Redis rate limit and access-token
 denylist, trusted proxy hop) and stay disarmed. Secrets stay out of the blueprint.
 A disarmed worker recognizes that posture before it requires PostgreSQL, Redis,

@@ -1881,4 +1881,34 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-062
 - Note: Do not merge, deploy, or activate.
 
+### AT-084 — Final Render Blueprint cleanup
+- Priority: P0 · Status: DONE · Dependencies: AT-083 · Risk: Medium
+  (Blueprint association can apply config to the existing API; this change
+  does not sync Render)
+- Safety classification: Paper execution; Watcher and Telegram stay disarmed;
+  no secrets; no live trading; no deploy; no activation
+- Goal: Decide from repository evidence whether `alphatrade-worker-staging`
+  is required, and leave `render.yaml` as the API plus the two disarmed
+  paper workers.
+- Result: Not required. Removed from `render.yaml`. ADR AT-ADR-063.
+- Branch: `cursor/render_blueprint_final_cleanup`
+- Base: `6314a2021441384b9a1bb20f6c0b82916b15f6bd`
+- Alembic: unchanged. No application runtime change.
+- Local validation on this run:
+  - `uv run ruff check` and `uv run ruff format --check` on the two edited
+    tests, exit 0.
+  - `uv run pytest` exit 0: 122 passed, 0 failed, 0 skipped. Files:
+    `tests/test_disarmed_render_worker_boot.py` (17),
+    `tests/test_deployment_safety.py` (51),
+    `tests/test_deployment_scripts.py` (14),
+    `tests/test_config.py` (8),
+    `tests/test_watcher_paper_activation.py` (29),
+    `tests/test_live_market_activation.py::test_declared_config_files_match_the_activation_contract`,
+    `tests/test_frontier_remediation.py::test_partial_deployment_and_rollback_order_keep_live_trading_impossible`,
+    `tests/test_final_three_activation_fixes.py::test_render_worker_blueprint_constructs_disarmed_staging_settings`.
+  - Not deployed. Not provisioned. Not activated.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-063
+- Note: Do not deploy, provision, or activate.
+
 

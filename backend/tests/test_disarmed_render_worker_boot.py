@@ -237,6 +237,37 @@ def boot_literal_worker(service_name: str, role: WorkerBootRole) -> dict[str, ob
     return _run_child(_DISARMED_SCRIPT, env, role.value)
 
 
+def test_blueprint_is_api_plus_disarmed_watcher_and_telegram() -> None:
+    """The legacy Slice 59 worker is not a Render service in this blueprint."""
+
+    services = blueprint_services()
+    assert set(services) == {
+        "alphatrade-api-staging",
+        "alphatrade-watcher-paper-staging",
+        "alphatrade-telegram-paper-staging",
+    }
+    assert "alphatrade-worker-staging" not in services
+    commands = {item.get("dockerCommand") for item in services.values()}
+    assert "python -m app.workers.entrypoint" not in commands
+    text = (ROOT / "render.yaml").read_text(encoding="utf-8")
+    assert text.count("\n  - type: web\n") == 1
+    api = services["alphatrade-api-staging"]
+    assert api["type"] == "web"
+    assert api["runtime"] == "docker"
+    assert "dockerCommand" not in api
+    assert api["healthCheckPath"] == "/health"
+    assert api["preDeployCommand"] == "alembic upgrade head"
+    for name in (
+        "alphatrade-watcher-paper-staging",
+        "alphatrade-telegram-paper-staging",
+    ):
+        worker = services[name]
+        assert worker["type"] == "worker"
+        assert worker["plan"] == "starter"
+        assert worker["region"] == "frankfurt"
+        assert "preDeployCommand" not in worker
+
+
 def test_literal_render_workers_boot_disarmed_without_secrets() -> None:
     text = (ROOT / "render.yaml").read_text(encoding="utf-8")
     assert "TELEGRAM_BOT_TOKEN" not in text
