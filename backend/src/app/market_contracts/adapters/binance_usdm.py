@@ -381,21 +381,24 @@ class BinanceUsdmPerpetualSource:
 
         key = closed_agg_trade_window_key(symbol, start, end)
         key_lock = self._trade_cache.lock_for(key)
-        with key_lock:
-            cached = self._trade_cache.get(key)
-            if cached is not None:
-                record_cache_hit()
-                return cached
-            rows = tuple(
-                fetch_complete_agg_trade_rows(
-                    get_json=self._get,
-                    symbol=symbol,
-                    start=start,
-                    end=end,
+        try:
+            with key_lock:
+                cached = self._trade_cache.get(key)
+                if cached is not None:
+                    record_cache_hit()
+                    return cached
+                rows = tuple(
+                    fetch_complete_agg_trade_rows(
+                        get_json=self._get,
+                        symbol=symbol,
+                        start=start,
+                        end=end,
+                    )
                 )
-            )
-            self._trade_cache.put(key, rows)
-            return rows
+                self._trade_cache.put(key, rows)
+                return rows
+        finally:
+            self._trade_cache.release_idle(key)
 
     def _get(self, path: str, params: Mapping[str, str | int] | None) -> Any:
         try:

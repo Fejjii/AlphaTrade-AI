@@ -102,6 +102,19 @@ class ClosedAggTradeCache:
                 self._locks[key] = current
             return current
 
+    def release_idle(self, key: CacheKey) -> None:
+        """Drop a lock left by a failed fetch so unique misses cannot grow forever."""
+
+        with self._guard:
+            lock = self._locks.get(key)
+            if lock is None or lock.locked() or key in self._entries:
+                return
+            self._locks.pop(key, None)
+
+    def tracked_lock_count(self) -> int:
+        with self._guard:
+            return len(self._locks)
+
     def get(self, key: CacheKey) -> tuple[Any, ...] | None:
         """Return fresh rows. Expired rows are a miss and are not served."""
 

@@ -240,6 +240,26 @@ def test_window_correction_replaces_rows_and_expiry_does_not_serve_stale() -> No
     source.close()
 
 
+def test_failed_windows_release_locks_so_memory_stays_bounded() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("network down")
+
+    cache = ClosedAggTradeCache(max_entries=2, ttl_seconds=30, clock=lambda: 0.0)
+    source = BinanceUsdmPerpetualSource(
+        transport=httpx.MockTransport(handler),
+        trade_cache=cache,
+        max_retries=0,
+        max_backoff_seconds=0,
+        weight_per_minute=1800,
+    )
+    for index in range(12):
+        with pytest.raises(RegionalProviderFailureError):
+            _read(source, f"S{index}USDT")
+    assert cache.tracked_lock_count() == 0
+    assert len(cache) == 0
+    source.close()
+
+
 def test_shared_budget_fails_closed_and_restart_drops_the_cache() -> None:
     calls = {"n": 0}
 
