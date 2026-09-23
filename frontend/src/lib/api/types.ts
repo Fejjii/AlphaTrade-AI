@@ -128,6 +128,9 @@ export interface WorkerComponentObservation {
   request_weight?: number;
   rate_limited_count?: number;
   cache_hits?: number;
+  health_state?: "RUNNING" | "STALE" | "UNAVAILABLE";
+  heartbeat_age_seconds?: number | null;
+  heartbeat_stale_after_seconds?: number;
 }
 
 export interface WorkerRuntimeObservation {

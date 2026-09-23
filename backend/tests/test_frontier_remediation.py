@@ -668,13 +668,16 @@ def test_partial_deployment_and_rollback_order_keep_live_trading_impossible() ->
         ("alphatrade-telegram-paper-staging", "python -m app.telegram_activation run"),
     ):
         start = blueprint.index(f"name: {name}")
-        block = blueprint[start : start + 1800]
+        block = blueprint[start : start + 4000]
         assert f"dockerCommand: {command}" in block
         assert "ENABLE_REAL_TRADING" in block
         assert "value: false" in block
         assert "WATCHER_ORCHESTRATION_ENABLED" in block
         assert "TELEGRAM_NETWORK_PERMITTED" in block
-        assert "value: off" in block
+        assert 'value: "off"' in block
+        assert "AUTH_REFRESH_COOKIE_ENABLED" in block
+        assert "CORS_ORIGINS" in block
+        assert "AUTH_COOKIE_SECURE" in block
     paths = [getattr(route, "path", "") for route in create_app().routes]
     assert not any("telegram" in path and "webhook" in path for path in paths)
 

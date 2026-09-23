@@ -9,9 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.providers.base import ProviderStatus
 
+WorkerHealthState = Literal["RUNNING", "STALE", "UNAVAILABLE"]
+
 
 class WorkerComponentObservation(BaseModel):
-    """One Watcher or Telegram process row. Empty when that process has not published."""
+    """One Watcher or Telegram process row.
+
+    ``available`` is true only when ``health_state`` is ``RUNNING``. A stored
+    row with a missing, future, or stale heartbeat is not running.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -39,11 +45,16 @@ class WorkerComponentObservation(BaseModel):
     request_weight: int = 0
     rate_limited_count: int = 0
     cache_hits: int = 0
+    health_state: WorkerHealthState = "UNAVAILABLE"
+    heartbeat_age_seconds: float | None = None
+    heartbeat_stale_after_seconds: int = 90
 
 
 class WorkerRuntimeObservation(BaseModel):
-    """Observed worker rows. ``available`` is false when the status read fails.
+    """Observed worker rows.
 
+    ``available`` is false when the status read fails. It does not mean either
+    worker is fresh. Each component's ``health_state`` is the liveness claim.
     These fields are not the API process configuration.
     """
 

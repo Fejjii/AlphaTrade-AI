@@ -176,10 +176,19 @@ CanonicalRuntimeDep = Annotated[ProductionCanonicalRuntime, Depends(get_canonica
 
 
 def get_canonical_evidence_service(
-    settings: SettingsDep, session: SessionDep
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
 ) -> CanonicalEvidenceService:
-    """Read-only USD-M evidence assembler. Does not start Watcher."""
-    return CanonicalEvidenceService(settings, session=session)
+    """Read-only USD-M evidence assembler. Does not start Watcher.
+
+    Live Binance reads share one process cache and one request-weight budget.
+    """
+
+    from app.market_contracts.adapters.factory import canonical_evidence_source_for_process
+
+    source = canonical_evidence_source_for_process(request.app.state, settings)
+    return CanonicalEvidenceService(settings, source=source, session=session)
 
 
 CanonicalEvidenceServiceDep = Annotated[
