@@ -81,11 +81,62 @@ export interface HealthResponse {
   market_watcher_enabled?: boolean;
   market_watcher_bridge_enabled?: boolean;
   watcher_orchestration_enabled?: boolean;
+  watcher_paper_staging_activation?: boolean;
   telegram_alerts_enabled?: boolean;
   telegram_interaction_enabled?: boolean;
   automatic_telegram_delivery_enabled?: boolean;
+  telegram_paper_activation_armed?: boolean;
+  telegram_inbound_mode?: "off" | "polling" | "webhook";
+  telegram_network_permitted?: boolean;
+  perpetual_evidence_source?: "replay" | "binance_usdm";
+  perpetual_evidence_activation?: "inactive" | "active" | "refused";
+  perpetual_evidence_intended_staging_source?: "binance_usdm";
+  perpetual_evidence_rollback_source?: "replay";
+  live_market_read_only?: true;
+  exchange_credentials_used_for_market_evidence?: false;
+  spot_fallback_permitted?: false;
+  fabricated_fallback_permitted?: false;
+  live_quote_freshness_seconds?: 10;
+  first_perpetual_symbol?: "BTCUSDT";
   git_sha?: string | null;
+  worker_runtime?: WorkerRuntimeObservation;
   timestamp: string;
+}
+
+export interface WorkerComponentObservation {
+  available?: boolean;
+  worker_id?: string;
+  heartbeat_at?: string | null;
+  activation_state?: string;
+  lease_owner?: string;
+  lease_epoch?: number;
+  lease_expires_at?: string | null;
+  fence_held?: boolean;
+  last_scan_at?: string | null;
+  last_scan_reason?: string;
+  market_source?: string;
+  freshness_seconds?: number | null;
+  telegram_runtime_state?: string;
+  inbound_mode?: string;
+  outbox_pending?: number;
+  outbox_retryable?: number;
+  outbox_dead_letter?: number;
+  last_delivery_at?: string | null;
+  last_error_code?: string;
+  kill_switch_active?: boolean;
+  request_count?: number;
+  request_weight?: number;
+  rate_limited_count?: number;
+  cache_hits?: number;
+  health_state?: "RUNNING" | "STALE" | "UNAVAILABLE";
+  heartbeat_age_seconds?: number | null;
+  heartbeat_stale_after_seconds?: number;
+}
+
+export interface WorkerRuntimeObservation {
+  available?: boolean;
+  watcher?: WorkerComponentObservation;
+  telegram?: WorkerComponentObservation;
 }
 
 export interface ReadinessResponse {
@@ -1831,6 +1882,18 @@ export interface CanonicalMarketMonitorStatusRead {
   };
   content_hash: string;
   unavailable_reason?: string | null;
+  activation?: {
+    state: "inactive" | "active" | "refused";
+    configured_source: "replay" | "binance_usdm";
+    intended_staging_source: "binance_usdm";
+    rollback_source: "replay";
+    read_only: true;
+    exchange_credentials_used: false;
+    spot_fallback_permitted: false;
+    fabricated_fallback_permitted: false;
+    first_symbol: "BTCUSDT";
+    trade_freshness_seconds: 10;
+  };
 }
 
 export interface CanonicalCandidateRead {
@@ -3402,6 +3465,9 @@ export interface WatcherConfigFlags {
   telegram_alerts_enabled: boolean;
   telegram_interaction_enabled: boolean;
   automatic_telegram_delivery_enabled: boolean;
+  telegram_paper_activation_armed?: boolean;
+  telegram_inbound_mode?: string;
+  telegram_network_permitted?: boolean;
 }
 
 export interface PaperMonitoringPosture {

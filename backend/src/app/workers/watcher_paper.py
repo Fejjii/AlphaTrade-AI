@@ -3,9 +3,10 @@
 Approved compiled strategy → read-only market evidence → WatcherOrchestrator
 scan → evaluate_canonical_strategy → Candidate only on CONFIRMED_SETUP.
 
-Never places orders, never starts Telegram, and never enables staging or
-production Watcher flags. Candidate persistence still requires persisted
-approved compiled authority.
+Never places orders and never starts Telegram. Local paper monitoring stays
+opt-in. Staging scans only after the paper-activation preflight clears, and
+production stays dark. Candidate persistence still requires persisted approved
+compiled authority.
 """
 
 from __future__ import annotations
@@ -20,11 +21,13 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Environment, ExecutionMode, Settings
-from app.db.models import KillSwitchState
+from app.runtime_safety.paper_actions import (
+    automated_paper_actions_blocked,
+    read_kill_switch_active,
+)
 from app.signal_fusion.lifecycle import CandidateLifecycleService
 from app.watcher.contracts import (
     EvaluationMode,
@@ -69,6 +72,7 @@ logger = structlog.get_logger("workers.watcher_paper")
 PaperEvidenceFactory = Callable[[Session | None, WatcherStore, str], WatcherScanEvidencePort]
 PaperTargetLoader = Callable[[Session | None], tuple[PaperScanTarget, ...]]
 KillSwitchProbe = Callable[[UUID], bool]
+ActivationGate = Callable[[], object]
 EvaluationObserverFactory = Callable[
     [Session | None, PaperScanTarget], EvaluationOutcomeObserver | None
 ]
@@ -142,8 +146,25 @@ def new_worker_instance_id(configured_id: str) -> str:
     return f"{prefix[:80]}:{uuid4().hex[:16]}"
 
 
+def paper_lease_ttl_seconds(settings: Settings) -> int:
+    """Floor the lease for several Binance timeouts plus bounded backoff.
+
+    The floor is ``timeout * 4 + max_backoff + 15``, capped at 3600. Callers
+    that pass ``lease_ttl_seconds`` explicitly keep that value. The default
+    30 second setting is unchanged for non-Binance evidence.
+    """
+
+    configured = int(settings.watcher_lease_ttl_seconds)
+    if settings.perpetual_evidence_source.strip().lower() != "binance_usdm":
+        return configured
+    timeout = float(settings.perpetual_evidence_timeout_seconds)
+    backoff = float(settings.binance_request_max_backoff_seconds)
+    floor = int(timeout * 4 + backoff + 15)
+    return min(3600, max(configured, floor))
+
+
 def paper_runtime_enabled(settings: Settings) -> bool:
-    """True only for local paper monitoring. Staging/production stay dark."""
+    """True only for local paper monitoring. Staging uses the activation gate."""
 
     return (
         bool(settings.watcher_orchestration_enabled)
@@ -152,6 +173,25 @@ def paper_runtime_enabled(settings: Settings) -> bool:
         and not settings.enable_real_trading
         and not settings.real_trading_enabled
     )
+
+
+def resolve_runtime_enabled(
+    settings: Settings,
+    *,
+    enabled: bool | None = None,
+    activation_cleared: bool = False,
+) -> bool:
+    """Local override stays explicit. Staging scans only after preflight clearance."""
+
+    if settings.environment is Environment.STAGING:
+        if not enabled or not activation_cleared:
+            return False
+        from app.workers.watcher_activation import staging_static_arm_ok
+
+        return staging_static_arm_ok(settings)
+    if enabled is not None:
+        return enabled
+    return paper_runtime_enabled(settings)
 
 
 class WatcherPaperRuntime:
@@ -180,6 +220,7 @@ class WatcherPaperRuntime:
         evaluation_clock: BoundEvaluationClock | None = None,
         scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
         evaluation_observer_factory: EvaluationObserverFactory | None = None,
+        activation_gate: ActivationGate | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -200,6 +241,7 @@ class WatcherPaperRuntime:
         self._settings = settings
         self._eval_clock = _shared_evaluation_clock(lifecycle, evaluation_clock)
         self._scan_notification_hook = scan_notification_hook
+        self._activation_gate = activation_gate
         self._observer_factory = (
             self._evaluation_observer
             if evaluation_observer_factory is None
@@ -212,6 +254,9 @@ class WatcherPaperRuntime:
                     repository=repository, clock=self._eval_clock
                 )
         self._stop = threading.Event()
+        self._market_source = ""
+        self._freshness_seconds: float | None = None
+        self._gate_refusals = 0
         self._thread: threading.Thread | None = None
         self._status_lock = threading.Lock()
         self._held_fencing_tokens: dict[str, int] = {}
@@ -254,6 +299,12 @@ class WatcherPaperRuntime:
                 last_scans=current.last_scans,
             )
 
+    def note_market_observation(self, *, source: str, freshness_seconds: float | None) -> None:
+        """Remember the latest provider probe. This does not mint a Candidate."""
+
+        self._market_source = source
+        self._freshness_seconds = freshness_seconds
+
     def stop(self) -> None:
         self._stop.set()
         with self._status_lock:
@@ -283,14 +334,16 @@ class WatcherPaperRuntime:
         try:
             while not self._stop.is_set():
                 try:
-                    self.run_cycle()
+                    report = self.run_cycle()
                 except Exception:
                     logger.error("watcher_paper_cycle_error", exc_info=True)
                     observe_cycle("failed")
+                    report = None
                 cycles += 1
                 if max_cycles is not None and cycles >= max_cycles:
                     break
-                self._stop.wait(self._poll_interval_seconds)
+                wait = self._poll_interval_seconds if report is None else self._wait_seconds(report)
+                self._stop.wait(wait)
         finally:
             with self._status_lock:
                 self._status.running = False
@@ -321,6 +374,9 @@ class WatcherPaperRuntime:
         return self.run_loop()
 
     def run_cycle(self) -> WatcherPaperCycleReport:
+        refused = self._activation_refusal()
+        if refused is not None:
+            return refused
         if not self._enabled:
             report = WatcherPaperCycleReport(
                 reason_code="watcher_disabled",
@@ -373,6 +429,40 @@ class WatcherPaperRuntime:
         )
         return report
 
+    def _activation_refusal(self) -> WatcherPaperCycleReport | None:
+        gate = self._activation_gate
+        if gate is None:
+            return None
+        try:
+            decision = gate()
+        except Exception:
+            logger.error(
+                "watcher_paper_activation_gate_error",
+                worker_id=self._worker_id,
+            )
+            reason = "activation_gate_error"
+        else:
+            reason_or_none = _gate_refusal_reason(decision)
+            if reason_or_none is None:
+                return None
+            reason = reason_or_none
+        report = WatcherPaperCycleReport(
+            reason_code=reason,
+            enabled=False,
+            scans=(),
+            candidates_created=0,
+            kill_switch_active=False,
+        )
+        observe_cycle("activation_refused")
+        self._remember_cycle(report)
+        logger.warning(
+            "watcher_paper_activation_rollback",
+            worker_id=self._worker_id,
+            reason_code=reason,
+            paper_only=True,
+        )
+        return report
+
     def _load_targets(self, session: Session | None) -> tuple[PaperScanTarget, ...]:
         if self._target_loader is not None:
             return self._target_loader(session)[: self._max_scopes_per_cycle]
@@ -422,6 +512,32 @@ class WatcherPaperRuntime:
         self, session: Session | None, target: PaperScanTarget
     ) -> WatcherPaperScanReport:
         kill_active = self._kill_switch_is_active(session, target.organization_id)
+        if automated_paper_actions_blocked(kill_active):
+            report = WatcherPaperScanReport(
+                organization_id=target.organization_id,
+                scan_scope=target.scan_scope,
+                symbol=target.symbol,
+                status="blocked",
+                reason_code="kill_switch_active",
+                replayed=False,
+                published=False,
+                candidate_ids=(),
+                kill_switch_active=True,
+                user_id=target.user_id,
+            )
+            observe_scan(report.reason_code)
+            logger.info(
+                "watcher_paper_scan",
+                worker_id=self._worker_id,
+                organization_id=str(target.organization_id),
+                scan_scope=target.scan_scope,
+                symbol=target.symbol,
+                status=report.status,
+                reason_code=report.reason_code,
+                kill_switch_active=True,
+                paper_only=True,
+            )
+            return report
         policy = self._materialize_policy(target)
         request = ScanRequest(
             organization_id=target.organization_id,
@@ -535,22 +651,22 @@ class WatcherPaperRuntime:
 
     def _kill_switch_is_active(self, session: Session | None, organization_id: UUID) -> bool:
         if self._kill_switch_probe is not None:
-            return self._kill_switch_probe(organization_id)
-        if session is None:
-            return False
-        try:
-            if self._settings is not None and self._settings.global_kill_switch_active:
+            try:
+                return bool(self._kill_switch_probe(organization_id))
+            except Exception:
+                logger.warning(
+                    "watcher_paper_kill_switch_unavailable",
+                    organization_id=str(organization_id),
+                )
                 return True
-            row = session.scalar(
-                select(KillSwitchState).where(KillSwitchState.organization_id == organization_id)
-            )
-            return bool(row is not None and row.active)
+        try:
+            return read_kill_switch_active(session, self._settings, organization_id)
         except Exception:
             logger.warning(
                 "watcher_paper_kill_switch_unavailable",
                 organization_id=str(organization_id),
             )
-            return False
+            return True
 
     def _notify_scan(self, report: WatcherPaperScanReport) -> None:
         """Optional paper notification. Default hook is unset, so scans do not send."""
@@ -592,6 +708,85 @@ class WatcherPaperRuntime:
             self._status.candidates_created += report.candidates_created
             self._status.kill_switch_active = report.kill_switch_active
             self._status.last_scans = report.scans
+        self._publish_observed_status(report)
+
+    def _wait_seconds(self, report: WatcherPaperCycleReport) -> float:
+        refusal = (not report.enabled) and report.reason_code != "watcher_disabled"
+        if not refusal:
+            self._gate_refusals = 0
+            return self._poll_interval_seconds
+        self._gate_refusals += 1
+        scaled = float(self._poll_interval_seconds) * float(2 ** min(self._gate_refusals, 3))
+        return min(60.0, scaled)
+
+    def _publish_observed_status(self, report: WatcherPaperCycleReport) -> None:
+        if self._session_factory is None:
+            return
+        from app.market_contracts.adapters.request_budget import market_request_metrics
+        from app.persistence.runtime_status import (
+            WATCHER_COMPONENT,
+            RuntimeStatusWrite,
+            publish_runtime_status,
+        )
+
+        metrics = market_request_metrics()
+        lease_owner = ""
+        lease_epoch = 0
+        for scan in report.scans:
+            if scan.lease_owner:
+                lease_owner = scan.lease_owner
+                lease_epoch = int(self._held_fencing_tokens.get(scan.scan_scope, 0))
+                break
+        if report.kill_switch_active:
+            state = "monitoring"
+        elif not report.enabled and report.reason_code != "watcher_disabled":
+            state = "refused"
+        elif report.enabled:
+            state = "running"
+        else:
+            state = "disarmed"
+        inbound = "off"
+        if self._settings is not None:
+            inbound = self._settings.telegram_inbound_mode.value
+        try:
+            publish_runtime_status(
+                self._session_factory,
+                RuntimeStatusWrite(
+                    component=WATCHER_COMPONENT,
+                    worker_id=self._worker_id,
+                    heartbeat_at=self._clock.now(),
+                    activation_state=state,
+                    lease_owner=lease_owner,
+                    lease_epoch=lease_epoch,
+                    fence_held=bool(lease_owner),
+                    last_scan_at=self._clock.now(),
+                    last_scan_reason=report.reason_code,
+                    market_source=self._market_source,
+                    freshness_seconds=self._freshness_seconds,
+                    telegram_runtime_state="absent",
+                    inbound_mode=inbound,
+                    kill_switch_active=report.kill_switch_active,
+                    request_count=metrics.requests,
+                    request_weight=metrics.weight_used,
+                    rate_limited_count=metrics.rate_limited,
+                    cache_hits=metrics.cache_hits,
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "watcher_runtime_status_unpublished",
+                worker_id=self._worker_id,
+            )
+
+
+def _gate_refusal_reason(decision: object) -> str | None:
+    allowed = getattr(decision, "allowed", None)
+    if allowed is True:
+        return None
+    reason = getattr(decision, "primary_reason", None)
+    if isinstance(reason, str) and reason and reason != "cleared":
+        return reason
+    return "activation_gate_error"
 
 
 def _report_from_cycle(
@@ -720,6 +915,9 @@ def build_watcher_paper_runtime(
     worker_id: str | None = None,
     scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
     evaluation_observer_factory: EvaluationObserverFactory | None = None,
+    enabled: bool | None = None,
+    activation_cleared: bool = False,
+    activation_gate: ActivationGate | None = None,
 ) -> WatcherPaperRuntime:
     """Compose the paper runtime. Does not enable staging/production flags.
 
@@ -752,14 +950,16 @@ def build_watcher_paper_runtime(
         store=resolved_store,
         lifecycle=resolved_lifecycle,
         clock=resolved_clock,
-        enabled=paper_runtime_enabled(settings),
+        enabled=resolve_runtime_enabled(
+            settings, enabled=enabled, activation_cleared=activation_cleared
+        ),
         worker_id=worker_id
         if worker_id is not None
         else new_worker_instance_id(settings.watcher_paper_worker_id),
         symbols=settings.watcher_paper_symbols,
         poll_interval_seconds=settings.watcher_paper_poll_interval_seconds,
         max_scopes_per_cycle=settings.watcher_paper_max_scopes_per_cycle,
-        lease_ttl_seconds=settings.watcher_lease_ttl_seconds,
+        lease_ttl_seconds=paper_lease_ttl_seconds(settings),
         heartbeat_stale_after_seconds=settings.watcher_heartbeat_stale_after_seconds,
         session_factory=session_factory,
         evidence_factory=evidence_factory
@@ -772,28 +972,125 @@ def build_watcher_paper_runtime(
         evaluation_clock=eval_clock,
         scan_notification_hook=scan_notification_hook,
         evaluation_observer_factory=evaluation_observer_factory,
+        activation_gate=activation_gate,
     )
 
 
-def main() -> None:
-    from app.core.config import get_settings
+def idle_until_signal(
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+    *,
+    reason: str,
+) -> None:
+    """Stay up and heartbeat when staging is disarmed or refused. Does not scan."""
+
+    from app.persistence.runtime_status import (
+        WATCHER_COMPONENT,
+        RuntimeStatusWrite,
+        publish_runtime_status,
+    )
+    from app.signal_fusion.memory import UtcClock
+
+    stop = threading.Event()
+
+    def _handle(_signum: int, _frame: FrameType | None) -> None:
+        stop.set()
+
+    signal.signal(signal.SIGINT, _handle)
+    signal.signal(signal.SIGTERM, _handle)
+    worker_id = new_worker_instance_id(settings.watcher_paper_worker_id)
+    clock = UtcClock()
+    state = "disarmed" if reason == "activation_disarmed" else "refused"
+    logger.warning(
+        "watcher_paper_idle",
+        worker_id=worker_id,
+        reason_code=reason,
+        paper_only=True,
+    )
+    while not stop.is_set():
+        try:
+            publish_runtime_status(
+                session_factory,
+                RuntimeStatusWrite(
+                    component=WATCHER_COMPONENT,
+                    worker_id=worker_id,
+                    heartbeat_at=clock.now(),
+                    activation_state=state,
+                    last_scan_reason=reason,
+                    market_source=settings.perpetual_evidence_source,
+                    telegram_runtime_state="absent",
+                    inbound_mode=settings.telegram_inbound_mode.value,
+                ),
+            )
+        except Exception:
+            logger.warning("watcher_runtime_status_unpublished", worker_id=worker_id)
+        stop.wait(settings.watcher_paper_poll_interval_seconds)
+
+
+def run_watcher_paper_process(*, once: bool = False) -> str:
+    """Start the paper Watcher, or idle when staging is disarmed.
+
+    Disarmed startup constructs Settings and returns ``disarmed`` without
+    opening PostgreSQL, Redis, or provider clients. ``once`` skips the idle
+    wait so tests can observe the posture. Armed staging still requires every
+    operational dependency and fails closed when one is missing.
+    """
+
+    from app.core.disarmed_worker_boot import (
+        WorkerBootRole,
+        idle_disarmed_until_signal,
+        load_worker_process_settings,
+        settings_are_disarmed_paper_worker,
+    )
     from app.core.logging import configure_logging
     from app.core.paper_safety import assert_execution_capable_composition_root
-    from app.db.session import get_session_factory
 
-    settings = get_settings()
+    settings = load_worker_process_settings(WorkerBootRole.WATCHER_PAPER)
     configure_logging(log_level=settings.log_level, json_logs=settings.log_json)
     assert_execution_capable_composition_root(settings)
+    if settings_are_disarmed_paper_worker(settings):
+        logger.warning(
+            "watcher_paper_idle",
+            reason_code="activation_disarmed",
+            posture="disarmed",
+            paper_only=True,
+            enable_real_trading=settings.enable_real_trading,
+            real_trading_enabled=settings.real_trading_enabled,
+        )
+        if not once:
+            idle_disarmed_until_signal(settings, component="watcher_paper")
+        return "disarmed"
+    from app.db.session import get_session_factory
+
+    if settings.environment is Environment.STAGING:
+        from app.workers.watcher_activation import run_staging_activation
+
+        decision = run_staging_activation(settings)
+        if not decision.allowed:
+            idle_until_signal(
+                settings,
+                get_session_factory(),
+                reason=decision.primary_reason,
+            )
+            return decision.primary_reason
+        return "armed"
     if not paper_runtime_enabled(settings):
         logger.warning(
             "watcher_paper_runtime_disabled",
             watcher_orchestration_enabled=settings.watcher_orchestration_enabled,
             environment=settings.environment.value,
-            hint="local paper only; staging/production flags stay false",
+            hint="local paper only; staging starts only after the paper activation preflight",
         )
-        return
+        return "disabled"
     runtime = build_watcher_paper_runtime(settings, get_session_factory())
+    if once:
+        return "local_paper"
     runtime.run_forever()
+    return "local_paper"
+
+
+def main() -> None:
+    run_watcher_paper_process(once=False)
 
 
 if __name__ == "__main__":

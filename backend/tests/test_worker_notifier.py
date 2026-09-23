@@ -143,6 +143,10 @@ def test_notifier_quiet_hours_blocks_info_but_not_critical() -> None:
 _ALLOWED_OUTBOUND_TELEGRAM_ROUTE_PATHS = {
     "/alerts/test-telegram",
     "/alerts/{alert_id}/deliver-telegram",
+    # Read-only posture. create_app does not mount /webhooks/telegram/paper.
+    "/health/telegram-paper-activation",
+    # Authenticated challenge start. Completion is the Telegram process poll.
+    "/telegram-paper/enrollment/start",
 }
 
 

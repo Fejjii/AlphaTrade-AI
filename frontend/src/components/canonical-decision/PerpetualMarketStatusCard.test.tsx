@@ -51,6 +51,20 @@ describe("PerpetualMarketStatusCard", () => {
     expect(screen.queryByText("Live mark")).not.toBeInTheDocument();
   });
 
+  it("shows rollback activation without calling the fixture a live mark", () => {
+    render(
+      <PerpetualMarketStatusCard
+        status={{
+          ...replayStatus(),
+          activationLabel: "inactive · replay · 10s freshness · read-only",
+        }}
+      />,
+    );
+    expect(screen.getByTestId("monitor-activation")).toHaveTextContent(/inactive · replay/i);
+    expect(screen.getByTestId("monitor-activation")).toHaveTextContent(/no exchange credentials/i);
+    expect(screen.queryByText("Live mark")).not.toBeInTheDocument();
+  });
+
   it("hides unusable live prices instead of showing a compatibility mark", () => {
     const unavailable: PerpetualMarketStatusView = {
       ...replayStatus(),

@@ -14,6 +14,10 @@ from typing import Protocol, cast
 from uuid import UUID, uuid4
 
 from app.guardrails.redaction import redact_text
+from app.market_contracts.request_progress import (
+    bind_market_request_progress,
+    reset_market_request_progress,
+)
 from app.watcher.contracts import (
     EvaluationCommand,
     EvaluationMode,
@@ -471,30 +475,55 @@ class WatcherOrchestrator:
             worker_id=worker_id,
             correlation_id=self._id_factory(),
         )
-        try:
-            outcome = self.evaluate(command)
-        except SimulatedWorkerCrashError:
-            raise
-        except Exception as exc:
-            outcome = EvaluationOutcome(
-                command_id=command.command_id,
-                request_hash=command.request_hash,
-                evaluation_input_hash=command.evaluation_input_hash,
-                status=EvaluationStatus.FAILED,
-                reason_code="evaluation_exception",
-                error=_sanitize(str(exc)),
-                candidate_ids=(),
-            )
-        self._crash.checkpoint("after_evaluation")
+        lease_lost = False
 
-        if not self._store.renew_lease(
-            organization_id=request.organization_id,
-            scan_scope=request.scan_scope,
-            owner_id=worker_id,
-            fencing_token=lease.fencing_token,
-            ttl_seconds=self._config.lease_ttl_seconds,
-            now=self._clock.now(),
-        ):
+        def _beat() -> None:
+            nonlocal lease_lost
+            if lease_lost:
+                return
+            renewed = self._store.renew_lease(
+                organization_id=request.organization_id,
+                scan_scope=request.scan_scope,
+                owner_id=worker_id,
+                fencing_token=lease.fencing_token,
+                ttl_seconds=self._config.lease_ttl_seconds,
+                now=self._clock.now(),
+            )
+            if not renewed:
+                lease_lost = True
+                return
+            self._store.record_heartbeat(
+                organization_id=request.organization_id,
+                scan_scope=request.scan_scope,
+                owner_id=worker_id,
+                lease_epoch=lease.lease_epoch,
+                fencing_token=lease.fencing_token,
+                now=self._clock.now(),
+                detail="lease_heartbeat",
+            )
+
+        progress = bind_market_request_progress(_beat)
+        try:
+            try:
+                outcome = self.evaluate(command)
+            except SimulatedWorkerCrashError:
+                raise
+            except Exception as exc:
+                outcome = EvaluationOutcome(
+                    command_id=command.command_id,
+                    request_hash=command.request_hash,
+                    evaluation_input_hash=command.evaluation_input_hash,
+                    status=EvaluationStatus.FAILED,
+                    reason_code="evaluation_exception",
+                    error=_sanitize(str(exc)),
+                    candidate_ids=(),
+                )
+        finally:
+            reset_market_request_progress(progress)
+        self._crash.checkpoint("after_evaluation")
+        if not lease_lost:
+            _beat()
+        if lease_lost:
             return self._reject_stale(
                 attempt=attempt,
                 lineage=lineage,
@@ -539,19 +568,32 @@ class WatcherOrchestrator:
                 reason_code="stale_fence",
             )
 
+        progress = bind_market_request_progress(_beat)
         try:
-            outcome = self._persist_canonical_candidate(command, outcome)
-        except SimulatedWorkerCrashError:
-            raise
-        except Exception as exc:
-            outcome = EvaluationOutcome(
-                command_id=command.command_id,
-                request_hash=command.request_hash,
-                evaluation_input_hash=command.evaluation_input_hash,
-                status=EvaluationStatus.FAILED,
-                reason_code="candidate_creation_failed",
-                error=_sanitize(str(exc)),
-                candidate_ids=(),
+            try:
+                outcome = self._persist_canonical_candidate(command, outcome)
+            except SimulatedWorkerCrashError:
+                raise
+            except Exception as exc:
+                outcome = EvaluationOutcome(
+                    command_id=command.command_id,
+                    request_hash=command.request_hash,
+                    evaluation_input_hash=command.evaluation_input_hash,
+                    status=EvaluationStatus.FAILED,
+                    reason_code="candidate_creation_failed",
+                    error=_sanitize(str(exc)),
+                    candidate_ids=(),
+                )
+        finally:
+            reset_market_request_progress(progress)
+        if lease_lost:
+            return self._reject_stale(
+                attempt=attempt,
+                lineage=lineage,
+                request=request,
+                worker_id=worker_id,
+                fencing_token=lease.fencing_token,
+                reason_code="lease_renewal_lost",
             )
 
         if not self._store.fence_is_active(

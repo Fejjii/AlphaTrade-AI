@@ -37,6 +37,14 @@ class ExecutionMode(StrEnum):
     TRADE = "trade"
 
 
+class TelegramInboundMode(StrEnum):
+    """How paper Telegram receives updates. Off is the only default."""
+
+    OFF = "off"
+    POLLING = "polling"
+    WEBHOOK = "webhook"
+
+
 class ExchangeMode(StrEnum):
     """Exchange connectivity for paper flows.
 
@@ -145,7 +153,18 @@ class Settings(BaseSettings):
     automatic_telegram_delivery_enabled: bool = False
     # Isolated inbound interaction protocol (AT-043). Not wired to HTTP or execution.
     telegram_interaction_enabled: bool = False
+    # Controlled paper activation. Default disarmed. Production rejects every
+    # arming flag. Staging accepts the arm only as the full paper package
+    # (Watcher arm + binance_usdm + verified bot/chat + inbound). Network
+    # delivery stays off unless that package explicitly permits it.
+    telegram_paper_activation_armed: bool = False
+    telegram_inbound_mode: TelegramInboundMode = TelegramInboundMode.OFF
+    telegram_webhook_secret: str = ""
+    telegram_network_permitted: bool = False
+    telegram_outbound_per_chat: int = Field(default=20, ge=1, le=100)
+    telegram_outbound_window_seconds: int = Field(default=60, ge=1, le=3600)
     telegram_bot_token: str = ""
+    telegram_bot_id: str = Field(default="", max_length=64)
     telegram_chat_id: str = ""
     telegram_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
     telegram_max_retries: int = Field(default=2, ge=0, le=5)
@@ -159,13 +178,20 @@ class Settings(BaseSettings):
     )
 
     # --- Watcher orchestration foundation (Phase 7 worker; disabled by default) ---
-    # Isolated from the legacy scanner. Must stay false in staging/production.
-    # Local paper Watcher runtime (``python -m app.workers.watcher_paper``) may
-    # set true only when ENVIRONMENT=local and EXECUTION_MODE=paper. Fusion
-    # wiring may persist a canonical candidate only when this flag is on and
-    # evaluate_setup returns CONFIRMED_SETUP. Does not enable Telegram,
-    # TradePlan, execution, journal, or live trading.
+    # Isolated from the legacy scanner. Production must stay false. Staging
+    # must stay false unless ``watcher_paper_staging_activation`` is armed and
+    # the paper preflight passes. Local paper Watcher
+    # (``python -m app.workers.watcher_paper``) may set this true only when
+    # ENVIRONMENT=local and EXECUTION_MODE=paper. Fusion wiring may persist a
+    # canonical candidate only when this flag is on and evaluate_setup returns
+    # CONFIRMED_SETUP. Does not enable Telegram, TradePlan, journal, or live
+    # trading.
     watcher_orchestration_enabled: bool = False
+    # Staging paper-monitoring arm. Default false. Does not start the worker,
+    # does not change Telegram, and is rejected in production. Leave unset.
+    watcher_paper_staging_activation: bool = False
+    # Paper live evidence raises this floor so one timeout plus backoff fits
+    # between lease heartbeats. See paper_lease_ttl_seconds.
     watcher_lease_ttl_seconds: int = Field(default=30, ge=1, le=3600)
     watcher_heartbeat_stale_after_seconds: int = Field(default=90, ge=5, le=3600)
     watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
@@ -258,6 +284,14 @@ class Settings(BaseSettings):
     # Never falls back to spot. Values: replay | binance_usdm
     perpetual_evidence_source: str = "replay"
     perpetual_evidence_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
+    # Public USD-M request-weight budget. 2400/min is the exchange IP cap.
+    binance_request_weight_per_minute: int = Field(default=1800, ge=20, le=2400)
+    binance_request_max_retries: int = Field(default=3, ge=0, le=8)
+    binance_request_max_backoff_seconds: float = Field(default=30.0, ge=0.0, le=120.0)
+    binance_evidence_cache_entries: int = Field(default=8, ge=1, le=64)
+    # Closed aggTrade windows are reused only until this TTL. A later payload
+    # with a different fingerprint replaces the entry (exchange correction).
+    binance_evidence_cache_ttl_seconds: float = Field(default=120.0, gt=0.0, le=3600.0)
     # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
     perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
     perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)
@@ -476,17 +510,19 @@ class Settings(BaseSettings):
             return value.upper()
         return value
 
+    @field_validator("telegram_inbound_mode", mode="before")
+    @classmethod
+    def _normalize_telegram_inbound_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
     @field_validator("perpetual_evidence_source")
     @classmethod
     def _validate_perpetual_evidence_source(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        allowed = {"replay", "mock", "fixture", "binance_usdm", "binance-usdm", "usdm"}
-        if normalized not in allowed:
-            raise ValueError(
-                "perpetual_evidence_source must be replay or binance_usdm "
-                "(spot fallback is not a legal value)."
-            )
-        return normalized
+        from app.market_activation.profile import canonicalize_perpetual_evidence_source
+
+        return canonicalize_perpetual_evidence_source(value)
 
     @model_validator(mode="after")
     def _enforce_trading_safety(self) -> Settings:
@@ -544,6 +580,14 @@ class Settings(BaseSettings):
         from app.core.deployment_safety import validate_deployment_settings
 
         validate_deployment_settings(self)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_live_market_activation(self) -> Settings:
+        """Refuse an unsafe Binance USD-M evidence selection in every environment."""
+        from app.market_activation.profile import validate_live_market_activation
+
+        validate_live_market_activation(self)
         return self
 
     @property

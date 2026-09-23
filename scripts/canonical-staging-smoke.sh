@@ -82,27 +82,9 @@ auth_header() {
 echo "Canonical synthetic smoke — BASE_URL=${BASE_URL}"
 echo "This script does not enable real trading (ENABLE_REAL_TRADING stays false)."
 
-echo "1/10 — /health paper + watcher/telegram disabled"
+echo "1/10 — /health paper posture (Watcher disarmed, or armed paper pair only)"
 health_json="$(curl_api "${BASE_URL}/health")"
-python3 - <<'PY' "$health_json"
-import json, sys
-payload = json.loads(sys.argv[1])
-assert payload.get("execution_mode") == "paper", payload
-assert payload.get("real_trading_enabled") is False, payload
-exchange_mode = payload.get("exchange_mode")
-assert exchange_mode in (None, "paper_internal", "paper_exchange_demo"), payload
-for flag in (
-    "market_watcher_enabled",
-    "market_watcher_bridge_enabled",
-    "watcher_orchestration_enabled",
-    "telegram_alerts_enabled",
-    "telegram_interaction_enabled",
-    "automatic_telegram_delivery_enabled",
-):
-    if flag in payload:
-        assert payload.get(flag) is False, payload
-print("  OK")
-PY
+python3 "${ROOT_DIR}/scripts/lib/watcher_paper_health.py" "$health_json"
 
 echo "2/10 — unauthenticated canonical reads are 401"
 unauth="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/canonical/candidates")"
@@ -133,7 +115,7 @@ assert "items" in payload and "total" in payload, payload
 print(f"  OK: total={payload.get('total')}")
 PY
 
-echo "4b/10 — canonical evidence is replay/fail-closed, never a live mark"
+echo "4b/10 — canonical evidence is read-only and fail-closed"
 ev_json="$(curl_api -H "$(auth_header "$token_a")" "${BASE_URL}/canonical/evidence")"
 python3 - <<'PY' "$ev_json"
 import json, sys
@@ -142,10 +124,21 @@ assert payload.get("authority") == "canonical", payload
 assert payload.get("live_executable") is False, payload
 assert payload.get("watcher_activated") is False, payload
 price = payload.get("current_price") or {}
-assert price.get("usable_as_current_market_price") is False, payload
-assert price.get("presentation") != "live_mark", payload
 assert price.get("fallback_used") is False, payload
-print("  OK: presentation=%s" % price.get("presentation"))
+presentation = price.get("presentation")
+source = payload.get("source") or {}
+assert source.get("fallback_used") is False, payload
+if presentation == "live_mark":
+    assert price.get("usable_as_current_market_price") is True, payload
+    assert price.get("is_live") is True, payload
+    assert price.get("is_mock") is False, payload
+    assert source.get("source_family") == "binance_usdm_futures_public", payload
+elif presentation == "replay_fixture":
+    assert price.get("usable_as_current_market_price") is False, payload
+    assert price.get("is_live") is False, payload
+else:
+    assert price.get("usable_as_current_market_price") is False, payload
+print("  OK: presentation=%s" % presentation)
 PY
 
 echo "5/10 — paper-plan rejects executable fields (422)"

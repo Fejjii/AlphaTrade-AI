@@ -30,7 +30,8 @@ execution, BloFin submission, or journal automation. Canonical read HTTP and the
 | Context | final 4h bars (minimum 30) |
 | Pattern name | Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance |
 | Preferred live source | `https://fapi.binance.com` `/fapi/v1/klines` and `/fapi/v1/aggTrades` |
-| Default runtime source | `PERPETUAL_EVIDENCE_SOURCE=replay` |
+| Process default | `PERPETUAL_EVIDENCE_SOURCE=replay` (local, CI, production, rollback) |
+| Staging intended source | `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` (public read-only; see `docs/live_market_staging_activation.md`) |
 
 Spot `/api/v3/*` and Coin-M `dapi.binance.com` cannot satisfy this contract.
 The legacy `binance-public` spot adapter is unchanged and is not an evidence source
@@ -118,7 +119,10 @@ can hash-compare identical inputs.
 
 Default registry registers `binance-usdm-perpetual-replay` (explicit mock).
 `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` selects the live read-only adapter.
-Live unavailability does not substitute spot data.
+Staging's intended value is that live adapter; the process default and the
+rollback value stay `replay`. Production refuses the live source. Live
+unavailability does not substitute spot data. See
+`docs/live_market_staging_activation.md`.
 
 ## Canonical live read-only pipeline (AT-064)
 
@@ -155,7 +159,7 @@ trade-stream assembler. It does not enable Watcher, Telegram, or execution.
 | Gaps | Sequence holes and out-of-order trades fail closed. Unrecoverable until restart |
 | Identity | Semantic hash excludes connection ids, receive times, and backoff. A later trade or price correction changes the hash |
 | HTTP | Authenticated `GET /canonical/market-status`. 422 unknown symbol. `watcher_activated=false` |
-| Default | `PERPETUAL_EVIDENCE_SOURCE=replay`. Live `binance_usdm` is opt-in read-only |
+| Default | Process default `PERPETUAL_EVIDENCE_SOURCE=replay`. Staging intended source is read-only `binance_usdm`; rollback is `replay` |
 
 Remaining Watcher work: wire the disabled worker to this monitor + AT-064 assembler
 and an approved compiled policy. Do not enable Watcher in this layer.

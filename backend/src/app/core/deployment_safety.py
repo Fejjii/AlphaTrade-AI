@@ -8,6 +8,7 @@ unaffected unless ``ENVIRONMENT`` is set to ``staging`` or ``production``.
 from __future__ import annotations
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
+from app.market_activation.profile import REPLAY_MODES, perpetual_evidence_health
 
 _LOCALHOST_MARKERS = ("localhost", "127.0.0.1")
 _WEAK_JWT_SECRETS = frozenset(
@@ -48,23 +49,17 @@ def validate_deployment_settings(settings: Settings) -> None:
     if settings.execution_mode is not ExecutionMode.PAPER:
         errors.append("execution_mode must be paper in staging/production")
 
-    # Staging/production remain paper-readiness environments: Watcher and Telegram
-    # stay off until a separately authorized enablement task. Accidental real
-    # trading remains impossible via the pins above plus paper/exchange safety.
+    # Legacy scanner, bridge, and Telegram stay off. Production Watcher stays off.
+    # Staging may construct an armed paper-monitoring pair; preflight still
+    # refuses to scan until live evidence, lineage, and migrations are healthy.
     if settings.market_watcher_enabled:
         errors.append("market_watcher_enabled must be false in staging/production")
     if settings.market_watcher_bridge_enabled:
         errors.append("market_watcher_bridge_enabled must be false in staging/production")
     if settings.market_watcher_bridge_auto_tick:
         errors.append("market_watcher_bridge_auto_tick must be false in staging/production")
-    if settings.watcher_orchestration_enabled:
-        errors.append("watcher_orchestration_enabled must be false in staging/production")
-    if settings.telegram_alerts_enabled:
-        errors.append("telegram_alerts_enabled must be false in staging/production")
-    if settings.telegram_interaction_enabled:
-        errors.append("telegram_interaction_enabled must be false in staging/production")
-    if settings.automatic_telegram_delivery_enabled:
-        errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
+    errors.extend(_watcher_activation_errors(settings))
+    errors.extend(_telegram_activation_errors(settings))
 
     # The demo exchange is allowed in staging only (for validation), never in
     # production. ``trade_live`` is rejected globally by exchange_safety.
@@ -74,7 +69,13 @@ def validate_deployment_settings(settings: Settings) -> None:
     ):
         errors.append("exchange_mode=paper_exchange_demo is not allowed in production")
 
-    if settings.jwt_secret.strip().lower() in _WEAK_JWT_SECRETS:
+    # Dedicated disarmed workers bind a process-local role before this runs.
+    # The API never binds it. Armed settings ignore it and keep every check below.
+    from app.core.disarmed_worker_boot import defer_operational_dependencies
+
+    defer_ops = defer_operational_dependencies(settings)
+
+    if not defer_ops and settings.jwt_secret.strip().lower() in _WEAK_JWT_SECRETS:
         errors.append("jwt_secret is a known weak placeholder; use a long random value")
 
     if not settings.auth_refresh_cookie_enabled:
@@ -89,31 +90,14 @@ def validate_deployment_settings(settings: Settings) -> None:
     elif samesite == "none" and not _cookie_secure_resolved(settings):
         errors.append("auth_cookie_samesite=none requires auth_cookie_secure=true")
 
-    if not settings.database_url.strip():
-        errors.append("database_url is required in staging/production")
-    elif _url_uses_localhost(settings.database_url):
-        errors.append("database_url must point to managed Postgres (not localhost)")
-
-    if not settings.redis_url.strip():
-        errors.append("redis_url is required in staging/production")
-    elif _url_uses_localhost(settings.redis_url):
-        errors.append("redis_url must point to managed Redis (not localhost)")
-
-    if not settings.openai_api_key.strip():
-        errors.append("openai_api_key is required in staging/production (AT-013 fail-closed)")
+    if not defer_ops:
+        errors.extend(_operational_dependency_errors(settings))
 
     provider_mode = settings.provider_mode.strip().lower()
     if provider_mode == "mock":
         errors.append(
             "provider_mode=mock is not allowed in staging/production (AT-013 fail-closed)"
         )
-
-    qdrant = settings.qdrant_url.strip()
-    if not qdrant:
-        # Staging and production both require hosted Qdrant for authoritative RAG.
-        errors.append("qdrant_url is required in staging/production (AT-013 fail-closed)")
-    elif _url_uses_localhost(qdrant):
-        errors.append("qdrant_url must point to hosted Qdrant (not localhost)")
 
     if not settings.cors_origins:
         errors.append("cors_origins must include the deployed frontend URL(s)")
@@ -156,6 +140,35 @@ def validate_deployment_settings(settings: Settings) -> None:
         raise ValueError(f"deployment safety check failed: {joined}")
 
 
+def _operational_dependency_errors(settings: Settings) -> list[str]:
+    """PostgreSQL, Redis, provider, and Qdrant requirements for active staging.
+
+    Disarmed worker startup does not call this. The API and armed workers do.
+    """
+
+    errors: list[str] = []
+    if not settings.database_url.strip():
+        errors.append("database_url is required in staging/production")
+    elif _url_uses_localhost(settings.database_url):
+        errors.append("database_url must point to managed Postgres (not localhost)")
+
+    if not settings.redis_url.strip():
+        errors.append("redis_url is required in staging/production")
+    elif _url_uses_localhost(settings.redis_url):
+        errors.append("redis_url must point to managed Redis (not localhost)")
+
+    if not settings.openai_api_key.strip():
+        errors.append("openai_api_key is required in staging/production (AT-013 fail-closed)")
+
+    qdrant = settings.qdrant_url.strip()
+    if not qdrant:
+        # Staging and production both require hosted Qdrant for authoritative RAG.
+        errors.append("qdrant_url is required in staging/production (AT-013 fail-closed)")
+    elif _url_uses_localhost(qdrant):
+        errors.append("qdrant_url must point to hosted Qdrant (not localhost)")
+    return errors
+
+
 def deployment_posture(settings: Settings) -> dict[str, object]:
     """Return a redaction-safe summary for startup logs (no secrets)."""
     return {
@@ -186,7 +199,75 @@ def deployment_posture(settings: Settings) -> dict[str, object]:
         "telegram_alerts_enabled": settings.telegram_alerts_enabled,
         "telegram_interaction_enabled": settings.telegram_interaction_enabled,
         "automatic_telegram_delivery_enabled": settings.automatic_telegram_delivery_enabled,
+        "telegram_paper_activation_armed": settings.telegram_paper_activation_armed,
+        "telegram_inbound_mode": settings.telegram_inbound_mode.value,
+        "telegram_network_permitted": settings.telegram_network_permitted,
+        "telegram_webhook_secret_configured": bool(settings.telegram_webhook_secret.strip()),
         "market_watcher_enabled": settings.market_watcher_enabled,
         "market_watcher_bridge_enabled": settings.market_watcher_bridge_enabled,
         "watcher_orchestration_enabled": settings.watcher_orchestration_enabled,
+        "watcher_paper_staging_activation": settings.watcher_paper_staging_activation,
+        **dict(perpetual_evidence_health(settings)),
     }
+
+
+def _telegram_activation_errors(settings: Settings) -> list[str]:
+    """Refuse Telegram except the staging paper projection on the Watcher package.
+
+    Alerts and automatic delivery stay refused in every deployed environment.
+    Incomplete arming flags keep the original error text so a partial flag
+    cannot start. Production cannot select the package.
+    """
+
+    errors: list[str] = []
+    if settings.telegram_alerts_enabled:
+        errors.append("telegram_alerts_enabled must be false in staging/production")
+    if settings.automatic_telegram_delivery_enabled:
+        errors.append("automatic_telegram_delivery_enabled must be false in staging/production")
+    from app.controlled_activation.profile import (
+        controlled_telegram_projection,
+        telegram_enrollment_runtime,
+    )
+
+    if controlled_telegram_projection(settings) or telegram_enrollment_runtime(settings):
+        return errors
+    if settings.telegram_interaction_enabled:
+        errors.append("telegram_interaction_enabled must be false in staging/production")
+    if settings.telegram_paper_activation_armed:
+        errors.append("telegram_paper_activation_armed must be false in staging/production")
+    if settings.telegram_inbound_mode.value != "off":
+        errors.append("telegram_inbound_mode must be off in staging/production")
+    if settings.telegram_network_permitted:
+        errors.append("telegram_network_permitted must be false in staging/production")
+    if settings.telegram_webhook_secret.strip():
+        errors.append("telegram_webhook_secret must be empty in staging/production")
+    return errors
+
+
+def _watcher_activation_errors(settings: Settings) -> list[str]:
+    """Refuse every Watcher arm except disarmed, or staging paper with live evidence."""
+
+    errors: list[str] = []
+    armed = settings.watcher_paper_staging_activation
+    orchestration = settings.watcher_orchestration_enabled
+    if settings.environment is Environment.PRODUCTION:
+        if armed:
+            errors.append("watcher_paper_staging_activation must be false in production")
+        if orchestration:
+            errors.append("watcher_orchestration_enabled must be false in staging/production")
+        return errors
+    if orchestration and not armed:
+        errors.append("watcher_orchestration_enabled must be false in staging/production")
+    elif armed and not orchestration:
+        errors.append(
+            "watcher_paper_staging_activation requires watcher_orchestration_enabled "
+            "for paper monitoring only"
+        )
+    elif armed and orchestration:
+        source = settings.perpetual_evidence_source.strip().lower()
+        if source in REPLAY_MODES:
+            errors.append(
+                "watcher paper activation refuses replay evidence while live canonical "
+                "evidence is required"
+            )
+    return errors

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Protocol
 
 import structlog
 from fastapi import FastAPI
@@ -55,6 +56,7 @@ from app.api.routes import (
     strategy_library,
     strategy_modules,
     strategy_quality,
+    telegram_enrollment,
     tools,
     tradingview,
     usage,
@@ -128,7 +130,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("shutdown")
 
 
-def _maybe_start_in_process_worker(settings: Settings):
+class _BackgroundStoppable(Protocol):
+    def stop(self) -> None: ...
+
+
+def _maybe_start_in_process_worker(settings: Settings) -> _BackgroundStoppable | None:
     """Start the background worker on a daemon thread when so configured.
 
     Only runs when ``WORKER_ENABLED=true`` and ``WORKER_MODE=in_process``; the
@@ -144,17 +150,21 @@ def _maybe_start_in_process_worker(settings: Settings):
     return driver
 
 
-def _maybe_start_watcher_paper_runtime(settings: Settings, *, monitor: object | None = None):
+def _maybe_start_watcher_paper_runtime(
+    settings: Settings, *, monitor: object | None = None
+) -> _BackgroundStoppable | None:
     """Start the paper Watcher loop locally when orchestration is explicitly on.
 
-    Staging/production cannot enable ``WATCHER_ORCHESTRATION_ENABLED``. Dedicated
-    process ``python -m app.workers.watcher_paper`` is the normal worker.
+    Staging activation is the dedicated worker only. This API process does not
+    autostart it. Production cannot enable the arm.
     """
 
     from app.db.session import get_session_factory
     from app.market_monitor.monitor import PerpetualMarketMonitor
     from app.workers.watcher_paper import build_watcher_paper_runtime, paper_runtime_enabled
 
+    if settings.environment is not Environment.LOCAL:
+        return None
     if not paper_runtime_enabled(settings):
         return None
     resolved_monitor = monitor if isinstance(monitor, PerpetualMarketMonitor) else None
@@ -184,6 +194,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=_lifespan,
     )
     app.state.settings = settings
+    app.state.telegram_paper_activation = None
+    app.state.telegram_webhook_mounted = False
     app.state.provider_registry = build_default_registry(settings)
     from app.market_monitor.factory import build_perpetual_market_monitor
 
@@ -260,6 +272,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tools.router,
         worker.router,
         watcher_paper.router,
+        telegram_enrollment.router,
     ):
         app.include_router(r)
     return app

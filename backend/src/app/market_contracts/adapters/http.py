@@ -7,12 +7,21 @@ hosts, and plain HTTP cannot be labelled as USD-M perpetual evidence.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import threading
+import time
+from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from app.market_contracts.adapters.request_budget import (
+    SlidingWeightBudget,
+    bounded_backoff_seconds,
+    record_request,
+    request_weight,
+    sleep_with_progress,
+)
 from app.market_contracts.errors import (
     NetworkMutationForbiddenError,
     RateLimitedError,
@@ -21,6 +30,7 @@ from app.market_contracts.errors import (
     UnapprovedEvidenceHostError,
     WrongMarketError,
 )
+from app.market_contracts.request_progress import current_progress_hook
 
 ALLOWED_PATHS = frozenset(
     {
@@ -44,6 +54,7 @@ COINM_HOST_MARKERS = ("dapi.binance.com",)
 SPOT_PATH_PREFIXES = ("/api/v3/", "/api/v1/")
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE"})
 REGIONAL_STATUS_CODES = frozenset({401, 403, 418, 451})
+_PROGRESS_INTERVAL_SECONDS = 5.0
 
 
 class ReadOnlyHttpGetClient:
@@ -57,11 +68,25 @@ class ReadOnlyHttpGetClient:
         transport: httpx.BaseTransport | None = None,
         client: httpx.Client | None = None,
         allowed_hosts: frozenset[str] | None = None,
+        max_retries: int = 0,
+        weight_per_minute: int = 1800,
+        max_backoff_seconds: float = 30.0,
+        sleeper: Callable[[float], None] | None = None,
+        budget: SlidingWeightBudget | None = None,
+        progress_interval_seconds: float = _PROGRESS_INTERVAL_SECONDS,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._allowed_hosts = allowed_hosts or APPROVED_BINANCE_USDM_REST_HOSTS
         self._assert_base_url()
         self._owns_client = client is None
+        self._max_retries = max_retries
+        self._max_backoff_seconds = max_backoff_seconds
+        self._sleep = sleeper if sleeper is not None else time.sleep
+        self._progress_interval_seconds = max(progress_interval_seconds, 0.01)
+        self._budget = budget or SlidingWeightBudget(
+            limit=weight_per_minute,
+            max_wait_seconds=max(max_backoff_seconds, 60.0),
+        )
         self._client = client or httpx.Client(
             base_url=self._base_url,
             timeout=timeout_seconds,
@@ -69,6 +94,10 @@ class ReadOnlyHttpGetClient:
             follow_redirects=False,
             headers={"User-Agent": "AlphaTradeAI-perpetual-evidence/read-only"},
         )
+
+    @property
+    def budget(self) -> SlidingWeightBudget:
+        return self._budget
 
     def close(self) -> None:
         if self._owns_client:
@@ -95,29 +124,88 @@ class ReadOnlyHttpGetClient:
             )
         url = urljoin(self._base_url + "/", normalized_path.lstrip("/"))
         self._assert_url(url)
+        weight = request_weight(normalized_path, params)
+        attempts = self._max_retries + 1
+        last_retry_after: float | None = None
+        for attempt in range(attempts):
+            self._budget.acquire(weight, sleeper=self._sleep)
+            try:
+                response = self._exchange_get(url, params)
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+                record_request(weight=weight, retry=attempt > 0)
+                if attempt + 1 >= attempts:
+                    raise RegionalProviderFailureError(
+                        "Preferred Binance USD-M perpetual source is unreachable."
+                    ) from exc
+                delay = bounded_backoff_seconds(
+                    attempt=attempt,
+                    retry_after_seconds=None,
+                    max_backoff_seconds=self._max_backoff_seconds,
+                )
+                sleep_with_progress(delay, sleeper=self._sleep)
+                continue
+            if response.status_code == 429:
+                last_retry_after = _retry_after_seconds(response)
+                record_request(weight=weight, rate_limited=True, retry=attempt > 0)
+                if attempt + 1 >= attempts:
+                    raise RateLimitedError(
+                        "Preferred Binance USD-M source rate-limited the read-only client.",
+                        retry_after_seconds=last_retry_after,
+                    )
+                delay = bounded_backoff_seconds(
+                    attempt=attempt,
+                    retry_after_seconds=last_retry_after,
+                    max_backoff_seconds=self._max_backoff_seconds,
+                )
+                sleep_with_progress(delay, sleeper=self._sleep)
+                continue
+            if response.status_code in REGIONAL_STATUS_CODES:
+                record_request(weight=weight)
+                raise RegionalProviderFailureError(
+                    f"Preferred Binance USD-M source rejected the runtime region "
+                    f"(HTTP {response.status_code})."
+                )
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                record_request(weight=weight)
+                raise RegionalProviderFailureError(
+                    f"Preferred Binance USD-M source returned HTTP {response.status_code}."
+                ) from exc
+            record_request(weight=weight, retry=attempt > 0)
+            return response.json()
+        raise RateLimitedError(
+            "Preferred Binance USD-M source rate-limited the read-only client.",
+            retry_after_seconds=last_retry_after,
+        )
+
+    def _exchange_get(
+        self,
+        url: str,
+        params: Mapping[str, str | int] | None,
+    ) -> httpx.Response:
+        """GET while a bound lease hook can beat during the call, not only backoff."""
+
+        hook = current_progress_hook()
+        query = dict(params or {})
+        if hook is None:
+            return self._client.get(url, params=query)
+        stop = threading.Event()
+
+        def _pulse() -> None:
+            # The hook is captured on the caller thread. A new thread does not
+            # inherit the contextvar that bind_market_request_progress set.
+            while not stop.wait(self._progress_interval_seconds):
+                hook()
+
+        hook()
+        thread = threading.Thread(target=_pulse, name="binance-read-heartbeat", daemon=True)
+        thread.start()
         try:
-            response = self._client.get(url, params=dict(params or {}))
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
-            raise RegionalProviderFailureError(
-                "Preferred Binance USD-M perpetual source is unreachable."
-            ) from exc
-        if response.status_code == 429:
-            raise RateLimitedError(
-                "Preferred Binance USD-M source rate-limited the read-only client.",
-                retry_after_seconds=_retry_after_seconds(response),
-            )
-        if response.status_code in REGIONAL_STATUS_CODES:
-            raise RegionalProviderFailureError(
-                f"Preferred Binance USD-M source rejected the runtime region "
-                f"(HTTP {response.status_code})."
-            )
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise RegionalProviderFailureError(
-                f"Preferred Binance USD-M source returned HTTP {response.status_code}."
-            ) from exc
-        return response.json()
+            return self._client.get(url, params=query)
+        finally:
+            stop.set()
+            thread.join(timeout=self._progress_interval_seconds)
 
     def _normalize_path(self, path: str) -> str:
         if path.startswith("http://") or path.startswith("https://"):

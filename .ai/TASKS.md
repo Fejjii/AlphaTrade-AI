@@ -1622,4 +1622,263 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Does not enable Watcher, Telegram, or live trading. Do not merge, deploy,
   or activate. Source PRs #125 and #126 stay unmerged.
 
+### AT-077 — Controlled staging read-only Binance USD-M evidence
+- Priority: P0 · Status: DONE · Dependencies: AT-064, AT-069 · Risk: High
+  (market-evidence honesty; must not become trading or Watcher activation)
+- Safety classification: Public read-only USD-M evidence configuration;
+  Watcher/Telegram/live trading stay off; no credentials; no deploy
+- Goal: Make `binance_usdm` the intended staging evidence source through the
+  existing read-only provider. Preserve replay for tests and rollback. Fail
+  closed on outage, stale evidence, gaps, wrong symbol, and wrong source.
+  Expose activation on health/market status and add a staging validator.
+- Branch: `cursor/activation_live_market`
+- Base: `main@894e9e4`
+- Validation: implementation `ed17355`. Local activation suite 17 passed.
+  Local `uv run pytest -q` exit 0 (2549 collected; Postgres was not
+  listening, so postgres-gated tests skipped and the retained log dropped
+  the pass/skip split). Local ruff check and format clean. Strict mypy on
+  the activation, health, monitor, deployment-safety, factory, and config
+  modules clean. Local frontend lint, typecheck, 1196 tests, and build
+  passed. Local evaluation 16/16, 5/5, 7/7. GitHub CI run 35740379070
+  success on `ed17355`: backend 2549 passed, 236 warnings, 1693.63s;
+  deployment-safety 60 tests at 100% plus live-market staging self-check;
+  frontend 1196 passed and build; evaluation 16/16, 5/5, 7/7; e2e 30 passed
+  / 13 skipped; docker image `alphatrade-backend:ci` built. Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/128. Do not merge or deploy.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-056
+- Note: Does not modify the live staging environment and does not deploy.
+  Exact env changes, activation, and rollback are in
+  `docs/live_market_staging_activation.md`. Do not enable Watcher, Telegram,
+  or live trading.
+
+### AT-078 — Prepare controlled staging Watcher paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-076 · Risk: High
+  (activation path must stay disarmed and paper-only)
+- Safety classification: Paper monitoring only; Telegram off; live trading off;
+  no deploy; no staging environment edits; no activation
+- Goal: Smallest safe arm on the existing Watcher. Preflight, runtime health
+  gate, rollback plan, post-activation smoke, and monitoring checklist.
+  Prove the worker cannot start on replay evidence, provider outage, invalid
+  lineage, real trading, or an unhealthy migration.
+- Branch: `cursor/activation-watcher-paper-5263`
+- Base: `main` `894e9e4`
+- Alembic: unchanged single head `d9e0f1a2b3c4`. No new revision.
+- Validation: local PostgreSQL pytest 2567 passed / 0 skipped (exit 0);
+  `tests/test_watcher_postgres_store.py`, ownership, product proof, final paper
+  loop, Alembic postgres, and activation tests included. `ruff check` and
+  `ruff format --check` clean. Strict mypy clean on the activation modules.
+  Evaluation 16/16, 5/5, 7/7. Frontend lint, typecheck, 1195 tests, and build
+  passed. Activation, rollback, health, and smoke self-checks passed.
+  `WATCHER_PAPER_STAGING_ACTIVATION` remains false. Not armed. Staging env files
+  unchanged. GitHub CI run 35744229457 success on `557ce32` (backend,
+  deployment-safety, docker-build, frontend, e2e-smoke, evaluation, and the
+  existing Vercel preview checks). Draft PR
+  https://github.com/Fejjii/AlphaTrade-AI/pull/130. Do not merge, deploy, or
+  activate.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-057
+- Note: Preparation only. Source PR #130 labeled this AT-077 / AT-ADR-056.
+  The integration branch assigns AT-078 / AT-ADR-057 because AT-077 is the
+  live-market workstream. `WATCHER_PAPER_STAGING_ACTIVATION` stays false.
+  Do not deploy or activate.
+
+### AT-079 — Controlled Telegram paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-074, AT-076 · Risk: High
+  (Telegram must never become trading authority)
+- Safety classification: Paper-only activation machinery; Watcher stays off;
+  Telegram stays disarmed; no live trading; no staging env changes; no deploy
+- Goal: Production-shaped path from a Watcher/Candidate event through the durable
+  outbox to a Telegram alert and an identity-bound paper discussion, plus
+  preflight, smoke, and rollback. Do not activate.
+- Branch: `cursor/activation_telegram_paper-a361` (requested
+  `cursor/activation_telegram_paper`)
+- Validation: `uv run ruff check .` and `uv run ruff format --check .` passed.
+  `uv run pytest -q --tb=line` failed only
+  `test_blackbox_telegram_cannot_place_orders` and
+  `test_no_inbound_telegram_route_exists` because
+  `GET /health/telegram-paper-activation` was outside the known route set.
+  Those allowlists were updated and the two tests plus
+  `tests/test_telegram_paper_activation.py`,
+  `tests/test_telegram_paper_activation_postgres.py`, and
+  `tests/test_phase2_4_alembic_postgres.py` passed (20). Frontend lint,
+  typecheck, 1195 unit tests, and build passed. Evaluation 16/16, RAG 5/5,
+  guardrails 7/7. Preflight `--expect-disabled` exit 0 (`NOT_ARMED`).
+  Rollback `--apply` exit 2. Docker image build was not run (no Docker daemon).
+  No live Telegram send. Not deployed. Not activated.
+- Recommended model: Cursor Grok 4.6 Extra High
+- ADR: AT-ADR-058
+- Note: Source PR #129 labeled this AT-077 / AT-ADR-056. The integration
+  branch assigns AT-079 / AT-ADR-058. Does not enable Watcher, Telegram, or
+  live trading. Does not change `render.yaml`. Do not deploy or activate.
+
+### AT-080 — Integrate controlled paper activation
+- Priority: P0 · Status: DONE · Dependencies: AT-077, AT-078, AT-079 · Risk: High
+  (one staging package must stay paper-only and fail closed)
+- Safety classification: Paper execution; public read-only USD-M evidence;
+  no exchange credentials; no exchange mutation; Telegram cannot trade;
+  no deploy; no live staging environment edits
+- Goal: One package from real read-only Binance USD-M evidence through the
+  Watcher, canonical SetupAssessment, Candidate, paper workflow,
+  Journal/evaluation/learning, and a verified Telegram projection, with one
+  activation order and one fail-closed rollback.
+- Branch: `cursor/controlled_paper_activation_integration`
+- Base: `main` `894e9e4`
+- Head: `9535a10`
+- Alembic: single head `e0f1a2b3c4d5` (revises `d9e0f1a2b3c4`)
+- Inputs not merged: PR #128 `fe705a2`, PR #129 `4f244d6`, PR #130 `99af425`
+- Validation: `uv run ruff check .` and `uv run ruff format --check .` exit 0.
+  Strict mypy on the 12 affected modules exit 0. `uv run pytest -q --tb=line`
+  exit 0: 2613 passed, 0 failed, 0 skipped (progress marks match
+  `pytest --collect-only` of 2613; the short summary line was absent from the
+  redirected log). That run includes Alembic upgrade/downgrade tests and
+  `test_alembic_single_head`. Offline `alembic heads` prints `e0f1a2b3c4d5 (head)`.
+  Evaluation agent 16/16, RAG 5/5, guardrails 7/7. Frontend lint, typecheck,
+  1196 unit tests, and build exit 0. Chromium Playwright `CI=true npm run test:e2e`
+  exit 0 (30 passed, 13 skipped; the skips are staging specs that require a
+  staging demo password). Local `docker build -t alphatrade-backend:ci ./backend`
+  exit 0. Rollback `--self-check` exit 0 and `--apply` exit 2. Telegram
+  preflight `--expect-disabled` exit 0, verdict `NOT_ARMED`. Watcher health,
+  live-market staging, and watcher-rollback self-checks exit 0. GitHub CI run
+  35756546952 success on `9535a10dd09b873b66118eb94ad06f3e181734f6`
+  (backend, deployment-safety, docker-build, frontend, e2e-smoke, evaluation).
+  Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/131.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-059
+- Note: Verdict is READY FOR FINAL ACTIVATION AUDIT. Do not merge, do not
+  deploy, and do not edit the live staging environment. `render.yaml` is still
+  the step-3 evidence blueprint only. Procedures are in
+  `docs/controlled_paper_activation.md`.
+
+### AT-081 — Frontier AT-080 P0/P1 remediation
+- Priority: P0 · Status: DONE · Dependencies: AT-080 · Risk: High
+  (Telegram and Watcher must stay paper-only and advisory)
+- Safety classification: Paper execution; public read-only USD-M evidence;
+  no exchange credentials; no exchange mutation; Telegram cannot trade;
+  no deploy; no activation; live trading remains impossible
+- Goal: Close every Frontier AT-080 P0 and P1 without redesigning canonical
+  Candidate authority.
+- Branch: `cursor/activation_frontier_remediation`
+- Base: `070169cd92f1258be337f6fe5ef6230368768d5a` (PR #131 head)
+- Alembic: single head `f1a2b3c4d5e6` (revises `e0f1a2b3c4d5`)
+- Validation recorded on this run:
+  - `uv run ruff check .` and `uv run ruff format --check .` exit 0 (909 files).
+  - `uv run alembic heads` prints `f1a2b3c4d5e6 (head)`.
+  - `uv run pytest --tb=line` exit 0: 2629 passed, 237 warnings, 1378.63s.
+    That process imported modules at collection, before a later one-line
+    change that keeps `last_delivery_at` across idle Telegram cycles.
+  - After that change, `uv run pytest tests/test_frontier_remediation.py::test_postgres_runtime_retries_duplicate_delivery_and_survives_restart -q --tb=short` exit 0.
+  - Strict mypy on 13 changed modules exit 0. Full-package mypy was not run.
+  - Frontend `npm run lint`, `npm run typecheck`, `npm run test` (200 files,
+    1196 tests), and `npm run build` exit 0.
+  - `CI=true npm run test:e2e` exit 0: 30 passed, 13 skipped. The first
+    attempt failed because Playwright's apt install raced with another apt
+    and Chromium was missing. The rerun after `npx playwright install chromium --with-deps` (INSTALL:0) is the result above.
+  - Evaluation: agent 16/16, RAG 5/5, guardrails 7/7. Redis connection
+    refused was logged and tolerated.
+  - Deployment self-checks exit 0: watcher rollback, watcher smoke, watcher
+    health, controlled rollback `--self-check`, watcher activation
+    `--self-check`, Telegram preflight `--expect-disabled` verdict
+    `NOT_ARMED`. Controlled rollback `--apply` exit 2.
+  - Local `sudo docker build -t alphatrade-backend:ci ./backend` exit 0
+    (image `2e0398476c2b`). `COPY src` was not cached.
+  - Exact-head GitHub CI run 35799241936 success on
+    `00b4e20f6bfc83d835c17cad6db7d7d2f14b0900`: backend, deployment-safety,
+    docker-build, e2e-smoke, evaluation, frontend, plus Vercel and Vercel
+    Preview Comments. https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35799241936
+  - Live Binance aggTrade weight from Frankfurt remains UNKNOWN. Not deployed.
+    Not activated.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-060
+- Note: Staging inbound is polling. Webhook is not a staging activation path.
+  Do not merge, deploy, or activate.
+
+### AT-082 — Close the three open PR132 activation findings
+- Priority: P0 · Status: DONE · Dependencies: AT-081 · Risk: High
+  (shared market cache and worker health must stay paper-only)
+- Safety classification: Paper execution; public read-only USD-M evidence;
+  no exchange credentials; no exchange mutation; workers stay disarmed;
+  no deploy; no activation; live trading remains impossible
+- Goal: Close Binance evidence reuse, Render worker Settings boot, and
+  worker heartbeat freshness. No redesign.
+- Branch: `cursor/final_three_activation_fixes`
+- Base: PR #132 head `d4e4e8daff9e42d2d8c7efb541ab57e52d05092d`
+- Behavior commit: `d778a4f2ade94a62a9a3081e8b6d11862ad53f65`
+- Alembic: single head `f1a2b3c4d5e6` (unchanged; no new revision)
+- Validation recorded on this run, against `d778a4f` unless noted:
+  - `uv run pytest tests/test_final_three_activation_fixes.py -q --tb=short`
+    exit 0: 12 passed, including PostgreSQL lease takeover and worker
+    health freshness.
+  - `uv run ruff check .` and `uv run ruff format --check .` exit 0
+    (913 files).
+  - Strict mypy on the 12 affected modules exit 0 after the idle-lock fix.
+  - `uv run alembic heads` prints `f1a2b3c4d5e6 (head)`.
+  - `uv run pytest -q --tb=line` exit 0. Progress marks: 2641 passed,
+    0 failed, 0 skipped. PostgreSQL was accepting connections at
+    `postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test`.
+    The short summary line was absent from the redirected log.
+  - Deployment-safety pytest
+    `tests/test_deployment_safety.py tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py -q --tb=line`
+    exit 0: 102 passed, 0 failed, 0 skipped.
+  - Script self-checks exit 0: post-deploy smoke gate, canonical staging
+    smoke, live-market staging validation, watcher rollback, watcher
+    activation smoke, watcher paper health, watcher activation module,
+    Telegram preflight verdict `NOT_ARMED`, controlled rollback
+    `--self-check`. Controlled rollback `--apply` exit 2.
+  - Evaluation: agent 16/16, RAG 5/5, guardrails 7/7.
+  - Frontend `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test`
+    (200 files, 1196 tests), and `npm run build` exit 0.
+  - Chromium `CI=true npm run test:e2e` exit 0: 30 passed, 13 skipped.
+  - Local `sudo docker build -t alphatrade-backend:ci ./backend` exit 0
+    (image `8b8a7bff546e`).
+  - Exact-head GitHub CI run 35837052105 success on
+    `d778a4f2ade94a62a9a3081e8b6d11862ad53f65`: backend,
+    deployment-safety, docker-build, frontend, evaluation, e2e-smoke.
+    https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35837052105
+  - Not deployed. Not activated. Live Binance aggTrade weight from
+    Frankfurt remains UNKNOWN.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-061
+- Note: Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/133 targets
+  `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
+
+### AT-083 — Disarmed Render workers boot without operational secrets
+- Priority: P0 · Status: DONE · Dependencies: AT-082 · Risk: High
+  (staging validation must stay fail-closed for the API and for armed workers)
+- Safety classification: Paper execution; workers stay disarmed; no exchange
+  credentials; no deploy; no activation; live trading remains impossible
+- Goal: `alphatrade-watcher-paper-staging` and
+  `alphatrade-telegram-paper-staging` construct Settings and idle disarmed
+  from the literal `render.yaml` environment. No secret is required only to
+  boot disarmed. Armed workers still require PostgreSQL, Redis, JWT, provider
+  dependencies, and the Telegram bot token where the arm applies.
+- Branch: `cursor/final_render_worker_boot_fix`
+- Base: `5ff0eb8c4a7d171118dfde921259a6da13b60abb`
+- Alembic: unchanged. No new revision.
+- Local validation on this run:
+  - `uv run ruff check .` and `uv run ruff format --check .` exit 0
+    (915 files).
+  - Strict mypy on `disarmed_worker_boot.py`, `deployment_safety.py`,
+    `watcher_paper.py`, and `telegram_activation/__main__.py` exit 0.
+  - Targeted pytest exit 0: 129 passed, 0 failed. Includes
+    `tests/test_disarmed_render_worker_boot.py`, deployment safety, deployment
+    scripts, config, Watcher paper activation, Telegram paper activation, and
+    the literal blueprint boot test.
+  - `tests/test_final_three_activation_fixes.py` plus the frontier blueprint
+    and live-market config tests: 12 passed, 2 skipped. The skips are
+    PostgreSQL tests; PostgreSQL was not reachable in this environment.
+  - Deployment-safety script self-checks exit 0. Telegram preflight verdict
+    `NOT_ARMED`. Controlled rollback `--apply` exit 2.
+  - Exact-head GitHub CI run 35851723888 success on
+    `d6d5492e08621a8c7be13f043eeaa3bb3781eb3e`: backend, deployment-safety,
+    docker-build, frontend, evaluation, e2e-smoke. Vercel and Vercel Preview
+    Comments also succeeded. 0 failed.
+    https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35851723888
+  - Not deployed. Not activated. Draft PR
+    https://github.com/Fejjii/AlphaTrade-AI/pull/134 targets
+    `cursor/final_three_activation_fixes`. Do not merge.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-062
+- Note: Do not merge, deploy, or activate.
+
 

@@ -22,6 +22,7 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     StaleEvidenceError,
 )
+from app.market_contracts.request_progress import notify_market_request_progress
 from app.market_monitor.monitor import PerpetualMarketMonitor
 from app.market_monitor.types import MarketMode, SymbolMonitorSnapshot
 from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
@@ -91,8 +92,29 @@ class AssemblingWatcherScanEvidence:
         self._store = watcher_store
         self._symbol = symbol
         self._monitor = monitor
+        self._load_cache: dict[tuple[str, str, str], WatcherCanonicalScanEvidence | None] = {}
 
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
+        """Return one assembled snapshot twice for evaluate and Candidate persist.
+
+        The key is the scan's evaluation input, organization, and symbol. A
+        later bar or tenant does not reuse this entry. Assessment still
+        recomputes from the cached evidence.
+        """
+
+        notify_market_request_progress()
+        key = (
+            str(command.request.organization_id),
+            command.evaluation_input_hash,
+            self._symbol,
+        )
+        if key in self._load_cache:
+            return self._load_cache[key]
+        loaded = self._load_uncached(command)
+        self._load_cache[key] = loaded
+        return loaded
+
+    def _load_uncached(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
         production_authority = self._session is not None and self._store is not None
         if production_authority and self._monitor is None:

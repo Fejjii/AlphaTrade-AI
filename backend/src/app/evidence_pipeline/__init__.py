@@ -27,7 +27,6 @@ from app.evidence_pipeline.types import (
     CurrentPriceQuote,
     EvidenceClockReport,
 )
-from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
 
 __all__ = [
     "FIRST_SLICE_READ_SETUP_CONTENT_HASH",
@@ -49,3 +48,13 @@ __all__ = [
     "is_first_slice_read_projection",
     "quote_current_price",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Load the Watcher port lazily so strategy evaluation can import canonical."""
+
+    if name == "AssemblingWatcherScanEvidence":
+        from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
+
+        return AssemblingWatcherScanEvidence
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

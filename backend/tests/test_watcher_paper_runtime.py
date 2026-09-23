@@ -689,8 +689,9 @@ def test_kill_switch_does_not_place_orders(session_factory: sessionmaker[Session
     report = runtime.run_cycle()
     assert report.kill_switch_active is True
     assert report.scans[0].kill_switch_active is True
-    assert report.scans[0].reason_code == SetupAssessmentState.CONFIRMED_SETUP.value
-    assert len(report.scans[0].candidate_ids) == 1
+    assert report.scans[0].reason_code == "kill_switch_active"
+    assert report.scans[0].candidate_ids == ()
+    assert report.candidates_created == 0
     assert probe.unused is True
     assert probe.execution == []
     assert probe.telegram == []

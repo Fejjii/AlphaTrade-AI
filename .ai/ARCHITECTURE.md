@@ -108,8 +108,12 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
   The paper worker does not install the hook. Telegram cannot write market
   truth or strategy authority. Learning replies can load the same eligibility
   rows the canonical summary uses; the loader defaults to none.
-  Alembic head `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`. See
+  Alembic `d9e0f1a2b3c4` revises `e3f4a5b6c7d8`. See
   `docs/telegram_evaluation_integration.md` and `docs/final_paper_system.md`.
+- `telegram_activation/`: controlled paper activation preflight, outbox
+  delivery, polling/webhook intake, and rollback. Disarmed by default.
+  `create_app` does not mount a webhook. Alembic head `f1a2b3c4d5e6`. See
+  `docs/telegram_paper_activation.md`.
 
 ## Endpoints of note (backward-compatibility anchors)
 
@@ -121,7 +125,8 @@ The LLM layer only **explains**; it cannot change risk decisions or approval sta
 - `POST /webhooks/tradingview`, `GET /tradingview/signals`, `POST /tradingview/signals/{id}/create-candidate` (AT-037 — signed intake + optional paper candidate; paper-only)
 - `POST /exchange/blofin/sync`, `GET /exchange/blofin/sync/latest` (AT-037 — BloFin demo read-only snapshots; no order mutation)
 - `GET/POST /paper-signal-orchestration/*` (AT-038 — deterministic paper-signal orchestration; paper-only; no order placement)
-- `GET /canonical/market-status` (AT-069 — live read-only perpetual monitor; replay default; never live_mark for fixtures)
+- `GET /canonical/market-status` (AT-069 — live read-only perpetual monitor; process default replay; staging intended source `binance_usdm`; fixtures never `live_mark`)
+- `GET /health` perpetual evidence activation (AT-077 — `inactive` replay/rollback or `active` public USD-M; no credentials; Watcher/Telegram/live trading stay off)
 - `GET /canonical/paper-evaluation/summary` (AT-073 — continuous paper evaluation measurement; Watcher stays off; refinements cannot activate)
 - `GET /watcher/paper-runtime/status` (AT-070 — paper Watcher monitoring status; disabled by default; no scans from HTTP)
 - `GET /market-watcher/monitoring` (AT-071/AT-072 — operator paper-monitoring snapshot; RUNNING requires fenced lease + fresh heartbeat; replay never live_mark)

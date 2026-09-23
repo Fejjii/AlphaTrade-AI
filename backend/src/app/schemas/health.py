@@ -3,10 +3,66 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.providers.base import ProviderStatus
+
+WorkerHealthState = Literal["RUNNING", "STALE", "UNAVAILABLE"]
+
+
+class WorkerComponentObservation(BaseModel):
+    """One Watcher or Telegram process row.
+
+    ``available`` is true only when ``health_state`` is ``RUNNING``. A stored
+    row with a missing, future, or stale heartbeat is not running.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool = False
+    worker_id: str = ""
+    heartbeat_at: datetime | None = None
+    activation_state: str = "unknown"
+    lease_owner: str = ""
+    lease_epoch: int = 0
+    lease_expires_at: datetime | None = None
+    fence_held: bool = False
+    last_scan_at: datetime | None = None
+    last_scan_reason: str = ""
+    market_source: str = ""
+    freshness_seconds: float | None = None
+    telegram_runtime_state: str = "absent"
+    inbound_mode: str = "off"
+    outbox_pending: int = 0
+    outbox_retryable: int = 0
+    outbox_dead_letter: int = 0
+    last_delivery_at: datetime | None = None
+    last_error_code: str = ""
+    kill_switch_active: bool = False
+    request_count: int = 0
+    request_weight: int = 0
+    rate_limited_count: int = 0
+    cache_hits: int = 0
+    health_state: WorkerHealthState = "UNAVAILABLE"
+    heartbeat_age_seconds: float | None = None
+    heartbeat_stale_after_seconds: int = 90
+
+
+class WorkerRuntimeObservation(BaseModel):
+    """Observed worker rows.
+
+    ``available`` is false when the status read fails. It does not mean either
+    worker is fresh. Each component's ``health_state`` is the liveness claim.
+    These fields are not the API process configuration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool = False
+    watcher: WorkerComponentObservation = Field(default_factory=WorkerComponentObservation)
+    telegram: WorkerComponentObservation = Field(default_factory=WorkerComponentObservation)
 
 
 class HealthResponse(BaseModel):
@@ -26,10 +82,25 @@ class HealthResponse(BaseModel):
     market_watcher_enabled: bool = False
     market_watcher_bridge_enabled: bool = False
     watcher_orchestration_enabled: bool = False
+    watcher_paper_staging_activation: bool = False
     telegram_alerts_enabled: bool = False
     telegram_interaction_enabled: bool = False
     automatic_telegram_delivery_enabled: bool = False
+    telegram_paper_activation_armed: bool = False
+    telegram_inbound_mode: str = "off"
+    telegram_network_permitted: bool = False
+    perpetual_evidence_source: Literal["replay", "binance_usdm"]
+    perpetual_evidence_activation: Literal["inactive", "active", "refused"]
+    perpetual_evidence_intended_staging_source: Literal["binance_usdm"] = "binance_usdm"
+    perpetual_evidence_rollback_source: Literal["replay"] = "replay"
+    live_market_read_only: Literal[True] = True
+    exchange_credentials_used_for_market_evidence: Literal[False] = False
+    spot_fallback_permitted: Literal[False] = False
+    fabricated_fallback_permitted: Literal[False] = False
+    live_quote_freshness_seconds: Literal[10] = 10
+    first_perpetual_symbol: Literal["BTCUSDT"] = "BTCUSDT"
     git_sha: str | None = None
+    worker_runtime: WorkerRuntimeObservation = Field(default_factory=WorkerRuntimeObservation)
     timestamp: datetime
 
 

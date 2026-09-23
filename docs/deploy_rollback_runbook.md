@@ -171,7 +171,9 @@ Current Alembic head is a single linear chain:
 → `b7c8d9e0f1a2` (strategy conversations, proposals, provenance links)
 → `c8d9e0f1a2b3` (durable setup-lifetime pins)
 → `e3f4a5b6c7d8` (paper evaluation observations)
-→ `d9e0f1a2b3c4` (paper Telegram notification/thread identity).
+→ `d9e0f1a2b3c4` (paper Telegram notification/thread identity)
+→ `e0f1a2b3c4d5` (paper Telegram activation cursor and send ledger)
+→ `f1a2b3c4d5e6` (controlled runtime status).
 
 These revisions ship non-empty `downgrade()`. Prefer leaving additive schema
 forward when rolling back the API image: old paper code can typically read the
@@ -180,6 +182,8 @@ an explicit restore plan.
 
 | Head to reverse | Safer action |
 |-----------------|--------------|
+| App-only defect after `f1a2b3c4d5e6` applied | Roll back the Render image; leave DB at head |
+| Need to undo paper Telegram activation cursor/ledger only | `alembic downgrade d9e0f1a2b3c4` after written approval |
 | App-only defect after `d9e0f1a2b3c4` applied | Roll back the Render image; leave DB at head |
 | Need to undo paper Telegram identity tables only | `alembic downgrade e3f4a5b6c7d8` after written approval |
 | App-only defect after `e3f4a5b6c7d8` applied | Roll back the Render image; leave DB at head |
@@ -261,6 +265,7 @@ Full env checklist: [staging_deployment_checklist.md](staging_deployment_checkli
 | `BILLING_ENABLED` | `false` |
 | `PROVIDER_MODE` | `fallback` (staging default) |
 | Alert / Telegram delivery | disabled unless separately approved |
+| `PERPETUAL_EVIDENCE_SOURCE` | `replay` to roll market evidence back; `binance_usdm` is staging read-only only |
 | Mode D real execution | **out of scope** — not enabled by this runbook |
 
 ---
@@ -277,4 +282,9 @@ COOKIE_MODE=true FRONTEND_URL=https://YOUR-APP.vercel.app \
 
 # Gate self-check (no network; used in CI)
 ./scripts/post-deploy-smoke-gate.sh --self-check
+
+# Live USD-M evidence activation / rollback (no platform writes)
+./scripts/validate-live-market-staging.sh --self-check
+BASE_URL=https://YOUR-API.onrender.com \
+  ./scripts/validate-live-market-staging.sh --remote --expect inactive
 ```

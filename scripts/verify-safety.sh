@@ -41,21 +41,84 @@ exchange_mode = payload.get("exchange_mode")
 if exchange_mode not in (None, "paper_internal", "paper_exchange_demo"):
     print(f"FAIL: exchange_mode={exchange_mode!r}", file=sys.stderr)
     sys.exit(1)
-disabled_flags = (
+always_false = (
     "market_watcher_enabled",
     "market_watcher_bridge_enabled",
-    "watcher_orchestration_enabled",
     "telegram_alerts_enabled",
-    "telegram_interaction_enabled",
     "automatic_telegram_delivery_enabled",
 )
-for flag in disabled_flags:
+for flag in always_false:
     if flag in payload and payload.get(flag) is not False:
         print(f"FAIL: {flag}={payload.get(flag)!r} (expected false)", file=sys.stderr)
         sys.exit(1)
+controlled = (
+    env != "production"
+    and mode == "paper"
+    and real is False
+    and payload.get("perpetual_evidence_source") == "binance_usdm"
+    and payload.get("watcher_orchestration_enabled") is True
+    and payload.get("watcher_paper_staging_activation") is True
+    and payload.get("telegram_interaction_enabled") is True
+    and payload.get("telegram_paper_activation_armed") is True
+    and payload.get("telegram_inbound_mode") == "polling"
+    and payload.get("telegram_network_permitted") is True
+    and payload.get("telegram_alerts_enabled") is not True
+    and payload.get("automatic_telegram_delivery_enabled") is not True
+)
+if not controlled:
+    for flag in ("telegram_interaction_enabled", "telegram_paper_activation_armed"):
+        if flag in payload and payload.get(flag) is not False:
+            print(f"FAIL: {flag}={payload.get(flag)!r} (expected false)", file=sys.stderr)
+            sys.exit(1)
+    if "telegram_inbound_mode" in payload and payload.get("telegram_inbound_mode") not in (
+        None,
+        "off",
+    ):
+        print(
+            f"FAIL: telegram_inbound_mode={payload.get('telegram_inbound_mode')!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if payload.get("telegram_network_permitted") is True:
+        print("FAIL: telegram_network_permitted=true without the paper package", file=sys.stderr)
+        sys.exit(1)
+source = payload.get("perpetual_evidence_source")
+activation = payload.get("perpetual_evidence_activation")
+if source is not None and source not in ("replay", "binance_usdm"):
+    print(f"FAIL: perpetual_evidence_source={source!r}", file=sys.stderr)
+    sys.exit(1)
+if activation is not None and activation not in ("inactive", "active"):
+    print(f"FAIL: perpetual_evidence_activation={activation!r}", file=sys.stderr)
+    sys.exit(1)
+if source == "binance_usdm" and activation not in (None, "active"):
+    print(f"FAIL: live source activation={activation!r}", file=sys.stderr)
+    sys.exit(1)
+if payload.get("live_quote_freshness_seconds") not in (None, 10):
+    print("FAIL: live_quote_freshness_seconds is not 10", file=sys.stderr)
+    sys.exit(1)
+if payload.get("spot_fallback_permitted") not in (None, False):
+    print("FAIL: spot_fallback_permitted is not false", file=sys.stderr)
+    sys.exit(1)
+if payload.get("exchange_credentials_used_for_market_evidence") not in (None, False):
+    print("FAIL: market evidence reported credentials", file=sys.stderr)
+    sys.exit(1)
+orchestration = bool(payload.get("watcher_orchestration_enabled"))
+armed = bool(payload.get("watcher_paper_staging_activation"))
+if "watcher_orchestration_enabled" in payload and orchestration != armed:
+    print(
+        "FAIL: watcher paper activation pair "
+        f"orchestration={orchestration} armed={armed}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if orchestration and env == "production":
+    print("FAIL: production watcher is forbidden", file=sys.stderr)
+    sys.exit(1)
 print(
     f"  health: execution_mode=paper, real_trading_enabled=false, "
-    f"environment={env}, exchange_mode={exchange_mode or 'unset'}"
+    f"environment={env}, exchange_mode={exchange_mode or 'unset'}, "
+    f"perpetual_evidence_source={source or 'unset'}, "
+    f"activation={activation or 'unset'}"
 )
 PY
 

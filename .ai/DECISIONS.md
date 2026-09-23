@@ -1899,4 +1899,302 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_paper_system_integration`. Draft PR
   only. Do not merge, deploy, or activate Watcher or Telegram.
 
+## AT-ADR-056 — Staging USD-M evidence is public read-only, rollback is replay
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** The Binance USD-M public adapter, 10-second freshness rule, and
+  canonical trade/CVD/OHLCV/coverage contracts already exist. Staging still
+  intends `PERPETUAL_EVIDENCE_SOURCE=replay`, so operators have no controlled
+  path to real read-only market evidence.
+- **Decision:**
+  1. The process default stays `replay` for local, CI, production, and
+     rollback. Staging's intended source is `binance_usdm` on
+     `https://fapi.binance.com`, declared in `.env.staging.example` and
+     `render.yaml`. Applying it is a human environment change. This task does
+     not edit a live platform environment and does not deploy.
+  2. Selecting `binance_usdm` fails closed unless the profile holds: public
+     USD-M origin only, no Binance or BloFin credentials, `exchange_mode`
+     `paper_internal`, Watcher and Telegram flags false, paper execution, and
+     not production. Spot, Coin-M, and plain HTTP are rejected. No fabricated
+     fallback. BTCUSDT stays the default catalog symbol. Live quote freshness
+     stays 10 seconds.
+  3. `GET /health` and `GET /canonical/market-status` report the configured
+     source, activation (`inactive` replay or `active` live), freshness, and
+     that credentials and spot fallback are not used. Replay prices stay
+     `replay_fixture`.
+  4. Rollback is `PERPETUAL_EVIDENCE_SOURCE=replay` plus a restart.
+     `scripts/validate-live-market-staging.sh` checks the profile offline and
+     the running health payload. It does not write environment variables.
+- **Alternatives considered:** Flip the code default to live (rejected: CI and
+  deterministic tests would need the network); allow production to select the
+  live source in the same change (rejected: activation is staging-only);
+  keep a last price during outage (rejected: fail closed).
+- **Safety impact:** Read-only public market data when a human applies the
+  staging env change. Does not enable Watcher, Telegram, or live trading.
+  `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Branch `cursor/activation_live_market`. Draft PR only.
+  Do not merge, deploy, or activate Watcher or Telegram. Operators follow
+  `docs/live_market_staging_activation.md`.
+
+## AT-ADR-057 — Staging Watcher paper activation is a disarmed, fail-closed arm
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** The validated Watcher can scan locally in paper mode. Staging
+  and production reject `WATCHER_ORCHESTRATION_ENABLED`. A controlled staging
+  path is required for paper monitoring only, without Telegram, without live
+  trading, and without turning the worker on in this change.
+- **Decision:**
+  1. `WATCHER_PAPER_STAGING_ACTIVATION` defaults false. Production rejects it.
+     Staging rejects `WATCHER_ORCHESTRATION_ENABLED` unless this arm is set.
+     The armed pair still requires live perpetual evidence. Replay, Telegram,
+     the legacy scanner, and real trading still fail settings load.
+  2. The API process does not autostart staging. Only
+     `python -m app.workers.watcher_paper` calls preflight, and it scans only
+     when every pin holds: unique worker id, PostgreSQL leases, fencing,
+     restart recovery, idempotency, approved compiled lineage, canonical live
+     evidence, freshness fail-closed, `CONFIRMED_SETUP` as the only Candidate
+     authority, risk `BLOCK` final, paper execution, and the kill switch.
+  3. The runtime health gate repeats those pins each cycle and stops the
+     process on failure. Rollback prints an operator plan and does not deploy,
+     edit environment files, clear the kill switch, or enable Telegram.
+  4. This decision does not arm staging and does not modify staging environment
+     values. Templates keep Watcher and Telegram false.
+- **Alternatives considered:** Flip `WATCHER_ORCHESTRATION_ENABLED` in
+  `render.yaml` (rejected: that is activation); allow replay evidence on the
+  arm (rejected: live canonical evidence is required); autostart inside the
+  API (rejected: the dedicated worker is the only start path).
+- **Safety impact:** Paper only. `ENABLE_REAL_TRADING` stays permanently
+  rejected. Default staging posture is unchanged until a human sets the arm.
+- **Consequences:** Branch `cursor/activation-watcher-paper-5263`. Do not
+  deploy or activate from this change. Source PR #130 recorded this decision as
+  AT-ADR-056 before the live-market decision took that id. The accepted id
+  on the integration branch is AT-ADR-057.
+
+## AT-ADR-058 — Paper Telegram activation is armed only by an explicit local preflight
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** AT-074 and AT-076 can project a Watcher or Candidate event into
+  the Telegram outbox and discuss it, but the production-shaped intake,
+  backoff, health, and rollback path was still absent. Operators need that
+  path before any controlled activation. Watcher and live trading stay off.
+  Staging environment variables stay unchanged.
+- **Decision:**
+  1. `app.telegram_activation` is the only paper activation controller.
+     `TelegramPaperActivation.arm` fails closed unless preflight passes.
+     Default settings are not armable. `create_app` does not mount a webhook
+     and does not start polling.
+  2. Inbound mode is `off`, `polling`, or `webhook`, never both. Webhook
+     requests must present `X-Telegram-Bot-Api-Secret-Token`. Polling uses an
+     injected update source. HTTP clients refuse unless
+     `TELEGRAM_NETWORK_PERMITTED=true`.
+  3. Recipient binding, tenant isolation, outbox idempotency, send-ledger
+     dedupe, retry backoff, expired-lease recovery, inbound and outbound rate
+     limits, audit events, and delivery status stay on the existing security
+     protocol plus the activation cursor and ledger.
+  4. Paper mutations still require an explicit confirmation identity.
+     Telegram cannot mint a Candidate, override SetupAssessment, override
+     risk, activate a strategy, place an order, or enable live trading.
+  5. Staging and production reject `TELEGRAM_PAPER_ACTIVATION_ARMED`,
+     non-off `TELEGRAM_INBOUND_MODE`, `TELEGRAM_NETWORK_PERMITTED`, and a
+     non-empty webhook secret. `render.yaml` is not modified.
+  6. Rollback is a printed human checklist. The rollback command refuses
+     `--apply` and does not edit environment files or deploy.
+- **Alternatives considered:** Mount the webhook from `create_app` (rejected:
+  activation must be explicit); enable Watcher `PERSIST_AND_NOTIFY` (rejected:
+  notify stays blocked); send a real Telegram message during implementation
+  (rejected: no test recipient was authorized for live delivery).
+- **Safety impact:** Machinery only. Does not enable Watcher, Telegram, or
+  live trading. `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`.
+- **Consequences:** Alembic `e0f1a2b3c4d5` revises `d9e0f1a2b3c4`. Branch
+  `cursor/activation_telegram_paper-a361`. Draft PR only. Do not deploy or
+  activate. Source PR #129 recorded this decision as AT-ADR-056. The
+  integration branch assigns AT-ADR-058.
+  AT-ADR-059 narrows staging rejection to incomplete arming flags. The
+  historical source-PR validation claims are unchanged.
+
+## AT-ADR-059 — One controlled paper activation package
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** PR #128 (live USD-M evidence), PR #129 (Telegram paper
+  activation), and PR #130 (Watcher paper activation) were each validated
+  separately. Their settings disagree: live evidence refused Watcher and
+  Telegram, Watcher required live evidence with Telegram off, and Telegram
+  preflight refused every non-local environment. Staging needs one package
+  that can be armed in a fixed order and rolled back without deleting rows.
+- **Decision:**
+  1. Production still refuses `binance_usdm`, the Watcher arm, and every
+     Telegram arming flag. Defaults stay disarmed. Replay remains the
+     rollback and test source.
+  2. Staging may select public `binance_usdm` evidence alone. The Watcher
+     pair (`WATCHER_PAPER_STAGING_ACTIVATION` and
+     `WATCHER_ORCHESTRATION_ENABLED`) may be set only with that live source,
+     paper execution, `paper_internal`, and legacy scanner flags off.
+  3. Staging may arm Telegram only as the full projection: the Watcher pair,
+     `binance_usdm`, `TELEGRAM_PAPER_ACTIVATION_ARMED`,
+     `TELEGRAM_INTERACTION_ENABLED`, inbound polling with an empty webhook
+     secret or webhook with a secret of at least 32 characters, and non-empty
+     `TELEGRAM_BOT_ID` and `TELEGRAM_CHAT_ID`. Alerts and automatic delivery
+     stay false. `TELEGRAM_NETWORK_PERMITTED` is allowed only with that
+     package. A partial flag is still rejected.
+  4. The dedicated Watcher process installs the projection hook only when
+     that package is on and a verified private binding exists. A missing
+     binding refuses the start. The API does not autostart the worker.
+  5. Telegram still cannot mint a Candidate, override SetupAssessment,
+     override risk, activate a strategy, place an order, or enable live
+     trading. Risk `BLOCK` and the kill switch stay final.
+  6. Rollback is one printed checklist. It returns to paper execution, replay
+     evidence, and no automated monitoring. It does not delete database rows,
+     downgrade Alembic, edit env, or deploy. `--apply` exits 2.
+  7. Alembic stays a single head: `e0f1a2b3c4d5` revises `d9e0f1a2b3c4`.
+  8. `render.yaml` keeps the step-3 evidence blueprint and does not arm
+     Watcher or Telegram. This decision does not deploy and does not change
+     the live staging environment.
+- **Alternatives considered:** Keep Telegram local-only (rejected: the
+  package must project scans on staging); allow interaction without the
+  Watcher arm (rejected: Telegram must not become a second scan authority);
+  delete rows on rollback (rejected: audit and journal history stay).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`. `ENABLE_REAL_TRADING`
+  stays false. No exchange credentials. No exchange mutation.
+- **Consequences:** Operator procedure is `docs/controlled_paper_activation.md`.
+  Branch `cursor/controlled_paper_activation_integration`. Do not merge and
+  do not deploy from this change.
+
+## AT-ADR-060 — Frontier paper runtime remediation
+- **Date:** 2026-09-22
+- **Status:** Accepted
+- **Context:** The Frontier AT-080 audit on `070169c` found the paper package
+  could not run a production-shaped Telegram process, could leak a bot token
+  through HTTP client logs, and could repeat the same Binance aggTrade window.
+  Staging also lacked a disarmed Watcher service, a single activation order,
+  a kill-switch contract that matches Candidate and Telegram behavior, and
+  health that reports the worker rather than only API flags.
+- **Decision:**
+  1. A dedicated process, `python -m app.telegram_activation run`, drains the
+     durable outbox and polls. The Watcher only enqueues. Staging inbound is
+     polling. Webhook remains for local tests and is not a staging activation
+     path. `create_app` does not mount a webhook.
+  2. Enrollment is `POST /telegram-paper/enrollment/start` plus a private-chat
+     poll. The one-time token is not logged. The polling cursor is durable and
+     does not move to another tenant. Restart resumes from the outbox and
+     cursor. A Postgres runtime lease stops a second replica from sending.
+  3. httpx and httpcore stay at WARNING. A stdlib redaction filter and
+     formatter, plus the existing structlog processor, redact Telegram bot
+     tokens in log lines, exception text, and trace-bound events. Application
+     log level is unchanged.
+  4. One closed aggTrade window is reused for evaluate and Candidate
+     persistence. Public Binance reads use request weight, a sliding budget,
+     Retry-After, bounded backoff, and process-local metrics. 418 and 451 are
+     not retried. The Watcher lease TTL for `binance_usdm` is at least
+     `timeout * 4 + max_backoff + 15` seconds, capped at 3600, and the lease
+     heartbeats during a long read.
+  5. `render.yaml` adds disarmed `alphatrade-watcher-paper-staging` and
+     `alphatrade-telegram-paper-staging`. Flags stay false. No bot token is
+     in the blueprint. This does not deploy.
+  6. Armed Telegram projection requires polling, network permission, and a bot
+     token together. Enrollment is the prior step and does not arm projection.
+     An intermediate armed projection with network off fails Settings
+     validation. A refused Watcher gate idles and heartbeats. It does not exit.
+  7. For controlled automated paper operation the kill switch stops new
+     Candidate mints, Watcher-started paper workflows, new Telegram enqueues,
+     and delivery of queued automated messages. Monitoring continues.
+     An unreadable switch is active. Rollback does not clear it.
+  8. `GET /health` includes `worker_runtime` from `controlled_runtime_status`.
+     A failed status read leaves liveness HTTP 200 with `available=false`.
+  9. Alembic head `f1a2b3c4d5e6` revises `e0f1a2b3c4d5`. Live trading stays
+     impossible.
+- **Alternatives considered:** Keep delivery inside the Watcher (rejected:
+  the Watcher would become the Telegram authority); use webhook on staging
+  (rejected: the API does not mount it); cache evidence across tenants
+  (rejected: the snapshot cache key includes organization id).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`. `ENABLE_REAL_TRADING`
+  stays false. `EXCHANGE_MODE` stays non-live. Telegram stays advisory.
+- **Consequences:** Operator procedure remains
+  `docs/controlled_paper_activation.md`. Branch
+  `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
+
+## AT-ADR-061 — Shared Binance evidence, disarmed worker boot, heartbeat health
+- **Date:** 2026-09-23
+- **Status:** Accepted
+- **Context:** The independent review of PR #132 left three findings open.
+  Canonical API reads built a new aggTrade cache and request-weight budget
+  per HTTP request. Dedicated staging workers in `render.yaml` did not carry
+  the Settings contract required to boot. Worker health treated a persisted
+  runtime row as live without considering heartbeat age.
+- **Decision:**
+  1. Canonical API evidence reads use one process pool per Binance
+     configuration: one bounded closed-window aggTrade cache and one sliding
+     request-weight budget. The cache key is retrieval policy, symbol, and
+     the UTC window. It does not include a tenant. Same-key fetches
+     single-flight. A different semantic fingerprint replaces the rows and
+     counts as a correction. Age equal to the TTL is still fresh. Age past
+     the TTL is a miss and is not served. Failures are not cached, and an
+     idle lock from a failed fetch is released. A process restart drops the
+     pool. The default `resolve_perpetual_evidence_source` stays isolated;
+     sharing is opt-in for the API process.
+  2. While a market-request progress hook is bound, a slow GET pulses that
+     hook during the HTTP call, including a successful call, a 429, and a
+     network timeout. The hook is captured on the caller thread. Backoff
+     still uses the existing progress sleep. A Watcher lease can be renewed
+     only while its fence is still active.
+  3. `alphatrade-watcher-paper-staging` and
+     `alphatrade-telegram-paper-staging` include the staging cookie, CORS,
+     denylist, rate-limit, and trusted-proxy settings. `TELEGRAM_INBOUND_MODE`
+     is the quoted string `off`. Secrets stay `sync: false`. Both workers
+     stay disarmed. This blueprint change does not deploy.
+  4. Worker component health is `RUNNING` only when the heartbeat age is
+     within `watcher_heartbeat_stale_after_seconds` (default 90, inclusive).
+     A missing heartbeat is `UNAVAILABLE`. A future, naive, or older
+     heartbeat is `STALE`. `available` on the component is true only for
+     `RUNNING`. A persisted activation state of `running` is not reported as
+     running when the heartbeat is not fresh. The parent
+     `worker_runtime.available` flag still means the status read succeeded.
+     Post-activation smoke checks `health_state`, age, and the threshold.
+  5. No Alembic revision. Head remains `f1a2b3c4d5e6`. Live trading stays
+     impossible.
+- **Alternatives considered:** Share the cache by default for every
+  `resolve_perpetual_evidence_source` call (rejected: existing isolated
+  reads and tests must stay isolated); treat any persisted row as RUNNING
+  (rejected: that was the finding).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. `EXCHANGE_MODE` stays `paper_internal`
+  in the worker blueprint. Neither worker is armed.
+- **Consequences:** Branch `cursor/final_three_activation_fixes`. Do not
+  merge, deploy, or activate.
+
+## AT-ADR-062 — Disarmed Render workers boot before operational secrets
+- **Date:** 2026-09-23
+- **Status:** Accepted
+- **Context:** AT-082 put the staging Settings contract on
+  `alphatrade-watcher-paper-staging` and `alphatrade-telegram-paper-staging`,
+  but Settings still required PostgreSQL, Redis, JWT, OpenAI, and Qdrant
+  before a disarmed worker could start. Those values are `sync: false` in
+  `render.yaml`. Injecting placeholders would be a fake secret. Skipping the
+  same checks for every staging process would weaken the API.
+- **Decision:**
+  1. Watcher and Telegram process startup read the disarmed paper posture
+     before Settings applies operational-dependency checks. The role is
+     process-local. It is not an environment variable.
+  2. While that role is bound and the constructed settings are staging,
+     paper, `paper_internal`, with Watcher and Telegram arms off and no bot
+     token, Settings may be built without `DATABASE_URL`, `REDIS_URL`,
+     `JWT_SECRET`, `OPENAI_API_KEY`, or `QDRANT_URL`. The process then idles
+     `disarmed` and does not open those dependencies.
+  3. Cookie, CORS, denylist, rate-limit, trusted-proxy, paper-only, and
+     `provider_mode!=mock` checks still run. JWT minimum length still runs.
+     A short secret is rejected. The API calls `Settings()` with no worker
+     role, so a literal API blueprint without secrets still fails.
+  4. If either worker is armed, the role is not bound. Missing PostgreSQL,
+     Redis, JWT, provider dependencies, or—for Telegram—the bot token still
+     fail closed. Real trading stays impossible.
+- **Alternatives considered:** Put placeholder secrets in `render.yaml`
+  (rejected: fake credentials). Relax `validate_deployment_settings` for
+  every disarmed staging process (rejected: the API blueprint is also
+  disarmed and must keep failing closed).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Neither blueprint worker is armed.
+  No deploy and no activation.
+- **Consequences:** Branch `cursor/final_render_worker_boot_fix`, based on
+  `5ff0eb8c4a7d171118dfde921259a6da13b60abb`. Do not merge, deploy, or
+  activate.
+
 
