@@ -190,6 +190,8 @@ class Settings(BaseSettings):
     # Staging paper-monitoring arm. Default false. Does not start the worker,
     # does not change Telegram, and is rejected in production. Leave unset.
     watcher_paper_staging_activation: bool = False
+    # Paper live evidence raises this floor so one timeout plus backoff fits
+    # between lease heartbeats. See paper_lease_ttl_seconds.
     watcher_lease_ttl_seconds: int = Field(default=30, ge=1, le=3600)
     watcher_heartbeat_stale_after_seconds: int = Field(default=90, ge=5, le=3600)
     watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
@@ -282,6 +284,11 @@ class Settings(BaseSettings):
     # Never falls back to spot. Values: replay | binance_usdm
     perpetual_evidence_source: str = "replay"
     perpetual_evidence_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
+    # Public USD-M request-weight budget. 2400/min is the exchange IP cap.
+    binance_request_weight_per_minute: int = Field(default=1800, ge=20, le=2400)
+    binance_request_max_retries: int = Field(default=3, ge=0, le=8)
+    binance_request_max_backoff_seconds: float = Field(default=30.0, ge=0.0, le=120.0)
+    binance_evidence_cache_entries: int = Field(default=8, ge=1, le=64)
     # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
     perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
     perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)

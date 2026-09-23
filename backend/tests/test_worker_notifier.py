@@ -145,6 +145,8 @@ _ALLOWED_OUTBOUND_TELEGRAM_ROUTE_PATHS = {
     "/alerts/{alert_id}/deliver-telegram",
     # Read-only posture. create_app does not mount /webhooks/telegram/paper.
     "/health/telegram-paper-activation",
+    # Authenticated challenge start. Completion is the Telegram process poll.
+    "/telegram-paper/enrollment/start",
 }
 
 

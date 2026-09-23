@@ -99,7 +99,41 @@ export interface HealthResponse {
   live_quote_freshness_seconds?: 10;
   first_perpetual_symbol?: "BTCUSDT";
   git_sha?: string | null;
+  worker_runtime?: WorkerRuntimeObservation;
   timestamp: string;
+}
+
+export interface WorkerComponentObservation {
+  available?: boolean;
+  worker_id?: string;
+  heartbeat_at?: string | null;
+  activation_state?: string;
+  lease_owner?: string;
+  lease_epoch?: number;
+  lease_expires_at?: string | null;
+  fence_held?: boolean;
+  last_scan_at?: string | null;
+  last_scan_reason?: string;
+  market_source?: string;
+  freshness_seconds?: number | null;
+  telegram_runtime_state?: string;
+  inbound_mode?: string;
+  outbox_pending?: number;
+  outbox_retryable?: number;
+  outbox_dead_letter?: number;
+  last_delivery_at?: string | null;
+  last_error_code?: string;
+  kill_switch_active?: boolean;
+  request_count?: number;
+  request_weight?: number;
+  rate_limited_count?: number;
+  cache_hits?: number;
+}
+
+export interface WorkerRuntimeObservation {
+  available?: boolean;
+  watcher?: WorkerComponentObservation;
+  telegram?: WorkerComponentObservation;
 }
 
 export interface ReadinessResponse {

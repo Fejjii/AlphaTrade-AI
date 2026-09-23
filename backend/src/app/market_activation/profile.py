@@ -187,9 +187,12 @@ def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list
         errors.append(
             "automatic_telegram_delivery_enabled must be false while live USD-M evidence is on."
         )
-    from app.controlled_activation.profile import controlled_telegram_projection
+    from app.controlled_activation.profile import (
+        controlled_telegram_projection,
+        telegram_enrollment_runtime,
+    )
 
-    if not controlled_telegram_projection(settings):
+    if not (controlled_telegram_projection(settings) or telegram_enrollment_runtime(settings)):
         if settings.telegram_interaction_enabled:
             errors.append(
                 "telegram_interaction_enabled must be false while live USD-M evidence is on."

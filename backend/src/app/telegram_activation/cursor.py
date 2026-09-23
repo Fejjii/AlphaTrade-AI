@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict
 
 from app.telegram_activation.errors import TelegramActivationError
+
+_ENROLLMENT_CURSOR_NAMESPACE = UUID("6f0c1a2b-3c4d-5e6f-7081-92a3b4c5d6e7")
+
+
+def enrollment_cursor_owner(bot_id: str) -> UUID:
+    """Stable offset owner used before a verified binding exists.
+
+    This is transport state for one bot. It is not a tenant authority.
+    """
+
+    return uuid5(_ENROLLMENT_CURSOR_NAMESPACE, f"telegram-enrollment-cursor:{bot_id}")
 
 
 class InboundCursor(BaseModel):

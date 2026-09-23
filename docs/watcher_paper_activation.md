@@ -106,7 +106,7 @@ do those steps.
 - [ ] Telegram flags false: alerts, interaction, automatic delivery
 - [ ] `MARKET_WATCHER_ENABLED=false` and bridge flags false
 - [ ] `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` (not `replay`)
-- [ ] Alembic is the single head `e0f1a2b3c4d5` and `alembic_version` matches it
+- [ ] Alembic is the single head `f1a2b3c4d5e6` and `alembic_version` matches it
 - [ ] At least one tenant has an approved or active compiled strategy
 - [ ] Live USD-M provider answers for `BTCUSDT` and the quote is fresh
 - [ ] `WATCHER_PAPER_STAGING_ACTIVATION=true` and `WATCHER_ORCHESTRATION_ENABLED=true` on the **dedicated worker only**
@@ -114,7 +114,7 @@ do those steps.
 - [ ] Worker command is `python -m app.workers.watcher_paper`
 - [ ] Process log shows a unique worker id (`watcher-paper-1:<16 hex>`), not the bare configured id
 - [ ] Lease row is in `watcher_worker_leases` and the fencing token advances only for that owner
-- [ ] Kill switch GET still reports state, and an active switch blocks scans
+- [ ] Kill switch GET still reports state. An active switch keeps the worker up and blocks new Candidates and Telegram actions
 - [ ] Risk `BLOCK` still blocks paper execution
 - [ ] `./scripts/watcher-paper-activation-smoke.sh` exits 0
 - [ ] `./scripts/verify-safety.sh` still shows paper mode and real trading false

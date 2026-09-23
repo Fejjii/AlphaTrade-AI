@@ -60,7 +60,8 @@ controlled = (
     and payload.get("watcher_paper_staging_activation") is True
     and payload.get("telegram_interaction_enabled") is True
     and payload.get("telegram_paper_activation_armed") is True
-    and payload.get("telegram_inbound_mode") in ("polling", "webhook")
+    and payload.get("telegram_inbound_mode") == "polling"
+    and payload.get("telegram_network_permitted") is True
     and payload.get("telegram_alerts_enabled") is not True
     and payload.get("automatic_telegram_delivery_enabled") is not True
 )

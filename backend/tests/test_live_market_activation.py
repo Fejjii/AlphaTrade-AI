@@ -250,6 +250,8 @@ def test_staging_controlled_package_selects_live_evidence() -> None:
             "telegram_inbound_mode": "polling",
             "telegram_bot_id": "bot-100",
             "telegram_chat_id": "tg-chat-1",
+            "telegram_bot_token": "123456789:AAHtestTokenValueForStagingPackage",
+            "telegram_network_permitted": True,
         }
     )
     assert live_market_activation_violations(settings) == []
@@ -500,8 +502,8 @@ def test_declared_config_files_match_the_activation_contract() -> None:
     assert "\nPERPETUAL_EVIDENCE_SOURCE=replay\n" in production
     assert "\nPERPETUAL_EVIDENCE_SOURCE=replay\n" in local
     assert "BINANCE_API_KEY=" not in staging
-    assert render.count("value: binance_usdm") == 2
-    assert render.count("value: https://fapi.binance.com") == 2
+    assert render.count("value: binance_usdm") == 4
+    assert render.count("value: https://fapi.binance.com") == 4
     assert (ROOT / "docs/live_market_staging_activation.md").is_file()
 
 

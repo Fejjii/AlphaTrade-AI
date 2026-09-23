@@ -10,6 +10,50 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.providers.base import ProviderStatus
 
 
+class WorkerComponentObservation(BaseModel):
+    """One Watcher or Telegram process row. Empty when that process has not published."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool = False
+    worker_id: str = ""
+    heartbeat_at: datetime | None = None
+    activation_state: str = "unknown"
+    lease_owner: str = ""
+    lease_epoch: int = 0
+    lease_expires_at: datetime | None = None
+    fence_held: bool = False
+    last_scan_at: datetime | None = None
+    last_scan_reason: str = ""
+    market_source: str = ""
+    freshness_seconds: float | None = None
+    telegram_runtime_state: str = "absent"
+    inbound_mode: str = "off"
+    outbox_pending: int = 0
+    outbox_retryable: int = 0
+    outbox_dead_letter: int = 0
+    last_delivery_at: datetime | None = None
+    last_error_code: str = ""
+    kill_switch_active: bool = False
+    request_count: int = 0
+    request_weight: int = 0
+    rate_limited_count: int = 0
+    cache_hits: int = 0
+
+
+class WorkerRuntimeObservation(BaseModel):
+    """Observed worker rows. ``available`` is false when the status read fails.
+
+    These fields are not the API process configuration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool = False
+    watcher: WorkerComponentObservation = Field(default_factory=WorkerComponentObservation)
+    telegram: WorkerComponentObservation = Field(default_factory=WorkerComponentObservation)
+
+
 class HealthResponse(BaseModel):
     """Basic liveness payload plus trading-safety posture."""
 
@@ -45,6 +89,7 @@ class HealthResponse(BaseModel):
     live_quote_freshness_seconds: Literal[10] = 10
     first_perpetual_symbol: Literal["BTCUSDT"] = "BTCUSDT"
     git_sha: str | None = None
+    worker_runtime: WorkerRuntimeObservation = Field(default_factory=WorkerRuntimeObservation)
     timestamp: datetime
 
 

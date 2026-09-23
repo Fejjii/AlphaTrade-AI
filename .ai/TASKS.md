@@ -1750,4 +1750,47 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   the step-3 evidence blueprint only. Procedures are in
   `docs/controlled_paper_activation.md`.
 
+### AT-081 — Frontier AT-080 P0/P1 remediation
+- Priority: P0 · Status: DONE · Dependencies: AT-080 · Risk: High
+  (Telegram and Watcher must stay paper-only and advisory)
+- Safety classification: Paper execution; public read-only USD-M evidence;
+  no exchange credentials; no exchange mutation; Telegram cannot trade;
+  no deploy; no activation; live trading remains impossible
+- Goal: Close every Frontier AT-080 P0 and P1 without redesigning canonical
+  Candidate authority.
+- Branch: `cursor/activation_frontier_remediation`
+- Base: `070169cd92f1258be337f6fe5ef6230368768d5a` (PR #131 head)
+- Alembic: single head `f1a2b3c4d5e6` (revises `e0f1a2b3c4d5`)
+- Validation recorded on this run:
+  - `uv run ruff check .` and `uv run ruff format --check .` exit 0 (909 files).
+  - `uv run alembic heads` prints `f1a2b3c4d5e6 (head)`.
+  - `uv run pytest --tb=line` exit 0: 2629 passed, 237 warnings, 1378.63s.
+    That process imported modules at collection, before a later one-line
+    change that keeps `last_delivery_at` across idle Telegram cycles.
+  - After that change, `uv run pytest tests/test_frontier_remediation.py::test_postgres_runtime_retries_duplicate_delivery_and_survives_restart -q --tb=short` exit 0.
+  - Strict mypy on 13 changed modules exit 0. Full-package mypy was not run.
+  - Frontend `npm run lint`, `npm run typecheck`, `npm run test` (200 files,
+    1196 tests), and `npm run build` exit 0.
+  - `CI=true npm run test:e2e` exit 0: 30 passed, 13 skipped. The first
+    attempt failed because Playwright's apt install raced with another apt
+    and Chromium was missing. The rerun after `npx playwright install chromium --with-deps` (INSTALL:0) is the result above.
+  - Evaluation: agent 16/16, RAG 5/5, guardrails 7/7. Redis connection
+    refused was logged and tolerated.
+  - Deployment self-checks exit 0: watcher rollback, watcher smoke, watcher
+    health, controlled rollback `--self-check`, watcher activation
+    `--self-check`, Telegram preflight `--expect-disabled` verdict
+    `NOT_ARMED`. Controlled rollback `--apply` exit 2.
+  - Local `sudo docker build -t alphatrade-backend:ci ./backend` exit 0
+    (image `2e0398476c2b`). `COPY src` was not cached.
+  - Exact-head GitHub CI run 35799241936 success on
+    `00b4e20f6bfc83d835c17cad6db7d7d2f14b0900`: backend, deployment-safety,
+    docker-build, e2e-smoke, evaluation, frontend, plus Vercel and Vercel
+    Preview Comments. https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35799241936
+  - Live Binance aggTrade weight from Frankfurt remains UNKNOWN. Not deployed.
+    Not activated.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-060
+- Note: Staging inbound is polling. Webhook is not a staging activation path.
+  Do not merge, deploy, or activate.
+
 

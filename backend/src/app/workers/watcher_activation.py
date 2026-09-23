@@ -104,6 +104,7 @@ class WatcherPaperActivationConfig:
     configured_worker_id: str
     telegram_paper_activation_armed: bool = False
     telegram_inbound_mode: str = "off"
+    telegram_network_permitted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +195,7 @@ def activation_config_from_settings(settings: Settings) -> WatcherPaperActivatio
         configured_worker_id=settings.watcher_paper_worker_id,
         telegram_paper_activation_armed=bool(settings.telegram_paper_activation_armed),
         telegram_inbound_mode=settings.telegram_inbound_mode.value,
+        telegram_network_permitted=bool(settings.telegram_network_permitted),
     )
 
 
@@ -389,6 +391,7 @@ def collect_live_observations(
     session_factory: sessionmaker[Session],
     worker_instance_id: str,
     monitor: object | None = None,
+    freshness_out: dict[str, float | None] | None = None,
 ) -> ActivationObservations:
     """Read migration, lineage, and the live monitor. Probe errors fail closed."""
 
@@ -411,7 +414,7 @@ def collect_live_observations(
 
     provider_state = "unavailable"
     try:
-        provider_state = _probe_provider(settings, monitor)
+        provider_state = _probe_provider(settings, monitor, freshness_out=freshness_out)
     except Exception:
         probe_failed = True
         provider_state = "unavailable"
@@ -543,7 +546,7 @@ def _self_check() -> int:
     from app.workers.watcher_paper import new_worker_instance_id
 
     head = expected_migration_head()
-    if head != "e0f1a2b3c4d5":
+    if head != "f1a2b3c4d5e6":
         print(f"FAIL: migration head {head!r}", file=sys.stderr)
         return 1
     config = _sample_config()
@@ -558,6 +561,7 @@ def _self_check() -> int:
         telegram_paper_activation_armed=True,
         telegram_interaction_enabled=True,
         telegram_inbound_mode="polling",
+        telegram_network_permitted=True,
     )
     if not evaluate_activation(pair, healthy).allowed:
         print("FAIL: controlled telegram pair was refused", file=sys.stderr)
@@ -663,20 +667,34 @@ def _run_cleared_runtime(
 
     projection = build_controlled_scan_hook(settings, factory)
     runtime_box: dict[str, object] = {}
+    monitor_box: dict[str, object] = {}
+    freshness_box: dict[str, float | None] = {}
 
     def gate() -> ActivationDecision:
+        monitor = monitor_box.get("monitor")
+        if monitor is None:
+            monitor = _build_monitor(settings)
+            monitor_box["monitor"] = monitor
         try:
             current = collect_live_observations(
                 settings,
                 session_factory=factory,
                 worker_instance_id=instance_id,
+                monitor=monitor,
+                freshness_out=freshness_box,
             )
         except Exception:
             logger.warning(
                 "watcher_activation_runtime_probe_failed", worker_instance_id=instance_id
             )
             current = _probe_failed_observations(instance_id)
-        current = _with_heartbeat(current, runtime_box.get("runtime"), settings)
+        runtime = runtime_box.get("runtime")
+        if runtime is not None and hasattr(runtime, "note_market_observation"):
+            runtime.note_market_observation(
+                source=settings.perpetual_evidence_source,
+                freshness_seconds=freshness_box.get("seconds"),
+            )
+        current = _with_heartbeat(current, runtime, settings)
         return runtime_health_decision(config, current)
 
     runtime = build_watcher_paper_runtime(
@@ -689,7 +707,10 @@ def _run_cleared_runtime(
         scan_notification_hook=None if projection is None else projection.hook,
     )
     runtime_box["runtime"] = runtime
-    runtime.run_forever()
+    try:
+        runtime.run_forever()
+    finally:
+        _close_monitor(monitor_box.get("monitor"))
 
 
 def _with_heartbeat(
@@ -756,16 +777,37 @@ def _probe_lineage(session: Session, settings: Settings) -> bool:
     return lineage_targets_are_valid(targets)
 
 
-def _probe_provider(settings: Settings, monitor: object | None) -> str:
+def _probe_provider(
+    settings: Settings,
+    monitor: object | None,
+    *,
+    freshness_out: dict[str, float | None] | None = None,
+) -> str:
     if perpetual_source_is_replay(settings) or bool(getattr(monitor, "replay", False)):
         return "replay"
     resolved = monitor if monitor is not None else _build_monitor(settings)
     snapshot = resolved.latest("BTCUSDT")  # type: ignore[attr-defined]
+    last_update = getattr(snapshot, "last_update", None)
+    evaluated_at = getattr(snapshot, "evaluated_at", None)
+    if freshness_out is not None and last_update is not None and evaluated_at is not None:
+        freshness_out["seconds"] = max(0.0, (evaluated_at - last_update).total_seconds())
     return provider_state_for(
         availability=str(snapshot.availability.value),
         reason=str(snapshot.reason.value),
         is_live=bool(snapshot.is_live),
     )
+
+
+def _close_monitor(monitor: object | None) -> None:
+    if monitor is None:
+        return
+    close = getattr(monitor, "close", None)
+    if callable(close):
+        close()
+    source = getattr(monitor, "_source", None)
+    source_close = getattr(source, "close", None)
+    if callable(source_close):
+        source_close()
 
 
 def _build_monitor(settings: Settings) -> object:
@@ -821,8 +863,13 @@ def _architecture_pins() -> _ArchitecturePins:
         freshness_fail_closed=callable(watcher_evidence_error_for_monitor),
         confirmed_setup_only=_CONFIRMED_SETUP == "confirmed_setup",
         risk_block_final=risk_final,
-        kill_switch_preserved=callable(
-            getattr(watcher_paper.WatcherPaperRuntime, "_kill_switch_is_active", None)
+        kill_switch_preserved=(
+            "automated_paper_actions_blocked"
+            in inspect.getsource(watcher_paper.WatcherPaperRuntime._scan_target)
+            and "read_kill_switch_active"
+            in inspect.getsource(watcher_paper.WatcherPaperRuntime._kill_switch_is_active)
+            and "return True"
+            in inspect.getsource(watcher_paper.WatcherPaperRuntime._kill_switch_is_active)
         ),
     )
 
@@ -928,12 +975,26 @@ def _runtime_reasons(observations: ActivationObservations) -> set[str]:
 
 
 def _controlled_telegram_pair(config: WatcherPaperActivationConfig) -> bool:
-    """Paper projection. Legacy alerts and automatic delivery stay forbidden."""
+    """Paper projection. Staging inbound is polling, and the network is on."""
 
     return (
         config.telegram_paper_activation_armed
         and config.telegram_interaction_enabled
-        and config.telegram_inbound_mode in {"polling", "webhook"}
+        and config.telegram_inbound_mode == "polling"
+        and config.telegram_network_permitted
+        and not config.telegram_alerts_enabled
+        and not config.automatic_telegram_delivery_enabled
+    )
+
+
+def _enrollment_posture(config: WatcherPaperActivationConfig) -> bool:
+    """Enrollment on the Telegram process. It does not arm the projection."""
+
+    return (
+        not config.telegram_paper_activation_armed
+        and config.telegram_interaction_enabled
+        and config.telegram_inbound_mode == "polling"
+        and config.telegram_network_permitted
         and not config.telegram_alerts_enabled
         and not config.automatic_telegram_delivery_enabled
     )
@@ -942,12 +1003,13 @@ def _controlled_telegram_pair(config: WatcherPaperActivationConfig) -> bool:
 def _telegram_enabled(config: WatcherPaperActivationConfig) -> bool:
     if config.telegram_alerts_enabled or config.automatic_telegram_delivery_enabled:
         return True
-    if _controlled_telegram_pair(config):
+    if _controlled_telegram_pair(config) or _enrollment_posture(config):
         return False
     return bool(
         config.telegram_interaction_enabled
         or config.telegram_paper_activation_armed
         or config.telegram_inbound_mode != "off"
+        or config.telegram_network_permitted
     )
 
 

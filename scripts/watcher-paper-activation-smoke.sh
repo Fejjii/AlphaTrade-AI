@@ -43,15 +43,28 @@ import json
 import sys
 
 payload = json.loads(sys.argv[1])
-armed = payload.get("watcher_paper_staging_activation") is True
-orchestration = payload.get("watcher_orchestration_enabled") is True
-if not armed or not orchestration:
-    print("FAIL: post-activation smoke expects the armed paper pair", file=sys.stderr)
-    sys.exit(1)
 if payload.get("environment") == "production":
     print("FAIL: production watcher is forbidden", file=sys.stderr)
     sys.exit(1)
-print("  OK: armed paper-monitoring health pair")
+runtime = payload.get("worker_runtime")
+if not isinstance(runtime, dict) or runtime.get("available") is not True:
+    print("FAIL: post-activation smoke expects observed worker_runtime", file=sys.stderr)
+    sys.exit(1)
+watcher = runtime.get("watcher")
+if not isinstance(watcher, dict):
+    print("FAIL: worker_runtime.watcher is missing", file=sys.stderr)
+    sys.exit(1)
+if watcher.get("activation_state") not in {"running", "cleared", "monitoring"}:
+    print(
+        "FAIL: watcher activation_state="
+        f"{watcher.get('activation_state')!r}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if not watcher.get("heartbeat_at"):
+    print("FAIL: watcher heartbeat_at is missing", file=sys.stderr)
+    sys.exit(1)
+print("  OK: observed paper watcher runtime")
 PY
 fi
 

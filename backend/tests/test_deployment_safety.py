@@ -315,6 +315,7 @@ def test_staging_controlled_package_can_construct() -> None:
             "telegram_inbound_mode": "polling",
             "telegram_bot_id": "bot-100",
             "telegram_chat_id": "tg-chat-1",
+            "telegram_bot_token": "123456789:AAHtestTokenValueForStagingPackage",
             "telegram_network_permitted": True,
         }
     )

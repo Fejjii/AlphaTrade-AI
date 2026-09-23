@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.core.config import Settings, TelegramInboundMode
 from app.telegram_activation.contracts import (
@@ -95,6 +95,10 @@ class TelegramPaperActivation:
     @property
     def cursor_store(self) -> ActivationCursorStore:
         return self._cursors
+
+    @property
+    def recipient_organization_id(self) -> UUID:
+        return self._recipient.organization_id
 
     def mark_webhook_mounted(self) -> None:
         self._webhook_mounted = True

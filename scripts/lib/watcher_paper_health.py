@@ -49,7 +49,9 @@ def _controlled_projection(payload: Mapping[str, object]) -> bool:
         return False
     if payload.get("telegram_paper_activation_armed") is not True:
         return False
-    return payload.get("telegram_inbound_mode") in {"polling", "webhook"}
+    if payload.get("telegram_inbound_mode") != "polling":
+        return False
+    return payload.get("telegram_network_permitted") is True
 
 
 def health_payload_errors(payload: Mapping[str, object]) -> tuple[str, ...]:
@@ -130,6 +132,10 @@ def _self_check() -> int:
     interaction_only = {**disarmed, "telegram_interaction_enabled": True}
     if health_payload_errors(package):
         print("FAIL: controlled telegram package was rejected", file=sys.stderr)
+        return 1
+    webhook = {**package, "telegram_inbound_mode": "webhook"}
+    if "telegram_inbound_mode" not in health_payload_errors(webhook):
+        print("FAIL: webhook was accepted as a staging inbound mode", file=sys.stderr)
         return 1
     if "telegram_interaction_enabled" not in health_payload_errors(interaction_only):
         print("FAIL: interaction without the package was accepted", file=sys.stderr)

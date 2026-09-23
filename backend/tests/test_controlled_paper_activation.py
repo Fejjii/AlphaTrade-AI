@@ -51,9 +51,10 @@ def _package(**overrides: object) -> Settings:
         "telegram_inbound_mode": "polling",
         "telegram_bot_id": "bot-100",
         "telegram_chat_id": "tg-chat-1",
+        "telegram_bot_token": "123456789:AAHtestTokenValueForStagingPackage",
         "telegram_alerts_enabled": False,
         "automatic_telegram_delivery_enabled": False,
-        "telegram_network_permitted": False,
+        "telegram_network_permitted": True,
     }
     payload.update(overrides)
     return Settings(**payload)
@@ -69,10 +70,10 @@ def test_full_package_constructs_and_partial_flags_do_not() -> None:
     assert "staging_package_incomplete" not in configuration_blockers(armed)
     assert "environment_forbidden" not in configuration_blockers(armed)
 
-    webhook = _package(telegram_inbound_mode="webhook", telegram_webhook_secret="w" * 32)
-    assert controlled_telegram_projection(webhook) is True
-    networked = _package(telegram_network_permitted=True)
-    assert controlled_telegram_projection(networked) is True
+    with pytest.raises(ValidationError, match="telegram_inbound_mode"):
+        _package(telegram_inbound_mode="webhook", telegram_webhook_secret="w" * 32)
+    with pytest.raises(ValidationError, match="telegram_paper_activation_armed"):
+        _package(telegram_network_permitted=False)
 
     with pytest.raises(ValidationError, match="telegram_interaction_enabled"):
         _package(watcher_orchestration_enabled=False, watcher_paper_staging_activation=False)
@@ -125,6 +126,7 @@ def test_activation_gate_allows_only_the_controlled_pair() -> None:
         telegram_paper_activation_armed=True,
         telegram_interaction_enabled=True,
         telegram_inbound_mode="polling",
+        telegram_network_permitted=True,
     )
     assert evaluate_activation(pair, healthy).allowed is True
     refused = {
@@ -151,6 +153,17 @@ def test_activation_gate_allows_only_the_controlled_pair() -> None:
         ),
         "alerts": (_config(telegram_alerts_enabled=True), healthy, "telegram_forbidden"),
         "partial": (_config(telegram_interaction_enabled=True), healthy, "telegram_forbidden"),
+        "network": (_config(telegram_network_permitted=True), healthy, "telegram_forbidden"),
+        "webhook": (
+            _config(
+                telegram_paper_activation_armed=True,
+                telegram_interaction_enabled=True,
+                telegram_inbound_mode="webhook",
+                telegram_network_permitted=True,
+            ),
+            healthy,
+            "telegram_forbidden",
+        ),
     }
     for name, (config, observations, reason) in refused.items():
         decision = evaluate_activation(config, observations)

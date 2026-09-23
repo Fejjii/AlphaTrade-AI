@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -12,6 +13,7 @@ import httpx
 
 from app.market_contracts.adapters.aggtrades import fetch_complete_agg_trade_rows
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
+from app.market_contracts.adapters.request_budget import record_cache_hit
 from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
@@ -69,14 +71,23 @@ class BinanceUsdmPerpetualSource:
         transport: httpx.BaseTransport | None = None,
         client: ReadOnlyHttpGetClient | None = None,
         catalog: PerpetualInstrumentCatalog | None = None,
+        max_retries: int = 3,
+        weight_per_minute: int = 1800,
+        max_backoff_seconds: float = 30.0,
+        trade_cache_entries: int = 8,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._http = client or ReadOnlyHttpGetClient(
             base_url=self._base_url,
             timeout_seconds=timeout_seconds,
             transport=transport,
+            max_retries=max_retries,
+            weight_per_minute=weight_per_minute,
+            max_backoff_seconds=max_backoff_seconds,
         )
         self._catalog = catalog if catalog is not None else default_perpetual_catalog()
+        self._trade_cache: OrderedDict[tuple[str, str, str], tuple[Any, ...]] = OrderedDict()
+        self._trade_cache_limit = max(trade_cache_entries, 1)
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
         self._regional_failure = False
@@ -146,8 +157,7 @@ class BinanceUsdmPerpetualSource:
         self._assert_request(identity, instrument, identity.timeframe)
         if end <= start:
             raise WrongMarketError("Trade window end must be after start.")
-        rows = fetch_complete_agg_trade_rows(
-            get_json=self._get,
+        rows = self._cached_agg_trades(
             symbol=instrument.provider_symbol,
             start=start,
             end=end,
@@ -333,6 +343,38 @@ class BinanceUsdmPerpetualSource:
             source_connection_id=source_connection_id,
             adapter_version=ADAPTER_VERSION,
         )
+
+    def close(self) -> None:
+        self._http.close()
+
+    def _cached_agg_trades(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[Any, ...]:
+        """Reuse one closed aggTrade window. The key is the window, not the tenant."""
+
+        key = (symbol, start.astimezone(UTC).isoformat(), end.astimezone(UTC).isoformat())
+        cached = self._trade_cache.get(key)
+        if cached is not None:
+            self._trade_cache.move_to_end(key)
+            record_cache_hit()
+            return cached
+        rows = tuple(
+            fetch_complete_agg_trade_rows(
+                get_json=self._get,
+                symbol=symbol,
+                start=start,
+                end=end,
+            )
+        )
+        self._trade_cache[key] = rows
+        self._trade_cache.move_to_end(key)
+        while len(self._trade_cache) > self._trade_cache_limit:
+            self._trade_cache.popitem(last=False)
+        return rows
 
     def _get(self, path: str, params: Mapping[str, str | int] | None) -> Any:
         try:
