@@ -1027,15 +1027,41 @@ def idle_until_signal(
         stop.wait(settings.watcher_paper_poll_interval_seconds)
 
 
-def main() -> None:
-    from app.core.config import get_settings
+def run_watcher_paper_process(*, once: bool = False) -> str:
+    """Start the paper Watcher, or idle when staging is disarmed.
+
+    Disarmed startup constructs Settings and returns ``disarmed`` without
+    opening PostgreSQL, Redis, or provider clients. ``once`` skips the idle
+    wait so tests can observe the posture. Armed staging still requires every
+    operational dependency and fails closed when one is missing.
+    """
+
+    from app.core.disarmed_worker_boot import (
+        WorkerBootRole,
+        idle_disarmed_until_signal,
+        load_worker_process_settings,
+        settings_are_disarmed_paper_worker,
+    )
     from app.core.logging import configure_logging
     from app.core.paper_safety import assert_execution_capable_composition_root
-    from app.db.session import get_session_factory
 
-    settings = get_settings()
+    settings = load_worker_process_settings(WorkerBootRole.WATCHER_PAPER)
     configure_logging(log_level=settings.log_level, json_logs=settings.log_json)
     assert_execution_capable_composition_root(settings)
+    if settings_are_disarmed_paper_worker(settings):
+        logger.warning(
+            "watcher_paper_idle",
+            reason_code="activation_disarmed",
+            posture="disarmed",
+            paper_only=True,
+            enable_real_trading=settings.enable_real_trading,
+            real_trading_enabled=settings.real_trading_enabled,
+        )
+        if not once:
+            idle_disarmed_until_signal(settings, component="watcher_paper")
+        return "disarmed"
+    from app.db.session import get_session_factory
+
     if settings.environment is Environment.STAGING:
         from app.workers.watcher_activation import run_staging_activation
 
@@ -1046,7 +1072,8 @@ def main() -> None:
                 get_session_factory(),
                 reason=decision.primary_reason,
             )
-        return
+            return decision.primary_reason
+        return "armed"
     if not paper_runtime_enabled(settings):
         logger.warning(
             "watcher_paper_runtime_disabled",
@@ -1054,9 +1081,16 @@ def main() -> None:
             environment=settings.environment.value,
             hint="local paper only; staging starts only after the paper activation preflight",
         )
-        return
+        return "disabled"
     runtime = build_watcher_paper_runtime(settings, get_session_factory())
+    if once:
+        return "local_paper"
     runtime.run_forever()
+    return "local_paper"
+
+
+def main() -> None:
+    run_watcher_paper_process(once=False)
 
 
 if __name__ == "__main__":

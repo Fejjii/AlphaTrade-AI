@@ -2161,4 +2161,40 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/final_three_activation_fixes`. Do not
   merge, deploy, or activate.
 
+## AT-ADR-062 — Disarmed Render workers boot before operational secrets
+- **Date:** 2026-09-23
+- **Status:** Accepted
+- **Context:** AT-082 put the staging Settings contract on
+  `alphatrade-watcher-paper-staging` and `alphatrade-telegram-paper-staging`,
+  but Settings still required PostgreSQL, Redis, JWT, OpenAI, and Qdrant
+  before a disarmed worker could start. Those values are `sync: false` in
+  `render.yaml`. Injecting placeholders would be a fake secret. Skipping the
+  same checks for every staging process would weaken the API.
+- **Decision:**
+  1. Watcher and Telegram process startup read the disarmed paper posture
+     before Settings applies operational-dependency checks. The role is
+     process-local. It is not an environment variable.
+  2. While that role is bound and the constructed settings are staging,
+     paper, `paper_internal`, with Watcher and Telegram arms off and no bot
+     token, Settings may be built without `DATABASE_URL`, `REDIS_URL`,
+     `JWT_SECRET`, `OPENAI_API_KEY`, or `QDRANT_URL`. The process then idles
+     `disarmed` and does not open those dependencies.
+  3. Cookie, CORS, denylist, rate-limit, trusted-proxy, paper-only, and
+     `provider_mode!=mock` checks still run. JWT minimum length still runs.
+     A short secret is rejected. The API calls `Settings()` with no worker
+     role, so a literal API blueprint without secrets still fails.
+  4. If either worker is armed, the role is not bound. Missing PostgreSQL,
+     Redis, JWT, provider dependencies, or—for Telegram—the bot token still
+     fail closed. Real trading stays impossible.
+- **Alternatives considered:** Put placeholder secrets in `render.yaml`
+  (rejected: fake credentials). Relax `validate_deployment_settings` for
+  every disarmed staging process (rejected: the API blueprint is also
+  disarmed and must keep failing closed).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Neither blueprint worker is armed.
+  No deploy and no activation.
+- **Consequences:** Branch `cursor/final_render_worker_boot_fix`, based on
+  `5ff0eb8c4a7d171118dfde921259a6da13b60abb`. Do not merge, deploy, or
+  activate.
+
 

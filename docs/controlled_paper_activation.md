@@ -238,6 +238,9 @@ and `alphatrade-telegram-paper-staging` (`python -m app.telegram_activation run`
 Both include the staging Settings contract required to boot (secure refresh
 cookie, `SameSite=none`, HTTPS `CORS_ORIGINS`, Redis rate limit and access-token
 denylist, trusted proxy hop) and stay disarmed. Secrets stay out of the blueprint.
-Both stay disarmed: Watcher flags false, Telegram flags false, inbound `off`,
-network false, and no bot token. Adding the services to the blueprint does not
-deploy or activate them. `.env.staging.example` keeps the same disarmed posture.
+A disarmed worker recognizes that posture before it requires PostgreSQL, Redis,
+JWT, provider credentials, or a Telegram bot token, then idles. Arming either
+worker makes those dependencies mandatory again. The API service does not use
+that path, so staging API validation is unchanged. Adding the services to the
+blueprint does not deploy or activate them. `.env.staging.example` keeps the
+same disarmed posture.

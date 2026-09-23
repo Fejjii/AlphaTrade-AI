@@ -1842,4 +1842,36 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Draft PR https://github.com/Fejjii/AlphaTrade-AI/pull/133 targets
   `cursor/activation_frontier_remediation`. Do not merge, deploy, or activate.
 
+### AT-083 — Disarmed Render workers boot without operational secrets
+- Priority: P0 · Status: IN PROGRESS · Dependencies: AT-082 · Risk: High
+  (staging validation must stay fail-closed for the API and for armed workers)
+- Safety classification: Paper execution; workers stay disarmed; no exchange
+  credentials; no deploy; no activation; live trading remains impossible
+- Goal: `alphatrade-watcher-paper-staging` and
+  `alphatrade-telegram-paper-staging` construct Settings and idle disarmed
+  from the literal `render.yaml` environment. No secret is required only to
+  boot disarmed. Armed workers still require PostgreSQL, Redis, JWT, provider
+  dependencies, and the Telegram bot token where the arm applies.
+- Branch: `cursor/final_render_worker_boot_fix`
+- Base: `5ff0eb8c4a7d171118dfde921259a6da13b60abb`
+- Alembic: unchanged. No new revision.
+- Local validation on this run:
+  - `uv run ruff check .` and `uv run ruff format --check .` exit 0
+    (915 files).
+  - Strict mypy on `disarmed_worker_boot.py`, `deployment_safety.py`,
+    `watcher_paper.py`, and `telegram_activation/__main__.py` exit 0.
+  - Targeted pytest exit 0: 129 passed, 0 failed. Includes
+    `tests/test_disarmed_render_worker_boot.py`, deployment safety, deployment
+    scripts, config, Watcher paper activation, Telegram paper activation, and
+    the literal blueprint boot test.
+  - `tests/test_final_three_activation_fixes.py` plus the frontier blueprint
+    and live-market config tests: 12 passed, 2 skipped. The skips are
+    PostgreSQL tests; PostgreSQL was not reachable in this environment.
+  - Deployment-safety script self-checks exit 0. Telegram preflight verdict
+    `NOT_ARMED`. Controlled rollback `--apply` exit 2.
+  - Exact-head GitHub CI: not yet recorded.
+- Recommended model: Grok 4.6 Extra High
+- ADR: AT-ADR-062
+- Note: Do not merge, deploy, or activate.
+
 

@@ -6,9 +6,13 @@ import argparse
 import json
 import sys
 
+import structlog
+
 from app.core.config import get_settings
 from app.telegram_activation.preflight import defaults_are_safe, run_preflight
 from app.telegram_activation.rollback import plan_rollback, rollback_refuses_apply
+
+logger = structlog.get_logger("telegram_activation.cli")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,22 +66,53 @@ def _preflight(*, expect_disabled: bool, expect_armable: bool) -> int:
     return 0 if report.defaults_safe or report.runtime_armable else 1
 
 
-def _run(*, once: bool) -> int:
-    """Paper Telegram process. Idle and heartbeat when disarmed. Does not trade."""
+def run_telegram_paper_process(*, once: bool = False) -> str:
+    """Drain and poll when armed. Idle when disarmed. Does not trade.
 
+    Disarmed startup constructs Settings and returns ``disarmed`` without
+    opening PostgreSQL, Redis, or the Telegram network. Armed startup keeps
+    global secret and dependency validation.
+    """
+
+    from app.core.disarmed_worker_boot import (
+        WorkerBootRole,
+        idle_disarmed_until_signal,
+        load_worker_process_settings,
+        settings_are_disarmed_paper_worker,
+    )
     from app.core.logging import configure_logging
     from app.core.paper_safety import assert_execution_capable_composition_root
+
+    settings = load_worker_process_settings(WorkerBootRole.TELEGRAM_PAPER)
+    configure_logging(log_level=settings.log_level, json_logs=settings.log_json)
+    assert_execution_capable_composition_root(settings)
+    if settings_are_disarmed_paper_worker(settings):
+        logger.warning(
+            "telegram_paper_idle",
+            posture="disarmed",
+            paper_only=True,
+            reason_code="activation_disarmed",
+            enable_real_trading=settings.enable_real_trading,
+            real_trading_enabled=settings.real_trading_enabled,
+        )
+        if not once:
+            idle_disarmed_until_signal(settings, component="telegram_paper")
+        return "disarmed"
     from app.db.session import get_session_factory
     from app.telegram_activation.runtime import build_telegram_runtime
 
-    settings = get_settings()
-    configure_logging(log_level=settings.log_level, json_logs=settings.log_json)
-    assert_execution_capable_composition_root(settings)
     runtime = build_telegram_runtime(settings, get_session_factory())
     if once:
         runtime.run_cycle()
-        return 0
+        return "armed"
     runtime.run_forever()
+    return "armed"
+
+
+def _run(*, once: bool) -> int:
+    """Paper Telegram process. Idle when disarmed. Does not trade."""
+
+    run_telegram_paper_process(once=once)
     return 0
 
 

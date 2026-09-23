@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
 import threading
 import time
 from datetime import UTC, datetime, timedelta, timezone
@@ -53,13 +49,6 @@ ROOT = Path(__file__).resolve().parents[2]
 START = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
 END = START + timedelta(minutes=30)
 EVENT_MS = int(START.timestamp() * 1000) + 1_000
-_SECRET_PLACEHOLDERS = {
-    "DATABASE_URL": "postgresql+psycopg://user:pass@db.example.com:5432/alphatrade",
-    "REDIS_URL": "redis://redis.example.com:6379/0",
-    "QDRANT_URL": "https://qdrant.example.com",
-    "JWT_SECRET": "j" * 48,
-    "OPENAI_API_KEY": "sk-test-not-a-real-key",
-}
 _WORKER_SERVICES = (
     ("alphatrade-watcher-paper-staging", "python -m app.workers.watcher_paper"),
     ("alphatrade-telegram-paper-staging", "python -m app.telegram_activation run"),
@@ -590,92 +579,39 @@ def test_worker_health_uses_heartbeat_age_not_row_presence() -> None:
 
 
 def test_render_worker_blueprint_constructs_disarmed_staging_settings() -> None:
+    from tests.test_disarmed_render_worker_boot import WorkerBootRole, boot_literal_worker
+
     document = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))
     services = {item["name"]: item for item in document["services"]}
     assert "TELEGRAM_BOT_TOKEN" not in (ROOT / "render.yaml").read_text(encoding="utf-8")
+    roles = {
+        "alphatrade-watcher-paper-staging": WorkerBootRole.WATCHER_PAPER,
+        "alphatrade-telegram-paper-staging": WorkerBootRole.TELEGRAM_PAPER,
+    }
     for name, command in _WORKER_SERVICES:
         service = services[name]
         assert service["dockerCommand"] == command
-        env = _blueprint_env(service["envVars"])
-        for secret in _SECRET_PLACEHOLDERS:
-            assert secret not in env
-        assert "TELEGRAM_BOT_TOKEN" not in env
-        merged = {**env, **_SECRET_PLACEHOLDERS}
-        built = _settings_from_environment(merged)
-        assert built["environment"] == "staging"
-        assert built["execution_mode"] == "paper"
-        assert built["real_trading_enabled"] is False
-        assert built["enable_real_trading"] is False
-        assert built["watcher_orchestration_enabled"] is False
-        assert built["watcher_paper_staging_activation"] is False
-        assert built["telegram_paper_activation_armed"] is False
-        assert built["telegram_network_permitted"] is False
-        assert built["telegram_inbound_mode"] == "off"
-        assert built["telegram_bot_token"] == ""
-        assert built["auth_refresh_cookie_enabled"] is True
-        assert built["auth_cookie_secure"] is True
-        assert built["auth_cookie_samesite"] == "none"
-        assert built["cors_origins"]
-        assert all(origin.startswith("https://") for origin in built["cors_origins"])
-
-
-def _blueprint_env(items: list[dict[str, object]]) -> dict[str, str]:
-    env: dict[str, str] = {}
-    for item in items:
-        key = str(item["key"])
-        if "value" not in item:
-            continue
-        value = item["value"]
-        if isinstance(value, bool):
-            env[key] = "true" if value else "false"
-        else:
-            env[key] = str(value)
-    return env
-
-
-def _settings_from_environment(env: dict[str, str]) -> dict[str, object]:
-    script = """
-import json, os
-from app.core.config import Settings
-payload = json.loads(os.environ["BLUEPRINT_JSON"])
-os.environ.clear()
-os.environ["BLUEPRINT_JSON"] = json.dumps(payload)
-os.environ.update(payload)
-settings = Settings()
-print(json.dumps({
-    "environment": settings.environment.value,
-    "execution_mode": settings.execution_mode.value,
-    "real_trading_enabled": settings.real_trading_enabled,
-    "enable_real_trading": settings.enable_real_trading,
-    "watcher_orchestration_enabled": settings.watcher_orchestration_enabled,
-    "watcher_paper_staging_activation": settings.watcher_paper_staging_activation,
-    "telegram_paper_activation_armed": settings.telegram_paper_activation_armed,
-    "telegram_network_permitted": settings.telegram_network_permitted,
-    "telegram_inbound_mode": settings.telegram_inbound_mode.value,
-    "telegram_bot_token": settings.telegram_bot_token,
-    "auth_refresh_cookie_enabled": settings.auth_refresh_cookie_enabled,
-    "auth_cookie_secure": settings.auth_cookie_secure,
-    "auth_cookie_samesite": settings.auth_cookie_samesite,
-    "cors_origins": settings.cors_origins,
-}))
-"""
-    completed = subprocess.run(
-        [sys.executable, "-c", script],
-        check=False,
-        cwd="/tmp",
-        capture_output=True,
-        text=True,
-        env={
-            "PATH": os.environ.get("PATH", ""),
-            "PYTHONPATH": str(ROOT / "backend" / "src"),
-            "BLUEPRINT_JSON": json.dumps(env),
-            "PYTHONDONTWRITEBYTECODE": "1",
-        },
-    )
-    assert completed.returncode == 0, completed.stderr
-    loaded = json.loads(completed.stdout)
-    assert isinstance(loaded, dict)
-    return loaded
+        booted = boot_literal_worker(name, roles[name])
+        assert booted["posture"] == "disarmed"
+        assert booted["environment"] == "staging"
+        assert booted["execution_mode"] == "paper"
+        assert booted["real_trading_enabled"] is False
+        assert booted["enable_real_trading"] is False
+        assert booted["watcher_orchestration_enabled"] is False
+        assert booted["watcher_paper_staging_activation"] is False
+        assert booted["telegram_paper_activation_armed"] is False
+        assert booted["telegram_network_permitted"] is False
+        assert booted["telegram_inbound_mode"] == "off"
+        assert booted["telegram_bot_token_configured"] is False
+        assert booted["database_url_configured"] is False
+        assert booted["jwt_secret_configured"] is False
+        assert booted["auth_refresh_cookie_enabled"] is True
+        assert booted["auth_cookie_secure"] is True
+        assert booted["auth_cookie_samesite"] == "none"
+        origins = booted["cors_origins"]
+        assert isinstance(origins, list)
+        assert origins
+        assert all(str(origin).startswith("https://") for origin in origins)
 
 
 @requires_postgres

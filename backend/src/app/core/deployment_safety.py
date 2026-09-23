@@ -69,7 +69,13 @@ def validate_deployment_settings(settings: Settings) -> None:
     ):
         errors.append("exchange_mode=paper_exchange_demo is not allowed in production")
 
-    if settings.jwt_secret.strip().lower() in _WEAK_JWT_SECRETS:
+    # Dedicated disarmed workers bind a process-local role before this runs.
+    # The API never binds it. Armed settings ignore it and keep every check below.
+    from app.core.disarmed_worker_boot import defer_operational_dependencies
+
+    defer_ops = defer_operational_dependencies(settings)
+
+    if not defer_ops and settings.jwt_secret.strip().lower() in _WEAK_JWT_SECRETS:
         errors.append("jwt_secret is a known weak placeholder; use a long random value")
 
     if not settings.auth_refresh_cookie_enabled:
@@ -84,31 +90,14 @@ def validate_deployment_settings(settings: Settings) -> None:
     elif samesite == "none" and not _cookie_secure_resolved(settings):
         errors.append("auth_cookie_samesite=none requires auth_cookie_secure=true")
 
-    if not settings.database_url.strip():
-        errors.append("database_url is required in staging/production")
-    elif _url_uses_localhost(settings.database_url):
-        errors.append("database_url must point to managed Postgres (not localhost)")
-
-    if not settings.redis_url.strip():
-        errors.append("redis_url is required in staging/production")
-    elif _url_uses_localhost(settings.redis_url):
-        errors.append("redis_url must point to managed Redis (not localhost)")
-
-    if not settings.openai_api_key.strip():
-        errors.append("openai_api_key is required in staging/production (AT-013 fail-closed)")
+    if not defer_ops:
+        errors.extend(_operational_dependency_errors(settings))
 
     provider_mode = settings.provider_mode.strip().lower()
     if provider_mode == "mock":
         errors.append(
             "provider_mode=mock is not allowed in staging/production (AT-013 fail-closed)"
         )
-
-    qdrant = settings.qdrant_url.strip()
-    if not qdrant:
-        # Staging and production both require hosted Qdrant for authoritative RAG.
-        errors.append("qdrant_url is required in staging/production (AT-013 fail-closed)")
-    elif _url_uses_localhost(qdrant):
-        errors.append("qdrant_url must point to hosted Qdrant (not localhost)")
 
     if not settings.cors_origins:
         errors.append("cors_origins must include the deployed frontend URL(s)")
@@ -149,6 +138,35 @@ def validate_deployment_settings(settings: Settings) -> None:
     if errors:
         joined = "; ".join(errors)
         raise ValueError(f"deployment safety check failed: {joined}")
+
+
+def _operational_dependency_errors(settings: Settings) -> list[str]:
+    """PostgreSQL, Redis, provider, and Qdrant requirements for active staging.
+
+    Disarmed worker startup does not call this. The API and armed workers do.
+    """
+
+    errors: list[str] = []
+    if not settings.database_url.strip():
+        errors.append("database_url is required in staging/production")
+    elif _url_uses_localhost(settings.database_url):
+        errors.append("database_url must point to managed Postgres (not localhost)")
+
+    if not settings.redis_url.strip():
+        errors.append("redis_url is required in staging/production")
+    elif _url_uses_localhost(settings.redis_url):
+        errors.append("redis_url must point to managed Redis (not localhost)")
+
+    if not settings.openai_api_key.strip():
+        errors.append("openai_api_key is required in staging/production (AT-013 fail-closed)")
+
+    qdrant = settings.qdrant_url.strip()
+    if not qdrant:
+        # Staging and production both require hosted Qdrant for authoritative RAG.
+        errors.append("qdrant_url is required in staging/production (AT-013 fail-closed)")
+    elif _url_uses_localhost(qdrant):
+        errors.append("qdrant_url must point to hosted Qdrant (not localhost)")
+    return errors
 
 
 def deployment_posture(settings: Settings) -> dict[str, object]:
