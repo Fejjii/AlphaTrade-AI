@@ -50,8 +50,7 @@ START = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
 END = START + timedelta(minutes=30)
 EVENT_MS = int(START.timestamp() * 1000) + 1_000
 _WORKER_SERVICES = (
-    ("alphatrade-watcher-paper-staging", "python -m app.workers.watcher_paper"),
-    ("alphatrade-telegram-paper-staging", "python -m app.telegram_activation run"),
+    ("alphatrade-paper-worker-staging", "python -m app.workers.paper_worker"),
 )
 
 
@@ -585,8 +584,7 @@ def test_render_worker_blueprint_constructs_disarmed_staging_settings() -> None:
     services = {item["name"]: item for item in document["services"]}
     assert "TELEGRAM_BOT_TOKEN" not in (ROOT / "render.yaml").read_text(encoding="utf-8")
     roles = {
-        "alphatrade-watcher-paper-staging": WorkerBootRole.WATCHER_PAPER,
-        "alphatrade-telegram-paper-staging": WorkerBootRole.TELEGRAM_PAPER,
+        "alphatrade-paper-worker-staging": WorkerBootRole.PAPER_WORKER,
     }
     for name, command in _WORKER_SERVICES:
         service = services[name]

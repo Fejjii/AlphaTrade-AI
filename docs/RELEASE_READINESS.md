@@ -121,10 +121,11 @@ Do **not** treat these as product defects. They are the exact human/ops boundary
 3. `d4f7a2c8e901` — learning attribution  
 4. `e8f1c4a9b702` — `journal_trades.account_id` (current head)
 
-Blueprint workers skip entrypoint migrations. `dockerCommand` is
-`python -m app.workers.watcher_paper` and `python -m app.telegram_activation run`.
-Both stay disarmed. The Slice 59 service `alphatrade-worker-staging` is not in
-`render.yaml`.
+Blueprint workers skip entrypoint migrations. The paper worker `dockerCommand`
+is `python -m app.workers.paper_worker`. It stays disarmed and supervises
+Watcher and Telegram. `alphatrade-worker-staging`,
+`alphatrade-watcher-paper-staging`, and `alphatrade-telegram-paper-staging`
+are not in `render.yaml`.
 
 ---
 

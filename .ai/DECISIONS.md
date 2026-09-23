@@ -2234,4 +2234,44 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/render_blueprint_final_cleanup`, based on
   `6314a2021441384b9a1bb20f6c0b82916b15f6bd`. Do not deploy or activate.
 
+## AT-ADR-064 — One supervised paper worker
+- **Date:** 2026-09-23
+- **Status:** Accepted
+- **Context:** The staging blueprint ran Watcher and Telegram as two Render
+  workers plus the API. The paper path needs both runtimes, and a third
+  compute service is not required for that split.
+- **Decision:**
+  1. `render.yaml` defines exactly `alphatrade-api-staging` and
+     `alphatrade-paper-worker-staging`. Both stay on the Starter plan. The
+     paper worker command is `python -m app.workers.paper_worker`. The
+     dedicated Watcher service, the dedicated Telegram service, and the
+     Slice 59 worker are not Blueprint services.
+  2. The paper worker supervises the existing Watcher runtime and the
+     existing Telegram runtime. Each has its own thread, health record, and
+     failure counter. Settings objects are copied before either runtime is
+     built. A Telegram exception does not rewrite Watcher health. A Watcher
+     exception or authority-flag change is reverted on that copy and does
+     not change the Telegram copy.
+  3. Scan leases and the Telegram runtime lease, cursor, and outbox stay in
+     the existing runtimes. The supervisor starts one loop of each. It does
+     not call `app.workers.entrypoint` and it does not mount the API.
+  4. Disarmed boot uses `WorkerBootRole.PAPER_WORKER` and does not open
+     PostgreSQL, Redis, or a bot token. Armed boot does not bind that role,
+     so the existing dependency and secret checks stay mandatory.
+  5. No deploy and no activation. Live trading stays impossible.
+- **Alternatives considered:** Keep two worker services (rejected: the cost
+  target is two Render compute services). Fold the worker into the API
+  (rejected: a worker failure must not take down the API, and the API must
+  not gain the worker's process role). Run the two runtimes as subprocesses
+  of the supervisor (rejected: health and shutdown stay simpler in one
+  process when each runtime already fences itself in PostgreSQL).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. The blueprint worker stays disarmed.
+  Render's published Starter price is $7 per month for a web service and $7
+  per month for a background worker (512 MB, 0.5 CPU), so the two compute
+  services are $14 per month before workspace, PostgreSQL, Redis, and
+  bandwidth. Those other charges are not set by this blueprint.
+- **Consequences:** Branch `cursor/consolidated-paper-worker-37fe`, based on
+  `8a2512c85d8c876576410e9de300310f720b37cb`. Do not deploy or activate.
+
 

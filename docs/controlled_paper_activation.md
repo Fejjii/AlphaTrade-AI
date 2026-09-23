@@ -211,7 +211,7 @@ Print the checklist without applying it:
 
 `--apply` exits 2 and changes nothing. A human then:
 
-1. Send SIGTERM to the dedicated Watcher and any Telegram intake process. Confirm both have exited.
+1. Send SIGTERM to `alphatrade-paper-worker-staging`. The supervisor stops the Watcher and Telegram runtimes and exits. Confirm the process has exited.
 2. Set `TELEGRAM_PAPER_ACTIVATION_ARMED=false`.
 3. Set `TELEGRAM_INBOUND_MODE=off`.
 4. Clear `TELEGRAM_WEBHOOK_SECRET` without logging the previous value.
@@ -227,22 +227,24 @@ Print the checklist without applying it:
 14. Leave outbox, audit, cursor, send-ledger, Candidate, Journal, and lease rows in place.
 15. Do not downgrade Alembic.
 16. Leave the kill switch unchanged.
-17. Restart the API and worker.
+17. Restart the API and the paper worker.
 18. Confirm `GET /health` shows `execution_mode=paper`, `real_trading_enabled=false`, `perpetual_evidence_source=replay`, `perpetual_evidence_activation=inactive`, and `worker_runtime` for the disarmed workers. API flag fields are configuration, not a substitute for `worker_runtime`.
 19. Confirm `GET /health/telegram-paper-activation` shows `NOT_ARMED`.
 
 ## What is not in the blueprint
 
-`render.yaml` defines `alphatrade-api-staging`, `alphatrade-watcher-paper-staging`
-(`python -m app.workers.watcher_paper`), and `alphatrade-telegram-paper-staging`
-(`python -m app.telegram_activation run`). It does not define
-`alphatrade-worker-staging`. That Slice 59 process is not the paper runtime.
-The Watcher and Telegram workers include the staging Settings contract required to boot (secure refresh
-cookie, `SameSite=none`, HTTPS `CORS_ORIGINS`, Redis rate limit and access-token
-denylist, trusted proxy hop) and stay disarmed. Secrets stay out of the blueprint.
-A disarmed worker recognizes that posture before it requires PostgreSQL, Redis,
-JWT, provider credentials, or a Telegram bot token, then idles. Arming either
-worker makes those dependencies mandatory again. The API service does not use
-that path, so staging API validation is unchanged. Adding the services to the
-blueprint does not deploy or activate them. `.env.staging.example` keeps the
-same disarmed posture.
+`render.yaml` defines two compute services: `alphatrade-api-staging` and
+`alphatrade-paper-worker-staging` (`python -m app.workers.paper_worker`,
+Starter). The paper worker supervises the Watcher runtime and the Telegram
+paper runtime. It does not define `alphatrade-worker-staging`,
+`alphatrade-watcher-paper-staging`, or `alphatrade-telegram-paper-staging`.
+The Slice 59 process is not the paper runtime. The paper worker includes the
+staging Settings contract required to boot (secure refresh cookie,
+`SameSite=none`, HTTPS `CORS_ORIGINS`, Redis rate limit and access-token
+denylist, trusted proxy hop) and stays disarmed. Secrets stay out of the
+blueprint. A disarmed worker recognizes that posture before it requires
+PostgreSQL, Redis, JWT, provider credentials, or a Telegram bot token, then
+idles. Arming the worker makes those dependencies mandatory again. The API
+service does not use that path, so staging API validation is unchanged.
+Adding the service to the blueprint does not deploy or activate it.
+`.env.staging.example` keeps the same disarmed posture.

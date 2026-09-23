@@ -664,8 +664,7 @@ def test_partial_deployment_and_rollback_order_keep_live_trading_impossible() ->
     blueprint = (ROOT / "render.yaml").read_text(encoding="utf-8")
     assert "TELEGRAM_BOT_TOKEN" not in blueprint
     for name, command in (
-        ("alphatrade-watcher-paper-staging", "python -m app.workers.watcher_paper"),
-        ("alphatrade-telegram-paper-staging", "python -m app.telegram_activation run"),
+        ("alphatrade-paper-worker-staging", "python -m app.workers.paper_worker"),
     ):
         start = blueprint.index(f"name: {name}")
         block = blueprint[start : start + 4000]
