@@ -1782,8 +1782,12 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
     `NOT_ARMED`. Controlled rollback `--apply` exit 2.
   - Local `sudo docker build -t alphatrade-backend:ci ./backend` exit 0
     (image `2e0398476c2b`). `COPY src` was not cached.
-  - Exact-head GitHub CI is recorded only after the push. Live Binance
-    aggTrade weight from Frankfurt remains UNKNOWN. Not deployed. Not activated.
+  - Exact-head GitHub CI run 35799241936 success on
+    `00b4e20f6bfc83d835c17cad6db7d7d2f14b0900`: backend, deployment-safety,
+    docker-build, e2e-smoke, evaluation, frontend, plus Vercel and Vercel
+    Preview Comments. https://github.com/Fejjii/AlphaTrade-AI/actions/runs/35799241936
+  - Live Binance aggTrade weight from Frankfurt remains UNKNOWN. Not deployed.
+    Not activated.
 - Recommended model: Grok 4.6 Extra High
 - ADR: AT-ADR-060
 - Note: Staging inbound is polling. Webhook is not a staging activation path.
