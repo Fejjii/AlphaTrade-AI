@@ -502,8 +502,8 @@ def test_declared_config_files_match_the_activation_contract() -> None:
     assert "\nPERPETUAL_EVIDENCE_SOURCE=replay\n" in production
     assert "\nPERPETUAL_EVIDENCE_SOURCE=replay\n" in local
     assert "BINANCE_API_KEY=" not in staging
-    assert render.count("value: binance_usdm") == 3
-    assert render.count("value: https://fapi.binance.com") == 3
+    assert render.count("value: binance_usdm") == 2
+    assert render.count("value: https://fapi.binance.com") == 2
     assert (ROOT / "docs/live_market_staging_activation.md").is_file()
 
 

@@ -1,10 +1,11 @@
 """Controlled staging activation for paper Watcher monitoring.
 
 The arm defaults off. This module does not deploy, does not edit environment
-files, and does not enable real trading. The dedicated worker calls
-:func:`run_staging_activation` and scans only after preflight clears. When the
-controlled paper package is armed, that path installs the Telegram projection
-hook. The API process never autostarts this path.
+files, and does not enable real trading. The dedicated worker and the
+supervised paper worker call :func:`run_staging_activation` and scan only after
+preflight clears. When the controlled paper package is armed, that path
+installs the Telegram projection hook. The hook enqueues. It does not deliver.
+The API process never autostarts this path.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
 from app.market_activation.profile import REPLAY_MODES
 from app.market_contracts.adapters.factory import perpetual_source_is_replay
+from app.workers.watcher_paper import WatcherPaperRuntime
 
 logger = structlog.get_logger("workers.watcher_activation")
 
@@ -654,19 +656,28 @@ def _read_text(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def _run_cleared_runtime(
+@dataclass(frozen=True, slots=True)
+class StagingWatcherSession:
+    """Cleared Watcher runtime. ``close`` releases the market monitor."""
+
+    runtime: WatcherPaperRuntime
+    close: Callable[[], None]
+
+
+def open_staging_watcher_session(
     settings: Settings,
     config: WatcherPaperActivationConfig,
     instance_id: str,
-    session_factory: sessionmaker[Session] | None,
-) -> None:
+    session_factory: sessionmaker[Session] | None = None,
+) -> StagingWatcherSession:
+    """Build the cleared paper Watcher. Does not loop and does not deliver."""
+
+    from app.controlled_activation.projection import build_controlled_scan_hook
     from app.workers.watcher_paper import build_watcher_paper_runtime
 
     factory = session_factory if session_factory is not None else _default_session_factory()
-    from app.controlled_activation.projection import build_controlled_scan_hook
-
     projection = build_controlled_scan_hook(settings, factory)
-    runtime_box: dict[str, object] = {}
+    runtime_box: dict[str, WatcherPaperRuntime] = {}
     monitor_box: dict[str, object] = {}
     freshness_box: dict[str, float | None] = {}
 
@@ -689,7 +700,7 @@ def _run_cleared_runtime(
             )
             current = _probe_failed_observations(instance_id)
         runtime = runtime_box.get("runtime")
-        if runtime is not None and hasattr(runtime, "note_market_observation"):
+        if runtime is not None:
             runtime.note_market_observation(
                 source=settings.perpetual_evidence_source,
                 freshness_seconds=freshness_box.get("seconds"),
@@ -707,10 +718,29 @@ def _run_cleared_runtime(
         scan_notification_hook=None if projection is None else projection.hook,
     )
     runtime_box["runtime"] = runtime
-    try:
-        runtime.run_forever()
-    finally:
+
+    def close() -> None:
         _close_monitor(monitor_box.get("monitor"))
+
+    return StagingWatcherSession(runtime=runtime, close=close)
+
+
+def _run_cleared_runtime(
+    settings: Settings,
+    config: WatcherPaperActivationConfig,
+    instance_id: str,
+    session_factory: sessionmaker[Session] | None,
+) -> None:
+    session = open_staging_watcher_session(
+        settings,
+        config,
+        instance_id,
+        session_factory,
+    )
+    try:
+        session.runtime.run_forever()
+    finally:
+        session.close()
 
 
 def _with_heartbeat(

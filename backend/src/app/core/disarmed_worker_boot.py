@@ -1,9 +1,10 @@
 """Disarmed paper-worker boot.
 
-Dedicated Watcher and Telegram processes recognize a disarmed staging posture
-before Settings requires PostgreSQL, Redis, JWT, provider credentials, or a
-Telegram bot token. The recognition is process-local. It is not an environment
-variable and the API never sets it.
+Dedicated Watcher and Telegram processes, and the supervised paper worker that
+hosts both, recognize a disarmed staging posture before Settings requires
+PostgreSQL, Redis, JWT, provider credentials, or a Telegram bot token. The
+recognition is process-local. It is not an environment variable and the API
+never sets it.
 
 Armed workers leave the role unset, so global deployment validation stays
 mandatory. A disarmed role does not defer those checks when the constructed
@@ -48,10 +49,20 @@ _DISARMED_FLAGS = (
 
 
 class WorkerBootRole(StrEnum):
-    """Dedicated paper processes that may idle while disarmed."""
+    """Paper processes that may idle while disarmed."""
 
     WATCHER_PAPER = "watcher_paper"
     TELEGRAM_PAPER = "telegram_paper"
+    PAPER_WORKER = "paper_worker"
+
+
+_DISARMED_ROLES = frozenset(
+    {
+        WorkerBootRole.WATCHER_PAPER,
+        WorkerBootRole.TELEGRAM_PAPER,
+        WorkerBootRole.PAPER_WORKER,
+    }
+)
 
 
 _ROLE: ContextVar[WorkerBootRole | None] = ContextVar("disarmed_worker_boot_role", default=None)
@@ -77,7 +88,7 @@ def defer_operational_dependencies(settings: Settings) -> bool:
     """
 
     role = _ROLE.get()
-    if role not in (WorkerBootRole.WATCHER_PAPER, WorkerBootRole.TELEGRAM_PAPER):
+    if role not in _DISARMED_ROLES:
         return False
     return settings_are_disarmed_paper_worker(settings)
 
@@ -143,7 +154,7 @@ def load_worker_process_settings(role: WorkerBootRole) -> Settings:
 
     from app.core.config import get_settings
 
-    if role not in (WorkerBootRole.WATCHER_PAPER, WorkerBootRole.TELEGRAM_PAPER):
+    if role not in _DISARMED_ROLES:
         raise ValueError("unknown worker boot role")
     get_settings.cache_clear()
     disarmed = environ_is_disarmed_worker_boot()

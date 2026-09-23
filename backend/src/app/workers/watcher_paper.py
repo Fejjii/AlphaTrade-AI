@@ -976,6 +976,38 @@ def build_watcher_paper_runtime(
     )
 
 
+def publish_idle_watcher_status(
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+    *,
+    worker_id: str,
+    reason: str,
+    now: datetime,
+) -> None:
+    """Heartbeat a refused or disarmed Watcher. Does not scan or open Telegram."""
+
+    from app.persistence.runtime_status import (
+        WATCHER_COMPONENT,
+        RuntimeStatusWrite,
+        publish_runtime_status,
+    )
+
+    state = "disarmed" if reason == "activation_disarmed" else "refused"
+    publish_runtime_status(
+        session_factory,
+        RuntimeStatusWrite(
+            component=WATCHER_COMPONENT,
+            worker_id=worker_id,
+            heartbeat_at=now,
+            activation_state=state,
+            last_scan_reason=reason,
+            market_source=settings.perpetual_evidence_source,
+            telegram_runtime_state="absent",
+            inbound_mode=settings.telegram_inbound_mode.value,
+        ),
+    )
+
+
 def idle_until_signal(
     settings: Settings,
     session_factory: sessionmaker[Session],
@@ -984,11 +1016,6 @@ def idle_until_signal(
 ) -> None:
     """Stay up and heartbeat when staging is disarmed or refused. Does not scan."""
 
-    from app.persistence.runtime_status import (
-        WATCHER_COMPONENT,
-        RuntimeStatusWrite,
-        publish_runtime_status,
-    )
     from app.signal_fusion.memory import UtcClock
 
     stop = threading.Event()
@@ -1000,7 +1027,6 @@ def idle_until_signal(
     signal.signal(signal.SIGTERM, _handle)
     worker_id = new_worker_instance_id(settings.watcher_paper_worker_id)
     clock = UtcClock()
-    state = "disarmed" if reason == "activation_disarmed" else "refused"
     logger.warning(
         "watcher_paper_idle",
         worker_id=worker_id,
@@ -1009,18 +1035,12 @@ def idle_until_signal(
     )
     while not stop.is_set():
         try:
-            publish_runtime_status(
+            publish_idle_watcher_status(
+                settings,
                 session_factory,
-                RuntimeStatusWrite(
-                    component=WATCHER_COMPONENT,
-                    worker_id=worker_id,
-                    heartbeat_at=clock.now(),
-                    activation_state=state,
-                    last_scan_reason=reason,
-                    market_source=settings.perpetual_evidence_source,
-                    telegram_runtime_state="absent",
-                    inbound_mode=settings.telegram_inbound_mode.value,
-                ),
+                worker_id=worker_id,
+                reason=reason,
+                now=clock.now(),
             )
         except Exception:
             logger.warning("watcher_runtime_status_unpublished", worker_id=worker_id)
