@@ -49,9 +49,7 @@ ROOT = Path(__file__).resolve().parents[2]
 START = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
 END = START + timedelta(minutes=30)
 EVENT_MS = int(START.timestamp() * 1000) + 1_000
-_WORKER_SERVICES = (
-    ("alphatrade-paper-worker-staging", "python -m app.workers.paper_worker"),
-)
+_WORKER_SERVICES = (("alphatrade-paper-worker-staging", "python -m app.workers.paper_worker"),)
 
 
 @pytest.fixture(autouse=True)
