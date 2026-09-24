@@ -2274,4 +2274,29 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/consolidated-paper-worker-37fe`, based on
   `8a2512c85d8c876576410e9de300310f720b37cb`. Do not deploy or activate.
 
+## AT-ADR-065 — Stored BloFin secrets stay sealed in paper isolation
+- **Date:** 2026-09-24
+- **Status:** Accepted
+- **Context:** Staging Settings validation rejected
+  `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` whenever `BLOFIN_API_KEY`,
+  `BLOFIN_API_SECRET`, and `BLOFIN_API_PASSPHRASE` were present, even with
+  `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`,
+  `EXCHANGE_MODE=paper_internal`, and `BLOFIN_DEMO_ENABLED=false`.
+- **Decision:** Credential storage, loading, client construction, and
+  execution authorization are separate. Stored BloFin secrets may remain
+  while paper isolation is active. They are not loaded into an authenticated
+  client, are not sent on Binance USD-M evidence requests, and cannot place,
+  cancel, or modify positions. The loader opens only for the complete demo
+  execution gate (paper execution, real trading off, `paper_exchange_demo`,
+  demo enabled, all three secrets, allowlisted demo host, and evidence that
+  is not Binance USD-M). Any incomplete gate fails closed. Binance public
+  evidence still refuses Binance credentials. Real trading stays disabled.
+- **Alternatives considered:** Delete the credential-presence check only
+  (rejected: presence would still be treated as access). Wipe Render secrets
+  (rejected: storage is not execution authority).
+- **Safety impact:** Paper only. No deploy. No live trading. No BloFin demo
+  activation.
+- **Consequences:** Branch `cursor/execution-credentials-isolation-1e5a`.
+  Tests in `backend/tests/test_execution_credential_isolation.py`.
+
 
