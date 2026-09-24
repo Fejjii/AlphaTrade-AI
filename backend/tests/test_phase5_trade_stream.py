@@ -17,12 +17,12 @@ from app.market_contracts.enums import (
     WarmUpStatus,
 )
 from app.market_contracts.errors import (
+    CursorRecoveryError,
     DuplicateDataError,
     GapDetectedError,
     NetworkMutationForbiddenError,
     OutOfOrderTradesError,
     UnknownAggressorError,
-    UnrecoverableGapError,
     WrongInstrumentError,
     WrongMarketError,
     WrongSourceError,
@@ -270,17 +270,43 @@ def test_cursor_recovery_unresolved_gap_fails_closed() -> None:
     t1 = trade(sequence=1, price="100", quantity="1", buyer_is_maker=False, event_time=TRIGGER_OPEN)
     assembler.ingest([t1], observed_at=EVALUATED_AT)
     assembler.begin_reconnect(observed_at=EVALUATED_AT + timedelta(seconds=1))
+    cursor_id = assembler.cursor.cursor_id
+    connection = assembler.connection_identity
     t4 = trade(
         sequence=4,
         price="100",
         quantity="1",
         buyer_is_maker=True,
         event_time=TRIGGER_OPEN + timedelta(seconds=4),
-        connection=assembler.connection_identity,
+        connection=connection,
     )
-    with pytest.raises(UnrecoverableGapError):
+    with pytest.raises(CursorRecoveryError):
         assembler.recover_from_backfill([t4], observed_at=EVALUATED_AT + timedelta(seconds=2))
-    assert assembler.cursor.gap_state is GapState.UNRECOVERABLE
+    assert assembler.cursor.gap_state is GapState.CONFIRMED
+    assert assembler.cursor.reconnect_state is ReconnectState.RECONNECTING
+    assert assembler.cursor.cursor_id == cursor_id
+    assert assembler.connection_identity == connection
+    filled = [
+        trade(
+            sequence=sequence,
+            price="100",
+            quantity="1",
+            buyer_is_maker=False,
+            event_time=TRIGGER_OPEN + timedelta(seconds=sequence),
+            connection=connection,
+        )
+        for sequence in (2, 3, 4)
+    ]
+    recovered = assembler.recover_from_backfill(
+        filled, observed_at=EVALUATED_AT + timedelta(seconds=5)
+    )
+    assert recovered.cursor.gap_state is GapState.NONE
+    assert recovered.cursor.connection_identity == connection
+    assert recovered.cursor.reconnect_state in {
+        ReconnectState.RECOVERED,
+        ReconnectState.CONTINUOUS,
+    }
+    assert recovered.usable is False
 
 
 def test_read_only_client_rejects_mutations() -> None:

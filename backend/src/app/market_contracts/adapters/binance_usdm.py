@@ -25,6 +25,7 @@ from app.market_contracts.errors import (
     FormingCandleError,
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
+    UpstreamBanError,
     WrongInstrumentError,
     WrongMarketError,
     WrongSourceError,
@@ -229,6 +230,18 @@ class BinanceUsdmPerpetualSource:
                 using_fallback=False,
                 is_mock=False,
                 detail="Preferred USD-M perpetual source unreachable; no spot fallback.",
+                last_success_at=self._last_success_at,
+                error_message=self._last_error,
+            )
+        except UpstreamBanError as exc:
+            self._last_error = str(exc)[:200]
+            return ProviderStatus(
+                name=self.name,
+                kind=self.kind,
+                health=ProviderHealth.DEGRADED,
+                using_fallback=False,
+                is_mock=False,
+                detail="Binance USD-M temporarily banned this client; no spot fallback.",
                 last_success_at=self._last_success_at,
                 error_message=self._last_error,
             )

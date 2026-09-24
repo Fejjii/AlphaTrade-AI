@@ -1911,4 +1911,19 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-063
 - Note: Do not deploy, provision, or activate.
 
+### AT-085 — Binance USD-M HTTP 418 recovery
+- Priority: P0 · Status: IN PROGRESS · Dependencies: AT-065 evidence adapter
+  · Risk: Medium (read-only market data; no execution path)
+- Safety classification: Paper execution; Watcher and Telegram stay disarmed;
+  no secrets; no live trading; no deploy; no activation
+- Goal: Treat Binance HTTP 418 as a temporary ban with bounded backoff, and
+  let a failed backfill recover later without exposing a price or latching
+  the monitor until process restart.
+- Branch: `cursor/binance-418-recovery-11ce`
+- Base: `main` at `697cc13`
+- Alembic: unchanged.
+- ADR: AT-ADR-066
+- Note: Do not deploy or activate. Exact-head CI is recorded when the PR
+  run finishes.
+
 

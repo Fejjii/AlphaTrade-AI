@@ -45,7 +45,11 @@ from app.market_contracts.adapters.request_budget import (
     request_weight,
     sleep_with_progress,
 )
-from app.market_contracts.errors import RateLimitedError, RegionalProviderFailureError
+from app.market_contracts.errors import (
+    RateLimitedError,
+    RegionalProviderFailureError,
+    UpstreamBanError,
+)
 from app.market_contracts.request_progress import (
     bind_market_request_progress,
     notify_market_request_progress,
@@ -403,7 +407,7 @@ def test_telegram_token_cannot_appear_in_logs_exceptions_or_health(
     assert "telegram_bot_token" not in response.text
 
 
-def test_binance_429_retries_and_418_does_not() -> None:
+def test_binance_429_retries_and_418_does_not_ignore_a_long_ban() -> None:
     calls = {"n": 0}
     sleeps: list[float] = []
 
@@ -430,19 +434,21 @@ def test_binance_429_retries_and_418_does_not() -> None:
 
     def teapot(_request: httpx.Request) -> httpx.Response:
         regional["n"] += 1
-        return httpx.Response(418, json={"msg": "region"})
+        return httpx.Response(418, headers={"Retry-After": "120"}, json={"msg": "banned"})
 
     blocked = ReadOnlyHttpGetClient(
         base_url="https://fapi.binance.com",
         timeout_seconds=2.0,
         transport=httpx.MockTransport(teapot),
         max_retries=3,
-        sleeper=lambda _seconds: (_ for _ in ()).throw(AssertionError("418 must not sleep")),
+        max_backoff_seconds=30.0,
+        sleeper=lambda _seconds: (_ for _ in ()).throw(AssertionError("418 must not retry early")),
     )
-    with pytest.raises(RegionalProviderFailureError):
+    with pytest.raises(UpstreamBanError) as banned:
         blocked.get_json("/fapi/v1/ping")
     blocked.close()
     assert regional["n"] == 1
+    assert banned.value.retry_after_seconds == 120.0
 
 
 def test_binance_outage_retries_and_weight_budget_fails_closed() -> None:

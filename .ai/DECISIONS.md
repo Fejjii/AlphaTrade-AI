@@ -2299,4 +2299,37 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/execution-credentials-isolation-1e5a`.
   Tests in `backend/tests/test_execution_credential_isolation.py`.
 
+## AT-ADR-066 — Binance HTTP 418 is a temporary ban, not a dead monitor
+- **Date:** 2026-09-24
+- **Status:** Accepted
+- **Context:** From Render Frankfurt, `fapi.binance.com` intermittently returns
+  HTTP 418. The read-only client treated 418 like 401/403/451
+  (`RegionalProviderFailureError`) and did not retry. A failed or incomplete
+  reconnect backfill then set `GapState.UNRECOVERABLE`, and
+  `SymbolMonitorRuntime` refused every later fetch until process restart.
+- **Decision:**
+  1. HTTP 418 is `UpstreamBanError`, a temporary IP ban. Retry only when
+     another attempt remains and Retry-After fits `max_backoff_seconds`.
+     A longer Retry-After is not followed by another request. The monitor
+     waits out Retry-After up to Binance's 3-day ban ceiling. HTTP 401, 403,
+     and 451 stay regional failures with no retry. HTTP 429 stays
+     `RateLimitedError`. There is no spot or fabricated fallback.
+  2. An empty or incomplete backfill stays on the same cursor and connection
+     epoch, records the gap, and does not publish a usable price. A later
+     attempt runs only after backoff. A complete backfill can recover without
+     a process restart. A process restart still opens a new epoch.
+  3. No deploy. Watcher and Telegram stay disarmed. Live trading stays off.
+     No Alembic revision.
+- **Alternatives considered:** Retry 418 on the same schedule as 429 even when
+  Retry-After exceeds the cap (rejected: that sends another request during
+  the ban). Keep the unrecoverable latch and rely on process restart
+  (rejected: one empty backfill then kills the monitor for the life of the
+  process).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Evidence stays fail-closed while
+  coverage is incomplete.
+- **Consequences:** Branch `cursor/binance-418-recovery-11ce`. Tests in
+  `backend/tests/test_binance_usdm_staging_reliability.py`. Do not deploy
+  or activate.
+
 
