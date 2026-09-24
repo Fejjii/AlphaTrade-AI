@@ -406,6 +406,8 @@ class SymbolMonitorRuntime:
         if cursor.gap_state is GapState.UNRECOVERABLE:
             return MarketAvailability.UNAVAILABLE, MonitorReason.UNRECOVERABLE_GAP
         if self._provider_outage_open and cursor.reconnect_state is ReconnectState.RECONNECTING:
+            if self._reason is MonitorReason.BACKOFF:
+                return MarketAvailability.DEGRADED, MonitorReason.PROVIDER_UNAVAILABLE
             return MarketAvailability.UNAVAILABLE, MonitorReason.PROVIDER_UNAVAILABLE
         if self._reason is MonitorReason.PROVIDER_UNAVAILABLE:
             return MarketAvailability.UNAVAILABLE, self._reason
