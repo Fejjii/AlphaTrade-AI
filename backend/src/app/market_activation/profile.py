@@ -2,9 +2,11 @@
 
 Replay stays the process default so deterministic tests do not need the
 network. Staging's intended evidence source is the public USD-M adapter.
-Selecting that source refuses credentials, spot hosts, the legacy scanner,
-legacy Telegram delivery, and live trading. The staging paper Watcher arm
-may select it. Rollback is ``PERPETUAL_EVIDENCE_SOURCE=replay``.
+Selecting that source refuses Binance credentials, spot hosts, the legacy
+scanner, legacy Telegram delivery, and live trading. Stored BloFin secrets
+may remain, but paper isolation keeps them sealed: they are not loaded and
+cannot build an authenticated client. The staging paper Watcher arm may
+select this source. Rollback is ``PERPETUAL_EVIDENCE_SOURCE=replay``.
 """
 
 from __future__ import annotations
@@ -15,6 +17,10 @@ from typing import Literal, TypedDict
 from urllib.parse import urlsplit
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
+from app.core.execution_credentials import (
+    blofin_execution_authorized,
+    paper_credential_isolation_active,
+)
 from app.market_contracts.catalog import default_perpetual_catalog
 from app.market_contracts.first_slice import (
     FIRST_SLICE_SYMBOL,
@@ -146,14 +152,14 @@ def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list
         errors.append("live USD-M evidence requires exchange_mode=paper_internal.")
     if settings.blofin_demo_enabled:
         errors.append("blofin_demo_enabled must be false for live USD-M evidence.")
-    if any(
-        (
-            settings.blofin_api_key.strip(),
-            settings.blofin_api_secret.strip(),
-            settings.blofin_api_passphrase.strip(),
+    # Capability, not presence. Stored BloFin secrets are allowed only while
+    # paper isolation holds and the execution gate stays closed.
+    if not paper_credential_isolation_active(settings):
+        errors.append(
+            "paper credential isolation must hold so a BloFin execution client cannot initialize."
         )
-    ):
-        errors.append("exchange credentials must be unset for live USD-M evidence.")
+    if blofin_execution_authorized(settings):
+        errors.append("authenticated BloFin execution must stay closed for live USD-M evidence.")
     present = [name for name in FORBIDDEN_MARKET_CREDENTIAL_ENV if _env_is_set(environ, name)]
     if present:
         errors.append(

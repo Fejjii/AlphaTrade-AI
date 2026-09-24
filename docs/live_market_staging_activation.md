@@ -17,7 +17,8 @@ tests stay deterministic and offline. Replay is also the rollback value.
 ## Exact staging environment changes
 
 Apply these on the staging **API** and **worker** services together. Do not
-add Binance or other exchange credentials.
+add Binance credentials. Stored BloFin secrets may remain in the environment;
+paper isolation does not load them and does not build a BloFin client.
 
 | Variable | Previous intended value | Activation value |
 |---|---|---|
@@ -34,9 +35,9 @@ Leave these unchanged:
 | `ENABLE_REAL_TRADING` | `false` |
 | `EXCHANGE_MODE` | `paper_internal` |
 | `BLOFIN_DEMO_ENABLED` | `false` |
-| `BLOFIN_API_KEY` | empty |
-| `BLOFIN_API_SECRET` | empty |
-| `BLOFIN_API_PASSPHRASE` | empty |
+| `BLOFIN_API_KEY` | may stay stored; not loaded for execution or evidence |
+| `BLOFIN_API_SECRET` | may stay stored; not loaded for execution or evidence |
+| `BLOFIN_API_PASSPHRASE` | may stay stored; not loaded for execution or evidence |
 | `MARKET_WATCHER_ENABLED` | `false` |
 | `MARKET_WATCHER_BRIDGE_ENABLED` | `false` |
 | `MARKET_WATCHER_BRIDGE_AUTO_TICK` | `false` |
@@ -61,8 +62,9 @@ Production (`.env.production.example`) stays `replay`. The process refuses
    This repository change does not edit the live platform environment and
    does not deploy.
 2. Set the activation variables above on both staging services. Remove any
-   Binance or BloFin credential if one is present. Confirm Watcher and
-   Telegram flags stay false.
+   Binance credential if one is present. Leave stored BloFin secrets in place
+   when `BLOFIN_DEMO_ENABLED=false` and `EXCHANGE_MODE=paper_internal`.
+   Confirm Watcher and Telegram flags stay false.
 3. Restart both services so `Settings` reloads. Startup fails closed if the
    futures host, credentials, Watcher, Telegram, or trading posture is unsafe.
 4. Validate without writing environment variables:

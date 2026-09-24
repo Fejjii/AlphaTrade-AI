@@ -13,6 +13,10 @@ import httpx
 import structlog
 
 from app.core.config import Settings
+from app.core.execution_credentials import (
+    blofin_execution_authorized,
+    load_blofin_execution_credentials,
+)
 from app.core.paper_safety import (
     assert_execution_capable_composition_root,
     assert_permanent_paper_mode,
@@ -43,12 +47,18 @@ class ResolvedExchange:
 def build_blofin_client(
     settings: Settings, *, transport: httpx.BaseTransport | None = None
 ) -> BloFinClient:
-    """Construct a signed BloFin demo client from settings (env-only credentials)."""
+    """Construct a signed BloFin demo client only after the execution gate opens.
+
+    Paper isolation and incomplete gate combinations raise
+    ``CredentialAccessDeniedError`` before any client or network call. Secret
+    values are not included in the error.
+    """
+    credentials = load_blofin_execution_credentials(settings)
     return BloFinClient(
         base_url=settings.blofin_demo_rest_base_url.strip(),
-        api_key=settings.blofin_api_key.strip(),
-        api_secret=settings.blofin_api_secret.strip(),
-        api_passphrase=settings.blofin_api_passphrase.strip(),
+        api_key=credentials.api_key,
+        api_secret=credentials.api_secret,
+        api_passphrase=credentials.api_passphrase,
         timeout_seconds=settings.blofin_request_timeout_seconds,
         max_retries=settings.blofin_max_retries,
         rate_limit_requests_per_second=settings.blofin_rate_limit_requests_per_second,
@@ -78,7 +88,7 @@ def resolve_exchange_provider(
     Raises ``ValueError`` if the demo API key carries money-movement scope.
     """
     assert_permanent_paper_mode(settings)
-    if not (settings.exchange_demo_active and settings.blofin_demo_configured):
+    if not blofin_execution_authorized(settings):
         return _mock_exchange(settings)
 
     client = build_blofin_client(settings, transport=transport)
@@ -111,7 +121,7 @@ def resolve_exchange_execution_provider(
     call, so this resolver does not perform the network permission probe.
     """
     assert_execution_capable_composition_root(settings)
-    if not (settings.exchange_demo_active and settings.blofin_demo_configured):
+    if not blofin_execution_authorized(settings):
         return None
     if settings.real_trading_enabled:  # defense-in-depth; should be impossible
         return None

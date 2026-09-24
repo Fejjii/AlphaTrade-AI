@@ -207,13 +207,15 @@ def test_market_credentials_and_exchange_credentials_fail_closed(
     with pytest.raises(ValidationError, match="BINANCE_API_KEY") as exc:
         _local()
     assert "not-a-real-key" not in str(exc.value)
-    with pytest.raises(ValidationError, match="exchange credentials") as blofin:
-        _local(
-            blofin_api_key="demo-key",
-            blofin_api_secret="demo-secret",
-            blofin_api_passphrase="demo-pass",
-        )
-    assert "demo-secret" not in str(blofin.value)
+    monkeypatch.delenv("BINANCE_API_KEY")
+    stored = _local(
+        blofin_api_key="demo-key",
+        blofin_api_secret="demo-secret",
+        blofin_api_passphrase="demo-pass",
+    )
+    assert stored.execution_mode is ExecutionMode.PAPER
+    assert stored.enable_real_trading is False
+    assert "demo-secret" not in repr(stored)
     with pytest.raises(ValidationError, match="paper_internal") as demo:
         _local(
             exchange_mode="paper_exchange_demo",

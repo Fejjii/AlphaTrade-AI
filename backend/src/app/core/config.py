@@ -113,9 +113,12 @@ class Settings(BaseSettings):
     # platform on pure internal simulation with no external exchange calls.
     exchange_mode: ExchangeMode = ExchangeMode.PAPER_INTERNAL
     blofin_demo_enabled: bool = False
-    blofin_api_key: str = ""
-    blofin_api_secret: str = ""
-    blofin_api_passphrase: str = ""
+    # Stored secrets. ``repr=False`` so Settings logs and exceptions do not
+    # print them. Loading for an authenticated client goes through
+    # ``app.core.execution_credentials``, not these fields.
+    blofin_api_key: str = Field(default="", repr=False)
+    blofin_api_secret: str = Field(default="", repr=False)
+    blofin_api_passphrase: str = Field(default="", repr=False)
     blofin_demo_rest_base_url: str = ""
     blofin_demo_ws_url: str = ""
     blofin_request_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
