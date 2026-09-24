@@ -67,6 +67,10 @@ class RateLimitedError(MarketContractError):
         self.retry_after_seconds = retry_after_seconds
 
 
+class UpstreamBanError(RateLimitedError):
+    """Binance HTTP 418 IP ban. Temporary. Not a 401/403/451 regional block."""
+
+
 class NetworkMutationForbiddenError(MarketContractError):
     """The read-only adapter refused a non-GET or non-allowlisted path."""
 

@@ -29,6 +29,7 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
     UnrecoverableGapError,
+    UpstreamBanError,
     WrongInstrumentError,
     WrongMarketError,
     WrongSourceError,
@@ -106,6 +107,7 @@ class SymbolMonitorRuntime:
         self._backoff_attempt = 0
         self._last_error_class: str | None = None
         self._ohlcv_reason: str | None = None
+        self._provider_outage_open = False
 
     @property
     def replay(self) -> bool:
@@ -122,10 +124,15 @@ class SymbolMonitorRuntime:
             self._clear_backoff()
         except RateLimitedError as exc:
             self._last_error_class = type(exc).__name__
-            self._apply_backoff(evaluated, retry_after_seconds=exc.retry_after_seconds)
+            self._apply_backoff(
+                evaluated,
+                retry_after_seconds=exc.retry_after_seconds,
+                honor_full_retry_after=isinstance(exc, UpstreamBanError),
+            )
             self._reason = MonitorReason.RATE_LIMITED
         except RegionalProviderFailureError as exc:
             self._last_error_class = type(exc).__name__
+            self._provider_outage_open = True
             self._begin_reconnect(evaluated)
             self._apply_backoff(evaluated)
             self._reason = MonitorReason.PROVIDER_UNAVAILABLE
@@ -146,6 +153,7 @@ class SymbolMonitorRuntime:
             self._reason = MonitorReason.DUPLICATE_CONFLICT
         except UnrecoverableGapError as exc:
             self._last_error_class = type(exc).__name__
+            self._schedule_recovery(evaluated)
             self._reason = MonitorReason.UNRECOVERABLE_GAP
         except (GapDetectedError, CursorRecoveryError, IncompleteWarmUpError) as exc:
             self._last_error_class = type(exc).__name__
@@ -168,7 +176,7 @@ class SymbolMonitorRuntime:
 
     def _fetch_and_ingest(self, now: datetime) -> None:
         if self._assembler.cursor.gap_state is GapState.UNRECOVERABLE:
-            raise UnrecoverableGapError("Stream is closed after an unrecoverable gap.")
+            self._assembler.release_unrecoverable_for_retry()
         start, end = self._window(now)
         batch = self._source.fetch_ordered_trades(
             identity=self.identity,
@@ -269,11 +277,25 @@ class SymbolMonitorRuntime:
         self._last_batch = None
         self._last_stream = None
 
-    def _apply_backoff(self, now: datetime, *, retry_after_seconds: float | None = None) -> None:
+    def _schedule_recovery(self, now: datetime) -> None:
+        """Backoff a failed recovery without opening another connection epoch."""
+
+        if self._assembler.cursor.reconnect_state is not ReconnectState.RECONNECTING:
+            self._begin_reconnect(now)
+        self._apply_backoff(now)
+
+    def _apply_backoff(
+        self,
+        now: datetime,
+        *,
+        retry_after_seconds: float | None = None,
+        honor_full_retry_after: bool = False,
+    ) -> None:
         delay = delay_seconds(
             self._backoff_attempt,
             self._backoff_policy,
             retry_after_seconds=retry_after_seconds,
+            honor_full_retry_after=honor_full_retry_after,
         )
         self._backoff_until = now + timedelta(seconds=delay)
         self._backoff_attempt += 1
@@ -282,6 +304,7 @@ class SymbolMonitorRuntime:
         self._backoff_until = None
         self._backoff_attempt = 0
         self._last_error_class = None
+        self._provider_outage_open = False
 
     def _in_backoff(self, now: datetime) -> bool:
         return self._backoff_until is not None and now < self._backoff_until
@@ -382,6 +405,10 @@ class SymbolMonitorRuntime:
             return MarketAvailability.UNAVAILABLE, self._reason
         if cursor.gap_state is GapState.UNRECOVERABLE:
             return MarketAvailability.UNAVAILABLE, MonitorReason.UNRECOVERABLE_GAP
+        if self._provider_outage_open and cursor.reconnect_state is ReconnectState.RECONNECTING:
+            if self._reason is MonitorReason.BACKOFF:
+                return MarketAvailability.DEGRADED, MonitorReason.PROVIDER_UNAVAILABLE
+            return MarketAvailability.UNAVAILABLE, MonitorReason.PROVIDER_UNAVAILABLE
         if self._reason is MonitorReason.PROVIDER_UNAVAILABLE:
             return MarketAvailability.UNAVAILABLE, self._reason
         if self._reason is MonitorReason.DUPLICATE_CONFLICT:
@@ -400,7 +427,7 @@ class SymbolMonitorRuntime:
             if self._reason is MonitorReason.BACKOFF:
                 reason = (
                     MonitorReason.RATE_LIMITED
-                    if self._last_error_class == "RateLimitedError"
+                    if self._last_error_class in {"RateLimitedError", "UpstreamBanError"}
                     else MonitorReason.RECONNECTING
                 )
             elif self._reason is MonitorReason.OK:

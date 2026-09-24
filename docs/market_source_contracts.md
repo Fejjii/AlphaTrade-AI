@@ -86,8 +86,9 @@ Live `GET /fapi/v1/aggTrades` uses policy `binance-usdm-aggtrades/time-chunk-fro
 States: `INITIAL -> CONTINUOUS -> RECONNECTING -> RECOVERED`.
 Every reconnect starts a new connection epoch. Current CVD is unusable until
 contiguous backfill proves coverage from the pre-disconnect watermark and warm-up
-completes. An unresolved gap is `UNRECOVERABLE` and fails closed. Cross-connection
-CVD windows are not supported in V1. Raw stream ingestion produces only PARTIAL
+completes. An empty or incomplete backfill fails closed for that attempt and keeps
+the reconnect epoch so a later bounded attempt can succeed. It does not publish a
+usable price. Cross-connection CVD windows are not supported in V1. Raw stream ingestion produces only PARTIAL
 coverage; COMPLETE coverage enters through a verified retrieval-bound
 `OrderedTradeBatch`.
 
@@ -106,8 +107,10 @@ The live adapter:
 - allowlists `/fapi/v1/ping`, `/time`, `/exchangeInfo`, `/klines`, `/aggTrades`
 - never sends API keys
 - never calls order, position, or account endpoints
-- reports regional HTTP 401/403/418/451 and connect failures as unavailable
+- reports regional HTTP 401/403/451 and connect failures as unavailable
   without falling back to spot or mock
+- treats HTTP 418 as a temporary IP ban: bounded retry only when Retry-After
+  fits the backoff cap; a longer ban is not followed by another request
 
 ## Replay
 
@@ -155,8 +158,8 @@ trade-stream assembler. It does not enable Watcher, Telegram, or execution.
 | Current price | Last contracted perpetual trade in the 10s window. Replay is `replay_fixture`. Outage, gap, conflict, and wrong-source fail closed (`price=null`) |
 | Availability | `fresh` / `stale` / `degraded` / `unavailable` / `replay` — never show compatibility or demo-seed as live |
 | Stream | `INITIAL -> CONTINUOUS -> RECONNECTING -> RECOVERED`. New process = new connection epoch |
-| Rate limit | HTTP 429 is `RateLimitedError` with Retry-After backoff. Not a fabricated fallback |
-| Gaps | Sequence holes and out-of-order trades fail closed. Unrecoverable until restart |
+| Rate limit | HTTP 429 is `RateLimitedError` with Retry-After backoff. HTTP 418 is a temporary ban (`UpstreamBanError`), not a regional block. Not a fabricated fallback |
+| Gaps | Sequence holes and out-of-order trades fail closed. Incomplete backfill stays on the same reconnect epoch and can be retried after backoff. No usable price until coverage is complete |
 | Identity | Semantic hash excludes connection ids, receive times, and backoff. A later trade or price correction changes the hash |
 | HTTP | Authenticated `GET /canonical/market-status`. 422 unknown symbol. `watcher_activated=false` |
 | Default | Process default `PERPETUAL_EVIDENCE_SOURCE=replay`. Staging intended source is read-only `binance_usdm`; rollback is `replay` |

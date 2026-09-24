@@ -278,22 +278,37 @@ class TradeStreamAssembler:
         if self._cursor.reconnect_state is not ReconnectState.RECONNECTING:
             raise CursorRecoveryError("recover_from_backfill requires RECONNECTING state.")
 
-        combined = self._dedupe_ordered(list(backfill) + list(live_resume or []))
+        try:
+            combined = self._dedupe_ordered(list(backfill) + list(live_resume or []))
+        except DuplicateDataError as exc:
+            self._note_incomplete_backfill(
+                observed_at,
+                gap_start=None,
+                gap_end=None,
+                confirmed=False,
+            )
+            raise CursorRecoveryError(str(exc)) from exc
         if not combined:
-            self._fail_unrecoverable(observed_at, gap_start=self._watermark_sequence, gap_end=None)
-            raise UnrecoverableGapError("Reconnect backfill was empty; gap remains unresolved.")
+            self._note_incomplete_backfill(
+                observed_at,
+                gap_start=None,
+                gap_end=None,
+                confirmed=False,
+            )
+            raise CursorRecoveryError("Reconnect backfill was empty; gap remains unresolved.")
 
         try:
             _assert_contiguous([trade.sequence for trade in combined])
             self._assert_watermark_coverage(combined)
         except (GapDetectedError, DuplicateDataError) as exc:
             sequences = [trade.sequence for trade in combined]
-            self._fail_unrecoverable(
+            self._note_incomplete_backfill(
                 observed_at,
                 gap_start=min(sequences),
                 gap_end=max(sequences),
+                confirmed=True,
             )
-            raise UnrecoverableGapError(str(exc)) from exc
+            raise CursorRecoveryError(str(exc)) from exc
 
         connection = self._cursor.connection_identity
         epoch_trades = [_retag_connection(trade, connection) for trade in combined]
@@ -461,25 +476,54 @@ class TradeStreamAssembler:
             gap_state=self._cursor.gap_state,
         )
 
-    def _fail_unrecoverable(
-        self, observed_at: datetime, *, gap_start: int | None, gap_end: int | None
-    ) -> None:
-        now = observed_at.astimezone(UTC)
-        start = gap_start if gap_start is not None else 0
-        end = gap_end if gap_end is not None else start
-        if end < start:
-            end = start
+    def release_unrecoverable_for_retry(self) -> None:
+        """Leave a terminal gap retryable without a new cursor or connection."""
+
+        if self._cursor.gap_state is not GapState.UNRECOVERABLE:
+            return
+        confirmed = self._cursor.gap_start is not None
         self._cursor = _hash_cursor(
             self._cursor.model_copy(
                 update={
-                    "gap_state": GapState.UNRECOVERABLE,
-                    "gap_start": start,
-                    "gap_end": end,
-                    "warm_up_status": WarmUpStatus.FAILED,
-                    "updated_at": now,
+                    "gap_state": GapState.CONFIRMED if confirmed else GapState.SUSPECTED,
+                    "warm_up_status": WarmUpStatus.BACKFILLING,
+                    "reconnect_state": ReconnectState.RECONNECTING,
+                    "updated_at": self._cursor.updated_at,
                 }
             )
         )
+
+    def _note_incomplete_backfill(
+        self,
+        observed_at: datetime,
+        *,
+        gap_start: int | None,
+        gap_end: int | None,
+        confirmed: bool,
+    ) -> None:
+        """Record a failed backfill without closing the reconnect epoch.
+
+        Cursor id, connection identity, and the pre-disconnect watermark stay
+        put so a later complete backfill can still prove coverage.
+        """
+
+        now = observed_at.astimezone(UTC)
+        update: dict[str, object] = {
+            "gap_state": GapState.CONFIRMED if confirmed else GapState.SUSPECTED,
+            "warm_up_status": WarmUpStatus.BACKFILLING,
+            "reconnect_state": ReconnectState.RECONNECTING,
+            "updated_at": now,
+            "gap_start": None,
+            "gap_end": None,
+        }
+        if confirmed and gap_start is not None:
+            start = gap_start
+            end = gap_start if gap_end is None else gap_end
+            if end < start:
+                end = start
+            update["gap_start"] = start
+            update["gap_end"] = end
+        self._cursor = _hash_cursor(self._cursor.model_copy(update=update))
 
     def _snapshot(self) -> TradeStreamSnapshot:
         if self._coverage is None:

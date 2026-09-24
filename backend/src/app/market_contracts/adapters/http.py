@@ -28,6 +28,7 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
     UnapprovedEvidenceHostError,
+    UpstreamBanError,
     WrongMarketError,
 )
 from app.market_contracts.request_progress import current_progress_hook
@@ -53,7 +54,8 @@ SPOT_HOST_MARKERS = (
 COINM_HOST_MARKERS = ("dapi.binance.com",)
 SPOT_PATH_PREFIXES = ("/api/v3/", "/api/v1/")
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE"})
-REGIONAL_STATUS_CODES = frozenset({401, 403, 418, 451})
+REGIONAL_STATUS_CODES = frozenset({401, 403, 451})
+UPSTREAM_BAN_STATUS = 418
 _PROGRESS_INTERVAL_SECONDS = 5.0
 
 
@@ -159,6 +161,21 @@ class ReadOnlyHttpGetClient:
                 )
                 sleep_with_progress(delay, sleeper=self._sleep)
                 continue
+            if response.status_code == UPSTREAM_BAN_STATUS:
+                retry_after = _retry_after_seconds(response)
+                record_request(weight=weight, rate_limited=True, retry=attempt > 0)
+                if not self._upstream_ban_retry_allowed(attempt, retry_after):
+                    raise UpstreamBanError(
+                        "Preferred Binance USD-M source temporarily banned this client (HTTP 418).",
+                        retry_after_seconds=retry_after,
+                    )
+                delay = bounded_backoff_seconds(
+                    attempt=attempt,
+                    retry_after_seconds=retry_after,
+                    max_backoff_seconds=self._max_backoff_seconds,
+                )
+                sleep_with_progress(delay, sleeper=self._sleep)
+                continue
             if response.status_code in REGIONAL_STATUS_CODES:
                 record_request(weight=weight)
                 raise RegionalProviderFailureError(
@@ -178,6 +195,17 @@ class ReadOnlyHttpGetClient:
             "Preferred Binance USD-M source rate-limited the read-only client.",
             retry_after_seconds=last_retry_after,
         )
+
+    def _upstream_ban_retry_allowed(self, attempt: int, retry_after: float | None) -> bool:
+        """Retry a 418 only inside the existing attempt budget and ban window.
+
+        A Retry-After longer than ``max_backoff_seconds`` means another request
+        now would land during the ban. That request is not sent.
+        """
+
+        if attempt + 1 >= self._max_retries + 1:
+            return False
+        return retry_after is None or retry_after <= self._max_backoff_seconds
 
     def _exchange_get(
         self,
