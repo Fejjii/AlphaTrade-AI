@@ -303,7 +303,12 @@ def test_incomplete_coverage_does_not_expose_a_stale_price() -> None:
     later = monitor.tick("BTCUSDT", now=T0 + timedelta(seconds=40))
     assert later.backoff.active is True
     assert later.current_price is None
-    assert later.reason in {MonitorReason.GAP, MonitorReason.RECONNECTING, MonitorReason.BACKOFF}
+    assert later.reason in {
+        MonitorReason.GAP,
+        MonitorReason.RECONNECTING,
+        MonitorReason.BACKOFF,
+        MonitorReason.PROVIDER_UNAVAILABLE,
+    }
     price = later.current_price
     assert price is None or price.usable_as_current_market_price is False
 

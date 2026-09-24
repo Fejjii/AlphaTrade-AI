@@ -107,6 +107,7 @@ class SymbolMonitorRuntime:
         self._backoff_attempt = 0
         self._last_error_class: str | None = None
         self._ohlcv_reason: str | None = None
+        self._provider_outage_open = False
 
     @property
     def replay(self) -> bool:
@@ -131,6 +132,7 @@ class SymbolMonitorRuntime:
             self._reason = MonitorReason.RATE_LIMITED
         except RegionalProviderFailureError as exc:
             self._last_error_class = type(exc).__name__
+            self._provider_outage_open = True
             self._begin_reconnect(evaluated)
             self._apply_backoff(evaluated)
             self._reason = MonitorReason.PROVIDER_UNAVAILABLE
@@ -302,6 +304,7 @@ class SymbolMonitorRuntime:
         self._backoff_until = None
         self._backoff_attempt = 0
         self._last_error_class = None
+        self._provider_outage_open = False
 
     def _in_backoff(self, now: datetime) -> bool:
         return self._backoff_until is not None and now < self._backoff_until
@@ -402,6 +405,8 @@ class SymbolMonitorRuntime:
             return MarketAvailability.UNAVAILABLE, self._reason
         if cursor.gap_state is GapState.UNRECOVERABLE:
             return MarketAvailability.UNAVAILABLE, MonitorReason.UNRECOVERABLE_GAP
+        if self._provider_outage_open and cursor.reconnect_state is ReconnectState.RECONNECTING:
+            return MarketAvailability.UNAVAILABLE, MonitorReason.PROVIDER_UNAVAILABLE
         if self._reason is MonitorReason.PROVIDER_UNAVAILABLE:
             return MarketAvailability.UNAVAILABLE, self._reason
         if self._reason is MonitorReason.DUPLICATE_CONFLICT:
