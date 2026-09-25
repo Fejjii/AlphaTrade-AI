@@ -10,6 +10,8 @@ from app.market_contracts.enums import SourceFamily, VenueId
 from app.market_contracts.identity import (
     ADAPTER_VERSION,
     AGGRESSOR_CONVENTION,
+    OKX_ADAPTER_VERSION,
+    OKX_AGGRESSOR_CONVENTION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
     ProviderProvenance,
@@ -60,6 +62,15 @@ def first_slice_spec() -> FirstSliceSpec:
     )
 
 
+def okx_usdt_swap_source() -> SourceIdentity:
+    return SourceIdentity(
+        family=SourceFamily.OKX_USDT_SWAP_PUBLIC,
+        provider_name="okx-usdt-swap-perpetual",
+        adapter_version=OKX_ADAPTER_VERSION,
+        aggressor_convention=OKX_AGGRESSOR_CONVENTION,
+    )
+
+
 def binance_usdm_source(*, replay: bool) -> SourceIdentity:
     if replay:
         return SourceIdentity(
@@ -86,7 +97,18 @@ def first_slice_identity(
     resolved = instrument or binance_usdm_btcusdt()
     if replay and is_live:
         raise ValueError("Replay evidence cannot also be live.")
-    source = binance_usdm_source(replay=replay)
+    if replay and resolved.venue is not VenueId.BINANCE:
+        raise ValueError("Replay fixtures are Binance USD-M evidence only.")
+    if resolved.venue is VenueId.OKX:
+        source = okx_usdt_swap_source()
+        detail = "OKX USDT linear swap public REST (read-only)."
+    else:
+        source = binance_usdm_source(replay=replay)
+        detail = (
+            "Replay fixture; not live perpetual evidence."
+            if replay
+            else "Binance USD-M futures public REST (read-only)."
+        )
     provenance = ProviderProvenance(
         provider_name=source.provider_name,
         source_family=source.family,
@@ -95,14 +117,10 @@ def first_slice_identity(
         fallback_used=False,
         is_mock=replay,
         regional_failure=False,
-        detail=(
-            "Replay fixture; not live perpetual evidence."
-            if replay
-            else "Binance USD-M futures public REST (read-only)."
-        ),
+        detail=detail,
     )
     identity = EvidenceMarketIdentity(
-        venue=VenueId.BINANCE,
+        venue=resolved.venue,
         market_type=resolved.market_type,
         instrument=resolved,
         timeframe=timeframe,

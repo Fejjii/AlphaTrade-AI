@@ -97,6 +97,7 @@ async def health(settings: SettingsDep) -> HealthResponse:
         telegram_inbound_mode=settings.telegram_inbound_mode.value,
         telegram_network_permitted=settings.telegram_network_permitted,
         perpetual_evidence_source=evidence["perpetual_evidence_source"],
+        perpetual_evidence_secondary_source=evidence["perpetual_evidence_secondary_source"],
         perpetual_evidence_activation=evidence["perpetual_evidence_activation"],
         perpetual_evidence_intended_staging_source=evidence[
             "perpetual_evidence_intended_staging_source"

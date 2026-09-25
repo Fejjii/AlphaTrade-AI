@@ -23,8 +23,20 @@ paper isolation does not load them and does not build a BloFin client.
 | Variable | Previous intended value | Activation value |
 |---|---|---|
 | `PERPETUAL_EVIDENCE_SOURCE` | `replay` | `binance_usdm` |
+| `PERPETUAL_EVIDENCE_SECONDARY_SOURCE` | `none` | `okx_usdt_swap` |
 | `MARKET_DATA_FUTURES_BASE_URL` | unset (code default `https://fapi.binance.com`) | `https://fapi.binance.com` |
+| `OKX_SWAP_BASE_URL` | unset (code default `https://www.okx.com`) | `https://www.okx.com` |
 | `PERPETUAL_EVIDENCE_TIMEOUT_SECONDS` | `10` | `10` |
+
+`okx_usdt_swap` is the public OKX linear swap `BTC-USDT-SWAP` (`https://www.okx.com`,
+GET `/api/v5/market/candles` and `/api/v5/market/history-trades` only). It is used
+only after the Binance primary fails with HTTP 418, HTTP 429, or a regional
+outage. The switch starts a new connection epoch and labels every later
+observation `okx` / `okx_usdt_swap_public`. A Binance price is not copied onto
+that observation. Spot `BTC-USDT` is rejected. A history page that does not
+prove the requested trade window fails closed. Rollback remains
+`PERPETUAL_EVIDENCE_SOURCE=replay` and `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=none`.
+Do not deploy from this document. Watcher and Telegram stay disarmed.
 
 Leave these unchanged:
 

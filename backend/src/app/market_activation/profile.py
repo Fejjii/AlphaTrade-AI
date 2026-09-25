@@ -32,11 +32,13 @@ from app.market_contracts.freshness import (
 )
 
 REPLAY_MODES = frozenset({"replay", "mock", "fixture"})
-LIVE_MODES = frozenset({"binance_usdm", "binance-usdm", "usdm"})
+LIVE_MODES = frozenset({"binance_usdm", "binance-usdm", "usdm", "okx_usdt_swap", "okx-usdt-swap"})
 LIVE_SOURCE: Literal["binance_usdm"] = "binance_usdm"
+OKX_SOURCE: Literal["okx_usdt_swap"] = "okx_usdt_swap"
 ROLLBACK_SOURCE: Literal["replay"] = "replay"
 INTENDED_STAGING_SOURCE: Literal["binance_usdm"] = LIVE_SOURCE
 APPROVED_FUTURES_ORIGIN = "https://fapi.binance.com"
+APPROVED_OKX_ORIGIN = "https://www.okx.com"
 LIVE_QUOTE_FRESHNESS_SECONDS: Literal[10] = 10
 FIRST_PERPETUAL_SYMBOL: Literal["BTCUSDT"] = "BTCUSDT"
 
@@ -52,11 +54,13 @@ FORBIDDEN_MARKET_CREDENTIAL_ENV = (
 )
 
 ActivationState = Literal["inactive", "active", "refused"]
-ConfiguredSource = Literal["replay", "binance_usdm"]
+ConfiguredSource = Literal["replay", "binance_usdm", "okx_usdt_swap"]
+SecondarySource = Literal["none", "okx_usdt_swap"]
 
 
 class PerpetualEvidenceHealth(TypedDict):
     perpetual_evidence_source: ConfiguredSource
+    perpetual_evidence_secondary_source: SecondarySource
     perpetual_evidence_activation: ActivationState
     perpetual_evidence_intended_staging_source: Literal["binance_usdm"]
     perpetual_evidence_rollback_source: Literal["replay"]
@@ -73,11 +77,25 @@ def canonicalize_perpetual_evidence_source(value: str) -> ConfiguredSource:
     normalized = value.strip().lower()
     if normalized in REPLAY_MODES:
         return ROLLBACK_SOURCE
-    if normalized in LIVE_MODES:
+    if normalized in {"binance_usdm", "binance-usdm", "usdm"}:
         return LIVE_SOURCE
+    if normalized in {"okx_usdt_swap", "okx-usdt-swap"}:
+        return OKX_SOURCE
     raise ValueError(
-        "perpetual_evidence_source must be replay or binance_usdm "
+        "perpetual_evidence_source must be replay, binance_usdm, or okx_usdt_swap "
         "(spot fallback is not a legal value)."
+    )
+
+
+def canonicalize_secondary_evidence_source(value: str) -> SecondarySource:
+    normalized = value.strip().lower()
+    if normalized in {"", "none", "off"}:
+        return "none"
+    if normalized in {"okx_usdt_swap", "okx-usdt-swap"}:
+        return OKX_SOURCE
+    raise ValueError(
+        "perpetual_evidence_secondary_source must be none or okx_usdt_swap "
+        "(spot and fabricated fallbacks are not legal values)."
     )
 
 
@@ -142,8 +160,44 @@ def controlled_watcher_arm(settings: Settings) -> bool:
     )
 
 
-def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list[str]:
+def _origin_errors_for(settings: Settings) -> list[str]:
+    source = _configured_source(settings)
+    if source == OKX_SOURCE:
+        return _okx_origin_errors(settings.okx_swap_base_url)
     errors = _futures_origin_errors(settings.market_data_futures_base_url)
+    secondary = canonicalize_secondary_evidence_source(settings.perpetual_evidence_secondary_source)
+    if secondary == OKX_SOURCE:
+        errors.extend(_okx_origin_errors(settings.okx_swap_base_url))
+    return errors
+
+
+def _okx_origin_errors(url: str) -> list[str]:
+    parsed = urlsplit(url.strip())
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme.lower() != "https" or host != "www.okx.com":
+        return [
+            "okx_swap_base_url must be https://www.okx.com "
+            "(spot hosts and plain HTTP are not swap evidence)."
+        ]
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return ["okx_swap_base_url must be the public origin only."]
+    if parsed.path not in ("", "/") or parsed.port not in (None, 443):
+        return ["okx_swap_base_url must be the origin only."]
+    return []
+
+
+def _secondary_pairing_errors(settings: Settings) -> list[str]:
+    secondary = canonicalize_secondary_evidence_source(settings.perpetual_evidence_secondary_source)
+    primary = _configured_source(settings)
+    if secondary == "none":
+        return []
+    if primary != LIVE_SOURCE:
+        return ["okx_usdt_swap secondary is only valid when the primary source is binance_usdm."]
+    return []
+
+
+def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list[str]:
+    errors = _origin_errors_for(settings)
     if settings.enable_real_trading or settings.real_trading_enabled:
         errors.append("live USD-M evidence cannot be combined with real trading.")
     if settings.execution_mode is not ExecutionMode.PAPER:
@@ -217,7 +271,7 @@ def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list
             errors.append("telegram_webhook_secret must be empty while live USD-M evidence is on.")
     if settings.environment is Environment.PRODUCTION:
         errors.append(
-            "binance_usdm evidence activation is staging-only; production stays on replay."
+            "live perpetual evidence activation is staging-only; production stays on replay."
         )
     return errors
 
@@ -230,7 +284,8 @@ def live_market_activation_violations(
     """Return profile violations. Replay/rollback skips the live-only checks."""
     env = os.environ if environ is None else environ
     errors = _invariant_errors()
-    if _configured_source(settings) == LIVE_SOURCE:
+    errors.extend(_secondary_pairing_errors(settings))
+    if _configured_source(settings) in {LIVE_SOURCE, OKX_SOURCE}:
         errors.extend(_live_profile_errors(settings, env))
     return errors
 
@@ -252,7 +307,7 @@ def activation_state(
     environ: Mapping[str, str] | None = None,
 ) -> ActivationState:
     """``inactive`` is replay/rollback. ``active`` is a valid live profile."""
-    if _configured_source(settings) != LIVE_SOURCE:
+    if _configured_source(settings) not in {LIVE_SOURCE, OKX_SOURCE}:
         return "inactive"
     if live_market_activation_violations(settings, environ=environ):
         return "refused"
@@ -267,6 +322,9 @@ def perpetual_evidence_health(
     """Redaction-safe evidence posture for ``/health`` and startup logs."""
     return {
         "perpetual_evidence_source": _configured_source(settings),
+        "perpetual_evidence_secondary_source": canonicalize_secondary_evidence_source(
+            settings.perpetual_evidence_secondary_source
+        ),
         "perpetual_evidence_activation": activation_state(settings, environ=environ),
         "perpetual_evidence_intended_staging_source": INTENDED_STAGING_SOURCE,
         "perpetual_evidence_rollback_source": ROLLBACK_SOURCE,

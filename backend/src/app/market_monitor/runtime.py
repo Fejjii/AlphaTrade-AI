@@ -20,6 +20,7 @@ from app.market_contracts.enums import (
 from app.market_contracts.errors import (
     CursorRecoveryError,
     DuplicateDataError,
+    EvidenceSourceSwitchRequiredError,
     FormingCandleError,
     GapDetectedError,
     IncompleteWarmUpError,
@@ -115,6 +116,9 @@ class SymbolMonitorRuntime:
 
     def tick(self, now: datetime) -> SymbolMonitorSnapshot:
         evaluated = now.astimezone(UTC)
+        recovered = self._maybe_recover_primary(evaluated)
+        if recovered is not None:
+            self._rebind(recovered, evaluated)
         if self._in_backoff(evaluated):
             self._reason = MonitorReason.BACKOFF
             return self._project(evaluated)
@@ -122,6 +126,20 @@ class SymbolMonitorRuntime:
             self._fetch_and_ingest(evaluated)
             self._refresh_ohlcv(evaluated)
             self._clear_backoff()
+        except EvidenceSourceSwitchRequiredError as exc:
+            switched = exc.instrument
+            if not isinstance(switched, InstrumentIdentity):
+                self._last_error_class = type(exc).__name__
+                self._reason = MonitorReason.WRONG_SOURCE
+                return self._project(evaluated)
+            self._rebind(switched, evaluated)
+            try:
+                self._fetch_and_ingest(evaluated)
+                self._refresh_ohlcv(evaluated)
+                self._clear_backoff()
+            except MarketContractError as retry_exc:
+                self._last_error_class = type(retry_exc).__name__
+                self._reason = MonitorReason.PROVIDER_ERROR
         except RateLimitedError as exc:
             self._last_error_class = type(exc).__name__
             self._apply_backoff(
@@ -173,6 +191,44 @@ class SymbolMonitorRuntime:
     def project(self, now: datetime) -> SymbolMonitorSnapshot:
         """Re-evaluate freshness without a provider fetch."""
         return self._project(now.astimezone(UTC))
+
+    def _maybe_recover_primary(self, now: datetime) -> InstrumentIdentity | None:
+        del now
+        recover = getattr(self._source, "try_recover_primary", None)
+        if not callable(recover):
+            return None
+        instrument = recover()
+        if isinstance(instrument, InstrumentIdentity):
+            return instrument
+        return None
+
+    def _rebind(self, instrument: InstrumentIdentity, now: datetime) -> None:
+        """Start a new connection epoch on the switched venue. Drop the previous book."""
+
+        self.instrument = instrument
+        self.identity = first_slice_identity(
+            timeframe=Timeframe.M15,
+            replay=self._replay,
+            is_live=not self._replay,
+            instrument=instrument,
+        )
+        self._identity_4h = first_slice_identity(
+            timeframe=Timeframe.H4,
+            replay=self._replay,
+            is_live=not self._replay,
+            instrument=instrument,
+        )
+        self._assembler = TradeStreamAssembler(
+            self.identity,
+            connected_at=now,
+            connection_identity=uuid4(),
+        )
+        self._watermark_time = None
+        self._last_batch = None
+        self._last_stream = None
+        self._series_15m = None
+        self._series_4h = None
+        self._reason = MonitorReason.WARM_UP
 
     def _fetch_and_ingest(self, now: datetime) -> None:
         if self._assembler.cursor.gap_state is GapState.UNRECOVERABLE:
