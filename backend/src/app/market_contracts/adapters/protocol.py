@@ -9,7 +9,7 @@ from uuid import UUID
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries
 from app.market_contracts.trades import OrderedTradeBatch
-from app.providers.base import ProviderStatus
+from app.providers.base import ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
 
 
@@ -17,6 +17,7 @@ class PerpetualMarketSource(Protocol):
     """Read-only source of perpetual OHLCV and aggregate trades."""
 
     name: str
+    kind: ProviderKind
 
     def fetch_closed_ohlcv(
         self,

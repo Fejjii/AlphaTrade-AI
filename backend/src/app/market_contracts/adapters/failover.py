@@ -21,14 +21,30 @@ from app.market_contracts.errors import (
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries
 from app.market_contracts.trades import OrderedTradeBatch
-from app.providers.base import ProviderHealth, ProviderStatus
+from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
 
 _SWITCH_ERRORS = (UpstreamBanError, RegionalProviderFailureError, RateLimitedError)
 
 
+def _require_market_data_kind(primary_kind: ProviderKind, secondary_kind: ProviderKind) -> None:
+    """Refuse a failover pair that is not one shared market-data capability."""
+
+    if primary_kind is ProviderKind.MARKET_DATA and secondary_kind is ProviderKind.MARKET_DATA:
+        return
+    raise WrongSourceError(
+        "Primary and secondary perpetual sources must both report the market_data provider kind."
+    )
+
+
 class FailoverPerpetualSource:
-    """One active venue at a time. Secondary is used only after an explicit switch."""
+    """One active venue at a time. Secondary is used only after an explicit switch.
+
+    ``kind`` is the provider capability of the active source, not the venue name.
+    Perpetual evidence is market data. Construction refuses a pair unless both
+    sources report :attr:`ProviderKind.MARKET_DATA`, so a switch cannot change
+    the category the provider registry records at startup.
+    """
 
     def __init__(
         self,
@@ -42,12 +58,14 @@ class FailoverPerpetualSource:
             raise WrongSourceError("Primary and secondary evidence must be different instruments.")
         if primary_instrument.venue is secondary_instrument.venue:
             raise WrongSourceError("Primary and secondary evidence must not share a venue.")
+        _require_market_data_kind(primary.kind, secondary.kind)
         self._primary = primary
         self._secondary = secondary
         self._primary_instrument = primary_instrument
         self._secondary_instrument = secondary_instrument
         self._using_secondary = False
         self.name = primary.name
+        self.kind = primary.kind
 
     @property
     def using_secondary(self) -> bool:
@@ -121,6 +139,7 @@ class FailoverPerpetualSource:
             return None
         self._using_secondary = False
         self.name = self._primary.name
+        self.kind = self._primary.kind
         return self._primary_instrument
 
     def _require_active_identity(
@@ -143,6 +162,7 @@ class FailoverPerpetualSource:
             raise exc
         self._using_secondary = True
         self.name = self._secondary.name
+        self.kind = self._secondary.kind
         raise EvidenceSourceSwitchRequiredError(
             "Primary perpetual source failed. The primary payload was not published.",
             instrument=self._secondary_instrument,

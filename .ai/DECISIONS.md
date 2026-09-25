@@ -2422,4 +2422,29 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Focused tests live in
   `backend/tests/test_automated_paper_loop.py`. Do not deploy or activate.
 
+## AT-ADR-070 — Failover perpetual evidence reports the active market-data kind
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Context:** Staging startup registers the perpetual evidence source through
+  `_PerpetualEvidenceAdapter`, which copies `inner.kind`. `FailoverPerpetualSource`
+  had a venue `name` and no provider kind, so Render raised
+  `AttributeError: 'FailoverPerpetualSource' object has no attribute 'kind'`
+  while building the default provider registry. Binance USD-M and Bybit USDT
+  perpetual sources already report `ProviderKind.MARKET_DATA`.
+- **Decision:** `kind` is the provider capability, not the venue. The failover
+  wrapper adopts `kind` from the active source and updates it on switch and on
+  return to the primary. Construction requires both sources to report
+  `ProviderKind.MARKET_DATA`. A hardcoded kind that ignores the sources is not
+  the contract. Venue provenance stays on the instrument and source identity.
+- **Alternatives considered:** Set `kind = ProviderKind.MARKET_DATA` on the
+  wrapper without reading the sources (rejected: that only hides the startup
+  error). Make the registry skip a missing kind (rejected: the source must
+  satisfy the provider interface).
+- **Safety impact:** Paper only. No change to Watcher authority, Telegram,
+  spot rejection, or fabricated-evidence rejection.
+- **Consequences:** `PerpetualMarketSource` requires `kind`. Regression coverage
+  builds `build_default_registry` and `create_app` with
+  `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` and
+  `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual`.
+
 
