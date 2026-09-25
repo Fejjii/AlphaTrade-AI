@@ -34,9 +34,11 @@ only, `category=linear`). It is used only after the Binance primary fails with
 HTTP 418, HTTP 429, or a regional outage. The switch starts a new connection
 epoch and labels every later observation `bybit` / `bybit_usdt_perpetual_public`.
 A Binance price is not copied onto that observation. Spot category `spot` is
-rejected. A recent-trade buffer that does not prove the requested window fails
-closed. Bybit `seq` is a cross sequence, not a per-trade id. A later read
-that drops the last proven print fails closed instead of inventing the gap.
+rejected. The first recent-trade page on a connection must prove the
+requested window. Later pages extend that proven tail when they still contain
+its last execution id, even if the page no longer reaches the original start.
+Bybit `seq` is a cross sequence, not a per-trade id. A later read that drops
+the last proven print fails closed instead of inventing the gap.
 Rollback remains `PERPETUAL_EVIDENCE_SOURCE=replay` and
 `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=none`.
 Do not deploy from this document. Watcher and Telegram stay disarmed.
