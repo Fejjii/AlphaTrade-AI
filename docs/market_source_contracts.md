@@ -16,7 +16,9 @@ Implemented:
 - deterministic quote-volume CVD and signed quote flow
 - Binance USD-M public REST adapter (GET-only)
 - Bybit linear USDT perpetual public REST adapter (GET-only), used as an explicit
-  secondary whole-source failover and never mixed into a Binance window
+  secondary whole-source failover and never mixed into a Binance window. The
+  failover wrapper's provider kind is the shared `market_data` capability of the
+  active source; a pair that does not both report that kind is refused
 - replay fixtures (no network)
 
 Not implemented here: watcher orchestration, Telegram, candidates, fusion predicates,

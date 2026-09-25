@@ -451,6 +451,8 @@ def test_binance_healthy_does_not_call_bybit() -> None:
     assert batch.identity.source.family is SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
     assert called["bybit"] == 0
     assert router.using_secondary is False
+    assert router.kind is router.active_source.kind
+    assert router.kind is ProviderKind.MARKET_DATA
 
 
 @pytest.mark.parametrize("kind", ["418", "429", "outage"])
@@ -506,6 +508,8 @@ def test_binance_http_failure_switches_entire_window_to_bybit(kind: str) -> None
     assert switched.value.instrument == bybit_usdt_perpetual_btcusdt()
     assert seen["bybit"] == 0
     assert seen["binance"] == 1
+    assert router.kind is secondary.kind
+    assert router.kind is ProviderKind.MARKET_DATA
     batch = router.fetch_ordered_trades(
         identity=_identity(bybit_usdt_perpetual_btcusdt()),
         instrument=bybit_usdt_perpetual_btcusdt(),
@@ -612,6 +616,8 @@ def test_provider_recovers_and_switches_back_to_binance() -> None:
     assert recovered == binance_usdm_btcusdt()
     assert router.using_secondary is False
     assert router.name == "binance-usdm-perpetual"
+    assert router.kind is primary.kind
+    assert router.kind is ProviderKind.MARKET_DATA
     with pytest.raises(WrongSourceError, match="active perpetual source"):
         router.fetch_ordered_trades(
             identity=_identity(bybit_usdt_perpetual_btcusdt()),
@@ -734,3 +740,67 @@ def test_factory_selects_bybit_secondary_without_enabling_trading() -> None:
             perpetual_evidence_secondary_source="okx_usdt_swap",
             jwt_secret="x" * 40,
         )
+
+
+def test_failover_refuses_a_pair_that_is_not_market_data() -> None:
+    class _ExchangeShaped:
+        name = "not-market-data"
+        kind = ProviderKind.EXCHANGE
+
+        def status(self) -> ProviderStatus:
+            return ProviderStatus(
+                name=self.name,
+                kind=self.kind,
+                health=ProviderHealth.HEALTHY,
+                using_fallback=False,
+                is_mock=True,
+            )
+
+    with pytest.raises(WrongSourceError, match="market_data"):
+        FailoverPerpetualSource(
+            _Primary(None),  # type: ignore[arg-type]
+            _ExchangeShaped(),  # type: ignore[arg-type]
+            primary_instrument=binance_usdm_btcusdt(),
+            secondary_instrument=bybit_usdt_perpetual_btcusdt(),
+        )
+
+
+def test_staging_provider_registry_starts_with_bybit_secondary() -> None:
+    """The Render startup path registers the Binance/Bybit failover."""
+
+    from app.main import create_app
+    from app.providers.registry import build_default_registry
+
+    settings = Settings(
+        environment="local",
+        execution_mode="paper",
+        enable_real_trading=False,
+        exchange_mode="paper_internal",
+        provider_mode="mock",
+        market_data_provider="mock",
+        rate_limit_use_redis=False,
+        market_data_cache_use_redis=False,
+        access_token_denylist_use_redis=False,
+        market_watcher_enabled=False,
+        telegram_alerts_enabled=False,
+        perpetual_evidence_source="binance_usdm",
+        perpetual_evidence_secondary_source="bybit_usdt_perpetual",
+        market_data_futures_base_url="https://fapi.binance.com",
+        bybit_perpetual_base_url="https://api.bybit.com",
+    )
+    registry = build_default_registry(settings)
+    app = create_app(settings)
+    source = resolve_perpetual_evidence_source(settings)
+    assert isinstance(source, FailoverPerpetualSource)
+    assert source.kind is source.active_source.kind
+    assert source.kind is ProviderKind.MARKET_DATA
+    assert source.using_secondary is False
+    registered = registry.get("binance-usdm-perpetual")
+    assert registered is not None
+    assert registered.kind is ProviderKind.MARKET_DATA
+    started = app.state.provider_registry.get("binance-usdm-perpetual")
+    assert started is not None
+    assert started.kind is ProviderKind.MARKET_DATA
+    assert settings.enable_real_trading is False
+    assert settings.execution_mode.value == "paper"
+    assert settings.exchange_mode.value == "paper_internal"
