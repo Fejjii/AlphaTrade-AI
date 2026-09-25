@@ -193,7 +193,8 @@ replies read recorded paper facts. They do not invent a SetupAssessment.
 Confirm one path, without a manually inserted `CONFIRMED_SETUP`:
 
 fresh USD-M evidence → Watcher scan → genuine `CONFIRMED_SETUP` → one
-Candidate → paper eligibility and paper plan → paper execution → Journal →
+Candidate → `AutomatedPaperLoop` (existing eligibility, canonical TradePlan,
+internal paper fill) → open Journal trade →
 evaluation facts (`watcher_orchestration_enabled=false` and
 `telegram_interaction_enabled=false` on the measurement record) → learning
 text with `activate=false` → Telegram projection of that scan.

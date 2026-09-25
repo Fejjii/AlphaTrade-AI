@@ -2393,4 +2393,33 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Branch `cursor/okx-perp-evidence-failover-98bd`. Tests in
   `backend/tests/test_bybit_usdt_perpetual_evidence.py`. No Bybit credentials.
 
+## AT-ADR-069 — Confirmed Watcher setup continues to one internal paper fill
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Context:** The activation runbook expects a genuine Watcher `CONFIRMED_SETUP`
+  to reach an open paper Journal trade. The worker stopped after the Candidate.
+  Eligibility, the canonical TradePlan, and the paper fill were composed only
+  in tests.
+- **Decision:**
+  1. `AutomatedPaperLoop` sequences the existing ActionEligibility service,
+     `CanonicalTradePlanService`, hash-bound API approval, and internal paper
+     fill. It is not a second setup or risk authority.
+  2. The loop runs only for paper mode, `ENABLE_REAL_TRADING=false`, and
+     `EXCHANGE_MODE=paper_internal`. The fill source is `paper_internal`.
+     Replay, `WATCH`, `NO_SETUP`, stale evidence, provider outage, a wrong
+     tenant, a wrong strategy lineage, risk `BLOCK`, and the kill switch
+     create no fill.
+  3. One Candidate produces at most one plan and one fill. A duplicate scan
+     and a later call with the same Candidate converge on that journal trade.
+  4. This change does not arm Watcher, Telegram, or live trading, and does
+     not add an Alembic revision.
+- **Alternatives considered:** Keep the manual test composition as the
+  production path (rejected: the activation runbook cannot observe an open
+  journal trade). Invoke Watcher side-effect ports from the orchestrator
+  (rejected: those ports stay unused by orchestration).
+- **Safety impact:** Paper only. Risk `BLOCK` stays final. No exchange
+  mutation and no Telegram execution authority.
+- **Consequences:** Focused tests live in
+  `backend/tests/test_automated_paper_loop.py`. Do not deploy or activate.
+
 

@@ -71,6 +71,27 @@ Fail-closed proof covers stale evidence, provider outage, wrong tenant, wrong
 lineage, expired setup, wrong source, missing monitor, in-memory policy,
 duplicate worker, stale fence, Telegram mutation, and AI strategy activation.
 
+## Confirmed setup continues inside the paper worker
+
+When a scan publishes one `CONFIRMED_SETUP` Candidate, `WatcherPaperRuntime`
+calls `AutomatedPaperLoop`. That sequencer uses the existing
+`ActionEligibilityService`, `CanonicalTradePlanService`, hash-bound API
+approval, and internal paper fill. It does not detect setups, mint Candidates,
+or replace the risk engine. Risk `BLOCK` remains final.
+
+The continuation runs only when `EXECUTION_MODE=paper`,
+`ENABLE_REAL_TRADING=false`, and `EXCHANGE_MODE=paper_internal`. The fill
+venue is `paper_internal`. No BloFin client is called, no exchange account is
+mutated, and Telegram is not an execution channel. `WATCH`, `NO_SETUP`, replay
+evidence, stale evidence, provider outage, a wrong tenant, a wrong strategy
+lineage, and an active kill switch create no plan and no fill. The kill switch
+still records the blocked scan. A repeated scan and a process restart converge
+on the same plan, fill, and open Journal trade.
+
+The open Journal row is the handoff to the existing paper close route and
+statistics pipeline. This page does not arm Watcher, Telegram, or live trading.
+`watcher_orchestration_enabled` stays false unless a later activation sets it.
+
 ## Migration chain
 
 Single Alembic head:
