@@ -2332,4 +2332,34 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `backend/tests/test_binance_usdm_staging_reliability.py`. Do not deploy
   or activate.
 
+## AT-ADR-067 — OKX USDT swap is the explicit secondary perpetual source
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Context:** Render Frankfurt is HTTP 418 banned by Binance USD-M, so paper
+  staging cannot depend only on `fapi.binance.com`. The canonical contract
+  still needs perpetual price, trades, OHLCV, volume, taker-side CVD, freshness,
+  and gap detection, each with its own provenance.
+- **Decision:**
+  1. Primary stays `binance_usdm`. Optional secondary is `okx_usdt_swap`
+     (`BTC-USDT-SWAP` only, contract value 0.01 BTC, taker side). Selecting
+     `okx_usdt_swap` as the primary is also legal. Replay stays the default
+     and the rollback. Spot, Coin-M, and fabricated rows stay rejected.
+  2. A primary 418, 429, or regional failure switches the whole active
+     instrument and opens a new connection epoch. The failed primary payload
+     is not published. Recovery returns to Binance only after its status is
+     healthy, again on a new epoch. The two venues are never merged into one
+     CVD window.
+  3. OKX history that does not reach the requested start fails closed. No
+     missing prints are invented. Staging blueprint sets the secondary and
+     does not arm Watcher, Telegram, or real trading. This decision does not
+     deploy.
+- **Alternatives considered:** Relabel OKX prints as Binance (rejected:
+  incompatible books). Use spot tickers (rejected). Proxy around the Binance
+  ban (rejected: does not change the evidence source and weakens the
+  read-only host allowlist).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Binance GET allowlist is unchanged.
+- **Consequences:** Branch `cursor/okx-perp-evidence-failover-98bd`. Tests in
+  `backend/tests/test_okx_usdt_swap_evidence.py`.
+
 

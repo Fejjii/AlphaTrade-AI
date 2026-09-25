@@ -65,8 +65,12 @@ services:
       # this blueprint is not a deploy by itself.
       - key: PERPETUAL_EVIDENCE_SOURCE
         value: binance_usdm
+      - key: PERPETUAL_EVIDENCE_SECONDARY_SOURCE
+        value: okx_usdt_swap
       - key: MARKET_DATA_FUTURES_BASE_URL
         value: https://fapi.binance.com
+      - key: OKX_SWAP_BASE_URL
+        value: https://www.okx.com
       - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
         value: "10"
       - key: DEBUG
@@ -161,8 +165,12 @@ services:
         value: true
       - key: PERPETUAL_EVIDENCE_SOURCE
         value: binance_usdm
+      - key: PERPETUAL_EVIDENCE_SECONDARY_SOURCE
+        value: okx_usdt_swap
       - key: MARKET_DATA_FUTURES_BASE_URL
         value: https://fapi.binance.com
+      - key: OKX_SWAP_BASE_URL
+        value: https://www.okx.com
       - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
         value: "10"
       - key: DEBUG

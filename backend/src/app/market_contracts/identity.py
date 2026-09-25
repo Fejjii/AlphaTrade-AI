@@ -20,6 +20,9 @@ from app.schemas.common import Timeframe
 
 ADAPTER_VERSION = "binance-usdm-perpetual/v1"
 AGGRESSOR_CONVENTION = "binance-usdm-aggtrade/buyer-is-maker/v1"
+OKX_ADAPTER_VERSION = "okx-usdt-swap-perpetual/v1"
+OKX_AGGRESSOR_CONVENTION = "okx-usdt-swap-trade/taker-side/v1"
+OKX_BTC_CONTRACT_MULTIPLIER = Decimal("0.01")
 HASH_ALGORITHM_VERSION = "canonical-json-sha256/v1"
 INTERVAL_SECONDS: dict[Timeframe, int] = {
     Timeframe.M1: 60,
@@ -182,6 +185,34 @@ def binance_usdm_perpetual(symbol: str) -> InstrumentIdentity:
 def binance_usdm_btcusdt() -> InstrumentIdentity:
     """Canonical first-slice instrument: Binance USD-M BTCUSDT perpetual."""
     return binance_usdm_perpetual("BTCUSDT")
+
+
+def okx_usdt_swap_btcusdt() -> InstrumentIdentity:
+    """OKX linear USDT swap BTC-USDT-SWAP. Size is contracts; ctVal is 0.01 BTC.
+
+    ``provider_symbol`` stays ``BTCUSDT`` so the catalog key matches the slice.
+    The adapter maps that symbol to ``BTC-USDT-SWAP`` and rejects spot ``BTC-USDT``.
+    """
+    return InstrumentIdentity(
+        venue=VenueId.OKX,
+        market_type=MarketType.PERPETUAL,
+        product_family=ProductFamily.USDM_FUTURES,
+        contract_style=ContractStyle.LINEAR,
+        instrument_id=canonical_instrument_id(
+            venue=VenueId.OKX,
+            product_family=ProductFamily.USDM_FUTURES,
+            market_type=MarketType.PERPETUAL,
+            symbol="BTCUSDT",
+        ),
+        provider_symbol="BTCUSDT",
+        base_asset="BTC",
+        quote_asset="USDT",
+        settlement_asset="USDT",
+        contract_multiplier=OKX_BTC_CONTRACT_MULTIPLIER,
+        price_unit="USDT",
+        base_quantity_unit="BTC",
+        quote_quantity_unit="USDT",
+    )
 
 
 def require_perpetual(identity: EvidenceMarketIdentity) -> None:

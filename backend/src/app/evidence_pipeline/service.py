@@ -33,8 +33,13 @@ from app.market_contracts.adapters.factory import (
     resolve_perpetual_evidence_source,
 )
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
-from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
+from app.market_contracts.catalog import (
+    PerpetualInstrumentCatalog,
+    default_perpetual_catalog,
+    instrument_for_source,
+)
 from app.market_contracts.errors import (
+    EvidenceSourceSwitchRequiredError,
     FormingCandleError,
     IncompleteWarmUpError,
     MarketContractError,
@@ -98,7 +103,7 @@ class CanonicalEvidenceService:
         symbol: str = "BTCUSDT",
     ) -> CanonicalEvidenceRead:
         try:
-            instrument = self._catalog.require(symbol)
+            instrument = instrument_for_source(self._source, self._catalog, symbol)
         except WrongInstrumentError as exc:
             raise ValidationAppError(str(exc), code="unknown_perpetual_instrument") from exc
 
@@ -159,32 +164,42 @@ class CanonicalEvidenceService:
         evaluated_at: datetime,
     ) -> tuple[CanonicalCurrentPriceRead, str | None]:
         del organization_id
-        instrument = self._catalog.require(instrument_symbol)
-        identity = first_slice_identity(
-            timeframe=Timeframe.M15,
-            replay=self._replay,
-            is_live=not self._replay,
-            instrument=instrument,
-        )
-        try:
-            quote = quote_current_price(
-                self._source,
-                identity=identity,
-                instrument=instrument,
-                evaluated_at=evaluated_at,
-                connection_id=UUID("a0640000-2222-4000-8000-000000000001"),
+        for _attempt in range(2):
+            instrument = instrument_for_source(self._source, self._catalog, instrument_symbol)
+            identity = first_slice_identity(
+                timeframe=Timeframe.M15,
                 replay=self._replay,
+                is_live=not self._replay,
+                instrument=instrument,
             )
-            return _price_from_quote(quote), None
-        except MarketContractError as exc:
-            presentation, reason = _presentation_for_error(exc, replay=self._replay)
-            return (
-                _unavailable_price(
-                    identity_is_live=identity.provenance.is_live,
-                    presentation=presentation,
-                ),
-                reason,
-            )
+            try:
+                quote = quote_current_price(
+                    self._source,
+                    identity=identity,
+                    instrument=instrument,
+                    evaluated_at=evaluated_at,
+                    connection_id=UUID("a0640000-2222-4000-8000-000000000001"),
+                    replay=self._replay,
+                )
+                return _price_from_quote(quote), None
+            except EvidenceSourceSwitchRequiredError:
+                continue
+            except MarketContractError as exc:
+                presentation, reason = _presentation_for_error(exc, replay=self._replay)
+                return (
+                    _unavailable_price(
+                        identity_is_live=identity.provenance.is_live,
+                        presentation=presentation,
+                    ),
+                    reason,
+                )
+        return (
+            _unavailable_price(
+                identity_is_live=False,
+                presentation=CurrentPricePresentation.UNAVAILABLE,
+            ),
+            "source_switch_failed",
+        )
 
     def _setup(
         self,

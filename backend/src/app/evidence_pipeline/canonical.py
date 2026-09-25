@@ -106,6 +106,8 @@ def semantic_source_from_identity(identity: EvidenceMarketIdentity) -> SemanticS
     family = identity.source.family
     if family is SourceFamily.REPLAY_FIXTURE:
         public_family = SourceFamily.REPLAY_FIXTURE
+    elif family is SourceFamily.OKX_USDT_SWAP_PUBLIC:
+        public_family = SourceFamily.OKX_USDT_SWAP_PUBLIC
     else:
         public_family = SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
     return SemanticSourceIdentity(

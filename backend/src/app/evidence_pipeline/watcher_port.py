@@ -187,7 +187,11 @@ class AssemblingWatcherScanEvidence:
             raise WatcherTenantMismatchError(
                 "Assessment command organization_id does not match the scan tenant."
             )
-        _reconcile_monitor_and_assembled(monitor_snapshot, assembled.replay)
+        _reconcile_monitor_and_assembled(
+            monitor_snapshot,
+            assembled.replay,
+            assembled.identity.source.family,
+        )
         return WatcherCanonicalScanEvidence(
             organization_id=organization_id,
             policy=policy,
@@ -229,17 +233,20 @@ class AssemblingWatcherScanEvidence:
 def _reconcile_monitor_and_assembled(
     monitor_snapshot: SymbolMonitorSnapshot | None,
     assembled_replay: bool,
+    assembled_family: SourceFamily | None = None,
 ) -> None:
-    """Shared source must not split live vs replay authority."""
+    """Shared source must not split live vs replay authority or venue."""
 
     if monitor_snapshot is None:
         return
     monitor_replay = monitor_snapshot.mode is MarketMode.REPLAY
-    family_matches = (
-        monitor_snapshot.source_family is SourceFamily.REPLAY_FIXTURE
-        if monitor_replay
-        else monitor_snapshot.source_family is SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
-    )
+    if assembled_family is None:
+        assembled_family = (
+            SourceFamily.REPLAY_FIXTURE
+            if assembled_replay
+            else SourceFamily.BINANCE_USDM_FUTURES_PUBLIC
+        )
+    family_matches = monitor_snapshot.source_family is assembled_family
     if monitor_replay != assembled_replay or not family_matches:
         raise WatcherEvidenceUnavailableError(
             "Watcher monitor mode does not match canonical evidence replay flag.",

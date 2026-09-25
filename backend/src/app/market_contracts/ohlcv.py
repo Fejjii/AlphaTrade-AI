@@ -235,6 +235,7 @@ def require_closed_series(
     require_instrument(identity, identity.instrument)
     if identity.source.family not in {
         SourceFamily.BINANCE_USDM_FUTURES_PUBLIC,
+        SourceFamily.OKX_USDT_SWAP_PUBLIC,
         SourceFamily.REPLAY_FIXTURE,
     }:
         raise WrongMarketError("OHLCV source family is not a contracted perpetual source.")

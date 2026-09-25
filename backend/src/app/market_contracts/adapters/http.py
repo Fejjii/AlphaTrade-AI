@@ -70,6 +70,8 @@ class ReadOnlyHttpGetClient:
         transport: httpx.BaseTransport | None = None,
         client: httpx.Client | None = None,
         allowed_hosts: frozenset[str] | None = None,
+        allowed_paths: frozenset[str] | None = None,
+        failure_label: str = "Preferred Binance USD-M",
         max_retries: int = 0,
         weight_per_minute: int = 1800,
         max_backoff_seconds: float = 30.0,
@@ -79,6 +81,8 @@ class ReadOnlyHttpGetClient:
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._allowed_hosts = allowed_hosts or APPROVED_BINANCE_USDM_REST_HOSTS
+        self._allowed_paths = allowed_paths or ALLOWED_PATHS
+        self._failure_label = failure_label
         self._assert_base_url()
         self._owns_client = client is None
         self._max_retries = max_retries
@@ -120,7 +124,7 @@ class ReadOnlyHttpGetClient:
                 f"Perpetual evidence adapter forbids HTTP {normalized_method}."
             )
         normalized_path = self._normalize_path(path)
-        if normalized_path not in ALLOWED_PATHS:
+        if normalized_path not in self._allowed_paths:
             raise NetworkMutationForbiddenError(
                 f"Path {normalized_path} is not on the read-only perpetual allowlist."
             )
@@ -137,7 +141,7 @@ class ReadOnlyHttpGetClient:
                 record_request(weight=weight, retry=attempt > 0)
                 if attempt + 1 >= attempts:
                     raise RegionalProviderFailureError(
-                        "Preferred Binance USD-M perpetual source is unreachable."
+                        f"{self._failure_label} perpetual source is unreachable."
                     ) from exc
                 delay = bounded_backoff_seconds(
                     attempt=attempt,
@@ -151,7 +155,7 @@ class ReadOnlyHttpGetClient:
                 record_request(weight=weight, rate_limited=True, retry=attempt > 0)
                 if attempt + 1 >= attempts:
                     raise RateLimitedError(
-                        "Preferred Binance USD-M source rate-limited the read-only client.",
+                        f"{self._failure_label} source rate-limited the read-only client.",
                         retry_after_seconds=last_retry_after,
                     )
                 delay = bounded_backoff_seconds(
@@ -166,7 +170,7 @@ class ReadOnlyHttpGetClient:
                 record_request(weight=weight, rate_limited=True, retry=attempt > 0)
                 if not self._upstream_ban_retry_allowed(attempt, retry_after):
                     raise UpstreamBanError(
-                        "Preferred Binance USD-M source temporarily banned this client (HTTP 418).",
+                        f"{self._failure_label} source temporarily banned this client (HTTP 418).",
                         retry_after_seconds=retry_after,
                     )
                 delay = bounded_backoff_seconds(
@@ -179,7 +183,7 @@ class ReadOnlyHttpGetClient:
             if response.status_code in REGIONAL_STATUS_CODES:
                 record_request(weight=weight)
                 raise RegionalProviderFailureError(
-                    f"Preferred Binance USD-M source rejected the runtime region "
+                    f"{self._failure_label} source rejected the runtime region "
                     f"(HTTP {response.status_code})."
                 )
             try:
@@ -187,12 +191,12 @@ class ReadOnlyHttpGetClient:
             except httpx.HTTPStatusError as exc:
                 record_request(weight=weight)
                 raise RegionalProviderFailureError(
-                    f"Preferred Binance USD-M source returned HTTP {response.status_code}."
+                    f"{self._failure_label} source returned HTTP {response.status_code}."
                 ) from exc
             record_request(weight=weight, retry=attempt > 0)
             return response.json()
         raise RateLimitedError(
-            "Preferred Binance USD-M source rate-limited the read-only client.",
+            f"{self._failure_label} source rate-limited the read-only client.",
             retry_after_seconds=last_retry_after,
         )
 
