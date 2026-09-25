@@ -16,6 +16,7 @@ from app.core.errors import NotFoundError
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
 from app.evidence_pipeline.canonical import is_first_slice_read_projection
 from app.evidence_pipeline.manual_resistance import persisted_resistance_evidence
+from app.evidence_pipeline.types import AssembledCanonicalEvidence
 from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
     MarketContractError,
@@ -93,6 +94,9 @@ class AssemblingWatcherScanEvidence:
         self._symbol = symbol
         self._monitor = monitor
         self._load_cache: dict[tuple[str, str, str], WatcherCanonicalScanEvidence | None] = {}
+        self._last_assembly: tuple[AssembledCanonicalEvidence, ExecutableStrategyPolicy] | None = (
+            None
+        )
 
     def load(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         """Return one assembled snapshot twice for evaluate and Candidate persist.
@@ -110,9 +114,15 @@ class AssemblingWatcherScanEvidence:
         )
         if key in self._load_cache:
             return self._load_cache[key]
+        self._last_assembly = None
         loaded = self._load_uncached(command)
         self._load_cache[key] = loaded
         return loaded
+
+    def last_assembly(self) -> tuple[AssembledCanonicalEvidence, ExecutableStrategyPolicy] | None:
+        """Last successful assembly for this scan. Empty after a failed load."""
+
+        return self._last_assembly
 
     def _load_uncached(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
@@ -192,6 +202,7 @@ class AssemblingWatcherScanEvidence:
             assembled.replay,
             assembled.identity.source.family,
         )
+        self._last_assembly = (assembled, executable)
         return WatcherCanonicalScanEvidence(
             organization_id=organization_id,
             policy=policy,

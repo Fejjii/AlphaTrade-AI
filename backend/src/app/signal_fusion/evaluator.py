@@ -906,6 +906,29 @@ def _fail_remaining_pattern(rules: dict[str, RuleResult]) -> None:
             rules[rule_id] = _rule(rule_id, False, "fail_closed_prerequisite")
 
 
+def first_slice_short_invalidation_price(
+    *,
+    trigger: OhlcvBar,
+    bars_15m: Sequence[OhlcvBar],
+    tick_size: Decimal,
+    params: FirstSliceEvaluationParams,
+) -> Decimal | None:
+    """Stop used by the first-slice short invalidation rule. None when ATR is missing."""
+
+    rules: dict[str, RuleResult] = {}
+    feature = _evaluate_atr(
+        bars_15m,
+        timeframe=Timeframe.M15,
+        rule_id="wilder_atr_15m",
+        rules=rules,
+        period=params.atr_period,
+    )
+    if feature is None or feature.value is None:
+        return None
+    buffer = max(params.invalidation_atr * feature.value, params.invalidation_ticks * tick_size)
+    return trigger.high + buffer
+
+
 def _evaluate_expiry_invalidation(
     trigger: OhlcvBar,
     evidence: FirstSliceEvidenceBundle,
@@ -1064,4 +1087,4 @@ def _build_assessment(
     )
 
 
-__all__ = ["evaluate_setup"]
+__all__ = ["evaluate_setup", "first_slice_short_invalidation_price"]

@@ -187,8 +187,11 @@ class Settings(BaseSettings):
     # (``python -m app.workers.watcher_paper``) may set this true only when
     # ENVIRONMENT=local and EXECUTION_MODE=paper. Fusion wiring may persist a
     # canonical candidate only when this flag is on and evaluate_setup returns
-    # CONFIRMED_SETUP. Does not enable Telegram, TradePlan, journal, or live
-    # trading.
+    # CONFIRMED_SETUP. Does not enable Telegram or live trading. A
+    # CONFIRMED_SETUP Candidate continues through existing ActionEligibility,
+    # the canonical TradePlan, and the internal paper fill only when
+    # EXECUTION_MODE=paper, ENABLE_REAL_TRADING=false, and
+    # EXCHANGE_MODE=paper_internal. WATCH and NO_SETUP create nothing.
     watcher_orchestration_enabled: bool = False
     # Staging paper-monitoring arm. Default false. Does not start the worker,
     # does not change Telegram, and is rejected in production. Leave unset.

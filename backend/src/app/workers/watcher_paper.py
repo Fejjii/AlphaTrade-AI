@@ -3,10 +3,12 @@
 Approved compiled strategy → read-only market evidence → WatcherOrchestrator
 scan → evaluate_canonical_strategy → Candidate only on CONFIRMED_SETUP.
 
-Never places orders and never starts Telegram. Local paper monitoring stays
-opt-in. Staging scans only after the paper-activation preflight clears, and
-production stays dark. Candidate persistence still requires persisted approved
-compiled authority.
+A confirmed Candidate may continue through the existing paper authorities to
+one internal paper fill and an open Journal trade. This worker does not call
+an exchange, does not arm Telegram, and does not place a live order. Local
+paper monitoring stays opt-in. Staging scans only after the paper-activation
+preflight clears, and production stays dark. Candidate persistence still
+requires persisted approved compiled authority.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 import signal
 import threading
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from types import FrameType
 from typing import TYPE_CHECKING
@@ -95,6 +97,16 @@ class WatcherPaperScanReport:
     request_hash: str | None = None
     lineage_id: UUID | None = None
     discussion: WatcherDiscussionSnapshot | None = None
+    paper_loop_stage: str = "not_applicable"
+    paper_loop_reason: str = ""
+    paper_loop_replayed: bool = False
+    eligibility_id: UUID | None = None
+    eligibility_state: str | None = None
+    trade_plan_revision_id: UUID | None = None
+    execution_command_id: UUID | None = None
+    paper_fill_id: UUID | None = None
+    journal_trade_id: UUID | None = None
+    journal_status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +233,7 @@ class WatcherPaperRuntime:
         scan_notification_hook: Callable[[WatcherPaperScanReport], None] | None = None,
         evaluation_observer_factory: EvaluationObserverFactory | None = None,
         activation_gate: ActivationGate | None = None,
+        canonical_runtime: object | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -242,6 +255,7 @@ class WatcherPaperRuntime:
         self._eval_clock = _shared_evaluation_clock(lifecycle, evaluation_clock)
         self._scan_notification_hook = scan_notification_hook
         self._activation_gate = activation_gate
+        self._canonical_runtime = canonical_runtime
         self._observer_factory = (
             self._evaluation_observer
             if evaluation_observer_factory is None
@@ -582,6 +596,7 @@ class WatcherPaperRuntime:
             kill_switch_active=kill_active,
             evaluator=evaluator,
         )
+        report = self._continue_paper_loop(session, target, report, evidence)
         self._notify_scan(report)
         observe_scan(report.reason_code)
         logger.info(
@@ -668,6 +683,80 @@ class WatcherPaperRuntime:
                 organization_id=str(organization_id),
             )
             return True
+
+    def _continue_paper_loop(
+        self,
+        session: Session | None,
+        target: PaperScanTarget,
+        report: WatcherPaperScanReport,
+        evidence: WatcherScanEvidencePort,
+    ) -> WatcherPaperScanReport:
+        """Fill an internal paper trade after CONFIRMED_SETUP. Other outcomes write nothing."""
+
+        discussion = report.discussion
+        runtime = self._canonical_runtime
+        if session is None or discussion is None or runtime is None or self._settings is None:
+            return report
+        if discussion.candidate.candidate_id not in report.candidate_ids:
+            return report
+        last_assembly = getattr(evidence, "last_assembly", None)
+        if not callable(last_assembly):
+            return report
+        loaded = last_assembly()
+        if loaded is None:
+            return report
+        assembled, policy = loaded
+        from app.services.automated_paper_loop import AutomatedPaperLoop
+
+        proof = AutomatedPaperLoop(
+            runtime,  # type: ignore[arg-type]
+            self._settings,
+            self._eval_clock,
+        ).continue_confirmed_setup(
+            session,
+            target=target,
+            candidate=discussion.candidate,
+            assessment=discussion.assessment,
+            window=discussion.window,
+            assembled=assembled,
+            policy=policy,
+            kill_switch_active=report.kill_switch_active,
+        )
+        logger.info(
+            "automated_paper_loop",
+            organization_id=str(target.organization_id),
+            scan_scope=target.scan_scope,
+            stage=proof.stage,
+            reason_code=proof.reason_code,
+            candidate_id=None if proof.candidate_id is None else str(proof.candidate_id),
+            eligibility_id=None if proof.eligibility_id is None else str(proof.eligibility_id),
+            trade_plan_revision_id=(
+                None if proof.trade_plan_revision_id is None else str(proof.trade_plan_revision_id)
+            ),
+            execution_command_id=(
+                None if proof.execution_command_id is None else str(proof.execution_command_id)
+            ),
+            paper_fill_id=None if proof.paper_fill_id is None else str(proof.paper_fill_id),
+            journal_trade_id=(
+                None if proof.journal_trade_id is None else str(proof.journal_trade_id)
+            ),
+            journal_status=proof.journal_status,
+            replayed=proof.replayed,
+            paper_only=True,
+        )
+        return replace(
+            report,
+            paper_loop_stage=proof.stage,
+            paper_loop_reason=proof.reason_code,
+            paper_loop_replayed=proof.replayed,
+            eligibility_id=proof.eligibility_id,
+            eligibility_state=proof.eligibility_state,
+            trade_plan_revision_id=proof.trade_plan_revision_id,
+            execution_command_id=proof.execution_command_id,
+            paper_fill_id=proof.paper_fill_id,
+            journal_trade_id=proof.journal_trade_id,
+            journal_status=proof.journal_status,
+        )
 
     def _notify_scan(self, report: WatcherPaperScanReport) -> None:
         """Optional paper notification. Default hook is unset, so scans do not send."""
@@ -984,6 +1073,7 @@ def build_watcher_paper_runtime(
         scan_notification_hook=scan_notification_hook,
         evaluation_observer_factory=evaluation_observer_factory,
         activation_gate=activation_gate,
+        canonical_runtime=canonical,
     )
 
 

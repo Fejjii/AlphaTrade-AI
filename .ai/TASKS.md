@@ -1940,4 +1940,20 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Do not deploy or arm staging. Activation steps are in
   `docs/telegram_paper_mvp_activation.md`.
 
+### AT-087 — Automatic internal paper loop after CONFIRMED_SETUP
+- Priority: P0 · Status: DONE · Dependencies: AT-076, AT-069 · Risk: High
+  (paper execution must stay internal)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`;
+  `EXCHANGE_MODE=paper_internal`; Watcher and Telegram stay disarmed; no
+  deploy; no activation; no exchange mutation
+- Goal: After a genuine Watcher `CONFIRMED_SETUP` Candidate, sequence existing
+  ActionEligibility, canonical TradePlan, and internal paper fill into one
+  open Journal trade. Duplicate scans and restarts converge. Risk BLOCK, the
+  kill switch, WATCH, NO_SETUP, stale evidence, and provider outage create no
+  fill.
+- Branch: `cursor/automated-paper-loop-e411`
+- Alembic: unchanged. No new revision.
+- ADR: AT-ADR-069
+- Note: Do not deploy, arm Watcher, or activate Telegram.
+
 
