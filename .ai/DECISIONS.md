@@ -2332,4 +2332,33 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `backend/tests/test_binance_usdm_staging_reliability.py`. Do not deploy
   or activate.
 
+## AT-ADR-067 — Telegram paper discussion reads durable facts
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Context:** The staging paper worker can enroll, poll, and deliver, but the
+  armed projection built an empty in-memory discussion context. Journal and
+  learning replies could not see recorded paper facts. Inbound discussion also
+  ignored the latest stored Candidate unless the caller passed an assessment.
+- **Decision:**
+  1. The controlled projection uses PostgreSQL journal, paper-position, and
+     strategy reads, plus paper-evaluation facts for learning text. It does
+     not invent a SetupAssessment or evidence window.
+  2. Inbound discussion may attach the latest stored Candidate for that
+     organization. Without an assessment body, the reply cites stored
+     Candidate facts only.
+  3. A numeric `TELEGRAM_BOT_ID` must match the bot user id prefix of
+     `TELEGRAM_BOT_TOKEN`. A mismatch fails closed and is not logged with
+     the token. Opaque non-numeric ids stay valid for tests.
+  4. Staging activation is the combined paper worker after Watcher health is
+     fresh. Do not run a second Telegram process. Do not deploy or arm from
+     this change. `render.yaml` stays disarmed.
+- **Alternatives considered:** Keep the empty in-memory context and require
+  operators to patch it (rejected: journal and learning replies would stay
+  empty). Reconstruct SetupAssessment from Candidate hashes (rejected: that
+  invents setup truth).
+- **Safety impact:** Paper only. Telegram still cannot place an order, mint a
+  Candidate, override risk, or enable live trading.
+- **Consequences:** Operator steps are in `docs/telegram_paper_mvp_activation.md`.
+  Do not deploy or activate.
+
 

@@ -64,6 +64,13 @@ def start_telegram_enrollment(
             "Telegram bot is not configured.",
             code="telegram_bot_unconfigured",
         )
+    from app.telegram_activation.identity import bot_identity_mismatch
+
+    if bot_identity_mismatch(bot_id=bot_id, token=settings.telegram_bot_token):
+        raise ConflictError(
+            "Telegram bot id does not match the bot token.",
+            code="telegram_bot_identity_mismatch",
+        )
     protocol = TelegramSecurityProtocol(
         store=build_postgres_telegram_security_store(get_session_factory()),
         transport=_NoSend(),

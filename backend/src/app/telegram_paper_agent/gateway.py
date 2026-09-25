@@ -60,6 +60,7 @@ from app.telegram_paper_agent.explain import (
     explain_candidate,
     explain_evidence,
     explain_market_context,
+    explain_persisted_candidate,
     explain_risk,
     explain_strategy,
 )
@@ -810,6 +811,18 @@ class TelegramPaperAgent:
             if learning is None:
                 return "No learning facts are bound for this tenant."
             return format_learning_summary_text(learning)
+        if candidate is not None and assessment is None:
+            if intent in {
+                DiscussionIntent.EXPLAIN_STRATEGY,
+                DiscussionIntent.STRATEGY_DISCUSSION,
+            }:
+                draft = self._context.strategy_discussion(
+                    organization_id=recipient_org,
+                    user_id=recipient_user,
+                    strategy_id=candidate.strategy_version_id,
+                )
+                return explain_strategy(candidate=candidate, draft=draft)
+            return explain_persisted_candidate(candidate=candidate)
         if candidate is None or assessment is None:
             if intent is DiscussionIntent.STRATEGY_DISCUSSION:
                 draft = self._context.strategy_discussion(

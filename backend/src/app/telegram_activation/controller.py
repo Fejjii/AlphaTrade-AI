@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from app.core.config import Settings, TelegramInboundMode
+from app.signal_fusion.candidate import Candidate
 from app.telegram_activation.contracts import (
     InboundSourceKind,
     OutboxCounts,
@@ -69,6 +70,7 @@ class TelegramPaperActivation:
         outbound_ready: bool,
         update_source: TelegramUpdateSource | None = None,
         cursor_store: ActivationCursorStore | None = None,
+        candidate_loader: Callable[[UUID], Candidate | None] | None = None,
     ) -> None:
         self._settings = settings
         self._agent = agent
@@ -77,6 +79,7 @@ class TelegramPaperActivation:
         self._outbound_ready = outbound_ready
         self._source = update_source
         self._cursors = cursor_store or InMemoryActivationCursorStore()
+        self._candidate_loader = candidate_loader
         self._armed = False
         self._webhook_mounted = False
 
@@ -240,6 +243,7 @@ class TelegramPaperActivation:
                         update_type="message", body_size=update.body_size
                     ),
                     text=update.text,
+                    candidate=self._load_candidate(),
                 )
                 replayed = outcome.telegram_outcome.replayed
             else:
@@ -299,6 +303,11 @@ class TelegramPaperActivation:
                 updated_at=self._clock.now(),
             )
         )
+
+    def _load_candidate(self) -> Candidate | None:
+        if self._candidate_loader is None:
+            return None
+        return self._candidate_loader(self._recipient.organization_id)
 
     def _require_armed(self) -> None:
         if not self._armed:

@@ -1926,4 +1926,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - Note: Do not deploy or activate. Exact-head CI is recorded when the PR
   run finishes.
 
+### AT-086 — Telegram paper MVP discussion and activation procedure
+- Priority: P0 · Status: DONE · Dependencies: AT-079, AT-084 · Risk: High
+  (Telegram must stay advisory)
+- Safety classification: Paper execution; Telegram stays disarmed in
+  `render.yaml`; no deploy; no activation; live trading remains impossible
+- Goal: Durable journal, learning, and Candidate discussion on the combined
+  paper worker, numeric bot-id check, and the exact Render variables to
+  activate Telegram after Watcher is healthy.
+- Branch: `cursor/telegram-paper-mvp-6d2e`
+- Alembic: unchanged. No new revision.
+- ADR: AT-ADR-067
+- Note: Do not deploy or arm staging. Activation steps are in
+  `docs/telegram_paper_mvp_activation.md`.
+
 

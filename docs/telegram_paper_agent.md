@@ -4,7 +4,8 @@ Paper-mode Telegram interaction on top of the existing Telegram security
 protocol, PostgreSQL Telegram store, and Candidate alert gateway.
 
 Telegram remains **disabled by default**. There is no webhook on FastAPI.
-Staging and production still reject `TELEGRAM_INTERACTION_ENABLED=true`.
+Production rejects `TELEGRAM_INTERACTION_ENABLED=true`. Staging accepts it
+only as the paper polling package in `docs/telegram_paper_mvp_activation.md`.
 This slice does not deploy, merge, activate Watcher, or enable live trading.
 
 See also: [telegram_security_protocol.md](./telegram_security_protocol.md) ·

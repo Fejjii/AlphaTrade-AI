@@ -72,7 +72,6 @@ from app.telegram_activation.errors import TelegramActivationError
 from app.telegram_activation.intake import ParsedTelegramUpdate, RecordedUpdateSource
 from app.telegram_activation.runtime import TelegramPaperRuntime
 from app.telegram_paper_agent.identity import PAPER_NOTIFY_IDENTITY_NAMESPACE
-from app.telegram_paper_agent.memory import InMemoryPaperContext
 from app.telegram_security.clock import FrozenClock as TelegramClock
 from app.telegram_security.contracts import ChatType
 from app.telegram_security.protocol import TelegramSecurityProtocol
@@ -323,6 +322,7 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
         clock=TelegramClock(EVALUATED_AT),
     )
     assert projection is not None
+    assert isinstance(projection.agent._context, EvaluationLearningContext)
     assert projection.recipient.binding_id == binding_id
     assert projection.recipient.account_id == account_id
 
@@ -473,14 +473,6 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
         assert lines is not None
         assert "telegram_interaction_enabled:false" in lines
         assert any("activate=false" in line for line in lines)
-        context = EvaluationLearningContext(
-            InMemoryPaperContext(),
-            query,
-            eligibility_loader=lambda organization_id: latest_evaluations_for_organization(
-                session, organization_id=organization_id
-            ),
-        )
-        projection.agent._context = context
         candidates_before = _count(factory, CanonicalCandidateRow)
         telegram = TelegramPaperRuntime(
             settings=settings,
