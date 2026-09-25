@@ -32,13 +32,15 @@ from app.market_contracts.freshness import (
 )
 
 REPLAY_MODES = frozenset({"replay", "mock", "fixture"})
-LIVE_MODES = frozenset({"binance_usdm", "binance-usdm", "usdm", "okx_usdt_swap", "okx-usdt-swap"})
+LIVE_MODES = frozenset(
+    {"binance_usdm", "binance-usdm", "usdm", "bybit_usdt_perpetual", "bybit-usdt-perpetual"}
+)
 LIVE_SOURCE: Literal["binance_usdm"] = "binance_usdm"
-OKX_SOURCE: Literal["okx_usdt_swap"] = "okx_usdt_swap"
+BYBIT_SOURCE: Literal["bybit_usdt_perpetual"] = "bybit_usdt_perpetual"
 ROLLBACK_SOURCE: Literal["replay"] = "replay"
 INTENDED_STAGING_SOURCE: Literal["binance_usdm"] = LIVE_SOURCE
 APPROVED_FUTURES_ORIGIN = "https://fapi.binance.com"
-APPROVED_OKX_ORIGIN = "https://www.okx.com"
+APPROVED_BYBIT_ORIGIN = "https://api.bybit.com"
 LIVE_QUOTE_FRESHNESS_SECONDS: Literal[10] = 10
 FIRST_PERPETUAL_SYMBOL: Literal["BTCUSDT"] = "BTCUSDT"
 
@@ -54,8 +56,8 @@ FORBIDDEN_MARKET_CREDENTIAL_ENV = (
 )
 
 ActivationState = Literal["inactive", "active", "refused"]
-ConfiguredSource = Literal["replay", "binance_usdm", "okx_usdt_swap"]
-SecondarySource = Literal["none", "okx_usdt_swap"]
+ConfiguredSource = Literal["replay", "binance_usdm", "bybit_usdt_perpetual"]
+SecondarySource = Literal["none", "bybit_usdt_perpetual"]
 
 
 class PerpetualEvidenceHealth(TypedDict):
@@ -73,16 +75,16 @@ class PerpetualEvidenceHealth(TypedDict):
 
 
 def canonicalize_perpetual_evidence_source(value: str) -> ConfiguredSource:
-    """Map accepted aliases onto ``replay`` or ``binance_usdm``."""
+    """Map accepted aliases onto ``replay``, ``binance_usdm``, or ``bybit_usdt_perpetual``."""
     normalized = value.strip().lower()
     if normalized in REPLAY_MODES:
         return ROLLBACK_SOURCE
     if normalized in {"binance_usdm", "binance-usdm", "usdm"}:
         return LIVE_SOURCE
-    if normalized in {"okx_usdt_swap", "okx-usdt-swap"}:
-        return OKX_SOURCE
+    if normalized in {"bybit_usdt_perpetual", "bybit-usdt-perpetual"}:
+        return BYBIT_SOURCE
     raise ValueError(
-        "perpetual_evidence_source must be replay, binance_usdm, or okx_usdt_swap "
+        "perpetual_evidence_source must be replay, binance_usdm, or bybit_usdt_perpetual "
         "(spot fallback is not a legal value)."
     )
 
@@ -91,10 +93,10 @@ def canonicalize_secondary_evidence_source(value: str) -> SecondarySource:
     normalized = value.strip().lower()
     if normalized in {"", "none", "off"}:
         return "none"
-    if normalized in {"okx_usdt_swap", "okx-usdt-swap"}:
-        return OKX_SOURCE
+    if normalized in {"bybit_usdt_perpetual", "bybit-usdt-perpetual"}:
+        return BYBIT_SOURCE
     raise ValueError(
-        "perpetual_evidence_secondary_source must be none or okx_usdt_swap "
+        "perpetual_evidence_secondary_source must be none or bybit_usdt_perpetual "
         "(spot and fabricated fallbacks are not legal values)."
     )
 
@@ -162,27 +164,27 @@ def controlled_watcher_arm(settings: Settings) -> bool:
 
 def _origin_errors_for(settings: Settings) -> list[str]:
     source = _configured_source(settings)
-    if source == OKX_SOURCE:
-        return _okx_origin_errors(settings.okx_swap_base_url)
+    if source == BYBIT_SOURCE:
+        return _bybit_origin_errors(settings.bybit_perpetual_base_url)
     errors = _futures_origin_errors(settings.market_data_futures_base_url)
     secondary = canonicalize_secondary_evidence_source(settings.perpetual_evidence_secondary_source)
-    if secondary == OKX_SOURCE:
-        errors.extend(_okx_origin_errors(settings.okx_swap_base_url))
+    if secondary == BYBIT_SOURCE:
+        errors.extend(_bybit_origin_errors(settings.bybit_perpetual_base_url))
     return errors
 
 
-def _okx_origin_errors(url: str) -> list[str]:
+def _bybit_origin_errors(url: str) -> list[str]:
     parsed = urlsplit(url.strip())
     host = (parsed.hostname or "").lower()
-    if parsed.scheme.lower() != "https" or host != "www.okx.com":
+    if parsed.scheme.lower() != "https" or host != "api.bybit.com":
         return [
-            "okx_swap_base_url must be https://www.okx.com "
-            "(spot hosts and plain HTTP are not swap evidence)."
+            "bybit_perpetual_base_url must be https://api.bybit.com "
+            "(spot hosts and plain HTTP are not perpetual evidence)."
         ]
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        return ["okx_swap_base_url must be the public origin only."]
+        return ["bybit_perpetual_base_url must be the public origin only."]
     if parsed.path not in ("", "/") or parsed.port not in (None, 443):
-        return ["okx_swap_base_url must be the origin only."]
+        return ["bybit_perpetual_base_url must be the origin only."]
     return []
 
 
@@ -192,7 +194,9 @@ def _secondary_pairing_errors(settings: Settings) -> list[str]:
     if secondary == "none":
         return []
     if primary != LIVE_SOURCE:
-        return ["okx_usdt_swap secondary is only valid when the primary source is binance_usdm."]
+        return [
+            "bybit_usdt_perpetual secondary is only valid when the primary source is binance_usdm."
+        ]
     return []
 
 
@@ -285,7 +289,7 @@ def live_market_activation_violations(
     env = os.environ if environ is None else environ
     errors = _invariant_errors()
     errors.extend(_secondary_pairing_errors(settings))
-    if _configured_source(settings) in {LIVE_SOURCE, OKX_SOURCE}:
+    if _configured_source(settings) in {LIVE_SOURCE, BYBIT_SOURCE}:
         errors.extend(_live_profile_errors(settings, env))
     return errors
 
@@ -307,7 +311,7 @@ def activation_state(
     environ: Mapping[str, str] | None = None,
 ) -> ActivationState:
     """``inactive`` is replay/rollback. ``active`` is a valid live profile."""
-    if _configured_source(settings) not in {LIVE_SOURCE, OKX_SOURCE}:
+    if _configured_source(settings) not in {LIVE_SOURCE, BYBIT_SOURCE}:
         return "inactive"
     if live_market_activation_violations(settings, environ=environ):
         return "refused"

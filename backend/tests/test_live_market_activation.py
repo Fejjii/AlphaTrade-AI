@@ -500,12 +500,18 @@ def test_declared_config_files_match_the_activation_contract() -> None:
     local = (ROOT / ".env.example").read_text(encoding="utf-8")
     render = (ROOT / "render.yaml").read_text(encoding="utf-8")
     assert "\nPERPETUAL_EVIDENCE_SOURCE=binance_usdm\n" in staging
+    assert "\nPERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual\n" in staging
+    assert "\nBYBIT_PERPETUAL_BASE_URL=https://api.bybit.com\n" in staging
+    assert "okx_usdt_swap" not in staging
     assert "\nMARKET_DATA_FUTURES_BASE_URL=https://fapi.binance.com\n" in staging
     assert "\nPERPETUAL_EVIDENCE_SOURCE=replay\n" in production
     assert "\nPERPETUAL_EVIDENCE_SOURCE=replay\n" in local
     assert "BINANCE_API_KEY=" not in staging
     assert render.count("value: binance_usdm") == 2
+    assert render.count("value: bybit_usdt_perpetual") == 2
     assert render.count("value: https://fapi.binance.com") == 2
+    assert render.count("value: https://api.bybit.com") == 2
+    assert "www.okx.com" not in render
     assert (ROOT / "docs/live_market_staging_activation.md").is_file()
 
 

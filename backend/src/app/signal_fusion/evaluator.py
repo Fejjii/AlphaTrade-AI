@@ -61,8 +61,8 @@ from app.market_contracts.freshness import (
 )
 from app.market_contracts.identity import (
     binance_usdm_btcusdt,
+    bybit_usdt_perpetual_btcusdt,
     interval_timedelta,
-    okx_usdt_swap_btcusdt,
 )
 from app.market_contracts.observation import PublicMarketObservation
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
@@ -290,11 +290,11 @@ def _evaluate_market_identity(
     identity_reason: str | None,
 ) -> None:
     identity = command.evidence_identity
-    if identity.venue is VenueId.OKX:
-        expected_instrument = okx_usdt_swap_btcusdt()
+    if identity.venue is VenueId.BYBIT:
+        expected_instrument = bybit_usdt_perpetual_btcusdt()
     else:
         expected_instrument = binance_usdm_btcusdt()
-    venue_ok = identity.venue in {VenueId.BINANCE, VenueId.OKX}
+    venue_ok = identity.venue in {VenueId.BINANCE, VenueId.BYBIT}
     market_ok = identity.market_type is MarketType.PERPETUAL
     instrument_ok = identity.instrument.instrument_id == expected_instrument.instrument_id
     timeframe_ok = identity.timeframe is FIRST_SLICE_TRIGGER_TIMEFRAME

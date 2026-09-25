@@ -284,12 +284,11 @@ class Settings(BaseSettings):
     market_data_cache_use_redis: bool = True
     market_data_timeout_seconds: float = 10.0
     # Phase 5 perpetual evidence: replay fixtures by default; live USD-M is opt-in.
-    # Never falls back to spot. Values: replay | binance_usdm | okx_usdt_swap
+    # Never falls back to spot. Values: replay | binance_usdm | bybit_usdt_perpetual
     perpetual_evidence_source: str = "replay"
-    # Optional whole-source failover. none | okx_usdt_swap. Not a price substitute.
+    # Optional whole-source failover. none | bybit_usdt_perpetual. Not a price substitute.
     perpetual_evidence_secondary_source: str = "none"
-    okx_swap_base_url: str = "https://www.okx.com"
-    okx_trade_history_max_pages: int = Field(default=8, ge=1, le=40)
+    bybit_perpetual_base_url: str = "https://api.bybit.com"
     perpetual_evidence_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
     # Public USD-M request-weight budget. 2400/min is the exchange IP cap.
     binance_request_weight_per_minute: int = Field(default=1800, ge=20, le=2400)

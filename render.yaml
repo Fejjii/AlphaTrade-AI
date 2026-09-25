@@ -66,11 +66,11 @@ services:
       - key: PERPETUAL_EVIDENCE_SOURCE
         value: binance_usdm
       - key: PERPETUAL_EVIDENCE_SECONDARY_SOURCE
-        value: okx_usdt_swap
+        value: bybit_usdt_perpetual
       - key: MARKET_DATA_FUTURES_BASE_URL
         value: https://fapi.binance.com
-      - key: OKX_SWAP_BASE_URL
-        value: https://www.okx.com
+      - key: BYBIT_PERPETUAL_BASE_URL
+        value: https://api.bybit.com
       - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
         value: "10"
       - key: DEBUG
@@ -166,11 +166,11 @@ services:
       - key: PERPETUAL_EVIDENCE_SOURCE
         value: binance_usdm
       - key: PERPETUAL_EVIDENCE_SECONDARY_SOURCE
-        value: okx_usdt_swap
+        value: bybit_usdt_perpetual
       - key: MARKET_DATA_FUTURES_BASE_URL
         value: https://fapi.binance.com
-      - key: OKX_SWAP_BASE_URL
-        value: https://www.okx.com
+      - key: BYBIT_PERPETUAL_BASE_URL
+        value: https://api.bybit.com
       - key: PERPETUAL_EVIDENCE_TIMEOUT_SECONDS
         value: "10"
       - key: DEBUG

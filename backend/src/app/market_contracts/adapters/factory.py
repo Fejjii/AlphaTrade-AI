@@ -9,18 +9,18 @@ import httpx
 from app.core.config import Settings
 from app.market_activation.profile import LIVE_MODES, REPLAY_MODES
 from app.market_contracts.adapters.binance_usdm import BinanceUsdmPerpetualSource
+from app.market_contracts.adapters.bybit_usdt_perpetual import BybitUsdtPerpetualSource
 from app.market_contracts.adapters.evidence_pool import shared_binance_evidence_pool
 from app.market_contracts.adapters.failover import FailoverPerpetualSource
-from app.market_contracts.adapters.okx_usdt_swap import OkxUsdtSwapPerpetualSource
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
 from app.market_contracts.catalog import PerpetualInstrumentCatalog
 from app.market_contracts.errors import FallbackForbiddenError
-from app.market_contracts.identity import binance_usdm_btcusdt, okx_usdt_swap_btcusdt
+from app.market_contracts.identity import binance_usdm_btcusdt, bybit_usdt_perpetual_btcusdt
 
 PerpetualEvidenceSource = (
     ReplayPerpetualSource
     | BinanceUsdmPerpetualSource
-    | OkxUsdtSwapPerpetualSource
+    | BybitUsdtPerpetualSource
     | FailoverPerpetualSource
 )
 
@@ -43,7 +43,7 @@ def canonical_evidence_source_for_process(
         current,
         ReplayPerpetualSource
         | BinanceUsdmPerpetualSource
-        | OkxUsdtSwapPerpetualSource
+        | BybitUsdtPerpetualSource
         | FailoverPerpetualSource,
     ):
         return current
@@ -68,14 +68,14 @@ def resolve_perpetual_evidence_source(
     secondary = settings.perpetual_evidence_secondary_source.strip().lower()
     if mode in REPLAY_MODES:
         return ReplayPerpetualSource()
-    if mode == "okx_usdt_swap":
-        return _okx_source(settings, transport=transport)
-    if mode in LIVE_MODES and secondary == "okx_usdt_swap":
+    if mode == "bybit_usdt_perpetual":
+        return _bybit_source(settings, transport=transport)
+    if mode in LIVE_MODES and secondary == "bybit_usdt_perpetual":
         return FailoverPerpetualSource(
             _binance_source(settings, transport=transport, catalog=catalog, shared=shared),
-            _okx_source(settings, transport=transport),
+            _bybit_source(settings, transport=transport),
             primary_instrument=binance_usdm_btcusdt(),
-            secondary_instrument=okx_usdt_swap_btcusdt(),
+            secondary_instrument=bybit_usdt_perpetual_btcusdt(),
         )
     if mode in LIVE_MODES:
         return _binance_source(settings, transport=transport, catalog=catalog, shared=shared)
@@ -107,16 +107,15 @@ def _binance_source(
     )
 
 
-def _okx_source(
+def _bybit_source(
     settings: Settings,
     *,
     transport: httpx.BaseTransport | None,
-) -> OkxUsdtSwapPerpetualSource:
-    return OkxUsdtSwapPerpetualSource(
-        base_url=settings.okx_swap_base_url,
+) -> BybitUsdtPerpetualSource:
+    return BybitUsdtPerpetualSource(
+        base_url=settings.bybit_perpetual_base_url,
         timeout_seconds=settings.perpetual_evidence_timeout_seconds,
         transport=transport,
         max_retries=settings.binance_request_max_retries,
         max_backoff_seconds=settings.binance_request_max_backoff_seconds,
-        max_trade_pages=settings.okx_trade_history_max_pages,
     )

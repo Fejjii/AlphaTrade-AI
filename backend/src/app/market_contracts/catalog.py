@@ -10,10 +10,9 @@ from __future__ import annotations
 from app.market_contracts.enums import ContractStyle, MarketType, ProductFamily, VenueId
 from app.market_contracts.errors import WrongInstrumentError, WrongMarketError
 from app.market_contracts.identity import (
-    OKX_BTC_CONTRACT_MULTIPLIER,
+    BYBIT_BTC_CONTRACT_MULTIPLIER,
     InstrumentIdentity,
     binance_usdm_btcusdt,
-    okx_usdt_swap_btcusdt,
 )
 
 
@@ -73,18 +72,13 @@ def _require_usdm_perpetual(instrument: InstrumentIdentity) -> None:
         raise WrongMarketError("Inverse contracts cannot enter the linear perpetual catalog.")
     if instrument.venue is VenueId.BINANCE:
         return
-    if instrument.venue is VenueId.OKX:
-        if instrument.contract_multiplier != OKX_BTC_CONTRACT_MULTIPLIER:
-            raise WrongMarketError("OKX BTCUSDT swap contract multiplier must stay 0.01.")
+    if instrument.venue is VenueId.BYBIT:
+        if instrument.contract_multiplier != BYBIT_BTC_CONTRACT_MULTIPLIER:
+            raise WrongMarketError("Bybit BTCUSDT perpetual contract multiplier must stay 1.")
         if instrument.provider_symbol != "BTCUSDT":
-            raise WrongInstrumentError("OKX perpetual evidence catalog is BTCUSDT only.")
+            raise WrongInstrumentError("Bybit perpetual evidence catalog is BTCUSDT only.")
         return
     raise WrongMarketError("Perpetual evidence catalog venue is not a contracted source.")
-
-
-def okx_perpetual_catalog() -> PerpetualInstrumentCatalog:
-    """OKX linear USDT swap catalog. It does not include the Binance instrument."""
-    return PerpetualInstrumentCatalog(enabled=(okx_usdt_swap_btcusdt(),))
 
 
 def default_perpetual_catalog() -> PerpetualInstrumentCatalog:

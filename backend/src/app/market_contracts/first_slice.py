@@ -10,8 +10,8 @@ from app.market_contracts.enums import SourceFamily, VenueId
 from app.market_contracts.identity import (
     ADAPTER_VERSION,
     AGGRESSOR_CONVENTION,
-    OKX_ADAPTER_VERSION,
-    OKX_AGGRESSOR_CONVENTION,
+    BYBIT_ADAPTER_VERSION,
+    BYBIT_AGGRESSOR_CONVENTION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
     ProviderProvenance,
@@ -62,12 +62,12 @@ def first_slice_spec() -> FirstSliceSpec:
     )
 
 
-def okx_usdt_swap_source() -> SourceIdentity:
+def bybit_usdt_perpetual_source() -> SourceIdentity:
     return SourceIdentity(
-        family=SourceFamily.OKX_USDT_SWAP_PUBLIC,
-        provider_name="okx-usdt-swap-perpetual",
-        adapter_version=OKX_ADAPTER_VERSION,
-        aggressor_convention=OKX_AGGRESSOR_CONVENTION,
+        family=SourceFamily.BYBIT_USDT_PERPETUAL_PUBLIC,
+        provider_name="bybit-usdt-perpetual",
+        adapter_version=BYBIT_ADAPTER_VERSION,
+        aggressor_convention=BYBIT_AGGRESSOR_CONVENTION,
     )
 
 
@@ -99,9 +99,9 @@ def first_slice_identity(
         raise ValueError("Replay evidence cannot also be live.")
     if replay and resolved.venue is not VenueId.BINANCE:
         raise ValueError("Replay fixtures are Binance USD-M evidence only.")
-    if resolved.venue is VenueId.OKX:
-        source = okx_usdt_swap_source()
-        detail = "OKX USDT linear swap public REST (read-only)."
+    if resolved.venue is VenueId.BYBIT:
+        source = bybit_usdt_perpetual_source()
+        detail = "Bybit USDT linear perpetual public REST (read-only)."
     else:
         source = binance_usdm_source(replay=replay)
         detail = (
