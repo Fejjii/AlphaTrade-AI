@@ -70,7 +70,7 @@ class MarketMonitorActivationRead(StrictModel):
     """Configured evidence source. Does not start Watcher or trading."""
 
     state: Literal["inactive", "active", "refused"]
-    configured_source: Literal["replay", "binance_usdm"]
+    configured_source: Literal["replay", "binance_usdm", "bybit_usdt_perpetual"]
     intended_staging_source: Literal["binance_usdm"] = "binance_usdm"
     rollback_source: Literal["replay"] = "replay"
     read_only: Literal[True] = True

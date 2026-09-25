@@ -20,6 +20,9 @@ from app.schemas.common import Timeframe
 
 ADAPTER_VERSION = "binance-usdm-perpetual/v1"
 AGGRESSOR_CONVENTION = "binance-usdm-aggtrade/buyer-is-maker/v1"
+BYBIT_ADAPTER_VERSION = "bybit-usdt-perpetual/v1"
+BYBIT_AGGRESSOR_CONVENTION = "bybit-linear-public-trade/taker-side/v1"
+BYBIT_BTC_CONTRACT_MULTIPLIER = Decimal("1")
 HASH_ALGORITHM_VERSION = "canonical-json-sha256/v1"
 INTERVAL_SECONDS: dict[Timeframe, int] = {
     Timeframe.M1: 60,
@@ -182,6 +185,30 @@ def binance_usdm_perpetual(symbol: str) -> InstrumentIdentity:
 def binance_usdm_btcusdt() -> InstrumentIdentity:
     """Canonical first-slice instrument: Binance USD-M BTCUSDT perpetual."""
     return binance_usdm_perpetual("BTCUSDT")
+
+
+def bybit_usdt_perpetual_btcusdt() -> InstrumentIdentity:
+    """Bybit linear USDT perpetual BTCUSDT. Trade size is base-coin quantity."""
+    return InstrumentIdentity(
+        venue=VenueId.BYBIT,
+        market_type=MarketType.PERPETUAL,
+        product_family=ProductFamily.USDM_FUTURES,
+        contract_style=ContractStyle.LINEAR,
+        instrument_id=canonical_instrument_id(
+            venue=VenueId.BYBIT,
+            product_family=ProductFamily.USDM_FUTURES,
+            market_type=MarketType.PERPETUAL,
+            symbol="BTCUSDT",
+        ),
+        provider_symbol="BTCUSDT",
+        base_asset="BTC",
+        quote_asset="USDT",
+        settlement_asset="USDT",
+        contract_multiplier=BYBIT_BTC_CONTRACT_MULTIPLIER,
+        price_unit="USDT",
+        base_quantity_unit="BTC",
+        quote_quantity_unit="USDT",
+    )
 
 
 def require_perpetual(identity: EvidenceMarketIdentity) -> None:

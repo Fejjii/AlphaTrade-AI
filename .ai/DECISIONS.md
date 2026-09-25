@@ -2361,4 +2361,36 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Operator steps are in `docs/telegram_paper_mvp_activation.md`.
   Do not deploy or activate.
 
+## AT-ADR-068 — Bybit USDT perpetual is the explicit secondary evidence source
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Context:** Render Frankfurt is HTTP 418 banned by Binance USD-M, so paper
+  staging cannot depend only on `fapi.binance.com`. The canonical contract
+  still needs perpetual price, trades, OHLCV, volume, taker-side CVD, freshness,
+  and gap detection, each with its own provenance. An earlier draft of this
+  change used OKX; that source is not the MVP secondary.
+- **Decision:**
+  1. Primary stays `binance_usdm`. Optional secondary is `bybit_usdt_perpetual`
+     (public linear `BTCUSDT` only, base-coin size, taker side). Selecting
+     `bybit_usdt_perpetual` as the primary is also legal. Replay stays the
+     default and the rollback. Spot, inverse, and fabricated rows stay rejected.
+  2. A primary 418, 429, or regional failure switches the whole active
+     instrument and opens a new connection epoch. The failed primary payload
+     is not published. Recovery returns to Binance only after its status is
+     healthy, again on a new epoch. The two venues are never merged into one
+     CVD window.
+  3. Bybit public recent trades that do not reach the requested start fail
+     closed. `seq` is a cross sequence and is not used as a per-trade id.
+     A later read on the same connection that drops the last proven print
+     fails closed. No missing prints are invented. Staging blueprint sets the
+     secondary and does not arm Watcher, Telegram, or real trading. This
+     decision does not deploy.
+- **Alternatives considered:** Keep OKX as the secondary (rejected: the
+  required secondary is Bybit). Relabel Bybit prints as Binance (rejected:
+  incompatible books). Use spot tickers (rejected).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Binance GET allowlist is unchanged.
+- **Consequences:** Branch `cursor/okx-perp-evidence-failover-98bd`. Tests in
+  `backend/tests/test_bybit_usdt_perpetual_evidence.py`. No Bybit credentials.
+
 

@@ -56,12 +56,25 @@ if [[ "$MODE" == "self-check" ]]; then
     || fail "staging example is not the intended live source"
   grep -q '^MARKET_DATA_FUTURES_BASE_URL=https://fapi.binance.com$' "${ROOT_DIR}/.env.staging.example" \
     || fail "staging example futures host is not fapi.binance.com"
+  grep -q '^PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual$' \
+    "${ROOT_DIR}/.env.staging.example" \
+    || fail "staging example secondary is not bybit_usdt_perpetual"
+  grep -q '^BYBIT_PERPETUAL_BASE_URL=https://api.bybit.com$' "${ROOT_DIR}/.env.staging.example" \
+    || fail "staging example Bybit host is not api.bybit.com"
   grep -q '^PERPETUAL_EVIDENCE_SOURCE=replay$' "${ROOT_DIR}/.env.example" \
     || fail "local example must stay on replay"
   grep -q '^PERPETUAL_EVIDENCE_SOURCE=replay$' "${ROOT_DIR}/.env.production.example" \
     || fail "production example must stay on replay"
   grep -q 'value: binance_usdm' "${ROOT_DIR}/render.yaml" || fail "render.yaml missing live source"
   grep -q 'value: https://fapi.binance.com' "${ROOT_DIR}/render.yaml" || fail "render.yaml missing futures host"
+  grep -q 'value: bybit_usdt_perpetual' "${ROOT_DIR}/render.yaml" \
+    || fail "render.yaml missing Bybit secondary"
+  grep -q 'value: https://api.bybit.com' "${ROOT_DIR}/render.yaml" \
+    || fail "render.yaml missing Bybit host"
+  if grep -E -q 'okx_usdt_swap|OKX_SWAP_BASE_URL|www\.okx\.com' \
+    "${ROOT_DIR}/.env.staging.example" "${ROOT_DIR}/render.yaml"; then
+    fail "OKX is not the MVP secondary perpetual source"
+  fi
   if grep -E -q '^(BINANCE_API_KEY|BINANCE_API_SECRET|BINANCE_FUTURES_API_KEY|FAPI_API_KEY)=' \
     "${ROOT_DIR}/.env.staging.example" "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env.production.example"; then
     fail "an env example assigns a Binance credential"

@@ -23,8 +23,23 @@ paper isolation does not load them and does not build a BloFin client.
 | Variable | Previous intended value | Activation value |
 |---|---|---|
 | `PERPETUAL_EVIDENCE_SOURCE` | `replay` | `binance_usdm` |
+| `PERPETUAL_EVIDENCE_SECONDARY_SOURCE` | `none` | `bybit_usdt_perpetual` |
 | `MARKET_DATA_FUTURES_BASE_URL` | unset (code default `https://fapi.binance.com`) | `https://fapi.binance.com` |
+| `BYBIT_PERPETUAL_BASE_URL` | unset (code default `https://api.bybit.com`) | `https://api.bybit.com` |
 | `PERPETUAL_EVIDENCE_TIMEOUT_SECONDS` | `10` | `10` |
+
+`bybit_usdt_perpetual` is the public Bybit linear USDT perpetual `BTCUSDT`
+(`https://api.bybit.com`, GET `/v5/market/kline` and `/v5/market/recent-trade`
+only, `category=linear`). It is used only after the Binance primary fails with
+HTTP 418, HTTP 429, or a regional outage. The switch starts a new connection
+epoch and labels every later observation `bybit` / `bybit_usdt_perpetual_public`.
+A Binance price is not copied onto that observation. Spot category `spot` is
+rejected. A recent-trade buffer that does not prove the requested window fails
+closed. Bybit `seq` is a cross sequence, not a per-trade id. A later read
+that drops the last proven print fails closed instead of inventing the gap.
+Rollback remains `PERPETUAL_EVIDENCE_SOURCE=replay` and
+`PERPETUAL_EVIDENCE_SECONDARY_SOURCE=none`.
+Do not deploy from this document. Watcher and Telegram stay disarmed.
 
 Leave these unchanged:
 

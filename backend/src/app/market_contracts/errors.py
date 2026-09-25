@@ -88,4 +88,16 @@ class IncompleteTradeWindowError(GapDetectedError):
 
 
 class UnapprovedEvidenceHostError(WrongMarketError):
-    """Evidence host is not an approved Binance USD-M HTTPS identity."""
+    """Evidence host is not an approved public perpetual HTTPS identity."""
+
+
+class EvidenceSourceSwitchRequiredError(MarketContractError):
+    """Primary source failed. The next read must use the secondary identity.
+
+    The failed primary payload is not returned. Callers rebind provenance
+    before any secondary fetch.
+    """
+
+    def __init__(self, message: str, *, instrument: object) -> None:
+        super().__init__(message)
+        self.instrument = instrument

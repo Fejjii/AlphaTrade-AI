@@ -19,7 +19,9 @@ from dataclasses import dataclass
 from app.core.config import ExchangeMode, ExecutionMode, Settings
 from app.core.exchange_safety import is_allowlisted_demo_host
 
-_LIVE_USD_M_SOURCES = frozenset({"binance_usdm", "binance-usdm", "usdm"})
+_LIVE_USD_M_SOURCES = frozenset(
+    {"binance_usdm", "binance-usdm", "usdm", "bybit_usdt_perpetual", "bybit-usdt-perpetual"}
+)
 
 
 class CredentialAccessDeniedError(ValueError):

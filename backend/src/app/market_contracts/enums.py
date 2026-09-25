@@ -8,6 +8,7 @@ from enum import StrEnum
 class VenueId(StrEnum):
     BINANCE = "binance"
     BLOFIN = "blofin"
+    BYBIT = "bybit"
 
 
 class MarketType(StrEnum):
@@ -99,4 +100,5 @@ class PrivacyClass(StrEnum):
 
 class SourceFamily(StrEnum):
     BINANCE_USDM_FUTURES_PUBLIC = "binance_usdm_futures_public"
+    BYBIT_USDT_PERPETUAL_PUBLIC = "bybit_usdt_perpetual_public"
     REPLAY_FIXTURE = "replay_fixture"

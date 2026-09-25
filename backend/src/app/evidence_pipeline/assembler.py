@@ -26,7 +26,11 @@ from app.evidence_pipeline.types import (
     EvidenceClockReport,
 )
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
-from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
+from app.market_contracts.catalog import (
+    PerpetualInstrumentCatalog,
+    default_perpetual_catalog,
+    instrument_for_source,
+)
 from app.market_contracts.cursor import TradeStreamAssembler
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
@@ -35,6 +39,7 @@ from app.market_contracts.cvd import (
 )
 from app.market_contracts.enums import DataCompleteness, Finality, FreshnessState, MarketType
 from app.market_contracts.errors import (
+    EvidenceSourceSwitchRequiredError,
     FallbackForbiddenError,
     FormingCandleError,
     IncompleteWarmUpError,
@@ -107,7 +112,40 @@ class FirstSliceEvidenceAssembler:
         connection_id: UUID | None = None,
         setup_trigger_end: datetime | None = None,
     ) -> AssembledCanonicalEvidence:
-        instrument = self._catalog.require(symbol)
+        for attempt in range(2):
+            try:
+                return self._assemble_once(
+                    organization_id=organization_id,
+                    symbol=symbol,
+                    evaluated_at=evaluated_at,
+                    policy=policy,
+                    adapter_kind=adapter_kind,
+                    tenant_assertions=tenant_assertions,
+                    manual_level_revision=manual_level_revision,
+                    resistances=resistances,
+                    connection_id=connection_id,
+                    setup_trigger_end=setup_trigger_end,
+                )
+            except EvidenceSourceSwitchRequiredError:
+                if attempt == 1:
+                    raise
+        raise WrongSourceError("Perpetual evidence source switch did not settle.")
+
+    def _assemble_once(
+        self,
+        *,
+        organization_id: UUID,
+        symbol: str,
+        evaluated_at: datetime | None,
+        policy: FusionPolicy | None,
+        adapter_kind: EvidenceAdapterKind,
+        tenant_assertions: tuple[TenantExternalAssertion, ...],
+        manual_level_revision: ManualLevelRevisionRef | None,
+        resistances: tuple[ManualResistanceEvidence, ...],
+        connection_id: UUID | None,
+        setup_trigger_end: datetime | None,
+    ) -> AssembledCanonicalEvidence:
+        instrument = instrument_for_source(self._source, self._catalog, symbol)
         clock = evaluated_at or self._default_clock()
         bound_policy = policy or first_slice_read_policy(organization_id)
         if bound_policy.organization_id != organization_id:
