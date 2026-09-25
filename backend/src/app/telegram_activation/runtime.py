@@ -357,6 +357,17 @@ def build_telegram_runtime(
     resolved_worker = worker_id or f"telegram-paper:{uuid4().hex[:16]}"
     resolved_transport = transport if isinstance(transport, TelegramTransport) else None
     posture = resolve_telegram_posture(settings)
+    from app.telegram_activation.identity import bot_identity_mismatch
+
+    if bot_identity_mismatch(bot_id=settings.telegram_bot_id, token=settings.telegram_bot_token):
+        return TelegramPaperRuntime(
+            settings=settings,
+            session_factory=session_factory,
+            clock=resolved_clock,
+            worker_id=resolved_worker,
+            posture=posture,
+            startup_error="bot_identity_mismatch",
+        )
     if posture == "projection":
         from app.controlled_activation.projection import build_controlled_scan_hook
 

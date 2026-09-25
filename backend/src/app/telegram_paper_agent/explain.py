@@ -11,6 +11,20 @@ from app.telegram_paper_agent.content import guard_paper_text
 from app.telegram_paper_agent.contracts import StrategyDraftView
 
 
+def explain_persisted_candidate(*, candidate: Candidate) -> str:
+    """Explain a stored Candidate when the assessment body is not on this path."""
+
+    return guard_paper_text(
+        "Candidate facts stored for this tenant (read-only).\n"
+        f"candidate_id: {candidate.candidate_id}\n"
+        f"state: {candidate.state.value}\n"
+        f"instrument: {candidate.evidence_instrument}\n"
+        f"evidence_window_hash: {candidate.evidence_window_hash}\n"
+        "The SetupAssessment body is not replayed from Telegram. "
+        "Telegram cannot override SetupAssessment, override risk, or mint a Candidate."
+    )
+
+
 def explain_candidate(
     *,
     candidate: Candidate,

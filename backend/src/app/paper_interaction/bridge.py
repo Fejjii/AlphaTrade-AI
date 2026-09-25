@@ -13,13 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
+from app.learning_attribution.contracts import LearningVenueMode
 from app.paper_evaluation.contracts import (
     REFINEMENT_NOT_ACTIVATED,
     PaperEvaluationSummary,
 )
-from app.paper_evaluation.query import PaperEvaluationQueryService
 from app.signal_fusion.action_eligibility import ActionEligibilityEvaluation
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.candidate import Candidate
@@ -154,13 +156,27 @@ def evaluation_fact_lines(summary: PaperEvaluationSummary) -> tuple[str, ...] | 
     return tuple(lines)
 
 
+class EvaluationSummarySource(Protocol):
+    """Read-only paper-evaluation summary. Implementations must not trade."""
+
+    def summary(
+        self,
+        *,
+        organization_id: UUID,
+        learning_venue_mode: LearningVenueMode | None = None,
+        eligibility: tuple[ActionEligibilityEvaluation, ...] = (),
+        generated_at: datetime | None = None,
+        narrative: str | None = None,
+    ) -> PaperEvaluationSummary: ...
+
+
 class EvaluationLearningContext:
     """Read-only Telegram context. Learning text comes from paper-evaluation facts."""
 
     def __init__(
         self,
         inner: PaperContextPort,
-        query: PaperEvaluationQueryService,
+        query: EvaluationSummarySource,
         *,
         eligibility_loader: Callable[[UUID], tuple[ActionEligibilityEvaluation, ...]] | None = None,
     ) -> None:

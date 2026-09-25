@@ -136,48 +136,57 @@ Telegram off. After this step, use `./scripts/verify-safety.sh` instead.
 
 ### 7. Telegram enrollment
 
-Only after step 6. Change the Telegram process only. Leave the Watcher
-environment unchanged so it does not restart.
+Only after step 6, when `worker_runtime.watcher` is fresh. Staging runs one
+process, `python -m app.workers.paper_worker`. Do not also start
+`python -m app.telegram_activation run`. A second process fights the Telegram
+lease.
 
-| Variable | Value |
+Set these on `alphatrade-paper-worker-staging` only, then restart that worker.
+Leave the API Watcher flags false.
+
+| Variable | Worker value |
 | --- | --- |
 | `TELEGRAM_INTERACTION_ENABLED` | `true` |
 | `TELEGRAM_NETWORK_PERMITTED` | `true` |
 | `TELEGRAM_INBOUND_MODE` | `polling` |
 | `TELEGRAM_PAPER_ACTIVATION_ARMED` | `false` |
-| `TELEGRAM_BOT_ID` | bot id |
+| `TELEGRAM_BOT_ID` | numeric bot user id (digits before `:` in the token) |
+| `TELEGRAM_BOT_TOKEN` | secret store only. Do not log it. Do not put it in `render.yaml`. |
 | `TELEGRAM_ALERTS_ENABLED` | `false` |
 | `AUTOMATIC_TELEGRAM_DELIVERY_ENABLED` | `false` |
 | `TELEGRAM_WEBHOOK_SECRET` | empty |
 
-Staging does not use a webhook. `TELEGRAM_BOT_TOKEN` comes from the secret
-store on the Telegram process only. Do not log it, do not commit it, and do
-not put it in `render.yaml`. Set `TELEGRAM_BOT_ID` on the API as well so an
-authenticated operator can start enrollment. Do not put the token on the API.
+Set `TELEGRAM_BOT_ID` on the API to the same numeric id. Do not put
+`TELEGRAM_BOT_TOKEN` on the API. A numeric id that disagrees with the token
+prefix fails closed (`bot_identity_mismatch`).
 
-Start `python -m app.telegram_activation run`. Call
-`POST /telegram-paper/enrollment/start` as the tenant. The response token is
-shown once and is not logged. Send that token in a private chat. The Telegram
-process completes the binding and advances the durable cursor. The Watcher
-keeps scanning. There is no configuration in which projection is armed and
-the network is off: that combination fails Settings validation and does not
-boot.
+Call `POST /telegram-paper/enrollment/start` as the tenant. The response token
+is shown once and is not logged. Send that token in a private chat with the
+bot. The paper worker completes the binding and advances the durable cursor.
+The Watcher keeps scanning after the worker restart. There is no configuration
+in which projection is armed and the network is off: that combination fails
+Settings validation and does not boot.
 
 ### 8. Atomic projection
 
-Set these on the Watcher and the Telegram process together, then restart both:
+Set these on the paper worker, then restart it once:
 
-| Variable | Value |
+| Variable | Worker value |
 | --- | --- |
 | `TELEGRAM_PAPER_ACTIVATION_ARMED` | `true` |
-| `TELEGRAM_CHAT_ID` | the verified private chat |
-| `TELEGRAM_NETWORK_PERMITTED` | `true` (already true) |
+| `TELEGRAM_CHAT_ID` | the verified private chat id |
+| `TELEGRAM_NETWORK_PERMITTED` | `true` |
 | `TELEGRAM_INBOUND_MODE` | `polling` |
+| `TELEGRAM_INTERACTION_ENABLED` | `true` |
+| `TELEGRAM_BOT_ID` | same numeric bot user id |
 | `TELEGRAM_BOT_TOKEN` | secret store, not logs |
+| `WATCHER_PAPER_STAGING_ACTIVATION` | `true` (already true) |
+| `WATCHER_ORCHESTRATION_ENABLED` | `true` (already true) |
 
-The Watcher installs an enqueue-only scan hook. The Telegram process drains
-the outbox and polls. A retry must not create a second send for the same
-idempotency key. Discussion stays advisory. It cannot place an order.
+The worker installs an enqueue-only scan hook and drains the outbox in the
+same process. A retry must not create a second send for the same idempotency
+key. Discussion stays advisory. It cannot place an order. Journal and learning
+replies read recorded paper facts. They do not invent a SetupAssessment.
 
 ### 9. Observe the full paper loop
 

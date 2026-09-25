@@ -24,24 +24,27 @@ rejects the package. The Render blueprint services stay disarmed.
 
 ## What a human must do later
 
+Staging activation is the combined paper worker, after Watcher health is fresh.
+Exact variables are in
+[telegram_paper_mvp_activation.md](./telegram_paper_mvp_activation.md).
+Do not start a second `python -m app.telegram_activation run` process.
+
 1. Run `scripts/telegram-paper-activation-preflight.sh` and confirm exit 0
    (`verdict` is `NOT_ARMED` on the default process).
 2. Run `scripts/telegram-paper-activation-smoke.sh`. It uses the fake transport
    and a recorded update source. It does not call `api.telegram.org`.
-3. Only in `ENVIRONMENT=local` and `EXECUTION_MODE=paper`, with
-   `ENABLE_REAL_TRADING=false`, set:
-   - `TELEGRAM_INTERACTION_ENABLED=true`
-   - `TELEGRAM_PAPER_ACTIVATION_ARMED=true`
-   - `TELEGRAM_INBOUND_MODE=polling` (staging does not activate webhook)
-   - `TELEGRAM_NETWORK_PERMITTED=true` only when a real send is intended
-4. Enroll a private-chat binding through the existing challenge. A chat id
-   alone is not a binding.
-5. Construct `TelegramPaperActivation` and call `arm()`. `arm` fails closed
-   when preflight reports blockers.
-6. Pass `paper_scan_hook()` into the paper worker yourself. `main()` does not
-   install it. Watcher `PERSIST_AND_NOTIFY` stays `notify_disabled`.
+3. Only in `ENVIRONMENT=local` or the staging paper package, with
+   `EXECUTION_MODE=paper` and `ENABLE_REAL_TRADING=false`, set polling,
+   interaction, and network together. A numeric `TELEGRAM_BOT_ID` must match
+   the token prefix.
+4. Enroll a private-chat binding through `POST /telegram-paper/enrollment/start`.
+   A chat id alone is not a binding.
+5. Arm projection only after that binding exists. `arm` fails closed when
+   preflight reports blockers.
+6. The staging paper worker installs the scan hook itself when projection is
+   armed. Watcher `PERSIST_AND_NOTIFY` stays `notify_disabled`.
 
-Staging follows the controlled runbook. Do not deploy from this work. Production stays rejected.
+Do not deploy from this work. Production stays rejected.
 
 ## Safety gates
 
