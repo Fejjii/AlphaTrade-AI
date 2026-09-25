@@ -15,6 +15,9 @@ from app.core.dependencies import (
 )
 from app.schemas.execution import PaginatedPaperOrders, PaperOrder, PaperOrderRequest
 from app.schemas.execution_protocol import (
+    ClosePaperPlanHttpRequest,
+    ClosePaperPlanRequest,
+    ClosePaperPlanResult,
     ExecutePaperPlanHttpRequest,
     ExecutePaperPlanRequest,
     ExecutePaperPlanResult,
@@ -131,6 +134,40 @@ async def execute_paper_plan(
                 provider_metadata={"cost_source": "unavailable"},
             )
         )
+    session.commit()
+    return result
+
+
+@router.post(
+    "/paper-plan/close",
+    response_model=ClosePaperPlanResult,
+    summary="Close a filled canonical paper plan and record the outcome",
+    dependencies=[_PAPER_PLAN_RATE_LIMIT],
+)
+async def close_paper_plan(
+    body: ClosePaperPlanHttpRequest,
+    tenant: TraderDep,
+    execution_service: ExecutionServiceDep,
+    session: SessionDep,
+) -> ClosePaperPlanResult:
+    """Explicit paper exit. Does not read market data or place an exchange order."""
+
+    result = execution_service.close_canonical_paper_plan(
+        ClosePaperPlanRequest(
+            organization_id=tenant.organization_id,
+            user_id=tenant.user_id,
+            account_id=body.account_id,
+            revision_id=body.revision_id,
+            command_id=body.command_id,
+            exit_price=body.exit_price,
+            fees=body.fees,
+            funding=body.funding,
+            slippage=body.slippage,
+            exit_reason=body.exit_reason,
+            occurred_at=body.occurred_at,
+            idempotency_key=body.idempotency_key,
+        )
+    )
     session.commit()
     return result
 

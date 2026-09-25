@@ -41,6 +41,8 @@ from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import ActorType, AuditEventType
 from app.schemas.execution import PaperOrder, PaperOrderPlacementResult, PaperOrderRequest
 from app.schemas.execution_protocol import (
+    ClosePaperPlanRequest,
+    ClosePaperPlanResult,
     ExecutePaperPlanRequest,
     ExecutePaperPlanResult,
     UniqueFillResult,
@@ -354,6 +356,38 @@ class ExecutionService:
         )
         self._project_canonical_fill(command_id, fill)
         return fill
+
+    def close_canonical_paper_plan(self, request: ClosePaperPlanRequest) -> ClosePaperPlanResult:
+        """Record a paper close for a filled canonical plan. Does not call an exchange."""
+
+        assert_write_allowed(PersistenceKind.JOURNAL)
+        if self._canonical_runtime is None:
+            raise TradingPolicyError(
+                "Canonical paper close requires the production canonical runtime.",
+                details={"reason": "canonical_runtime_unbound"},
+            )
+        plan_row = self._revisions.get_scoped(
+            request.revision_id,
+            organization_id=request.organization_id,
+            user_id=request.user_id,
+        )
+        if plan_row is None:
+            raise NotFoundError("Trade plan revision is unknown; refusing paper close.")
+        if not is_canonical_plan_authority(plan_row.plan_authority):
+            raise TradingPolicyError(
+                "Paper close statistics are recorded only for canonical paper plans.",
+                details={"reason": "canonical_plan_required"},
+            )
+        from app.services.safety_epoch import SafetyEpochService
+
+        return CanonicalPaperExecutionService(
+            self._session,
+            self._settings,
+            self._audit,
+            self._canonical_runtime,
+            safety_epochs=SafetyEpochService(self._session, self._settings, self._risk_settings),
+            clock=lambda: datetime.now(UTC),
+        ).close_filled_plan(request)
 
     def _project_canonical_fill(self, command_id: uuid.UUID, fill: UniqueFillResult) -> None:
         command = self._session.get(ExecutionCommand, command_id)

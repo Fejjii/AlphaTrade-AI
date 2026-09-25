@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.trade_plan import CanonicalDecimal, NonNegativeCanonicalDecimal, PlanOperation
+from app.schemas.common import TradeResult
+from app.schemas.trade_plan import (
+    CanonicalDecimal,
+    NonNegativeCanonicalDecimal,
+    PlanOperation,
+    PositiveCanonicalDecimal,
+)
 
 SUBMIT_ENTRY_NAMESPACE = "alphatrade/submit-entry/v1"
 EXECUTION_POLICY_PROTOCOL_VERSION = "phase1-execution-protocol-v1"
@@ -104,6 +111,65 @@ class ExecutePaperPlanHttpRequest(BaseModel):
     revision_id: UUID
     idempotency_key: str = Field(min_length=1, max_length=128)
     correlation_id: UUID | None = None
+
+
+class ClosePaperPlanRequest(BaseModel):
+    """Close one filled canonical paper plan. Prices are explicit; no market I/O."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    organization_id: UUID
+    user_id: UUID
+    account_id: UUID
+    revision_id: UUID
+    command_id: UUID
+    exit_price: PositiveCanonicalDecimal
+    fees: NonNegativeCanonicalDecimal = Decimal("0")
+    funding: NonNegativeCanonicalDecimal = Decimal("0")
+    slippage: NonNegativeCanonicalDecimal = Decimal("0")
+    exit_reason: str = Field(min_length=1, max_length=60)
+    occurred_at: datetime
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class ClosePaperPlanHttpRequest(BaseModel):
+    """HTTP body for a paper close. Executable venue fields besides the exit are forbidden."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False, frozen=True)
+
+    account_id: UUID
+    revision_id: UUID
+    command_id: UUID
+    exit_price: PositiveCanonicalDecimal
+    fees: NonNegativeCanonicalDecimal = Decimal("0")
+    funding: NonNegativeCanonicalDecimal = Decimal("0")
+    slippage: NonNegativeCanonicalDecimal = Decimal("0")
+    exit_reason: str = Field(min_length=1, max_length=60)
+    occurred_at: datetime
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class ClosePaperPlanResult(BaseModel):
+    """Recorded paper outcome. This is not an exchange fill."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    replayed: bool
+    live_executable: Literal[False] = False
+    command_id: UUID
+    journal_trade_id: UUID
+    candidate_id: UUID | None = None
+    strategy_version_id: UUID | None = None
+    symbol: str
+    timeframe: str
+    entry_price: CanonicalDecimal
+    exit_price: CanonicalDecimal
+    exit_reason: str
+    fees: CanonicalDecimal
+    gross_pnl: CanonicalDecimal
+    net_pnl: CanonicalDecimal
+    result: TradeResult
+    thesis: str | None = None
 
 
 class SemanticQuantity(BaseModel):

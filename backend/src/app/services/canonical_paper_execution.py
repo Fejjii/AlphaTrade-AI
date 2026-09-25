@@ -16,17 +16,27 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.errors import NotFoundError, TradingPolicyError
+from app.core.errors import NotFoundError, TradingPolicyError, ValidationAppError
 from app.core.paper_safety import assert_paper_execution_allowed
 from app.db.canonical_trade_plans import PLAN_AUTHORITY_CANONICAL
+from app.db.models import ExecutionCommand, JournalLifecycleEvent
+from app.repositories.journal_trades import JournalTradeRepository
 from app.runtime.canonical import ProductionCanonicalRuntime
 from app.schemas.approval import ApprovalAuthorization
 from app.schemas.canonical_trade_plan import CanonicalTradePlanRevision
-from app.schemas.common import JournalLifecycleEventType, TradeDirection
+from app.schemas.common import (
+    JournalLifecycleEventType,
+    JournalTradeStatus,
+    TradeDirection,
+    TradeResult,
+)
 from app.schemas.execution_protocol import (
+    ClosePaperPlanRequest,
+    ClosePaperPlanResult,
     ExecutePaperPlanRequest,
     ExecutePaperPlanResult,
     ExecutionCommandOutcome,
@@ -46,6 +56,7 @@ from app.services.canonical_execution_learning import (
 from app.services.canonical_trade_plan_errors import CanonicalTradePlanNotFoundError
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
 from app.services.journal_lifecycle_projector import JournalLifecycleProjector
+from app.services.paper_close_economics import paper_close_pnl
 from app.services.safety_epoch import SafetyEpochService
 from app.signal_fusion.enums import CandidateState
 
@@ -151,6 +162,182 @@ class CanonicalPaperExecutionService:
                 projection=projection,
                 organization_id=organization_id,
                 user_id=user_id,
+            )
+
+    def close_filled_plan(self, request: ClosePaperPlanRequest) -> ClosePaperPlanResult:
+        """Project a paper CLOSE for one filled canonical plan.
+
+        The exit price and costs are caller-supplied. This method does not read
+        market data, does not call an exchange, and does not open a new order.
+        """
+
+        assert_paper_execution_allowed(self._settings)
+        if request.occurred_at.tzinfo is None:
+            raise ValidationAppError(
+                "Paper close time must be timezone-aware.",
+                details={"reason": "naive_close_time"},
+            )
+        with self._runtime.bind_session(self._session):
+            envelope = self._load_close_envelope(request)
+            trade = JournalTradeRepository(self._session).find_by_execution_lifecycle(
+                organization_id=request.organization_id,
+                execution_lifecycle_id=request.command_id,
+            )
+            if trade is None or trade.user_id != request.user_id:
+                raise ValidationAppError(
+                    "Filled paper journal trade is missing; refusing to invent an outcome.",
+                    details={"reason": "missing_open_trade"},
+                )
+            self._assert_close_eligible(request, trade_status=trade.status)
+            if trade.entry_price is None or trade.size is None:
+                raise ValidationAppError(
+                    "Paper close requires a recorded entry price and size.",
+                    details={"reason": "incomplete_fill"},
+                )
+            economics = paper_close_pnl(
+                direction=trade.direction,
+                entry_price=trade.entry_price,
+                exit_price=request.exit_price,
+                size=trade.size,
+                fees=request.fees,
+                funding=request.funding,
+                slippage=request.slippage,
+            )
+            exit_reason = request.exit_reason.strip()
+            if not exit_reason:
+                raise ValidationAppError(
+                    "Paper close requires an exit reason.",
+                    details={"reason": "missing_exit_reason"},
+                )
+            payload = {
+                "exit_price": str(request.exit_price),
+                "exit_time": request.occurred_at.isoformat(),
+                "exit_reason": exit_reason,
+                "fees": str(request.fees),
+                "funding": str(request.funding),
+                "slippage": str(request.slippage),
+                "gross_pnl": str(economics.gross_pnl),
+                "net_pnl": str(economics.net_pnl),
+                "result": economics.result.value,
+                "lineage": _lineage_payload(envelope, request.command_id, self._runtime).model_dump(
+                    mode="json", exclude_none=True
+                ),
+            }
+            event = JournalLifecycleEventInput(
+                event_type=JournalLifecycleEventType.CLOSE,
+                execution_lifecycle_id=request.command_id,
+                source_system=CANONICAL_EXECUTION_SOURCE_SYSTEM,
+                source_aggregate="execution-command",
+                source_event_id=request.idempotency_key,
+                source_event_version=1,
+                account_id=request.account_id,
+                payload=payload,
+                correlation_id=str(envelope.plan.correlation_id),
+            )
+            projection = project_canonical_execution_event(
+                self._projector,
+                event=event,
+                organization_id=request.organization_id,
+                user_id=request.user_id,
+            )
+            attribute_canonical_paper_event(
+                session=self._session,
+                projector=self._projector,
+                runtime=self._runtime,
+                settings=self._settings,
+                envelope=envelope,
+                event=event,
+                projection=projection,
+                organization_id=request.organization_id,
+                user_id=request.user_id,
+            )
+            if projection.journal_trade_id is None:
+                raise ValidationAppError(
+                    "Paper close did not resolve a journal trade.",
+                    details={"reason": "missing_journal_trade"},
+                )
+            self._session.refresh(trade)
+            if (
+                trade.entry_price is None
+                or trade.exit_price is None
+                or trade.fees is None
+                or trade.gross_pnl is None
+                or trade.net_pnl is None
+                or trade.exit_reason is None
+                or trade.result is TradeResult.OPEN
+            ):
+                raise ValidationAppError(
+                    "Paper close did not record exit, fees, and PnL.",
+                    details={"reason": "incomplete_close"},
+                )
+            return ClosePaperPlanResult(
+                replayed=projection.replayed,
+                command_id=request.command_id,
+                journal_trade_id=projection.journal_trade_id,
+                candidate_id=trade.candidate_id,
+                strategy_version_id=trade.strategy_version_id,
+                symbol=trade.symbol,
+                timeframe=trade.timeframe,
+                entry_price=trade.entry_price,
+                exit_price=trade.exit_price,
+                exit_reason=trade.exit_reason,
+                fees=trade.fees,
+                gross_pnl=trade.gross_pnl,
+                net_pnl=trade.net_pnl,
+                result=trade.result,
+                thesis=trade.thesis,
+            )
+
+    def _load_close_envelope(self, request: ClosePaperPlanRequest) -> CanonicalTradePlanRevision:
+        command = self._session.get(ExecutionCommand, request.command_id)
+        if command is None or command.organization_id != request.organization_id:
+            raise NotFoundError("Execution command is unknown in this organization.")
+        if command.user_id != request.user_id:
+            raise NotFoundError("Execution command is unknown in this organization.")
+        if command.account_id != request.account_id or command.revision_id != request.revision_id:
+            raise ValidationAppError(
+                "Paper close identity does not match the execution command.",
+                details={"reason": "close_identity_mismatch"},
+            )
+        try:
+            return self._runtime.plans.get_scoped(
+                request.revision_id,
+                organization_id=request.organization_id,
+                user_id=request.user_id,
+            )
+        except CanonicalTradePlanNotFoundError as exc:
+            raise NotFoundError(
+                "Canonical trade plan revision is unknown in this tenant scope."
+            ) from exc
+
+    def _assert_close_eligible(
+        self,
+        request: ClosePaperPlanRequest,
+        *,
+        trade_status: JournalTradeStatus,
+    ) -> None:
+        existing = self._session.scalar(
+            select(JournalLifecycleEvent).where(
+                JournalLifecycleEvent.organization_id == request.organization_id,
+                JournalLifecycleEvent.source_system == CANONICAL_EXECUTION_SOURCE_SYSTEM,
+                JournalLifecycleEvent.event_type == JournalLifecycleEventType.CLOSE,
+                JournalLifecycleEvent.source_event_id == request.idempotency_key,
+            )
+        )
+        if existing is not None and existing.execution_lifecycle_id != request.command_id:
+            raise ValidationAppError(
+                "Paper close idempotency key is bound to another trade.",
+                details={"reason": "idempotency_conflict"},
+            )
+        if trade_status is JournalTradeStatus.CLOSED and existing is None:
+            raise ValidationAppError(
+                "Paper trade is already closed.",
+                details={"reason": "already_closed"},
+            )
+        if trade_status is not JournalTradeStatus.OPEN and existing is None:
+            raise ValidationAppError(
+                "Paper close requires an open fill.",
+                details={"reason": "not_open"},
             )
 
     def _revalidate_canonical_lineage(

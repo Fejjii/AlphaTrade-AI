@@ -64,10 +64,26 @@ export function PaperEvaluationSummaryCard({
           </div>
           <div data-testid="paper-evaluation-performance">
             <p className="font-medium">Strategy performance</p>
+            {metric("Closed outcomes", facts.strategy_overall.executed_outcome_count)}
+            {metric("Wins", facts.strategy_overall.win_count)}
+            {metric("Losses", facts.strategy_overall.loss_count)}
             {metric("Win rate", facts.strategy_overall.win_rate)}
+            {metric("Net PnL", facts.strategy_overall.net_pnl_total)}
             {metric("Expectancy", facts.strategy_overall.expectancy)}
             {metric("Max drawdown", facts.strategy_overall.max_drawdown)}
             {metric("Avg MFE / MAE", `${facts.strategy_overall.average_mfe ?? "unavailable"} / ${facts.strategy_overall.average_mae ?? "unavailable"}`)}
+            {facts.strategy_versions?.length ? (
+              <ul className="mt-2 space-y-1" data-testid="paper-evaluation-setups">
+                {facts.strategy_versions.map((version) => (
+                  <li key={`${version.strategy_version_id ?? "strategy"}-${version.setup_definition_id ?? "setup"}`}>
+                    Setup {version.setup_definition_id ?? "unassigned"} · strategy{" "}
+                    {version.strategy_version_id ?? "unassigned"}: W {version.win_count ?? "unavailable"} / L{" "}
+                    {version.loss_count ?? "unavailable"} · win rate {version.win_rate ?? "unavailable"} · PnL{" "}
+                    {version.net_pnl_total ?? "unavailable"}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <div data-testid="paper-evaluation-behaviour">
             <p className="font-medium">Blocked, missed, human vs system</p>

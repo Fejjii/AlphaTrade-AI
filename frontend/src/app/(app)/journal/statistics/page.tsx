@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 
+import { ClosedJournalTrades } from "@/components/journal/ClosedJournalTrades";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,12 +14,14 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type {
+  CanonicalJournalTradeListItem,
   ExecutionActor,
   JournalStatsGroupBy,
   JournalStatsParams,
   JournalTradeSource,
   JournalTradeStatsMetrics,
   MarketRegime,
+  PaginatedCanonicalJournalTrades,
   SampleConfidence,
   TradeRuleCompliance,
 } from "@/lib/api/types";
@@ -173,6 +176,12 @@ export default function JournalStatisticsPage() {
     return api.journal.statistics(params);
   }, [groupBy, source, symbol, timeframe, regime, compliance, actor, dateFrom, dateTo, offset]);
   const { data, loading, error, reload } = useAsyncData(loader, [loader]);
+  const tradeLoader = useCallback(
+    () => api.journal.listTrades({ status: "closed", source: "paper_execution", limit: 20 }),
+    [],
+  );
+  const tradesState = useAsyncData(tradeLoader, [tradeLoader]);
+  const closedTrades = closedTradeItems(tradesState.data);
 
   return (
     <div className="space-y-section">
@@ -410,8 +419,15 @@ export default function JournalStatisticsPage() {
               )}
             </section>
           ) : null}
+
+          <ClosedJournalTrades trades={closedTrades} />
         </>
       ) : null}
     </div>
   );
+}
+
+function closedTradeItems(data: PaginatedCanonicalJournalTrades | null): CanonicalJournalTradeListItem[] {
+  if (!data || !Array.isArray(data.items)) return [];
+  return data.items;
 }

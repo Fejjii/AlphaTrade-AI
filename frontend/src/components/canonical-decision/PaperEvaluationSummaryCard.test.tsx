@@ -46,8 +46,22 @@ function evaluation(): CanonicalPaperEvaluationRead {
           average_mfe: "20",
           average_mae: "5",
           executed_outcome_count: 1,
+          win_count: 1,
+          loss_count: 0,
+          net_pnl_total: "10",
           confidence: "insufficient",
         },
+        strategy_versions: [
+          {
+            strategy_version_id: "strategy-1",
+            setup_definition_id: "setup-1",
+            executed_outcome_count: 1,
+            win_count: 1,
+            loss_count: 0,
+            win_rate: "1",
+            net_pnl_total: "10",
+          },
+        ],
         rule_adherence: {
           risk_adhered_count: 1,
           stop_violation_count: 0,
@@ -107,6 +121,11 @@ describe("PaperEvaluationSummaryCard", () => {
     );
     expect(screen.getByTestId("paper-evaluation-watcher")).toHaveTextContent("Scans: 3");
     expect(screen.getByTestId("paper-evaluation-performance")).toHaveTextContent("Win rate");
+    expect(screen.getByTestId("paper-evaluation-performance")).toHaveTextContent("Wins: 1");
+    expect(screen.getByTestId("paper-evaluation-performance")).toHaveTextContent("Losses: 0");
+    expect(screen.getByTestId("paper-evaluation-performance")).toHaveTextContent("Net PnL: 10");
+    expect(screen.getByTestId("paper-evaluation-setups")).toHaveTextContent("setup-1");
+    expect(screen.getByTestId("paper-evaluation-setups")).toHaveTextContent("strategy-1");
     expect(screen.getByTestId("paper-evaluation-missed-warning")).toHaveTextContent(
       /counterfactual pnl is not invented/i,
     );

@@ -38,8 +38,22 @@ export function StrategyPerformance({
               <p>Human approvals: {canonical.snapshot.human_vs_system.human_approvals}</p>
               <p>Paper executions: {canonical.snapshot.human_vs_system.paper_system_executions}</p>
               <p>Executed outcomes: {canonical.snapshot.human_vs_system.executed_outcomes}</p>
+              {canonical.snapshot.patterns.length ? (
+                <ul className="space-y-1" data-testid="canonical-setup-attribution">
+                  {canonical.snapshot.patterns.map((pattern) => (
+                    <li key={`${pattern.strategy_version_id}-${pattern.setup_definition_id}`}>
+                      Setup {pattern.setup_definition_id} · strategy {pattern.strategy_version_id}: wins{" "}
+                      {pattern.win_count} / losses {pattern.loss_count} · win rate{" "}
+                      {pattern.executed_win_rate ?? "unavailable"}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No closed setup outcomes recorded yet.</p>
+              )}
               <p className="text-caption text-text-muted">
-                LearningQueryService only. LLM narrative is not a fact.
+                Learning observations are the recorded setup, execution, risk, and outcome facts.
+                LLM narrative is not a fact.
               </p>
             </>
           ) : (
