@@ -16,6 +16,7 @@ import type {
   JournalImportResult,
   JournalStatsParams,
   JournalStatsResponse,
+  PaginatedCanonicalJournalTrades,
   PaginatedJournalImportBatches,
   PaginatedConversations,
   PaginatedConversationMessages,
@@ -599,6 +600,8 @@ export const api = {
       apiFetch<void>(`/journal/entries/${id}`, { method: "DELETE" }),
     statistics: (params?: JournalStatsParams) =>
       apiFetch<JournalStatsResponse>("/journal/statistics", { query: params }),
+    listTrades: (params?: { status?: string; source?: string; symbol?: string; limit?: number }) =>
+      apiFetch<PaginatedCanonicalJournalTrades>("/journal/trades", { query: params }),
     importTrades: (body: JournalImportRequestBody) =>
       apiFetch<JournalImportResult>("/journal/trades/import", {
         method: "POST",

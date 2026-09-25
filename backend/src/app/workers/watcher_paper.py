@@ -620,6 +620,7 @@ class WatcherPaperRuntime:
             recorder,
             strategy_version_id=target.strategy_version_id,
             setup_definition_id=target.compiled_setup_definition_id,
+            replayed=watcher_measurement_is_replay(self._settings),
         )
 
     def _materialize_policy(self, target: PaperScanTarget) -> WatcherPolicyVersion:
@@ -850,6 +851,16 @@ def _shared_evaluation_clock(
     if isinstance(existing, BoundEvaluationClock):
         return existing
     return BoundEvaluationClock()
+
+
+def watcher_measurement_is_replay(settings: Settings | None) -> bool:
+    """True when Watcher evidence is the replay source, so stats are not labeled live."""
+
+    if settings is None:
+        return False
+    from app.market_contracts.adapters.factory import perpetual_source_is_replay
+
+    return perpetual_source_is_replay(settings)
 
 
 def default_paper_evidence_factory(

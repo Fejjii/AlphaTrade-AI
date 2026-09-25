@@ -68,7 +68,12 @@ authority:
 
 `ALLOW` projects `approved_plan` and fills project `fill` through
 `JournalLifecycleProjector` with `source_system=canonical_paper_execution`.
-Exact replay converges. Journal is record-only.
+A filled plan is closed with `POST /execution/paper-plan/close`. The caller
+supplies the exit price, fees, funding, slippage, exit reason, and close time.
+Gross and net PnL are computed from the recorded entry and size. The close
+projects `close`, attributes learning facts, and does not read market data or
+call an exchange. Exact replay of the same idempotency key converges. A second
+close key on an already closed trade is refused. Journal is record-only.
 
 ## Learning
 

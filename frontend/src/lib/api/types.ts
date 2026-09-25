@@ -2044,8 +2044,21 @@ export interface CanonicalPaperEvaluationRead {
         average_mfe?: string | null;
         average_mae?: string | null;
         executed_outcome_count: number;
+        win_count?: number;
+        loss_count?: number;
+        breakeven_count?: number;
+        net_pnl_total?: string | null;
         confidence: string;
       };
+      strategy_versions?: Array<{
+        strategy_version_id?: string | null;
+        setup_definition_id?: string | null;
+        executed_outcome_count: number;
+        win_count?: number;
+        loss_count?: number;
+        win_rate?: string | null;
+        net_pnl_total?: string | null;
+      }>;
       rule_adherence: {
         risk_adhered_count: number;
         stop_violation_count: number;
@@ -2988,6 +3001,32 @@ export interface PaperSignalResult {
   stop_loss?: string | null;
   reason?: string | null;
   created_at: string;
+}
+
+export interface CanonicalJournalTradeListItem {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  direction: string;
+  status: string;
+  thesis?: string | null;
+  trigger?: string | null;
+  entry_price?: string | null;
+  exit_price?: string | null;
+  exit_reason?: string | null;
+  fees?: string | null;
+  net_pnl?: string | null;
+  result: string;
+  strategy_label?: string | null;
+  strategy_version_id?: string | null;
+  candidate_id?: string | null;
+}
+
+export interface PaginatedCanonicalJournalTrades {
+  items: CanonicalJournalTradeListItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface PaperTradeRecord {
