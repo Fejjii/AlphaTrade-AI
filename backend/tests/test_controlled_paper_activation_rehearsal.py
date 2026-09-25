@@ -1,16 +1,17 @@
 """PostgreSQL rehearsal of the controlled paper package. No network and no orders.
 
 Live evidence is a scripted USD-M source with live identity. Replay is not the
-success path. The Watcher assembles a genuine SetupAssessment. Telegram is the
-projection hook and cannot mint, trade, or override risk.
+success path. The Watcher assembles a genuine SetupAssessment, and the paper
+loop continues that Candidate through eligibility, one canonical TradePlan, one
+internal paper fill, and one open Journal trade. Telegram is the projection
+hook and cannot mint, trade, or override risk.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from decimal import Decimal
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid5
 
 import pytest
 from sqlalchemy import func, select
@@ -21,9 +22,11 @@ from app.controlled_activation.rollback import plan_package_rollback
 from app.core.config import Settings
 from app.core.persistence_firewall import install_persistence_firewall
 from app.db.canonical_candidates import CanonicalCandidateRow
+from app.db.canonical_trade_plans import CanonicalTradePlanLineageRow, CanonicalTradePlanRootRow
 from app.db.learning_attribution import LearningAttributionRecordRow
 from app.db.models import (
     ExecutionAccount,
+    ExecutionFillFact,
     JournalLifecycleEvent,
     JournalTrade,
     Membership,
@@ -58,9 +61,7 @@ from app.persistence.eligibility_postgres import latest_evaluations_for_organiza
 from app.persistence.paper_evaluation_postgres import PostgresPaperEvaluationStore
 from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 from app.runtime.canonical import build_production_canonical_runtime
-from app.schemas.canonical_trade_plan import CanonicalTradePlanCommand
-from app.schemas.common import MembershipRole, RuleComplianceStatus
-from app.schemas.execution_protocol import ExecutionCommandOutcome
+from app.schemas.common import JournalTradeStatus, MembershipRole, RuleComplianceStatus
 from app.schemas.journal_trades import JournalTradeRuleCheckCreate
 from app.schemas.trade_plan import AccountMode, ExecutionMode
 from app.services.audit_service import AuditService
@@ -80,28 +81,10 @@ from app.workers.watcher_activation import run_staging_activation
 from app.workers.watcher_paper import build_watcher_paper_runtime, new_worker_instance_id
 from tests.support.live_market_monitor import ScriptedPerpetualSource
 from tests.support.phase5_market import EVALUATED_AT
-from tests.support.phase6_eligibility import (
-    account_identity,
-    eligibility_command,
-    market_action,
-    paper_configuration,
-    portfolio_state,
-    risk_snapshot,
-    safety_snapshot,
-)
 from tests.support.phase6_evaluator import (
     build_context_4h_bars,
     build_pattern_15m_bars,
     build_slice_trades,
-)
-from tests.support.phase6_fusion import CORRELATION_A, VENUE_STATE_ID
-from tests.support.phase7_trade_plan import plan_terms
-from tests.support.phase8_runtime import (
-    EXECUTE_AT,
-    authorize_canonical_plan,
-    canonical_execute_request,
-    canonical_execution_service,
-    seed_paper_capacity,
 )
 from tests.support.postgres_persistence import phase7_plan_session_factory, requires_postgres
 from tests.support.telegram_security import (
@@ -366,66 +349,63 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
     assert SourceFamily.REPLAY_FIXTURE not in families
     assert runtime.side_effects.execution == []  # type: ignore[attr-defined]
     candidate = scan.discussion.candidate
-    assessment = scan.discussion.assessment
-    window = scan.discussion.window
+    assert scan.paper_loop_stage == "filled"
+    assert scan.paper_loop_reason == "open_journal"
+    assert scan.paper_loop_replayed is False
+    assert scan.eligibility_state == ActionEligibilityState.ELIGIBLE.value
+    assert scan.trade_plan_revision_id is not None
+    assert scan.execution_command_id is not None
+    assert scan.paper_fill_id is not None
+    assert scan.journal_trade_id is not None
+    assert scan.journal_status == JournalTradeStatus.OPEN.value
 
     decision_runtime = build_production_canonical_runtime(
         factory, settings=settings, clock=PlanClock(EVALUATED_AT)
     )
     stored = decision_runtime.lifecycle.get_by_candidate_id(ORG, candidate.candidate_id)
     assert stored is not None
-    assert stored.state is CandidateState.ACTIVE
-    evaluation = decision_runtime.eligibility.evaluate(
-        eligibility_command(
-            window=window,
-            assessment=assessment,
-            candidate=stored,
-            account=account_identity(organization_id=ORG, user_id=USER, account_id=account_id),
-            portfolio=portfolio_state(organization_id=ORG, account_id=account_id),
-            risk=risk_snapshot(
-                organization_id=ORG,
-                user_id=USER,
-                account_id=account_id,
-                risk_snapshot_id=uuid4(),
-            ),
-            safety=safety_snapshot(organization_id=ORG, account_id=account_id),
-            market=market_action(venue_state_id=VENUE_STATE_ID),
-            configuration=paper_configuration(),
-            correlation_id=CORRELATION_A,
-        )
+    assert stored.state is CandidateState.PLAN_CREATED
+    envelope = decision_runtime.plans.get_scoped(
+        scan.trade_plan_revision_id,
+        organization_id=ORG,
+        user_id=USER,
     )
-    assert evaluation.eligibility.state is ActionEligibilityState.ELIGIBLE
-    assert evaluation.paper_actionable is True
-    assert evaluation.live_executable is False
-    envelope = decision_runtime.plans.create(
-        CanonicalTradePlanCommand(
-            organization_id=ORG,
-            user_id=USER,
-            account_id=account_id,
-            candidate_id=candidate.candidate_id,
-            eligibility_id=evaluation.eligibility.eligibility_id,
-            terms=plan_terms(stored, account_id=account_id),
-            idempotency_key="controlled-paper-plan",
-            correlation_id=CORRELATION_A,
-        )
-    )
+    assert envelope.paper_actionable is True
     assert envelope.live_executable is False
+    assert envelope.plan.execution_venue == "PAPER_INTERNAL"
+    assert envelope.lineage.candidate_id == candidate.candidate_id
+    assert decision_runtime.flags.real_trading_enabled is False
+    assert settings.enable_real_trading is False
+    assert settings.real_trading_enabled is False
     with factory() as session:
-        authorization = authorize_canonical_plan(session, envelope, plans=decision_runtime.plans)
-        seed_paper_capacity(session, envelope)
-        session.commit()
-        service = canonical_execution_service(session, decision_runtime)
-        result = service.execute_paper_plan(
-            canonical_execute_request(envelope, authorization, key="controlled-paper-exec"),
-            clock=lambda: EXECUTE_AT,
-        )
-        session.commit()
-        assert result.outcome is ExecutionCommandOutcome.ALLOW
+        plans = session.scalars(select(CanonicalTradePlanRootRow)).all()
+        assert len(plans) == 1
+        assert plans[0].candidate_id == candidate.candidate_id
+        lineages = session.scalars(select(CanonicalTradePlanLineageRow)).all()
+        assert len(lineages) == 1
+        assert lineages[0].revision_id == scan.trade_plan_revision_id
+        assert lineages[0].candidate_id == candidate.candidate_id
+        fills = session.scalars(select(ExecutionFillFact)).all()
+        assert len(fills) == 1
+        assert fills[0].id == scan.paper_fill_id
+        assert fills[0].command_id == scan.execution_command_id
+        assert fills[0].venue_source == "paper_internal"
         trade = session.scalars(select(JournalTrade)).one()
+        assert trade.id == scan.journal_trade_id
         assert trade.candidate_id == candidate.candidate_id
-        assert session.scalars(select(JournalLifecycleEvent)).one().payload["lineage"][
-            "candidate_id"
-        ] == str(candidate.candidate_id)
+        assert trade.execution_lifecycle_id == scan.execution_command_id
+        assert trade.status == JournalTradeStatus.OPEN
+        events = session.scalars(select(JournalLifecycleEvent)).all()
+        assert events
+        linked_candidates: set[str] = set()
+        for event in events:
+            payload = event.payload
+            if not isinstance(payload, dict):
+                continue
+            lineage = payload.get("lineage")
+            if isinstance(lineage, dict) and "candidate_id" in lineage:
+                linked_candidates.add(str(lineage["candidate_id"]))
+        assert linked_candidates == {str(candidate.candidate_id)}
         attribution = session.scalars(select(LearningAttributionRecordRow)).one()
         assert attribution.candidate_id == candidate.candidate_id
         JournalTradeService(session, AuditService(session)).add_rule_check(
@@ -440,15 +420,6 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
             user_id=USER,
         )
         session.commit()
-        fill = service.apply_paper_plan_fill(
-            command_id=result.command_id,
-            fill_quantity=Decimal("1"),
-            fill_price=Decimal("100000"),
-            source_identity="controlled-paper-fill",
-            occurred_at=EXECUTE_AT,
-        )
-        session.commit()
-        assert fill.replayed is False
         query = PaperEvaluationQueryService(
             PostgresPaperEvaluationStore(session),
             attribution_store=PostgresAttributionStore(session),
@@ -474,6 +445,9 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
         assert "telegram_interaction_enabled:false" in lines
         assert any("activate=false" in line for line in lines)
         candidates_before = _count(factory, CanonicalCandidateRow)
+        plans_before = _count(factory, CanonicalTradePlanRootRow)
+        fills_before = _count(factory, ExecutionFillFact)
+        journals_before = _count(factory, JournalTrade)
         telegram = TelegramPaperRuntime(
             settings=settings,
             session_factory=factory,
@@ -488,6 +462,11 @@ def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
         assert telegram_cycle.kill_switch_active is False
         assert transport.send_count >= 1
         assert _count(factory, CanonicalCandidateRow) == candidates_before
+        assert _count(factory, CanonicalTradePlanRootRow) == plans_before == 1
+        assert _count(factory, ExecutionFillFact) == fills_before == 1
+        assert _count(factory, JournalTrade) == journals_before == 1
+        assert settings.enable_real_trading is False
+        assert settings.real_trading_enabled is False
         with factory() as fresh:
             texts = "\n".join(fresh.scalars(select(TelegramOutboxRow.text)).all())
         assert "activate=false" in texts
