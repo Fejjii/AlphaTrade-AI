@@ -36,7 +36,7 @@ execution, BloFin submission, or journal automation. Canonical read HTTP and the
 | Preferred live source | `https://fapi.binance.com` `/fapi/v1/klines` and `/fapi/v1/aggTrades` |
 | Process default | `PERPETUAL_EVIDENCE_SOURCE=replay` (local, CI, production, rollback) |
 | Staging intended source | `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` (public read-only; see `docs/live_market_staging_activation.md`) |
-| Staging secondary | `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual` at `https://api.bybit.com` (`GET /v5/market/kline` and `/v5/market/recent-trade`, `category=linear` only). A Binance HTTP 418, HTTP 429, or regional failure switches the whole observation onto Bybit and opens a new connection epoch. A recent-trade buffer that does not reach the requested start fails closed. Bybit `seq` is a cross sequence, not a per-trade id. A later read that drops the last proven print fails closed. |
+| Staging secondary | `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual` at `https://api.bybit.com` (`GET /v5/market/kline` and `/v5/market/recent-trade`, `category=linear` only). A Binance HTTP 418, HTTP 429, or regional failure switches the whole observation onto Bybit and opens a new connection epoch. The first recent-trade page on a connection must reach the requested start. Later pages extend that proven tail when they still contain its last execution id. A page that drops that print fails closed. A buffer that never proved the requested start fails closed. Bybit `seq` is a cross sequence, not a per-trade id. A later read that drops the last proven print fails closed. |
 
 Spot `/api/v3/*` and Coin-M `dapi.binance.com` cannot satisfy this contract.
 The legacy `binance-public` spot adapter is unchanged and is not an evidence source

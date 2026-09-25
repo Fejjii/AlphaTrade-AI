@@ -20,6 +20,7 @@ from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.cvd import accumulate_signed_quote
 from app.market_contracts.enums import SourceFamily, VenueId
 from app.market_contracts.errors import (
+    DuplicateDataError,
     EvidenceSourceSwitchRequiredError,
     FormingCandleError,
     GapDetectedError,
@@ -308,6 +309,163 @@ def test_gap_and_unproven_window_do_not_fabricate() -> None:
             receive_at=T0,
         )
     short_source.close()
+
+
+def test_forward_tail_covers_ten_reads_after_the_buffer_rolls() -> None:
+    """Later pages overlap the watermark and do not rebuild the dropped prefix."""
+
+    instrument = bybit_usdt_perpetual_btcusdt()
+    connection = uuid4()
+    origin = T0 - timedelta(seconds=4)
+    prefix = _trade(1, origin - timedelta(seconds=1))
+    tape = [
+        _trade(index, origin + timedelta(milliseconds=100 * index), side="Buy", size="0.01")
+        for index in range(2, 13)
+    ]
+    pages = [[prefix, tape[0], tape[1]]]
+    for index in range(1, 10):
+        pages.append([tape[index], tape[index + 1]])
+    cursor = {"n": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        page = pages[cursor["n"]]
+        cursor["n"] += 1
+        return _ok(_bybit_trades(page))
+
+    source = _source(handler)
+    signed = Decimal("0")
+    previous_ids: list[str] = []
+    for read in range(10):
+        batch = source.fetch_ordered_trades(
+            identity=_identity(instrument),
+            instrument=instrument,
+            start=origin,
+            end=T0,
+            source_connection_id=connection,
+            receive_at=T0,
+        )
+        assert batch.identity.provenance.fallback_used is False
+        assert [trade.venue_trade_id for trade in batch.trades] == [
+            f"exec-{index}" for index in range(2, 4 + read)
+        ]
+        assert [trade.sequence for trade in batch.trades] == list(range(2, 4 + read))
+        delta, _total = accumulate_signed_quote(
+            [trade for trade in batch.trades if trade.venue_trade_id not in previous_ids]
+        )
+        signed += delta
+        previous_ids = [trade.venue_trade_id for trade in batch.trades]
+    source.close()
+    assert cursor["n"] == 10
+    assert signed == Decimal("11")
+    assert previous_ids[-1] == "exec-12"
+
+
+def test_duplicate_exec_ids_do_not_double_count_or_conflict() -> None:
+    instrument = bybit_usdt_perpetual_btcusdt()
+    connection = uuid4()
+    start = T0 - timedelta(seconds=4)
+    first = _trade(2, start + timedelta(milliseconds=100), size="0.02")
+    proof = _trade(1, start - timedelta(seconds=1))
+    calls = {"n": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _ok(_bybit_trades([proof, first, dict(first)]))
+        if calls["n"] == 2:
+            return _ok(_bybit_trades([first]))
+        changed = dict(first)
+        changed["price"] = "101"
+        return _ok(_bybit_trades([changed]))
+
+    source = _source(handler)
+    batch = source.fetch_ordered_trades(
+        identity=_identity(instrument),
+        instrument=instrument,
+        start=start,
+        end=T0,
+        source_connection_id=connection,
+        receive_at=T0,
+    )
+    assert [trade.venue_trade_id for trade in batch.trades] == ["exec-2"]
+    assert accumulate_signed_quote(batch.trades)[0] == Decimal("2")
+    quiet = source.fetch_ordered_trades(
+        identity=_identity(instrument),
+        instrument=instrument,
+        start=start,
+        end=T0,
+        source_connection_id=connection,
+        receive_at=T0,
+    )
+    assert [trade.venue_trade_id for trade in quiet.trades] == ["exec-2"]
+    with pytest.raises(DuplicateDataError):
+        source.fetch_ordered_trades(
+            identity=_identity(instrument),
+            instrument=instrument,
+            start=start,
+            end=T0,
+            source_connection_id=connection,
+            receive_at=T0,
+        )
+    source.close()
+
+
+def test_restart_requires_a_new_prefix_and_stale_tail_fails_closed() -> None:
+    instrument = bybit_usdt_perpetual_btcusdt()
+    start = T0 - timedelta(seconds=4)
+    fresh = _trade(4, T0 - timedelta(seconds=1))
+    proof = _trade(3, start - timedelta(seconds=1))
+    stale = _trade(5, T0 - timedelta(seconds=30))
+    stale_proof = _trade(6, T0 - timedelta(seconds=31))
+
+    def fresh_page(_request: httpx.Request) -> httpx.Response:
+        if fresh_page.calls == 0:
+            fresh_page.calls += 1
+            return _ok(_bybit_trades([proof, fresh]))
+        return _ok(_bybit_trades([fresh]))
+
+    fresh_page.calls = 0
+    source = _source(fresh_page)
+    connection = uuid4()
+    source.fetch_ordered_trades(
+        identity=_identity(instrument),
+        instrument=instrument,
+        start=start,
+        end=T0,
+        source_connection_id=connection,
+        receive_at=T0,
+    )
+    with pytest.raises(IncompleteTradeWindowError):
+        source.fetch_ordered_trades(
+            identity=_identity(instrument),
+            instrument=instrument,
+            start=start,
+            end=T0,
+            source_connection_id=uuid4(),
+            receive_at=T0,
+        )
+    source.close()
+
+    def stale_page(_request: httpx.Request) -> httpx.Response:
+        return _ok(_bybit_trades([stale_proof, stale]))
+
+    stale_source = _source(stale_page)
+    batch = stale_source.fetch_ordered_trades(
+        identity=_identity(instrument),
+        instrument=instrument,
+        start=T0 - timedelta(seconds=31),
+        end=T0,
+        source_connection_id=uuid4(),
+        receive_at=T0,
+    )
+    stale_source.close()
+    with pytest.raises(StaleEvidenceError):
+        evaluate_freshness(
+            source_time=batch.trades[-1].event_timestamp,
+            evaluated_at=T0,
+            policy=first_slice_freshness_policy(),
+            require_fresh=True,
+        )
 
 
 def test_spot_and_inverse_books_are_rejected() -> None:

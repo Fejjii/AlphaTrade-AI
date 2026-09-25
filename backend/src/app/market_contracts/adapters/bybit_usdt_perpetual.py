@@ -63,6 +63,7 @@ BYBIT_ALLOWED_PATHS = frozenset(
 BYBIT_ALLOWED_HOSTS = frozenset({"api.bybit.com"})
 _BYBIT_INTERVAL = {Timeframe.M15: "15", Timeframe.H4: "240"}
 _RECENT_TRADE_LIMIT = 1000
+_PROVEN_TAIL_RETENTION = timedelta(minutes=15)
 
 
 class BybitUsdtPerpetualSource:
@@ -95,11 +96,15 @@ class BybitUsdtPerpetualSource:
         )
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
-        # Cross sequence is not a per-trade id. Ranks are stable per connection.
+        # Cross sequence is not a per-trade id. Ranks and the proven tail are
+        # stable per connection. Later reads extend that tail; they do not
+        # rebuild history the recent-trade buffer has already dropped.
         self._rank_connection: UUID | None = None
         self._rank_by_exec: dict[str, int] = {}
         self._next_rank = 1
         self._anchor_exec_id: str | None = None
+        self._proven: list[dict[str, Any]] = []
+        self._proven_from_ms: int | None = None
 
     def active_instrument(self) -> InstrumentIdentity:
         return self._instrument
@@ -234,65 +239,29 @@ class BybitUsdtPerpetualSource:
         end: datetime,
         source_connection_id: UUID,
     ) -> list[dict[str, Any]]:
-        """Prove one recent-trade tail, then keep only the requested half-open window.
+        """Return the proven half-open window, extending it only from an overlap.
 
-        Bybit ``seq`` is a cross sequence. It is not a per-symbol trade id and is
-        not required to increase by one. Coverage is the public buffer reaching
-        ``start``, plus a stable rank per execution id on this connection.
+        The first read on a connection must see a recent-trade page that reaches
+        ``start``. Later reads keep that proven tail. A new page has to contain
+        the last proven execution id, then contributes only prints after it.
+        Bybit ``seq`` is not a per-trade id. A page that drops the watermark is
+        a gap. Trades are not invented to fill it.
         """
 
         start_ms = int(start.astimezone(UTC).timestamp() * 1000)
         end_ms = int(end.astimezone(UTC).timestamp() * 1000)
-        result = self._public_result(
-            "/v5/market/recent-trade",
-            {"category": BYBIT_CATEGORY, "symbol": BYBIT_SYMBOL, "limit": _RECENT_TRADE_LIMIT},
-        )
-        self._assert_linear_btc(result)
-        payload = result.get("list")
-        if not isinstance(payload, list) or not payload:
-            raise IncompleteTradeWindowError(
-                "Bybit recent trades do not prove the requested window. "
-                "Refusing to fabricate the missing prefix."
-            )
-        prints = [_normalize_print(row) for row in payload]
-        prints.sort(key=lambda item: (item["time_ms"], item["exec_id"]))
-        _reject_conflicting_exec_ids(prints)
-        prints = _unique_exec_ids(prints)
-        if int(prints[0]["time_ms"]) > start_ms:
-            raise IncompleteTradeWindowError(
-                "Bybit recent trades do not prove the requested window. "
-                "Refusing to fabricate the missing prefix."
-            )
+        prints = self._load_recent_prints()
         self._prepare_connection(source_connection_id)
-        if self._anchor_exec_id is not None and all(
-            item["exec_id"] != self._anchor_exec_id for item in prints
-        ):
-            raise GapDetectedError(
-                "Bybit recent-trade buffer dropped the last proven print. "
-                "Refusing to fabricate the missing interval."
-            )
-        for item in prints:
-            exec_id = str(item["exec_id"])
-            if exec_id in self._rank_by_exec:
-                continue
-            self._rank_by_exec[exec_id] = self._next_rank
-            self._next_rank += 1
-        ranks = [self._rank_by_exec[str(item["exec_id"])] for item in prints]
-        if ranks != list(range(ranks[0], ranks[0] + len(ranks))):
-            raise GapDetectedError(
-                "Bybit recent-trade order is not a contiguous proven tail. Refusing a partial CVD."
-            )
-        window = [item for item in prints if start_ms <= int(item["time_ms"]) < end_ms]
-        if not window:
+        if not self._proven:
+            self._prove_initial_tail(prints, start_ms)
+        else:
+            self._extend_proven_tail(prints)
+        if self._proven_from_ms is None or start_ms < self._proven_from_ms:
             raise IncompleteTradeWindowError(
-                "Bybit recent trades have no prints inside the requested window."
+                "Bybit recent trades do not prove the requested window. "
+                "Refusing to fabricate the missing prefix."
             )
-        window_ranks = [self._rank_by_exec[str(item["exec_id"])] for item in window]
-        if window_ranks != list(range(window_ranks[0], window_ranks[0] + len(window_ranks))):
-            raise GapDetectedError(
-                "Bybit trade window is not a contiguous proven tail. Refusing a partial CVD."
-            )
-        self._anchor_exec_id = str(window[-1]["exec_id"])
+        window = [item for item in self._proven if start_ms <= int(item["time_ms"]) < end_ms]
         for item in window:
             item["sequence"] = self._rank_by_exec[str(item["exec_id"])]
         return window
@@ -427,6 +396,102 @@ class BybitUsdtPerpetualSource:
             raise WrongMarketError("Bybit result is not an object.")
         return result
 
+    def _load_recent_prints(self) -> list[dict[str, Any]]:
+        result = self._public_result(
+            "/v5/market/recent-trade",
+            {"category": BYBIT_CATEGORY, "symbol": BYBIT_SYMBOL, "limit": _RECENT_TRADE_LIMIT},
+        )
+        self._assert_linear_btc(result)
+        payload = result.get("list")
+        if not isinstance(payload, list) or not payload:
+            raise IncompleteTradeWindowError(
+                "Bybit recent trades do not prove the requested window. "
+                "Refusing to fabricate the missing prefix."
+            )
+        prints = [_normalize_print(row) for row in payload]
+        prints.sort(key=lambda item: (item["time_ms"], item["exec_id"]))
+        _reject_conflicting_exec_ids(prints)
+        return _unique_exec_ids(prints)
+
+    def _prove_initial_tail(self, prints: list[dict[str, Any]], start_ms: int) -> None:
+        if int(prints[0]["time_ms"]) > start_ms:
+            raise IncompleteTradeWindowError(
+                "Bybit recent trades do not prove the requested window. "
+                "Refusing to fabricate the missing prefix."
+            )
+        self._assign_ranks(prints)
+        proven = [item for item in prints if int(item["time_ms"]) >= start_ms]
+        if not proven:
+            raise IncompleteTradeWindowError(
+                "Bybit recent trades have no prints inside the requested window."
+            )
+        self._require_rank_tail(proven)
+        self._proven = proven
+        self._proven_from_ms = start_ms
+        self._anchor_exec_id = str(proven[-1]["exec_id"])
+
+    def _extend_proven_tail(self, prints: list[dict[str, Any]]) -> None:
+        anchor = self._anchor_exec_id
+        anchor_at = next(
+            (index for index, item in enumerate(prints) if item["exec_id"] == anchor),
+            None,
+        )
+        if anchor is None or anchor_at is None:
+            raise GapDetectedError(
+                "Bybit recent-trade buffer dropped the last proven print. "
+                "Refusing to fabricate the missing interval."
+            )
+        self._reject_conflicts_with_proven(prints)
+        extension = prints[anchor_at + 1 :]
+        self._assign_ranks(extension)
+        if extension:
+            self._require_rank_tail(self._proven + extension)
+            self._proven.extend(extension)
+            self._anchor_exec_id = str(extension[-1]["exec_id"])
+        self._trim_proven_prefix()
+
+    def _assign_ranks(self, prints: list[dict[str, Any]]) -> None:
+        for item in prints:
+            exec_id = str(item["exec_id"])
+            if exec_id in self._rank_by_exec:
+                continue
+            self._rank_by_exec[exec_id] = self._next_rank
+            self._next_rank += 1
+
+    def _require_rank_tail(self, prints: list[dict[str, Any]]) -> None:
+        ranks = [self._rank_by_exec[str(item["exec_id"])] for item in prints]
+        if ranks != list(range(ranks[0], ranks[0] + len(ranks))):
+            raise GapDetectedError(
+                "Bybit recent-trade order is not a contiguous proven tail. Refusing a partial CVD."
+            )
+
+    def _reject_conflicts_with_proven(self, prints: list[dict[str, Any]]) -> None:
+        known = {str(item["exec_id"]): item for item in self._proven}
+        for item in prints:
+            prior = known.get(str(item["exec_id"]))
+            if prior is None:
+                continue
+            signature = (item["time_ms"], item["price"], item["size"], item["side"])
+            previous = (prior["time_ms"], prior["price"], prior["size"], prior["side"])
+            if signature != previous:
+                raise DuplicateDataError(
+                    f"Conflicting content for Bybit execution {item['exec_id']}."
+                )
+
+    def _trim_proven_prefix(self) -> None:
+        if len(self._proven) < 2:
+            return
+        newest_ms = int(self._proven[-1]["time_ms"])
+        cutoff_ms = newest_ms - int(_PROVEN_TAIL_RETENTION.total_seconds() * 1000)
+        keep_at = 0
+        for index, item in enumerate(self._proven):
+            if int(item["time_ms"]) >= cutoff_ms:
+                keep_at = index
+                break
+        if keep_at > 0:
+            self._proven = self._proven[keep_at:]
+            self._proven_from_ms = int(self._proven[0]["time_ms"])
+
     def _prepare_connection(self, source_connection_id: UUID) -> None:
         if self._rank_connection == source_connection_id:
             return
@@ -434,6 +499,8 @@ class BybitUsdtPerpetualSource:
         self._rank_by_exec = {}
         self._next_rank = 1
         self._anchor_exec_id = None
+        self._proven = []
+        self._proven_from_ms = None
 
     def close(self) -> None:
         self._http.close()

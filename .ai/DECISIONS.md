@@ -2422,6 +2422,28 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** Focused tests live in
   `backend/tests/test_automated_paper_loop.py`. Do not deploy or activate.
 
+## AT-ADR-071 — Bybit forward trade tail is retained on the connection
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Context:** Staging produced one Bybit BTCUSDT observation, then later
+  reads raised `IncompleteTradeWindowError`. Each recent-trade response was
+  required to reach the original window start. The public buffer only returns
+  the latest prints, so a later page can still contain the last proven
+  execution id after it has dropped that prefix.
+- **Decision:** The first page on a connection must reach the requested start.
+  That proven tail is kept for the connection. A later page extends it only
+  when it still contains the last proven execution id. The returned window is
+  the retained tail clipped to the request. A page that drops the watermark
+  fails closed. Trades are not invented. A new connection id proves its prefix
+  again.
+- **Alternatives considered:** Treat every short page as a complete window
+  (rejected: that hides a missing prefix). Fill a dropped watermark with
+  synthetic prints (rejected: fabricated evidence).
+- **Safety impact:** Paper only. Spot rejection, Binance primary, and Bybit
+  secondary are unchanged. Real trading stays false.
+- **Consequences:** Tests in `backend/tests/test_bybit_usdt_perpetual_evidence.py`.
+  No deploy, no Watcher arm, no Telegram activation.
+
 ## AT-ADR-070 — Failover perpetual evidence reports the active market-data kind
 - **Date:** 2026-09-25
 - **Status:** Accepted
