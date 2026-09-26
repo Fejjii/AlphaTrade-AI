@@ -29,6 +29,7 @@ from app.persistence.runtime_status import (
 )
 from app.runtime_safety.paper_actions import (
     automated_paper_actions_blocked,
+    read_enrollment_runtime_kill_switch,
     read_kill_switch_active,
     read_process_kill_switch,
 )
@@ -269,16 +270,27 @@ class TelegramPaperRuntime:
         )
 
     def _kill_switch_active(self) -> bool:
+        """Pause delivery for the bound tenant. Enrollment is not process-wide.
+
+        Projection and any runtime that already has a recipient use that
+        organization's switch. Enrollment does not: an unrelated tenant must
+        not block another tenant's binding. The ops global switch still pauses
+        enrollment. A read error fails closed.
+        """
+
         try:
-            with self._session_factory() as session:
-                if self._controller is not None:
-                    active = read_kill_switch_active(
-                        session,
-                        self._settings,
-                        self._controller.recipient_organization_id,
-                    )
-                else:
-                    active = read_process_kill_switch(session, self._settings)
+            if self._posture == "enrollment" and self._controller is None:
+                active = read_enrollment_runtime_kill_switch(self._settings)
+            else:
+                with self._session_factory() as session:
+                    if self._controller is not None:
+                        active = read_kill_switch_active(
+                            session,
+                            self._settings,
+                            self._controller.recipient_organization_id,
+                        )
+                    else:
+                        active = read_process_kill_switch(session, self._settings)
         except Exception:
             return True
         return automated_paper_actions_blocked(active)
