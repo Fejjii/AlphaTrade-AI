@@ -8,7 +8,7 @@ import {
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
 
-const MONITOR_ROUTES = ["/", "/watcher", "/market-watcher", "/decision", "/strategy-lab"] as const;
+const MONITOR_ROUTES = ["/watcher", "/market-watcher", "/decision", "/strategy-lab"] as const;
 
 async function hasHorizontalOverflow(page: Page): Promise<boolean> {
   return page.evaluate(() => {
@@ -90,6 +90,13 @@ test.describe("Watcher paper monitoring", () => {
     request,
   }) => {
     await installSharedE2ESession(page, request);
+
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+    await expect(paperModeActive(page)).toBeVisible();
+    await expect(page.getByTestId("dashboard-watcher-status")).toContainText("Stopped");
+    await expect(page.getByTestId("watcher-monitoring-card")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /place real order/i })).toHaveCount(0);
 
     for (const route of MONITOR_ROUTES) {
       await page.goto(route);

@@ -1,47 +1,15 @@
 import type { LucideIcon } from "lucide-react";
-import {
-  Activity,
-  BarChart3,
-  Bell,
-  BookOpen,
-  Bot,
-  Brain,
-  CalendarClock,
-  ClipboardCheck,
-  CreditCard,
-  Eye,
-  FilePenLine,
-  FileText,
-  FlaskConical,
-  Gauge,
-  GitCompare,
-  GraduationCap,
-  Inbox,
-  LayoutDashboard,
-  LineChart,
-  ListChecks,
-  Menu,
-  Microscope,
-  PlayCircle,
-  Radio,
-  Scale,
-  ScanSearch,
-  Settings,
-  Shield,
-  Target,
-  Upload,
-  Wallet,
-} from "lucide-react";
+import { BookOpen, Bot, Layers, LayoutDashboard, Settings, SlidersHorizontal } from "lucide-react";
 
-export type DestinationId =
-  | "dashboard"
-  | "plan"
-  | "signals"
-  | "validate"
-  | "journal"
-  | "analyze"
-  | "portfolio"
-  | "settings";
+import {
+  ADVANCED_ROUTES,
+  isAdvancedPath,
+  matchesAnyPrefix,
+  resolveAdvancedRoute,
+  SETTINGS_ROUTE_PREFIXES,
+} from "@/components/layout/advanced-routes";
+
+export type DestinationId = "dashboard" | "agent" | "strategies" | "journal" | "settings";
 
 export type NavLink = {
   href: string;
@@ -64,7 +32,7 @@ export type SecondaryNavGroup = {
   items: readonly NavLink[];
 };
 
-/** Exactly eight primary destinations (AT-039 §2.1 / §3.1). */
+/** Five trader destinations. Engineering routes live under Settings / Advanced. */
 export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   {
     id: "dashboard",
@@ -74,25 +42,18 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
     ariaLabel: "Dashboard",
   },
   {
-    id: "plan",
-    label: "Plan",
-    href: "/decision",
+    id: "agent",
+    label: "Agent",
+    href: "/agent",
     icon: Bot,
-    ariaLabel: "Plan",
+    ariaLabel: "Agent",
   },
   {
-    id: "signals",
-    label: "Signals",
-    href: "/tradingview-signals",
-    icon: Radio,
-    ariaLabel: "Signals",
-  },
-  {
-    id: "validate",
-    label: "Validate",
-    href: "/paper-validation",
-    icon: Inbox,
-    ariaLabel: "Validate",
+    id: "strategies",
+    label: "Strategies",
+    href: "/strategies",
+    icon: Layers,
+    ariaLabel: "Strategies",
   },
   {
     id: "journal",
@@ -100,20 +61,6 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
     href: "/journal",
     icon: BookOpen,
     ariaLabel: "Journal",
-  },
-  {
-    id: "analyze",
-    label: "Analytics",
-    href: "/analytics",
-    icon: BarChart3,
-    ariaLabel: "Analytics",
-  },
-  {
-    id: "portfolio",
-    label: "Portfolio",
-    href: "/portfolio",
-    icon: Wallet,
-    ariaLabel: "Portfolio",
   },
   {
     id: "settings",
@@ -124,117 +71,25 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   },
 ] as const;
 
-/** Mobile bottom bar: Dashboard, Signals, Plan (center), Portfolio, Menu. */
+/** Phone tab bar shows every primary destination. Advanced work stays inside Settings. */
 export const MOBILE_BOTTOM_DESTINATION_IDS: readonly DestinationId[] = [
   "dashboard",
-  "signals",
-  "plan",
-  "portfolio",
-] as const;
-
-/** Menu sheet destinations (remaining four). */
-export const MOBILE_MENU_DESTINATION_IDS: readonly DestinationId[] = [
-  "validate",
+  "agent",
+  "strategies",
   "journal",
-  "analyze",
   "settings",
 ] as const;
 
-export const MENU_NAV_ITEM = {
-  id: "menu" as const,
-  label: "Menu",
-  icon: Menu,
-  ariaLabel: "Open navigation menu",
-};
+const JOURNAL_PREFIXES = ["/journal", "/lessons", "/learning-analytics", "/coaching"] as const;
+const STRATEGY_PREFIXES = ["/strategies", "/strategy-lab", "/knowledge"] as const;
+const AGENT_PREFIXES = ["/agent"] as const;
 
 export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
-    destinationId: "plan",
-    items: [
-      { href: "/decision", label: "Decision", icon: ListChecks },
-      { href: "/decision/market", label: "Market quality", icon: LineChart },
-      { href: "/decision/candidates", label: "Candidates", icon: Inbox },
-      { href: "/decision/strategy", label: "Strategy performance", icon: Gauge },
-      { href: "/workspace", label: "AI assist", icon: Bot },
-      { href: "/proposals", label: "Proposals", icon: FileText },
-      { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
-      { href: "/pre-trade", label: "Pre-Trade", icon: Scale },
-      { href: "/manual-levels", label: "Manual Levels", icon: Target },
-      { href: "/strategy-lab", label: "Strategy Lab", icon: FlaskConical },
-    ],
-  },
-  {
-    destinationId: "signals",
-    items: [
-      { href: "/tradingview-signals", label: "Signals inbox", icon: Radio },
-      { href: "/alerts", label: "Alerts", icon: Bell },
-      { href: "/alerts/review", label: "Setup Review", icon: ScanSearch },
-      { href: "/watcher", label: "Watcher Scanner", icon: Radio },
-      { href: "/market-watcher", label: "Market Watcher", icon: Eye },
-      { href: "/market", label: "Market Monitor", icon: LineChart },
-      { href: "/watchlist", label: "Watchlist", icon: Eye },
-      {
-        href: "/paper-signal-orchestration",
-        label: "Signal Orchestration",
-        icon: GitCompare,
-        advanced: true,
-      },
-    ],
-  },
-  {
-    destinationId: "validate",
-    items: [
-      { href: "/paper-validation", label: "Validate hub", icon: Inbox },
-      { href: "/paper-validation/drafts", label: "Drafts", icon: FilePenLine },
-      { href: "/paper-validation/candidates", label: "Candidates", icon: Inbox },
-      { href: "/paper-validation/run-plans", label: "Run Plans", icon: CalendarClock },
-      { href: "/paper-validation/run-sessions", label: "Run Sessions", icon: PlayCircle },
-      { href: "/validation-priority", label: "Validation Priority", icon: ListChecks },
-      {
-        href: "/research-validation",
-        label: "Research Validation",
-        icon: Microscope,
-        advanced: true,
-      },
-    ],
-  },
-  {
-    destinationId: "journal",
-    items: [
-      { href: "/journal", label: "Journal", icon: BookOpen },
-      { href: "/journal/import", label: "Import", icon: Upload },
-      { href: "/lessons", label: "Lessons", icon: GraduationCap },
-      { href: "/knowledge", label: "Knowledge", icon: ListChecks },
-    ],
-  },
-  {
-    destinationId: "analyze",
-    items: [
-      { href: "/analytics", label: "Analytics hub", icon: BarChart3 },
-      { href: "/journal/statistics", label: "Journal Statistics", icon: BarChart3 },
-      { href: "/journal/comparison", label: "Human vs System", icon: GitCompare },
-      { href: "/learning-analytics", label: "Learning Analytics", icon: Brain },
-      { href: "/coaching", label: "Coaching", icon: GraduationCap },
-      { href: "/strategy-quality", label: "Strategy Quality", icon: Gauge },
-    ],
-  },
-  {
-    destinationId: "portfolio",
-    items: [
-      { href: "/portfolio", label: "Overview", icon: Wallet },
-      { href: "/positions", label: "Positions", icon: Wallet },
-      { href: "/risk", label: "Risk settings", icon: Shield },
-    ],
-  },
-  {
     destinationId: "settings",
     items: [
-      { href: "/settings", label: "Settings", icon: Settings },
-      // Billing & Usage are one L2 section; /risk config split is deferred to Phase C.
-      { href: "/settings/billing", label: "Billing & Usage", icon: CreditCard },
-      { href: "/settings/team", label: "Team", icon: ClipboardCheck },
-      { href: "/settings/audit", label: "Audit", icon: Activity, advanced: true },
-      { href: "/settings/exchange", label: "Exchange diagnostics", icon: Radio, advanced: true },
+      { href: "/settings", label: "Account", icon: Settings },
+      { href: "/settings/advanced", label: "Advanced", icon: SlidersHorizontal, advanced: true },
     ],
   },
 ] as const;
@@ -242,69 +97,17 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
 /** Ordered prefix rules; first match wins. Dashboard `/` is exact-only. */
 const DESTINATION_MATCHERS: readonly { id: DestinationId; match: (pathname: string) => boolean }[] =
   [
-    {
-      id: "validate",
-      match: (p) =>
-        p.startsWith("/paper-validation") ||
-        p.startsWith("/validation-priority") ||
-        p.startsWith("/research-validation") ||
-        p.startsWith("/backtests"),
-    },
-    {
-      id: "signals",
-      match: (p) =>
-        p.startsWith("/tradingview-signals") ||
-        p.startsWith("/alerts") ||
-        p.startsWith("/watcher") ||
-        p.startsWith("/market-watcher") ||
-        p.startsWith("/market") ||
-        p.startsWith("/watchlist") ||
-        p.startsWith("/paper-signal-orchestration"),
-    },
-    {
-      id: "analyze",
-      match: (p) =>
-        p.startsWith("/analytics") ||
-        p.startsWith("/journal/statistics") ||
-        p.startsWith("/journal/comparison") ||
-        p.startsWith("/learning-analytics") ||
-        p.startsWith("/coaching") ||
-        p.startsWith("/strategy-quality"),
-    },
-    {
-      id: "journal",
-      match: (p) =>
-        p === "/journal" ||
-        p.startsWith("/journal/") ||
-        p.startsWith("/lessons") ||
-        p.startsWith("/knowledge"),
-    },
-    {
-      id: "plan",
-      match: (p) =>
-        p.startsWith("/decision") ||
-        p.startsWith("/workspace") ||
-        p.startsWith("/proposals") ||
-        p.startsWith("/approvals") ||
-        p.startsWith("/pre-trade") ||
-        p.startsWith("/manual-levels") ||
-        p.startsWith("/strategy-lab"),
-    },
-    {
-      id: "portfolio",
-      match: (p) => p.startsWith("/portfolio") || p.startsWith("/positions") || p === "/risk",
-    },
+    { id: "journal", match: (pathname) => matchesAnyPrefix(pathname, JOURNAL_PREFIXES) },
+    { id: "strategies", match: (pathname) => matchesAnyPrefix(pathname, STRATEGY_PREFIXES) },
+    { id: "agent", match: (pathname) => matchesAnyPrefix(pathname, AGENT_PREFIXES) },
     {
       id: "settings",
-      match: (p) =>
-        p.startsWith("/settings") ||
-        p.startsWith("/billing") ||
-        p.startsWith("/usage") ||
-        p.startsWith("/invitations") ||
-        p.startsWith("/audit") ||
-        p.startsWith("/exchange"),
+      match: (pathname) =>
+        pathname === "/settings/advanced" ||
+        matchesAnyPrefix(pathname, SETTINGS_ROUTE_PREFIXES) ||
+        isAdvancedPath(pathname),
     },
-    { id: "dashboard", match: (p) => p === "/" },
+    { id: "dashboard", match: (pathname) => pathname === "/" },
   ];
 
 export function getDestinationId(pathname: string): DestinationId | null {
@@ -315,7 +118,7 @@ export function getDestinationId(pathname: string): DestinationId | null {
 }
 
 export function getPrimaryDestination(id: DestinationId): PrimaryDestination {
-  const found = PRIMARY_DESTINATIONS.find((d) => d.id === id);
+  const found = PRIMARY_DESTINATIONS.find((destination) => destination.id === id);
   if (!found) {
     throw new Error(`Unknown destination: ${id}`);
   }
@@ -330,9 +133,9 @@ export function isNavLinkActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   if (href === "/settings") return pathname === "/settings";
   if (href === "/journal") return pathname === "/journal";
-  // Validate hub is exact-only so stage routes do not keep the hub link current.
-  if (href === "/paper-validation") return pathname === "/paper-validation";
-  if (href === "/decision") return pathname === "/decision";
+  if (href === "/settings/advanced") {
+    return pathname === href || (pathname !== "/settings" && isAdvancedPath(pathname));
+  }
   if (href === "/risk") return pathname === "/risk" || pathname.startsWith("/risk/");
   if (href === "/alerts") return pathname === "/alerts" || pathname.startsWith("/alerts/");
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -340,7 +143,6 @@ export function isNavLinkActive(pathname: string, href: string): boolean {
 
 /**
  * Exactly one secondary link may be current: prefer the longest matching href.
- * Dynamic detail routes without a more-specific item keep the parent match.
  */
 export function resolveSecondaryActiveHref(
   pathname: string,
@@ -352,7 +154,10 @@ export function resolveSecondaryActiveHref(
   return matches[0]?.href ?? null;
 }
 
-export function isPrimaryDestinationActive(pathname: string, destination: PrimaryDestination): boolean {
+export function isPrimaryDestinationActive(
+  pathname: string,
+  destination: PrimaryDestination,
+): boolean {
   return getDestinationId(pathname) === destination.id;
 }
 
@@ -364,8 +169,8 @@ export type PageIdentity = {
 };
 
 /**
- * Route-aware page identity derived only from the centralized navigation config.
- * Dynamic detail routes fall back to the owning primary / parent secondary item.
+ * Route-aware page identity. Trader hubs use the primary label.
+ * Retained operational routes keep their own subtitle under that hub.
  */
 export function resolvePageIdentity(pathname: string): PageIdentity {
   const destinationId = getDestinationId(pathname);
@@ -379,11 +184,28 @@ export function resolvePageIdentity(pathname: string): PageIdentity {
   }
 
   const primary = getPrimaryDestination(destinationId);
+  const labeled = resolveAdvancedRoute(pathname);
+  if (labeled && labeled.href !== primary.href) {
+    return {
+      primaryLabel: primary.label,
+      secondaryLabel: labeled.label,
+      title: primary.label,
+      subtitle: labeled.label,
+    };
+  }
+
+  if (pathname === "/settings/advanced") {
+    return {
+      primaryLabel: primary.label,
+      secondaryLabel: "Advanced",
+      title: primary.label,
+      subtitle: "Advanced",
+    };
+  }
+
   const secondaryItems = getSecondaryItems(destinationId);
   const activeHref = resolveSecondaryActiveHref(pathname, secondaryItems);
   const secondary = secondaryItems.find((item) => item.href === activeHref) ?? null;
-
-  // Hub exact match with the destination entry: title only.
   if (!secondary || (secondary.href === primary.href && pathname === primary.href)) {
     return {
       primaryLabel: primary.label,
@@ -404,13 +226,16 @@ export function resolvePageIdentity(pathname: string): PageIdentity {
 /** Flat reachability map used by tests — every retained capability path. */
 export function listReachableHrefs(): string[] {
   const hrefs = new Set<string>();
-  for (const dest of PRIMARY_DESTINATIONS) {
-    hrefs.add(dest.href);
+  for (const destination of PRIMARY_DESTINATIONS) {
+    hrefs.add(destination.href);
   }
   for (const group of SECONDARY_NAV) {
     for (const item of group.items) {
       hrefs.add(item.href);
     }
+  }
+  for (const route of ADVANCED_ROUTES) {
+    hrefs.add(route.href);
   }
   return [...hrefs].sort();
 }

@@ -178,6 +178,7 @@ function resetAsyncState() {
 
 beforeEach(() => {
   resetAsyncState();
+  search.set("view", "record");
   safetyPosture.executionMode = "paper";
   safetyPosture.realTradingEnabled = false;
   for (const key of [
