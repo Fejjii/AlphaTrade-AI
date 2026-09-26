@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, RefreshCw, UserRound } from "lucide-react";
+import { ChevronDown, RefreshCw, Search, UserRound } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -90,10 +90,12 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
           <button
             type="button"
             onClick={onOpenCommandMenu}
-            className="hidden min-h-11 items-center rounded-control border border-border-subtle px-2 py-1.5 text-caption text-text-muted hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus md:inline-flex"
+            data-testid="topbar-search"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-control border border-border-subtle px-2 py-1.5 text-caption text-text-muted hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             aria-label="Search pages and destinations"
           >
-            Search ⌘K
+            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="hidden md:inline">Search</span>
           </button>
 
           <span className="hidden lg:inline-flex" data-testid="topbar-providers-chip">

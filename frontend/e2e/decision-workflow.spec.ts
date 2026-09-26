@@ -172,7 +172,7 @@ test.describe("Canonical paper decision workflow", () => {
     expect(monitor.current_price?.is_live).toBe(false);
   });
 
-  test("iPhone-width decision hub does not overflow and keeps Plan in the bottom nav", async ({
+  test("iPhone-width decision hub does not overflow and keeps trader tabs", async ({
     page,
     request,
   }) => {
@@ -181,8 +181,13 @@ test.describe("Canonical paper decision workflow", () => {
     await page.goto("/decision");
     await expect(page.getByRole("heading", { level: 1, name: "Decision" })).toBeVisible();
     expect(await hasHorizontalOverflow(page)).toBeFalsy();
-    const plan = page.getByTestId("mobile-bottom-navigation").getByRole("link", { name: "Plan" });
-    await expect(plan).toHaveAttribute("href", "/decision");
+    const nav = page.getByTestId("mobile-bottom-navigation");
+    await expect(nav.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
+    await expect(nav.getByRole("link", { name: "Agent" })).toHaveAttribute("href", "/agent");
+    await expect(nav.getByRole("link", { name: "Strategies" })).toHaveAttribute("href", "/strategies");
+    await expect(nav.getByRole("link", { name: "Journal" })).toHaveAttribute("href", "/journal");
+    await expect(nav.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+    await expect(nav.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("banner").getByTestId("kill-switch-button")).toBeVisible();
     await expect(
       page.getByTestId("decision-safety-rail").getByTestId("kill-switch-button"),

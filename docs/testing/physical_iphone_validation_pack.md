@@ -10,7 +10,7 @@
 |---|---|
 | PR #41 audit — `docs/product/at040_final_polish_and_readiness_audit.md` (§4 staging, §5 physical iPhone) | Why this pack exists; historical staging lag notes; physical iPhone still required |
 | `docs/testing/at041_pr4_readiness_checklist.md` §B / §C | Automated vs pending physical separation |
-| Mobile nav (`MobileBottomNavigation`, `MobileMenuSheet`, `navigation-config`) | Bottom bar + Menu sheet destinations |
+| Mobile nav (`MobileBottomNavigation`, `navigation-config`) | Five trader tabs: Dashboard, Agent, Strategies, Journal, Settings |
 | Paper close (`/positions`, `PositionCard`) | Explicit exit-price close flow (FP2-001) |
 | Command menu (`CommandMenu`, `TopBar`) | Navigation palette — touch affordance note below |
 | Kill switch (`KillSwitchButton`) | In-app confirm dialog + BLOCK chrome |
@@ -127,8 +127,8 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 
 | Surface | Destinations |
 |---|---|
-| Bottom bar | Dashboard `/` · Signals `/tradingview-signals` · Plan `/workspace` · Portfolio `/portfolio` · **Menu** (sheet) |
-| Menu sheet | Validate `/paper-validation` · Journal `/journal` · Analytics `/analytics` · Settings `/settings` |
+| Bottom bar | Dashboard `/` · Agent `/agent` · Strategies `/strategies` · Journal `/journal` · Settings `/settings` |
+| Settings / Advanced | Retained operational pages (signals, plan, validate, portfolio, analytics, watcher, billing). Also in the command menu. |
 
 ### Step A — Registration / login
 
@@ -150,28 +150,28 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| C1 | Bottom nav → **Signals** (`/tradingview-signals`) | Inbox loads or honest empty/error state (not a false “all clear” if load failed) | |
+| C1 | Settings → Advanced → **Signals inbox**, or Search → `/tradingview-signals` | Inbox loads or honest empty/error state (not a false “all clear” if load failed). Signals is not a primary tab. | |
 | C2 | If signals exist, open one | Detail/selection works with touch | |
 
 ### Step D — Plan
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| D1 | Bottom nav → **Plan** (`/workspace`) | Plan workspace loads; kill-switch control reachable from shell/page | |
+| D1 | Bottom nav → **Agent** (`/agent`), then optionally Search → **AI assist** (`/workspace`) | Agent workspace loads. `/workspace` remains the existing assist page and is not a primary tab. Kill-switch control stays reachable from the shell. | |
 | D2 | Spot-check touch targets | Primary actions comfortably tappable | |
 
 ### Step E — Validate
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| E1 | Menu → **Validate** (`/paper-validation`) | Page loads; tables/panels scroll horizontally inside wrappers if wide | |
-| E2 | Return via Menu or browser back | Navigation remains coherent | |
+| E1 | Settings → Advanced → **Validate hub** (`/paper-validation`) | Page loads; tables/panels scroll horizontally inside wrappers if wide | |
+| E2 | Return via browser back or Settings | Navigation remains coherent | |
 
 ### Step F — Journal
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| F1 | Menu → **Journal** (`/journal`) | Journal loads | |
+| F1 | Bottom nav → **Journal** (`/journal`) | Trader journal loads. Record/deep-link hub is `/journal?view=record` or an entry/proposal/position link. | |
 | F2 | Open quick-entry / focus a text field | On-screen keyboard does **not** permanently hide the focused field or sticky save/submit | |
 | F3 | Dismiss keyboard; scroll list | Entries readable; no clipped controls under home indicator | |
 
@@ -179,22 +179,22 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| G1 | Tap each bottom item: Dashboard, Signals, Plan, Portfolio | Correct route each time; active state sensible | |
+| G1 | Tap each bottom item: Dashboard, Agent, Strategies, Journal, Settings | Correct route each time; active state sensible | |
 | G2 | Confirm bar clears home indicator | Icons/labels not obscured by safe-area | |
 
-### Step H — Menu sheet
+### Step H — Settings / Advanced
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| H1 | Tap **Menu** (`mobile-menu-button`) | Sheet opens (`More destinations`); backdrop dims | |
-| H2 | Tap outside / backdrop to dismiss | Sheet closes; focus returns sensibly | |
-| H3 | Re-open; navigate to Validate, Journal, Analytics, Settings | Each destination works; sheet closes on navigate | |
+| H1 | Bottom nav → **Settings**, then **Open advanced pages** (`/settings/advanced`) | Directory lists retained operational routes | |
+| H2 | Open Validate hub, Analytics, and Portfolio from that directory | Each page still loads. Routes were not deleted. | |
+| H3 | Confirm there is no Menu sheet (`mobile-menu-button`) | Phone uses the five tabs plus Search | |
 
 ### Step I — Safe-area and landscape
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| I1 | Portrait: sticky headers / bottom nav / Menu sheet | Clear of notch and home indicator | |
+| I1 | Portrait: sticky headers / bottom nav | Clear of notch and home indicator | |
 | I2 | Rotate to landscape briefly on Dashboard + one dense page (Portfolio or Analytics) | No permanent clip under notch/status; usable enough to dismiss landscape | |
 | I3 | Return to portrait | Layout recovers without broken overlay | |
 
@@ -224,7 +224,7 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 
 ### Step M — Paper-position close with explicit exit price
 
-**Route:** `/positions` (Portfolio bottom tab → secondary nav **Positions**).
+**Route:** `/positions` (Settings → Advanced → Positions, or Search).
 
 | # | Action | Expected | Result |
 |---|---|---|---|
@@ -237,11 +237,11 @@ For **every** step, fill a row in §3 (evidence log). Mark **PASS** / **FAIL** /
 
 ### Step N — Command menu using touch
 
-**Known product fact (verify, do not assume fixed):** the TopBar **Search ⌘K** control is `hidden` below the `md` breakpoint, and the desktop sidebar command button is not shown on phone. ⌘K has no iPhone equivalent without a hardware keyboard.
+**Known product fact:** phone Search is the TopBar control `topbar-search` (visible at all widths). The desktop sidebar command button is not shown on phone. There is no Menu sheet.
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| N1 | Look for any on-screen Search / command-menu control in TopBar, Menu sheet, or elsewhere | If **none** is visible: mark **FAIL** (missing touch affordance) — not PASS | |
+| N1 | Look for the TopBar Search control on a phone-width viewport | The Search button is visible. If none is visible: mark **FAIL** | |
 | N2 | If a control exists, open command menu with touch | Menu (`command-menu`) opens; destinations tappable | |
 | N3 | Navigate via an entry; dismiss | Closes cleanly; lands on correct route | |
 | N4 | Optional: hardware keyboard Cmd/Ctrl+K | Only if available; does **not** replace touch evidence | |
@@ -371,7 +371,7 @@ Use one report per distinct defect.
 |---|---|
 | P0 | Fabricated exit price; false-empty hiding errors; kill switch fails to block; live-trading implication; data loss |
 | P1 | Deep link opens wrong record; keyboard permanently hides confirm; BLOCK chrome missing when kill switch on |
-| P2 | Menu sheet animation glitch; landscape clutter; filter disclosure awkward |
+| P2 | Tab label truncation; landscape clutter; filter disclosure awkward |
 | P3 | Cosmetic label mismatch |
 
 ---
@@ -454,16 +454,19 @@ After iPhone evidence is collected (this pack), complete PR #41 as follows. **Do
 | Login | `/login` |
 | Register | `/register` |
 | Dashboard | `/` |
-| Signals | `/tradingview-signals` |
-| Plan | `/workspace` |
-| Validate | `/paper-validation` |
+| Agent | `/agent` |
+| Strategies | `/strategies` |
 | Journal | `/journal` |
+| Settings | `/settings` |
+| Advanced directory | `/settings/advanced` |
+| Signals | `/tradingview-signals` |
+| Plan / AI assist | `/workspace` |
+| Validate | `/paper-validation` |
 | Portfolio | `/portfolio` |
 | Positions (paper close) | `/positions` |
 | Risk | `/risk` |
 | Analytics | `/analytics` |
 | Knowledge | `/knowledge` |
-| Settings | `/settings` |
 
 ## Appendix B — Suggested Messages deep-link scratchpad
 

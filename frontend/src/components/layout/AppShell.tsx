@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </main>
           </div>
         </div>
-        <MobileBottomNavigation onOpenCommandMenu={() => setCommandOpen(true)} />
+        <MobileBottomNavigation />
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </div>
     </ShellFreshnessProvider>
