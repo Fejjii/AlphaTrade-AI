@@ -19,7 +19,7 @@ Watcher is already healthy:
 - `WATCHER_PAPER_STAGING_ACTIVATION=true` on the worker only
 - `WATCHER_ORCHESTRATION_ENABLED=true` on the worker only
 - `GET /health` `worker_runtime.watcher.available` is true and status is fresh
-- Alembic head `f1a2b3c4d5e6`
+- Alembic head `a8c3e1b94d20`
 - `TELEGRAM_ALERTS_ENABLED=false`
 - `AUTOMATIC_TELEGRAM_DELIVERY_ENABLED=false`
 - `TELEGRAM_WEBHOOK_SECRET` empty

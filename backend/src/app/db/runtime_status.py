@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -45,3 +45,5 @@ class ControlledRuntimeStatusRow(Base):
     request_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rate_limited_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cache_hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    process_rss_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    process_rss_peak_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

@@ -23,9 +23,10 @@ from app.analysis.wilder_atr_v1 import (
 )
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
-    cvd_at_close,
     first_slice_baseline_open,
     first_slice_cvd_window,
+    signed_quote_delta_until,
+    snapshot_terminal_event_time,
 )
 from app.market_contracts.enums import (
     Finality,
@@ -66,7 +67,6 @@ from app.market_contracts.identity import (
 )
 from app.market_contracts.observation import PublicMarketObservation
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
-from app.market_contracts.trades import order_trades
 from app.schemas.common import Timeframe, TradeDirection
 from app.services.canonical_serialization import canonical_sha256
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
@@ -707,7 +707,7 @@ def _evaluate_freshness_and_flow(
         )
         if live_window:
             evaluate_freshness(
-                source_time=max(trade.event_timestamp for trade in snapshot.trades),
+                source_time=snapshot_terminal_event_time(snapshot),
                 evaluated_at=evaluated,
                 policy=first_slice_freshness_policy(),
                 require_fresh=True,
@@ -850,12 +850,14 @@ def _evaluate_freshness_and_flow(
                 evidence_role=EvidenceRole.VOLUME,
             )
 
-    ordered = order_trades(list(snapshot.trades))
-    cvd_t = cvd_at_close(
-        ordered, window_start=window_start, bar_end=trigger.interval_end, baseline=Decimal("0")
+    cvd_t = signed_quote_delta_until(
+        snapshot, window_start=window_start, bar_end=trigger.interval_end, baseline=Decimal("0")
     )
-    cvd_s = cvd_at_close(
-        ordered, window_start=window_start, bar_end=swing.bar.interval_end, baseline=Decimal("0")
+    cvd_s = signed_quote_delta_until(
+        snapshot,
+        window_start=window_start,
+        bar_end=swing.bar.interval_end,
+        baseline=Decimal("0"),
     )
     cvd_ok = trigger.high > swing.price and cvd_t < cvd_s
     rules["bearish_cvd_divergence"] = _rule(

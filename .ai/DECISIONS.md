@@ -2469,4 +2469,38 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` and
   `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual`.
 
+## AT-ADR-072 — Watcher scans release the trade tape after the proof is bound
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** The consolidated paper worker (Watcher plus Telegram) exceeded
+  the 512 MB Render limit during Watcher scans and was temporarily moved to
+  2 GB. CPU stayed low. The scan fetches about eight hours of aggTrades and
+  was retaining every trade as a `TradeEvent`, plus raw cache copies and a
+  monitor book that grew for the life of the process.
+- **Decision:**
+  1. Binance scan retrieval streams aggTrades, binds the same coverage hash
+     and closed-bar Decimal sums, and stores `trades=[]` with a
+     `ReleasedTradeTape`. Replay fixtures keep the full trade list. CVD,
+     signed flow, and bearish-divergence sums read the tape when trades are
+     absent. The 32-bar lookback is unchanged.
+  2. Raw aggTrade cache entries larger than
+     `binance_evidence_cache_max_rows` (default 4096) are not stored. The
+     reduced snapshot for a closed window is cached instead.
+  3. The market monitor keeps coverage and CVD totals for the latest window
+     and drops trades older than `last_event_at`. Reconnect clears the book.
+  4. The worker logs RSS, sets Prometheus gauges, and writes nullable
+     `process_rss_bytes` / `process_rss_peak_bytes` (`BigInteger`) on
+     `controlled_runtime_status`. Alembic head `a8c3e1b94d20` revises
+     `f1a2b3c4d5e6`. No secrets are included.
+  5. Real trading stays impossible. Render is not changed by this decision.
+- **Alternatives considered:** Shorten the CVD lookback (rejected: that
+  changes the strategy). Keep the 2 GB tier without a code change (rejected:
+  the spike is retention, and a streamed tape stayed flat in measurement).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Risk `BLOCK` stays final.
+- **Consequences:** Staging can retest the 512 MB worker after a human
+  deploy. A 10-minute monitor stall can still materialize that short window.
+  Live BTCUSDT trade counts were not measured from this environment
+  (HTTP 451). This decision does not deploy.
+
 

@@ -31,11 +31,13 @@ from app.market_contracts.catalog import (
     default_perpetual_catalog,
     instrument_for_source,
 )
-from app.market_contracts.cursor import TradeStreamAssembler
+from app.market_contracts.cursor import TradeStreamAssembler, TradeStreamSnapshot
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
     first_slice_baseline_open,
     first_slice_cvd_window,
+    snapshot_terminal_event_time,
+    snapshot_terminal_price,
 )
 from app.market_contracts.enums import DataCompleteness, Finality, FreshnessState, MarketType
 from app.market_contracts.errors import (
@@ -60,7 +62,7 @@ from app.market_contracts.freshness import (
     first_slice_freshness_policy,
     live_confirmation_window_open,
 )
-from app.market_contracts.identity import EvidenceMarketIdentity
+from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
@@ -214,21 +216,14 @@ class FirstSliceEvidenceAssembler:
             f"{instrument.instrument_id}:{self._source.name}:"
             f"{window_start.isoformat()}:{window_end.isoformat()}",
         )
-        batch = self._source.fetch_ordered_trades(
+        snapshot = self._load_trade_snapshot(
             identity=trigger_identity,
             instrument=instrument,
-            start=window_start,
-            end=window_end,
-            source_connection_id=lineage,
-            receive_at=clock,
+            window_start=window_start,
+            window_end=window_end,
+            lineage=lineage,
+            clock=clock,
         )
-        assembler = TradeStreamAssembler(
-            trigger_identity,
-            connected_at=clock,
-            connection_identity=lineage,
-            expected_contiguous_count=len(batch.trades),
-        )
-        snapshot = assembler.ingest_batch(batch, observed_at=clock)
         live_window = live_confirmation_window_open(
             closed_interval_end=trigger.interval_end,
             evaluated_at=clock,
@@ -248,7 +243,7 @@ class FirstSliceEvidenceAssembler:
             require_live_freshness=live_window,
         )
         freshness = evaluate_freshness(
-            source_time=cvd.event_time_max or snapshot.trades[-1].event_timestamp,
+            source_time=cvd.event_time_max or snapshot_terminal_event_time(snapshot),
             evaluated_at=clock,
             policy=first_slice_freshness_policy(),
             require_fresh=live_window,
@@ -354,8 +349,49 @@ class FirstSliceEvidenceAssembler:
             evidence_window=window,
             evidence_window_hash=window.content_hash,
             connection_id=lineage,
-            evaluation_mark=snapshot.trades[-1].price,
+            evaluation_mark=snapshot_terminal_price(snapshot),
         )
+
+    def _load_trade_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        window_start: datetime,
+        window_end: datetime,
+        lineage: UUID,
+        clock: datetime,
+    ) -> TradeStreamSnapshot:
+        """Load the scan window. Binance reduces it; replay keeps the trade list."""
+
+        reduce = getattr(self._source, "reduce_ordered_trades", None)
+        if callable(reduce):
+            reduced = reduce(
+                identity=identity,
+                instrument=instrument,
+                start=window_start,
+                end=window_end,
+                source_connection_id=lineage,
+                receive_at=clock,
+            )
+            if not isinstance(reduced, TradeStreamSnapshot):
+                raise WrongSourceError("Trade reduction did not return a snapshot.")
+            return reduced
+        batch = self._source.fetch_ordered_trades(
+            identity=identity,
+            instrument=instrument,
+            start=window_start,
+            end=window_end,
+            source_connection_id=lineage,
+            receive_at=clock,
+        )
+        assembler = TradeStreamAssembler(
+            identity,
+            connected_at=clock,
+            connection_identity=lineage,
+            expected_contiguous_count=len(batch.trades),
+        )
+        return assembler.ingest_batch(batch, observed_at=clock)
 
     def _default_clock(self) -> datetime:
         if self._clock is not None:

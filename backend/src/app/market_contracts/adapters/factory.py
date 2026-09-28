@@ -102,7 +102,9 @@ def _binance_source(
         max_backoff_seconds=settings.binance_request_max_backoff_seconds,
         trade_cache_entries=settings.binance_evidence_cache_entries,
         cache_ttl_seconds=settings.binance_evidence_cache_ttl_seconds,
+        max_cached_rows=settings.binance_evidence_cache_max_rows,
         trade_cache=None if pool is None else pool.cache,
+        reduced_cache=None if pool is None else pool.reduced,
         budget=None if pool is None else pool.budget,
     )
 
