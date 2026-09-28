@@ -2469,4 +2469,32 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` and
   `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual`.
 
+## AT-ADR-072 — Interactive agent orchestrates existing authorities
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** The product is moving toward an Agent surface. Conversation
+  transcripts, strategy previews, journal rows, knowledge chunks, portfolio
+  reads, and coaching summaries already exist. A second store, or free-form
+  chat that writes those records, would split authority.
+- **Decision:**
+  1. `InteractiveAgentService` is an orchestration layer. It appends turns to
+     the existing conversation transcript and reads strategy, knowledge,
+     journal, portfolio, performance, coaching, and watcher records.
+  2. A turn may store a structured proposal. It does not confirm that proposal.
+     Chat text that says "I confirm" does not write domain rows.
+  3. Explicit confirm applies only a complete journal proposal, through
+     `JournalService`. Strategy, rule, lesson, and trade-decision confirms stay
+     `confirmed_unapplied`. Strategy preview rows remain `DRAFT`.
+  4. Screenshot analysis and voice input/output are contracts only. No image or
+     audio is interpreted.
+  5. The agent cannot enable real trading. It does not call execution.
+- **Alternatives considered:** Route the new surface through the existing
+  LangGraph graph (rejected for this slice: that graph can still plan trades).
+  Add a new proposal table (rejected: the transcript and strategy preview
+  tables already store these drafts).
+- **Safety impact:** Paper only. No Render change, no deploy, no live-trading
+  flag. Risk `BLOCK` and execution services are not invoked.
+- **Consequences:** Tests in `backend/tests/test_interactive_agent_foundation.py`.
+  Contract notes in `docs/interactive_agent_foundation.md`.
+
 
