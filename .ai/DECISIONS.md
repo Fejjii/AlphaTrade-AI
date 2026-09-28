@@ -2469,4 +2469,33 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` and
   `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual`.
 
+## AT-ADR-072 — Telegram enrollment ignores unrelated organization kill switches
+- **Date:** 2026-09-26
+- **Status:** Accepted
+- **Context:** Telegram enrollment posture called `read_process_kill_switch()`,
+  which is true when any `KillSwitchState` row is active. One tenant's switch
+  paused enrollment for every tenant (`telegram_runtime_state=paused`,
+  `last_error_code=kill_switch_active`) even after the enrolling organization's
+  switch was deactivated. Enrollment does not mint Candidates, start Watcher
+  paper workflows, enqueue automated notices, or deliver them.
+- **Decision:**
+  1. Enrollment pauses only for `Settings.global_kill_switch_active`. A missing
+     settings object or a failed read of that flag fails closed.
+  2. Organization kill switches stay tenant-scoped for Watcher paper scans,
+     automated paper actions, and Telegram delivery bound to that organization.
+     `read_process_kill_switch()` remains the any-tenant fail-closed reader and
+     is not used for enrollment.
+  3. Real trading stays impossible. This change does not arm live orders.
+- **Alternatives considered:** Keep the any-tenant pause for enrollment
+  (rejected: it blocks unrelated tenants). Also refuse enrollment when the
+  token's own organization switch is active (rejected: enrollment is not an
+  automated paper action, and delivery still checks the bound tenant at send
+  time). Scope `read_process_kill_switch()` itself to one tenant (rejected:
+  that function's contract is the process-wide gate).
+- **Safety impact:** Paper only. Bound-tenant delivery and Watcher scans still
+  stop when that tenant's switch is active or unreadable. The ops global
+  switch still pauses enrollment.
+- **Consequences:** Regression coverage is
+  `backend/tests/test_telegram_enrollment_kill_switch_scope.py`. No deploy.
+
 
