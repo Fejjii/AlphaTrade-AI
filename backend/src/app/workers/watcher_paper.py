@@ -433,6 +433,9 @@ class WatcherPaperRuntime:
         observe_cycle(reason)
         observe_candidates(created)
         self._remember_cycle(report)
+        from app.observability.process_memory import read_process_memory
+
+        memory = read_process_memory()
         logger.info(
             "watcher_paper_cycle",
             worker_id=self._worker_id,
@@ -440,6 +443,8 @@ class WatcherPaperRuntime:
             candidates_created=created,
             kill_switch_active=any_kill,
             reason_code=reason,
+            rss_bytes=memory.rss_bytes,
+            rss_peak_bytes=memory.peak_rss_bytes,
         )
         return report
 
@@ -813,6 +818,7 @@ class WatcherPaperRuntime:
         if self._session_factory is None:
             return
         from app.market_contracts.adapters.request_budget import market_request_metrics
+        from app.observability.process_memory import memory_status_fields
         from app.persistence.runtime_status import (
             WATCHER_COMPONENT,
             RuntimeStatusWrite,
@@ -860,6 +866,7 @@ class WatcherPaperRuntime:
                     request_weight=metrics.weight_used,
                     rate_limited_count=metrics.rate_limited,
                     cache_hits=metrics.cache_hits,
+                    **memory_status_fields(),
                 ),
             )
         except Exception:
@@ -1087,6 +1094,7 @@ def publish_idle_watcher_status(
 ) -> None:
     """Heartbeat a refused or disarmed Watcher. Does not scan or open Telegram."""
 
+    from app.observability.process_memory import memory_status_fields
     from app.persistence.runtime_status import (
         WATCHER_COMPONENT,
         RuntimeStatusWrite,
@@ -1105,6 +1113,7 @@ def publish_idle_watcher_status(
             market_source=settings.perpetual_evidence_source,
             telegram_runtime_state="absent",
             inbound_mode=settings.telegram_inbound_mode.value,
+            **memory_status_fields(),
         ),
     )
 

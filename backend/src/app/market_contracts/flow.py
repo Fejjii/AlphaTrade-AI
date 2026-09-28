@@ -26,6 +26,7 @@ from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import EvidenceMarketIdentity
 from app.market_contracts.models import CanonicalDecimal, CanonicalModel
 from app.market_contracts.ohlcv import OhlcvBar
+from app.market_contracts.released_tape import closed_bar_covering
 
 SIGNED_FLOW_POLICY_VERSION = "signed-quote-delta/total-quote-volume/v1"
 
@@ -66,6 +67,7 @@ def bar_signed_quote_flow(
     if identity.timeframe is not None and bar.timeframe is not identity.timeframe:
         raise WrongMarketError("Signed-flow bar timeframe does not match market identity.")
     require_cvd_stream_proof(snapshot)
+    tape = snapshot.released_tape
     require_complete_window_coverage(
         snapshot.coverage,
         identity=identity,
@@ -73,29 +75,52 @@ def bar_signed_quote_flow(
         trades=snapshot.trades,
         required_start=bar.interval_start,
         required_end=bar.interval_end,
+        released=tape,
     )
-    selected = select_trades_in_window(
-        snapshot.trades,
-        start=bar.interval_start,
-        end=bar.interval_end,
-    )
-    signed, total = accumulate_signed_quote(selected)
+    if tape is not None and not snapshot.trades:
+        matched = closed_bar_covering(
+            tape,
+            interval_start=bar.interval_start,
+            interval_end=bar.interval_end,
+        )
+        if matched is None:
+            raise IncompleteWarmUpError(
+                "Signed quote flow is undefined when total quote volume is 0."
+            )
+        signed = matched.signed_quote_delta
+        total = matched.total_quote_volume
+        buy = matched.buy_quote_volume
+        sell = matched.sell_quote_volume
+        event_count = matched.event_count
+        event_time_max = matched.event_time_max
+    else:
+        selected = select_trades_in_window(
+            snapshot.trades,
+            start=bar.interval_start,
+            end=bar.interval_end,
+        )
+        signed, total = accumulate_signed_quote(selected)
+        buy = Decimal("0")
+        sell = Decimal("0")
+        for trade in selected:
+            if trade.aggressor_side is AggressorSide.BUY:
+                buy += trade.quote_quantity
+            else:
+                sell += trade.quote_quantity
+        if not selected:
+            raise IncompleteWarmUpError(
+                "Signed quote flow is undefined when total quote volume is 0."
+            )
+        event_count = len(selected)
+        event_time_max = selected[-1].event_timestamp
     if total == 0:
         raise IncompleteWarmUpError("Signed quote flow is undefined when total quote volume is 0.")
-    terminal = selected[-1]
     evaluate_freshness(
-        source_time=terminal.event_timestamp,
+        source_time=event_time_max,
         evaluated_at=evaluated_at,
         policy=first_slice_freshness_policy(),
         require_fresh=require_live_freshness,
     )
-    buy = Decimal("0")
-    sell = Decimal("0")
-    for trade in selected:
-        if trade.aggressor_side is AggressorSide.BUY:
-            buy += trade.quote_quantity
-        else:
-            sell += trade.quote_quantity
     ratio = signed / total
     flow = SignedQuoteFlow(
         identity=identity,
@@ -106,11 +131,11 @@ def bar_signed_quote_flow(
         signed_flow_ratio=ratio,
         buy_quote_volume=buy,
         sell_quote_volume=sell,
-        event_count=len(selected),
+        event_count=event_count,
         source_connection_id=snapshot.cursor.connection_identity,
         coverage_proof_id=snapshot.coverage.coverage_proof_id,
         coverage_content_hash=snapshot.coverage.content_hash,
-        event_time_max=terminal.event_timestamp,
+        event_time_max=event_time_max,
         policy_version=SIGNED_FLOW_POLICY_VERSION,
         content_hash="0" * 64,
     )

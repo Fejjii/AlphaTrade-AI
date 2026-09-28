@@ -57,6 +57,8 @@ def project_worker_component(
         request_weight=int(getattr(row, "request_weight", 0)),
         rate_limited_count=int(getattr(row, "rate_limited_count", 0)),
         cache_hits=int(getattr(row, "cache_hits", 0)),
+        process_rss_bytes=_optional_int(getattr(row, "process_rss_bytes", None)),
+        process_rss_peak_bytes=_optional_int(getattr(row, "process_rss_peak_bytes", None)),
         health_state=health_state,
         heartbeat_age_seconds=age,
         heartbeat_stale_after_seconds=limit,
@@ -89,6 +91,14 @@ def _reported_activation(persisted: str, health_state: WorkerHealthState) -> str
     if persisted.strip().lower() == "running":
         return health_state
     return persisted
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def _unavailable(stale_after_seconds: int) -> WorkerComponentObservation:

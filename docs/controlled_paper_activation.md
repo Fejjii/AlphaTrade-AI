@@ -27,7 +27,7 @@ and every later flag below, is a human action.
 | Watcher | dedicated process `python -m app.workers.watcher_paper`. Unique worker id. PostgreSQL leases and fencing. Approved compiled strategy only. `CONFIRMED_SETUP` is the only Candidate authority. |
 | Telegram | verified private binding, idempotent outbox, retry/backoff, restart recovery, audit, explicit confirmation. |
 | Telegram authority | cannot mint a Candidate, override SetupAssessment, override risk, activate a strategy, place an order, or enable live trading. |
-| Migration head | `f1a2b3c4d5e6` (revises `e0f1a2b3c4d5`). Do not downgrade Alembic as part of rollback. |
+| Migration head | `a8c3e1b94d20` (revises `f1a2b3c4d5e6`). Do not downgrade Alembic as part of rollback. |
 
 Production refuses `binance_usdm`, the Watcher arm, and every Telegram arming
 flag. Defaults stay disarmed.
@@ -55,7 +55,7 @@ disarmed (`NOT_ARMED`).
 
 ### 2. Migrations
 
-Apply Alembic through head `f1a2b3c4d5e6` on the staging database. Confirm a
+Apply Alembic through head `a8c3e1b94d20` on the staging database. Confirm a
 single head. Do not downgrade.
 
 ### 3. Live market activation
