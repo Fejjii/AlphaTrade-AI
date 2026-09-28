@@ -184,6 +184,25 @@ export function WatcherMonitoringCard({
           </div>
         </dl>
 
+        <div data-testid="watcher-symbol-statuses">
+          <p className="text-xs text-text-muted">Per-symbol status</p>
+          {snapshot.symbol_statuses && snapshot.symbol_statuses.length > 0 ? (
+            <ul className="mt-1 space-y-1 text-xs">
+              {snapshot.symbol_statuses.map((item) => (
+                <li key={item.symbol} data-testid={`watcher-symbol-status-${item.symbol}`}>
+                  {`${item.symbol} · ${item.source} · ${item.freshness} · ${item.scan_status}`}
+                  {item.strategy_candidate_ids.length
+                    ? ` · candidates ${item.strategy_candidate_ids.length}`
+                    : ""}
+                  {item.last_failure_reason ? ` · last failure ${item.last_failure_reason}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-text-muted">No per-symbol scan evidence.</p>
+          )}
+        </div>
+
         {snapshot.limitations.length ? (
           <ul className="text-xs text-text-muted" data-testid="watcher-monitoring-limitations">
             {snapshot.limitations.map((item) => (

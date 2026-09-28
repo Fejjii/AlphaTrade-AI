@@ -192,12 +192,25 @@ class SymbolMonitorRuntime:
         """Re-evaluate freshness without a provider fetch."""
         return self._project(now.astimezone(UTC))
 
+    def release_historical_series(self) -> None:
+        """Drop retained candles and the last trade batch. Keep the cursor.
+
+        The next tick fetches again. Freshness already copied into a snapshot
+        is unchanged. This bounds memory when several symbols are scanned one
+        after another.
+        """
+
+        self._series_15m = None
+        self._series_4h = None
+        self._last_batch = None
+        self._last_stream = None
+
     def _maybe_recover_primary(self, now: datetime) -> InstrumentIdentity | None:
         del now
         recover = getattr(self._source, "try_recover_primary", None)
         if not callable(recover):
             return None
-        instrument = recover()
+        instrument = recover(self.instrument.provider_symbol)
         if isinstance(instrument, InstrumentIdentity):
             return instrument
         return None

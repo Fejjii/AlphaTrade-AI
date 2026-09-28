@@ -2469,4 +2469,48 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` and
   `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual`.
 
+## AT-ADR-072 — Gated paper watchlist stays BTCUSDT until explicitly enabled
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** Watcher paper config already accepted `WATCHER_PAPER_SYMBOLS`,
+  and `normalize_paper_symbols` always keeps BTCUSDT first. The default
+  perpetual catalog, the Bybit adapter, and `FailoverPerpetualSource` were
+  still BTCUSDT-shaped. A primary failure switched the whole source. Fusion
+  market identity still expects the Binance USD-M or Bybit USDT BTCUSDT
+  instrument. Staging must keep monitoring BTCUSDT only.
+- **Decision:**
+  1. Extra symbols are configured with `WATCHER_PAPER_SYMBOLS` and stay
+     inactive while `WATCHER_MULTI_SYMBOL_ENABLED` is false. The flag
+     defaults to false. `WATCHER_PAPER_MAX_SYMBOLS` defaults to 10 and cannot
+     exceed 10. Invalid linear-USDT tokens are dropped and do not block the
+     valid symbols. BTCUSDT cannot be removed by configuration.
+  2. `default_perpetual_catalog()` stays BTCUSDT. A larger catalog is built
+     only for the active watchlist. Per-symbol Binance-to-Bybit failover is
+     used only when the catalog is not exactly BTCUSDT. The single-BTC path
+     stays `FailoverPerpetualSource`.
+  3. Historical windows load one symbol at a time and are released after the
+     scan. A compiled strategy with a non-empty asset universe does not load
+     history for symbols outside that universe. One symbol's scan exception
+     does not stop the cycle.
+  4. Per-symbol source, freshness, scan status, last success, last failure,
+     and strategy candidate ids stay in process memory and are filtered by
+     organization. This change adds no Alembic revision.
+  5. `render.yaml` is unchanged. The flag is not set in Render. This decision
+     does not deploy and does not arm Watcher or Telegram.
+  6. Controlled activation of non-BTC symbols is not accepted. The first-slice
+     fusion evaluator still requires the BTCUSDT instrument, so a strategy
+     that covers another symbol fails closed on market identity. Live HTTP
+     for ETHUSDT, SOLUSDT, XRPUSDT, and DOGEUSDT was not run.
+- **Alternatives considered:** Activate the five-symbol list in staging now
+  (rejected: market identity and live reads are not ready). Change the fusion
+  evaluator to accept any USDT perpetual in this change (rejected: that would
+  weaken the BTC first-slice gate). Store symbol status in a new table
+  (rejected: no migration is required for a process snapshot).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. The flag does not start the worker,
+  Telegram, or trading. Risk `BLOCK` is unchanged.
+- **Consequences:** Branch `cursor/multi-symbol-watchlist-c57c`. Tests in
+  `backend/tests/test_watcher_multi_symbol_watchlist.py`. Verdict for
+  activating additional coins: NOT READY.
+
 

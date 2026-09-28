@@ -102,6 +102,25 @@ def lineage_targets_are_valid(targets: Sequence[PaperScanTarget]) -> bool:
     return True
 
 
+def strategy_version_covers_symbol(card: object, symbol: str) -> bool:
+    """True when a strategy card may scan ``symbol``.
+
+    An empty asset universe scans the active watchlist. A non-empty universe
+    scans only the symbols it names, so a BTCUSDT strategy does not pull
+    historical windows for the rest of the watchlist.
+    """
+
+    if not isinstance(card, dict):
+        return True
+    raw = card.get("asset_universe")
+    if not isinstance(raw, list) or not raw:
+        return True
+    allowed = {str(item).strip().upper() for item in raw if str(item).strip()}
+    if not allowed:
+        return True
+    return symbol.strip().upper() in allowed
+
+
 def normalize_paper_symbols(symbols: Sequence[str]) -> tuple[str, ...]:
     """BTCUSDT first, then unique additional configured symbols."""
 
@@ -149,6 +168,8 @@ def list_paper_scan_targets(
         except (StrategyEvaluationPolicyError, NotFoundError):
             continue
         for symbol in enabled_symbols:
+            if not strategy_version_covers_symbol(version.card, symbol):
+                continue
             targets.append(_target_from_executable(strategy, executable, symbol=symbol))
             if len(targets) >= limit:
                 return tuple(targets)

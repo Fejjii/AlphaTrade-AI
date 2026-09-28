@@ -144,12 +144,13 @@ def canonical_instrument_id(
     return f"{venue.value}:{product_family.value}:{market_type.value}:{symbol.upper()}"
 
 
-def binance_usdm_perpetual(symbol: str) -> InstrumentIdentity:
-    """Linear Binance USD-M perpetual identity for an alphanumeric USDT symbol.
+def require_linear_usdt_symbol(symbol: str) -> tuple[str, str]:
+    """Return ``(symbol, base)`` for one alphanumeric linear USDT perpetual.
 
-    First-slice runtime enablement is the catalog, not this factory. Unknown or
-    non-USDT tokens fail closed here so callers cannot mint a spot-like identity.
+    The catalog decides which of these identities are enabled. This helper only
+    rejects tokens that cannot be a linear USDT-margined perpetual.
     """
+
     token = symbol.strip().upper()
     if not token.isalnum():
         raise WrongInstrumentError("Perpetual symbols must be alphanumeric.")
@@ -158,8 +159,18 @@ def binance_usdm_perpetual(symbol: str) -> InstrumentIdentity:
             "USD-M perpetual evidence requires a linear USDT-margined symbol."
         )
     base = token[:-4]
-    if len(base) < 2:
+    if len(base) < 2 or len(base) > 16:
         raise WrongInstrumentError("USD-M perpetual base asset is missing.")
+    return token, base
+
+
+def binance_usdm_perpetual(symbol: str) -> InstrumentIdentity:
+    """Linear Binance USD-M perpetual identity for an alphanumeric USDT symbol.
+
+    First-slice runtime enablement is the catalog, not this factory. Unknown or
+    non-USDT tokens fail closed here so callers cannot mint a spot-like identity.
+    """
+    token, base = require_linear_usdt_symbol(symbol)
     return InstrumentIdentity(
         venue=VenueId.BINANCE,
         market_type=MarketType.PERPETUAL,
@@ -187,8 +198,14 @@ def binance_usdm_btcusdt() -> InstrumentIdentity:
     return binance_usdm_perpetual("BTCUSDT")
 
 
-def bybit_usdt_perpetual_btcusdt() -> InstrumentIdentity:
-    """Bybit linear USDT perpetual BTCUSDT. Trade size is base-coin quantity."""
+def bybit_usdt_perpetual(symbol: str) -> InstrumentIdentity:
+    """Bybit linear USDT perpetual. Trade size is base-coin quantity.
+
+    BTCUSDT remains the contracted default. Other symbols are identities only
+    until a watchlist enables them. The multiplier stays 1.
+    """
+
+    token, base = require_linear_usdt_symbol(symbol)
     return InstrumentIdentity(
         venue=VenueId.BYBIT,
         market_type=MarketType.PERPETUAL,
@@ -198,17 +215,22 @@ def bybit_usdt_perpetual_btcusdt() -> InstrumentIdentity:
             venue=VenueId.BYBIT,
             product_family=ProductFamily.USDM_FUTURES,
             market_type=MarketType.PERPETUAL,
-            symbol="BTCUSDT",
+            symbol=token,
         ),
-        provider_symbol="BTCUSDT",
-        base_asset="BTC",
+        provider_symbol=token,
+        base_asset=base,
         quote_asset="USDT",
         settlement_asset="USDT",
         contract_multiplier=BYBIT_BTC_CONTRACT_MULTIPLIER,
         price_unit="USDT",
-        base_quantity_unit="BTC",
+        base_quantity_unit=base,
         quote_quantity_unit="USDT",
     )
+
+
+def bybit_usdt_perpetual_btcusdt() -> InstrumentIdentity:
+    """Bybit linear USDT perpetual BTCUSDT. Trade size is base-coin quantity."""
+    return bybit_usdt_perpetual("BTCUSDT")
 
 
 def require_perpetual(identity: EvidenceMarketIdentity) -> None:

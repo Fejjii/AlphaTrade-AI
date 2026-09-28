@@ -21,6 +21,45 @@ describe("WatcherMonitoringCard", () => {
     expect(screen.queryByText("RUNNING")).not.toBeInTheDocument();
   });
 
+  it("shows per-symbol source, freshness, scan status, and candidates", () => {
+    render(
+      <WatcherMonitoringCard
+        snapshot={makeWatcherMonitoringSnapshot({
+          symbol_statuses: [
+            {
+              symbol: "BTCUSDT",
+              source: "binance-usdm-perpetual",
+              freshness: "fresh",
+              freshness_seconds: 2,
+              scan_status: "succeeded",
+              last_successful_scan_at: "2026-09-21T13:55:00.000Z",
+              last_failure_at: null,
+              last_failure_reason: null,
+              strategy_candidate_ids: ["cand-1"],
+            },
+            {
+              symbol: "SOLUSDT",
+              source: "unknown",
+              freshness: "unavailable",
+              freshness_seconds: null,
+              scan_status: "failed",
+              last_successful_scan_at: null,
+              last_failure_at: "2026-09-21T13:56:00.000Z",
+              last_failure_reason: "provider_outage",
+              strategy_candidate_ids: [],
+            },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByTestId("watcher-symbol-status-BTCUSDT")).toHaveTextContent(
+      "binance-usdm-perpetual",
+    );
+    expect(screen.getByTestId("watcher-symbol-status-BTCUSDT")).toHaveTextContent("candidates 1");
+    expect(screen.getByTestId("watcher-symbol-status-SOLUSDT")).toHaveTextContent("provider_outage");
+    expect(screen.getByTestId("watcher-symbol-status-SOLUSDT")).not.toHaveTextContent("cand-1");
+  });
+
   it("does not infer RUNNING from frontend configuration flags", () => {
     const snapshot = makeWatcherMonitoringSnapshot({
       watcher_status: "STOPPED",

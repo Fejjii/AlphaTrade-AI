@@ -20,3 +20,6 @@ class MarketMonitorWatcherPort:
 
     def latest(self, symbol: str = "BTCUSDT") -> SymbolMonitorSnapshot:
         return self._monitor.snapshot(symbol, force=True)
+
+    def release_historical_series(self, symbol: str) -> None:
+        self._monitor.release_historical_series(symbol)

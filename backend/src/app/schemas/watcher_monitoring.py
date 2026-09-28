@@ -168,6 +168,20 @@ class WatcherRecentError(StrictModel):
     reason_code: str | None = None
 
 
+class WatcherSymbolStatus(StrictModel):
+    """One symbol on the paper watchlist. Missing scans stay unknown, never invented."""
+
+    symbol: str
+    source: str = "unknown"
+    freshness: str = "unknown"
+    freshness_seconds: float | None = None
+    scan_status: str = "not_scanned"
+    last_successful_scan_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    last_failure_reason: str | None = None
+    strategy_candidate_ids: list[str] = Field(default_factory=list)
+
+
 class WatcherMonitoringSnapshot(StrictModel):
     """Aggregated paper-monitoring snapshot. No fabricated activity or prices."""
 
@@ -179,6 +193,8 @@ class WatcherMonitoringSnapshot(StrictModel):
     paper_posture: PaperMonitoringPosture
     config_flags: WatcherConfigFlags
     symbols_monitored: list[str] = Field(default_factory=list)
+    multi_symbol_enabled: bool = False
+    symbol_statuses: list[WatcherSymbolStatus] = Field(default_factory=list)
     approved_strategies: list[WatcherApprovedStrategy] = Field(default_factory=list)
     last_scan_at: datetime | None = None
     last_scan_status: str | None = None

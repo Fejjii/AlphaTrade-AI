@@ -129,9 +129,14 @@ class FailoverPerpetualSource:
     def status(self) -> ProviderStatus:
         return self.active_source.status()
 
-    def try_recover_primary(self) -> InstrumentIdentity | None:
-        """Return the primary instrument when it is healthy again. Do not publish yet."""
+    def try_recover_primary(self, symbol: str | None = None) -> InstrumentIdentity | None:
+        """Return the primary instrument when it is healthy again. Do not publish yet.
 
+        ``symbol`` is accepted so a per-symbol monitor can ask about its own
+        instrument. This source still switches the whole active identity.
+        """
+
+        del symbol
         if not self._using_secondary:
             return None
         report = self._primary.status()

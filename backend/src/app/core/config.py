@@ -203,6 +203,10 @@ class Settings(BaseSettings):
     watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["BTCUSDT"]
     )
+    # Extra symbols in WATCHER_PAPER_SYMBOLS stay inactive until this is true.
+    # Staging and Render leave it false. It does not place orders.
+    watcher_multi_symbol_enabled: bool = False
+    watcher_paper_max_symbols: int = Field(default=10, ge=1, le=10)
     watcher_paper_poll_interval_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
     watcher_paper_max_scopes_per_cycle: int = Field(default=20, ge=1, le=200)
     watcher_paper_worker_id: str = Field(default="watcher-paper-1", min_length=1, max_length=80)

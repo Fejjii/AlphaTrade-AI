@@ -48,6 +48,7 @@ from app.schemas.watcher_monitoring import (
     WatcherProviderHealthItem,
     WatcherRecentError,
     WatcherSetupAssessmentSummary,
+    WatcherSymbolStatus,
     WatcherWorkerHealth,
 )
 from app.services.market_watcher_service import MarketWatcherService
@@ -71,6 +72,7 @@ from app.watcher.contracts import (
 from app.watcher.health import project_health
 from app.watcher.settings import runtime_config_from_settings
 from app.workers.watcher_paper_targets import FIRST_SLICE_SYMBOL, normalize_paper_symbols
+from app.workers.watcher_watchlist import effective_watch_symbols
 
 logger = structlog.get_logger("watcher_monitoring")
 
@@ -245,6 +247,12 @@ class WatcherMonitoringService:
                 watched=list(watcher_status.watched_symbols),
                 monitor_snapshot=monitor_snapshot,
                 paper_status=paper_status,
+            ),
+            multi_symbol_enabled=bool(settings.watcher_multi_symbol_enabled),
+            symbol_statuses=_symbol_statuses(
+                organization_id=organization_id,
+                settings=settings,
+                paper_runtime=self._paper_runtime,
             ),
             approved_strategies=approved,
             last_scan_at=last_scan_at,
@@ -914,6 +922,34 @@ def _freshness_status(
     return "unknown"
 
 
+def _symbol_statuses(
+    *,
+    organization_id: uuid.UUID,
+    settings: Settings,
+    paper_runtime: _PaperRuntime | None,
+) -> list[WatcherSymbolStatus]:
+    reader = getattr(paper_runtime, "symbol_statuses_for", None)
+    if callable(reader):
+        rows = reader(organization_id)
+        projected: list[WatcherSymbolStatus] = []
+        for row in rows:
+            projected.append(
+                WatcherSymbolStatus(
+                    symbol=str(row.symbol),
+                    source=str(row.source),
+                    freshness=str(row.freshness),
+                    freshness_seconds=row.freshness_seconds,
+                    scan_status=str(row.scan_status),
+                    last_successful_scan_at=row.last_successful_scan_at,
+                    last_failure_at=row.last_failure_at,
+                    last_failure_reason=row.last_failure_reason,
+                    strategy_candidate_ids=list(row.strategy_candidate_ids),
+                )
+            )
+        return projected
+    return [WatcherSymbolStatus(symbol=symbol) for symbol in effective_watch_symbols(settings)]
+
+
 def _symbols_monitored(
     *,
     settings: Settings,
@@ -929,7 +965,7 @@ def _symbols_monitored(
     paper_symbols = getattr(paper_status, "symbols", None)
     if isinstance(paper_symbols, tuple | list):
         symbols.extend(str(item) for item in paper_symbols)
-    symbols.extend(settings.watcher_paper_symbols)
+    symbols.extend(effective_watch_symbols(settings))
     symbols.extend(watched)
     return list(normalize_paper_symbols(symbols))
 

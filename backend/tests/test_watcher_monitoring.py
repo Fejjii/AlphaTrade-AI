@@ -437,6 +437,8 @@ def test_monitoring_payload_exposes_operator_fields(
         "paper_posture",
         "config_flags",
         "symbols_monitored",
+        "multi_symbol_enabled",
+        "symbol_statuses",
         "approved_strategies",
         "last_scan_at",
         "next_scan_at",

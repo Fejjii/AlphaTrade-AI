@@ -3615,6 +3615,18 @@ export interface WatcherRecentError {
   reason_code?: string | null;
 }
 
+export interface WatcherSymbolStatus {
+  symbol: string;
+  source: string;
+  freshness: string;
+  freshness_seconds?: number | null;
+  scan_status: string;
+  last_successful_scan_at?: string | null;
+  last_failure_at?: string | null;
+  last_failure_reason?: string | null;
+  strategy_candidate_ids: string[];
+}
+
 export interface WatcherMonitoringSnapshot {
   watcher_status: WatcherMonitoringRuntimeState;
   paper_monitoring_status: WatcherMonitoringRuntimeState;
@@ -3624,6 +3636,8 @@ export interface WatcherMonitoringSnapshot {
   paper_posture: PaperMonitoringPosture;
   config_flags: WatcherConfigFlags;
   symbols_monitored: string[];
+  multi_symbol_enabled?: boolean;
+  symbol_statuses?: WatcherSymbolStatus[];
   approved_strategies: WatcherApprovedStrategy[];
   last_scan_at?: string | null;
   last_scan_status?: string | null;
