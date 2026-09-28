@@ -10,7 +10,7 @@ import threading
 from dataclasses import dataclass
 
 from app.core.config import Settings
-from app.market_contracts.adapters.aggtrade_cache import ClosedAggTradeCache
+from app.market_contracts.adapters.aggtrade_cache import ClosedAggTradeCache, TtlValueCache
 from app.market_contracts.adapters.request_budget import SlidingWeightBudget
 
 
@@ -21,6 +21,7 @@ class _PoolKey:
     max_backoff_seconds: float
     cache_entries: int
     cache_ttl_seconds: float
+    cache_max_rows: int
 
 
 class BinanceEvidencePool:
@@ -32,6 +33,11 @@ class BinanceEvidencePool:
             max_wait_seconds=max(key.max_backoff_seconds, 60.0),
         )
         self.cache = ClosedAggTradeCache(
+            max_entries=key.cache_entries,
+            ttl_seconds=key.cache_ttl_seconds,
+            max_rows=key.cache_max_rows,
+        )
+        self.reduced = TtlValueCache(
             max_entries=key.cache_entries,
             ttl_seconds=key.cache_ttl_seconds,
         )
@@ -50,6 +56,7 @@ def shared_binance_evidence_pool(settings: Settings) -> BinanceEvidencePool:
         max_backoff_seconds=settings.binance_request_max_backoff_seconds,
         cache_entries=settings.binance_evidence_cache_entries,
         cache_ttl_seconds=settings.binance_evidence_cache_ttl_seconds,
+        cache_max_rows=settings.binance_evidence_cache_max_rows,
     )
     with _POOLS_GUARD:
         pool = _POOLS.get(key)

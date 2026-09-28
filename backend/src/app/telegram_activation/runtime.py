@@ -21,6 +21,7 @@ from app.controlled_activation.profile import (
     telegram_enrollment_runtime,
 )
 from app.core.config import Settings
+from app.observability.process_memory import memory_status_fields
 from app.persistence.runtime_status import (
     TELEGRAM_COMPONENT,
     RuntimeStatusWrite,
@@ -319,6 +320,7 @@ class TelegramPaperRuntime:
                     # try_acquire_runtime_lease already committed the fence.
                     # Publishing must not zero the epoch or steal another owner.
                     preserve_lease=True,
+                    **memory_status_fields(),
                 ),
             )
         except Exception:

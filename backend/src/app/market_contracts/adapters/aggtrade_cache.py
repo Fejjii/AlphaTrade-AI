@@ -70,13 +70,17 @@ class ClosedAggTradeCache:
         max_entries: int,
         ttl_seconds: float,
         clock: Callable[[], float] | None = None,
+        max_rows: int = 4096,
     ) -> None:
         if max_entries < 1:
             raise ValueError("aggTrade cache must keep at least one entry.")
         if ttl_seconds <= 0:
             raise ValueError("aggTrade cache TTL must be positive.")
+        if max_rows < 1:
+            raise ValueError("aggTrade cache row cap must be at least one.")
         self._max_entries = max_entries
         self._ttl_seconds = ttl_seconds
+        self._max_rows = max_rows
         self._clock = clock or time.monotonic
         self._entries: OrderedDict[CacheKey, _CacheEntry] = OrderedDict()
         self._locks: dict[CacheKey, threading.Lock] = {}
@@ -126,8 +130,13 @@ class ClosedAggTradeCache:
             return entry.rows
 
     def put(self, key: CacheKey, rows: tuple[Any, ...]) -> bool:
-        """Store ``rows``. Return True when they correct a different cached payload."""
+        """Store ``rows``. Return True when they correct a different cached payload.
 
+        Windows larger than ``max_rows`` are not stored. Callers refetch them.
+        """
+
+        if len(rows) > self._max_rows:
+            return False
         fingerprint = agg_trade_fingerprint(rows)
         stored_at = self._clock()
         with self._guard:
@@ -160,6 +169,46 @@ class ClosedAggTradeCache:
             if key in self._entries or lock.locked():
                 continue
             self._locks.pop(key, None)
+
+
+class TtlValueCache:
+    """Small TTL cache for reduced trade snapshots. Values are not raw trades."""
+
+    def __init__(
+        self,
+        *,
+        max_entries: int,
+        ttl_seconds: float,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        if max_entries < 1:
+            raise ValueError("reduced trade cache must keep at least one entry.")
+        if ttl_seconds <= 0:
+            raise ValueError("reduced trade cache TTL must be positive.")
+        self._max_entries = max_entries
+        self._ttl_seconds = ttl_seconds
+        self._clock = clock or time.monotonic
+        self._entries: OrderedDict[CacheKey, tuple[float, Any]] = OrderedDict()
+        self._guard = threading.Lock()
+
+    def get(self, key: CacheKey) -> Any | None:
+        with self._guard:
+            item = self._entries.get(key)
+            if item is None:
+                return None
+            stored_at, value = item
+            if self._clock() - stored_at > self._ttl_seconds:
+                return None
+            self._entries.move_to_end(key)
+            return value
+
+    def put(self, key: CacheKey, value: Any) -> None:
+        stored_at = self._clock()
+        with self._guard:
+            self._entries[key] = (stored_at, value)
+            self._entries.move_to_end(key)
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
 
 
 def _utc_token(value: datetime) -> str:
