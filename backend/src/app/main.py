@@ -34,6 +34,7 @@ from app.api.routes import (
     execution,
     health,
     human_vs_system,
+    interactive_agent,
     journal,
     knowledge,
     learning_analytics,
@@ -228,6 +229,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for r in (
         health.router,
+        interactive_agent.router,
         metrics.router,
         providers.router,
         auth.router,

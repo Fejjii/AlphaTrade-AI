@@ -1956,4 +1956,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-069
 - Note: Do not deploy, arm Watcher, or activate Telegram.
 
+### AT-088 — Interactive agent foundation
+- Priority: P1 · Status: DONE · Dependencies: conversation, journal, strategy,
+  and knowledge stores · Risk: Medium (chat must not gain a live-trading path)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`; no
+  deploy; no Render change; no Watcher or Telegram activation
+- Goal: Backend orchestration for an Agent surface that proposes structured
+  actions and reads existing authorities.
+- Branch: `cursor/interactive-agent-foundation-4807`
+- Alembic: unchanged. No new revision.
+- ADR: AT-ADR-072
+- Remaining: screenshot and voice implementations, default Qdrant retrieval,
+  and the simplified UI from the separate product PR.
+- Note: Do not deploy or enable real trading.
+
 
