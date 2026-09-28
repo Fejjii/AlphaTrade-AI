@@ -11,8 +11,10 @@ const posture = {
   postureKnown: true,
 };
 
+const navigationState = { pathname: "/tradingview-signals" };
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/tradingview-signals",
+  usePathname: () => navigationState.pathname,
 }));
 
 vi.mock("@/contexts/AppContext", () => ({
@@ -61,11 +63,12 @@ describe("AT-040 Phase B AppShell", () => {
   beforeEach(() => {
     posture.executionMode = "paper";
     posture.realTradingEnabled = false;
+    navigationState.pathname = "/tradingview-signals";
   });
 
   afterEach(() => cleanup());
 
-  it("renders eight desktop primary destinations with accessible current page", () => {
+  it("renders five desktop primary destinations and highlights Settings on retained routes", () => {
     render(
       <AppShell>
         <div>Page</div>
@@ -73,79 +76,87 @@ describe("AT-040 Phase B AppShell", () => {
     );
     const sidebar = screen.getByTestId("desktop-sidebar");
     const links = within(sidebar).getAllByRole("link");
-    expect(links).toHaveLength(8);
+    expect(links).toHaveLength(5);
     for (const destination of PRIMARY_DESTINATIONS) {
       expect(within(sidebar).getByRole("link", { name: destination.ariaLabel })).toHaveAttribute(
         "href",
         destination.href,
       );
     }
-    expect(within(sidebar).getByRole("link", { name: "Signals" })).toHaveAttribute(
+    expect(within(sidebar).getByRole("link", { name: "Settings" })).toHaveAttribute(
       "aria-current",
       "page",
     );
   });
 
-  it("renders mobile bottom navigation with Menu sheet destinations", () => {
+  it("renders five mobile tabs and no engineering menu sheet", () => {
     render(
       <AppShell>
         <div>Page</div>
       </AppShell>,
     );
     const bottom = screen.getByTestId("mobile-bottom-navigation");
-    expect(within(bottom).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
-    expect(within(bottom).getByRole("link", { name: "Signals" })).toBeInTheDocument();
-    expect(within(bottom).getByRole("link", { name: "Plan" })).toBeInTheDocument();
-    expect(within(bottom).getByRole("link", { name: "Portfolio" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("mobile-menu-button"));
-    const sheet = screen.getByTestId("mobile-menu-sheet");
-    expect(within(sheet).getByRole("link", { name: "Validate" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("link", { name: "Journal" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("link", { name: "Analytics" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("link", { name: "Settings" })).toBeInTheDocument();
+    expect(within(bottom).getAllByRole("link")).toHaveLength(5);
+    expect(within(bottom).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
+    expect(within(bottom).getByRole("link", { name: "Agent" })).toHaveAttribute("href", "/agent");
+    expect(within(bottom).getByRole("link", { name: "Strategies" })).toHaveAttribute(
+      "href",
+      "/strategies",
+    );
+    expect(within(bottom).getByRole("link", { name: "Journal" })).toHaveAttribute("href", "/journal");
+    expect(within(bottom).getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+    expect(within(bottom).getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.queryByTestId("mobile-menu-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-menu-sheet")).not.toBeInTheDocument();
   });
 
-  it("opens the command menu from the mobile Menu sheet touch control", () => {
+  it("opens the command menu from the phone search control", () => {
     render(
       <AppShell>
         <div>Page</div>
       </AppShell>,
     );
-    fireEvent.click(screen.getByTestId("mobile-menu-button"));
-    fireEvent.click(screen.getByTestId("mobile-menu-command"));
-    expect(screen.queryByTestId("mobile-menu-sheet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("topbar-search"));
     expect(screen.getByTestId("command-menu")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Strategy Lab/i })).toBeInTheDocument();
   });
 
-  it("closes the Menu sheet on Escape and returns focus to the Menu button", () => {
-    render(
-      <AppShell>
-        <div>Page</div>
-      </AppShell>,
-    );
-    const menuButton = screen.getByTestId("mobile-menu-button");
-    menuButton.focus();
-    fireEvent.click(menuButton);
-    expect(screen.getByTestId("mobile-menu-sheet")).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByTestId("mobile-menu-sheet")).not.toBeInTheDocument();
-    expect(menuButton).toHaveFocus();
-  });
-
-  it("shows secondary navigation for the active destination including Advanced", () => {
+  it("shows Account and Advanced under Settings", () => {
+    navigationState.pathname = "/settings";
     render(
       <AppShell>
         <div>Page</div>
       </AppShell>,
     );
     const secondary = screen.getByTestId("secondary-navigation");
-    expect(secondary).toHaveAttribute("data-destination", "signals");
-    expect(within(secondary).getByRole("link", { name: "Signals inbox" })).toBeInTheDocument();
-    expect(within(secondary).getByText("Advanced")).toBeInTheDocument();
-    expect(
-      within(secondary).getByRole("link", { name: "Signal Orchestration" }),
-    ).toHaveAttribute("href", "/paper-signal-orchestration");
+    expect(secondary).toHaveAttribute("data-destination", "settings");
+    expect(within(secondary).getByRole("link", { name: "Account" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+    expect(within(secondary).getByRole("link", { name: "Advanced" })).toHaveAttribute(
+      "href",
+      "/settings/advanced",
+    );
+  });
+
+  it("marks Advanced current on a retained operational route", () => {
+    render(
+      <AppShell>
+        <div>Page</div>
+      </AppShell>,
+    );
+    const secondary = screen.getByTestId("secondary-navigation");
+    expect(within(secondary).getByRole("link", { name: "Advanced" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("keeps paper status fail-closed in the status strip", () => {
@@ -219,7 +230,8 @@ describe("AT-040 Phase B AppShell", () => {
     expect(names.length).toBeGreaterThan(0);
     expect(new Set(names).size).toBe(names.length);
     expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open navigation menu" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search pages and destinations" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open navigation menu" })).not.toBeInTheDocument();
   });
 
   it("announces posture politely from the status strip (FP2-114)", () => {

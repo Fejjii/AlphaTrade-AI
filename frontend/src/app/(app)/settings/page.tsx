@@ -48,6 +48,17 @@ export default function SettingsPage() {
           </span>
         </CardContent>
       </Card>
+      <Card data-testid="settings-advanced-link">
+        <CardHeader>
+          <CardTitle>Advanced</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-zinc-300">
+          <p>Operational, audit, validation, billing, provider, and engineering pages.</p>
+          <Link href="/settings/advanced" className="text-emerald-400 hover:underline">
+            Open advanced pages
+          </Link>
+        </CardContent>
+      </Card>
       <Card data-testid="settings-runtime-posture">
         <CardHeader>
           <CardTitle>Verified runtime posture</CardTitle>
