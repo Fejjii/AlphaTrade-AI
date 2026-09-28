@@ -294,6 +294,7 @@ def _runtime(
     kill_switch_probe: object | None = None,
     target_loader: object | None = None,
     evidence_factory: object | None = None,
+    symbols: tuple[str, ...] | None = None,
     bind_session: bool = True,
     scan_notification_hook: object | None = None,
     evaluation_observer_factory: object | None = None,
@@ -326,6 +327,7 @@ def _runtime(
         side_effects=probe,
         lease_ttl_seconds=lease_ttl_seconds,
         poll_interval_seconds=0.05,
+        symbols=symbols if symbols is not None else (FIRST_SLICE_SYMBOL,),
         settings=_settings(),
         evaluation_clock=eval_clock,
         scan_notification_hook=scan_notification_hook,  # type: ignore[arg-type]
@@ -338,6 +340,8 @@ def test_defaults_keep_paper_runtime_disabled() -> None:
     settings = _settings()
     assert settings.watcher_orchestration_enabled is False
     assert settings.watcher_paper_symbols == ["BTCUSDT"]
+    assert settings.watcher_multi_symbol_enabled is False
+    assert settings.watcher_paper_max_symbols == 10
     assert paper_runtime_enabled(settings) is False
     assert paper_runtime_enabled(_settings(watcher_orchestration_enabled=True)) is True
     assert (

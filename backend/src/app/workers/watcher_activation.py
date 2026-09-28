@@ -794,11 +794,12 @@ def _probe_failed_observations(worker_instance_id: str) -> ActivationObservation
 
 def _probe_lineage(session: Session, settings: Settings) -> bool:
     from app.workers.watcher_paper_targets import lineage_targets_are_valid, list_paper_scan_targets
+    from app.workers.watcher_watchlist import effective_watch_symbols
 
     try:
         targets = list_paper_scan_targets(
             session,
-            symbols=settings.watcher_paper_symbols,
+            symbols=effective_watch_symbols(settings),
             limit=settings.watcher_paper_max_scopes_per_cycle,
         )
     except Exception:

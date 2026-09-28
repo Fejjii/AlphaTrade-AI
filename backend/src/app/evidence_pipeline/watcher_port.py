@@ -124,6 +124,30 @@ class AssemblingWatcherScanEvidence:
 
         return self._last_assembly
 
+    def symbol_observation(self) -> tuple[str, str, float | None]:
+        """Source, freshness state, and quote age for this symbol. No price."""
+
+        assembled = None if self._last_assembly is None else self._last_assembly[0]
+        if assembled is None:
+            return ("unknown", "unknown", None)
+        quote = assembled.current_price
+        seconds = None if quote is None else float(quote.freshness.age_seconds)
+        return (
+            assembled.identity.source.provider_name,
+            assembled.freshness_state.value,
+            seconds,
+        )
+
+    def release_historical_window(self) -> None:
+        """Drop this scan's assembled window and the monitor's retained series."""
+
+        self._last_assembly = None
+        self._load_cache.clear()
+        monitor = self._monitor
+        release = getattr(monitor, "release_historical_series", None)
+        if callable(release):
+            release(self._symbol)
+
     def _load_uncached(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
         production_authority = self._session is not None and self._store is not None

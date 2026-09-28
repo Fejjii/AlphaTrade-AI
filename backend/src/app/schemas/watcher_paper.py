@@ -6,6 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.watcher_monitoring import WatcherSymbolStatus
+
 WATCHER_PAPER_ACTIVATION_REQUIREMENTS: tuple[str, ...] = (
     "Default disarmed: WATCHER_PAPER_STAGING_ACTIVATION is false",
     "Local paper monitoring stays ENVIRONMENT=local with WATCHER_ORCHESTRATION_ENABLED",
@@ -42,6 +44,8 @@ class WatcherPaperRuntimeStatus(BaseModel):
     running: bool
     worker_id: str | None = None
     symbols: list[str] = Field(default_factory=lambda: ["BTCUSDT"])
+    multi_symbol_enabled: bool = False
+    symbol_statuses: list[WatcherSymbolStatus] = Field(default_factory=list)
     poll_interval_seconds: float
     max_scopes_per_cycle: int
     paper_only: bool = True

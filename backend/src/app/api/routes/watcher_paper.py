@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.core.dependencies import SessionDep, SettingsDep
 from app.db.models import KillSwitchState
+from app.schemas.watcher_monitoring import WatcherSymbolStatus
 from app.schemas.watcher_paper import (
     WATCHER_PAPER_ACTIVATION_REQUIREMENTS,
     WatcherPaperRuntimeStatus,
@@ -18,7 +19,7 @@ from app.schemas.watcher_paper import (
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import ReaderDep
 from app.workers.watcher_paper import paper_runtime_enabled
-from app.workers.watcher_paper_targets import normalize_paper_symbols
+from app.workers.watcher_watchlist import effective_watch_symbols
 
 router = APIRouter(prefix="/watcher", tags=["watcher-paper"])
 
@@ -61,9 +62,13 @@ async def watcher_paper_runtime_status(
         running=False if snapshot is None else snapshot.running,
         worker_id=None if snapshot is None else snapshot.worker_id,
         symbols=list(
-            snapshot.symbols
-            if snapshot is not None
-            else normalize_paper_symbols(settings.watcher_paper_symbols)
+            snapshot.symbols if snapshot is not None else effective_watch_symbols(settings)
+        ),
+        multi_symbol_enabled=bool(settings.watcher_multi_symbol_enabled),
+        symbol_statuses=_symbol_statuses(
+            runtime,
+            settings,
+            tenant.organization_id,
         ),
         poll_interval_seconds=(
             snapshot.poll_interval_seconds
@@ -90,6 +95,32 @@ async def watcher_paper_runtime_status(
         scopes=scopes,
         remaining_activation_requirements=list(WATCHER_PAPER_ACTIVATION_REQUIREMENTS),
     )
+
+
+def _symbol_statuses(
+    runtime: object | None,
+    settings: Settings,
+    organization_id: UUID,
+) -> list[WatcherSymbolStatus]:
+    reader = getattr(runtime, "symbol_statuses_for", None)
+    if not callable(reader):
+        return [WatcherSymbolStatus(symbol=symbol) for symbol in effective_watch_symbols(settings)]
+    projected: list[WatcherSymbolStatus] = []
+    for row in reader(organization_id):
+        projected.append(
+            WatcherSymbolStatus(
+                symbol=str(row.symbol),
+                source=str(row.source),
+                freshness=str(row.freshness),
+                freshness_seconds=row.freshness_seconds,
+                scan_status=str(row.scan_status),
+                last_successful_scan_at=row.last_successful_scan_at,
+                last_failure_at=row.last_failure_at,
+                last_failure_reason=row.last_failure_reason,
+                strategy_candidate_ids=[str(item) for item in row.strategy_candidate_ids],
+            )
+        )
+    return projected
 
 
 def _tenant_kill_switch_active(

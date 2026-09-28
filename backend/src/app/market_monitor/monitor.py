@@ -97,6 +97,15 @@ class PerpetualMarketMonitor:
                 return result
             return runtime.project(evaluated)
 
+    def release_historical_series(self, symbol: str) -> None:
+        """Drop one symbol's retained candles and trade batch. Keep its cursor."""
+
+        token = symbol.strip().upper()
+        with self._lock:
+            runtime = self._runtimes.get(token)
+            if runtime is not None:
+                runtime.release_historical_series()
+
     def restart(self) -> None:
         """Drop all connection epochs. Used by tests to simulate process restart."""
         with self._lock:

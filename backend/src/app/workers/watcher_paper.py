@@ -65,6 +65,11 @@ from app.workers.watcher_paper_targets import (
     list_paper_scan_targets,
     normalize_paper_symbols,
 )
+from app.workers.watcher_watchlist import (
+    SymbolHistoryBudget,
+    SymbolObservation,
+    effective_watch_symbols,
+)
 
 if TYPE_CHECKING:
     from app.market_monitor.monitor import PerpetualMarketMonitor
@@ -107,6 +112,22 @@ class WatcherPaperScanReport:
     paper_fill_id: UUID | None = None
     journal_trade_id: UUID | None = None
     journal_status: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolWatchStatus:
+    """One tenant's latest view of one watchlist symbol. No prices."""
+
+    organization_id: UUID
+    symbol: str
+    source: str
+    freshness: str
+    freshness_seconds: float | None
+    scan_status: str
+    last_successful_scan_at: datetime | None
+    last_failure_at: datetime | None
+    last_failure_reason: str | None
+    strategy_candidate_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +292,8 @@ class WatcherPaperRuntime:
         self._market_source = ""
         self._freshness_seconds: float | None = None
         self._gate_refusals = 0
+        self._history = SymbolHistoryBudget()
+        self._symbol_status: dict[tuple[UUID, str], SymbolWatchStatus] = {}
         self._thread: threading.Thread | None = None
         self._status_lock = threading.Lock()
         self._held_fencing_tokens: dict[str, int] = {}
@@ -289,6 +312,42 @@ class WatcherPaperRuntime:
     @property
     def side_effects(self) -> SideEffectPorts:
         return self._side_effects
+
+    @property
+    def history_budget(self) -> SymbolHistoryBudget:
+        return self._history
+
+    def symbol_statuses_for(self, organization_id: UUID) -> tuple[SymbolWatchStatus, ...]:
+        """Per-symbol status for one tenant. Other tenants' scans are omitted."""
+
+        with self._status_lock:
+            rows = [
+                row
+                for row in self._symbol_status.values()
+                if row.organization_id == organization_id
+            ]
+            known = {row.symbol: row for row in rows}
+            ordered: list[SymbolWatchStatus] = []
+            for symbol in self._symbols:
+                current = known.get(symbol)
+                if current is not None:
+                    ordered.append(current)
+                    continue
+                ordered.append(
+                    SymbolWatchStatus(
+                        organization_id=organization_id,
+                        symbol=symbol,
+                        source="unknown",
+                        freshness="unknown",
+                        freshness_seconds=None,
+                        scan_status="not_scanned",
+                        last_successful_scan_at=None,
+                        last_failure_at=None,
+                        last_failure_reason=None,
+                        strategy_candidate_ids=(),
+                    )
+                )
+            return tuple(ordered)
 
     def snapshot(self) -> WatcherPaperStatusState:
         with self._status_lock:
@@ -418,6 +477,7 @@ class WatcherPaperRuntime:
                 scans.append(scan)
                 created += len(scan.candidate_ids)
                 any_kill = any_kill or scan.kill_switch_active
+            self._note_uncovered_symbols(targets, scans)
         finally:
             if close_session and session is not None:
                 session.close()
@@ -489,13 +549,15 @@ class WatcherPaperRuntime:
         )
 
     def _scan_one(self, session: Session | None, target: PaperScanTarget) -> WatcherPaperScanReport:
+        observation = SymbolObservation.unknown()
         try:
             # Candidate writes lock watcher_worker_leases in their own transaction
             # and commit before the orchestrator heartbeats that same row. Binding
             # this scan session across run_worker holds that lock and deadlocks.
-            report = self._scan_target(session, target)
+            report, observation = self._scan_target(session, target)
             if session is not None:
                 session.commit()
+            self._record_symbol_status(report, observation)
             return report
         except Exception:
             if session is not None:
@@ -509,7 +571,7 @@ class WatcherPaperRuntime:
                 exc_info=True,
             )
             observe_scan("failed")
-            return WatcherPaperScanReport(
+            report = WatcherPaperScanReport(
                 organization_id=target.organization_id,
                 scan_scope=target.scan_scope,
                 symbol=target.symbol,
@@ -521,10 +583,12 @@ class WatcherPaperRuntime:
                 kill_switch_active=self._kill_switch_is_active(session, target.organization_id),
                 user_id=target.user_id,
             )
+            self._record_symbol_status(report, observation)
+            return report
 
     def _scan_target(
         self, session: Session | None, target: PaperScanTarget
-    ) -> WatcherPaperScanReport:
+    ) -> tuple[WatcherPaperScanReport, SymbolObservation]:
         kill_active = self._kill_switch_is_active(session, target.organization_id)
         if automated_paper_actions_blocked(kill_active):
             report = WatcherPaperScanReport(
@@ -551,70 +615,159 @@ class WatcherPaperRuntime:
                 kill_switch_active=True,
                 paper_only=True,
             )
-            return report
-        policy = self._materialize_policy(target)
-        request = ScanRequest(
-            organization_id=target.organization_id,
-            principal_id=None,
-            scan_scope=target.scan_scope,
-            policy_id=policy.identity.policy_id,
-            policy_version=policy.version,
-            policy_content_hash=policy.content_hash,
-            watchlist_item_ids=(policy.identity.watchlist_item_id,),
-            timeframe=target.timeframe,
-            idempotency_key=self._idempotency_key(target),
-        )
-        evidence = self._build_evidence(session, target.symbol)
-        evaluator = build_fusion_evaluation_service(
-            evidence=evidence,
-            lifecycle=self._lifecycle,
-            clock=self._eval_clock,
-            persistence_fence=self._persistence_fence,
-            outcome_observer=self._observer_factory(session, target),
-        )
-        orchestrator = WatcherOrchestrator(
-            store=self._store,
-            evaluator=evaluator,
-            clock=self._clock,
-            config=WatcherRuntimeConfig(
-                enabled=True,
-                lease_ttl_seconds=self._lease_ttl_seconds,
-                heartbeat_stale_after_seconds=self._heartbeat_stale_after_seconds,
-            ),
-            side_effects=self._side_effects,
-        )
-        result = orchestrator.run_worker(
-            request,
-            worker_id=self._worker_id,
-            held_fencing_token=self._held_fencing_tokens.get(target.scan_scope),
-        )
-        if result.fencing_token is not None:
-            self._held_fencing_tokens[target.scan_scope] = result.fencing_token
-        report = _report_from_cycle(
-            target=target,
-            result=result,
-            kill_switch_active=kill_active,
-            evaluator=evaluator,
-        )
-        report = self._continue_paper_loop(session, target, report, evidence)
-        self._notify_scan(report)
-        observe_scan(report.reason_code)
-        logger.info(
-            "watcher_paper_scan",
-            worker_id=self._worker_id,
-            organization_id=str(target.organization_id),
-            scan_scope=target.scan_scope,
-            symbol=target.symbol,
-            status=report.status,
-            reason_code=report.reason_code,
-            replayed=report.replayed,
-            published=report.published,
-            candidates=len(report.candidate_ids),
-            kill_switch_active=kill_active,
-            mode=EvaluationMode.PERSIST_EVIDENCE.value,
-            paper_only=True,
-        )
-        return report
+            return report, SymbolObservation.unknown()
+        evidence: WatcherScanEvidencePort | None = None
+        acquired = False
+        try:
+            self._history.acquire(target.symbol)
+            acquired = True
+            policy = self._materialize_policy(target)
+            request = ScanRequest(
+                organization_id=target.organization_id,
+                principal_id=None,
+                scan_scope=target.scan_scope,
+                policy_id=policy.identity.policy_id,
+                policy_version=policy.version,
+                policy_content_hash=policy.content_hash,
+                watchlist_item_ids=(policy.identity.watchlist_item_id,),
+                timeframe=target.timeframe,
+                idempotency_key=self._idempotency_key(target),
+            )
+            evidence = self._build_evidence(session, target.symbol)
+            evaluator = build_fusion_evaluation_service(
+                evidence=evidence,
+                lifecycle=self._lifecycle,
+                clock=self._eval_clock,
+                persistence_fence=self._persistence_fence,
+                outcome_observer=self._observer_factory(session, target),
+            )
+            orchestrator = WatcherOrchestrator(
+                store=self._store,
+                evaluator=evaluator,
+                clock=self._clock,
+                config=WatcherRuntimeConfig(
+                    enabled=True,
+                    lease_ttl_seconds=self._lease_ttl_seconds,
+                    heartbeat_stale_after_seconds=self._heartbeat_stale_after_seconds,
+                ),
+                side_effects=self._side_effects,
+            )
+            result = orchestrator.run_worker(
+                request,
+                worker_id=self._worker_id,
+                held_fencing_token=self._held_fencing_tokens.get(target.scan_scope),
+            )
+            if result.fencing_token is not None:
+                self._held_fencing_tokens[target.scan_scope] = result.fencing_token
+            report = _report_from_cycle(
+                target=target,
+                result=result,
+                kill_switch_active=kill_active,
+                evaluator=evaluator,
+            )
+            report = self._continue_paper_loop(session, target, report, evidence)
+            observation = _read_symbol_observation(evidence)
+            self._notify_scan(report)
+            observe_scan(report.reason_code)
+            logger.info(
+                "watcher_paper_scan",
+                worker_id=self._worker_id,
+                organization_id=str(target.organization_id),
+                scan_scope=target.scan_scope,
+                symbol=target.symbol,
+                status=report.status,
+                reason_code=report.reason_code,
+                replayed=report.replayed,
+                published=report.published,
+                candidates=len(report.candidate_ids),
+                kill_switch_active=kill_active,
+                mode=EvaluationMode.PERSIST_EVIDENCE.value,
+                paper_only=True,
+            )
+            return report, observation
+        finally:
+            if evidence is not None:
+                _release_historical_window(evidence)
+            if acquired:
+                self._history.release(target.symbol)
+
+    def _record_symbol_status(
+        self,
+        report: WatcherPaperScanReport,
+        observation: SymbolObservation,
+    ) -> None:
+        key = (report.organization_id, report.symbol)
+        now = self._clock.now()
+        success = report.status == "succeeded"
+        failure = report.status == "failed"
+        with self._status_lock:
+            previous = self._symbol_status.get(key)
+            source = observation.source
+            freshness = observation.freshness
+            freshness_seconds = observation.freshness_seconds
+            if source == "unknown" and previous is not None:
+                source = previous.source
+            if freshness == "unknown" and previous is not None:
+                freshness = previous.freshness
+                if freshness_seconds is None:
+                    freshness_seconds = previous.freshness_seconds
+            if success:
+                candidates = tuple(str(item) for item in report.candidate_ids)
+                last_success: datetime | None = now
+                last_failure = None if previous is None else previous.last_failure_at
+                last_failure_reason = None if previous is None else previous.last_failure_reason
+            else:
+                candidates = () if previous is None else previous.strategy_candidate_ids
+                last_success = None if previous is None else previous.last_successful_scan_at
+                if failure:
+                    last_failure = now
+                    last_failure_reason = report.reason_code
+                elif previous is None:
+                    last_failure = None
+                    last_failure_reason = None
+                else:
+                    last_failure = previous.last_failure_at
+                    last_failure_reason = previous.last_failure_reason
+            self._symbol_status[key] = SymbolWatchStatus(
+                organization_id=report.organization_id,
+                symbol=report.symbol,
+                source=source,
+                freshness=freshness,
+                freshness_seconds=freshness_seconds,
+                scan_status=report.status,
+                last_successful_scan_at=last_success,
+                last_failure_at=last_failure,
+                last_failure_reason=last_failure_reason,
+                strategy_candidate_ids=candidates,
+            )
+
+    def _note_uncovered_symbols(
+        self,
+        targets: tuple[PaperScanTarget, ...] | list[PaperScanTarget],
+        scans: list[WatcherPaperScanReport],
+    ) -> None:
+        """Watchlist symbols with no covering strategy do not load history."""
+
+        scanned = {(item.organization_id, item.symbol) for item in scans}
+        organizations = {item.organization_id for item in targets}
+        for organization_id in organizations:
+            for symbol in self._symbols:
+                if (organization_id, symbol) in scanned:
+                    continue
+                self._record_symbol_status(
+                    WatcherPaperScanReport(
+                        organization_id=organization_id,
+                        scan_scope="",
+                        symbol=symbol,
+                        status="no_strategy",
+                        reason_code="symbol_outside_strategy_universe",
+                        replayed=False,
+                        published=False,
+                        candidate_ids=(),
+                        kill_switch_active=False,
+                    ),
+                    SymbolObservation.unknown(),
+                )
 
     def _build_evidence(self, session: Session | None, symbol: str) -> WatcherScanEvidencePort:
         if self._evidence_factory is None:
@@ -869,6 +1022,30 @@ class WatcherPaperRuntime:
             )
 
 
+def _read_symbol_observation(evidence: WatcherScanEvidencePort) -> SymbolObservation:
+    reader = getattr(evidence, "symbol_observation", None)
+    if not callable(reader):
+        return SymbolObservation.unknown()
+    observed = reader()
+    if isinstance(observed, SymbolObservation):
+        return observed
+    if isinstance(observed, tuple) and len(observed) == 3:
+        source, freshness, seconds = observed
+        age = float(seconds) if isinstance(seconds, int | float) else None
+        return SymbolObservation(
+            source=str(source),
+            freshness=str(freshness),
+            freshness_seconds=age,
+        )
+    return SymbolObservation.unknown()
+
+
+def _release_historical_window(evidence: WatcherScanEvidencePort) -> None:
+    release = getattr(evidence, "release_historical_window", None)
+    if callable(release):
+        release()
+
+
 def _gate_refusal_reason(decision: object) -> str | None:
     allowed = getattr(decision, "allowed", None)
     if allowed is True:
@@ -966,12 +1143,17 @@ def default_paper_evidence_factory(
         perpetual_source_is_replay,
         resolve_perpetual_evidence_source,
     )
-    from app.market_contracts.catalog import default_perpetual_catalog
+    from app.market_contracts.catalog import catalog_for_symbols, default_perpetual_catalog
+    from app.market_contracts.enums import VenueId
     from app.market_monitor.factory import build_perpetual_market_monitor
     from app.market_monitor.watcher_port import MarketMonitorWatcherPort
     from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 
-    catalog = default_perpetual_catalog()
+    symbols = effective_watch_symbols(settings)
+    if symbols == (FIRST_SLICE_SYMBOL,):
+        catalog = default_perpetual_catalog()
+    else:
+        catalog = catalog_for_symbols(symbols, venue=VenueId.BINANCE)
     source = resolve_perpetual_evidence_source(settings, catalog=catalog)
     replay = perpetual_source_is_replay(settings)
     resolved_monitor = monitor or build_perpetual_market_monitor(
@@ -1056,7 +1238,7 @@ def build_watcher_paper_runtime(
         worker_id=worker_id
         if worker_id is not None
         else new_worker_instance_id(settings.watcher_paper_worker_id),
-        symbols=settings.watcher_paper_symbols,
+        symbols=effective_watch_symbols(settings),
         poll_interval_seconds=settings.watcher_paper_poll_interval_seconds,
         max_scopes_per_cycle=settings.watcher_paper_max_scopes_per_cycle,
         lease_ttl_seconds=paper_lease_ttl_seconds(settings),

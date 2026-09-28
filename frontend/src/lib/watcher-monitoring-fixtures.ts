@@ -32,6 +32,8 @@ export function makeWatcherMonitoringSnapshot(
     },
     config_flags: { ...EMPTY_FLAGS },
     symbols_monitored: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    multi_symbol_enabled: false,
+    symbol_statuses: [],
     approved_strategies: [],
     last_scan_at: null,
     last_scan_status: null,

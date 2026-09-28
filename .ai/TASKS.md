@@ -1956,4 +1956,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-069
 - Note: Do not deploy, arm Watcher, or activate Telegram.
 
+### AT-088 — Configurable paper Watcher watchlist (default off)
+- Priority: P0 · Status: DONE · Dependencies: AT-087 · Risk: Medium
+  (market-data scope only; must not activate extra symbols)
+- Safety classification: Paper execution; `WATCHER_MULTI_SYMBOL_ENABLED`
+  defaults false; `render.yaml` unchanged; no deploy; no activation; no live
+  trading
+- Goal: Let Watcher monitor a configurable USDT-perpetual watchlist without
+  code changes, with per-symbol freshness, per-symbol Binance-to-Bybit
+  failover, failure isolation, and a sequential history bound. Do not activate
+  additional symbols in Render.
+- Result: Machinery is implemented and default-off. Simulated watchlist
+  BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT, DOGEUSDT. Activation verdict: NOT READY.
+  Fusion market identity remains BTCUSDT. Live HTTP for the extra symbols was
+  not run.
+- Branch: `cursor/multi-symbol-watchlist-c57c`
+- Base: `main` at `3678cf8`
+- Alembic: unchanged. No new revision.
+- ADR: AT-ADR-072
+- Note: Do not deploy. Do not set `WATCHER_MULTI_SYMBOL_ENABLED=true` in
+  Render. Do not treat this task as approval to monitor extra coins.
+
 

@@ -13,15 +13,21 @@ from app.market_contracts.adapters.bybit_usdt_perpetual import BybitUsdtPerpetua
 from app.market_contracts.adapters.evidence_pool import shared_binance_evidence_pool
 from app.market_contracts.adapters.failover import FailoverPerpetualSource
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
-from app.market_contracts.catalog import PerpetualInstrumentCatalog
+from app.market_contracts.adapters.symbol_failover import PerSymbolFailoverSource
+from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.errors import FallbackForbiddenError
-from app.market_contracts.identity import binance_usdm_btcusdt, bybit_usdt_perpetual_btcusdt
+from app.market_contracts.identity import (
+    binance_usdm_btcusdt,
+    bybit_usdt_perpetual,
+    bybit_usdt_perpetual_btcusdt,
+)
 
 PerpetualEvidenceSource = (
     ReplayPerpetualSource
     | BinanceUsdmPerpetualSource
     | BybitUsdtPerpetualSource
     | FailoverPerpetualSource
+    | PerSymbolFailoverSource
 )
 
 
@@ -44,7 +50,8 @@ def canonical_evidence_source_for_process(
         ReplayPerpetualSource
         | BinanceUsdmPerpetualSource
         | BybitUsdtPerpetualSource
-        | FailoverPerpetualSource,
+        | FailoverPerpetualSource
+        | PerSymbolFailoverSource,
     ):
         return current
     source = resolve_perpetual_evidence_source(
@@ -71,8 +78,25 @@ def resolve_perpetual_evidence_source(
     if mode == "bybit_usdt_perpetual":
         return _bybit_source(settings, transport=transport)
     if mode in LIVE_MODES and secondary == "bybit_usdt_perpetual":
+        resolved_catalog = catalog if catalog is not None else default_perpetual_catalog()
+        symbols = resolved_catalog.enabled_symbols()
+        binance = _binance_source(
+            settings, transport=transport, catalog=resolved_catalog, shared=shared
+        )
+        if len(symbols) > 1:
+            return PerSymbolFailoverSource(
+                binance,
+                symbols=symbols,
+                primary_instrument_for=resolved_catalog.require,
+                secondary_instrument_for=bybit_usdt_perpetual,
+                secondary_factory=lambda symbol: _bybit_source(
+                    settings,
+                    transport=transport,
+                    symbol=symbol,
+                ),
+            )
         return FailoverPerpetualSource(
-            _binance_source(settings, transport=transport, catalog=catalog, shared=shared),
+            binance,
             _bybit_source(settings, transport=transport),
             primary_instrument=binance_usdm_btcusdt(),
             secondary_instrument=bybit_usdt_perpetual_btcusdt(),
@@ -111,11 +135,14 @@ def _bybit_source(
     settings: Settings,
     *,
     transport: httpx.BaseTransport | None,
+    symbol: str | None = None,
 ) -> BybitUsdtPerpetualSource:
+    instrument = None if symbol is None else bybit_usdt_perpetual(symbol)
     return BybitUsdtPerpetualSource(
         base_url=settings.bybit_perpetual_base_url,
         timeout_seconds=settings.perpetual_evidence_timeout_seconds,
         transport=transport,
+        instrument=instrument,
         max_retries=settings.binance_request_max_retries,
         max_backoff_seconds=settings.binance_request_max_backoff_seconds,
     )
