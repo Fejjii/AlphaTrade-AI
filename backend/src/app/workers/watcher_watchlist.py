@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -92,7 +93,7 @@ class SymbolHistoryBudget:
         self._held: str | None = None
         self._lock = threading.Lock()
         self.peak_in_flight = 0
-        self.completed: list[str] = []
+        self.completed: deque[str] = deque(maxlen=MAX_WATCHLIST_SLOTS)
         self.rejected_overlaps = 0
 
     @property
@@ -140,17 +141,17 @@ class SymbolStatusBook:
 
         contracts = book if book is not None else default_contract_book()
         with self._lock:
+            previous_by_symbol = {row.symbol: row for row in self._rows.values()}
             refreshed: dict[int, SymbolRuntimeStatus] = {}
             for slot in config.slots:
-                previous = self._rows.get(slot.position)
-                same_symbol = previous is not None and previous.symbol == slot.symbol
+                previous = previous_by_symbol.get(slot.symbol)
                 source, error = availability_for_symbol(
                     slot.symbol,
                     source_mode=source_mode,
                     book=contracts,
                     verdicts=verdicts,
                 )
-                retained = previous if same_symbol and previous is not None else None
+                retained = previous
                 if not slot.enabled:
                     setup = "disabled"
                     freshness = "not_evaluated"

@@ -53,6 +53,7 @@ from app.workers.watcher_watchlist import (
     MemoryWatchlistStore,
     SymbolHistoryBudget,
     SymbolScanOutcome,
+    SymbolStatusBook,
     WatchlistValidationError,
     default_watchlist,
     reorder_slots,
@@ -646,3 +647,55 @@ def _identity_for(instrument: object) -> object:
             detail="Bybit test identity.",
         ),
     )
+
+
+def test_repeated_scans_keep_only_one_cycle_of_completion_history() -> None:
+    budget = SymbolHistoryBudget()
+    symbols = default_watchlist(now=NOW).enabled_symbols()
+    for _ in range(1000):
+        scan_symbols_sequentially(
+            symbols, lambda symbol: SymbolScanOutcome(symbol=symbol, status="ok"), budget
+        )
+    assert tuple(budget.completed) == symbols
+    assert budget.held_symbol is None
+    assert budget.peak_in_flight == 1
+
+
+def test_runtime_status_follows_symbol_across_reorder_and_replacement() -> None:
+    config = default_watchlist(now=NOW)
+    book = SymbolStatusBook()
+    book.project(config, source_mode="binance_usdm")
+    book.record_scan(
+        symbol="BTCUSDT",
+        succeeded=True,
+        setup_state="no_setup",
+        freshness="fresh",
+        strategy_matches=("btc_strategy",),
+        alert_state="none",
+        error_state=None,
+        scanned_at=NOW,
+    )
+    book.record_scan(
+        symbol="ETHUSDT",
+        succeeded=False,
+        setup_state="scan_failed",
+        freshness="unknown",
+        strategy_matches=(),
+        alert_state="none",
+        error_state="provider_unreachable",
+        scanned_at=NOW,
+    )
+    reordered = reorder_slots(config, (3, 2, 1, 4, 5), now=NOW)
+    rows = {row.symbol: row for row in book.project(reordered, source_mode="binance_usdm")}
+    assert rows["BTCUSDT"].position == 3
+    assert rows["BTCUSDT"].last_successful_scan == NOW
+    assert rows["BTCUSDT"].strategy_matches == ("btc_strategy",)
+    assert rows["ETHUSDT"].position == 1
+    assert rows["ETHUSDT"].last_failed_scan == NOW
+    assert rows["ETHUSDT"].error_state == "provider_unreachable"
+    replaced = replace_symbol(reordered, 3, "SOLUSDT", now=NOW)
+    rows = {row.symbol: row for row in book.project(replaced, source_mode="binance_usdm")}
+    assert "BTCUSDT" not in rows
+    assert rows["SOLUSDT"].last_successful_scan is None
+    assert rows["SOLUSDT"].strategy_matches == ()
+    assert rows["ETHUSDT"].last_failed_scan == NOW
