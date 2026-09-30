@@ -45,6 +45,7 @@ frontend/.env*.local
 *.sqlite3
 *.db
 logs/
+var/
 .vercel
 
 # AI collaboration layer

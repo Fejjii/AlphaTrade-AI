@@ -2600,4 +2600,37 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** `docs/interactive_agent_foundation.md` and
   `docs/controlled_paper_activation.md`. PR 148 remains excluded.
 
+## AT-ADR-076 — Paper Watcher uses five logical symbol slots
+- **Date:** 2026-09-30
+- **Status:** Accepted
+- **Context:** The paper Watcher treated BTCUSDT as the only market identity.
+  PR 148 gated extra symbols behind a flag and still forced BTCUSDT into the
+  active set. Live Binance and Bybit contract checks were not reachable from
+  this environment (HTTP 451 and HTTP 403).
+- **Decision:**
+  1. One paper Watcher process owns five ordered slots. The default symbols are
+     BTCUSDT, ZECUSDT, ETHUSDT, TAOUSDT, and HYPEUSDT. Operators can enable,
+     disable, replace, and reorder them through `PUT /watcher/watchlist`
+     without a code deployment. The file store is `var/watcher-watchlist.json`
+     unless `WATCHER_WATCHLIST_PATH` is set. No Alembic migration is added.
+  2. A symbol is scan-eligible only when the active evidence venue has a
+     verified linear USDT perpetual contract for that exact symbol. The
+     in-repo book verifies BTCUSDT on Binance USD-M and Bybit linear. Other
+     symbols stay unavailable. A payload for a different symbol is rejected.
+  3. Generic market identity follows the symbol being evaluated. The canonical
+     first-slice evaluator still defaults to BTCUSDT when no symbol is passed,
+     and compiled BTC strategies still match only BTCUSDT. No new setup rules
+     are added.
+  4. Symbols are scanned one at a time. One failure does not stop the others.
+     Historical trade windows are released after each symbol. Risk BLOCK and
+     the kill switch stay in force. Real trading stays disabled.
+- **Alternatives considered:** Cherry-pick PR 148 (rejected: it still forced
+  BTC as the only active identity). Mark ZEC, ETH, TAO, and HYPE as verified
+  without a provider payload (rejected: those listings were not verified here).
+- **Safety impact:** Paper only. No Render deploy, no Telegram arm, no live
+  orders, no shared database migration.
+- **Consequences:** `GET /watcher/watchlist` is configuration.
+  `GET /watcher/watchlist/status` is per-symbol runtime status. Settings shows
+  the five slots.
+
 

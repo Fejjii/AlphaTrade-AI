@@ -316,6 +316,12 @@ class BinanceUsdmPerpetualSource:
                 error_message=self._last_error,
             )
 
+    def release_symbol_history(self, symbol: str) -> None:
+        """Release cached trade windows for one symbol after its evaluation."""
+
+        self._trade_cache.drop_symbol(symbol)
+        self._reduced_cache.drop_symbol(symbol)
+
     def verify_exchange_info(self, instrument: InstrumentIdentity) -> None:
         payload = self._get("/fapi/v1/exchangeInfo", {"symbol": instrument.provider_symbol})
         if not isinstance(payload, dict):

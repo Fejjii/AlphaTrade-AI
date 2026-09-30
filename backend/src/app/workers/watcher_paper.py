@@ -63,7 +63,17 @@ from app.workers.watcher_paper_targets import (
     FIRST_SLICE_SYMBOL,
     PaperScanTarget,
     list_paper_scan_targets,
+    list_watchlist_scan_targets,
     normalize_paper_symbols,
+)
+from app.workers.watcher_watchlist import (
+    FileWatchlistStore,
+    MemoryWatchlistStore,
+    SymbolHistoryBudget,
+    SymbolStatusBook,
+    WatchlistConfiguration,
+    ordered_watch_symbols,
+    release_symbol_history,
 )
 
 if TYPE_CHECKING:
@@ -234,13 +244,26 @@ class WatcherPaperRuntime:
         evaluation_observer_factory: EvaluationObserverFactory | None = None,
         activation_gate: ActivationGate | None = None,
         canonical_runtime: object | None = None,
+        watchlist_mode: bool = False,
+        watchlist: WatchlistConfiguration | None = None,
+        watchlist_store: FileWatchlistStore | MemoryWatchlistStore | None = None,
+        symbol_status: SymbolStatusBook | None = None,
+        history_source: object | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
         self._clock = clock
         self._enabled = enabled
         self._worker_id = worker_id
-        self._symbols = normalize_paper_symbols(symbols)
+        self._watchlist_mode = watchlist_mode
+        self._watchlist = watchlist
+        self._watchlist_store = watchlist_store
+        self._symbol_status = symbol_status if symbol_status is not None else SymbolStatusBook()
+        self._history = SymbolHistoryBudget()
+        self._history_source = history_source
+        self._symbols = (
+            ordered_watch_symbols(symbols) if watchlist_mode else normalize_paper_symbols(symbols)
+        )
         self._poll_interval_seconds = poll_interval_seconds
         self._max_scopes_per_cycle = max_scopes_per_cycle
         self._lease_ttl_seconds = lease_ttl_seconds
@@ -289,6 +312,14 @@ class WatcherPaperRuntime:
     @property
     def side_effects(self) -> SideEffectPorts:
         return self._side_effects
+
+    @property
+    def history(self) -> SymbolHistoryBudget:
+        return self._history
+
+    @property
+    def symbol_status(self) -> SymbolStatusBook:
+        return self._symbol_status
 
     def snapshot(self) -> WatcherPaperStatusState:
         with self._status_lock:
@@ -388,6 +419,7 @@ class WatcherPaperRuntime:
         return self.run_loop()
 
     def run_cycle(self) -> WatcherPaperCycleReport:
+        self._project_watchlist_status()
         refused = self._activation_refusal()
         if refused is not None:
             return refused
@@ -487,6 +519,12 @@ class WatcherPaperRuntime:
             return self._target_loader(session)[: self._max_scopes_per_cycle]
         if session is None:
             return ()
+        if self._watchlist_mode:
+            return list_watchlist_scan_targets(
+                session,
+                symbols=self._symbols,
+                limit=self._max_scopes_per_cycle,
+            )
         return list_paper_scan_targets(
             session,
             symbols=self._symbols,
@@ -494,6 +532,16 @@ class WatcherPaperRuntime:
         )
 
     def _scan_one(self, session: Session | None, target: PaperScanTarget) -> WatcherPaperScanReport:
+        self._history.acquire(target.symbol)
+        try:
+            return self._scan_one_isolated(session, target)
+        finally:
+            self._history.release(target.symbol)
+            release_symbol_history(self._history_source, target.symbol)
+
+    def _scan_one_isolated(
+        self, session: Session | None, target: PaperScanTarget
+    ) -> WatcherPaperScanReport:
         try:
             # Candidate writes lock watcher_worker_leases in their own transaction
             # and commit before the orchestrator heartbeats that same row. Binding
@@ -779,6 +827,60 @@ class WatcherPaperRuntime:
                 reason_code=report.reason_code,
             )
 
+    def _project_watchlist_status(self) -> None:
+        store = self._watchlist_store
+        if store is not None and self._watchlist_mode:
+            try:
+                self._watchlist = store.load()
+            except (OSError, ValueError):
+                logger.warning("watcher_watchlist_load_failed", worker_id=self._worker_id)
+        config = self._watchlist
+        if config is None:
+            return
+        if self._watchlist_mode:
+            self._symbols = ordered_watch_symbols(config.enabled_symbols())
+            with self._status_lock:
+                self._status.symbols = self._symbols
+        source_mode = "replay"
+        if self._settings is not None:
+            source_mode = self._settings.perpetual_evidence_source
+        self._symbol_status.project(config, source_mode=source_mode)
+
+    def _record_watchlist_scans(self, report: WatcherPaperCycleReport) -> None:
+        config = self._watchlist
+        if config is None:
+            return
+        scanned: set[str] = set()
+        moment = self._clock.now()
+        for scan in report.scans:
+            scanned.add(scan.symbol.strip().upper())
+            stale = "stale" in scan.reason_code
+            failed = scan.status == "failed" or stale
+            if scan.kill_switch_active:
+                alert = "blocked"
+            elif scan.candidate_ids and not stale:
+                alert = "paper_candidate"
+            else:
+                alert = "none"
+            self._symbol_status.record_scan(
+                symbol=scan.symbol,
+                succeeded=not failed and scan.status == "succeeded",
+                setup_state=scan.reason_code,
+                freshness="stale" if stale else "evaluated",
+                strategy_matches=() if failed else (scan.scan_scope,),
+                alert_state=alert,
+                error_state=scan.reason_code if failed else None,
+                scanned_at=moment,
+            )
+        for symbol in config.enabled_symbols():
+            if symbol in scanned:
+                continue
+            self._symbol_status.mark_unscanned(
+                symbol,
+                setup_state="no_strategy",
+                error_state=None,
+            )
+
     def _remember_cycle(self, report: WatcherPaperCycleReport) -> None:
         succeeded = failed = skipped = blocked = 0
         for scan in report.scans:
@@ -804,6 +906,7 @@ class WatcherPaperRuntime:
             self._status.kill_switch_active = report.kill_switch_active
             self._status.last_scans = report.scans
         self._publish_observed_status(report)
+        self._record_watchlist_scans(report)
 
     def _wait_seconds(self, report: WatcherPaperCycleReport) -> float:
         refusal = (not report.enabled) and report.reason_code != "watcher_disabled"
@@ -963,6 +1066,7 @@ def default_paper_evidence_factory(
     settings: Settings,
     *,
     monitor: PerpetualMarketMonitor | None = None,
+    history_source_out: list[object] | None = None,
 ) -> PaperEvidenceFactory:
     """Assemble live/read-only evidence through one monitor + canonical assembler."""
 
@@ -980,6 +1084,8 @@ def default_paper_evidence_factory(
 
     catalog = default_perpetual_catalog()
     source = resolve_perpetual_evidence_source(settings, catalog=catalog)
+    if history_source_out is not None:
+        history_source_out.append(source)
     replay = perpetual_source_is_replay(settings)
     resolved_monitor = monitor or build_perpetual_market_monitor(
         settings, source=source, catalog=catalog
@@ -1035,8 +1141,12 @@ def build_watcher_paper_runtime(
     from app.persistence.composition import build_postgres_watcher_store
     from app.runtime.canonical import build_production_canonical_runtime
     from app.signal_fusion.memory import UtcClock
+    from app.workers.watcher_watchlist import FileWatchlistStore, watchlist_path
 
     resolved_clock = clock if clock is not None else UtcClock()
+    watchlist_store = FileWatchlistStore(watchlist_path(settings))
+    watchlist = watchlist_store.load()
+    history_holder: list[object] = []
     canonical = build_production_canonical_runtime(
         session_factory, settings=settings, clock=resolved_clock
     )
@@ -1063,14 +1173,20 @@ def build_watcher_paper_runtime(
         worker_id=worker_id
         if worker_id is not None
         else new_worker_instance_id(settings.watcher_paper_worker_id),
-        symbols=settings.watcher_paper_symbols,
+        symbols=watchlist.enabled_symbols(),
+        watchlist_mode=True,
+        watchlist=watchlist,
+        watchlist_store=watchlist_store,
         poll_interval_seconds=settings.watcher_paper_poll_interval_seconds,
         max_scopes_per_cycle=settings.watcher_paper_max_scopes_per_cycle,
         lease_ttl_seconds=paper_lease_ttl_seconds(settings),
         heartbeat_stale_after_seconds=settings.watcher_heartbeat_stale_after_seconds,
         session_factory=session_factory,
         evidence_factory=evidence_factory
-        or default_paper_evidence_factory(settings, monitor=monitor),
+        or default_paper_evidence_factory(
+            settings, monitor=monitor, history_source_out=history_holder
+        ),
+        history_source=None if not history_holder else history_holder[0],
         target_loader=target_loader,
         kill_switch_probe=kill_switch_probe,
         persistence_fence=resolved_fence,

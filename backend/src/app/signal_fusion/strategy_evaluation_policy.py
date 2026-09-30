@@ -165,6 +165,7 @@ def evaluate_canonical_strategy(
         previous_assessment=previous_assessment,
         account_context=None,
         evaluation_params=bound,
+        market_symbol=executable_policy.authored_spec.symbol,
     )
 
 

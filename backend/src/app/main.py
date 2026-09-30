@@ -201,6 +201,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from app.market_monitor.factory import build_perpetual_market_monitor
 
     app.state.market_monitor = build_perpetual_market_monitor(settings)
+    from app.workers.watcher_watchlist import FileWatchlistStore, watchlist_path
+
+    app.state.watcher_watchlist = FileWatchlistStore(watchlist_path(settings))
     app.state.strategy_registry = build_strategy_registry()
     app.state.tool_registry = build_tool_registry(settings)
 

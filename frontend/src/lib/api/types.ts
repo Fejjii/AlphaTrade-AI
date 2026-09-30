@@ -4455,3 +4455,37 @@ export interface PaginatedJournalImportBatches {
   limit: number;
   offset: number;
 }
+
+export interface WatcherWatchlistSlot {
+  position: number;
+  symbol: string;
+  enabled: boolean;
+}
+
+export interface WatcherWatchlistConfiguration {
+  revision: number;
+  updated_at: string;
+  max_enabled: number;
+  slots: WatcherWatchlistSlot[];
+  paper_only: boolean;
+}
+
+export interface WatcherSymbolRuntimeStatus {
+  position: number;
+  symbol: string;
+  enabled: boolean;
+  market_source: string;
+  freshness: string;
+  last_successful_scan: string | null;
+  last_failed_scan: string | null;
+  setup_state: string;
+  strategy_matches: string[];
+  alert_state: string;
+  error_state: string | null;
+}
+
+export interface WatcherWatchlistStatus {
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+  symbols: WatcherSymbolRuntimeStatus[];
+}

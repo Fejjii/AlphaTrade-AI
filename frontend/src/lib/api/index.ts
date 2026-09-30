@@ -176,6 +176,9 @@ import type {
   OHLCVResponse,
   TickerResponse,
   WatchlistItem,
+  WatcherWatchlistConfiguration,
+  WatcherWatchlistSlot,
+  WatcherWatchlistStatus,
   ExchangeDiagnosticsSummary,
   AlertDeliveryPreviewResponse,
   AlertRoutingSummary,
@@ -938,6 +941,17 @@ export const api = {
       }),
     sendTest: () =>
       apiFetch<NotificationTestResult>("/notifications/test", { method: "POST", auth: true }),
+  },
+  watcherWatchlist: {
+    configuration: () =>
+      apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", { auth: true }),
+    replace: (slots: Array<Pick<WatcherWatchlistSlot, "symbol" | "enabled">>) =>
+      apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", {
+        method: "PUT",
+        auth: true,
+        body: JSON.stringify({ slots }),
+      }),
+    status: () => apiFetch<WatcherWatchlistStatus>("/watcher/watchlist/status", { auth: true }),
   },
   marketWatcher: {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),

@@ -32,6 +32,7 @@ from app.market_contracts.identity import (
     BYBIT_AGGRESSOR_CONVENTION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
+    bybit_usdt_perpetual,
     bybit_usdt_perpetual_btcusdt,
     require_instrument,
     require_perpetual,
@@ -67,7 +68,11 @@ _PROVEN_TAIL_RETENTION = timedelta(minutes=15)
 
 
 class BybitUsdtPerpetualSource:
-    """Public Bybit linear BTCUSDT perpetual. Spot and inverse books are rejected."""
+    """Public Bybit linear USDT perpetual. Spot and inverse books are rejected.
+
+    The default instrument is BTCUSDT. One instance serves one symbol so the
+    proven trade tail is never reused for a different market.
+    """
 
     name = "bybit-usdt-perpetual"
     kind = ProviderKind.MARKET_DATA
@@ -81,8 +86,18 @@ class BybitUsdtPerpetualSource:
         client: ReadOnlyHttpGetClient | None = None,
         max_retries: int = 3,
         max_backoff_seconds: float = 30.0,
+        instrument: InstrumentIdentity | None = None,
     ) -> None:
-        self._instrument = bybit_usdt_perpetual_btcusdt()
+        if instrument is None:
+            self._instrument = bybit_usdt_perpetual_btcusdt()
+        else:
+            expected = bybit_usdt_perpetual(instrument.provider_symbol)
+            if instrument.instrument_id != expected.instrument_id:
+                raise WrongInstrumentError(
+                    "Bybit adapter requires the contracted Bybit linear USDT perpetual."
+                )
+            self._instrument = expected
+        self._symbol = self._instrument.provider_symbol
         self._http = client or ReadOnlyHttpGetClient(
             base_url=base_url,
             timeout_seconds=timeout_seconds,
@@ -129,12 +144,12 @@ class BybitUsdtPerpetualSource:
             "/v5/market/kline",
             {
                 "category": BYBIT_CATEGORY,
-                "symbol": BYBIT_SYMBOL,
+                "symbol": self._symbol,
                 "interval": interval,
                 "limit": limit,
             },
         )
-        self._assert_linear_btc(result)
+        self._assert_linear(result)
         rows = result.get("list")
         if not isinstance(rows, list):
             raise WrongMarketError("Bybit kline payload is not a list.")
@@ -266,7 +281,19 @@ class BybitUsdtPerpetualSource:
             item["sequence"] = self._rank_by_exec[str(item["exec_id"])]
         return window
 
-    def _assert_linear_btc(self, result: Mapping[str, Any]) -> None:
+    def release_symbol_history(self, symbol: str) -> None:
+        """Drop this symbol's proven trade tail. A different symbol is left untouched."""
+
+        if symbol.strip().upper() != self._symbol:
+            return
+        self._proven.clear()
+        self._rank_by_exec.clear()
+        self._next_rank = 1
+        self._anchor_exec_id = None
+        self._proven_from_ms = None
+        self._rank_connection = None
+
+    def _assert_linear(self, result: Mapping[str, Any]) -> None:
         category = str(result.get("category", "")).lower()
         if category == "spot":
             raise SpotFallbackRejectedError(
@@ -277,8 +304,10 @@ class BybitUsdtPerpetualSource:
                 f"Bybit category {category or 'missing'} is not linear perpetual evidence."
             )
         symbol = str(result.get("symbol", "")).upper()
-        if symbol and symbol != BYBIT_SYMBOL:
-            raise WrongInstrumentError(f"Bybit symbol {symbol} is not BTCUSDT perpetual.")
+        if symbol and symbol != self._symbol:
+            raise WrongInstrumentError(
+                f"Bybit symbol {symbol} is not the configured {self._symbol} perpetual."
+            )
 
     def _assert_request(
         self,
@@ -288,7 +317,11 @@ class BybitUsdtPerpetualSource:
         require_perpetual(identity)
         require_instrument(identity, instrument)
         if instrument.instrument_id != self._instrument.instrument_id:
-            raise WrongInstrumentError("Bybit adapter only serves linear BTCUSDT perpetual.")
+            if self._symbol == BYBIT_SYMBOL:
+                raise WrongInstrumentError("Bybit adapter only serves linear BTCUSDT perpetual.")
+            raise WrongInstrumentError(
+                f"Bybit adapter instance only serves linear {self._symbol} perpetual."
+            )
         if identity.venue is not VenueId.BYBIT:
             raise WrongMarketError("Bybit adapter cannot serve a non-Bybit venue.")
         if identity.instrument.product_family is not ProductFamily.USDM_FUTURES:
@@ -350,8 +383,10 @@ class BybitUsdtPerpetualSource:
         receive_at: datetime,
     ) -> TradeEvent:
         symbol = str(row.get("symbol", "")).upper()
-        if symbol != BYBIT_SYMBOL:
-            raise WrongInstrumentError(f"Bybit trade symbol {symbol} is not BTCUSDT.")
+        if symbol != self._symbol:
+            raise WrongInstrumentError(
+                f"Bybit trade symbol {symbol} is not the configured {self._symbol} perpetual."
+            )
         side = str(row.get("side", "")).lower()
         if side == "buy":
             buyer_is_maker = False
@@ -399,9 +434,9 @@ class BybitUsdtPerpetualSource:
     def _load_recent_prints(self) -> list[dict[str, Any]]:
         result = self._public_result(
             "/v5/market/recent-trade",
-            {"category": BYBIT_CATEGORY, "symbol": BYBIT_SYMBOL, "limit": _RECENT_TRADE_LIMIT},
+            {"category": BYBIT_CATEGORY, "symbol": self._symbol, "limit": _RECENT_TRADE_LIMIT},
         )
-        self._assert_linear_btc(result)
+        self._assert_linear(result)
         payload = result.get("list")
         if not isinstance(payload, list) or not payload:
             raise IncompleteTradeWindowError(

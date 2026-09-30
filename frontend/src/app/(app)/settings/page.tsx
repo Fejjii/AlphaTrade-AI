@@ -1,6 +1,7 @@
 "use client";
 
 import { EmailVerificationNotice } from "@/components/account/EmailVerificationNotice";
+import { WatcherWatchlistSection } from "@/components/WatcherWatchlistSection";
 import { NotificationSettingsPanel } from "@/components/NotificationSettingsPanel";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { SafetyDisclaimers } from "@/components/SafetyDisclaimers";
@@ -21,6 +22,7 @@ export default function SettingsPage() {
         <p className="text-sm text-zinc-400">Environment and safety configuration for this workspace.</p>
       </div>
       <PaperModeBanner />
+      <WatcherWatchlistSection />
       <EmailVerificationNotice />
       <Card>
         <CardHeader>
