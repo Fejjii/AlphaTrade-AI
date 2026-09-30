@@ -60,6 +60,7 @@ from app.interactive_agent.contracts import (
     VoiceOutputRequest,
 )
 from app.interactive_agent.conversation import compose_visible_reply
+from app.interactive_agent.proposals import find_proposal, write_proposal
 from app.interactive_agent.service import InteractiveAgentService
 from app.main import create_app
 from app.schemas.common import (
@@ -970,12 +971,8 @@ def test_canonical_market_unavailable_and_stale_stay_explicit() -> None:
     assert labeled.is_live is False
 
 
-def _file_sqlite_factory(path: Path) -> sessionmaker[Session]:
-    """Separate connections. BEGIN IMMEDIATE waits instead of interleaving writes.
-
-    The default agent fixture uses one shared connection, so two threads cannot
-    take a real row lock there.
-    """
+def _open_locking_sqlite(path: Path) -> sessionmaker[Session]:
+    """Separate connections. BEGIN IMMEDIATE waits instead of interleaving writes."""
     engine = create_engine(
         f"sqlite+pysqlite:///{path}",
         connect_args={"check_same_thread": False, "timeout": 30},
@@ -994,8 +991,13 @@ def _file_sqlite_factory(path: Path) -> sessionmaker[Session]:
     def _begin(conn: object) -> None:
         conn.exec_driver_sql("BEGIN IMMEDIATE")  # type: ignore[attr-defined]
 
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+def _file_sqlite_factory(path: Path) -> sessionmaker[Session]:
+    """The default agent fixture uses one shared connection, so it cannot lock."""
+    factory = _open_locking_sqlite(path)
+    Base.metadata.create_all(factory.kw["bind"])
     with factory() as session:
         session.add(Organization(id=ORG_A, name="Agent Org A"))
         session.add(User(id=USER_A, email="agent-a@test.example", hashed_password="x"))
@@ -1049,8 +1051,14 @@ def test_repeated_and_concurrent_journal_confirms_write_one_row(tmp_path: Path) 
         thread.join(timeout=30)
     assert all(not thread.is_alive() for thread in threads)
 
-    with factory() as session:
-        assert _count(session, TradeJournal) == 1
+    assert not errors
+    factory.kw["bind"].dispose()
+    reloaded = _open_locking_sqlite(tmp_path / "agent-confirm.db")
+    with reloaded() as session:
+        stored = session.scalars(select(TradeJournal)).all()
+        assert len(stored) == 1
+        durable_id = stored[0].id
+        assert f"proposal:{proposal_id}" in (stored[0].tags or [])
         again = InteractiveAgentService(session, settings=settings).confirm(
             proposal_id,
             ProposalDecisionRequest(
@@ -1063,10 +1071,111 @@ def test_repeated_and_concurrent_journal_confirms_write_one_row(tmp_path: Path) 
         )
         session.commit()
         assert _count(session, TradeJournal) == 1
-        assert again.resulting_record_id is not None
+        assert again.resulting_record_id == durable_id
     written = {item for item in results if item is not None}
-    assert not errors
-    assert written == {again.resulting_record_id}
+    assert written == {durable_id}
+
+
+def test_applied_journal_without_a_row_writes_one_and_replays_it(tmp_path: Path) -> None:
+    factory = _file_sqlite_factory(tmp_path / "agent-missing.db")
+    settings = _settings()
+    with factory() as session:
+        _service_unused, proposed = _turn(session, settings, JOURNAL_TEXT)
+        session.commit()
+        proposal = proposed.proposals[0]
+        message, stored = find_proposal(
+            session,
+            conversation_id=proposal.conversation_id,
+            organization_id=ORG_A,
+            user_id=USER_A,
+            proposal_id=proposal.proposal_id,
+        )
+        phantom_id = uuid.uuid4()
+        write_proposal(
+            message,
+            stored.model_copy(
+                update={
+                    "status": ProposalLifecycle.APPLIED,
+                    "applied": True,
+                    "authority_mutated": True,
+                    "resulting_record_id": phantom_id,
+                }
+            ),
+        )
+        session.commit()
+        assert _count(session, TradeJournal) == 0
+        service = InteractiveAgentService(session, settings=settings)
+        request = ProposalDecisionRequest(
+            conversation_id=proposal.conversation_id,
+            expected_content_hash=proposal.content_hash,
+            statement="I confirm",
+        )
+        repaired = service.confirm(
+            proposal.proposal_id,
+            request,
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        assert _count(session, TradeJournal) == 1
+        assert repaired.resulting_record_id is not None
+        assert repaired.resulting_record_id != phantom_id
+        replay = service.confirm(
+            proposal.proposal_id,
+            request,
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        assert replay.resulting_record_id == repaired.resulting_record_id
+        assert _count(session, TradeJournal) == 1
+
+
+def test_rejected_or_unauthorized_journal_requests_write_nothing(tmp_path: Path) -> None:
+    factory = _file_sqlite_factory(tmp_path / "agent-reject.db")
+    settings = _settings()
+    with factory() as session:
+        service, proposed = _turn(session, settings, JOURNAL_TEXT)
+        session.commit()
+        proposal = proposed.proposals[0]
+        request_hash = proposal.content_hash
+        for statement in ("> I confirm", "I confirm?", "please save this journal"):
+            with pytest.raises(ValidationAppError):
+                service.confirm(
+                    proposal.proposal_id,
+                    ProposalDecisionRequest(
+                        conversation_id=proposal.conversation_id,
+                        expected_content_hash=request_hash,
+                        statement=statement,
+                    ),
+                    organization_id=ORG_A,
+                    user_id=USER_A,
+                )
+        rejected = service.reject(
+            proposal.proposal_id,
+            ProposalDecisionRequest(
+                conversation_id=proposal.conversation_id,
+                expected_content_hash=request_hash,
+                statement="I reject",
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        assert rejected.status is ProposalLifecycle.REJECTED
+        assert _count(session, TradeJournal) == 0
+        with pytest.raises(ConflictError):
+            service.confirm(
+                proposal.proposal_id,
+                ProposalDecisionRequest(
+                    conversation_id=proposal.conversation_id,
+                    expected_content_hash=request_hash,
+                    statement="I confirm",
+                ),
+                organization_id=ORG_A,
+                user_id=USER_A,
+            )
+        assert _count(session, TradeJournal) == 0
 
 
 def _canonical_read(

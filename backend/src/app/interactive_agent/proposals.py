@@ -235,9 +235,20 @@ def confirm_proposal(
         user_id=user_id,
     )
     _require_hash(proposal, expected_content_hash)
-    if proposal.status in {ProposalLifecycle.APPLIED, ProposalLifecycle.CONFIRMED_UNAPPLIED}:
+    if proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
+        existing = _existing_journal_id(
+            session,
+            proposal,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        if existing is not None:
+            return _replay_journal(session, message, proposal, existing)
+        if proposal.status not in {ProposalLifecycle.PROPOSED, ProposalLifecycle.APPLIED}:
+            raise ConflictError("This proposal cannot be confirmed.")
+    elif proposal.status in {ProposalLifecycle.APPLIED, ProposalLifecycle.CONFIRMED_UNAPPLIED}:
         return proposal
-    if proposal.status is not ProposalLifecycle.PROPOSED:
+    elif proposal.status is not ProposalLifecycle.PROPOSED:
         raise ConflictError("This proposal cannot be confirmed.")
     if proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
         record_id = _apply_journal(
@@ -335,6 +346,32 @@ def _lock_proposal(
             raise NotFoundError("Agent proposal not found.")
         return locked, proposal
     raise NotFoundError("Agent proposal not found.")
+
+
+def _replay_journal(
+    session: Session,
+    message: ConversationMessage,
+    proposal: StructuredActionProposal,
+    record_id: uuid.UUID,
+) -> StructuredActionProposal:
+    """Return the journal row that already exists. Do not insert another one."""
+    if (
+        proposal.status is ProposalLifecycle.APPLIED
+        and proposal.applied
+        and proposal.resulting_record_id == record_id
+    ):
+        return proposal
+    updated = proposal.model_copy(
+        update={
+            "status": ProposalLifecycle.APPLIED,
+            "applied": True,
+            "authority_mutated": True,
+            "resulting_record_id": record_id,
+        }
+    )
+    write_proposal(message, updated)
+    session.flush()
+    return updated
 
 
 def _existing_journal_id(

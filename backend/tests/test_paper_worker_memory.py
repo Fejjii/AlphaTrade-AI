@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import gc
 import json
+import os
+import subprocess
+import sys
+import tracemalloc
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -311,22 +317,79 @@ def _events(count: int, *, start: datetime, connection: UUID) -> list[TradeEvent
     ]
 
 
-def test_released_tape_drops_trade_objects() -> None:
-    """Release proof is structural. Process RSS is recorded, not gated.
+_RETENTION_FLOOR = 4 * 1024 * 1024
 
-    Holding 5,000 ``TradeEvent`` objects did not move RSS by 4 MiB on the
-    source CI host (765952 bytes, run 36395949966) or on this integration
-    host (3141632 bytes). Those samples are measurement limits, not evidence
-    that the tape still retains trades.
-    """
+_ISOLATED_RSS_PROBE = """
+import json
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from app.market_contracts.first_slice import first_slice_identity
+from app.market_contracts.identity import ADAPTER_VERSION, binance_usdm_btcusdt
+from app.market_contracts.trade_reduction import build_released_trade_snapshot
+from app.market_contracts.trades import build_trade_event
+from app.observability.process_memory import read_process_memory, release_allocator_memory
+from app.schemas.common import Timeframe
+from tests.support.phase5_market import CONNECTION, EVALUATED_AT
+
+def one(index, start, instrument):
+    return build_trade_event(
+        instrument=instrument,
+        venue_trade_id=str(index),
+        sequence=index,
+        price=Decimal("100000"),
+        quantity=Decimal("0.01"),
+        buyer_is_maker=index % 2 == 0,
+        event_timestamp=start + timedelta(milliseconds=index),
+        receive_timestamp=EVALUATED_AT,
+        source_connection_id=CONNECTION,
+        adapter_version=ADAPTER_VERSION,
+    )
+
+release_allocator_memory()
+before = read_process_memory().rss_bytes
+start = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
+instrument = binance_usdm_btcusdt()
+retained = [one(index, start, instrument) for index in range(1, 5001)]
+held = read_process_memory().rss_bytes
+del retained
+release_allocator_memory()
+end = start + timedelta(minutes=15)
+market = first_slice_identity(timeframe=Timeframe.M15, replay=False, is_live=True)
+released = build_released_trade_snapshot(
+    (one(index, start, instrument) for index in range(1, 5001)),
+    identity=market,
+    lineage_id=CONNECTION,
+    window_start=start,
+    window_end=end,
+    observed_at=EVALUATED_AT,
+)
+release_allocator_memory()
+after = read_process_memory().rss_bytes
+tape = released.released_tape
+print(json.dumps({
+    "retain_delta": held - before,
+    "release_delta": after - before,
+    "trades": len(released.trades),
+    "event_count": None if tape is None else tape.event_count,
+}))
+"""
+
+
+def test_traced_trade_retention_exceeds_the_released_tape() -> None:
+    """Python allocations, not process RSS. This does not depend on arena reuse."""
+    if tracemalloc.is_tracing():
+        tracemalloc.stop()
+    tracemalloc.start()
+    baseline = tracemalloc.get_traced_memory()[0]
     start = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
     end = start + timedelta(minutes=15)
     market = first_slice_identity(timeframe=Timeframe.M15, replay=False, is_live=True)
-    before = read_process_memory().rss_bytes
     retained = _events(5_000, start=start, connection=CONNECTION)
-    held = read_process_memory().rss_bytes
-    retain_delta = held - before
+    held = tracemalloc.get_traced_memory()[0]
     del retained
+    gc.collect()
+    after_release_of_list = tracemalloc.get_traced_memory()[0]
     released = build_released_trade_snapshot(
         _events(5_000, start=start, connection=CONNECTION),
         identity=market,
@@ -335,26 +398,42 @@ def test_released_tape_drops_trade_objects() -> None:
         window_end=end,
         observed_at=EVALUATED_AT,
     )
+    taped = tracemalloc.get_traced_memory()[0]
+    tracemalloc.stop()
+    retain_bytes = held - baseline
+    tape_bytes = taped - after_release_of_list
     tape = released.released_tape
     assert released.trades == []
     assert tape is not None
     assert tape.event_count == 5_000
     assert tape.trade_set_hash
     assert tape.event_set_hash
-    measurement = {
-        "retain_delta_bytes": retain_delta,
-        "rss_before_bytes": before,
-        "rss_held_bytes": held,
-        "gate": "none",
-        "prior_failures": {
-            "pr_149_ci_run_36395949966_bytes": 765952,
-            "integration_host_2026_09_28_bytes": 3141632,
-            "rejected_threshold_bytes": 4 * 1024 * 1024,
-        },
-    }
-    with open("/tmp/paper_worker_retain_delta.json", "w", encoding="utf-8") as handle:
-        json.dump(measurement, handle)
-    assert isinstance(retain_delta, int)
+    assert retain_bytes > _RETENTION_FLOOR
+    assert tape_bytes < retain_bytes
+
+
+def test_retained_trades_cost_more_rss_than_a_released_tape() -> None:
+    """RSS gate in a fresh interpreter.
+
+    The same assertion inside the pytest process reused freed arenas and grew
+    only 765952 bytes on PR 149 CI run 36395949966. That sample is not the
+    retention cost. This probe trims the allocator before and after the hold.
+    """
+    backend = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [sys.executable, "-c", _ISOLATED_RSS_PROBE],
+        cwd=backend,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(("src", str(backend)))},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["trades"] == 0
+    assert payload["event_count"] == 5_000
+    assert payload["retain_delta"] > _RETENTION_FLOOR
+    assert payload["release_delta"] < payload["retain_delta"]
 
 
 def test_repeated_reduction_does_not_grow_rss() -> None:

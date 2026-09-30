@@ -2582,8 +2582,11 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
      reads stay labeled. No price is invented and `fallback_used` stays false.
   3. Strategy and journal proposals are not confirmed by model text or by
      sending a message. Journal rows are written only by the explicit confirm
-     route, and a repeated or concurrent confirm of the same proposal writes
-     one row. Strategy confirm stays `confirmed_unapplied`.
+     route. A confirm that finds the proposal's journal row returns that row
+     and does not insert another. A confirm whose payload says applied, but
+     whose journal row is missing, writes exactly one row. Rejected and
+     unauthorized statements write none. Strategy confirm stays
+     `confirmed_unapplied`.
   4. Screenshot and voice routes stay unimplemented.
   5. Decision identifiers on this candidate are `AT-ADR-072` enrollment,
      `AT-ADR-073` trade-tape release, and `AT-ADR-074` agent orchestration.

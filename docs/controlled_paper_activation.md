@@ -83,13 +83,17 @@ materialize that short window. Live BTCUSDT trade counts were not measured
 from the integration environment (HTTP 451). Replay fixtures keep the full
 trade list; scan retrieval releases it after the coverage proof is bound.
 
-The release proof is structural: after the coverage hash and bar sums are
+The release proof stays structural: after the coverage hash and bar sums are
 bound, `trades` is empty and `ReleasedTradeTape.event_count` matches the
-stream. A process-RSS comparison is not that proof. Holding 5,000
-`TradeEvent` objects moved RSS by 765952 bytes on PR 149 CI (run
-36395949966, job `backend`, assertion `retain_delta > 4 MiB` failed) and by
-3141632 bytes on this integration host on 2026-09-28 (same assertion). The
-candidate records those samples and does not treat 4 MiB as a pass gate.
+stream. Process RSS is a separate gate, and it is measured in a fresh
+interpreter after `malloc_trim`. Inside the pytest process, freed arenas are
+reused, so holding 5,000 `TradeEvent` objects moved RSS by only 765952 bytes
+on PR 149 CI (run 36395949966) and by 3141632 bytes on this host on
+2026-09-28. Those samples do not replace the 4 MiB gate. A fresh interpreter
+on this host held the same 5,000 trades above that floor, and the released
+tape, after the allocator was trimmed, stayed below the retained delta.
+Traced Python allocations for the live trade list are also required to exceed
+4 MiB and to exceed the released tape.
 
 Retest the staging worker only after a human applies `a8c3e1b94d20` and
 restarts the worker. This task does not do that.
