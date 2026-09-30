@@ -574,3 +574,31 @@ def test_all_five_canonical_evidence_ports_have_their_own_monitor(source):
         assert evidence._assembler._source is monitor._source
         monitors.append(monitor)
     assert len({id(monitor) for monitor in monitors}) == 5
+
+
+@pytest.mark.parametrize("wrong_instrument", [False, True])
+def test_failed_secondary_probe_retains_actual_provider_and_error(db, wrong_instrument):
+    market = PublicMarket(failover={"ETHUSDT"}, wrong=wrong_instrument)
+
+    def handle(request):
+        if (
+            not wrong_instrument
+            and request.url.path == "/v5/market/kline"
+            and request.url.params["symbol"] == "ETHUSDT"
+        ):
+            return httpx.Response(503)
+        return market.handle(request)
+
+    market.transport = httpx.MockTransport(handle)
+    worker, factory, _ = runtime(db, market, secondary="bybit_usdt_perpetual")
+    worker.run_cycle()
+    rows = {row.symbol: row for row in worker.symbol_status.snapshot()}
+    failed = rows["ETHUSDT"]
+    assert factory.provider_for("ETHUSDT") == "bybit-usdt-perpetual"
+    assert failed.market_source == "bybit-usdt-perpetual"
+    assert failed.last_successful_scan is None and failed.last_failed_scan is not None
+    assert failed.error_state == (
+        "wrong_instrument" if wrong_instrument else "provider_unreachable"
+    )
+    assert rows["BTCUSDT"].market_source == "binance-usdm-perpetual"
+    assert rows["BTCUSDT"].last_successful_scan is not None

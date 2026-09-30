@@ -1012,7 +1012,12 @@ class WatcherPaperRuntime:
     def _note_verified_contract_scans(
         self, scanned: set[str], *, session: Session | None, only_symbol: str | None = None
     ) -> None:
-        from app.market_contracts.errors import StaleEvidenceError
+        from app.market_contracts.errors import (
+            StaleEvidenceError,
+            WrongInstrumentError,
+            WrongMarketError,
+            WrongSourceError,
+        )
         from app.workers.watcher_market import ContractUnavailableError, MarketProbeResult
 
         config = self._watchlist
@@ -1039,20 +1044,26 @@ class WatcherPaperRuntime:
                 if not isinstance(result, MarketProbeResult) or result.symbol != symbol:
                     raise ContractUnavailableError("probe_result_unverified")
             except Exception as exc:
-                reason = (
-                    exc.reason
-                    if isinstance(exc, ContractUnavailableError)
-                    else (
-                        "stale_evidence"
-                        if isinstance(exc, StaleEvidenceError)
-                        else "provider_unreachable"
-                    )
-                )
+                if isinstance(exc, ContractUnavailableError):
+                    reason = exc.reason
+                elif isinstance(exc, StaleEvidenceError):
+                    reason = "stale_evidence"
+                elif isinstance(exc, WrongInstrumentError):
+                    reason = "wrong_instrument"
+                elif isinstance(exc, WrongSourceError):
+                    reason = "wrong_source"
+                elif isinstance(exc, WrongMarketError):
+                    reason = "wrong_market"
+                else:
+                    reason = "provider_unreachable"
                 self._symbol_status.record_scan(
                     symbol=symbol,
                     succeeded=False,
                     setup_state="scan_failed",
                     freshness="stale" if reason == "stale_evidence" else "unavailable",
+                    market_source=getattr(self._evidence_factory, "provider_for", lambda _s: None)(
+                        symbol
+                    ),
                     strategy_matches=(),
                     alert_state="none",
                     error_state=reason,
