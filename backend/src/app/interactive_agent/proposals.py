@@ -187,7 +187,9 @@ def write_proposal(message: ConversationMessage, updated: StructuredActionPropos
 
 
 def _require_hash(proposal: StructuredActionProposal, expected_content_hash: str) -> None:
-    if proposal.content_hash != expected_content_hash:
+    """Refuse unless the stored seal, the payload, and the request hash are one digest."""
+    recomputed = canonical_sha256(proposal_hash_body(proposal))
+    if len({recomputed, proposal.content_hash, expected_content_hash}) != 1:
         raise ConflictError("Proposal content hash does not match.")
 
 
@@ -218,15 +220,13 @@ def confirm_proposal(
     named = confirmed_proposal_id(statement)
     if named is not None and named != str(proposal_id):
         raise ConflictError("Confirmation proposal id does not match the target proposal.")
-    message, proposal = find_proposal(
+    message, _unlocked = find_proposal(
         session,
         conversation_id=conversation_id,
         organization_id=organization_id,
         user_id=user_id,
         proposal_id=proposal_id,
     )
-    _require_hash(proposal, expected_content_hash)
-    _guard_live_trading(proposal)
     message, proposal = _lock_proposal(
         session,
         message,
@@ -235,6 +235,9 @@ def confirm_proposal(
         user_id=user_id,
     )
     _require_hash(proposal, expected_content_hash)
+    _guard_live_trading(proposal)
+    if proposal.status is ProposalLifecycle.REJECTED:
+        raise ConflictError("This proposal cannot be confirmed.")
     if proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
         existing = _existing_journal_id(
             session,
@@ -297,12 +300,19 @@ def reject_proposal(
     named = rejected_proposal_id(statement)
     if named is not None and named != str(proposal_id):
         raise ConflictError("Rejection proposal id does not match the target proposal.")
-    message, proposal = find_proposal(
+    message, _unlocked = find_proposal(
         session,
         conversation_id=conversation_id,
         organization_id=organization_id,
         user_id=user_id,
         proposal_id=proposal_id,
+    )
+    message, proposal = _lock_proposal(
+        session,
+        message,
+        proposal_id=proposal_id,
+        organization_id=organization_id,
+        user_id=user_id,
     )
     _require_hash(proposal, expected_content_hash)
     _guard_live_trading(proposal)
@@ -330,8 +340,13 @@ def _lock_proposal(
     organization_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> tuple[ConversationMessage, StructuredActionProposal]:
-    """Re-read one proposal under a row lock so a second confirm sees the first."""
-    locked = session.get(ConversationMessage, message.id, with_for_update=True)
+    """Lock the transcript row, then load the payload committed by the last writer."""
+    locked = session.get(
+        ConversationMessage,
+        message.id,
+        with_for_update=True,
+        populate_existing=True,
+    )
     if locked is None:
         raise NotFoundError("Agent proposal not found.")
     block = dict(locked.payload or {}).get(PAYLOAD_KEY) or {}
