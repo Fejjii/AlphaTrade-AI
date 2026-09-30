@@ -17,6 +17,14 @@ export const DEFAULT_WATCHLIST_SLOTS: WatcherWatchlistSlot[] = [
   { position: 5, symbol: "HYPEUSDT", enabled: true },
 ];
 
+function statusLabel(errorState: string | null, marketSource: string): string {
+  if (errorState === "unsupported_contract") return "Unsupported";
+  if (errorState === "provider_unreachable") return "Provider unreachable";
+  if (errorState === "awaiting_contract_check") return "Awaiting contract check";
+  if (errorState) return "Unavailable";
+  return marketSource;
+}
+
 function moveSlot(slots: WatcherWatchlistSlot[], index: number, direction: -1 | 1) {
   const next = index + direction;
   if (next < 0 || next >= slots.length) return slots;
@@ -96,7 +104,7 @@ export function WatcherWatchlistEditor({
                 {status ? (
                   <>
                     <StatusBadge
-                      label={status.error_state ? "Unavailable" : status.market_source}
+                      label={statusLabel(status.error_state, status.market_source)}
                       tone={status.error_state ? "warn" : "healthy"}
                     />{" "}
                     {status.freshness} · {status.setup_state}

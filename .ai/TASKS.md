@@ -1999,11 +1999,10 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   `tests/test_phase6_fusion_evaluator.py::test_stale_evidence_fail_closed`,
   frontend `WatcherWatchlistSection.test.tsx` and settings page tests (8 passed).
   mypy on the touched modules reported no issues. `tsc --noEmit` passed.
-- Blocker: Binance `exchangeInfo` returned HTTP 451 and Bybit
-  `instruments-info` returned HTTP 403 from this environment, so ZECUSDT,
-  ETHUSDT, TAOUSDT, and HYPEUSDT stay configured and unavailable until a
-  provider payload verifies those exact contracts. BTCUSDT is the only
-  in-repo verified contract on both venues.
+- Blocker: Bybit `instruments-info` returned HTTP 403, so Bybit listings for
+  the non-BTC symbols are not proven. Binance USD-M rows for all five symbols
+  were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
+  returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
 - Note: Do not merge automatically. Do not deploy.
 
 

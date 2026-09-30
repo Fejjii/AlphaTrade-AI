@@ -10,6 +10,7 @@ import pytest
 from app.core.config import ExecutionMode, Settings
 from app.market_contracts.adapters.aggtrade_cache import ClosedAggTradeCache
 from app.market_contracts.adapters.bybit_usdt_perpetual import BybitUsdtPerpetualSource
+from app.market_contracts.contract_discovery import fetch_binance_usdm_exchange_info
 from app.market_contracts.enums import VenueId
 from app.market_contracts.errors import WrongInstrumentError
 from app.market_contracts.first_slice import first_slice_identity
@@ -20,10 +21,15 @@ from app.market_contracts.identity import (
     instrument_matches_requested_symbol,
 )
 from app.market_contracts.provider_contracts import (
+    ContractCheck,
+    ContractProviderUnreachableError,
+    ContractVerdict,
+    apply_binance_exchange_info,
     availability_for_symbol,
     contract_from_binance_exchange_info,
     contract_from_bybit_instruments,
     default_contract_book,
+    unreachable_verdicts,
 )
 from app.schemas.common import Timeframe
 from app.signal_fusion.assessment import SetupAssessmentState
@@ -142,25 +148,41 @@ def test_watchlist_persists_without_a_database(tmp_path: object) -> None:
     assert memory.load().slots[0].enabled is False
 
 
-def test_unsupported_symbol_fails_closed_without_substitution() -> None:
+def test_proven_binance_contracts_are_scannable_and_bybit_is_not_substituted() -> None:
     book = default_contract_book()
-    source, error = availability_for_symbol("ETHUSDT", source_mode="binance_usdm", book=book)
-    assert source == "unavailable"
-    assert error == "contract_unverified"
-    btc_source, btc_error = availability_for_symbol(
-        "BTCUSDT", source_mode="binance_usdm", book=book
-    )
-    assert btc_source == "binance_usdm"
-    assert btc_error is None
+    for symbol, base, price_precision, quantity_precision in (
+        ("BTCUSDT", "BTC", 2, 3),
+        ("ETHUSDT", "ETH", 2, 3),
+        ("ZECUSDT", "ZEC", 2, 3),
+        ("TAOUSDT", "TAO", 2, 3),
+        ("HYPEUSDT", "HYPE", 5, 2),
+    ):
+        source, error = availability_for_symbol(symbol, source_mode="binance_usdm", book=book)
+        contract = book.contract_for(symbol, VenueId.BINANCE)
+        assert source == "binance_usdm"
+        assert error is None
+        assert contract is not None
+        assert contract.base_asset == base
+        assert contract.contract_type == "PERPETUAL"
+        assert contract.quote_asset == "USDT"
+        assert contract.status == "TRADING"
+        assert contract.price_precision == price_precision
+        assert contract.quantity_precision == quantity_precision
     bybit_source, bybit_error = availability_for_symbol(
         "BTCUSDT", source_mode="bybit_usdt_perpetual", book=book
     )
     assert bybit_source == "bybit_usdt_perpetual"
     assert bybit_error is None
-    # A Bybit contract must not satisfy a Binance request for another symbol.
-    swapped, swapped_error = availability_for_symbol("ETHUSDT", source_mode="replay", book=book)
-    assert swapped == "unavailable"
-    assert swapped_error == "contract_unverified"
+    eth_on_bybit, eth_on_bybit_error = availability_for_symbol(
+        "ETHUSDT", source_mode="bybit_usdt_perpetual", book=book
+    )
+    assert eth_on_bybit == "unavailable"
+    assert eth_on_bybit_error == "awaiting_contract_check"
+    replay_eth, replay_eth_error = availability_for_symbol(
+        "ETHUSDT", source_mode="replay", book=book
+    )
+    assert replay_eth == "binance_usdm"
+    assert replay_eth_error is None
 
 
 def test_binance_and_bybit_payloads_keep_provenance_and_reject_substitution() -> None:
@@ -181,7 +203,7 @@ def test_binance_and_bybit_payloads_keep_provenance_and_reject_substitution() ->
     assert eth.venue is VenueId.BINANCE
     assert eth.symbol == "ETHUSDT"
     assert eth.source == "binance_usdm"
-    with pytest.raises(WrongInstrumentError, match="does not match"):
+    with pytest.raises(WrongInstrumentError, match="does not list ETHUSDT"):
         contract_from_binance_exchange_info(
             {
                 "symbols": [
@@ -398,6 +420,157 @@ def test_strategy_match_follows_symbol_and_rejects_stale_evidence() -> None:
     )
     assert stale.matched is False
     assert stale.reason == "stale_evidence"
+
+
+def _usdm_row(symbol: str, base: str) -> dict[str, object]:
+    return {
+        "symbol": symbol,
+        "contractType": "PERPETUAL",
+        "status": "TRADING",
+        "baseAsset": base,
+        "quoteAsset": "USDT",
+        "marginAsset": "USDT",
+        "pricePrecision": 2,
+        "quantityPrecision": 3,
+        "filters": [
+            {"filterType": "PRICE_FILTER", "tickSize": "0.01"},
+            {"filterType": "LOT_SIZE", "stepSize": "0.001"},
+        ],
+    }
+
+
+def test_exchange_info_matches_exact_symbol_and_rejects_a_btc_substitute() -> None:
+    payload = {
+        "futuresType": "U_MARGINED",
+        "symbols": [
+            _usdm_row("BTCUSDT", "BTC"),
+            _usdm_row("ETHUSDT", "ETH"),
+            _usdm_row("ZECUSDT", "ZEC"),
+            _usdm_row("TAOUSDT", "TAO"),
+            _usdm_row("HYPEUSDT", "HYPE"),
+        ],
+    }
+    book, verdicts = apply_binance_exchange_info(
+        default_contract_book(),
+        payload,
+        ("ETHUSDT", "ZECUSDT", "TAOUSDT", "HYPEUSDT", "NOTAREALUSDT"),
+    )
+    by_symbol = {item.symbol: item for item in verdicts}
+    assert by_symbol["ETHUSDT"].state.value == "verified"
+    assert by_symbol["ETHUSDT"].contract is not None
+    assert by_symbol["ETHUSDT"].contract.base_asset == "ETH"
+    assert by_symbol["ZECUSDT"].state.value == "verified"
+    assert by_symbol["TAOUSDT"].state.value == "verified"
+    assert by_symbol["HYPEUSDT"].state.value == "verified"
+    assert by_symbol["NOTAREALUSDT"].state.value == "unsupported"
+    assert book.contract_for("NOTAREALUSDT", VenueId.BINANCE) is None
+    assert book.contract_for("ETHUSDT", VenueId.BINANCE) is not None
+    with pytest.raises(WrongInstrumentError, match="does not list ETHUSDT"):
+        contract_from_binance_exchange_info(
+            {"futuresType": "U_MARGINED", "symbols": [_usdm_row("BTCUSDT", "BTC")]},
+            requested_symbol="ETHUSDT",
+        )
+
+
+def test_provider_unreachable_does_not_drop_a_proven_contract() -> None:
+    book = default_contract_book()
+    verdicts = unreachable_verdicts(
+        ("ETHUSDT", "ZECUSDT", "TAOUSDT", "HYPEUSDT"),
+        venue=VenueId.BINANCE,
+        reason="provider_unreachable",
+    )
+    assert all(item.state.value == "unreachable" for item in verdicts)
+    mapped = {(item.symbol, item.venue): item for item in verdicts}
+    source, error = availability_for_symbol(
+        "ETHUSDT",
+        source_mode="binance_usdm",
+        book=book,
+        verdicts=mapped,
+    )
+    assert source == "binance_usdm"
+    assert error is None
+    missing, missing_error = availability_for_symbol(
+        "NOTAREALUSDT",
+        source_mode="binance_usdm",
+        book=book,
+        verdicts={
+            ("NOTAREALUSDT", VenueId.BINANCE): ContractVerdict(
+                symbol="NOTAREALUSDT",
+                venue=VenueId.BINANCE,
+                state=ContractCheck.UNREACHABLE,
+                reason="provider_unreachable",
+            )
+        },
+    )
+    assert missing == "unavailable"
+    assert missing_error == "provider_unreachable"
+
+
+def test_verified_symbols_scan_sequentially_when_one_fails() -> None:
+    failed: list[str] = []
+
+    def probe(symbol: str) -> None:
+        failed.append(symbol)
+        if symbol == "TAOUSDT":
+            raise RuntimeError("tao failed")
+
+    runtime = WatcherPaperRuntime(
+        store=InMemoryWatcherStore(),
+        lifecycle=CandidateLifecycleService(
+            repository=InMemoryCandidateRepository(),
+            clock=BoundEvaluationClock(),
+        ),
+        clock=FakeClock(NOW),
+        enabled=True,
+        symbols=default_watchlist(now=NOW).enabled_symbols(),
+        watchlist_mode=True,
+        watchlist=default_watchlist(now=NOW),
+        watchlist_store=MemoryWatchlistStore(default_watchlist(now=NOW)),
+        target_loader=lambda _session: (),
+        evidence_factory=lambda *_args: object(),  # type: ignore[arg-type]
+        kill_switch_probe=lambda _org: False,
+        settings=Settings(),
+        symbol_probe=probe,
+    )
+    runtime.run_cycle()
+    rows = {row.symbol: row for row in runtime.symbol_status.snapshot()}
+    assert failed == ["BTCUSDT", "ZECUSDT", "ETHUSDT", "TAOUSDT", "HYPEUSDT"]
+    assert rows["TAOUSDT"].error_state == "evaluation_exception"
+    assert rows["HYPEUSDT"].error_state is None
+    assert rows["HYPEUSDT"].freshness == "contract_verified"
+    assert rows["ETHUSDT"].market_source == "binance_usdm"
+    assert rows["BTCUSDT"].last_successful_scan is not None
+    assert runtime.history.held_symbol is None
+    assert runtime.history.peak_in_flight == 1
+    assert runtime.history.rejected_overlaps == 0
+
+
+def test_catalog_fetch_uses_a_later_host_after_regional_rejection() -> None:
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "fapi.binance.com":
+            return httpx.Response(451, json={"code": 0, "msg": "restricted"})
+        if request.url.host == "www.binance.com":
+            return httpx.Response(
+                200,
+                json={
+                    "futuresType": "U_MARGINED",
+                    "symbols": [_usdm_row("ETHUSDT", "ETH")],
+                },
+            )
+        return httpx.Response(403, json={"error": "unexpected host"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    payload = fetch_binance_usdm_exchange_info(client=client)
+    contract = contract_from_binance_exchange_info(payload, requested_symbol="ETHUSDT")
+    assert contract.symbol == "ETHUSDT"
+    assert contract.base_asset == "ETH"
+    blocked = httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(451, json={"code": 0}))
+    )
+    with pytest.raises(ContractProviderUnreachableError):
+        fetch_binance_usdm_exchange_info(client=blocked)
 
 
 def test_legacy_btc_symbol_order_helper_is_unchanged() -> None:

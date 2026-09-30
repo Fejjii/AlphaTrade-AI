@@ -26,6 +26,14 @@ import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Environment, ExecutionMode, Settings
+from app.market_contracts.enums import VenueId
+from app.market_contracts.provider_contracts import (
+    ContractBook,
+    ContractProviderUnreachableError,
+    ContractVerdict,
+    availability_for_symbol,
+    default_contract_book,
+)
 from app.runtime_safety.paper_actions import (
     automated_paper_actions_blocked,
     read_kill_switch_active,
@@ -249,6 +257,9 @@ class WatcherPaperRuntime:
         watchlist_store: FileWatchlistStore | MemoryWatchlistStore | None = None,
         symbol_status: SymbolStatusBook | None = None,
         history_source: object | None = None,
+        contract_book: ContractBook | None = None,
+        contract_discoverer: Callable[[ContractBook, Sequence[str]], ContractBook] | None = None,
+        symbol_probe: Callable[[str], None] | None = None,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -261,6 +272,12 @@ class WatcherPaperRuntime:
         self._symbol_status = symbol_status if symbol_status is not None else SymbolStatusBook()
         self._history = SymbolHistoryBudget()
         self._history_source = history_source
+        self._contract_book = (
+            contract_book if contract_book is not None else default_contract_book()
+        )
+        self._contract_verdicts: dict[tuple[str, VenueId], ContractVerdict] = {}
+        self._contract_discoverer = contract_discoverer
+        self._symbol_probe = symbol_probe
         self._symbols = (
             ordered_watch_symbols(symbols) if watchlist_mode else normalize_paper_symbols(symbols)
         )
@@ -827,6 +844,75 @@ class WatcherPaperRuntime:
                 reason_code=report.reason_code,
             )
 
+    def _refresh_contract_book(self, config: WatchlistConfiguration) -> None:
+        discover = self._contract_discoverer
+        if discover is None:
+            return
+        symbols = tuple(slot.symbol for slot in config.slots)
+        try:
+            updated = discover(self._contract_book, symbols)
+        except ContractProviderUnreachableError:
+            return
+        if isinstance(updated, ContractBook):
+            self._contract_book = updated
+            found = getattr(discover, "verdicts", None)
+            if isinstance(found, dict):
+                self._contract_verdicts = found
+
+    def _note_verified_contract_scans(self, scanned: set[str]) -> None:
+        """Record a contract scan for verified symbols that had no strategy target.
+
+        Replay candles are not loaded for a non-BTC symbol. One probe failure
+        does not stop the later slots.
+        """
+
+        config = self._watchlist
+        if not self._watchlist_mode or config is None:
+            return
+        source_mode = "replay"
+        if self._settings is not None:
+            source_mode = self._settings.perpetual_evidence_source
+        moment = self._clock.now()
+        for symbol in config.enabled_symbols():
+            if symbol in scanned:
+                continue
+            _market_source, error = availability_for_symbol(
+                symbol,
+                source_mode=source_mode,
+                book=self._contract_book,
+            )
+            if error is not None:
+                continue
+            self._history.acquire(symbol)
+            try:
+                if self._symbol_probe is not None:
+                    self._symbol_probe(symbol)
+            except Exception:
+                self._symbol_status.record_scan(
+                    symbol=symbol,
+                    succeeded=False,
+                    setup_state="scan_failed",
+                    freshness="unknown",
+                    strategy_matches=(),
+                    alert_state="none",
+                    error_state="evaluation_exception",
+                    scanned_at=moment,
+                )
+            else:
+                self._symbol_status.record_scan(
+                    symbol=symbol,
+                    succeeded=True,
+                    setup_state="no_strategy",
+                    freshness="contract_verified",
+                    strategy_matches=(),
+                    alert_state="none",
+                    error_state=None,
+                    scanned_at=moment,
+                )
+            finally:
+                self._history.release(symbol)
+                release_symbol_history(self._history_source, symbol)
+
     def _project_watchlist_status(self) -> None:
         store = self._watchlist_store
         if store is not None and self._watchlist_mode:
@@ -844,7 +930,13 @@ class WatcherPaperRuntime:
         source_mode = "replay"
         if self._settings is not None:
             source_mode = self._settings.perpetual_evidence_source
-        self._symbol_status.project(config, source_mode=source_mode)
+        self._refresh_contract_book(config)
+        self._symbol_status.project(
+            config,
+            source_mode=source_mode,
+            book=self._contract_book,
+            verdicts=self._contract_verdicts,
+        )
 
     def _record_watchlist_scans(self, report: WatcherPaperCycleReport) -> None:
         config = self._watchlist
@@ -905,8 +997,10 @@ class WatcherPaperRuntime:
             self._status.candidates_created += report.candidates_created
             self._status.kill_switch_active = report.kill_switch_active
             self._status.last_scans = report.scans
-        self._publish_observed_status(report)
+            self._publish_observed_status(report)
         self._record_watchlist_scans(report)
+        scanned = {scan.symbol.strip().upper() for scan in report.scans}
+        self._note_verified_contract_scans(scanned)
 
     def _wait_seconds(self, report: WatcherPaperCycleReport) -> float:
         refusal = (not report.enabled) and report.reason_code != "watcher_disabled"
@@ -1077,12 +1171,19 @@ def default_paper_evidence_factory(
         perpetual_source_is_replay,
         resolve_perpetual_evidence_source,
     )
-    from app.market_contracts.catalog import default_perpetual_catalog
+    from app.market_contracts.catalog import catalog_for_symbols
+    from app.market_contracts.enums import VenueId
+    from app.market_contracts.provider_contracts import default_contract_book
     from app.market_monitor.factory import build_perpetual_market_monitor
     from app.market_monitor.watcher_port import MarketMonitorWatcherPort
     from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 
-    catalog = default_perpetual_catalog()
+    verified = [
+        item.symbol
+        for item in default_contract_book().contracts
+        if item.venue is VenueId.BINANCE
+    ]
+    catalog = catalog_for_symbols(verified, venue=VenueId.BINANCE)
     source = resolve_perpetual_evidence_source(settings, catalog=catalog)
     if history_source_out is not None:
         history_source_out.append(source)
@@ -1197,7 +1298,29 @@ def build_watcher_paper_runtime(
         evaluation_observer_factory=evaluation_observer_factory,
         activation_gate=activation_gate,
         canonical_runtime=canonical,
+        contract_discoverer=_live_contract_discoverer(settings),
     )
+
+
+def _live_contract_discoverer(
+    settings: Settings,
+) -> Callable[[ContractBook, Sequence[str]], ContractBook] | None:
+    """Refresh USD-M contracts only for a live evidence mode.
+
+    Replay keeps the proven catalog and does not open a network call.
+    """
+
+    from app.market_contracts.adapters.factory import perpetual_source_is_replay
+    from app.market_contracts.contract_discovery import BinanceContractDiscovery
+
+    if perpetual_source_is_replay(settings):
+        return None
+    if settings.perpetual_evidence_source.strip().lower().replace("-", "_") in {
+        "bybit_usdt_perpetual",
+        "bybit",
+    }:
+        return None
+    return BinanceContractDiscovery()
 
 
 def publish_idle_watcher_status(

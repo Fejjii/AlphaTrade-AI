@@ -2633,4 +2633,26 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `GET /watcher/watchlist/status` is per-symbol runtime status. Settings shows
   the five slots.
 
+## AT-ADR-077 — USD-M contract checks must not treat a blocked host as a delisting
+- **Date:** 2026-09-30
+- **Status:** Accepted
+- **Context:** PR 151 left ETHUSDT, ZECUSDT, TAOUSDT, and HYPEUSDT as
+  `contract_unverified` because `fapi.binance.com` returned HTTP 451 and
+  `api.bybit.com` returned HTTP 403. `www.binance.com/fapi/v1/exchangeInfo`
+  returned a `futuresType=U_MARGINED` book. That host ignores the symbol query
+  and returns the full book, whose first row is BTCUSDT.
+- **Decision:**
+  1. Select the exchangeInfo row with the exact symbol. A different row is not
+     a substitute.
+  2. The five Binance USD-M perpetual rows proven on 2026-09-30 are the catalog
+     the Watcher may scan. A later USD-M payload replaces a row. A missing row
+     in a successful book is `unsupported_contract`.
+  3. HTTP 451, 403, a redirect, or a transport failure is
+     `provider_unreachable`. It does not delete a proven contract and it does
+     not invent a Bybit listing.
+  4. Live candle reads stay on `https://fapi.binance.com`. This decision does
+     not change execution mode, real trading, Telegram, or the kill switch.
+- **Safety impact:** Paper only. No deploy.
+- **Consequences:** `backend/src/app/market_contracts/contract_discovery.py`.
+
 

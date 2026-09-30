@@ -9,16 +9,18 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from app.core.config import Settings
+from app.market_contracts.enums import VenueId
 from app.market_contracts.errors import WrongInstrumentError
 from app.market_contracts.identity import require_linear_usdt_symbol
 from app.market_contracts.provider_contracts import (
     ContractBook,
+    ContractVerdict,
     availability_for_symbol,
     default_contract_book,
 )
@@ -132,6 +134,7 @@ class SymbolStatusBook:
         *,
         source_mode: str,
         book: ContractBook | None = None,
+        verdicts: Mapping[tuple[str, VenueId], ContractVerdict] | None = None,
     ) -> tuple[SymbolRuntimeStatus, ...]:
         """Refresh availability from the contract book without erasing scan times."""
 
@@ -145,6 +148,7 @@ class SymbolStatusBook:
                     slot.symbol,
                     source_mode=source_mode,
                     book=contracts,
+                    verdicts=verdicts,
                 )
                 retained = previous if same_symbol and previous is not None else None
                 if not slot.enabled:
