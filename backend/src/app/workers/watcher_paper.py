@@ -1179,9 +1179,7 @@ def default_paper_evidence_factory(
     from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 
     verified = [
-        item.symbol
-        for item in default_contract_book().contracts
-        if item.venue is VenueId.BINANCE
+        item.symbol for item in default_contract_book().contracts if item.venue is VenueId.BINANCE
     ]
     catalog = catalog_for_symbols(verified, venue=VenueId.BINANCE)
     source = resolve_perpetual_evidence_source(settings, catalog=catalog)
