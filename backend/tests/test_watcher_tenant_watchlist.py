@@ -602,3 +602,18 @@ def test_failed_secondary_probe_retains_actual_provider_and_error(db, wrong_inst
     )
     assert rows["BTCUSDT"].market_source == "binance-usdm-perpetual"
     assert rows["BTCUSDT"].last_successful_scan is not None
+
+
+def test_foreign_target_is_rejected_before_evidence_and_candidate_creation(db):
+    foreign = PaperScanTarget(OTHER, uuid4(), uuid4(), uuid4(), uuid4(), "a" * 64, "v1", "BTCUSDT")
+    worker, _, candidates = runtime(db, PublicMarket(), target_loader=lambda _s: (foreign,))
+
+    def forbidden(*_args):
+        pytest.fail("Foreign target reached evidence acquisition")
+
+    worker._evidence_factory = forbidden
+    worker._symbol_probe = None
+    report = worker.run_cycle()  # ORG's turn, with an injected OTHER target
+    assert report.reason_code == "idle" and report.scans == ()
+    assert candidates.list_for_organization(ORG) == ((), 0)
+    assert candidates.list_for_organization(OTHER) == ((), 0)

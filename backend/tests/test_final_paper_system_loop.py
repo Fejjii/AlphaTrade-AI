@@ -608,13 +608,17 @@ def test_postgres_fail_closed_paths_do_not_mint_or_override_authority() -> None:
             fusion_policy_version=targets[0].fusion_policy_version,
             symbol=targets[0].symbol,
         )
-    wrong_tenant = rescan(_world_factory(world), target_loader=lambda _session: (foreign,))
-    assert wrong_tenant.scans[0].candidate_ids == ()
-    assert wrong_tenant.scans[0].reason_code in {
-        "missing_canonical_evidence",
-        "organization_mismatch",
-        "strategy_not_approved",
-    }
+
+    def foreign_evidence_must_not_run(*_args: object) -> object:
+        pytest.fail("Foreign tenant target reached evidence acquisition")
+
+    wrong_tenant = rescan(foreign_evidence_must_not_run, target_loader=lambda _session: (foreign,))
+    # Organization-owned scheduling now rejects this target before a scan,
+    # rather than relying on a later evidence/strategy tenant rejection.
+    assert wrong_tenant.scans == ()
+    assert wrong_tenant.reason_code == "idle"
+    assert wrong_tenant.candidates_created == 0
+    assert _candidate_total(factory) == 0
 
     with factory() as session:
         draft = _create_strategy(session)
