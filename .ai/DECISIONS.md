@@ -2667,3 +2667,14 @@ The five-slot process file could cross tenant boundaries and did not connect API
 The worker visits organizations in deterministic round-robin order, loading one organization per bounded cycle from the shared database. Per-symbol market composition and latest status remain bounded; no tenant strategy data enters shared public-market caches. Configuration changes are observed on the tenant's next turn; delayed/missing worker observations expire visibly. Exact provider contract verification gates acquisition, and no-strategy monitoring reads only a bounded closed-candle sample without producing Candidates. This probe is not current-price or full CVD evidence.
 
 Existing activation, kill-switch, paper execution and Telegram tenant controls remain authoritative. Migration b6f2d9a10e73 is for isolated validation only in this task; shared database rollout, merge and deployment require their existing human gates. Acceptance requires regression tests, exact-revision CI and a fresh independent review.
+
+
+## AT-ADR-WATCHER-BYBIT-CONTINUITY-20260930 — bounded ranks and lineage proofs
+
+Status: PR152 independent-review correction under validation.
+
+The organization-owned database decision above supersedes AT-ADR-076's historical process-file authority. The legacy path setting remains only for local/test helpers.
+
+Bybit execution ranks now identify observations of one exact symbol/source independently of a caller's retrieval lineage. The persistent monitor and historical canonical assembly keep separate proof tails (at most two recent lineages). A failed historical request cannot reset the monitor's sequence. The execution ledger retains only the current provider page plus those bounded proofs, including signatures to reject changed duplicate executions. Bulk cleanup trims each proof to one provider page, preserving overlap identity and anchors. During reads, each proof has a ten-page and 15-minute bound. Discarded prefixes, including any partially retained millisecond bucket, are unavailable rather than fabricated complete coverage. Gaps, wrong instruments/sources and freshness checks remain authoritative. This bound is not a staging RSS claim.
+
+Contract eligibility refusals cross the strategy evidence boundary as typed errors retaining unsupported versus unreachable reasons, matching the existing read-only probe path. No new acquisition, Candidate, execution or activation authority is added.

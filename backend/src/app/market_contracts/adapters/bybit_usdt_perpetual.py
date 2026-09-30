@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -65,6 +67,18 @@ BYBIT_ALLOWED_HOSTS = frozenset({"api.bybit.com"})
 _BYBIT_INTERVAL = {Timeframe.M15: "15", Timeframe.H4: "240"}
 _RECENT_TRADE_LIMIT = 1000
 _PROVEN_TAIL_RETENTION = timedelta(minutes=15)
+# Two consumers: the persistent monitor and the current canonical window.
+_MAX_LINEAGE_PROOFS = 2
+# A finite ten-page proof budget, also limited by the existing 15-minute horizon.
+# Evicted prefixes become unavailable; they are never reported as complete.
+_MAX_PROVEN_TRADES = 10 * _RECENT_TRADE_LIMIT
+
+
+@dataclass
+class _LineageProof:
+    proven: list[dict[str, Any]] = field(default_factory=list)
+    proven_from_ms: int | None = None
+    anchor_exec_id: str | None = None
 
 
 class BybitUsdtPerpetualSource:
@@ -111,15 +125,15 @@ class BybitUsdtPerpetualSource:
         )
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
-        # Cross sequence is not a per-trade id. Ranks and the proven tail are
-        # stable per connection. Later reads extend that tail; they do not
-        # rebuild history the recent-trade buffer has already dropped.
+        # Execution rank belongs to this exact source/symbol, not to a caller's
+        # retrieval lineage. A historical read must not recycle a live cursor's
+        # rank. Proofs remain lineage-scoped and bounded independently.
         self._rank_connection: UUID | None = None
         self._rank_by_exec: dict[str, int] = {}
+        self._signature_by_exec: dict[str, tuple[object, ...]] = {}
         self._next_rank = 1
-        self._anchor_exec_id: str | None = None
-        self._proven: list[dict[str, Any]] = []
-        self._proven_from_ms: int | None = None
+        self._recent_exec_ids: set[str] = set()
+        self._lineages: OrderedDict[UUID, _LineageProof] = OrderedDict()
 
     def active_instrument(self) -> InstrumentIdentity:
         return self._instrument
@@ -266,32 +280,38 @@ class BybitUsdtPerpetualSource:
         start_ms = int(start.astimezone(UTC).timestamp() * 1000)
         end_ms = int(end.astimezone(UTC).timestamp() * 1000)
         prints = self._load_recent_prints()
-        self._prepare_connection(source_connection_id)
-        if not self._proven:
-            self._prove_initial_tail(prints, start_ms)
-        else:
-            self._extend_proven_tail(prints)
-        if self._proven_from_ms is None or start_ms < self._proven_from_ms:
-            raise IncompleteTradeWindowError(
-                "Bybit recent trades do not prove the requested window. "
-                "Refusing to fabricate the missing prefix."
-            )
-        window = [item for item in self._proven if start_ms <= int(item["time_ms"]) < end_ms]
-        for item in window:
-            item["sequence"] = self._rank_by_exec[str(item["exec_id"])]
-        return window
+        proof = self._prepare_connection(source_connection_id)
+        try:
+            self._assign_ranks(prints)
+            self._recent_exec_ids = {str(item["exec_id"]) for item in prints}
+            if not proof.proven:
+                self._prove_initial_tail(prints, start_ms, proof)
+            else:
+                self._extend_proven_tail(prints, proof)
+            if proof.proven_from_ms is None or start_ms < proof.proven_from_ms:
+                raise IncompleteTradeWindowError(
+                    "Bybit recent trades do not prove the requested window. "
+                    "Refusing to fabricate the missing prefix."
+                )
+            window = [item for item in proof.proven if start_ms <= int(item["time_ms"]) < end_ms]
+            for item in window:
+                item["sequence"] = self._rank_by_exec[str(item["exec_id"])]
+            return window
+        finally:
+            self._prune_ranks()
 
     def release_symbol_history(self, symbol: str) -> None:
-        """Drop this symbol's proven trade tail. A different symbol is left untouched."""
+        """Release bulk windows; retain one provider page per live proof.
+
+        The retained execution ledger and anchor never renumber overlapping
+        prints. A requested prefix removed by this bound fails closed.
+        """
 
         if symbol.strip().upper() != self._symbol:
             return
-        self._proven.clear()
-        self._rank_by_exec.clear()
-        self._next_rank = 1
-        self._anchor_exec_id = None
-        self._proven_from_ms = None
-        self._rank_connection = None
+        for proof in self._lineages.values():
+            self._trim_proven_prefix(proof, limit=_RECENT_TRADE_LIMIT)
+        self._prune_ranks()
 
     def _assert_linear(self, result: Mapping[str, Any]) -> None:
         category = str(result.get("category", "")).lower()
@@ -438,7 +458,7 @@ class BybitUsdtPerpetualSource:
         )
         self._assert_linear(result)
         payload = result.get("list")
-        if not isinstance(payload, list) or not payload:
+        if not isinstance(payload, list) or not payload or len(payload) > _RECENT_TRADE_LIMIT:
             raise IncompleteTradeWindowError(
                 "Bybit recent trades do not prove the requested window. "
                 "Refusing to fabricate the missing prefix."
@@ -448,25 +468,27 @@ class BybitUsdtPerpetualSource:
         _reject_conflicting_exec_ids(prints)
         return _unique_exec_ids(prints)
 
-    def _prove_initial_tail(self, prints: list[dict[str, Any]], start_ms: int) -> None:
+    def _prove_initial_tail(
+        self, prints: list[dict[str, Any]], start_ms: int, proof: _LineageProof
+    ) -> None:
         if int(prints[0]["time_ms"]) > start_ms:
             raise IncompleteTradeWindowError(
                 "Bybit recent trades do not prove the requested window. "
                 "Refusing to fabricate the missing prefix."
             )
-        self._assign_ranks(prints)
         proven = [item for item in prints if int(item["time_ms"]) >= start_ms]
         if not proven:
             raise IncompleteTradeWindowError(
                 "Bybit recent trades have no prints inside the requested window."
             )
         self._require_rank_tail(proven)
-        self._proven = proven
-        self._proven_from_ms = start_ms
-        self._anchor_exec_id = str(proven[-1]["exec_id"])
+        proof.proven = proven
+        proof.proven_from_ms = start_ms
+        proof.anchor_exec_id = str(proven[-1]["exec_id"])
+        self._trim_proven_prefix(proof)
 
-    def _extend_proven_tail(self, prints: list[dict[str, Any]]) -> None:
-        anchor = self._anchor_exec_id
+    def _extend_proven_tail(self, prints: list[dict[str, Any]], proof: _LineageProof) -> None:
+        anchor = proof.anchor_exec_id
         anchor_at = next(
             (index for index, item in enumerate(prints) if item["exec_id"] == anchor),
             None,
@@ -476,21 +498,31 @@ class BybitUsdtPerpetualSource:
                 "Bybit recent-trade buffer dropped the last proven print. "
                 "Refusing to fabricate the missing interval."
             )
-        self._reject_conflicts_with_proven(prints)
         extension = prints[anchor_at + 1 :]
-        self._assign_ranks(extension)
         if extension:
-            self._require_rank_tail(self._proven + extension)
-            self._proven.extend(extension)
-            self._anchor_exec_id = str(extension[-1]["exec_id"])
-        self._trim_proven_prefix()
+            self._require_rank_tail(proof.proven + extension)
+            proof.proven.extend(extension)
+            proof.anchor_exec_id = str(extension[-1]["exec_id"])
+        self._trim_proven_prefix(proof)
 
     def _assign_ranks(self, prints: list[dict[str, Any]]) -> None:
+        for item in prints:
+            exec_id = str(item["exec_id"])
+            signature = (item["time_ms"], item["price"], item["size"], item["side"])
+            prior = self._signature_by_exec.get(exec_id)
+            if prior is not None and signature != prior:
+                raise DuplicateDataError(f"Conflicting content for Bybit execution {exec_id}.")
         for item in prints:
             exec_id = str(item["exec_id"])
             if exec_id in self._rank_by_exec:
                 continue
             self._rank_by_exec[exec_id] = self._next_rank
+            self._signature_by_exec[exec_id] = (
+                item["time_ms"],
+                item["price"],
+                item["size"],
+                item["side"],
+            )
             self._next_rank += 1
 
     def _require_rank_tail(self, prints: list[dict[str, Any]]) -> None:
@@ -500,42 +532,44 @@ class BybitUsdtPerpetualSource:
                 "Bybit recent-trade order is not a contiguous proven tail. Refusing a partial CVD."
             )
 
-    def _reject_conflicts_with_proven(self, prints: list[dict[str, Any]]) -> None:
-        known = {str(item["exec_id"]): item for item in self._proven}
-        for item in prints:
-            prior = known.get(str(item["exec_id"]))
-            if prior is None:
-                continue
-            signature = (item["time_ms"], item["price"], item["size"], item["side"])
-            previous = (prior["time_ms"], prior["price"], prior["size"], prior["side"])
-            if signature != previous:
-                raise DuplicateDataError(
-                    f"Conflicting content for Bybit execution {item['exec_id']}."
-                )
-
-    def _trim_proven_prefix(self) -> None:
-        if len(self._proven) < 2:
+    def _trim_proven_prefix(self, proof: _LineageProof, *, limit: int = _MAX_PROVEN_TRADES) -> None:
+        if not proof.proven:
             return
-        newest_ms = int(self._proven[-1]["time_ms"])
+        newest_ms = int(proof.proven[-1]["time_ms"])
         cutoff_ms = newest_ms - int(_PROVEN_TAIL_RETENTION.total_seconds() * 1000)
-        keep_at = 0
-        for index, item in enumerate(self._proven):
-            if int(item["time_ms"]) >= cutoff_ms:
-                keep_at = index
-                break
+        keep_at = max(0, len(proof.proven) - limit)
+        while keep_at < len(proof.proven) - 1 and int(proof.proven[keep_at]["time_ms"]) < cutoff_ms:
+            keep_at += 1
         if keep_at > 0:
-            self._proven = self._proven[keep_at:]
-            self._proven_from_ms = int(self._proven[0]["time_ms"])
+            first_ms = int(proof.proven[keep_at]["time_ms"])
+            # A count bound can split a millisecond bucket. Never claim that
+            # partial bucket as complete coverage, even though its anchor stays.
+            if int(proof.proven[keep_at - 1]["time_ms"]) == first_ms:
+                first_ms += 1
+            proof.proven = proof.proven[keep_at:]
+            proof.proven_from_ms = max(proof.proven_from_ms or first_ms, first_ms)
 
-    def _prepare_connection(self, source_connection_id: UUID) -> None:
-        if self._rank_connection == source_connection_id:
-            return
+    def _prepare_connection(self, source_connection_id: UUID) -> _LineageProof:
         self._rank_connection = source_connection_id
-        self._rank_by_exec = {}
-        self._next_rank = 1
-        self._anchor_exec_id = None
-        self._proven = []
-        self._proven_from_ms = None
+        proof = self._lineages.get(source_connection_id)
+        if proof is None:
+            proof = _LineageProof()
+            self._lineages[source_connection_id] = proof
+        self._lineages.move_to_end(source_connection_id)
+        while len(self._lineages) > _MAX_LINEAGE_PROOFS:
+            self._lineages.popitem(last=False)
+        return proof
+
+    def _prune_ranks(self) -> None:
+        retained = set(self._recent_exec_ids)
+        for proof in self._lineages.values():
+            retained.update(str(item["exec_id"]) for item in proof.proven)
+        self._rank_by_exec = {
+            key: rank for key, rank in self._rank_by_exec.items() if key in retained
+        }
+        self._signature_by_exec = {
+            key: signature for key, signature in self._signature_by_exec.items() if key in retained
+        }
 
     def close(self) -> None:
         self._http.close()

@@ -28,6 +28,7 @@ from app.market_contracts.catalog import catalog_for_symbols, instrument_for_sou
 from app.market_contracts.contract_discovery import fetch_binance_usdm_exchange_info
 from app.market_contracts.enums import VenueId
 from app.market_contracts.errors import (
+    ContractUnavailableError,
     EvidenceSourceSwitchRequiredError,
     StaleEvidenceError,
     WrongInstrumentError,
@@ -50,12 +51,6 @@ from app.market_monitor.watcher_port import MarketMonitorWatcherPort
 from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
 from app.schemas.common import Timeframe
 from app.watcher.ports import WatcherStore
-
-
-class ContractUnavailableError(RuntimeError):
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(reason)
 
 
 @dataclass(frozen=True)

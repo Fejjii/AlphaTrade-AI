@@ -617,3 +617,74 @@ def test_foreign_target_is_rejected_before_evidence_and_candidate_creation(db):
     assert report.reason_code == "idle" and report.scans == ()
     assert candidates.list_for_organization(ORG) == ((), 0)
     assert candidates.list_for_organization(OTHER) == ((), 0)
+
+
+@pytest.mark.parametrize(
+    "unreachable,expected", [(False, "unsupported_contract"), (True, "provider_unreachable")]
+)
+def test_strategy_secondary_refusal_keeps_reason_without_market_acquisition(unreachable, expected):
+    from app.watcher.memory import FakeClock
+    from app.workers.watcher_paper import WatcherPaperRuntime
+    from app.workers.watcher_watchlist import replace_watchlist
+
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        if request.url.path.endswith("exchangeInfo"):
+            return httpx.Response(
+                200,
+                json={
+                    "futuresType": "U_MARGINED",
+                    "symbols": [
+                        {
+                            "symbol": "ETHUSDT",
+                            "baseAsset": "ETH",
+                            "quoteAsset": "USDT",
+                            "contractType": "PERPETUAL",
+                            "status": "TRADING",
+                        }
+                    ],
+                },
+            )
+        if request.url.path.endswith("instruments-info"):
+            if unreachable:
+                return httpx.Response(503)
+            return httpx.Response(
+                200, json={"retCode": 0, "result": {"category": "linear", "list": []}}
+            )
+        if request.url.host == "fapi.binance.com":
+            return httpx.Response(451)
+        raise AssertionError("Ineligible secondary must never acquire market data")
+
+    config = settings(perpetual_evidence_secondary_source="bybit_usdt_perpetual")
+    factory = SymbolMarketFactory(config, transport=httpx.MockTransport(handler))
+    org = uuid4()
+    target = PaperScanTarget(org, uuid4(), uuid4(), uuid4(), uuid4(), "a" * 64, "v1", "ETHUSDT")
+    candidates = InMemoryCandidateRepository()
+    worker = WatcherPaperRuntime(
+        store=InMemoryWatcherStore(),
+        lifecycle=CandidateLifecycleService(repository=candidates, clock=BoundEvaluationClock()),
+        clock=FakeClock(datetime.now(UTC)),
+        enabled=True,
+        watchlist_mode=True,
+        watchlist=replace_watchlist([("ETHUSDT", True)]),
+        symbols=["ETHUSDT"],
+        evidence_factory=factory,
+        history_source=factory,
+        contract_discoverer=factory.discovery,
+        target_loader=lambda _s: (target,),
+        kill_switch_probe=lambda _o: False,
+        settings=config,
+    )
+    try:
+        report = worker.run_cycle()
+        row = worker.symbol_status.snapshot()[0]
+        assert report.scans[0].status == "failed"
+        assert report.scans[0].reason_code == row.error_state == expected
+        assert row.market_source == "bybit-usdt-perpetual"
+        assert row.last_successful_scan is None
+        assert candidates.list_for_organization(org)[1] == 0
+        assert len(calls) == 3
+    finally:
+        factory.retain(())
