@@ -1595,6 +1595,40 @@ export interface AgentMessageResponse {
   history_injected?: number;
 }
 
+export interface AgentStructuredProposal {
+  proposal_id: string;
+  conversation_id: string;
+  kind: string;
+  artifact_kind: string;
+  status: "proposed" | "confirmed_unapplied" | "applied" | "rejected" | "refused" | string;
+  summary: string;
+  content_hash: string;
+  applied: boolean;
+  authority_mutated: boolean;
+  resulting_record_id?: string | null;
+}
+
+export interface AgentTurnResult {
+  conversation_id: string;
+  reply: string;
+  capability: string;
+  operation: string;
+  proposals: AgentStructuredProposal[];
+  limitations: string[];
+  market_quote?: {
+    symbol: string;
+    last_price: string;
+    source: string;
+    is_live: boolean;
+    is_stale: boolean;
+    fallback_used: boolean;
+    provider_name: string;
+  } | null;
+  authority_mutated: false;
+  execution_attempted: false;
+  real_trading_enabled: false;
+}
+
 export type ConversationStatus = "active" | "archived";
 export type ConversationMessageRole = "user" | "assistant" | "system";
 export type StrategyProposalStatus = "draft" | "confirmed" | "rejected" | "superseded";

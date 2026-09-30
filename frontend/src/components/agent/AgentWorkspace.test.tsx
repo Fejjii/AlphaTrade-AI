@@ -7,7 +7,9 @@ import { missingAgentCapabilities } from "@/components/agent/agent-contracts";
 const apiMocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
   listMessages: vi.fn(),
-  chatMessage: vi.fn(),
+  agentTurn: vi.fn(),
+  confirmProposal: vi.fn(),
+  rejectProposal: vi.fn(),
   listPositions: vi.fn(),
   listStrategies: vi.fn(),
   marketStatus: vi.fn(),
@@ -19,7 +21,12 @@ vi.mock("@/lib/api", () => ({
       list: apiMocks.listConversations,
       listMessages: apiMocks.listMessages,
     },
-    chat: { message: apiMocks.chatMessage },
+    chat: { message: vi.fn() },
+    agent: {
+      turn: apiMocks.agentTurn,
+      confirmProposal: apiMocks.confirmProposal,
+      rejectProposal: apiMocks.rejectProposal,
+    },
     positions: { list: apiMocks.listPositions },
     strategies: { list: apiMocks.listStrategies },
     canonical: { getMarketStatus: apiMocks.marketStatus },
@@ -55,15 +62,27 @@ describe("Agent workspace", () => {
     });
     apiMocks.listStrategies.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     apiMocks.marketStatus.mockResolvedValue({ availability: "fresh", symbol: "BTCUSDT" });
-    apiMocks.chatMessage.mockResolvedValue({
+    apiMocks.agentTurn.mockResolvedValue({
       conversation_id: "c1",
-      request_id: "r1",
-      reply: "Noted.",
-      citations: [],
-      approval_required: false,
-      approval_status: "none",
-      tool_outputs: [],
+      reply: "Noted.\n\nRecorded facts (not a confirmation):\nDraft only.",
+      capability: "general_conversation",
+      operation: "read",
+      proposals: [],
       limitations: [],
+      authority_mutated: false,
+      execution_attempted: false,
+      real_trading_enabled: false,
+    });
+    apiMocks.confirmProposal.mockResolvedValue({
+      proposal_id: "p1",
+      conversation_id: "c1",
+      kind: "propose_journal_entry",
+      artifact_kind: "journal_entry",
+      status: "applied",
+      summary: "Journal draft",
+      content_hash: "a".repeat(64),
+      applied: true,
+      authority_mutated: true,
     });
   });
 
@@ -87,8 +106,9 @@ describe("Agent workspace", () => {
       "Image and screenshot attachment",
     );
     expect(
-      screen.getByText("Screenshot attachment is not available. The chat API accepts text only."),
+      screen.getByText("Screenshot analysis is not available. No image is uploaded or interpreted."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Voice is not available. No audio is transcribed or played.")).toBeInTheDocument();
     for (const missing of missingAgentCapabilities()) {
       expect(screen.getByText(missing.label)).toBeInTheDocument();
     }
@@ -100,14 +120,55 @@ describe("Agent workspace", () => {
     fireEvent.change(screen.getByLabelText("Timeframe"), { target: { value: "1h" } });
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Review this long." } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(apiMocks.chatMessage).toHaveBeenCalledTimes(1));
-    expect(apiMocks.chatMessage).toHaveBeenCalledWith({
+    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1));
+    expect(apiMocks.agentTurn).toHaveBeenCalledWith({
       message: "Review this long.",
       conversation_id: undefined,
       symbol: "BTCUSDT",
       timeframe: "1h",
       strategy_id: undefined,
     });
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+    expect(apiMocks.rejectProposal).not.toHaveBeenCalled();
     expect(await screen.findByTestId("agent-market-context")).toHaveTextContent("fresh");
+  });
+
+  it("confirms a proposal only from the explicit button", async () => {
+    apiMocks.agentTurn.mockResolvedValue({
+      conversation_id: "c1",
+      reply: "Drafted a journal proposal.",
+      capability: "journal_capture",
+      operation: "propose",
+      proposals: [
+        {
+          proposal_id: "p1",
+          conversation_id: "c1",
+          kind: "propose_journal_entry",
+          artifact_kind: "journal_entry",
+          status: "proposed",
+          summary: "Journal draft",
+          content_hash: "a".repeat(64),
+          applied: false,
+          authority_mutated: false,
+        },
+      ],
+      limitations: [],
+      authority_mutated: false,
+      execution_attempted: false,
+      real_trading_enabled: false,
+    });
+    render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Journal this trade." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent("proposed");
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm proposal" }));
+    await waitFor(() => expect(apiMocks.confirmProposal).toHaveBeenCalledTimes(1));
+    expect(apiMocks.confirmProposal).toHaveBeenCalledWith("p1", {
+      conversation_id: "c1",
+      expected_content_hash: "a".repeat(64),
+      statement: "I confirm",
+    });
+    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent("applied");
   });
 });

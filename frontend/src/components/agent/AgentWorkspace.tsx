@@ -15,7 +15,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useAppContext } from "@/contexts/AppContext";
 import { api } from "@/lib/api";
 import type {
-  AgentMessageResponse,
+  AgentStructuredProposal,
+  AgentTurnResult,
   ConversationMessageRecord,
   ConversationSummary,
   Position,
@@ -69,7 +70,9 @@ export function AgentWorkspace() {
   const [marketLabel, setMarketLabel] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [latest, setLatest] = useState<AgentMessageResponse | null>(null);
+  const [latest, setLatest] = useState<AgentTurnResult | null>(null);
+  const [proposals, setProposals] = useState<AgentStructuredProposal[]>([]);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const refreshConversations = useCallback(async () => {
     setConversations((current) => ({ ...current, loading: true, error: null }));
@@ -154,15 +157,13 @@ export function AgentWorkspace() {
     };
   }, [symbol]);
 
-  const blocked = latest?.risk_result?.action === "block";
-
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || sending || killSwitchActive || blocked) return;
+    if (!text || sending || killSwitchActive) return;
     setSending(true);
     setSendError(null);
     try {
-      const result = await api.chat.message({
+      const result = await api.agent.turn({
         message: text,
         conversation_id: conversationId ?? undefined,
         symbol: symbol.trim() || undefined,
@@ -170,6 +171,7 @@ export function AgentWorkspace() {
         strategy_id: strategyId || undefined,
       });
       setLatest(result);
+      setProposals(result.proposals);
       setConversationId(result.conversation_id);
       setDraft("");
       try {
@@ -180,7 +182,7 @@ export function AgentWorkspace() {
         setMessages((current) => [
           ...current,
           {
-            id: `local-user-${result.request_id}`,
+            id: `local-user-${result.conversation_id}`,
             conversation_id: result.conversation_id,
             organization_id: "",
             user_id: "",
@@ -189,7 +191,7 @@ export function AgentWorkspace() {
             created_at: new Date().toISOString(),
           },
           {
-            id: `local-agent-${result.request_id}`,
+            id: `local-agent-${result.conversation_id}`,
             conversation_id: result.conversation_id,
             organization_id: "",
             user_id: "",
@@ -207,6 +209,30 @@ export function AgentWorkspace() {
     }
   }
 
+  async function decideProposal(proposal: AgentStructuredProposal, statement: "I confirm" | "I reject") {
+    if (decidingId) return;
+    setDecidingId(proposal.proposal_id);
+    setSendError(null);
+    try {
+      const request = {
+        conversation_id: proposal.conversation_id,
+        expected_content_hash: proposal.content_hash,
+        statement,
+      };
+      const updated =
+        statement === "I confirm"
+          ? await api.agent.confirmProposal(proposal.proposal_id, request)
+          : await api.agent.rejectProposal(proposal.proposal_id, request);
+      setProposals((current) =>
+        current.map((item) => (item.proposal_id === updated.proposal_id ? updated : item)),
+      );
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Proposal decision failed");
+    } finally {
+      setDecidingId(null);
+    }
+  }
+
   const wired = AGENT_CAPABILITIES.filter((item) => item.status === "wired");
   const missing = AGENT_CAPABILITIES.filter((item) => item.status === "missing");
 
@@ -214,7 +240,7 @@ export function AgentWorkspace() {
     <div className="space-y-4" data-testid="agent-workspace">
       <PageHeader
         title="Agent"
-        description="Discuss a paper trade in text. Attachments and voice are not connected yet."
+        description="Discuss a paper trade in text. Proposals stay unconfirmed until you use Confirm or Reject. Screenshots and voice are not available."
       />
 
       <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
@@ -231,6 +257,7 @@ export function AgentWorkspace() {
                 setConversationId(null);
                 setMessages([]);
                 setLatest(null);
+                setProposals([]);
               }}
             >
               New conversation
@@ -365,22 +392,56 @@ export function AgentWorkspace() {
                 )}
               </div>
 
-              {latest ? (
-                <div className="space-y-1 text-caption text-text-muted" data-testid="agent-latest">
-                  {latest.risk_result ? <p>Risk: {latest.risk_result.summary}</p> : null}
-                  {latest.citations.length > 0 ? (
-                    <p>
-                      Citations:{" "}
-                      {latest.citations.map((item) => item.title || item.document_id).join(", ")}
-                    </p>
-                  ) : null}
-                  {latest.pending_proposal ? (
-                    <p>
-                      Proposal preview: {latest.pending_proposal.status}. Confirmation stays outside
-                      this workspace.
-                    </p>
-                  ) : null}
-                </div>
+              {proposals.length > 0 ? (
+                <ul className="space-y-2" data-testid="agent-proposals">
+                  {proposals.map((proposal) => (
+                    <li
+                      key={proposal.proposal_id}
+                      className="rounded-control border border-border-subtle p-3"
+                      data-proposal-status={proposal.status}
+                    >
+                      <p className="text-sm text-text-primary">{proposal.summary}</p>
+                      <p className="text-caption text-text-muted">
+                        Status {proposal.status}. The reply did not confirm this proposal.
+                      </p>
+                      {proposal.kind === "propose_strategy" ? (
+                        <p className="text-caption text-text-muted">
+                          Confirm records the request only. The strategy preview stays a draft.
+                        </p>
+                      ) : null}
+                      {proposal.kind === "propose_journal_entry" ? (
+                        <p className="text-caption text-text-muted">
+                          Confirm writes one journal entry. Sending a message does not.
+                        </p>
+                      ) : null}
+                      {proposal.status === "proposed" ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => void decideProposal(proposal, "I confirm")}
+                            disabled={decidingId !== null}
+                          >
+                            Confirm proposal
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => void decideProposal(proposal, "I reject")}
+                            disabled={decidingId !== null}
+                          >
+                            Reject proposal
+                          </Button>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {latest?.market_quote ? (
+                <p className="text-caption text-text-muted" data-testid="agent-turn-market">
+                  {latest.market_quote.symbol} source {latest.market_quote.source} live{" "}
+                  {String(latest.market_quote.is_live)} stale {String(latest.market_quote.is_stale)}
+                </p>
               ) : null}
 
               <form
@@ -397,7 +458,7 @@ export function AgentWorkspace() {
                   placeholder="Ask about a paper trade, a rule, or a journal note."
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="submit" disabled={sending || killSwitchActive || blocked || !draft.trim()}>
+                  <Button type="submit" disabled={sending || killSwitchActive || !draft.trim()}>
                     <Send className="h-4 w-4" aria-hidden="true" />
                     {sending ? "Sending…" : "Send"}
                   </Button>
@@ -423,16 +484,13 @@ export function AgentWorkspace() {
                   </Button>
                 </div>
                 <p id="agent-attachment-contract" className="text-caption text-text-muted">
-                  Screenshot attachment is not available. The chat API accepts text only.
+                  Screenshot analysis is not available. No image is uploaded or interpreted.
                 </p>
                 <p id="agent-voice-contract" className="text-caption text-text-muted">
-                  Voice is not available. There is no transcription endpoint.
+                  Voice is not available. No audio is transcribed or played.
                 </p>
                 {killSwitchActive ? (
                   <p className="text-sm text-danger">Kill switch is active. New messages are paused.</p>
-                ) : null}
-                {blocked ? (
-                  <p className="text-sm text-danger">Risk blocked further messages in this reply.</p>
                 ) : null}
                 {sendError ? <p className="text-sm text-danger">{sendError}</p> : null}
               </form>

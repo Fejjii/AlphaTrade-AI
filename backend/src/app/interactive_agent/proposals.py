@@ -11,6 +11,7 @@ import uuid
 from typing import Any
 
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.mutation_policy import (
@@ -20,7 +21,7 @@ from app.agents.mutation_policy import (
     rejection_authorizes_mutation,
 )
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
-from app.db.models import ConversationMessage
+from app.db.models import ConversationMessage, TradeJournal
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
     ArtifactKind,
@@ -226,6 +227,14 @@ def confirm_proposal(
     )
     _require_hash(proposal, expected_content_hash)
     _guard_live_trading(proposal)
+    message, proposal = _lock_proposal(
+        session,
+        message,
+        proposal_id=proposal_id,
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+    _require_hash(proposal, expected_content_hash)
     if proposal.status in {ProposalLifecycle.APPLIED, ProposalLifecycle.CONFIRMED_UNAPPLIED}:
         return proposal
     if proposal.status is not ProposalLifecycle.PROPOSED:
@@ -302,6 +311,53 @@ def reject_proposal(
     return updated
 
 
+def _lock_proposal(
+    session: Session,
+    message: ConversationMessage,
+    *,
+    proposal_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> tuple[ConversationMessage, StructuredActionProposal]:
+    """Re-read one proposal under a row lock so a second confirm sees the first."""
+    locked = session.get(ConversationMessage, message.id, with_for_update=True)
+    if locked is None:
+        raise NotFoundError("Agent proposal not found.")
+    block = dict(locked.payload or {}).get(PAYLOAD_KEY) or {}
+    items = block.get("proposals") or []
+    if not isinstance(items, list):
+        raise NotFoundError("Agent proposal not found.")
+    for item in items:
+        if not isinstance(item, dict) or str(item.get("proposal_id")) != str(proposal_id):
+            continue
+        proposal = StructuredActionProposal.model_validate(item)
+        if proposal.organization_id != organization_id or proposal.user_id != user_id:
+            raise NotFoundError("Agent proposal not found.")
+        return locked, proposal
+    raise NotFoundError("Agent proposal not found.")
+
+
+def _existing_journal_id(
+    session: Session,
+    proposal: StructuredActionProposal,
+    *,
+    organization_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> uuid.UUID | None:
+    tag = f"proposal:{proposal.proposal_id}"
+    rows = session.scalars(
+        select(TradeJournal).where(
+            TradeJournal.organization_id == organization_id,
+            TradeJournal.user_id == user_id,
+        )
+    ).all()
+    for row in rows:
+        tags = row.tags if isinstance(row.tags, list) else []
+        if tag in tags:
+            return row.id
+    return None
+
+
 def _apply_journal(
     session: Session,
     proposal: StructuredActionProposal,
@@ -321,6 +377,14 @@ def _apply_journal(
             "Journal proposal is incomplete.",
             details={"fields": draft.incomplete_fields},
         )
+    existing = _existing_journal_id(
+        session,
+        proposal,
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+    if existing is not None:
+        return existing
     try:
         entry = JournalService(session, AuditService(session)).create(
             JournalEntryCreate(

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,18 @@ from app.db.models import (
     UserStrategyVersion,
 )
 from app.db.session import get_session
+from app.evidence_pipeline.http_schemas import (
+    CanonicalCompletenessRead,
+    CanonicalCurrentPriceRead,
+    CanonicalEvidenceRead,
+    CanonicalFreshnessRead,
+    CanonicalSetupEvidenceRead,
+    CanonicalSourceIdentityRead,
+)
+from app.interactive_agent.canonical_market import (
+    CanonicalMarketStateError,
+    market_view_from_evidence,
+)
 from app.interactive_agent.classify import classify_turn
 from app.interactive_agent.contracts import (
     AgentCapability,
@@ -45,6 +59,7 @@ from app.interactive_agent.contracts import (
     TurnOperation,
     VoiceOutputRequest,
 )
+from app.interactive_agent.conversation import compose_visible_reply
 from app.interactive_agent.service import InteractiveAgentService
 from app.main import create_app
 from app.schemas.common import (
@@ -828,6 +843,8 @@ def test_agent_http_journal_confirm_and_capability_catalog(
         payload = turned.json()
         assert payload["authority_mutated"] is False
         assert payload["execution_attempted"] is False
+        assert "Recorded facts (not a confirmation)" in payload["reply"]
+        assert payload["proposals"][0]["applied"] is False
         entries = client.get("/journal/entries")
         assert entries.status_code == 200
         assert entries.json()["total"] == 0
@@ -853,3 +870,252 @@ def test_agent_http_journal_confirm_and_capability_catalog(
         assert speech.json()["audio_generated"] is False
         assert speech.json()["transcript"] is None
     app.dependency_overrides.clear()
+
+
+class _ConfirmingResponder:
+    def compose(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        message: str,
+        factual_context: str,
+    ) -> str:
+        del organization_id, user_id, conversation_id, message, factual_context
+        return "I confirm the journal was saved and the strategy is confirmed."
+
+
+def test_model_text_does_not_confirm_a_journal(
+    agent_db: tuple[sessionmaker[Session], Settings],
+) -> None:
+    factory, settings = agent_db
+    with factory() as session:
+        service = InteractiveAgentService(
+            session,
+            settings=settings,
+            responder=_ConfirmingResponder(),
+        )
+        result = service.handle_turn(
+            AgentTurnRequest(message=JOURNAL_TEXT),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        assert "I confirm the journal was saved" in result.reply
+        assert "Recorded facts (not a confirmation)" in result.reply
+        assert result.authority_mutated is False
+        assert result.proposals[0].status is ProposalLifecycle.PROPOSED
+        assert result.proposals[0].applied is False
+        assert _count(session, TradeJournal) == 0
+        visible = compose_visible_reply("Noted.", "Canonical perpetual evidence is stale.")
+        assert visible.startswith("Noted.")
+        assert "stale" in visible
+
+
+def test_canonical_market_unavailable_and_stale_stay_explicit() -> None:
+    stale = _canonical_read(presentation="stale", price=None, freshness="stale", usable=False)
+    with pytest.raises(CanonicalMarketStateError) as stale_error:
+        market_view_from_evidence(stale)
+    assert stale_error.value.availability == "stale"
+    assert "stale" in stale_error.value.reason
+
+    missing = _canonical_read(
+        presentation="unavailable",
+        price=None,
+        freshness="unknown",
+        usable=False,
+    )
+    with pytest.raises(CanonicalMarketStateError) as missing_error:
+        market_view_from_evidence(missing)
+    assert missing_error.value.availability == "unavailable"
+    assert "unavailable" in missing_error.value.reason
+
+    fresh = market_view_from_evidence(
+        _canonical_read(
+            presentation="live_mark",
+            price="64000",
+            freshness="fresh",
+            usable=True,
+            is_live=True,
+        )
+    )
+    assert fresh.is_live is True
+    assert fresh.is_stale is False
+    assert fresh.fallback_used is False
+    assert fresh.last_price == "64000"
+    assert fresh.source.startswith("canonical:")
+
+    replay = market_view_from_evidence(
+        _canonical_read(
+            presentation="replay_fixture",
+            price="1",
+            freshness="fresh",
+            usable=True,
+            is_live=False,
+        )
+    )
+    assert replay.is_live is False
+    assert replay.is_stale is False
+
+    labeled = market_view_from_evidence(
+        _canonical_read(
+            presentation="stale",
+            price="64000",
+            freshness="stale",
+            usable=False,
+        )
+    )
+    assert labeled.is_stale is True
+    assert labeled.is_live is False
+
+
+def _file_sqlite_factory(path: Path) -> sessionmaker[Session]:
+    """Separate connections. BEGIN IMMEDIATE waits instead of interleaving writes.
+
+    The default agent fixture uses one shared connection, so two threads cannot
+    take a real row lock there.
+    """
+    engine = create_engine(
+        f"sqlite+pysqlite:///{path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+
+    @event.listens_for(engine, "connect")
+    def _connect(dbapi_conn: object, _record: object) -> None:
+        dbapi_conn.isolation_level = None  # type: ignore[attr-defined]
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
+    @event.listens_for(engine, "begin")
+    def _begin(conn: object) -> None:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")  # type: ignore[attr-defined]
+
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        session.add(Organization(id=ORG_A, name="Agent Org A"))
+        session.add(User(id=USER_A, email="agent-a@test.example", hashed_password="x"))
+        session.flush()
+        session.add(Membership(user_id=USER_A, organization_id=ORG_A, role=MembershipRole.OWNER))
+        session.commit()
+    return factory
+
+
+def test_repeated_and_concurrent_journal_confirms_write_one_row(tmp_path: Path) -> None:
+    factory = _file_sqlite_factory(tmp_path / "agent-confirm.db")
+    settings = _settings()
+    with factory() as session:
+        _service_unused, proposed = _turn(session, settings, JOURNAL_TEXT)
+        session.commit()
+        proposal = proposed.proposals[0]
+        conversation_id = proposed.conversation_id
+        digest = proposal.content_hash
+        proposal_id = proposal.proposal_id
+
+    barrier = threading.Barrier(2)
+    results: list[uuid.UUID | None] = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def _confirm() -> None:
+        barrier.wait(timeout=10)
+        try:
+            with factory() as session:
+                confirmed = InteractiveAgentService(session, settings=settings).confirm(
+                    proposal_id,
+                    ProposalDecisionRequest(
+                        conversation_id=conversation_id,
+                        expected_content_hash=digest,
+                        statement="I confirm",
+                    ),
+                    organization_id=ORG_A,
+                    user_id=USER_A,
+                )
+                session.commit()
+            with lock:
+                results.append(confirmed.resulting_record_id)
+        except BaseException as exc:
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=_confirm) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert all(not thread.is_alive() for thread in threads)
+
+    with factory() as session:
+        assert _count(session, TradeJournal) == 1
+        again = InteractiveAgentService(session, settings=settings).confirm(
+            proposal_id,
+            ProposalDecisionRequest(
+                conversation_id=conversation_id,
+                expected_content_hash=digest,
+                statement="I confirm",
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        session.commit()
+        assert _count(session, TradeJournal) == 1
+        assert again.resulting_record_id is not None
+    written = {item for item in results if item is not None}
+    assert not errors
+    assert written == {again.resulting_record_id}
+
+
+def _canonical_read(
+    *,
+    presentation: str,
+    price: str | None,
+    freshness: str,
+    usable: bool,
+    is_live: bool = False,
+) -> CanonicalEvidenceRead:
+    now = datetime.now(UTC)
+    return CanonicalEvidenceRead(
+        organization_id=str(ORG_A),
+        symbol="BTCUSDT",
+        source=CanonicalSourceIdentityRead(
+            venue="binance",
+            market_type="usd_m_perpetual",
+            instrument_id="BTCUSDT",
+            provider_symbol="BTCUSDT",
+            provider_name="binance_usdm",
+            source_family="binance_usdm",
+            adapter_version="test",
+            is_live=is_live,
+            is_mock=not is_live,
+        ),
+        current_price=CanonicalCurrentPriceRead(
+            usable_as_current_market_price=usable,
+            presentation=presentation,
+            price=price,
+            source_time=now if price else None,
+            venue_trade_id="trade-1" if price else None,
+            is_live=is_live,
+            is_mock=not is_live,
+            freshness=CanonicalFreshnessRead(
+                policy_version="freshness/v1",
+                state=freshness,
+                evaluated_at=now,
+            ),
+        ),
+        setup_evidence=CanonicalSetupEvidenceRead(
+            available=False,
+            completeness=CanonicalCompletenessRead(
+                ohlcv_15m="unknown",
+                ohlcv_4h="unknown",
+                cvd="unknown",
+                signed_flow="unknown",
+            ),
+            reason="not_used",
+        ),
+        timestamps={"evaluated_at": now},
+        unavailable_reason=None if usable else presentation,
+    )

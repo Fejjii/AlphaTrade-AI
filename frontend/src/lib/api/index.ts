@@ -1,6 +1,8 @@
 import { apiFetch } from "@/lib/api/client";
 import type {
   AgentMessageResponse,
+  AgentStructuredProposal,
+  AgentTurnResult,
   ApprovalRequest,
   AuditRecord,
   AuthResponse,
@@ -351,6 +353,35 @@ export const api = {
       timeframe?: string;
     }) =>
       apiFetch<AgentMessageResponse>("/chat/message", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  },
+  agent: {
+    turn: (body: {
+      message: string;
+      conversation_id?: string;
+      strategy_id?: string;
+      symbol?: string;
+      timeframe?: string;
+    }) =>
+      apiFetch<AgentTurnResult>("/agent/turns", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    confirmProposal: (
+      proposalId: string,
+      body: { conversation_id: string; expected_content_hash: string; statement: string },
+    ) =>
+      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/confirm`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    rejectProposal: (
+      proposalId: string,
+      body: { conversation_id: string; expected_content_hash: string; statement: string },
+    ) =>
+      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/reject`, {
         method: "POST",
         body: JSON.stringify(body),
       }),

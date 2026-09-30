@@ -10,12 +10,13 @@ import uuid
 
 from fastapi import APIRouter
 
-from app.core.dependencies import MarketDataServiceDep, SessionDep, SettingsDep
+from app.core.dependencies import SessionDep, SettingsDep
+from app.evidence_pipeline.service import CanonicalEvidenceService
+from app.interactive_agent.canonical_market import CanonicalPerpetualQuoteReader
 from app.interactive_agent.contracts import (
     AgentCapabilityCatalog,
     AgentTurnRequest,
     AgentTurnResult,
-    MarketQuoteView,
     ProposalDecisionRequest,
     ScreenshotAnalysisContract,
     ScreenshotAnalysisRequest,
@@ -24,42 +25,27 @@ from app.interactive_agent.contracts import (
     VoiceIoContract,
     VoiceOutputRequest,
 )
+from app.interactive_agent.conversation import ModelConversationalResponder
 from app.interactive_agent.service import InteractiveAgentService
 from app.security.rbac import TraderDep
-from app.services.market_data_service import MarketDataService
 
 router = APIRouter(prefix="/agent", tags=["agent"])
-
-
-class _MarketQuoteAdapter:
-    """Copy a ticker into the agent quote contract without hiding freshness."""
-
-    def __init__(self, market_data: MarketDataService) -> None:
-        self._market_data = market_data
-
-    def quote(self, symbol: str) -> MarketQuoteView:
-        ticker = self._market_data.get_ticker(symbol)
-        meta = ticker.meta
-        return MarketQuoteView(
-            symbol=str(meta.symbol),
-            last_price=str(ticker.last_price),
-            source=meta.source,
-            is_live=meta.is_live,
-            is_stale=meta.is_stale,
-            fallback_used=meta.fallback_used,
-            provider_name=meta.provider_name,
-        )
 
 
 def _service(
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
+    organization_id: uuid.UUID,
 ) -> InteractiveAgentService:
+    """Wire canonical evidence and the existing model. Neither path confirms."""
     return InteractiveAgentService(
         session,
         settings=settings,
-        market_reader=_MarketQuoteAdapter(market_data),
+        market_reader=CanonicalPerpetualQuoteReader(
+            CanonicalEvidenceService(settings, session=session),
+            organization_id,
+        ),
+        responder=ModelConversationalResponder(session, settings),
     )
 
 
@@ -79,9 +65,8 @@ async def agent_turn(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
 ) -> AgentTurnResult:
-    result = _service(session, settings, market_data).handle_turn(
+    result = _service(session, settings, tenant.organization_id).handle_turn(
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
@@ -101,9 +86,8 @@ async def confirm_agent_proposal(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
 ) -> StructuredActionProposal:
-    result = _service(session, settings, market_data).confirm(
+    result = _service(session, settings, tenant.organization_id).confirm(
         proposal_id,
         body,
         organization_id=tenant.organization_id,
@@ -124,9 +108,8 @@ async def reject_agent_proposal(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
 ) -> StructuredActionProposal:
-    result = _service(session, settings, market_data).reject(
+    result = _service(session, settings, tenant.organization_id).reject(
         proposal_id,
         body,
         organization_id=tenant.organization_id,
@@ -146,9 +129,8 @@ async def analyze_screenshot(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
 ) -> ScreenshotAnalysisContract:
-    result = _service(session, settings, market_data).screenshot_contract(
+    result = _service(session, settings, tenant.organization_id).screenshot_contract(
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
@@ -167,9 +149,8 @@ async def transcribe_voice(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
 ) -> VoiceIoContract:
-    result = _service(session, settings, market_data).voice_input_contract(
+    result = _service(session, settings, tenant.organization_id).voice_input_contract(
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
@@ -184,9 +165,8 @@ async def speak_voice(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
-    market_data: MarketDataServiceDep,
 ) -> VoiceIoContract:
-    result = _service(session, settings, market_data).voice_output_contract(
+    result = _service(session, settings, tenant.organization_id).voice_output_contract(
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,

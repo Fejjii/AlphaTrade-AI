@@ -10,6 +10,7 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
+from app.interactive_agent.canonical_market import CanonicalMarketStateError
 from app.interactive_agent.contracts import (
     AgentCapability,
     ArtifactKind,
@@ -38,6 +39,8 @@ class MarketQuoteReader(Protocol):
 
 class ReadBundle(StrictModel):
     market_quote: MarketQuoteView | None = None
+    market_availability: str | None = None
+    market_reason: str | None = None
     portfolio_summary: str | None = None
     statistics_summary: str | None = None
     coaching_note: str | None = None
@@ -56,11 +59,12 @@ def gather_reads(
     capability: AgentCapability,
     strategy_id: uuid.UUID | None,
     market_reader: MarketQuoteReader | None,
+    symbol: str | None = None,
 ) -> ReadBundle:
     """Read existing authorities for this turn. No snapshots or journal writes."""
     bundle = ReadBundle()
     if capability is AgentCapability.MARKET_AND_PORTFOLIO:
-        _read_quote(bundle, message, market_reader)
+        _read_quote(bundle, message, market_reader, symbol_hint=symbol)
         _read_portfolio(session, bundle, organization_id=organization_id, user_id=user_id)
     if capability is AgentCapability.STATISTICS_AND_PERFORMANCE:
         _read_statistics(session, bundle, organization_id=organization_id, user_id=user_id)
@@ -86,8 +90,14 @@ def gather_reads(
     return bundle
 
 
-def _read_quote(bundle: ReadBundle, message: str, reader: MarketQuoteReader | None) -> None:
-    symbol = extract_symbol(message)
+def _read_quote(
+    bundle: ReadBundle,
+    message: str,
+    reader: MarketQuoteReader | None,
+    *,
+    symbol_hint: str | None = None,
+) -> None:
+    symbol = extract_symbol(message) or _symbol_hint(symbol_hint)
     if symbol is None:
         bundle.limitations.append("No symbol was named, so no market quote was fetched.")
         return
@@ -96,9 +106,33 @@ def _read_quote(bundle: ReadBundle, message: str, reader: MarketQuoteReader | No
         return
     try:
         bundle.market_quote = reader.quote(symbol)
+    except CanonicalMarketStateError as exc:
+        bundle.market_availability = exc.availability
+        bundle.market_reason = exc.reason
+        bundle.limitations.append(
+            f"Canonical perpetual evidence for {symbol} is {exc.availability}. "
+            f"{exc.reason} No price was invented."
+        )
+        return
     except Exception:
         logger.warning("interactive_agent_quote_unavailable")
         bundle.limitations.append("The market-data reader failed. No quote was invented.")
+        return
+    if bundle.market_quote is not None and bundle.market_quote.is_stale:
+        bundle.market_availability = "stale"
+        bundle.limitations.append(
+            f"Canonical perpetual evidence for {symbol} is stale. "
+            "The price is not a current market price."
+        )
+
+
+def _symbol_hint(value: str | None) -> str | None:
+    if value is None:
+        return None
+    token = value.strip().upper()
+    if len(token) < 2 or len(token) > 30 or not token.isalnum():
+        return None
+    return token
 
 
 def _read_portfolio(

@@ -93,6 +93,8 @@ class AgentTurnRequest(StrictModel):
     message: str = Field(min_length=1, max_length=8000)
     conversation_id: UUID | None = None
     strategy_id: UUID | None = None
+    symbol: str | None = Field(default=None, max_length=30)
+    timeframe: str | None = Field(default=None, max_length=16)
 
 
 class ProposalDecisionRequest(StrictModel):

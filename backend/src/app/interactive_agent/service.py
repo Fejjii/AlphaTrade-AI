@@ -37,6 +37,11 @@ from app.interactive_agent.contracts import (
     VoiceIoContract,
     VoiceOutputRequest,
 )
+from app.interactive_agent.conversation import (
+    MODEL_REPLY_UNAVAILABLE,
+    ConversationalResponder,
+    compose_visible_reply,
+)
 from app.interactive_agent.proposals import (
     build_proposal,
     confirm_proposal,
@@ -65,6 +70,9 @@ _BASE_LIMITATIONS = (
     "Free-form agent text does not mutate strategies, rules, or journal records.",
     "This turn used deterministic orchestration and did not call a narrative model.",
 )
+_MODEL_LIMITATIONS = (
+    "Model text is not confirmation and does not write strategies, rules, or journal records.",
+)
 _SKIP_RETRIEVAL = frozenset(
     {
         AgentCapability.SCREENSHOT_ANALYSIS,
@@ -83,11 +91,13 @@ class InteractiveAgentService:
         settings: Settings,
         market_reader: MarketQuoteReader | None = None,
         vector_retriever: VectorKnowledgeRetriever | None = None,
+        responder: ConversationalResponder | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
         self._market_reader = market_reader
         self._vector_retriever = vector_retriever
+        self._responder = responder
         self._conversations = ConversationService(session)
 
     def catalog(self) -> AgentCapabilityCatalog:
@@ -129,10 +139,12 @@ class InteractiveAgentService:
                     "schema_version": SCHEMA_VERSION,
                     "capability": classification.capability.value,
                     "artifact_kinds": [kind.value for kind in classification.artifact_kinds],
+                    "symbol": _context_token(request.symbol),
+                    "timeframe": _context_token(request.timeframe),
                 }
             },
         )
-        limitations = list(_BASE_LIMITATIONS)
+        limitations = list(_BASE_LIMITATIONS if self._responder is None else _MODEL_LIMITATIONS)
         knowledge: list[KnowledgeHit] = []
         strategies: list[StrategyHit] = []
         bundle = ReadBundle()
@@ -162,6 +174,7 @@ class InteractiveAgentService:
                 capability=classification.capability,
                 strategy_id=request.strategy_id or conversation.strategy_id,
                 market_reader=self._market_reader,
+                symbol=_context_token(request.symbol),
             )
             limitations.extend(knowledge_notes)
             limitations.extend(strategy_notes)
@@ -178,7 +191,7 @@ class InteractiveAgentService:
             limitations=limitations,
         )
         connections = _connections(knowledge, strategies, bundle.connections)
-        reply = _reply(
+        factual = _reply(
             classification,
             proposals=proposals,
             knowledge=knowledge,
@@ -186,6 +199,18 @@ class InteractiveAgentService:
             bundle=bundle,
             prior_user_messages=prior,
         )
+        reply = factual
+        if self._responder is not None:
+            model_text = self._responder.compose(
+                organization_id=organization_id,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                message=request.message,
+                factual_context=factual,
+            )
+            if model_text == MODEL_REPLY_UNAVAILABLE:
+                limitations.append(MODEL_REPLY_UNAVAILABLE)
+            reply = compose_visible_reply(model_text, factual)
         assistant = self._conversations.append_message(
             conversation=conversation,
             role=ConversationMessageRole.ASSISTANT,
@@ -709,12 +734,25 @@ def _market_reply(bundle: ReadBundle) -> str:
         parts.append(
             f"{quote.symbol} last {quote.last_price} source={quote.source} "
             f"is_live={str(quote.is_live).lower()} "
+            f"is_stale={str(quote.is_stale).lower()} "
             f"fallback_used={str(quote.fallback_used).lower()} "
             f"provider={quote.provider_name}."
         )
+        if quote.is_stale:
+            parts.append("The quote is stale and is not a current market price.")
+    elif bundle.market_availability:
+        reason = bundle.market_reason or "No price was invented."
+        parts.append(f"Canonical perpetual evidence is {bundle.market_availability}. {reason}")
     else:
         parts.append("No market quote was fetched.")
     return " ".join(parts)[:4000]
+
+
+def _context_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    token = value.strip()
+    return token or None
 
 
 def _trade_reply(bundle: ReadBundle, knowledge: list[KnowledgeHit]) -> str:

@@ -1971,4 +1971,17 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   screenshot stay unimplemented.
 - Note: Do not deploy or enable real trading.
 
+### AT-089 — Reviewed paper release candidate
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-088 and the enrollment
+  and worker-memory branches · Risk: Medium (integration must not widen
+  trading authority)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`; no
+  deploy; no Render change; no additional symbols; no Telegram arm
+- Goal: Integrate PR 146, PR 149, PR 145, and PR 147. Exclude PR 148.
+- Branch: `cursor/release-candidate-146-149-145-147-5354`
+- Alembic: head `a8c3e1b94d20` must be applied before the paper worker starts.
+  Staging is not migrated by this task.
+- ADR: AT-ADR-072, AT-ADR-073, AT-ADR-074, AT-ADR-075
+- Note: Do not merge to main, deploy, or enable real trading.
+
 

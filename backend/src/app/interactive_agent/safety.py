@@ -52,14 +52,20 @@ def capability_catalog(settings: Settings) -> AgentCapabilityCatalog:
         CapabilityDescriptor(
             capability=AgentCapability.GENERAL_CONVERSATION,
             status=CapabilityStatus.IMPLEMENTED,
-            authority="ConversationService",
-            notes="Deterministic reply stored on the existing conversation transcript.",
+            authority="ConversationService and ModelRouter",
+            notes=(
+                "The HTTP turn stores the existing model reply. That text does not "
+                "confirm or write records."
+            ),
         ),
         CapabilityDescriptor(
             capability=AgentCapability.MARKET_AND_PORTFOLIO,
             status=CapabilityStatus.READ_THROUGH,
-            authority="PaperPortfolioService and optional MarketDataService",
-            notes="Quotes are returned only from an injected reader and keep source flags.",
+            authority="CanonicalEvidenceService and PaperPortfolioService",
+            notes=(
+                "Market answers use canonical perpetual evidence. Unavailable and "
+                "stale stay explicit. No price is invented."
+            ),
         ),
         CapabilityDescriptor(
             capability=AgentCapability.STRATEGY_RETRIEVAL,

@@ -67,8 +67,32 @@ status. Starting it against `f1a2b3c4d5e6` fails those writes. A migration
 mismatch also skips Watcher scans (`migration_unhealthy`) and leaves the
 process up.
 
-This integration validated the revision locally. It did not migrate the
-staging database and did not restart the staging worker.
+This integration applied `alembic upgrade head` on a disposable local
+PostgreSQL 16 database created for the check. `alembic_version` was
+`a8c3e1b94d20`, and `controlled_runtime_status` gained nullable bigint
+columns `process_rss_bytes` and `process_rss_peak_bytes`. Staging was not
+migrated and the staging worker was not restarted.
+
+### Memory measurement limits
+
+RSS figures are the local worker process only (`process_rss_bytes` and
+`process_rss_peak_bytes`). They are not account data and they are not a
+guarantee that a 512 MB host will stay under its limit. Peak RSS does not
+fall during the life of the process. A 10-minute monitor stall can still
+materialize that short window. Live BTCUSDT trade counts were not measured
+from the integration environment (HTTP 451). Replay fixtures keep the full
+trade list; scan retrieval releases it after the coverage proof is bound.
+
+The release proof is structural: after the coverage hash and bar sums are
+bound, `trades` is empty and `ReleasedTradeTape.event_count` matches the
+stream. A process-RSS comparison is not that proof. Holding 5,000
+`TradeEvent` objects moved RSS by 765952 bytes on PR 149 CI (run
+36395949966, job `backend`, assertion `retain_delta > 4 MiB` failed) and by
+3141632 bytes on this integration host on 2026-09-28 (same assertion). The
+candidate records those samples and does not treat 4 MiB as a pass gate.
+
+Retest the staging worker only after a human applies `a8c3e1b94d20` and
+restarts the worker. This task does not do that.
 
 ### 3. Live market activation
 

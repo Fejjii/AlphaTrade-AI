@@ -2566,4 +2566,35 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `backend/tests/test_interactive_agent_foundation.py`. Contract notes in
   `docs/interactive_agent_foundation.md`.
 
+## AT-ADR-075 — Release candidate keeps the conversational model beside proposals
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** PR 145's Agent workspace talks to `/chat`. PR 147's agent turns
+  reply with deterministic templates and read an injected ticker. Integrating
+  those branches by switching the workspace onto the templates would replace
+  the conversational model. Three source branches also appended `AT-ADR-072`.
+- **Decision:**
+  1. `POST /agent/turns` asks the existing `ModelRouter` purpose
+     `general_agent_synthesis` for the assistant prose. If that call is
+     unavailable, the transcript says the conversational model reply is
+     unavailable. Recorded facts are appended and are not a confirmation.
+  2. Market answers use `CanonicalEvidenceService`. Unavailable and stale
+     reads stay labeled. No price is invented and `fallback_used` stays false.
+  3. Strategy and journal proposals are not confirmed by model text or by
+     sending a message. Journal rows are written only by the explicit confirm
+     route, and a repeated or concurrent confirm of the same proposal writes
+     one row. Strategy confirm stays `confirmed_unapplied`.
+  4. Screenshot and voice routes stay unimplemented.
+  5. Decision identifiers on this candidate are `AT-ADR-072` enrollment,
+     `AT-ADR-073` trade-tape release, and `AT-ADR-074` agent orchestration.
+     Apply Alembic `a8c3e1b94d20` before the paper worker starts. This
+     decision does not migrate staging.
+- **Alternatives considered:** Point the workspace only at `/chat` (rejected:
+  structured proposals would stay disconnected). Replace replies with the
+  PR 147 templates (rejected: that removes the conversational model).
+- **Safety impact:** Paper only. Real trading stays disabled. No deploy, no
+  Render change, no additional symbols, no kill-switch or Telegram arm.
+- **Consequences:** `docs/interactive_agent_foundation.md` and
+  `docs/controlled_paper_activation.md`. PR 148 remains excluded.
+
 
