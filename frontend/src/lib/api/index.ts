@@ -945,11 +945,11 @@ export const api = {
   watcherWatchlist: {
     configuration: () =>
       apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", { auth: true }),
-    replace: (slots: Array<Pick<WatcherWatchlistSlot, "symbol" | "enabled">>) =>
+    replace: (slots: Array<Pick<WatcherWatchlistSlot, "symbol" | "enabled">>, revision: number) =>
       apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", {
         method: "PUT",
         auth: true,
-        body: JSON.stringify({ slots }),
+        body: JSON.stringify({ slots, revision }),
       }),
     status: () => apiFetch<WatcherWatchlistStatus>("/watcher/watchlist/status", { auth: true }),
   },

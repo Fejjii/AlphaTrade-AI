@@ -20,7 +20,8 @@ class WatcherWatchlistSlotWrite(StrictModel):
 
 
 class WatcherWatchlistReplace(StrictModel):
-    slots: list[WatcherWatchlistSlotWrite] = Field(min_length=5, max_length=5)
+    revision: int = Field(ge=0)
+    slots: list[WatcherWatchlistSlotWrite] = Field(max_length=5)
 
 
 class WatcherWatchlistSlotRead(StrictModel):
@@ -38,6 +39,8 @@ class WatcherWatchlistConfigurationRead(StrictModel):
 
 
 class WatcherSymbolRuntimeRead(StrictModel):
+    configuration_revision: int
+    observed_at: datetime | None = None
     position: int
     symbol: str
     enabled: bool
@@ -52,6 +55,9 @@ class WatcherSymbolRuntimeRead(StrictModel):
 
 
 class WatcherWatchlistStatusRead(StrictModel):
+    configuration_revision: int
+    observed_at: datetime
+    stale_after_seconds: float
     paper_only: bool = True
     real_trading_enabled: bool = False
     symbols: list[WatcherSymbolRuntimeRead]

@@ -37,7 +37,8 @@ TELEGRAM_PAPER_AGENT = "d9e0f1a2b3c4"
 TELEGRAM_PAPER_ACTIVATION = "e0f1a2b3c4d5"
 CONTROLLED_RUNTIME_STATUS = "f1a2b3c4d5e6"
 WORKER_PROCESS_MEMORY = "a8c3e1b94d20"
-CURRENT_HEAD = WORKER_PROCESS_MEMORY
+WATCHER_TENANT_WATCHLIST = "b6f2d9a10e73"
+CURRENT_HEAD = WATCHER_TENANT_WATCHLIST
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -191,7 +192,8 @@ def test_alembic_single_head() -> None:
     assert script.get_heads() == [CURRENT_HEAD]
     head = script.get_revision(CURRENT_HEAD)
     assert head is not None
-    assert head.down_revision == CONTROLLED_RUNTIME_STATUS
+    assert head.down_revision == WORKER_PROCESS_MEMORY
+    assert script.get_revision(WORKER_PROCESS_MEMORY).down_revision == CONTROLLED_RUNTIME_STATUS
     revisions = {rev.revision for rev in script.walk_revisions()}
     assert LEARNING_ATTRIBUTION_PERSISTENCE in revisions
     assert TELEGRAM_PAPER_ACTIVATION in revisions

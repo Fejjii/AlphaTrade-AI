@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,8 @@ export function WatcherWatchlistEditor({
   slots,
   statuses,
   saving = false,
+  configurationRevision = 0,
+  staleAfterSeconds = 90,
   message = null,
   onChange,
   onSave,
@@ -48,11 +50,16 @@ export function WatcherWatchlistEditor({
   slots: WatcherWatchlistSlot[];
   statuses: WatcherSymbolRuntimeStatus[];
   saving?: boolean;
+  configurationRevision?: number;
+  staleAfterSeconds?: number;
   message?: string | null;
   onChange: (slots: WatcherWatchlistSlot[]) => void;
   onSave: () => void;
 }) {
-  const statusByPosition = new Map(statuses.map((row) => [row.position, row]));
+  const statusBySymbol = new Map(statuses.filter((row) => {
+    const age = row.observed_at ? Date.now() - Date.parse(row.observed_at) : Number.NaN;
+    return row.configuration_revision === configurationRevision && age >= 0 && age <= staleAfterSeconds * 1000;
+  }).map((row) => [row.symbol.trim().toUpperCase(), row]));
   return (
     <Card data-testid="watcher-watchlist">
       <CardHeader>
@@ -63,7 +70,8 @@ export function WatcherWatchlistEditor({
       </CardHeader>
       <CardContent className="space-y-3">
         {slots.map((slot, index) => {
-          const status = statusByPosition.get(slot.position);
+          const found = statusBySymbol.get(slot.symbol.trim().toUpperCase());
+          const status = found?.enabled === slot.enabled ? found : undefined;
           return (
             <div
               key={slot.position}
@@ -112,7 +120,7 @@ export function WatcherWatchlistEditor({
                     {status.error_state ? ` · ${status.error_state}` : ""}
                   </>
                 ) : (
-                  "Status not loaded"
+                  "Pending / unscanned"
                 )}
               </p>
               <div className="flex gap-2">
@@ -152,54 +160,80 @@ export function WatcherWatchlistEditor({
 }
 
 export function WatcherWatchlistSection() {
-  const [slots, setSlots] = useState<WatcherWatchlistSlot[]>(DEFAULT_WATCHLIST_SLOTS);
+  const [slots, setSlots] = useState<WatcherWatchlistSlot[]>([]);
+  const [revision, setRevision] = useState<number | null>(null);
   const [statuses, setStatuses] = useState<WatcherSymbolRuntimeStatus[]>([]);
+  const [staleAfter, setStaleAfter] = useState(90);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const generation = useRef(0);
+  const mounted = useRef(false);
+  const savingRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    const request = ++generation.current;
+    const [config, status] = await Promise.all([
+      api.watcherWatchlist.configuration(), api.watcherWatchlist.status(),
+    ]);
+    if (!mounted.current || request !== generation.current) return;
+    setSlots(config.slots);
+    setRevision(config.revision);
+    setStatuses(status.configuration_revision === config.revision ? status.symbols : []);
+    setStaleAfter(status.stale_after_seconds);
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    void api.watcherWatchlist
-      .configuration()
-      .then((config) => {
-        if (!cancelled && config.slots.length === 5) setSlots(config.slots);
-      })
-      .catch(() => {
-        if (!cancelled) setMessage("Watchlist configuration is not loaded yet.");
+    mounted.current = true;
+    void refresh().catch(() => {
+      if (mounted.current) setMessage("Watchlist configuration is not loaded yet.");
+    });
+    const timer = setInterval(() => {
+      if (savingRef.current) return;
+      const request = ++generation.current;
+      void api.watcherWatchlist.status().then((status) => {
+        if (mounted.current && request === generation.current) {
+          setStatuses(status.symbols);
+          setStaleAfter(status.stale_after_seconds);
+        }
+      }).catch(() => {
+        if (mounted.current && request === generation.current) setStatuses([]);
       });
-    void api.watcherWatchlist
-      .status()
-      .then((status) => {
-        if (!cancelled) setStatuses(status.symbols);
-      })
-      .catch(() => {
-        if (!cancelled) setStatuses([]);
-      });
+    }, 15000);
     return () => {
-      cancelled = true;
+      mounted.current = false;
+      clearInterval(timer);
     };
-  }, []);
+  }, [refresh]);
 
   return (
     <WatcherWatchlistEditor
       slots={slots}
       statuses={statuses}
-      saving={saving}
+      configurationRevision={revision ?? -1}
+      staleAfterSeconds={staleAfter}
+      saving={saving || revision === null}
       message={message}
       onChange={setSlots}
       onSave={() => {
+        if (revision === null || savingRef.current) return;
+        savingRef.current = true;
         setSaving(true);
+        ++generation.current;
+        setStatuses([]);
         setMessage(null);
         void api.watcherWatchlist
-          .replace(slots.map((slot) => ({ symbol: slot.symbol, enabled: slot.enabled })))
-          .then((config) => {
-            setSlots(config.slots);
-            setMessage("Watchlist saved. Paper only.");
+          .replace(slots.map((slot) => ({ symbol: slot.symbol, enabled: slot.enabled })), revision)
+          .then(async () => {
+            await refresh();
+            if (mounted.current) setMessage("Watchlist saved. Paper only.");
           })
           .catch(() => {
-            setMessage("Watchlist was not saved.");
+            if (mounted.current) setMessage("Save or refresh failed. Reload before trying again.");
           })
-          .finally(() => setSaving(false));
+          .finally(() => {
+            savingRef.current = false;
+            if (mounted.current) setSaving(false);
+          });
       }}
     />
   );

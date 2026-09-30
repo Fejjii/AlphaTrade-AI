@@ -2656,3 +2656,14 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** `backend/src/app/market_contracts/contract_discovery.py`.
 
 
+
+
+## AT-ADR-WATCHER-TENANT-20260930 — organization-owned durable Watcher state
+
+Status: accepted by the PR152 remediation contract; implementation under validation.
+
+The five-slot process file could cross tenant boundaries and did not connect API and dedicated worker services. Watcher configuration now belongs to an organization in the existing SQLAlchemy database, with monotonic revisions. Latest per-symbol observations and the legacy runtime summary carry that organization, revision and observation time; stale or old-revision observations are pending, and obsolete symbol rows are removed. The API derives ownership from authenticated membership. Optimistic configuration updates and revision-fenced worker publication prevent stale writers.
+
+The worker visits organizations in deterministic round-robin order, loading one organization per bounded cycle from the shared database. Per-symbol market composition and latest status remain bounded; no tenant strategy data enters shared public-market caches. Configuration changes are observed on the tenant's next turn; delayed/missing worker observations expire visibly. Exact provider contract verification gates acquisition, and no-strategy monitoring reads only a bounded closed-candle sample without producing Candidates. This probe is not current-price or full CVD evidence.
+
+Existing activation, kill-switch, paper execution and Telegram tenant controls remain authoritative. Migration b6f2d9a10e73 is for isolated validation only in this task; shared database rollout, merge and deployment require their existing human gates. Acceptance requires regression tests, exact-revision CI and a fresh independent review.

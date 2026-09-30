@@ -1,13 +1,16 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_WATCHLIST_SLOTS,
   WatcherWatchlistEditor,
+  WatcherWatchlistSection,
 } from "@/components/WatcherWatchlistSection";
 import type { WatcherSymbolRuntimeStatus } from "@/lib/api/types";
 
 const statuses: WatcherSymbolRuntimeStatus[] = DEFAULT_WATCHLIST_SLOTS.map((slot) => ({
+  configuration_revision: 0,
+  observed_at: new Date().toISOString(),
   position: slot.position,
   symbol: slot.symbol,
   enabled: slot.enabled,
@@ -21,7 +24,7 @@ const statuses: WatcherSymbolRuntimeStatus[] = DEFAULT_WATCHLIST_SLOTS.map((slot
   error_state: slot.symbol === "BTCUSDT" ? null : "contract_unverified",
 }));
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("WatcherWatchlistEditor", () => {
   it("shows five slots with live status beside each symbol", () => {
@@ -64,5 +67,55 @@ describe("WatcherWatchlistEditor", () => {
     const reordered = onChange.mock.calls.at(-1)?.[0] as typeof DEFAULT_WATCHLIST_SLOTS;
     expect(reordered[0]?.symbol).toBe("ZECUSDT");
     expect(reordered[1]?.symbol).toBe("BTCUSDT");
+  });
+});
+
+
+describe("symbol and revision status boundaries", () => {
+  it("status follows the symbol through reorder and is never inherited by replacement", () => {
+    const props = { statuses, onChange: vi.fn(), onSave: vi.fn() };
+    const view = render(<WatcherWatchlistEditor {...props} slots={DEFAULT_WATCHLIST_SLOTS} />);
+    const reordered = [DEFAULT_WATCHLIST_SLOTS[1]!, DEFAULT_WATCHLIST_SLOTS[0]!, ...DEFAULT_WATCHLIST_SLOTS.slice(2)]
+      .map((slot, index) => ({...slot, position: index + 1}));
+    view.rerender(<WatcherWatchlistEditor {...props} slots={reordered} />);
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("contract_unverified");
+    expect(screen.getByTestId("watchlist-status-2")).toHaveTextContent("replay");
+    const replaced = reordered.map((slot, index) => index === 1 ? {...slot, symbol: "SOLUSDT"} : slot);
+    view.rerender(<WatcherWatchlistEditor {...props} slots={replaced} />);
+    expect(screen.getByTestId("watchlist-status-2")).toHaveTextContent("Pending / unscanned");
+    expect(screen.getByTestId("watchlist-status-2")).not.toHaveTextContent("replay");
+  });
+
+  it("rejects old revisions, missing timestamps and stale observations", () => {
+    const rows = statuses.map((row) => ({...row, observed_at: new Date(Date.now() - 120000).toISOString()}));
+    const props = { slots: DEFAULT_WATCHLIST_SLOTS, onChange: vi.fn(), onSave: vi.fn() };
+    const view = render(<WatcherWatchlistEditor {...props} statuses={rows} />);
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+    view.rerender(<WatcherWatchlistEditor {...props} statuses={statuses} configurationRevision={1} />);
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+    view.rerender(<WatcherWatchlistEditor {...props} statuses={statuses.map(row => ({...row, observed_at:null}))} />);
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+  });
+
+  it("refreshes configuration and status after a revisioned save", async () => {
+    const { api } = await import("@/lib/api");
+    const config = { revision: 0, updated_at: new Date().toISOString(), max_enabled: 5, paper_only: true, slots: DEFAULT_WATCHLIST_SLOTS };
+    const configuration = vi.spyOn(api.watcherWatchlist, "configuration").mockResolvedValue(config);
+    const status = vi.spyOn(api.watcherWatchlist, "status").mockResolvedValue({
+      configuration_revision:0, observed_at:new Date().toISOString(), stale_after_seconds:90,
+      paper_only:true, real_trading_enabled:false, symbols:statuses,
+    });
+    const replace = vi.spyOn(api.watcherWatchlist, "replace").mockResolvedValue({...config, revision:1});
+    render(<WatcherWatchlistSection />);
+    await waitFor(() => expect(screen.getByTestId("watchlist-save")).not.toBeDisabled());
+    fireEvent.change(screen.getByLabelText("Symbol for slot 1"), {target:{value:"SOLUSDT"}});
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+    configuration.mockResolvedValue({...config, revision:1, slots:config.slots.map((slot, i) => i ? slot : {...slot, symbol:"SOLUSDT"})});
+    fireEvent.click(screen.getByTestId("watchlist-save"));
+    await waitFor(() => expect(configuration).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("Watchlist saved. Paper only.")).toBeInTheDocument());
+    expect(status).toHaveBeenCalledTimes(2);
+    expect(replace.mock.calls[0]?.[1]).toBe(0);
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
   });
 });

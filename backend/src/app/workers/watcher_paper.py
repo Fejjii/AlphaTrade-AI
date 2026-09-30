@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import signal
 import threading
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from types import FrameType
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -125,6 +127,7 @@ class WatcherPaperScanReport:
     paper_fill_id: UUID | None = None
     journal_trade_id: UUID | None = None
     journal_status: str | None = None
+    market_read_completed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,7 +262,8 @@ class WatcherPaperRuntime:
         history_source: object | None = None,
         contract_book: ContractBook | None = None,
         contract_discoverer: Callable[[ContractBook, Sequence[str]], ContractBook] | None = None,
-        symbol_probe: Callable[[str], None] | None = None,
+        symbol_probe: Callable[[str], object] | None = None,
+        tenant_watchlists: bool = False,
     ) -> None:
         self._store = store
         self._lifecycle = lifecycle
@@ -267,6 +271,10 @@ class WatcherPaperRuntime:
         self._enabled = enabled
         self._worker_id = worker_id
         self._watchlist_mode = watchlist_mode
+        self._tenant_watchlists = tenant_watchlists
+        self._organization_id: UUID | None = None
+        self._organization_cursor: UUID | None = None
+        self._probes_completed = 0
         self._watchlist = watchlist
         self._watchlist_store = watchlist_store
         self._symbol_status = symbol_status if symbol_status is not None else SymbolStatusBook()
@@ -313,7 +321,11 @@ class WatcherPaperRuntime:
         self._gate_refusals = 0
         self._thread: threading.Thread | None = None
         self._status_lock = threading.Lock()
-        self._held_fencing_tokens: dict[str, int] = {}
+        self._held_fencing_tokens: OrderedDict[str, int] = OrderedDict()
+        self._fence_organizations: dict[str, UUID] = {}
+        self._fence_capacity = max_scopes_per_cycle * (
+            ceil(lease_ttl_seconds / max(1, poll_interval_seconds)) + 2
+        )
         self._status = WatcherPaperStatusState(
             enabled=enabled,
             worker_id=worker_id,
@@ -436,6 +448,82 @@ class WatcherPaperRuntime:
         return self.run_loop()
 
     def run_cycle(self) -> WatcherPaperCycleReport:
+        if not self._tenant_watchlists:
+            return self._run_cycle()
+        from sqlalchemy import select
+
+        from app.db.models import Organization
+        from app.repositories.watcher_watchlist import WatcherWatchlistRepository
+
+        assert self._session_factory is not None
+        # One organization per cycle, round-robin by durable key. No unbounded
+        # tenant runtime cache or global symbol status shared across tenants.
+        with self._session_factory() as session:
+            query = select(Organization.id).order_by(Organization.id).limit(1)
+            org = (
+                session.scalar(query.where(Organization.id > self._organization_cursor))
+                if self._organization_cursor
+                else session.scalar(query)
+            )
+            if org is None:
+                org = session.scalar(query)
+            if org is None:
+                report = WatcherPaperCycleReport("idle", self._enabled, (), 0, False)
+                self._watchlist = None
+                self._symbol_status.restore(())
+                self._remember_cycle(report)
+                return report
+            repo = WatcherWatchlistRepository(session)
+            self._organization_id = self._organization_cursor = org
+            self._watchlist = repo.load(org)
+            self._symbol_status.restore(repo.previous(org))
+        report = self._run_cycle()
+        with self._session_factory() as session:
+            WatcherWatchlistRepository(session).publish(
+                org,
+                self._watchlist,
+                self._symbol_status.snapshot(),
+                observed_at=self._clock.now(),
+                runtime=self._tenant_runtime_summary(report),
+            )
+            session.commit()
+        active = {scan.scan_scope for scan in report.scans}
+        for scope, organization in list(self._fence_organizations.items()):
+            if organization == org and scope not in active:
+                self._held_fencing_tokens.pop(scope, None)
+                self._fence_organizations.pop(scope, None)
+        return report
+
+    def _tenant_runtime_summary(self, report: WatcherPaperCycleReport) -> dict:
+        """Only this tenant's bounded cycle, never process-global counters/scopes."""
+        scans = [s for s in report.scans if s.organization_id == self._organization_id]
+        return {
+            "enabled": report.enabled,
+            "running": self.snapshot().running,
+            "worker_id": self._worker_id,
+            "last_cycle_at": self._clock.now().isoformat(),
+            "last_reason_code": report.reason_code,
+            "cycles_completed": 1,
+            "scans_succeeded": sum(s.status == "succeeded" for s in scans),
+            "scans_failed": sum(s.status == "failed" for s in scans),
+            "scans_skipped": sum(s.status == "skipped" for s in scans),
+            "scans_blocked": sum(s.status == "blocked" for s in scans),
+            "candidates_created": sum(len(s.candidate_ids) for s in scans),
+            "scopes": [
+                {
+                    "scan_scope": s.scan_scope,
+                    "symbol": s.symbol,
+                    "health_state": s.health_state,
+                    "lease_owner": s.lease_owner,
+                    "last_reason_code": s.reason_code,
+                    "candidate_ids": [str(item) for item in s.candidate_ids],
+                }
+                for s in scans
+            ],
+        }
+
+    def _run_cycle(self) -> WatcherPaperCycleReport:
+        self._probes_completed = 0
         self._project_watchlist_status()
         refused = self._activation_refusal()
         if refused is not None:
@@ -462,16 +550,25 @@ class WatcherPaperRuntime:
             scans: list[WatcherPaperScanReport] = []
             any_kill = False
             created = 0
-            for target in targets:
-                scan = self._scan_one(session, target)
-                scans.append(scan)
-                created += len(scan.candidate_ids)
-                any_kill = any_kill or scan.kill_switch_active
+            ordered = (
+                self._symbols
+                if self._watchlist_mode
+                else tuple(dict.fromkeys(t.symbol for t in targets))
+            )
+            for symbol in ordered:
+                selected = [target for target in targets if target.symbol == symbol]
+                for target in selected:
+                    scan = self._scan_one(session, target)
+                    scans.append(scan)
+                    created += len(scan.candidate_ids)
+                    any_kill = any_kill or scan.kill_switch_active
+                if not selected:
+                    self._note_verified_contract_scans(set(), session=session, only_symbol=symbol)
         finally:
             if close_session and session is not None:
                 session.close()
 
-        reason = "idle" if not scans else "completed"
+        reason = "completed" if scans or self._probes_completed else "idle"
         report = WatcherPaperCycleReport(
             reason_code=reason,
             enabled=True,
@@ -533,13 +630,24 @@ class WatcherPaperRuntime:
 
     def _load_targets(self, session: Session | None) -> tuple[PaperScanTarget, ...]:
         if self._target_loader is not None:
-            return self._target_loader(session)[: self._max_scopes_per_cycle]
+            targets = self._target_loader(session)
+            if self._watchlist_mode:
+                targets = tuple(
+                    t
+                    for t in targets
+                    if t.symbol in self._symbols
+                    and (
+                        self._organization_id is None or t.organization_id == self._organization_id
+                    )
+                )
+            return targets[: self._max_scopes_per_cycle]
         if session is None:
             return ()
         if self._watchlist_mode:
             return list_watchlist_scan_targets(
                 session,
                 symbols=self._symbols,
+                organization_id=self._organization_id,
                 limit=self._max_scopes_per_cycle,
             )
         return list_paper_scan_targets(
@@ -622,6 +730,22 @@ class WatcherPaperRuntime:
                 paper_only=True,
             )
             return report
+        contract_error = self._contract_error(target.symbol) if self._watchlist_mode else None
+        if contract_error is not None:
+            return WatcherPaperScanReport(
+                organization_id=target.organization_id,
+                scan_scope=target.scan_scope,
+                symbol=target.symbol,
+                status="blocked",
+                reason_code=contract_error,
+                replayed=False,
+                published=False,
+                candidate_ids=(),
+                kill_switch_active=False,
+                user_id=target.user_id,
+            )
+        read_count = getattr(self._evidence_factory, "read_count", lambda _symbol: 0)
+        reads_before = read_count(target.symbol)
         policy = self._materialize_policy(target)
         request = ScanRequest(
             organization_id=target.organization_id,
@@ -660,11 +784,25 @@ class WatcherPaperRuntime:
         )
         if result.fencing_token is not None:
             self._held_fencing_tokens[target.scan_scope] = result.fencing_token
+            self._held_fencing_tokens.move_to_end(target.scan_scope)
+            self._fence_organizations[target.scan_scope] = target.organization_id
+            while len(self._held_fencing_tokens) > self._fence_capacity:
+                old_scope, _ = self._held_fencing_tokens.popitem(last=False)
+                self._fence_organizations.pop(old_scope, None)
         report = _report_from_cycle(
             target=target,
             result=result,
             kill_switch_active=kill_active,
             evaluator=evaluator,
+        )
+        from dataclasses import replace
+
+        report = replace(
+            report,
+            market_read_completed=(
+                read_count(target.symbol) > reads_before
+                and not watcher_measurement_is_replay(self._settings)
+            ),
         )
         report = self._continue_paper_loop(session, target, report, evidence)
         self._notify_scan(report)
@@ -859,55 +997,79 @@ class WatcherPaperRuntime:
             if isinstance(found, dict):
                 self._contract_verdicts = found
 
-    def _note_verified_contract_scans(self, scanned: set[str]) -> None:
-        """Record a contract scan for verified symbols that had no strategy target.
+    def _contract_error(self, symbol: str) -> str | None:
+        from app.market_contracts.provider_contracts import ContractCheck, venue_for_evidence_source
 
-        Replay candles are not loaded for a non-BTC symbol. One probe failure
-        does not stop the later slots.
-        """
+        mode = self._settings.perpetual_evidence_source if self._settings else "replay"
+        venue = venue_for_evidence_source(mode)
+        verdict = self._contract_verdicts.get((symbol, venue))
+        if verdict is not None and verdict.state is not ContractCheck.VERIFIED:
+            return verdict.reason
+        return availability_for_symbol(
+            symbol, source_mode=mode, book=self._contract_book, verdicts=self._contract_verdicts
+        )[1]
+
+    def _note_verified_contract_scans(
+        self, scanned: set[str], *, session: Session | None, only_symbol: str | None = None
+    ) -> None:
+        from app.market_contracts.errors import StaleEvidenceError
+        from app.workers.watcher_market import ContractUnavailableError, MarketProbeResult
 
         config = self._watchlist
-        if not self._watchlist_mode or config is None:
+        if not self._watchlist_mode or config is None or not self._enabled:
             return
-        source_mode = "replay"
-        if self._settings is not None:
-            source_mode = self._settings.perpetual_evidence_source
-        moment = self._clock.now()
         for symbol in config.enabled_symbols():
-            if symbol in scanned:
+            if symbol in scanned or (only_symbol is not None and symbol != only_symbol):
                 continue
-            _market_source, error = availability_for_symbol(
-                symbol,
-                source_mode=source_mode,
-                book=self._contract_book,
-            )
-            if error is not None:
+            error = self._contract_error(symbol)
+            if (
+                error is None
+                and self._organization_id is not None
+                and self._kill_switch_is_active(session, self._organization_id)
+            ):
+                error = "kill_switch_active"
+            if error is not None or self._symbol_probe is None:
+                self._symbol_status.mark_state(
+                    symbol, setup_state="unavailable" if error else "no_strategy", error_state=error
+                )
                 continue
             self._history.acquire(symbol)
             try:
-                if self._symbol_probe is not None:
-                    self._symbol_probe(symbol)
-            except Exception:
+                result = self._symbol_probe(symbol)
+                if not isinstance(result, MarketProbeResult) or result.symbol != symbol:
+                    raise ContractUnavailableError("probe_result_unverified")
+            except Exception as exc:
+                reason = (
+                    exc.reason
+                    if isinstance(exc, ContractUnavailableError)
+                    else (
+                        "stale_evidence"
+                        if isinstance(exc, StaleEvidenceError)
+                        else "provider_unreachable"
+                    )
+                )
                 self._symbol_status.record_scan(
                     symbol=symbol,
                     succeeded=False,
                     setup_state="scan_failed",
-                    freshness="unknown",
+                    freshness="stale" if reason == "stale_evidence" else "unavailable",
                     strategy_matches=(),
                     alert_state="none",
-                    error_state="evaluation_exception",
-                    scanned_at=moment,
+                    error_state=reason,
+                    scanned_at=self._clock.now(),
                 )
             else:
+                self._probes_completed += 1
                 self._symbol_status.record_scan(
                     symbol=symbol,
                     succeeded=True,
                     setup_state="no_strategy",
-                    freshness="contract_verified",
+                    freshness=result.freshness,
+                    market_source=result.provider,
                     strategy_matches=(),
                     alert_state="none",
                     error_state=None,
-                    scanned_at=moment,
+                    scanned_at=result.observed_at,
                 )
             finally:
                 self._history.release(symbol)
@@ -930,7 +1092,12 @@ class WatcherPaperRuntime:
         source_mode = "replay"
         if self._settings is not None:
             source_mode = self._settings.perpetual_evidence_source
-        self._refresh_contract_book(config)
+        # Disabled/refused runtime never turns discovery into scan success.
+        if self._enabled:
+            self._refresh_contract_book(config)
+        retain = getattr(self._evidence_factory, "retain", None)
+        if callable(retain):
+            retain(config.enabled_symbols())
         self._symbol_status.project(
             config,
             source_mode=source_mode,
@@ -946,6 +1113,17 @@ class WatcherPaperRuntime:
         moment = self._clock.now()
         for scan in report.scans:
             scanned.add(scan.symbol.strip().upper())
+            if (
+                scan.status == "blocked"
+                or scan.replayed
+                or (scan.status == "succeeded" and not scan.market_read_completed)
+            ):
+                self._symbol_status.mark_state(
+                    scan.symbol,
+                    setup_state=scan.reason_code,
+                    error_state=scan.reason_code if scan.status == "blocked" else None,
+                )
+                continue
             stale = "stale" in scan.reason_code
             failed = scan.status == "failed" or stale
             if scan.kill_switch_active:
@@ -959,6 +1137,9 @@ class WatcherPaperRuntime:
                 succeeded=not failed and scan.status == "succeeded",
                 setup_state=scan.reason_code,
                 freshness="stale" if stale else "evaluated",
+                market_source=getattr(self._evidence_factory, "provider_for", lambda _s: None)(
+                    scan.symbol
+                ),
                 strategy_matches=() if failed else (scan.scan_scope,),
                 alert_state=alert,
                 error_state=scan.reason_code if failed else None,
@@ -999,8 +1180,11 @@ class WatcherPaperRuntime:
             self._status.last_scans = report.scans
             self._publish_observed_status(report)
         self._record_watchlist_scans(report)
-        scanned = {scan.symbol.strip().upper() for scan in report.scans}
-        self._note_verified_contract_scans(scanned)
+        if not report.enabled and self._watchlist is not None:
+            for slot in self._watchlist.slots:
+                self._symbol_status.mark_state(
+                    slot.symbol, setup_state=report.reason_code, error_state=report.reason_code
+                )
 
     def _wait_seconds(self, report: WatcherPaperCycleReport) -> float:
         refusal = (not report.enabled) and report.reason_code != "watcher_disabled"
@@ -1164,50 +1348,13 @@ def default_paper_evidence_factory(
 ) -> PaperEvidenceFactory:
     """Assemble live/read-only evidence through one monitor + canonical assembler."""
 
-    from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
-    from app.evidence_pipeline.setup_lifetime import SetupLifetimeStore
-    from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
-    from app.market_contracts.adapters.factory import (
-        perpetual_source_is_replay,
-        resolve_perpetual_evidence_source,
-    )
-    from app.market_contracts.catalog import catalog_for_symbols
-    from app.market_contracts.enums import VenueId
-    from app.market_contracts.provider_contracts import default_contract_book
-    from app.market_monitor.factory import build_perpetual_market_monitor
-    from app.market_monitor.watcher_port import MarketMonitorWatcherPort
-    from app.persistence.setup_lifetime import SqlAlchemySetupLifetimeStore
+    from app.workers.watcher_market import SymbolMarketFactory
 
-    verified = [
-        item.symbol for item in default_contract_book().contracts if item.venue is VenueId.BINANCE
-    ]
-    catalog = catalog_for_symbols(verified, venue=VenueId.BINANCE)
-    source = resolve_perpetual_evidence_source(settings, catalog=catalog)
+    # The supplied app monitor may be BTC-only. Watcher owns bounded per-symbol
+    # monitors instead of mutating another caller's process-wide monitor.
+    factory = SymbolMarketFactory(settings)
     if history_source_out is not None:
-        history_source_out.append(source)
-    replay = perpetual_source_is_replay(settings)
-    resolved_monitor = monitor or build_perpetual_market_monitor(
-        settings, source=source, catalog=catalog
-    )
-    gate = MarketMonitorWatcherPort(resolved_monitor)
-
-    def factory(
-        session: Session | None, store: WatcherStore, symbol: str
-    ) -> WatcherScanEvidencePort:
-        lifetime = (
-            SqlAlchemySetupLifetimeStore(session) if session is not None else SetupLifetimeStore()
-        )
-        assembler = FirstSliceEvidenceAssembler(
-            source, replay=replay, catalog=catalog, lifetime=lifetime
-        )
-        return AssemblingWatcherScanEvidence(
-            assembler,
-            session=session,
-            watcher_store=store,
-            symbol=symbol,
-            monitor=gate,
-        )
-
+        history_source_out.append(factory)
     return factory
 
 
@@ -1240,12 +1387,16 @@ def build_watcher_paper_runtime(
     from app.persistence.composition import build_postgres_watcher_store
     from app.runtime.canonical import build_production_canonical_runtime
     from app.signal_fusion.memory import UtcClock
-    from app.workers.watcher_watchlist import FileWatchlistStore, watchlist_path
 
     resolved_clock = clock if clock is not None else UtcClock()
-    watchlist_store = FileWatchlistStore(watchlist_path(settings))
-    watchlist = watchlist_store.load()
+    from app.workers.watcher_watchlist import default_watchlist
+
+    watchlist = default_watchlist()
     history_holder: list[object] = []
+    resolved_evidence = evidence_factory or default_paper_evidence_factory(
+        settings, history_source_out=history_holder
+    )
+
     canonical = build_production_canonical_runtime(
         session_factory, settings=settings, clock=resolved_clock
     )
@@ -1275,17 +1426,15 @@ def build_watcher_paper_runtime(
         symbols=watchlist.enabled_symbols(),
         watchlist_mode=True,
         watchlist=watchlist,
-        watchlist_store=watchlist_store,
+        tenant_watchlists=True,
         poll_interval_seconds=settings.watcher_paper_poll_interval_seconds,
         max_scopes_per_cycle=settings.watcher_paper_max_scopes_per_cycle,
         lease_ttl_seconds=paper_lease_ttl_seconds(settings),
         heartbeat_stale_after_seconds=settings.watcher_heartbeat_stale_after_seconds,
         session_factory=session_factory,
-        evidence_factory=evidence_factory
-        or default_paper_evidence_factory(
-            settings, monitor=monitor, history_source_out=history_holder
-        ),
-        history_source=None if not history_holder else history_holder[0],
+        evidence_factory=resolved_evidence,
+        symbol_probe=getattr(resolved_evidence, "probe", None),
+        history_source=resolved_evidence,
         target_loader=target_loader,
         kill_switch_probe=kill_switch_probe,
         persistence_fence=resolved_fence,
@@ -1296,7 +1445,8 @@ def build_watcher_paper_runtime(
         evaluation_observer_factory=evaluation_observer_factory,
         activation_gate=activation_gate,
         canonical_runtime=canonical,
-        contract_discoverer=_live_contract_discoverer(settings),
+        contract_discoverer=getattr(resolved_evidence, "discovery", None)
+        or _live_contract_discoverer(settings),
     )
 
 
@@ -1308,17 +1458,9 @@ def _live_contract_discoverer(
     Replay keeps the proven catalog and does not open a network call.
     """
 
-    from app.market_contracts.adapters.factory import perpetual_source_is_replay
-    from app.market_contracts.contract_discovery import BinanceContractDiscovery
+    from app.workers.watcher_market import WatchlistContractDiscovery
 
-    if perpetual_source_is_replay(settings):
-        return None
-    if settings.perpetual_evidence_source.strip().lower().replace("-", "_") in {
-        "bybit_usdt_perpetual",
-        "bybit",
-    }:
-        return None
-    return BinanceContractDiscovery()
+    return WatchlistContractDiscovery(settings)
 
 
 def publish_idle_watcher_status(

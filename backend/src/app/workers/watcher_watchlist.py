@@ -1,7 +1,9 @@
-"""Durable five-slot paper Watcher watchlist.
+"""Bounded paper Watcher values and status projection.
 
-One process owns the slots. Symbols are enabled, disabled, replaced, and
-reordered without a code deployment. BTC is a normal slot, not an identity
+Production ownership/persistence is organization-scoped in the DB repository.
+File and memory stores remain test/legacy utilities, not production authority.
+Symbols are enabled, disabled, replaced, and reordered without deployment.
+BTC is a normal slot, not an identity
 that is injected into every other market.
 """
 
@@ -129,6 +131,10 @@ class SymbolStatusBook:
         self._lock = threading.Lock()
         self._rows: dict[int, SymbolRuntimeStatus] = {}
 
+    def restore(self, rows: Sequence[SymbolRuntimeStatus]) -> None:
+        with self._lock:
+            self._rows = {row.position: row for row in rows[:MAX_WATCHLIST_SLOTS]}
+
     def project(
         self,
         config: WatchlistConfiguration,
@@ -179,8 +185,16 @@ class SymbolStatusBook:
                     ),
                     last_failed_scan=None if retained is None else retained.last_failed_scan,
                     setup_state=setup,
-                    strategy_matches=() if retained is None else retained.strategy_matches,
-                    alert_state="none" if retained is None else retained.alert_state,
+                    strategy_matches=(
+                        ()
+                        if retained is None or not slot.enabled or error
+                        else retained.strategy_matches
+                    ),
+                    alert_state=(
+                        "none"
+                        if retained is None or not slot.enabled or error
+                        else retained.alert_state
+                    ),
                     error_state=error_state,
                 )
             self._rows = refreshed
@@ -197,6 +211,7 @@ class SymbolStatusBook:
         alert_state: str,
         error_state: str | None,
         scanned_at: datetime,
+        market_source: str | None = None,
     ) -> None:
         token = symbol.strip().upper()
         matches = tuple(strategy_matches[:8])
@@ -207,6 +222,7 @@ class SymbolStatusBook:
                 self._rows[position] = replace(
                     row,
                     freshness=freshness,
+                    market_source=market_source or row.market_source,
                     last_successful_scan=scanned_at if succeeded else row.last_successful_scan,
                     last_failed_scan=None if succeeded else scanned_at,
                     setup_state=setup_state,
@@ -214,6 +230,20 @@ class SymbolStatusBook:
                     alert_state=alert_state,
                     error_state=error_state,
                 )
+
+    def mark_state(self, symbol: str, *, setup_state: str, error_state: str | None) -> None:
+        """An eligibility/no-op state is not a market scan."""
+        with self._lock:
+            for position, row in list(self._rows.items()):
+                if row.symbol == symbol:
+                    self._rows[position] = replace(
+                        row,
+                        setup_state=setup_state,
+                        freshness="not_evaluated",
+                        error_state=error_state,
+                        strategy_matches=(),
+                        alert_state="none",
+                    )
 
     def mark_unscanned(self, symbol: str, *, setup_state: str, error_state: str | None) -> None:
         token = symbol.strip().upper()
@@ -317,7 +347,7 @@ def reorder_slots(
     *,
     now: datetime | None = None,
 ) -> WatchlistConfiguration:
-    if sorted(int(item) for item in positions) != list(_SLOT_POSITIONS):
+    if sorted(int(item) for item in positions) != list(range(1, len(config.slots) + 1)):
         raise WatchlistValidationError("Reorder must be a permutation of slots 1 through 5.")
     by_position = {slot.position: slot for slot in config.slots}
     ordered = tuple(
@@ -339,8 +369,8 @@ def replace_watchlist(
 ) -> WatchlistConfiguration:
     """Replace the five slots in display order."""
 
-    if len(slots) != MAX_WATCHLIST_SLOTS:
-        raise WatchlistValidationError("Watcher watchlist requires exactly five slots.")
+    if len(slots) > MAX_WATCHLIST_SLOTS:
+        raise WatchlistValidationError("Watcher watchlist allows at most five slots.")
     built = tuple(
         WatchlistSlot(position=index, symbol=canonical_perpetual_symbol(symbol), enabled=enabled)
         for index, (symbol, enabled) in enumerate(slots, start=1)
@@ -488,10 +518,10 @@ def _validated(
     revision: int,
     now: datetime | None,
 ) -> WatchlistConfiguration:
-    if len(slots) != MAX_WATCHLIST_SLOTS:
-        raise WatchlistValidationError("Watcher watchlist requires exactly five slots.")
+    if len(slots) > MAX_WATCHLIST_SLOTS:
+        raise WatchlistValidationError("Watcher watchlist allows at most five slots.")
     positions = tuple(slot.position for slot in slots)
-    if positions != _SLOT_POSITIONS:
+    if positions != tuple(range(1, len(slots) + 1)):
         raise WatchlistValidationError("Watchlist slots must stay in positions 1 through 5.")
     enabled = [slot for slot in slots if slot.enabled]
     if len(enabled) > MAX_WATCHLIST_SLOTS:

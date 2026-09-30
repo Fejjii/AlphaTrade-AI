@@ -97,12 +97,9 @@ def test_default_slots_and_reorder_replace_disable() -> None:
 
 
 def test_maximum_five_slots_and_duplicate_rejection() -> None:
-    with pytest.raises(WatchlistValidationError, match="exactly five"):
-        replace_watchlist(
-            [("BTCUSDT", True), ("ETHUSDT", True)],
-            now=NOW,
-        )
-    with pytest.raises(WatchlistValidationError, match="exactly five"):
+    assert len(replace_watchlist([("BTCUSDT", True), ("ETHUSDT", True)], now=NOW).slots) == 2
+    assert replace_watchlist([], now=NOW).slots == ()
+    with pytest.raises(WatchlistValidationError, match="at most five"):
         replace_watchlist(
             [
                 ("BTCUSDT", True),
@@ -510,10 +507,13 @@ def test_provider_unreachable_does_not_drop_a_proven_contract() -> None:
 def test_verified_symbols_scan_sequentially_when_one_fails() -> None:
     failed: list[str] = []
 
-    def probe(symbol: str) -> None:
+    from app.workers.watcher_market import MarketProbeResult
+
+    def probe(symbol: str) -> MarketProbeResult:
         failed.append(symbol)
         if symbol == "TAOUSDT":
             raise RuntimeError("tao failed")
+        return MarketProbeResult(symbol, "binance_usdm", "fresh_closed_candle", NOW)
 
     runtime = WatcherPaperRuntime(
         store=InMemoryWatcherStore(),
@@ -536,9 +536,9 @@ def test_verified_symbols_scan_sequentially_when_one_fails() -> None:
     runtime.run_cycle()
     rows = {row.symbol: row for row in runtime.symbol_status.snapshot()}
     assert failed == ["BTCUSDT", "ZECUSDT", "ETHUSDT", "TAOUSDT", "HYPEUSDT"]
-    assert rows["TAOUSDT"].error_state == "evaluation_exception"
+    assert rows["TAOUSDT"].error_state == "provider_unreachable"
     assert rows["HYPEUSDT"].error_state is None
-    assert rows["HYPEUSDT"].freshness == "contract_verified"
+    assert rows["HYPEUSDT"].freshness == "fresh_closed_candle"
     assert rows["ETHUSDT"].market_source == "binance_usdm"
     assert rows["BTCUSDT"].last_successful_scan is not None
     assert runtime.history.held_symbol is None

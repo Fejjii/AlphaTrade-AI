@@ -4471,6 +4471,8 @@ export interface WatcherWatchlistConfiguration {
 }
 
 export interface WatcherSymbolRuntimeStatus {
+  configuration_revision: number;
+  observed_at: string | null;
   position: number;
   symbol: string;
   enabled: boolean;
@@ -4485,6 +4487,9 @@ export interface WatcherSymbolRuntimeStatus {
 }
 
 export interface WatcherWatchlistStatus {
+  configuration_revision: number;
+  observed_at: string;
+  stale_after_seconds: number;
   paper_only: boolean;
   real_trading_enabled: boolean;
   symbols: WatcherSymbolRuntimeStatus[];

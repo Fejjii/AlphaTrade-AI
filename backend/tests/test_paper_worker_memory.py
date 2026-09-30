@@ -449,6 +449,31 @@ def test_retained_trades_cost_more_rss_than_a_released_tape() -> None:
 
 
 def test_repeated_reduction_does_not_grow_rss() -> None:
+    """Keep the 8x25,000 workload and limits; isolate unrelated pytest arenas.
+
+    A prior test's arena release caused max(early peak)-min(later RSS) to exceed
+    80 MiB even though retained memory fell. A fresh process measures this
+    workload's complete peak/release range rather than unrelated suite history.
+    """
+    backend = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from tests.test_paper_worker_memory import _measure_repeated_reduction; "
+            "_measure_repeated_reduction()",
+        ],
+        cwd=backend,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(("src", str(backend)))},
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _measure_repeated_reduction() -> None:
     start = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
     end = start + timedelta(minutes=15)
     market = first_slice_identity(timeframe=Timeframe.M15, replay=False, is_live=True)
