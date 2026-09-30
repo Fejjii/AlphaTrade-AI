@@ -129,6 +129,11 @@ class WatcherPaperScanReport:
     journal_status: str | None = None
     market_read_completed: bool = False
 
+    @property
+    def completed_market_scan(self) -> bool:
+        """Cached/no-read outcomes are observable cycles, not successful scans."""
+        return self.status == "succeeded" and not self.replayed and self.market_read_completed
+
 
 @dataclass(frozen=True, slots=True)
 class WatcherPaperCycleReport:
@@ -504,9 +509,12 @@ class WatcherPaperRuntime:
             "last_cycle_at": self._clock.now().isoformat(),
             "last_reason_code": report.reason_code,
             "cycles_completed": 1,
-            "scans_succeeded": sum(s.status == "succeeded" for s in scans),
+            "scans_succeeded": sum(s.completed_market_scan for s in scans),
             "scans_failed": sum(s.status == "failed" for s in scans),
-            "scans_skipped": sum(s.status == "skipped" for s in scans),
+            "scans_skipped": sum(
+                s.status == "skipped" or (s.status == "succeeded" and not s.completed_market_scan)
+                for s in scans
+            ),
             "scans_blocked": sum(s.status == "blocked" for s in scans),
             "candidates_created": sum(len(s.candidate_ids) for s in scans),
             "scopes": [
@@ -1168,8 +1176,10 @@ class WatcherPaperRuntime:
     def _remember_cycle(self, report: WatcherPaperCycleReport) -> None:
         succeeded = failed = skipped = blocked = 0
         for scan in report.scans:
-            if scan.status in {"succeeded"}:
+            if scan.completed_market_scan:
                 succeeded += 1
+            elif scan.status == "succeeded":
+                skipped += 1
             elif scan.status in {"failed"}:
                 failed += 1
             elif scan.status in {"skipped"}:

@@ -688,3 +688,120 @@ def test_strategy_secondary_refusal_keeps_reason_without_market_acquisition(unre
         assert len(calls) == 3
     finally:
         factory.retain(())
+
+
+@pytest.mark.parametrize("market_read", [True, False])
+def test_real_orchestrator_replay_does_not_inflate_durable_scan_counts(
+    db, monkeypatch, market_read
+):
+    """Keep actual scheduling/replay and SQL accumulation; stub only evaluation input."""
+    from app.watcher.contracts import EvaluationOutcome, EvaluationStatus
+    from app.watcher.memory import FakeClock
+    from app.workers.watcher_paper import WatcherPaperRuntime
+
+    clock = FakeClock(datetime(2026, 9, 30, 12, 0, 10, tzinfo=UTC))
+    store = InMemoryWatcherStore()
+    candidate_id = UUID(int=999)
+    target = PaperScanTarget(ORG, uuid4(), uuid4(), uuid4(), uuid4(), "a" * 64, "v1", "BTCUSDT")
+    with db() as session:
+        repo = WatcherWatchlistRepository(session)
+        repo.replace(ORG, [("BTCUSDT", True)], expected_revision=0)
+        repo.replace(OTHER, [("BTCUSDT", False)], expected_revision=0)
+        session.commit()
+
+    class Inputs:
+        reads = 0
+        evaluations = 0
+
+        def __call__(self, session, watcher_store, symbol):
+            assert session is not None and watcher_store is store and symbol == "BTCUSDT"
+            return self
+
+        def read_count(self, symbol):
+            return self.reads
+
+        def provider_for(self, symbol):
+            return "binance_usdm"
+
+    inputs = Inputs()
+
+    class Evaluator:
+        discussion_snapshot = None
+
+        def evaluate(self, command):
+            inputs.evaluations += 1
+            inputs.reads += int(market_read)
+            return EvaluationOutcome(
+                command_id=command.command_id,
+                request_hash=command.request_hash,
+                evaluation_input_hash=command.evaluation_input_hash,
+                status=EvaluationStatus.SUCCEEDED,
+                reason_code="confirmed_setup",
+                candidate_ids=(candidate_id,),
+                evidence_validity_token="b" * 64,
+            )
+
+    monkeypatch.setattr(
+        "app.workers.watcher_paper.build_fusion_evaluation_service", lambda **_kwargs: Evaluator()
+    )
+
+    def make_worker(worker_id):
+        return WatcherPaperRuntime(
+            store=store,
+            lifecycle=CandidateLifecycleService(
+                repository=InMemoryCandidateRepository(), clock=BoundEvaluationClock()
+            ),
+            clock=clock,
+            enabled=True,
+            worker_id=worker_id,
+            session_factory=db,
+            tenant_watchlists=True,
+            watchlist_mode=True,
+            symbols=["BTCUSDT"],
+            evidence_factory=inputs,
+            target_loader=lambda _session: (target,),
+            kill_switch_probe=lambda _org: False,
+            evaluation_observer_factory=lambda _session, _target: None,
+            settings=settings(),
+        )
+
+    def durable():
+        with db() as session:
+            repo = WatcherWatchlistRepository(session)
+            return (
+                repo.runtime_status(ORG, now=clock.now(), max_age_seconds=90),
+                repo.previous(ORG)[0].last_successful_scan,
+            )
+
+    worker = make_worker("first-worker")
+    initial = worker.run_cycle()
+    assert initial.scans[0].market_read_completed is market_read
+    assert not initial.scans[0].replayed and initial.candidates_created == 1
+    first_status, first_timestamp = durable()
+    assert first_status["scans_succeeded"] == int(market_read)
+    assert (first_timestamp is not None) is market_read
+    clock.advance(seconds=15)
+    assert worker.run_cycle().scans == ()  # OTHER's disabled configuration
+    replay = worker.run_cycle()
+    assert replay.scans[0].replayed and not replay.scans[0].market_read_completed
+    assert replay.scans[0].candidate_ids == () and replay.candidates_created == 0
+    assert worker.snapshot().scans_succeeded == int(market_read)
+    assert worker.snapshot().scans_skipped == 2 - int(market_read)
+    clock.advance(seconds=31)  # Expire the original worker's lease.
+    restarted = make_worker("restarted-worker")
+    replay_after_restart = restarted.run_cycle()
+    assert replay_after_restart.scans[0].replayed
+    assert replay_after_restart.candidates_created == 0
+    assert restarted.snapshot().scans_succeeded == 0
+    status, timestamp = durable()
+    assert status["cycles_completed"] == 3
+    assert status["scans_succeeded"] == int(market_read)
+    assert status["scans_skipped"] == 3 - int(market_read)
+    assert status["candidates_created"] == 1
+    assert timestamp == first_timestamp
+    assert inputs.evaluations == 1 and inputs.reads == int(market_read)
+    with db() as session:
+        other = WatcherWatchlistRepository(session).runtime_status(
+            OTHER, now=clock.now(), max_age_seconds=90
+        )
+        assert other["scans_succeeded"] == other["candidates_created"] == 0
