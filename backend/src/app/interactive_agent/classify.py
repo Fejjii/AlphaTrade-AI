@@ -205,7 +205,8 @@ def classify_turn(message: str) -> TurnClassification:
         operation = TurnOperation.PROPOSE
         action = StructuredActionKind.PROPOSE_TRADE_DECISION
     elif re.search(
-        r"\b(?:nested|setups?|watching|N[1-3]|N4\s*(?:plus|\+)|blocked|"
+        r"\b(?:nested|sfp|swing failure|reclaim|liquidity sweep|setups?|watching|"
+        r"N[1-3]|N4\s*(?:plus|\+)|blocked|"
         r"previous setup|missing data|data is missing|strategy version generated|"
         r"(?:paper trade|journal entry).{0,30}connected)\b",
         message,

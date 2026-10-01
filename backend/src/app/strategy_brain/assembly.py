@@ -42,7 +42,29 @@ def assemble_nested(
     organization_id: object,
     session: Session | None,
 ) -> AssembledCanonicalEvidence:
+    return assemble_ohlcv_family(
+        assembler,
+        executable=executable,
+        organization_id=organization_id,
+        session=session,
+    )
+
+
+def assemble_ohlcv_family(
+    assembler: object,
+    *,
+    executable: object,
+    organization_id: object,
+    session: Session | None,
+) -> AssembledCanonicalEvidence:
+    from app.strategy_brain.sfp.contracts import SfpSpec
+    from app.strategy_brain.sfp.detector import detect_sfp
+    from app.strategy_brain.sfp_runtime.assembly import sfp_observations
+    from app.strategy_brain.sfp_runtime.assessment import select_detection
+    from app.strategy_brain.sfp_runtime.records import record_sfp_scan
+
     spec = executable.authored_spec
+    sfp = isinstance(spec, SfpSpec)
     source, catalog = assembler._source, assembler._catalog
     replay = assembler._replay
     now = assembler._default_clock()
@@ -55,36 +77,93 @@ def assemble_nested(
         identity=identity,
         instrument=instrument,
         timeframe=spec.trigger_timeframe,
-        min_final_bars=256,
+        min_final_bars=max(
+            256,
+            max(spec.parameters.level_lookback, spec.parameters.quality_lookback)
+            + 2 * spec.parameters.pivot_width,
+        )
+        if sfp
+        else 256,
         evaluated_at=now,
     )
     bars = tuple(series.bars)
-    if not timedelta(0) <= now - bars[-1].interval_end < interval_timedelta(spec.trigger_timeframe):
+    if not bars:
+        raise MarketContractError("Required OHLCV is missing.")
+    if not sfp and not timedelta(0) <= now - bars[-1].interval_end < interval_timedelta(
+        spec.trigger_timeframe
+    ):
         raise StaleEvidenceError("Required Nested OHLCV is stale.")
-    events = detect_nested(bars, spec, evaluated_at=now)
-    latest = events[-1] if events else None
+    if sfp:
+        observations = sfp_observations(session, bars=bars, identity=identity, now=now)
+        if session is not None:
+            from app.persistence.public_market_observations import observed_ohlcv_history
+
+            horizon = (
+                spec.parameters.level_lookback
+                + spec.parameters.expiry_bars
+                + spec.parameters.quality_lookback
+                + 2 * spec.parameters.pivot_width
+            )
+            retained = observed_ohlcv_history(
+                session,
+                identity=identity,
+                since=now - interval_timedelta(spec.trigger_timeframe) * horizon,
+                evaluated_at=now,
+                limit=horizon * 2,
+            )
+            # Original prices and original receipt clocks survive a rolling provider window.
+            # The fetched revision explicitly replaces the corresponding historical revision.
+            pairs = {b.source_event_id: (b, o) for b, o in retained}
+            for b, o in zip(bars, observations, strict=True):
+                previous = pairs.get(b.source_event_id)
+                if previous is not None and previous[0].revision > b.revision:
+                    from app.market_contracts.errors import DuplicateDataError
+
+                    raise DuplicateDataError(
+                        "Provider returned an older canonical candle revision."
+                    )
+                pairs[b.source_event_id] = (b, o)
+            ordered = sorted(pairs.values(), key=lambda pair: pair[0].interval_start)
+            bars = tuple(b for b, _ in ordered)
+            observations = tuple(o for _, o in ordered)
+        scan = detect_sfp(bars, observations, spec, evaluated_at=now)
+        latest = select_detection(scan, bars)
+        events = scan.events
+    else:
+        events = detect_nested(bars, spec, evaluated_at=now)
+        latest = events[-1] if events else None
     trigger = bars[-1]
     policy = executable.fusion_policy
-    trigger_obs = observation_from_ohlcv(
-        trigger,
-        identity=identity,
-        observed_at=now,
-        receive_time=now,
-        freshness_state=FreshnessState.FRESH,
-    )
-    # A typed OHLCV-series observation binds every causal bar to canonical evidence.
-    history_hash = canonical_sha256([b.content_hash for b in bars])
-    history_obs = with_content_hash(
-        trigger_obs.model_copy(
-            update={
-                "observation_id": uuid5(NAMESPACE, history_hash),
-                "source_event_id": f"history:{history_hash}",
-                "interval_start": bars[0].interval_start,
-                "payload_content_hash": history_hash,
-                "content_hash": "0" * 64,
-            }
+    if sfp:
+        trigger_obs = observations[-1]
+        public_observations = (trigger_obs, *observations)
+        selected_roles = (
+            EvidenceRole.TRIGGER_OHLCV,
+            *(EvidenceRole.STRUCTURE for _ in observations),
         )
-    )
+    else:
+        trigger_obs = observation_from_ohlcv(
+            trigger,
+            identity=identity,
+            observed_at=now,
+            receive_time=now,
+            freshness_state=FreshnessState.FRESH,
+        )
+        # A typed OHLCV-series observation binds every causal bar to canonical evidence.
+        history_hash = canonical_sha256([b.content_hash for b in bars])
+        history_obs = with_content_hash(
+            trigger_obs.model_copy(
+                update={
+                    "observation_id": uuid5(NAMESPACE, history_hash),
+                    "source_event_id": f"history:{history_hash}",
+                    "interval_start": bars[0].interval_start,
+                    "payload_content_hash": history_hash,
+                    "content_hash": "0" * 64,
+                }
+            )
+        )
+        public_observations = (trigger_obs, history_obs)
+        selected_roles = (EvidenceRole.TRIGGER_OHLCV, EvidenceRole.STRUCTURE)
     command = AssessmentCommand(
         organization_id=organization_id,
         strategy_version_id=policy.strategy_version_id,
@@ -99,25 +178,34 @@ def assemble_nested(
             natural_event_id=trigger.source_event_id, revision=trigger.revision
         ),
         mandatory_evidence_roles=policy.required_roles,
-        public_observations=(trigger_obs, history_obs),
-        selected_roles=(EvidenceRole.TRIGGER_OHLCV, EvidenceRole.STRUCTURE),
+        public_observations=public_observations,
+        selected_roles=selected_roles,
         source_set=(semantic_source_from_identity(identity),),
         adapter_kind=EvidenceAdapterKind.WATCHER,
         role_timeframes=policy.role_timeframes,
     )
     window = evidence_window_from_assessment_command(command)
     if session is not None:
-        record_detections(
-            session,
-            organization_id=organization_id,
-            strategy_id=executable.strategy_id,
-            version_id=executable.strategy_version_id,
-            spec=spec,
-            bars=bars,
-            events=events,
-            evidence_hash=window.content_hash,
-            evaluated_at=now,
-        )
+        if sfp:
+            record_sfp_scan(
+                session,
+                executable=executable,
+                scan=scan,
+                evidence_hash=window.content_hash,
+                evaluated_at=now,
+            )
+        else:
+            record_detections(
+                session,
+                organization_id=organization_id,
+                strategy_id=executable.strategy_id,
+                version_id=executable.strategy_version_id,
+                spec=spec,
+                bars=bars,
+                events=events,
+                evidence_hash=window.content_hash,
+                evaluated_at=now,
+            )
     quote = None
     with suppress(MarketContractError):
         quote = quote_current_price(
@@ -157,7 +245,9 @@ def assemble_nested(
             closed_evidence_valid=True,
             subsequent_final_15m_count=0,
             setup_expired=latest is not None and latest.state.value in {"EXPIRED", "INVALIDATED"},
-            setup_lifetime_remaining_bars=spec.parameters.confirmation_window,
+            setup_lifetime_remaining_bars=spec.parameters.expiry_bars
+            if sfp
+            else spec.parameters.confirmation_window,
             setup_trigger_bar_hash=trigger.content_hash,
         ),
         bundle=FirstSliceEvidenceBundle(bars_15m=bars),
@@ -184,12 +274,35 @@ def record_paper_link(
         return
     assembled, policy = last
     from app.schemas.nested_continuation import NestedContinuationSpec
+    from app.signal_fusion.enums import EvidenceRole
+    from app.strategy_brain.sfp.contracts import SfpSpec
+    from app.strategy_brain.sfp.detector import detect_sfp
+    from app.strategy_brain.sfp_runtime.assessment import select_detection
 
-    if not isinstance(policy.authored_spec, NestedContinuationSpec):
+    if not isinstance(policy.authored_spec, (NestedContinuationSpec, SfpSpec)):
         return
-    events = detect_nested(
-        assembled.bundle.bars_15m, policy.authored_spec, evaluated_at=assembled.evaluated_at
-    )
+    if isinstance(policy.authored_spec, SfpSpec):
+        observations = tuple(
+            o
+            for o, role in zip(
+                assembled.assessment_command.public_observations,
+                assembled.assessment_command.selected_roles,
+                strict=True,
+            )
+            if role is EvidenceRole.STRUCTURE
+        )
+        scan = detect_sfp(
+            assembled.bundle.bars_15m,
+            observations,
+            policy.authored_spec,
+            evaluated_at=assembled.evaluated_at,
+        )
+        detection = select_detection(scan, assembled.bundle.bars_15m)
+        events = (detection,) if detection is not None else ()
+    else:
+        events = detect_nested(
+            assembled.bundle.bars_15m, policy.authored_spec, evaluated_at=assembled.evaluated_at
+        )
     if not events:
         return
     identity = scoped_setup_id(

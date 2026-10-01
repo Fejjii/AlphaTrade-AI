@@ -83,6 +83,7 @@ from app.db.paper_evaluation import PaperEvaluationObservationRow  # noqa: F401
 from app.db.paper_evaluation import (
     register_paper_evaluation_immutability as _register_paper_evaluation_immutability,
 )
+from app.db.public_market_observations import PublicMarketObservationRow  # noqa: F401
 from app.db.runtime_status import ControlledRuntimeStatusRow  # noqa: F401
 from app.db.setup_lifetime import SetupLifetimePin  # noqa: F401
 from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow  # noqa: F401

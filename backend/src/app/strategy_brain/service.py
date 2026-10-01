@@ -21,6 +21,7 @@ from app.services.canonical_serialization import canonical_sha256
 from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_versioning import StrategyVersioningService
 from app.strategy_brain.records import aware
+from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
 
 
 def create_template(
@@ -28,10 +29,15 @@ def create_template(
     *,
     organization_id: UUID,
     user_id: UUID,
-    spec: NestedContinuationSpec,
+    spec: NestedContinuationSpec | SfpSpec,
 ) -> dict:
     signature = canonical_sha256(spec.model_dump(mode="json"))[:12]
-    name = f"Nested {spec.symbol} {spec.direction.value} {spec.trigger_timeframe.value} {signature}"
+    sfp = isinstance(spec, SfpSpec)
+    family_name = "SFP" if sfp else "Nested"
+    name = (
+        f"{family_name} {spec.symbol} {spec.direction.value} "
+        f"{spec.trigger_timeframe.value} {signature}"
+    )
     existing = session.scalar(
         select(UserStrategy).where(
             UserStrategy.organization_id == organization_id,
@@ -72,12 +78,36 @@ def create_template(
             ],
         ),
     )
+    if sfp:
+        card = card.model_copy(
+            update={
+                "entry_conditions": [
+                    "Closed break of reclaim extreme after a causal structural sweep"
+                ],
+                "confirmation_conditions": ["Confirmed reclaim; fresh final canonical OHLCV"],
+                "invalidation": ["Failed reclaim, breakout or structural failure"],
+                "stop_loss": ["No SFP execution plan is authorized by this foundation"],
+                "take_profit_plan": ["Available structural target space is advisory evidence only"],
+                "brain": StrategyBrainDefinition(
+                    family="sfp",
+                    market_regime="structural liquidity sweep and reclaim",
+                    structure_conditions=[
+                        "important high or low",
+                        "sweep",
+                        "reclaim",
+                        "confirmation",
+                    ],
+                    setup_conditions=["Required evidence AVAILABLE", "immutable approved version"],
+                    alert_rules=[],
+                ),
+            }
+        )
     strategy = StrategyLibraryService(session).create(
         UserStrategyCreate(
             organization_id=organization_id,
             user_id=user_id,
             name=card.strategy_name,
-            setup_type=StrategyId.NESTED_CONTINUATION,
+            setup_type=StrategyId.SFP if sfp else StrategyId.NESTED_CONTINUATION,
             card=card,
             pattern_spec=spec.model_dump(mode="json"),
         )
@@ -101,7 +131,17 @@ def setup_view(session: Session, row: BrainSetupRow, *, now: datetime) -> dict:
     from app.market_contracts.identity import interval_timedelta
     from app.schemas.common import Timeframe
 
-    fresh = observed <= now < observed + interval_timedelta(Timeframe(timeframe))
+    fresh_until = observed + interval_timedelta(Timeframe(timeframe))
+    availability = "AVAILABLE"
+    if payload.get("family") == "sfp":
+        evidence_end = datetime.fromisoformat(payload["evidence_close_at"])
+        fresh_until = (
+            evidence_end
+            + interval_timedelta(Timeframe(timeframe)) * payload["required_evidence_max_age_bars"]
+        )
+        availability = payload.get("required_evidence", "MISSING")
+    fresh = observed <= now < fresh_until and availability == "AVAILABLE"
+    quality = "AVAILABLE" if fresh else availability if availability != "AVAILABLE" else "STALE"
     expired = now >= aware(row.expires_at)
     journal = None
     if row.journal_trade_id:
@@ -124,13 +164,13 @@ def setup_view(session: Session, row: BrainSetupRow, *, now: datetime) -> dict:
         "state": "EXPIRED"
         if expired and row.state not in {"COMPLETED", "INVALIDATED"}
         else row.state,
-        "freshness": "AVAILABLE" if fresh else "STALE",
-        "fresh_until": (observed + interval_timedelta(Timeframe(timeframe))).isoformat(),
-        "data_quality": "AVAILABLE" if fresh else "STALE",
+        "freshness": quality,
+        "fresh_until": fresh_until.isoformat(),
+        "data_quality": quality,
         "evidence": {
             **payload.get("evidence", {}),
-            "closed_ohlcv": "AVAILABLE" if fresh else "STALE",
-            "volume": "AVAILABLE" if fresh else "STALE",
+            "closed_ohlcv": quality,
+            "volume": quality,
         },
         "observed_at": observed.isoformat(),
         "expires_at": aware(row.expires_at).isoformat(),
@@ -169,7 +209,7 @@ def overview(
         if (
             version is None
             or not version.pattern_spec
-            or version.pattern_spec.get("kind") != NESTED_KIND
+            or version.pattern_spec.get("kind") not in {NESTED_KIND, SFP_KIND}
         ):
             continue
         lifecycle = StrategyVersioningService(session).latest_lifecycle_event_for_version(

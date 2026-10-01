@@ -777,6 +777,34 @@ def compile_from_authored(
         return compile_pattern(pattern).model_copy(
             update={"strategy_version_id": strategy_version_id, "organization_id": organization_id}
         )
+    from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
+
+    if isinstance(pattern_spec, SfpSpec) or (
+        isinstance(pattern_spec, dict) and pattern_spec.get("kind") == SFP_KIND
+    ):
+        try:
+            sfp = SfpSpec.model_validate(pattern_spec)
+        except ValidationError:
+            return CompileResult(
+                status=SetupCompileStatus.NON_EXECUTABLE.value,
+                failures=[_fail("invalid_sfp_spec", "Invalid SFP parameters.")],
+            )
+        # Family metadata binds the entire spec into the canonical compiled hash.
+        # Setup truth is evaluated only by the registered SFP adapter in evaluate_setup.
+        pattern = PatternAst(
+            sfp_spec=sfp,
+            symbols=[sfp.symbol],
+            trigger_timeframe=sfp.trigger_timeframe.value,
+            direction=sfp.direction,
+            preconditions=boolean("and", fld("predicate.finality"), fld("predicate.freshness")),
+            sequence=[PatternStep(step_id="swing_failure_pattern_v1", predicate=lit_bool(True))],
+            trigger=lit_bool(False),
+            invalidation=[lit_bool(False)],
+            expiration_final_bars=sfp.parameters.expiry_bars,
+        )
+        return compile_pattern(pattern).model_copy(
+            update={"strategy_version_id": strategy_version_id, "organization_id": organization_id}
+        )
     if isinstance(pattern_spec, FirstSliceAuthoredPatternSpec):
         spec = pattern_spec
     else:

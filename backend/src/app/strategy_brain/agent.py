@@ -37,13 +37,17 @@ def read_brain(
     refs = []
     if not data["setups"]:
         lines.append(
-            "No stored Nested Continuation setup exists for this query. "
-            "Current market conditions are unknown."
+            (
+                "No stored SFP setup exists for this query. "
+                if re.search(r"\bsfp\b|swing failure", message, re.I)
+                else "No stored Nested Continuation setup exists for this query. "
+            )
+            + "Current market conditions are unknown."
         )
     for setup in data["setups"][:8]:
         lines.append(
             f"Setup {setup['setup_id']} on {setup.get('instrument')}: {setup['state']}, "
-            f"{setup.get('stage')}, {setup.get('direction')}; "
+            f"{setup.get('condition', setup.get('stage'))}, {setup.get('direction')}; "
             f"strategy version {setup['strategy_version_id']}; "
             f"observed {setup['observed_at']}; expires {setup['expires_at']}; "
             f"freshness {setup['freshness']}. "
@@ -59,11 +63,28 @@ def read_brain(
             + f"journal {setup['journal'] or 'none'}; decision {setup['decision_id'] or 'none'}. "
             "These are stored observations, not current market claims."
         )
+        if setup.get("family") == "sfp":
+            level = setup["sweep"]["reference_level"]
+            lines.append(
+                f"Swept {level['kind']} {level['price']}; level {level['level_id']}; "
+                f"evidence time {setup['evidence_at']}; "
+                f"reclaim {setup.get('reclaim_observation_id')}; "
+                "quality components "
+                + ", ".join(
+                    f"{name}={component['availability']}:{component['value']} {component['unit']}"
+                    for name, component in setup["quality"].items()
+                )
+                + "; "
+                "target space is advisory, not an executable target."
+            )
         refs.append(
             ConnectionRef(
                 artifact_kind=ArtifactKind.OBSERVATION,
                 record_id=setup["setup_id"],
-                title=f"Nested {setup.get('stage')} {setup['state']}",
+                title=(
+                    f"{setup.get('family', 'Nested')} "
+                    f"{setup.get('condition', setup.get('stage'))} {setup['state']}"
+                ),
                 relation="stored setup and history",
                 provenance=ProvenanceSource.WATCHER_OBSERVED,
             )

@@ -126,23 +126,49 @@ class AssemblingWatcherScanEvidence:
         return self._last_assembly
 
     def candidate_episode(self):
-        """Lock the durable Nested episode under the existing Candidate fence."""
+        """Lock the durable Brain episode under the existing Candidate fence."""
         if self._last_assembly is None:
             return None
         assembled, executable = self._last_assembly
         from app.schemas.nested_continuation import NestedContinuationSpec
         from app.strategy_brain.detector import detect_nested
         from app.strategy_brain.records import lock_candidate_episode
+        from app.strategy_brain.sfp.contracts import SfpSpec
 
-        if not isinstance(executable.authored_spec, NestedContinuationSpec):
+        if not isinstance(executable.authored_spec, (NestedContinuationSpec, SfpSpec)):
             return None
         if self._session is None:
-            raise ValueError("Nested Candidate persistence requires a database session")
-        events = detect_nested(
-            assembled.bundle.bars_15m, executable.authored_spec, evaluated_at=assembled.evaluated_at
-        )
+            raise ValueError("Brain Candidate persistence requires a database session")
+        if isinstance(executable.authored_spec, SfpSpec):
+            from app.signal_fusion.enums import EvidenceRole
+            from app.strategy_brain.sfp.detector import detect_sfp
+            from app.strategy_brain.sfp_runtime.assessment import select_detection
+
+            observations = tuple(
+                o
+                for o, role in zip(
+                    assembled.assessment_command.public_observations,
+                    assembled.assessment_command.selected_roles,
+                    strict=True,
+                )
+                if role is EvidenceRole.STRUCTURE
+            )
+            scan = detect_sfp(
+                assembled.bundle.bars_15m,
+                observations,
+                executable.authored_spec,
+                evaluated_at=assembled.evaluated_at,
+            )
+            detection = select_detection(scan, assembled.bundle.bars_15m)
+            events = (detection,) if detection is not None else ()
+        else:
+            events = detect_nested(
+                assembled.bundle.bars_15m,
+                executable.authored_spec,
+                evaluated_at=assembled.evaluated_at,
+            )
         if not events:
-            raise ValueError("No Nested structural episode")
+            raise ValueError("No Brain structural episode")
         return lock_candidate_episode(
             self._session,
             organization_id=executable.organization_id,
@@ -160,11 +186,12 @@ class AssemblingWatcherScanEvidence:
             )
         executable = self._resolve_executable(command)
         from app.schemas.nested_continuation import NestedContinuationSpec
+        from app.strategy_brain.sfp.contracts import SfpSpec
 
-        nested = executable is not None and isinstance(
-            executable.authored_spec, NestedContinuationSpec
+        ohlcv_family = executable is not None and isinstance(
+            executable.authored_spec, (NestedContinuationSpec, SfpSpec)
         )
-        monitor_snapshot = None if nested else self._monitor_snapshot()
+        monitor_snapshot = None if ohlcv_family else self._monitor_snapshot()
         if monitor_snapshot is not None:
             gated = watcher_evidence_error_for_monitor(monitor_snapshot)
             if gated is not None:
@@ -198,10 +225,16 @@ class AssemblingWatcherScanEvidence:
                 symbol=self._symbol,
             )
         try:
-            if nested:
+            if ohlcv_family:
                 from app.strategy_brain.assembly import assemble_nested
+                from app.strategy_brain.sfp_runtime.assembly import assemble_sfp
 
-                assembled = assemble_nested(
+                assemble_family = (
+                    assemble_sfp
+                    if isinstance(executable.authored_spec, SfpSpec)
+                    else assemble_nested
+                )
+                assembled = assemble_family(
                     self._assembler,
                     executable=executable,
                     organization_id=organization_id,
