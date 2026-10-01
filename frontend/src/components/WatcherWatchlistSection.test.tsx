@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -24,7 +24,7 @@ const statuses: WatcherSymbolRuntimeStatus[] = DEFAULT_WATCHLIST_SLOTS.map((slot
   error_state: slot.symbol === "BTCUSDT" ? null : "contract_unverified",
 }));
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("WatcherWatchlistEditor", () => {
   it("shows five slots with live status beside each symbol", () => {
@@ -117,5 +117,91 @@ describe("symbol and revision status boundaries", () => {
     expect(status).toHaveBeenCalledTimes(2);
     expect(replace.mock.calls[0]?.[1]).toBe(0);
     expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+  });
+});
+
+
+describe("watchlist request coordination", () => {
+  function responses() {
+    return {
+      config: { revision: 0, updated_at: new Date().toISOString(), max_enabled: 5, paper_only: true, slots: DEFAULT_WATCHLIST_SLOTS },
+      status: { configuration_revision: 0, observed_at: new Date().toISOString(), stale_after_seconds: 90, paper_only: true, real_trading_enabled: false, symbols: [] as WatcherSymbolRuntimeStatus[] },
+    };
+  }
+
+  it("keeps a slow initial configuration load and starts polling after it completes", async () => {
+    vi.useFakeTimers();
+    const { api } = await import("@/lib/api");
+    const { config, status } = responses();
+    let resolveConfig!: (value: typeof config) => void;
+    const configuration = vi.spyOn(api.watcherWatchlist, "configuration").mockImplementation(() => new Promise(resolve => { resolveConfig = resolve; }));
+    const readStatus = vi.spyOn(api.watcherWatchlist, "status").mockResolvedValue(status);
+    await act(async () => { render(<WatcherWatchlistSection />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(65000); });
+    expect(readStatus).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveConfig(config); });
+    expect(configuration).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByTestId(/watchlist-slot-/)).toHaveLength(5);
+    expect(screen.getByTestId("watchlist-save")).not.toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(readStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not overlap or discard a slow status poll", async () => {
+    vi.useFakeTimers();
+    const { api } = await import("@/lib/api");
+    const { config, status } = responses();
+    vi.spyOn(api.watcherWatchlist, "configuration").mockResolvedValue(config);
+    let resolvePoll!: (value: typeof status) => void;
+    const readStatus = vi.spyOn(api.watcherWatchlist, "status").mockResolvedValueOnce(status)
+      .mockImplementation(() => new Promise(resolve => { resolvePoll = resolve; }));
+    await act(async () => { render(<WatcherWatchlistSection />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(180000); });
+    expect(readStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { resolvePoll({ ...status, symbols: statuses.map(row => ({ ...row, observed_at: new Date().toISOString(), market_source: "completed-poll", error_state: null })) }); });
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("completed-poll");
+  });
+
+  it("keeps an hour of normal polling within the unchanged shared read budget", async () => {
+    vi.useFakeTimers();
+    const { api } = await import("@/lib/api");
+    const { config, status } = responses();
+    let revision = 0;
+    const configuration = vi.spyOn(api.watcherWatchlist, "configuration").mockImplementation(async () => ({ ...config, revision }));
+    const readStatus = vi.spyOn(api.watcherWatchlist, "status").mockImplementation(async () => ({ ...status, configuration_revision: revision }));
+    const replace = vi.spyOn(api.watcherWatchlist, "replace").mockImplementation(async () => ({ ...config, revision: ++revision }));
+    await act(async () => { render(<WatcherWatchlistSection />); });
+    for (let save = 0; save < 6; save += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(600000); });
+      await act(async () => { fireEvent.click(screen.getByTestId("watchlist-save")); });
+    }
+    expect(replace.mock.calls.map(call => call[1])).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(readStatus.mock.calls.length).toBeGreaterThan(1);
+    expect(configuration.mock.calls.length + readStatus.mock.calls.length).toBeLessThan(120);
+  });
+
+  it("ignores a pre-save poll after loading the new revision", async () => {
+    vi.useFakeTimers();
+    const { api } = await import("@/lib/api");
+    const { config, status } = responses();
+    const saved = { ...config, revision: 1, slots: config.slots.map((slot, index) => index ? slot : { ...slot, symbol: "SOLUSDT" }) };
+    const savedStatus = { ...status, configuration_revision: 1, symbols: statuses.map((row, index) => ({ ...row, configuration_revision: 1, symbol: index ? row.symbol : "SOLUSDT", observed_at: new Date().toISOString(), market_source: "fresh-saved", error_state: null })) };
+    vi.spyOn(api.watcherWatchlist, "configuration").mockResolvedValueOnce(config).mockResolvedValue(saved);
+    let resolveOldPoll!: (value: typeof status) => void;
+    vi.spyOn(api.watcherWatchlist, "status").mockResolvedValueOnce(status)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOldPoll = resolve; }))
+      .mockResolvedValue(savedStatus);
+    vi.spyOn(api.watcherWatchlist, "replace").mockResolvedValue(saved);
+    await act(async () => { render(<WatcherWatchlistSection />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Symbol for slot 1"), { target: { value: "SOLUSDT" } });
+    });
+    await act(async () => { fireEvent.click(screen.getByTestId("watchlist-save")); });
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh-saved");
+    await act(async () => { resolveOldPoll(status); });
+    expect(screen.getByLabelText("Symbol for slot 1")).toHaveValue("SOLUSDT");
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh-saved");
+    expect(screen.getByTestId("watchlist-save")).not.toBeDisabled();
   });
 });

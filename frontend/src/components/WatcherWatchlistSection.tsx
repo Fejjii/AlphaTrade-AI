@@ -167,19 +167,27 @@ export function WatcherWatchlistSection() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const generation = useRef(0);
+  const refreshRequest = useRef<number | null>(null);
+  const pollRequest = useRef<number | null>(null);
   const mounted = useRef(false);
   const savingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     const request = ++generation.current;
-    const [config, status] = await Promise.all([
-      api.watcherWatchlist.configuration(), api.watcherWatchlist.status(),
-    ]);
-    if (!mounted.current || request !== generation.current) return;
-    setSlots(config.slots);
-    setRevision(config.revision);
-    setStatuses(status.configuration_revision === config.revision ? status.symbols : []);
-    setStaleAfter(status.stale_after_seconds);
+    refreshRequest.current = request;
+    pollRequest.current = null;
+    try {
+      const [config, status] = await Promise.all([
+        api.watcherWatchlist.configuration(), api.watcherWatchlist.status(),
+      ]);
+      if (!mounted.current || request !== generation.current) return;
+      setSlots(config.slots);
+      setRevision(config.revision);
+      setStatuses(status.configuration_revision === config.revision ? status.symbols : []);
+      setStaleAfter(status.stale_after_seconds);
+    } finally {
+      if (refreshRequest.current === request) refreshRequest.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -187,9 +195,11 @@ export function WatcherWatchlistSection() {
     void refresh().catch(() => {
       if (mounted.current) setMessage("Watchlist configuration is not loaded yet.");
     });
+    // Leave capacity in the shared 120/hour read quota for configuration and saves.
     const timer = setInterval(() => {
-      if (savingRef.current) return;
+      if (savingRef.current || refreshRequest.current !== null || pollRequest.current !== null) return;
       const request = ++generation.current;
+      pollRequest.current = request;
       void api.watcherWatchlist.status().then((status) => {
         if (mounted.current && request === generation.current) {
           setStatuses(status.symbols);
@@ -197,8 +207,10 @@ export function WatcherWatchlistSection() {
         }
       }).catch(() => {
         if (mounted.current && request === generation.current) setStatuses([]);
+      }).finally(() => {
+        if (pollRequest.current === request) pollRequest.current = null;
       });
-    }, 15000);
+    }, 60000);
     return () => {
       mounted.current = false;
       clearInterval(timer);
@@ -219,6 +231,7 @@ export function WatcherWatchlistSection() {
         savingRef.current = true;
         setSaving(true);
         ++generation.current;
+        pollRequest.current = null;
         setStatuses([]);
         setMessage(null);
         void api.watcherWatchlist
