@@ -41,6 +41,44 @@ function section(label: RegExp) {
 describe("Daily Review", () => {
   beforeEach(() => dailyReview.mockReset());
   afterEach(() => cleanup());
+  it.each([undefined, null, {}, failedSource("review down")])(
+    "renders unavailable without metrics when no review is returned: %j",
+    async (data) => {
+      dailyReview.mockResolvedValue(data);
+      render(<DailyReviewCard />);
+      expect(await screen.findByTestId("daily-review-unavailable")).toHaveTextContent(
+        "Daily Review unavailable",
+      );
+      expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Recorded net PnL:/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Win rate:/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Watcher activity:/)).not.toBeInTheDocument();
+    },
+  );
+  it.each([
+    { ...review, window: undefined },
+    { ...review, facts: undefined },
+    { ...review, daily_pnl: undefined },
+    { ...review, counts: {} },
+  ])("does not render partial review payloads: %j", (data) => {
+    render(<DailyReviewContent review={data as DailyReview} />);
+    expect(screen.getByTestId("daily-review-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
+  });
+  it("accepts missing content without dereferencing a review", () => {
+    render(<DailyReviewContent />);
+    expect(screen.getByTestId("daily-review-unavailable")).toBeInTheDocument();
+  });
+  it("hides previous review metrics while a refresh is loading", async () => {
+    dailyReview.mockResolvedValueOnce(review).mockImplementationOnce(() => new Promise(() => {}));
+    render(<DailyReviewCard />);
+    await screen.findByTestId("daily-review-content");
+    fireEvent.click(screen.getByRole("button", { name: "Review day" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading Daily Review");
+    expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("daily-review-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Recorded net PnL:/)).not.toBeInTheDocument();
+  });
   it("separates evidence classes and displays provenance, missing metrics and limitations", () => {
     render(<DailyReviewContent review={review} />);
     expect(within(section(/^Facts/)).getByText("Forming · watch")).toBeInTheDocument();
@@ -95,6 +133,8 @@ describe("Daily Review", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review day" }));
     await screen.findByRole("alert");
     expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("daily-review-unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Recorded net PnL:/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByTestId("daily-review-content");
   });

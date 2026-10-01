@@ -153,6 +153,8 @@ describe("Trader dashboard", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Dashboard" }),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("daily-review-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
   });
 
   it("shows safety conflict when real trading is enabled", () => {
