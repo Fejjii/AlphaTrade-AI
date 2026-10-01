@@ -50,6 +50,15 @@ def capability_catalog(settings: Settings) -> AgentCapabilityCatalog:
     safety = paper_safety_contract(settings)
     items = [
         CapabilityDescriptor(
+            capability=AgentCapability.DAILY_REVIEW,
+            status=CapabilityStatus.READ_THROUGH,
+            authority="DailyReviewService",
+            notes=(
+                "Reads recorded daily evidence with source IDs and separate facts, user "
+                "observations, system inference and research suggestions. UTC by default."
+            ),
+        ),
+        CapabilityDescriptor(
             capability=AgentCapability.GENERAL_CONVERSATION,
             status=CapabilityStatus.IMPLEMENTED,
             authority="ConversationService and ModelRouter",

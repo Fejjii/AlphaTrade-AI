@@ -7,6 +7,7 @@ that proposal, submit an order, or change trading mode.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.interactive_agent.action_registry import (
     resolve_action,
     route_action,
 )
+from app.interactive_agent.actions import DailyReviewInput
 from app.interactive_agent.classify import TurnClassification, classify_turn
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
@@ -49,6 +51,7 @@ from app.interactive_agent.conversation import (
     ConversationalResponder,
     compose_visible_reply,
 )
+from app.interactive_agent.daily_review import read_daily_review, render_daily_review
 from app.interactive_agent.orchestration import propose_action
 from app.interactive_agent.proposals import (
     build_proposal,
@@ -86,6 +89,7 @@ _SKIP_RETRIEVAL = frozenset(
     {
         AgentCapability.SCREENSHOT_ANALYSIS,
         AgentCapability.VOICE_IO,
+        AgentCapability.DAILY_REVIEW,
     }
 )
 
@@ -183,6 +187,19 @@ class InteractiveAgentService:
         limitations = list(_BASE_LIMITATIONS if self._responder is None else _MODEL_LIMITATIONS)
         if action is not None:
             limitations.extend(action[0].limitations)
+        daily_review = None
+        review_inputs = None
+        if action is not None and action[0].name == "daily_review.read":
+            assert isinstance(action[1], DailyReviewInput)
+            review_inputs = action[1]
+            daily_review = read_daily_review(
+                self._session,
+                review_inputs,
+                organization_id=organization_id,
+                user_id=user_id,
+                now=datetime.now(UTC),
+            )
+            limitations.extend(daily_review.limitations)
         knowledge: list[KnowledgeHit] = []
         strategies: list[StrategyHit] = []
         bundle = ReadBundle()
@@ -240,8 +257,12 @@ class InteractiveAgentService:
             bundle=bundle,
             prior_user_messages=prior,
         )
+        if daily_review is not None and review_inputs is not None:
+            factual = render_daily_review(daily_review, review_inputs)
+            limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
+            limitations.extend(_BASE_LIMITATIONS)
         reply = factual
-        if self._responder is not None and not (
+        if self._responder is not None and daily_review is None and not (
             action is not None and action[0].name == "paper_trade.prepare_execution"
         ):
             model_text = self._responder.compose(
@@ -265,6 +286,11 @@ class InteractiveAgentService:
                     "capability": classification.capability.value,
                     "operation": classification.operation.value,
                     "proposals": [item.model_dump(mode="json") for item in proposals],
+                    **(
+                        {"daily_review": daily_review.model_dump(mode="json")}
+                        if daily_review is not None
+                        else {}
+                    ),
                 }
             },
         )
@@ -286,6 +312,7 @@ class InteractiveAgentService:
             market_quote=bundle.market_quote,
             portfolio_summary=bundle.portfolio_summary,
             statistics_summary=bundle.statistics_summary,
+            daily_review=daily_review,
             paper_safety=safety,
             screenshot=_screenshot_contract(classification.screenshot_requested),
             voice=_voice_contract(classification.voice_requested),
