@@ -22,7 +22,7 @@ export function MobileBottomNavigation() {
         "pb-[env(safe-area-inset-bottom,0px)] lg:hidden",
       )}
     >
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {MOBILE_BOTTOM_DESTINATION_IDS.map((id) => {
           const destination = getPrimaryDestination(id);
           const { href, label, icon: Icon, ariaLabel } = destination;
@@ -34,14 +34,20 @@ export function MobileBottomNavigation() {
               aria-label={ariaLabel}
               aria-current={active ? "page" : undefined}
               data-destination={id}
+              data-primary-workspace={id === "agent" ? "true" : undefined}
               className={cn(
-                "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 px-1 text-caption",
+                "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 border-t-2 px-0 text-[10px] leading-tight min-[360px]:px-0.5 min-[360px]:text-[11px] sm:text-xs",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-                active ? "text-accent" : "text-text-muted",
+                active
+                  ? "border-accent bg-accent-muted text-accent"
+                  : "border-transparent text-text-secondary",
               )}
             >
-              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-              <span className="truncate">{label}</span>
+              <Icon
+                className={cn("h-5 w-5 shrink-0", id === "agent" && "text-accent")}
+                aria-hidden="true"
+              />
+              <span className="whitespace-nowrap">{label}</span>
             </Link>
           );
         })}

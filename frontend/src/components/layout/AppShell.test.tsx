@@ -68,7 +68,7 @@ describe("AT-040 Phase B AppShell", () => {
 
   afterEach(() => cleanup());
 
-  it("renders five desktop primary destinations and highlights Settings on retained routes", () => {
+  it("renders six desktop primary destinations and highlights Settings on retained routes", () => {
     render(
       <AppShell>
         <div>Page</div>
@@ -76,7 +76,7 @@ describe("AT-040 Phase B AppShell", () => {
     );
     const sidebar = screen.getByTestId("desktop-sidebar");
     const links = within(sidebar).getAllByRole("link");
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(6);
     for (const destination of PRIMARY_DESTINATIONS) {
       expect(within(sidebar).getByRole("link", { name: destination.ariaLabel })).toHaveAttribute(
         "href",
@@ -89,21 +89,33 @@ describe("AT-040 Phase B AppShell", () => {
     );
   });
 
-  it("renders five mobile tabs and no engineering menu sheet", () => {
+  it("renders six mobile tabs and no engineering menu sheet", () => {
     render(
       <AppShell>
         <div>Page</div>
       </AppShell>,
     );
     const bottom = screen.getByTestId("mobile-bottom-navigation");
-    expect(within(bottom).getAllByRole("link")).toHaveLength(5);
+    expect(within(bottom).getAllByRole("link")).toHaveLength(6);
+    expect(
+      within(bottom)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["Dashboard", "Agent", "Journal", "Strategies", "Knowledge", "Settings"]);
     expect(within(bottom).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     expect(within(bottom).getByRole("link", { name: "Agent" })).toHaveAttribute("href", "/agent");
     expect(within(bottom).getByRole("link", { name: "Strategies" })).toHaveAttribute(
       "href",
       "/strategies",
     );
-    expect(within(bottom).getByRole("link", { name: "Journal" })).toHaveAttribute("href", "/journal");
+    expect(within(bottom).getByRole("link", { name: "Journal" })).toHaveAttribute(
+      "href",
+      "/journal",
+    );
+    expect(within(bottom).getByRole("link", { name: "Knowledge" })).toHaveAttribute(
+      "href",
+      "/knowledge",
+    );
     expect(within(bottom).getByRole("link", { name: "Settings" })).toHaveAttribute(
       "href",
       "/settings",
@@ -115,6 +127,33 @@ describe("AT-040 Phase B AppShell", () => {
     expect(screen.queryByTestId("mobile-menu-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("mobile-menu-sheet")).not.toBeInTheDocument();
   });
+
+  it.each(["/knowledge", "/lessons/lesson-42"])(
+    "selects Knowledge on %s in both navigation surfaces",
+    (pathname) => {
+      navigationState.pathname = pathname;
+      render(
+        <AppShell>
+          <div>Page</div>
+        </AppShell>,
+      );
+      for (const nav of [
+        screen.getByTestId("desktop-sidebar"),
+        screen.getByTestId("mobile-bottom-navigation"),
+      ]) {
+        expect(within(nav).getByRole("link", { name: "Knowledge" })).toHaveAttribute(
+          "aria-current",
+          "page",
+        );
+        expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+        expect(within(nav).getByRole("link", { name: "Agent" })).toHaveAttribute(
+          "data-primary-workspace",
+          "true",
+        );
+      }
+      expect(screen.queryByTestId("secondary-navigation")).not.toBeInTheDocument();
+    },
+  );
 
   it("opens the command menu from the phone search control", () => {
     render(
@@ -230,7 +269,9 @@ describe("AT-040 Phase B AppShell", () => {
     expect(names.length).toBeGreaterThan(0);
     expect(new Set(names).size).toBe(names.length);
     expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Search pages and destinations" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Search pages and destinations" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open navigation menu" })).not.toBeInTheDocument();
   });
 

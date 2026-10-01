@@ -19,10 +19,34 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-sm text-zinc-400">Environment and safety configuration for this workspace.</p>
+        <p className="text-sm text-zinc-400">
+          Markets, strategies, notifications, risk, and system parameters.
+        </p>
       </div>
       <PaperModeBanner />
-      <WatcherWatchlistSection />
+      <nav
+        aria-label="Workspace settings"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
+      >
+        {[
+          { href: "#settings-markets", label: "Markets" },
+          { href: "/strategy-lab", label: "Strategies" },
+          { href: "#settings-notifications", label: "Notifications" },
+          { href: "/risk", label: "Risk" },
+          { href: "#settings-system", label: "System parameters" },
+        ].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex min-h-11 items-center rounded-control border border-border-subtle bg-surface-1 px-3 py-3 text-sm font-medium text-text-primary hover:bg-surface-2"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+      <section id="settings-markets" className="scroll-mt-4" aria-label="Market settings">
+        <WatcherWatchlistSection />
+      </section>
       <EmailVerificationNotice />
       <Card>
         <CardHeader>
@@ -61,7 +85,7 @@ export default function SettingsPage() {
           </Link>
         </CardContent>
       </Card>
-      <Card data-testid="settings-runtime-posture">
+      <Card data-testid="settings-runtime-posture" id="settings-system" className="scroll-mt-4">
         <CardHeader>
           <CardTitle>Verified runtime posture</CardTitle>
         </CardHeader>
@@ -143,7 +167,13 @@ export default function SettingsPage() {
           <SafetyDisclaimers />
         </CardContent>
       </Card>
-      <NotificationSettingsPanel />
+      <section
+        id="settings-notifications"
+        className="scroll-mt-4"
+        aria-label="Notification settings"
+      >
+        <NotificationSettingsPanel />
+      </section>
     </div>
   );
 }

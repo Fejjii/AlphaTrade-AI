@@ -19,6 +19,7 @@ export const ADVANCED_ROUTE_GROUPS = [
   "Review",
   "Strategy tools",
   "Journal tools",
+  "Knowledge tools",
 ] as const;
 
 export const ADVANCED_ROUTES: readonly AdvancedRoute[] = [
@@ -70,10 +71,9 @@ export const ADVANCED_ROUTES: readonly AdvancedRoute[] = [
   { href: "/strategy-quality", label: "Strategy Quality", group: "Review" },
 
   { href: "/strategy-lab", label: "Strategy Lab", group: "Strategy tools" },
-  { href: "/knowledge", label: "Knowledge", group: "Strategy tools" },
 
   { href: "/journal/import", label: "Import", group: "Journal tools" },
-  { href: "/lessons", label: "Lessons", group: "Journal tools" },
+  { href: "/lessons", label: "Lessons", group: "Knowledge tools" },
 ] as const;
 
 /** Prefixes that belong to Settings, including dynamic detail routes. */

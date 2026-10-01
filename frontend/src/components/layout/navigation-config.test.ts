@@ -11,26 +11,25 @@ import {
   resolvePageIdentity,
   resolveSecondaryActiveHref,
 } from "@/components/layout/navigation-config";
-import {
-  PHASE_B_CAPABILITY_PATHS,
-  PHASE_B_REDIRECTS,
-} from "@/lib/navigation/phase-b-redirects";
+import { PHASE_B_CAPABILITY_PATHS, PHASE_B_REDIRECTS } from "@/lib/navigation/phase-b-redirects";
 
 describe("Trader primary navigation", () => {
-  it("exposes exactly five primary destinations", () => {
-    expect(PRIMARY_DESTINATIONS).toHaveLength(5);
+  it("exposes exactly six primary destinations", () => {
+    expect(PRIMARY_DESTINATIONS).toHaveLength(6);
     expect(PRIMARY_DESTINATIONS.map((destination) => destination.id)).toEqual([
       "dashboard",
       "agent",
-      "strategies",
       "journal",
+      "strategies",
+      "knowledge",
       "settings",
     ]);
     expect(PRIMARY_DESTINATIONS.map((destination) => destination.label)).toEqual([
       "Dashboard",
       "Agent",
-      "Strategies",
       "Journal",
+      "Strategies",
+      "Knowledge",
       "Settings",
     ]);
   });
@@ -39,23 +38,53 @@ describe("Trader primary navigation", () => {
     expect(MOBILE_BOTTOM_DESTINATION_IDS).toEqual([
       "dashboard",
       "agent",
-      "strategies",
       "journal",
+      "strategies",
+      "knowledge",
       "settings",
     ]);
   });
 
-  it("maps trader hubs and retained routes onto the five destinations", () => {
+  it("keeps primary paths unique and specialized routes outside the primary list", () => {
+    const paths = PRIMARY_DESTINATIONS.map((destination) => destination.href);
+    expect(paths).toEqual(["/", "/agent", "/journal", "/strategies", "/knowledge", "/settings"]);
+    expect(new Set(paths).size).toBe(6);
+    for (const path of ["/watcher", "/risk", "/strategy-lab", "/lessons", "/market"]) {
+      expect(paths).not.toContain(path);
+      expect(listReachableHrefs()).toContain(path);
+    }
+  });
+
+  it("selects exactly one destination for nested links and respects path boundaries", () => {
+    for (const [path, label] of [
+      ["/knowledge/documents/doc-1", "Knowledge"],
+      ["/lessons/lesson-42", "Knowledge"],
+      ["/journal/statistics", "Journal"],
+      ["/strategy-lab/strategy-7", "Strategies"],
+      ["/agent/history", "Agent"],
+      ["/settings/advanced", "Settings"],
+    ]) {
+      expect(
+        PRIMARY_DESTINATIONS.filter((item) => isPrimaryDestinationActive(path!, item)).map(
+          (item) => item.label,
+        ),
+      ).toEqual([label]);
+    }
+    expect(getDestinationId("/knowledge-base")).toBeNull();
+    expect(getDestinationId("/lessons-learned")).toBeNull();
+  });
+
+  it("maps trader hubs and retained routes onto the six destinations", () => {
     expect(getDestinationId("/")).toBe("dashboard");
     expect(getDestinationId("/agent")).toBe("agent");
     expect(getDestinationId("/strategies")).toBe("strategies");
     expect(getDestinationId("/strategy-lab")).toBe("strategies");
     expect(getDestinationId("/strategy-lab/new")).toBe("strategies");
-    expect(getDestinationId("/knowledge")).toBe("strategies");
+    expect(getDestinationId("/knowledge")).toBe("knowledge");
     expect(getDestinationId("/journal")).toBe("journal");
     expect(getDestinationId("/journal/comparison")).toBe("journal");
     expect(getDestinationId("/journal/import")).toBe("journal");
-    expect(getDestinationId("/lessons")).toBe("journal");
+    expect(getDestinationId("/lessons")).toBe("knowledge");
     expect(getDestinationId("/coaching")).toBe("journal");
     expect(getDestinationId("/learning-analytics")).toBe("journal");
     expect(getDestinationId("/settings")).toBe("settings");
@@ -96,18 +125,33 @@ describe("Trader primary navigation", () => {
   });
 
   it("resolves trader titles and advanced subtitles", () => {
-    expect(resolvePageIdentity("/")).toMatchObject({ title: "Dashboard", subtitle: null });
-    expect(resolvePageIdentity("/agent")).toMatchObject({ title: "Agent", subtitle: null });
-    expect(resolvePageIdentity("/strategies")).toMatchObject({ title: "Strategies", subtitle: null });
-    expect(resolvePageIdentity("/journal")).toMatchObject({ title: "Journal", subtitle: null });
-    expect(resolvePageIdentity("/settings")).toMatchObject({ title: "Settings", subtitle: null });
+    expect(resolvePageIdentity("/")).toMatchObject({
+      title: "Dashboard",
+      subtitle: null,
+    });
+    expect(resolvePageIdentity("/agent")).toMatchObject({
+      title: "Agent",
+      subtitle: null,
+    });
+    expect(resolvePageIdentity("/strategies")).toMatchObject({
+      title: "Strategies",
+      subtitle: null,
+    });
+    expect(resolvePageIdentity("/journal")).toMatchObject({
+      title: "Journal",
+      subtitle: null,
+    });
+    expect(resolvePageIdentity("/settings")).toMatchObject({
+      title: "Settings",
+      subtitle: null,
+    });
     expect(resolvePageIdentity("/settings/advanced")).toMatchObject({
       title: "Settings",
       subtitle: "Advanced",
     });
     expect(resolvePageIdentity("/knowledge")).toMatchObject({
-      title: "Strategies",
-      subtitle: "Knowledge",
+      title: "Knowledge",
+      subtitle: null,
     });
     expect(resolvePageIdentity("/journal/import")).toMatchObject({
       title: "Journal",
