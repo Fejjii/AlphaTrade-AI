@@ -491,16 +491,33 @@ class WatcherFusionEvaluationService:
                 "In-memory or injected executable policies cannot mint Candidates."
             )
         with _persistence_fence_context(self._persistence_fence, command):
+            episode = getattr(self._evidence, "candidate_episode", lambda: None)()
+            if episode is not None:
+                if episode.state in {"INVALIDATED", "EXPIRED", "COMPLETED"}:
+                    return ()
+                if (
+                    episode.candidate_id is not None
+                    and episode.assessment_id != assessment.assessment_id
+                ):
+                    # A corrected/sliding window cannot remint an already accepted episode.
+                    return ()
             created = self._lifecycle.create_from_confirmed_setup(
                 CandidateCreationCommand(
                     assessment=assessment,
                     evidence_window=window,
                     executable_setup=bound_command.executable_setup,
                     evidence_identity=bound_command.evidence_identity,
-                    idempotency_key=f"watcher:{assessment.evidence_window_hash}",
+                    idempotency_key=(
+                        f"watcher:{episode.payload.get('family', 'nested')}:{episode.id}"
+                    )
+                    if episode is not None
+                    else f"watcher:{assessment.evidence_window_hash}",
                     correlation_id=assessment.correlation_id,
                 )
             )
+            if episode is not None:
+                episode.candidate_id = created.candidate_id
+                episode.assessment_id = assessment.assessment_id
         self._published_candidate_ids.append(created.candidate_id)
         if window is not None:
             self._discussion_snapshot = WatcherDiscussionSnapshot(

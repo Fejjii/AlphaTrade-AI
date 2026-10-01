@@ -12,7 +12,9 @@ from app.schemas.common import RiskAction, SafetyVerdict
 
 RouteAfterInjection = Literal["blocked", "continue"]
 RouteAfterModeration = Literal["blocked", "continue"]
-RouteAfterIntent = Literal["trading_analysis", "analytics", "strategy_workflow", "general"]
+RouteAfterIntent = Literal[
+    "trading_analysis", "analytics", "strategy_workflow", "paper_action", "general"
+]
 RouteAfterRisk = Literal["blocked", "approval", "tools", "respond"]
 RouteAfterApproval = Literal["tools", "respond"]
 
@@ -41,6 +43,8 @@ def route_after_moderation(state: dict) -> RouteAfterModeration:
 
 def route_after_intent(state: dict) -> RouteAfterIntent:
     agent = parse_state(state)
+    if agent.intent in {Intent.PREPARE_PAPER_TRADE, Intent.CONFIRM_PAPER_EXECUTION}:
+        return "paper_action"
     if is_strategy_workflow_intent(agent.intent):
         return "strategy_workflow"
     if agent.intent in {Intent.REVIEW, Intent.REVIEW_TRADE} and is_analytics_message(agent.message):

@@ -2469,4 +2469,212 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
   `PERPETUAL_EVIDENCE_SOURCE=binance_usdm` and
   `PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual`.
 
+## AT-ADR-072 — Telegram enrollment ignores unrelated organization kill switches
+- **Date:** 2026-09-26
+- **Status:** Accepted
+- **Context:** Telegram enrollment posture called `read_process_kill_switch()`,
+  which is true when any `KillSwitchState` row is active. One tenant's switch
+  paused enrollment for every tenant (`telegram_runtime_state=paused`,
+  `last_error_code=kill_switch_active`) even after the enrolling organization's
+  switch was deactivated. Enrollment does not mint Candidates, start Watcher
+  paper workflows, enqueue automated notices, or deliver them.
+- **Decision:**
+  1. Enrollment pauses only for `Settings.global_kill_switch_active`. A missing
+     settings object or a failed read of that flag fails closed.
+  2. Organization kill switches stay tenant-scoped for Watcher paper scans,
+     automated paper actions, and Telegram delivery bound to that organization.
+     `read_process_kill_switch()` remains the any-tenant fail-closed reader and
+     is not used for enrollment.
+  3. Real trading stays impossible. This change does not arm live orders.
+- **Alternatives considered:** Keep the any-tenant pause for enrollment
+  (rejected: it blocks unrelated tenants). Also refuse enrollment when the
+  token's own organization switch is active (rejected: enrollment is not an
+  automated paper action, and delivery still checks the bound tenant at send
+  time). Scope `read_process_kill_switch()` itself to one tenant (rejected:
+  that function's contract is the process-wide gate).
+- **Safety impact:** Paper only. Bound-tenant delivery and Watcher scans still
+  stop when that tenant's switch is active or unreadable. The ops global
+  switch still pauses enrollment.
+- **Consequences:** Regression coverage is
+  `backend/tests/test_telegram_enrollment_kill_switch_scope.py`. No deploy.
 
+## AT-ADR-073 — Watcher scans release the trade tape after the proof is bound
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** The consolidated paper worker (Watcher plus Telegram) exceeded
+  the 512 MB Render limit during Watcher scans and was temporarily moved to
+  2 GB. CPU stayed low. The scan fetches about eight hours of aggTrades and
+  was retaining every trade as a `TradeEvent`, plus raw cache copies and a
+  monitor book that grew for the life of the process.
+- **Decision:**
+  1. Binance scan retrieval streams aggTrades, binds the same coverage hash
+     and closed-bar Decimal sums, and stores `trades=[]` with a
+     `ReleasedTradeTape`. Replay fixtures keep the full trade list. CVD,
+     signed flow, and bearish-divergence sums read the tape when trades are
+     absent. The 32-bar lookback is unchanged.
+  2. Raw aggTrade cache entries larger than
+     `binance_evidence_cache_max_rows` (default 4096) are not stored. The
+     reduced snapshot for a closed window is cached instead.
+  3. The market monitor keeps coverage and CVD totals for the latest window
+     and drops trades older than `last_event_at`. Reconnect clears the book.
+  4. The worker logs RSS, sets Prometheus gauges, and writes nullable
+     `process_rss_bytes` / `process_rss_peak_bytes` (`BigInteger`) on
+     `controlled_runtime_status`. Alembic head `a8c3e1b94d20` revises
+     `f1a2b3c4d5e6`. No secrets are included.
+  5. Real trading stays impossible. Render is not changed by this decision.
+- **Alternatives considered:** Shorten the CVD lookback (rejected: that
+  changes the strategy). Keep the 2 GB tier without a code change (rejected:
+  the spike is retention, and a streamed tape stayed flat in measurement).
+- **Safety impact:** Paper only. `EXECUTION_MODE=paper`.
+  `ENABLE_REAL_TRADING` stays false. Risk `BLOCK` stays final.
+- **Consequences:** The source branch recorded this decision as `AT-ADR-072`.
+  The release candidate assigns `AT-ADR-073` because `AT-ADR-072` is the
+  Telegram enrollment scope decision. Apply `a8c3e1b94d20` before the paper
+  worker starts. Staging can retest the 512 MB worker after a human deploy.
+  A 10-minute monitor stall can still materialize that short window. Live
+  BTCUSDT trade counts were not measured from this environment (HTTP 451).
+  This decision does not deploy and does not migrate the staging database.
+
+## AT-ADR-074 — Interactive agent orchestrates existing authorities
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** The product is moving toward an Agent surface. Conversation
+  transcripts, strategy previews, journal rows, knowledge chunks, portfolio
+  reads, and coaching summaries already exist. A second store, or free-form
+  chat that writes those records, would split authority.
+- **Decision:**
+  1. `InteractiveAgentService` is an orchestration layer. It appends turns to
+     the existing conversation transcript and reads strategy, knowledge,
+     journal, portfolio, performance, coaching, and watcher records.
+  2. A turn may store a structured proposal. It does not confirm that proposal.
+     Chat text that says "I confirm" does not write domain rows.
+  3. Explicit confirm applies only a complete journal proposal, through
+     `JournalService`. Strategy, rule, lesson, and trade-decision confirms stay
+     `confirmed_unapplied`. Strategy preview rows remain `DRAFT`.
+  4. Screenshot analysis and voice input/output are contracts only. No image or
+     audio is interpreted.
+  5. The agent cannot enable real trading. It does not call execution.
+- **Alternatives considered:** Route the new surface through the existing
+  LangGraph graph (rejected for this slice: that graph can still plan trades).
+  Add a new proposal table (rejected: the transcript and strategy preview
+  tables already store these drafts).
+- **Safety impact:** Paper only. No Render change, no deploy, no live-trading
+  flag. Risk `BLOCK` and execution services are not invoked.
+- **Consequences:** The source branch recorded this decision as `AT-ADR-072`.
+  The release candidate assigns `AT-ADR-074` because `AT-ADR-072` is Telegram
+  enrollment scope and `AT-ADR-073` is the trade-tape release. Tests in
+  `backend/tests/test_interactive_agent_foundation.py`. Contract notes in
+  `docs/interactive_agent_foundation.md`.
+
+## AT-ADR-075 — Release candidate keeps the conversational model beside proposals
+- **Date:** 2026-09-28
+- **Status:** Accepted
+- **Context:** PR 145's Agent workspace talks to `/chat`. PR 147's agent turns
+  reply with deterministic templates and read an injected ticker. Integrating
+  those branches by switching the workspace onto the templates would replace
+  the conversational model. Three source branches also appended `AT-ADR-072`.
+- **Decision:**
+  1. `POST /agent/turns` asks the existing `ModelRouter` purpose
+     `general_agent_synthesis` for the assistant prose. If that call is
+     unavailable, the transcript says the conversational model reply is
+     unavailable. Recorded facts are appended and are not a confirmation.
+  2. Market answers use `CanonicalEvidenceService`. Unavailable and stale
+     reads stay labeled. No price is invented and `fallback_used` stays false.
+  3. Strategy and journal proposals are not confirmed by model text or by
+     sending a message. Journal rows are written only by the explicit confirm
+     route. A confirm that finds the proposal's journal row returns that row
+     and does not insert another. A confirm whose payload says applied, but
+     whose journal row is missing, writes exactly one row. Rejected and
+     unauthorized statements write none. Strategy confirm stays
+     `confirmed_unapplied`.
+  4. Screenshot and voice routes stay unimplemented.
+  5. Decision identifiers on this candidate are `AT-ADR-072` enrollment,
+     `AT-ADR-073` trade-tape release, and `AT-ADR-074` agent orchestration.
+     Apply Alembic `a8c3e1b94d20` before the paper worker starts. This
+     decision does not migrate staging.
+- **Alternatives considered:** Point the workspace only at `/chat` (rejected:
+  structured proposals would stay disconnected). Replace replies with the
+  PR 147 templates (rejected: that removes the conversational model).
+- **Safety impact:** Paper only. Real trading stays disabled. No deploy, no
+  Render change, no additional symbols, no kill-switch or Telegram arm.
+- **Consequences:** `docs/interactive_agent_foundation.md` and
+  `docs/controlled_paper_activation.md`. PR 148 remains excluded.
+
+## AT-ADR-076 — Paper Watcher uses five logical symbol slots
+- **Date:** 2026-09-30
+- **Status:** Accepted
+- **Context:** The paper Watcher treated BTCUSDT as the only market identity.
+  PR 148 gated extra symbols behind a flag and still forced BTCUSDT into the
+  active set. Live Binance and Bybit contract checks were not reachable from
+  this environment (HTTP 451 and HTTP 403).
+- **Decision:**
+  1. One paper Watcher process owns five ordered slots. The default symbols are
+     BTCUSDT, ZECUSDT, ETHUSDT, TAOUSDT, and HYPEUSDT. Operators can enable,
+     disable, replace, and reorder them through `PUT /watcher/watchlist`
+     without a code deployment. The file store is `var/watcher-watchlist.json`
+     unless `WATCHER_WATCHLIST_PATH` is set. No Alembic migration is added.
+  2. A symbol is scan-eligible only when the active evidence venue has a
+     verified linear USDT perpetual contract for that exact symbol. The
+     in-repo book verifies BTCUSDT on Binance USD-M and Bybit linear. Other
+     symbols stay unavailable. A payload for a different symbol is rejected.
+  3. Generic market identity follows the symbol being evaluated. The canonical
+     first-slice evaluator still defaults to BTCUSDT when no symbol is passed,
+     and compiled BTC strategies still match only BTCUSDT. No new setup rules
+     are added.
+  4. Symbols are scanned one at a time. One failure does not stop the others.
+     Historical trade windows are released after each symbol. Risk BLOCK and
+     the kill switch stay in force. Real trading stays disabled.
+- **Alternatives considered:** Cherry-pick PR 148 (rejected: it still forced
+  BTC as the only active identity). Mark ZEC, ETH, TAO, and HYPE as verified
+  without a provider payload (rejected: those listings were not verified here).
+- **Safety impact:** Paper only. No Render deploy, no Telegram arm, no live
+  orders, no shared database migration.
+- **Consequences:** `GET /watcher/watchlist` is configuration.
+  `GET /watcher/watchlist/status` is per-symbol runtime status. Settings shows
+  the five slots.
+
+## AT-ADR-077 — USD-M contract checks must not treat a blocked host as a delisting
+- **Date:** 2026-09-30
+- **Status:** Accepted
+- **Context:** PR 151 left ETHUSDT, ZECUSDT, TAOUSDT, and HYPEUSDT as
+  `contract_unverified` because `fapi.binance.com` returned HTTP 451 and
+  `api.bybit.com` returned HTTP 403. `www.binance.com/fapi/v1/exchangeInfo`
+  returned a `futuresType=U_MARGINED` book. That host ignores the symbol query
+  and returns the full book, whose first row is BTCUSDT.
+- **Decision:**
+  1. Select the exchangeInfo row with the exact symbol. A different row is not
+     a substitute.
+  2. The five Binance USD-M perpetual rows proven on 2026-09-30 are the catalog
+     the Watcher may scan. A later USD-M payload replaces a row. A missing row
+     in a successful book is `unsupported_contract`.
+  3. HTTP 451, 403, a redirect, or a transport failure is
+     `provider_unreachable`. It does not delete a proven contract and it does
+     not invent a Bybit listing.
+  4. Live candle reads stay on `https://fapi.binance.com`. This decision does
+     not change execution mode, real trading, Telegram, or the kill switch.
+- **Safety impact:** Paper only. No deploy.
+- **Consequences:** `backend/src/app/market_contracts/contract_discovery.py`.
+
+
+
+
+## AT-ADR-WATCHER-TENANT-20260930 — organization-owned durable Watcher state
+
+Status: accepted by the PR152 remediation contract; implementation under validation.
+
+The five-slot process file could cross tenant boundaries and did not connect API and dedicated worker services. Watcher configuration now belongs to an organization in the existing SQLAlchemy database, with monotonic revisions. Latest per-symbol observations and the legacy runtime summary carry that organization, revision and observation time; stale or old-revision observations are pending, and obsolete symbol rows are removed. The API derives ownership from authenticated membership. Optimistic configuration updates and revision-fenced worker publication prevent stale writers.
+
+The worker visits organizations in deterministic round-robin order, loading one organization per bounded cycle from the shared database. Per-symbol market composition and latest status remain bounded; no tenant strategy data enters shared public-market caches. Configuration changes are observed on the tenant's next turn; delayed/missing worker observations expire visibly. Exact provider contract verification gates acquisition, and no-strategy monitoring reads only a bounded closed-candle sample without producing Candidates. This probe is not current-price or full CVD evidence.
+
+Existing activation, kill-switch, paper execution and Telegram tenant controls remain authoritative. Migration b6f2d9a10e73 is for isolated validation only in this task; shared database rollout, merge and deployment require their existing human gates. Acceptance requires regression tests, exact-revision CI and a fresh independent review.
+
+
+## AT-ADR-WATCHER-BYBIT-CONTINUITY-20260930 — bounded ranks and lineage proofs
+
+Status: PR152 independent-review correction under validation.
+
+The organization-owned database decision above supersedes AT-ADR-076's historical process-file authority. The legacy path setting remains only for local/test helpers.
+
+Bybit execution ranks now identify observations of one exact symbol/source independently of a caller's retrieval lineage. The persistent monitor and historical canonical assembly keep separate proof tails (at most two recent lineages). A failed historical request cannot reset the monitor's sequence. The execution ledger retains only the current provider page plus those bounded proofs, including signatures to reject changed duplicate executions. Bulk cleanup trims each proof to one provider page, preserving overlap identity and anchors. During reads, each proof has a ten-page and 15-minute bound. Discarded prefixes, including any partially retained millisecond bucket, are unavailable rather than fabricated complete coverage. Gaps, wrong instruments/sources and freshness checks remain authoritative. This bound is not a staging RSS claim.
+
+Contract eligibility refusals cross the strategy evidence boundary as typed errors retaining unsupported versus unreachable reasons, matching the existing read-only probe path. No new acquisition, Candidate, execution or activation authority is added.

@@ -744,6 +744,67 @@ def compile_from_authored(
             strategy_version_id=strategy_version_id,
             organization_id=organization_id,
         )
+    from pydantic import ValidationError
+
+    from app.schemas.nested_continuation import NESTED_KIND, NestedContinuationSpec
+
+    if isinstance(pattern_spec, NestedContinuationSpec) or (
+        isinstance(pattern_spec, dict) and pattern_spec.get("kind") == NESTED_KIND
+    ):
+        try:
+            nested = NestedContinuationSpec.model_validate(pattern_spec)
+        except ValidationError:
+            return CompileResult(
+                status=SetupCompileStatus.NON_EXECUTABLE.value,
+                failures=[_fail("invalid_nested_spec", "Invalid Nested Continuation parameters.")],
+            )
+        pattern = PatternAst(
+            nested_spec=nested,
+            symbols=[nested.symbol],
+            trigger_timeframe=nested.trigger_timeframe.value,
+            direction=nested.direction,
+            preconditions=boolean("and", fld("predicate.finality"), fld("predicate.freshness")),
+            sequence=[
+                PatternStep(
+                    step_id="operational_nested_continuation_v1",
+                    predicate=cmp(CompareOp.GT, fld("ohlcv.high"), fld("ohlcv.low")),
+                )
+            ],
+            trigger=cmp(CompareOp.GT, fld("ohlcv.volume"), lit_decimal("0", AstUnit.VOLUME)),
+            invalidation=[cmp(CompareOp.LTE, fld("ohlcv.close"), lit_decimal("0", AstUnit.PRICE))],
+            expiration_final_bars=nested.parameters.confirmation_window,
+        )
+        return compile_pattern(pattern).model_copy(
+            update={"strategy_version_id": strategy_version_id, "organization_id": organization_id}
+        )
+    from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
+
+    if isinstance(pattern_spec, SfpSpec) or (
+        isinstance(pattern_spec, dict) and pattern_spec.get("kind") == SFP_KIND
+    ):
+        try:
+            sfp = SfpSpec.model_validate(pattern_spec)
+        except ValidationError:
+            return CompileResult(
+                status=SetupCompileStatus.NON_EXECUTABLE.value,
+                failures=[_fail("invalid_sfp_spec", "Invalid SFP parameters.")],
+            )
+        # Family metadata binds the entire spec into the canonical compiled hash.
+        # Setup truth is evaluated only by the registered SFP adapter in evaluate_setup.
+        pattern = PatternAst(
+            sfp_spec=sfp,
+            symbols=[sfp.symbol],
+            trigger_timeframe=sfp.trigger_timeframe.value,
+            direction=sfp.direction,
+            preconditions=boolean("and", fld("predicate.finality"), fld("predicate.freshness")),
+            sequence=[PatternStep(step_id="swing_failure_pattern_v1", predicate=lit_bool(True))],
+            trigger=lit_bool(False),
+            invalidation=[lit_bool(False)],
+            expiration_final_bars=sfp.parameters.expiry_bars,
+        )
+        return compile_pattern(pattern).model_copy(
+            update={"strategy_version_id": strategy_version_id, "organization_id": organization_id}
+        )
     if isinstance(pattern_spec, FirstSliceAuthoredPatternSpec):
         spec = pattern_spec
     else:

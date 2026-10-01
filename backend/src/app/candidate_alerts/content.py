@@ -112,6 +112,25 @@ def build_candidate_alert_content(
 
 def format_candidate_alert_text(content: CandidateAlertContent) -> str:
     """Deterministic private-chat text. Not a trade order and not a performance claim."""
+    if content.nested is not None:
+        nested = content.nested
+        return "\n".join(
+            (
+                "AlphaTrade PAPER informational Nested Continuation setup.",
+                f"Symbol: {nested.symbol}",
+                f"Venue: {content.evidence_provenance.venue.value}",
+                f"Timeframe: {content.trigger_context.timeframe.value}",
+                f"Nested stage: {nested.stage}",
+                f"Direction: {content.direction.value}",
+                f"Strategy version: {nested.strategy_version_id}",
+                f"Setup ID: {nested.setup_id}",
+                f"Evidence timestamp: {nested.evidence_at.isoformat()}",
+                f"Freshness: {nested.freshness}",
+                f"Decision: {nested.decision}",
+                f"Risk state: {nested.risk_state}",
+                f"Reason summary: {', '.join(nested.reasons)[:500]}",
+            )
+        )
     rules = ", ".join(
         f"{item.rule_id}={'pass' if item.passed else 'fail'}" for item in content.rule_results
     )

@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import JournalStatisticsPage from "@/app/(app)/journal/statistics/page";
 import type { JournalTradeStatsMetrics } from "@/lib/api/types";
 
-const metrics = (overrides: Partial<JournalTradeStatsMetrics>): JournalTradeStatsMetrics => ({
+const metrics = (
+  overrides: Partial<JournalTradeStatsMetrics>,
+): JournalTradeStatsMetrics => ({
   trade_count: 0,
   wins: 0,
   losses: 0,
@@ -36,6 +38,11 @@ const metrics = (overrides: Partial<JournalTradeStatsMetrics>): JournalTradeStat
   warnings: [],
   ...overrides,
 });
+
+const asyncFlags = vi.hoisted(() => ({
+  loading: false,
+  error: null as string | null,
+}));
 
 const safetyPosture = {
   executionMode: "paper" as string | null,
@@ -70,7 +77,8 @@ vi.mock("@/hooks/useAsyncData", () => ({
         warnings: [
           {
             code: "low_sample",
-            message: "Only 12 closed trade(s); treat these statistics as anecdotal.",
+            message:
+              "Only 12 closed trade(s); treat these statistics as anecdotal.",
           },
         ],
       }),
@@ -97,14 +105,17 @@ vi.mock("@/hooks/useAsyncData", () => ({
       max_rows: 5000,
       generated_at: "2026-07-24T10:00:00Z",
     },
-    loading: false,
-    error: null,
     reload: vi.fn(),
+    ...asyncFlags,
   }),
 }));
 
 describe("JournalStatisticsPage", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    asyncFlags.loading = false;
+    asyncFlags.error = null;
+  });
 
   it("renders overall metrics, bucket cards, and warnings", () => {
     safetyPosture.executionMode = "paper";
@@ -115,13 +126,34 @@ describe("JournalStatisticsPage", () => {
     expect(screen.getByText("Overall (filtered)")).toBeInTheDocument();
     expect(screen.getByText("Sweep reversal v2")).toBeInTheDocument();
     expect(
-      screen.getByText(/Only 12 closed trade\(s\); treat these statistics as anecdotal\./),
+      screen.getByText(
+        /Only 12 closed trade\(s\); treat these statistics as anecdotal\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Setup version breakdown/)).toBeInTheDocument();
     expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
       "aria-label",
       "Paper mode active",
     );
+  });
+
+  it("keeps a failed closed-trade list distinct from an empty list", () => {
+    asyncFlags.error = "Statistics offline";
+    render(<JournalStatisticsPage />);
+    expect(
+      screen.getByText("Closed paper trades unavailable: Statistics offline"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No closed canonical journal trades in this list."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Overall (filtered)")).not.toBeInTheDocument();
+  });
+
+  it("hides previous aggregates while filters are loading", () => {
+    asyncFlags.loading = true;
+    render(<JournalStatisticsPage />);
+    expect(screen.getByText("Loading journal statistics…")).toBeInTheDocument();
+    expect(screen.queryByText("Overall (filtered)")).not.toBeInTheDocument();
   });
 
   it("fails closed when runtime safety is missing", () => {

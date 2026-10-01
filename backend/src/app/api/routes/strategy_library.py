@@ -66,6 +66,7 @@ async def create_strategy(
         setup_type=body.setup_type,
         card=body.card,
         notes=body.notes,
+        pattern_spec=body.pattern_spec,
     )
     result = service.create(payload)
     session.commit()

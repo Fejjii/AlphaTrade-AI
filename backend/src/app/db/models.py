@@ -83,8 +83,10 @@ from app.db.paper_evaluation import PaperEvaluationObservationRow  # noqa: F401
 from app.db.paper_evaluation import (
     register_paper_evaluation_immutability as _register_paper_evaluation_immutability,
 )
+from app.db.public_market_observations import PublicMarketObservationRow  # noqa: F401
 from app.db.runtime_status import ControlledRuntimeStatusRow  # noqa: F401
 from app.db.setup_lifetime import SetupLifetimePin  # noqa: F401
+from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow  # noqa: F401
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )
@@ -113,6 +115,7 @@ from app.db.watcher_orchestration import (  # noqa: F401
     WatcherSubscriptionEvalAttemptRow,
     WatcherWorkerLeaseRow,
 )
+from app.db.watcher_watchlist import WatcherSymbolStatusRow, WatcherWatchlistRow  # noqa: F401
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,
@@ -2563,6 +2566,7 @@ class UserNotificationPreferences(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     webhook_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     telegram_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     min_severity: Mapped[PaperAlertSeverity] = mapped_column(
         _enum(PaperAlertSeverity), default=PaperAlertSeverity.INFO
     )

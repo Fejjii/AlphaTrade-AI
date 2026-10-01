@@ -23,10 +23,12 @@ from app.analysis.wilder_atr_v1 import (
 )
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
-    cvd_at_close,
     first_slice_baseline_open,
     first_slice_cvd_window,
+    signed_quote_delta_until,
+    snapshot_terminal_event_time,
 )
+from app.market_contracts.derivatives import DerivativeMetric, require_derivative_observations
 from app.market_contracts.enums import (
     Finality,
     FreshnessState,
@@ -45,12 +47,14 @@ from app.market_contracts.errors import (
     StaleEvidenceError,
     WrongInstrumentError,
     WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.first_slice import (
     FIRST_SLICE_CONTEXT_TIMEFRAME,
     FIRST_SLICE_MIN_FINAL_4H,
     FIRST_SLICE_MIN_FINAL_15M,
     FIRST_SLICE_PATTERN_NAME,
+    FIRST_SLICE_SYMBOL,
     FIRST_SLICE_TRIGGER_TIMEFRAME,
 )
 from app.market_contracts.flow import bar_signed_quote_flow
@@ -60,13 +64,14 @@ from app.market_contracts.freshness import (
     live_confirmation_window_open,
 )
 from app.market_contracts.identity import (
-    binance_usdm_btcusdt,
-    bybit_usdt_perpetual_btcusdt,
+    instrument_matches_requested_symbol,
     interval_timedelta,
 )
-from app.market_contracts.observation import PublicMarketObservation
+from app.market_contracts.observation import (
+    PublicMarketObservation,
+    observation_from_derivative,
+)
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
-from app.market_contracts.trades import order_trades
 from app.schemas.common import Timeframe, TradeDirection
 from app.services.canonical_serialization import canonical_sha256
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
@@ -90,9 +95,15 @@ from app.signal_fusion.first_slice_types import (
     FirstSliceEvidenceBundle,
     ManualResistanceEvidence,
 )
+from app.signal_fusion.order_flow_inputs import ORDER_FLOW_ROLES, require_bound_order_flow
 from app.signal_fusion.policy import DEFAULT_FUSION_POLICY_VERSION, FusionPolicy
 from app.signal_fusion.swings import most_recent_confirmed_swing_high
 from app.signal_fusion.types import HalfOpenInterval, RuleResult
+
+DERIVATIVE_ROLES = {
+    EvidenceRole.OPEN_INTEREST: DerivativeMetric.OPEN_INTEREST,
+    EvidenceRole.FUNDING: DerivativeMetric.FUNDING,
+}
 
 _ASSESSMENT_NAMESPACE = UUID("9c4e1d70-2b8a-4f11-9d55-6a1f0c3e8b27")
 _LIVE_STATES = frozenset(
@@ -113,15 +124,43 @@ def evaluate_setup(
     previous_assessment: SetupAssessment | None = None,
     account_context: object | None = None,
     evaluation_params: FirstSliceEvaluationParams | None = None,
+    market_symbol: str | None = None,
+    nested_spec: object | None = None,
+    sfp_spec: object | None = None,
 ) -> SetupAssessment:
     """Evaluate first-slice setup truth. Account/risk context is ignored.
 
     ``evaluation_params`` are the first-slice compatibility adapter. Product
     callers must pass params bound from an approved compiled spec; omitting
     them keeps adapter-level tests on the canonical first-slice constants.
+    ``market_symbol`` is the market under evaluation. Omitting it keeps the
+    canonical first-slice symbol so existing BTC evaluations stay unchanged.
     """
     del account_context
+    if sfp_spec is not None:
+        if nested_spec is not None:
+            raise ValueError("Exactly one strategy family may occupy evaluate_setup")
+        from app.strategy_brain.sfp_runtime.assessment import evaluate_sfp_setup
+
+        return evaluate_sfp_setup(
+            policy=policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            spec=sfp_spec,
+        )
+    if nested_spec is not None:
+        from app.strategy_brain.assessment import evaluate_nested_setup
+
+        return evaluate_nested_setup(
+            policy=policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            spec=nested_spec,
+        )
     params = resolve_evaluation_params(evaluation_params)
+    resolved_market = FIRST_SLICE_SYMBOL if market_symbol is None else market_symbol.strip().upper()
     evaluated = evaluated_at.astimezone(UTC)
     rules = {rule_id: _pending_rule(rule_id) for rule_id in FIRST_SLICE_RULE_IDS}
     window_hash: str | None = None
@@ -150,7 +189,7 @@ def evaluate_setup(
         identity_reason = _classify_contract_error(exc)
         window_hash = _fail_closed_hash(command, reason=identity_reason)
 
-    _evaluate_market_identity(command, rules, identity_reason)
+    _evaluate_market_identity(command, rules, identity_reason, market_symbol=resolved_market)
     series_15m, series_4h = _evaluate_series(command, evidence, evaluated, rules)
     atr_15m = _evaluate_atr(
         series_15m,
@@ -180,6 +219,57 @@ def evaluate_setup(
         params=params,
     )
 
+    try:
+        require_derivative_observations(
+            evidence.market_intelligence,
+            required_metrics=tuple(
+                DERIVATIVE_ROLES[r] for r in policy.required_roles if r in DERIVATIVE_ROLES
+            ),
+            identity=command.evidence_identity,
+            evaluated_at=evaluated,
+        )
+        for role in policy.required_roles:
+            if role not in DERIVATIVE_ROLES:
+                continue
+            item = next(
+                item
+                for item in evidence.market_intelligence
+                if item.metric is DERIVATIVE_ROLES[role]
+            )
+            selected = [
+                obs
+                for obs, selected_role in zip(
+                    command.public_observations, command.selected_roles, strict=True
+                )
+                if selected_role is role
+            ]
+            if selected != [observation_from_derivative(item)]:
+                raise WrongSourceError("Required OI/funding payload is not bound to the command.")
+    except (MarketContractError, ValueError) as exc:
+        rules["complete_warmup"] = _rule(
+            "complete_warmup",
+            False,
+            "required_source_stale"
+            if isinstance(exc, StaleEvidenceError)
+            else "missing_required_evidence",
+        )
+    if any(role in ORDER_FLOW_ROLES for role in policy.required_roles):
+        try:
+            require_bound_order_flow(
+                evidence.order_flow,
+                command=command,
+                required_roles=policy.required_roles,
+                evaluated_at=evaluated,
+                trigger_end=trigger.interval_end if trigger else None,
+            )
+        except (MarketContractError, ValueError) as exc:
+            rules["complete_warmup"] = _rule(
+                "complete_warmup",
+                False,
+                "required_source_stale"
+                if isinstance(exc, StaleEvidenceError)
+                else "missing_required_evidence",
+            )
     quality_ok = all(rules[rule_id].passed for rule_id in QUALITY_RULE_IDS)
     all_passed = all(rules[rule_id].passed for rule_id in FIRST_SLICE_RULE_IDS)
     state, reason_codes = _resolve_state(
@@ -288,15 +378,13 @@ def _evaluate_market_identity(
     command: AssessmentCommand,
     rules: dict[str, RuleResult],
     identity_reason: str | None,
+    *,
+    market_symbol: str,
 ) -> None:
     identity = command.evidence_identity
-    if identity.venue is VenueId.BYBIT:
-        expected_instrument = bybit_usdt_perpetual_btcusdt()
-    else:
-        expected_instrument = binance_usdm_btcusdt()
     venue_ok = identity.venue in {VenueId.BINANCE, VenueId.BYBIT}
     market_ok = identity.market_type is MarketType.PERPETUAL
-    instrument_ok = identity.instrument.instrument_id == expected_instrument.instrument_id
+    instrument_ok = instrument_matches_requested_symbol(identity, market_symbol)
     timeframe_ok = identity.timeframe is FIRST_SLICE_TRIGGER_TIMEFRAME
     fallback_used = identity.provenance.fallback_used
     if identity_reason == "wrong_venue_or_market" or not (venue_ok and market_ok and timeframe_ok):
@@ -707,7 +795,7 @@ def _evaluate_freshness_and_flow(
         )
         if live_window:
             evaluate_freshness(
-                source_time=max(trade.event_timestamp for trade in snapshot.trades),
+                source_time=snapshot_terminal_event_time(snapshot),
                 evaluated_at=evaluated,
                 policy=first_slice_freshness_policy(),
                 require_fresh=True,
@@ -850,12 +938,14 @@ def _evaluate_freshness_and_flow(
                 evidence_role=EvidenceRole.VOLUME,
             )
 
-    ordered = order_trades(list(snapshot.trades))
-    cvd_t = cvd_at_close(
-        ordered, window_start=window_start, bar_end=trigger.interval_end, baseline=Decimal("0")
+    cvd_t = signed_quote_delta_until(
+        snapshot, window_start=window_start, bar_end=trigger.interval_end, baseline=Decimal("0")
     )
-    cvd_s = cvd_at_close(
-        ordered, window_start=window_start, bar_end=swing.bar.interval_end, baseline=Decimal("0")
+    cvd_s = signed_quote_delta_until(
+        snapshot,
+        window_start=window_start,
+        bar_end=swing.bar.interval_end,
+        baseline=Decimal("0"),
     )
     cvd_ok = trigger.high > swing.price and cvd_t < cvd_s
     rules["bearish_cvd_divergence"] = _rule(

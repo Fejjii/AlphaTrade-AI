@@ -11,8 +11,9 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, SerializerFunctionWrapHandler, model_serializer
 
+from app.candidate_alerts.nested import NestedAlertSummary
 from app.market_contracts.enums import MarketType, VenueId
 from app.market_contracts.models import CanonicalModel
 from app.schemas.common import Timeframe, TradeDirection
@@ -29,6 +30,7 @@ MAX_ALERT_TEXT_BYTES_GUARD = 4096
 
 class CandidateAlertKind(StrEnum):
     CANDIDATE_ACTIVE = "CANDIDATE_ACTIVE"
+    NESTED_CONFIRMED = "NESTED_CONFIRMED"
 
 
 class DeliveryChannel(StrEnum):
@@ -95,6 +97,14 @@ class CandidateAlertContent(CanonicalModel):
     evidence_provenance: EvidenceProvenanceSummary
     candidate_id: UUID
     candidate_revision: int = Field(ge=1)
+    nested: NestedAlertSummary | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_serialization(self, handler: SerializerFunctionWrapHandler) -> dict:
+        payload = handler(self)
+        if self.nested is None:
+            payload.pop("nested", None)
+        return payload
 
 
 class CandidateAlertRecipient(CanonicalModel):

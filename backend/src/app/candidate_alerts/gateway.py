@@ -38,10 +38,12 @@ from app.candidate_alerts.contracts import (
 from app.candidate_alerts.errors import CandidateAlertNotFoundError
 from app.candidate_alerts.identity import (
     build_candidate_alert_identity,
+    candidate_alert_intent_id,
     candidate_telegram_revision_id,
     risk_reduction_intent_id,
 )
 from app.candidate_alerts.memory import CandidateAlertStore, InMemoryCandidateAlertStore
+from app.candidate_alerts.nested import NestedAlertSummary, required_evidence_fresh
 from app.services.canonical_serialization import canonical_sha256
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.candidate import Candidate
@@ -122,26 +124,67 @@ class CandidateAlertGateway:
         window: CanonicalEvidenceWindowV1,
         recipient: CandidateAlertRecipient,
         alert_kind: CandidateAlertKind = CandidateAlertKind.CANDIDATE_ACTIVE,
-    ) -> CandidateAlertProjection:
+        nested: NestedAlertSummary | None = None,
+    ) -> CandidateAlertProjection | None:
         """Insert or converge one CandidateAlertIntent and enqueue the Telegram outbox row."""
         canonical = require_canonical_candidate(candidate)
         stored = require_stored_candidate(self._lifecycle, canonical)
         require_matching_canonical_inputs(candidate=stored, assessment=assessment, window=window)
         require_recipient_matches_candidate(candidate=stored, recipient=recipient)
         require_active_binding(self._protocol.store, recipient)
+        from app.schemas.nested_continuation import NESTED_KIND
+
+        if stored.fusion_policy_version == NESTED_KIND:
+            if nested is None:
+                return None
+            if (
+                nested.organization_id != stored.organization_id
+                or nested.strategy_version_id != stored.strategy_version_id
+                or nested.symbol != stored.evidence_identity.instrument.provider_symbol
+                or nested.evidence_at != window.interval.end
+            ):
+                raise ValueError("Nested summary does not match canonical candidate evidence.")
+            if (
+                not required_evidence_fresh(assessment, window, self._clock.now())
+                or stored.state in {CandidateState.INVALIDATED, CandidateState.EXPIRED}
+                or self._clock.now() >= stored.valid_until
+            ):
+                return None
+            alert_kind = CandidateAlertKind.NESTED_CONFIRMED
+        elif nested is not None:
+            raise ValueError("Nested summary requires a Nested candidate.")
         intent = self._build_intent(
             candidate=stored,
             assessment=assessment,
             window=window,
             recipient=recipient,
             alert_kind=alert_kind,
+            nested=nested,
         )
         prior_intent = self._store.get_by_identity_hash(intent.identity_hash)
-        persisted = self._store.get_or_insert(intent)
+        persisted = (
+            prior_intent
+            if nested is not None and prior_intent is not None
+            else self._store.get_or_insert(intent)
+        )
         existing_before = self._protocol.store.get_outbox_by_idempotency(
             organization_id=persisted.organization_id,
             idempotency_key=_outbox_key(persisted.identity_hash),
         )
+        if nested is not None and existing_before is not None:
+            if (
+                existing_before.user_id != recipient.user_id
+                or existing_before.chat_id != recipient.chat_id
+                or existing_before.bot_id != recipient.bot_id
+            ):
+                raise ValueError("Nested episode is bound to a different Telegram recipient.")
+            from app.telegram_security.contracts import OutboxState
+
+            if existing_before.state is OutboxState.SUPPRESSED:
+                return None
+            return CandidateAlertProjection(
+                intent=persisted, outbox=existing_before, converged=True
+            )
         outbox = self._protocol.enqueue_outbound(
             organization_id=persisted.organization_id,
             user_id=persisted.user_id,
@@ -150,7 +193,14 @@ class CandidateAlertGateway:
             text=format_candidate_alert_text(persisted.content),
             idempotency_key=_outbox_key(persisted.identity_hash),
             binding_id=recipient.binding_id,
+            notification_event=_candidate_notification_event(
+                persisted, symbol=stored.evidence_identity.instrument.provider_symbol
+            ),
         )
+        from app.telegram_security.contracts import OutboxState
+
+        if outbox.state is OutboxState.SUPPRESSED:
+            return None
         return CandidateAlertProjection(
             intent=persisted,
             outbox=outbox,
@@ -164,6 +214,8 @@ class CandidateAlertGateway:
         intent: CandidateAlertIntent,
         action: TelegramRemoteAction | str,
     ) -> IssueNonceResult:
+        if intent.alert_kind is CandidateAlertKind.NESTED_CONFIRMED:
+            raise ValueError("Nested informational alerts do not offer actions.")
         resolved = _parse_action(action)
         return self._protocol.issue_action_nonce(
             binding_id=binding_id,
@@ -406,6 +458,7 @@ class CandidateAlertGateway:
         window: CanonicalEvidenceWindowV1,
         recipient: CandidateAlertRecipient,
         alert_kind: CandidateAlertKind,
+        nested: NestedAlertSummary | None = None,
     ) -> CandidateAlertIntent:
         intent_id, identity_hash = build_candidate_alert_identity(
             organization_id=recipient.organization_id,
@@ -425,6 +478,21 @@ class CandidateAlertGateway:
         content = build_candidate_alert_content(
             candidate=candidate, assessment=assessment, window=window
         )
+        if nested is not None:
+            # Episode identity survives scan evidence and candidate revision changes.
+            identity_hash = canonical_sha256(
+                {
+                    "organization_id": recipient.organization_id,
+                    "user_id": recipient.user_id,
+                    "account_id": recipient.account_id,
+                    "strategy_version_id": nested.strategy_version_id,
+                    "setup_id": nested.setup_id,
+                    "alert_kind": CandidateAlertKind.NESTED_CONFIRMED,
+                    "delivery_channel": DeliveryChannel.TELEGRAM,
+                }
+            )
+            intent_id = candidate_alert_intent_id(identity_hash)
+            content = content.model_copy(update={"nested": nested})
         return CandidateAlertIntent(
             intent_id=intent_id,
             identity_hash=identity_hash,
@@ -464,6 +532,28 @@ def _parse_action(action: TelegramRemoteAction | str) -> TelegramRemoteAction:
 
 def _outbox_key(identity_hash: str) -> str:
     return f"{CANDIDATE_ALERT_OUTBOX_PREFIX}{identity_hash}"
+
+
+def _candidate_notification_event(intent: CandidateAlertIntent, *, symbol: str):
+    from app.schemas.telegram_policy import (
+        AlertPhase,
+        NotificationEventType,
+        NotificationSeverity,
+        TelegramNotificationEvent,
+    )
+
+    nested = intent.content.nested
+    return TelegramNotificationEvent(
+        event_type=NotificationEventType.SETUP,
+        severity=NotificationSeverity.INFO,
+        strategy_id=intent.strategy_version_id,
+        symbol=symbol,
+        setup_stage=nested.stage if nested else None,
+        phase=AlertPhase.CONFIRMED,
+        quality=None,
+        duplicate_key=intent.identity_hash,
+        occurred_at=intent.content.trigger_context.interval_end,
+    )
 
 
 def _transition_key(action: TelegramRemoteAction, intent_id: UUID) -> str:

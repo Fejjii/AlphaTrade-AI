@@ -1,0 +1,114 @@
+"""Public contracts for bounded Agent tools. Narrative text is never authority."""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Any, Literal
+from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import Field, field_validator
+
+from app.schemas.agent_paper import AgentPaperTradeIntent
+from app.schemas.backtest import BacktestRunCreate
+from app.schemas.common import PositiveDecimal, StrictModel, Symbol, Timeframe, TradeDirection
+from app.schemas.pretrade import PreTradeAnalyzeBody
+from app.schemas.watcher_watchlist import WatcherWatchlistSlotWrite
+
+
+class ActionRequest(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ActionDescriptor(StrictModel):
+    name: str
+    input_contract: dict[str, Any]
+    authority: str
+    behavior: Literal["read", "propose", "confirm"]
+    required_permissions: list[str]
+    explicit_confirmation_required: bool
+    result_record_identity: str
+    limitations: list[str]
+
+
+class TextInput(StrictModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class JournalCreateInput(TextInput):
+    symbol: Symbol | None = None
+    timeframe: Timeframe | None = None
+    direction: TradeDirection | None = None
+
+
+class JournalNoteInput(TextInput):
+    journal_entry_id: UUID | None = None
+
+
+class StrategyInput(TextInput):
+    strategy_id: UUID | None = None
+    evidence_document_ids: list[UUID] = Field(default_factory=list, max_length=20)
+
+
+class KnowledgeInput(StrategyInput):
+    title: str = Field(default="Trading knowledge proposal", min_length=1, max_length=255)
+    kind: Literal["lesson", "rule", "observation"] = "lesson"
+
+
+class StrategyValidationInput(StrategyInput):
+    backtest: BacktestRunCreate | None = None
+
+
+class WatcherChangeInput(StrictModel):
+    operation: Literal["enable", "disable", "replace", "reorder", "universe"]
+    revision: int | None = Field(default=None, ge=0)
+    position: int | None = Field(default=None, ge=1, le=5)
+    symbol: Symbol | None = None
+    positions: list[int] = Field(default_factory=list, max_length=5)
+    slots: list[WatcherWatchlistSlotWrite] = Field(default_factory=list, max_length=5)
+
+
+class PaperTradeInput(StrictModel):
+    symbol: Symbol | None = None
+    timeframe: Timeframe | None = None
+    direction: TradeDirection | None = None
+    entry: PositiveDecimal | None = None
+    stop: PositiveDecimal | None = None
+    targets: list[PositiveDecimal] = Field(default_factory=list, max_length=10)
+    trade_proposal_id: UUID | None = None
+    pretrade: PreTradeAnalyzeBody | None = None
+
+
+class EmptyInput(StrictModel):
+    pass
+
+
+class PaperExecutionInput(StrictModel):
+    trade: AgentPaperTradeIntent
+
+
+class DailyReviewInput(StrictModel):
+    day: date | None = None
+    relative_day: Literal["today", "yesterday"] = "today"
+    timezone: str = Field(default="UTC", min_length=1, max_length=80)
+    focus: Literal[
+        "summary",
+        "setups",
+        "trades",
+        "blocked",
+        "performance",
+        "mistakes",
+        "lessons",
+        "evidence",
+        "tomorrow",
+    ] = "summary"
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise ValueError("Use an IANA timezone such as Europe/Berlin.") from exc
+        return value

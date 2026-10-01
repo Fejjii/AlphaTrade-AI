@@ -266,6 +266,21 @@ class InMemoryTelegramSecurityStore:
         with self._lock:
             self._audits.append(event)
 
+    def notification_history(
+        self, *, organization_id: UUID, user_id: UUID, bot_id: str, chat_id: str, since: datetime
+    ) -> list[OutboxRecord]:
+        with self._lock:
+            return [
+                row
+                for row in self._outbox.values()
+                if row.organization_id == organization_id
+                and row.user_id == user_id
+                and row.bot_id == bot_id
+                and row.chat_id == chat_id
+                and row.notification_event is not None
+                and (row.created_at >= since or (row.sent_at is not None and row.sent_at >= since))
+            ]
+
     def list_audits(self) -> list[ProtocolAuditEvent]:
         with self._lock:
             return list(self._audits)

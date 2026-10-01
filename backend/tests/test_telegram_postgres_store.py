@@ -629,6 +629,45 @@ def test_postgres_duplicate_outbox_idempotency_converges() -> None:
 
 
 @requires_postgres
+def test_postgres_policy_history_survives_adapter_restart() -> None:
+    from app.schemas.telegram_policy import TelegramNotificationEvent
+
+    factory = persistence_session_factory()
+    clock = FrozenClock()
+    transport = FakeTelegramTransport()
+    protocol = _protocol(factory, clock=clock, transport=transport)
+    _, binding_id = enroll(protocol)
+    facts = TelegramNotificationEvent(
+        event_type="SETUP",
+        severity="INFO",
+        symbol="BTCUSDT",
+        setup_stage="N3",
+        phase="CONFIRMED",
+        duplicate_key="same-episode",
+        occurred_at=clock.now(),
+    )
+    args = {
+        "organization_id": ORG,
+        "user_id": USER,
+        "binding_id": binding_id,
+        "bot_id": BOT,
+        "chat_id": CHAT,
+        "text": "policy alert",
+        "notification_event": facts,
+    }
+    first = protocol.enqueue_outbound(**args, idempotency_key="policy-first")
+    assert protocol.deliver_pending()[0].outbox.state == OutboxState.SENT
+    restarted = _protocol(factory, clock=clock, transport=transport)
+    duplicate = restarted.enqueue_outbound(**args, idempotency_key="policy-duplicate")
+    assert duplicate.state == OutboxState.SUPPRESSED
+    assert duplicate.last_error == "POLICY_DUPLICATE"
+    assert restarted.store.get_outbox(first.outbox_id).notification_event == facts
+    assert restarted.store.get_outbox(first.outbox_id).sent_at == clock.now()
+    assert restarted.deliver_pending() == []
+    assert transport.send_count == 1
+
+
+@requires_postgres
 def test_postgres_outbox_conflicting_idempotency_fails_closed() -> None:
     protocol = _protocol()
     _, binding_id = enroll(protocol)

@@ -15,6 +15,7 @@ from app.core.config import Settings, get_settings
 from app.core.operation_policy import reset_operation_decision
 from app.observability.context import bind_identity, get_or_create_trace_id, set_trace_id
 from app.providers.factory import resolve_market_data_provider
+from app.runtime.canonical import ProductionCanonicalRuntime
 from app.schemas.agent import AgentState
 from app.schemas.chat import AgentMessageResponse
 from app.schemas.common import (
@@ -24,6 +25,7 @@ from app.schemas.common import (
     StrategyProposalStatus,
     Timeframe,
 )
+from app.services.agent_paper_execution import CanonicalPaperEvidencePort
 from app.services.indicator_service import IndicatorService
 from app.services.market_cache import MarketDataCache
 from app.services.market_data_service import MarketDataService
@@ -294,6 +296,7 @@ class AgentService:
             analysis=agent.analysis_detail,
             narrative=agent.narrative_detail,
             narrative_meta=agent.narrative_metadata,
+            paper_execution=agent.paper_execution,
             pending_proposal=pending,
             history_injected=history_injected,
         )
@@ -318,6 +321,9 @@ class AgentService:
             for citation in agent.citations[:12]
         ]
         return {
+            "paper_execution": agent.paper_execution.model_dump(mode="json")
+            if agent.paper_execution
+            else None,
             "intent": agent.intent.value,
             "tool_names": tool_names,
             "citation_source_types": source_types,
@@ -331,6 +337,8 @@ class AgentService:
 def build_agent_service(
     settings: Settings | None = None,
     session: Session | None = None,
+    canonical_runtime: ProductionCanonicalRuntime | None = None,
+    canonical_evidence: CanonicalPaperEvidencePort | None = None,
 ) -> AgentService:
     settings = settings or get_settings()
     risk = RiskService()
@@ -352,5 +360,11 @@ def build_agent_service(
             strategy_service=strategies,
             tool_registry=tools,
             rag_service=rag,
+        )
+    if session is not None and canonical_runtime is not None and canonical_evidence is not None:
+        from app.services.agent_paper_execution import AgentPaperExecutionService
+
+        runtime.paper_execution_service = AgentPaperExecutionService(
+            session, settings, canonical_runtime, canonical_evidence
         )
     return AgentService(runtime=runtime)

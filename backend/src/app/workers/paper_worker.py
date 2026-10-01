@@ -29,6 +29,7 @@ import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Environment, Settings
+from app.observability.process_memory import read_process_memory, release_allocator_memory
 from app.workers.watcher_paper import (
     WatcherPaperCycleReport,
     WatcherPaperRuntime,
@@ -293,20 +294,23 @@ class PaperWorkerSupervisor:
         self._mark_stopped(component)
 
     def _step(self, component: _Component) -> None:
-        if self._stop.is_set():
-            self._mark_stopped(component)
-            return
         try:
-            outcome = component.cycle()
-        except Exception as exc:
-            self._revert(component)
-            self._fail(component, exc)
-            return
-        if component.guard is not None and component.guard.drifted():
-            self._revert(component)
-            self._fail(component, AuthorityDriftError(component.name))
-            return
-        self._succeed(component, outcome)
+            if self._stop.is_set():
+                self._mark_stopped(component)
+                return
+            try:
+                outcome = component.cycle()
+            except Exception as exc:
+                self._revert(component)
+                self._fail(component, exc)
+                return
+            if component.guard is not None and component.guard.drifted():
+                self._revert(component)
+                self._fail(component, AuthorityDriftError(component.name))
+                return
+            self._succeed(component, outcome)
+        finally:
+            release_allocator_memory()
 
     def _revert(self, component: _Component) -> None:
         guard = component.guard
@@ -356,8 +360,11 @@ class PaperWorkerSupervisor:
 
     def _log_health(self) -> None:
         health = self.snapshot()
+        memory = read_process_memory()
         logger.info(
             "paper_worker_health",
+            rss_bytes=memory.rss_bytes,
+            rss_peak_bytes=memory.peak_rss_bytes,
             watcher_status=health.watcher.status,
             watcher_error=health.watcher.last_error,
             watcher_heartbeat=_iso(health.watcher.last_heartbeat_at),

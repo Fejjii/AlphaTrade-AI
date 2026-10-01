@@ -14,9 +14,11 @@ from decimal import Decimal
 from pydantic import AwareDatetime, Field
 
 from app.market_contracts.cursor import TradeStreamSnapshot
+from app.market_contracts.derivatives import DerivativeObservation
 from app.market_contracts.enums import MarketType, VenueId
 from app.market_contracts.models import CanonicalModel, PositiveCanonicalDecimal
 from app.market_contracts.ohlcv import OhlcvBar
+from app.market_contracts.order_flow import OrderFlowObservation
 from app.schemas.common import Timeframe
 from app.signal_fusion.types import ManualLevelRevisionRef
 
@@ -89,3 +91,5 @@ class FirstSliceEvidenceBundle(CanonicalModel):
     resistances: tuple[ManualResistanceEvidence, ...] = ()
     subsequent_final_15m: tuple[OhlcvBar, ...] = ()
     tick_size: PositiveCanonicalDecimal = FIRST_SLICE_TICK_SIZE
+    market_intelligence: tuple[DerivativeObservation, ...] = ()
+    order_flow: OrderFlowObservation | None = None

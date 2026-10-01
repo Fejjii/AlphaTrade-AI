@@ -22,6 +22,7 @@ from app.evidence_pipeline.http_schemas import (
     CanonicalSetupEvidenceRead,
     CanonicalSourceIdentityRead,
 )
+from app.evidence_pipeline.market_intelligence import read_market_intelligence, read_order_flow
 from app.evidence_pipeline.setup_lifetime import SetupLifetimePort
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
@@ -102,6 +103,29 @@ class CanonicalEvidenceService:
         organization_id: UUID,
         symbol: str = "BTCUSDT",
     ) -> CanonicalEvidenceRead:
+        # A source can switch during any read. Discard the entire old-venue
+        # projection before retrying so quote, setup and OI/funding stay aligned.
+        for attempt in range(2):
+            try:
+                initial_instrument = instrument_for_source(self._source, self._catalog, symbol)
+            except WrongInstrumentError as exc:
+                raise ValidationAppError(str(exc), code="unknown_perpetual_instrument") from exc
+            try:
+                result = self._read_once(organization_id=organization_id, symbol=symbol)
+                active = instrument_for_source(self._source, self._catalog, symbol)
+                if active.instrument_id == initial_instrument.instrument_id:
+                    return result
+            except EvidenceSourceSwitchRequiredError:
+                if attempt == 1:
+                    raise
+        raise WrongSourceError("Canonical read source switch did not settle.")
+
+    def _read_once(
+        self,
+        *,
+        organization_id: UUID,
+        symbol: str,
+    ) -> CanonicalEvidenceRead:
         try:
             instrument = instrument_for_source(self._source, self._catalog, symbol)
         except WrongInstrumentError as exc:
@@ -136,6 +160,18 @@ class CanonicalEvidenceService:
             symbol=instrument.provider_symbol,
             evaluated_at=evaluated_at,
         )
+        intelligence = read_market_intelligence(
+            self._source,
+            identity=identity,
+            instrument=instrument,
+            observed_at=evaluated_at,
+        )
+        order_flow = read_order_flow(
+            self._source,
+            identity=identity,
+            instrument=instrument,
+            observed_at=evaluated_at,
+        )
         unavailable = None
         if not price_read.usable_as_current_market_price:
             unavailable = price_reason or price_read.presentation
@@ -147,6 +183,8 @@ class CanonicalEvidenceService:
             source=source_read,
             current_price=price_read,
             setup_evidence=setup_read,
+            market_intelligence=intelligence,
+            order_flow=order_flow,
             timestamps={
                 "evaluated_at": evaluated_at,
                 "current_price_source_time": price_read.source_time,

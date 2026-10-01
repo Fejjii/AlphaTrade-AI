@@ -66,6 +66,7 @@ class BacktestDatasetService:
                     HistoricalCandleModel.open_time <= end_dt,
                 )
                 .order_by(HistoricalCandleModel.open_time.asc())
+                .execution_options(populate_existing=True)
             ).all()
         )
         if not rows:

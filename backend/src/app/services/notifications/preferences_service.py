@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import UserNotificationPreferences
 from app.schemas.audit import AuditRecordCreate
@@ -25,9 +26,26 @@ from app.schemas.notifications import (
     NotificationPreferencesUpdate,
     NotificationTestResult,
 )
+from app.schemas.telegram_policy import TelegramNotificationPolicyV2
 from app.services.audit_service import AuditService
 from app.services.delivery_routing_service import _provider_configured, _provider_env_enabled
 from app.services.risk.settings_service import normalize_timezone
+
+
+def build_telegram_policy_loader(
+    session_factory: sessionmaker[Session],
+) -> Callable[[uuid.UUID, uuid.UUID], TelegramNotificationPolicyV2]:
+    """Load the existing tenant/user preferences at each secured outbox boundary."""
+
+    def load(organization_id: uuid.UUID, user_id: uuid.UUID) -> TelegramNotificationPolicyV2:
+        with session_factory() as session:
+            return (
+                NotificationPreferencesService(session, AuditService(session))
+                .get(organization_id=organization_id, user_id=user_id)
+                .telegram_policy
+            )
+
+    return load
 
 
 class NotificationPreferencesService:
@@ -66,6 +84,14 @@ class NotificationPreferencesService:
         changes: dict[str, str] = {}
         timezone_fallback = False
         for field, value in payload.model_dump(exclude_unset=True).items():
+            if field == "telegram_policy":
+                row.telegram_policy = (
+                    payload.telegram_policy.model_dump(mode="json")
+                    if payload.telegram_policy is not None
+                    else None
+                )
+                changes[field] = "v2" if value is not None else "defaults"
+                continue
             if field == "timezone" and value is not None:
                 tz, fallback = normalize_timezone(str(value))
                 if fallback:
@@ -233,6 +259,7 @@ class NotificationPreferencesService:
             "in_app_enabled": True,
             "webhook_enabled": False,
             "telegram_enabled": False,
+            "telegram_policy": None,
             "min_severity": PaperAlertSeverity.INFO,
             "enabled_alert_types": None,
             "quiet_hours_enabled": False,
@@ -289,6 +316,7 @@ class NotificationPreferencesService:
         return NotificationPreferencesResponse(
             organization_id=row.organization_id,
             user_id=row.user_id,
+            telegram_policy=TelegramNotificationPolicyV2.model_validate(row.telegram_policy or {}),
             in_app_enabled=row.in_app_enabled,
             webhook_enabled=row.webhook_enabled,
             telegram_enabled=row.telegram_enabled,

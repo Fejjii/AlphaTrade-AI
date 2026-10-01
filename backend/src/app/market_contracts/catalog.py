@@ -7,12 +7,16 @@ Spot and Coin-M identities cannot be registered.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.market_contracts.enums import ContractStyle, MarketType, ProductFamily, VenueId
 from app.market_contracts.errors import WrongInstrumentError, WrongMarketError
 from app.market_contracts.identity import (
     BYBIT_BTC_CONTRACT_MULTIPLIER,
     InstrumentIdentity,
     binance_usdm_btcusdt,
+    binance_usdm_perpetual,
+    bybit_usdt_perpetual,
 )
 
 
@@ -74,9 +78,9 @@ def _require_usdm_perpetual(instrument: InstrumentIdentity) -> None:
         return
     if instrument.venue is VenueId.BYBIT:
         if instrument.contract_multiplier != BYBIT_BTC_CONTRACT_MULTIPLIER:
-            raise WrongMarketError("Bybit BTCUSDT perpetual contract multiplier must stay 1.")
-        if instrument.provider_symbol != "BTCUSDT":
-            raise WrongInstrumentError("Bybit perpetual evidence catalog is BTCUSDT only.")
+            raise WrongMarketError("Bybit linear USDT perpetual contract multiplier must stay 1.")
+        if not instrument.provider_symbol.endswith("USDT"):
+            raise WrongInstrumentError("Bybit perpetual evidence requires a USDT symbol.")
         return
     raise WrongMarketError("Perpetual evidence catalog venue is not a contracted source.")
 
@@ -86,19 +90,50 @@ def default_perpetual_catalog() -> PerpetualInstrumentCatalog:
     return PerpetualInstrumentCatalog()
 
 
+def catalog_for_symbols(
+    symbols: Sequence[str],
+    *,
+    venue: VenueId,
+) -> PerpetualInstrumentCatalog:
+    """Build one single-venue catalog. Does not change the BTCUSDT default."""
+
+    if venue is VenueId.BINANCE:
+        factory = binance_usdm_perpetual
+    elif venue is VenueId.BYBIT:
+        factory = bybit_usdt_perpetual
+    else:
+        raise WrongMarketError("Perpetual evidence catalog venue is not a contracted source.")
+    instruments: list[InstrumentIdentity] = []
+    seen: set[str] = set()
+    for raw in symbols:
+        instrument = factory(raw)
+        if instrument.provider_symbol in seen:
+            continue
+        seen.add(instrument.provider_symbol)
+        instruments.append(instrument)
+    return PerpetualInstrumentCatalog(enabled=tuple(instruments))
+
+
 def instrument_for_source(
     source: object,
     catalog: PerpetualInstrumentCatalog,
     symbol: str,
 ) -> InstrumentIdentity:
-    """Prefer the source's active instrument so a venue switch keeps its own identity."""
+    """Prefer the source's active instrument so a venue switch keeps its own identity.
 
+    A source instrument is used only when its provider symbol is the requested
+    symbol. A different market is never returned in its place.
+    """
+
+    token = symbol.strip().upper()
+    scoped = getattr(source, "active_instrument_for", None)
+    if callable(scoped):
+        instrument = scoped(token)
+        if isinstance(instrument, InstrumentIdentity) and instrument.provider_symbol == token:
+            return instrument
     active = getattr(source, "active_instrument", None)
     if callable(active):
         instrument = active()
-        if (
-            isinstance(instrument, InstrumentIdentity)
-            and instrument.provider_symbol == symbol.strip().upper()
-        ):
+        if isinstance(instrument, InstrumentIdentity) and instrument.provider_symbol == token:
             return instrument
     return catalog.require(symbol)

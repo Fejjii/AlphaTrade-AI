@@ -34,6 +34,7 @@ from app.api.routes import (
     execution,
     health,
     human_vs_system,
+    interactive_agent,
     journal,
     knowledge,
     learning_analytics,
@@ -53,6 +54,8 @@ from app.api.routes import (
     providers,
     research_validation,
     risk,
+    strategy_analytics,
+    strategy_brain,
     strategy_library,
     strategy_modules,
     strategy_quality,
@@ -228,6 +231,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for r in (
         health.router,
+        interactive_agent.router,
         metrics.router,
         providers.router,
         auth.router,
@@ -237,6 +241,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         market.router,
         strategy_modules.router,
         strategy_library.router,
+        strategy_analytics.router,
+        strategy_brain.router,
         paper_validation.router,
         research_validation.router,
         tradingview.router,

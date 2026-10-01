@@ -53,12 +53,16 @@ class EvidenceRole(StrEnum):
     CONTEXT_OHLCV = "context_ohlcv"
     TRIGGER = "trigger"
     SWING = "swing"
+    CVD_5M = "cvd_5m"
+    ORDER_FLOW_5M = "order_flow_5m"
     CVD_WINDOW = "cvd_window"
     SIGNED_FLOW = "signed_flow"
     VOLUME = "volume"
     STRUCTURE = "structure"
     TRADE_EVENT = "trade_event"
     ORDER_BOOK = "order_book"
+    OPEN_INTEREST = "open_interest"
+    FUNDING = "funding"
     PUBLIC_EXTERNAL_SIGNAL = "public_external_signal"
 
 

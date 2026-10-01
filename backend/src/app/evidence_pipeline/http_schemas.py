@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import Field
 
+from app.market_contracts.derivatives import DerivativeObservation
+from app.market_contracts.order_flow import OrderFlowObservation
 from app.schemas.common import StrictModel
 
 
@@ -80,3 +82,5 @@ class CanonicalEvidenceRead(StrictModel):
     setup_evidence: CanonicalSetupEvidenceRead
     timestamps: dict[str, datetime | None]
     unavailable_reason: str | None = None
+    market_intelligence: tuple[DerivativeObservation, ...] = ()
+    order_flow: OrderFlowObservation | None = None

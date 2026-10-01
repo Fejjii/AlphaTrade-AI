@@ -12,6 +12,13 @@ from app.evidence_pipeline.canonical import (
     timeframe_identity,
 )
 from app.evidence_pipeline.current_price import quote_current_price
+from app.evidence_pipeline.market_intelligence import (
+    DERIVATIVE_ROLES,
+    ORDER_FLOW_ROLES,
+    read_market_intelligence,
+    read_order_flow,
+    require_market_intelligence,
+)
 from app.evidence_pipeline.setup_lifetime import (
     SetupLifetimePort,
     SetupLifetimeStore,
@@ -31,11 +38,13 @@ from app.market_contracts.catalog import (
     default_perpetual_catalog,
     instrument_for_source,
 )
-from app.market_contracts.cursor import TradeStreamAssembler
+from app.market_contracts.cursor import TradeStreamAssembler, TradeStreamSnapshot
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
     first_slice_baseline_open,
     first_slice_cvd_window,
+    snapshot_terminal_event_time,
+    snapshot_terminal_price,
 )
 from app.market_contracts.enums import DataCompleteness, Finality, FreshnessState, MarketType
 from app.market_contracts.errors import (
@@ -60,11 +69,16 @@ from app.market_contracts.freshness import (
     first_slice_freshness_policy,
     live_confirmation_window_open,
 )
-from app.market_contracts.identity import EvidenceMarketIdentity
+from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
+from app.market_contracts.observation import (
+    observation_from_derivative,
+    observation_from_order_flow,
+)
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
+from app.market_contracts.order_flow import require_order_flow
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
-from app.signal_fusion.enums import EvidenceAdapterKind
+from app.signal_fusion.enums import EvidenceAdapterKind, EvidenceRole
 from app.signal_fusion.first_slice_types import (
     FIRST_SLICE_EXPIRY_BARS,
     FirstSliceEvidenceBundle,
@@ -214,21 +228,14 @@ class FirstSliceEvidenceAssembler:
             f"{instrument.instrument_id}:{self._source.name}:"
             f"{window_start.isoformat()}:{window_end.isoformat()}",
         )
-        batch = self._source.fetch_ordered_trades(
+        snapshot = self._load_trade_snapshot(
             identity=trigger_identity,
             instrument=instrument,
-            start=window_start,
-            end=window_end,
-            source_connection_id=lineage,
-            receive_at=clock,
+            window_start=window_start,
+            window_end=window_end,
+            lineage=lineage,
+            clock=clock,
         )
-        assembler = TradeStreamAssembler(
-            trigger_identity,
-            connected_at=clock,
-            connection_identity=lineage,
-            expected_contiguous_count=len(batch.trades),
-        )
-        snapshot = assembler.ingest_batch(batch, observed_at=clock)
         live_window = live_confirmation_window_open(
             closed_interval_end=trigger.interval_end,
             evaluated_at=clock,
@@ -248,7 +255,7 @@ class FirstSliceEvidenceAssembler:
             require_live_freshness=live_window,
         )
         freshness = evaluate_freshness(
-            source_time=cvd.event_time_max or snapshot.trades[-1].event_timestamp,
+            source_time=cvd.event_time_max or snapshot_terminal_event_time(snapshot),
             evaluated_at=clock,
             policy=first_slice_freshness_policy(),
             require_fresh=live_window,
@@ -289,6 +296,64 @@ class FirstSliceEvidenceAssembler:
             tenant_assertions=tenant_assertions,
             manual_level_revision=selected_revision,
         )
+        required_metrics = tuple(
+            DERIVATIVE_ROLES[role]
+            for role in bound_policy.required_roles
+            if role in DERIVATIVE_ROLES
+        )
+        intelligence = read_market_intelligence(
+            self._source,
+            identity=trigger_identity,
+            instrument=instrument,
+            observed_at=clock,
+            metrics=required_metrics,
+        )
+        require_market_intelligence(
+            intelligence,
+            required_roles=bound_policy.required_roles,
+            identity=trigger_identity,
+            evaluated_at=clock,
+        )
+        if intelligence:
+            command = command.model_copy(
+                update={
+                    "mandatory_evidence_roles": tuple(
+                        dict.fromkeys(
+                            (*command.mandatory_evidence_roles, *bound_policy.required_roles)
+                        )
+                    ),
+                    "public_observations": command.public_observations
+                    + tuple(observation_from_derivative(item) for item in intelligence),
+                    "selected_roles": command.selected_roles
+                    + tuple(
+                        role for role in bound_policy.required_roles if role in DERIVATIVE_ROLES
+                    ),
+                }
+            )
+        order_flow = None
+        flow_roles = tuple(role for role in bound_policy.required_roles if role in ORDER_FLOW_ROLES)
+        if flow_roles:
+            order_flow = read_order_flow(
+                self._source,
+                identity=trigger_identity,
+                instrument=instrument,
+                observed_at=clock,
+                window_end=trigger.interval_end,
+            )
+            require_order_flow(order_flow, identity=trigger_identity, evaluated_at=clock)
+            command = command.model_copy(
+                update={
+                    "mandatory_evidence_roles": tuple(
+                        dict.fromkeys((*command.mandatory_evidence_roles, *flow_roles))
+                    ),
+                    "public_observations": command.public_observations
+                    + tuple(
+                        observation_from_order_flow(order_flow, cvd=role is EvidenceRole.CVD_5M)
+                        for role in flow_roles
+                    ),
+                    "selected_roles": command.selected_roles + flow_roles,
+                }
+            )
         window = evidence_window_from_assessment_command(command)
         bundle = FirstSliceEvidenceBundle(
             bars_15m=tuple(series_15m.bars),
@@ -296,6 +361,8 @@ class FirstSliceEvidenceAssembler:
             snapshot=snapshot,
             subsequent_final_15m=subsequent,
             resistances=resistances,
+            market_intelligence=intelligence,
+            order_flow=order_flow,
         )
         completeness = CompletenessReport(
             ohlcv_15m=DataCompleteness.COMPLETE,
@@ -354,8 +421,49 @@ class FirstSliceEvidenceAssembler:
             evidence_window=window,
             evidence_window_hash=window.content_hash,
             connection_id=lineage,
-            evaluation_mark=snapshot.trades[-1].price,
+            evaluation_mark=snapshot_terminal_price(snapshot),
         )
+
+    def _load_trade_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        window_start: datetime,
+        window_end: datetime,
+        lineage: UUID,
+        clock: datetime,
+    ) -> TradeStreamSnapshot:
+        """Load the scan window. Binance reduces it; replay keeps the trade list."""
+
+        reduce = getattr(self._source, "reduce_ordered_trades", None)
+        if callable(reduce):
+            reduced = reduce(
+                identity=identity,
+                instrument=instrument,
+                start=window_start,
+                end=window_end,
+                source_connection_id=lineage,
+                receive_at=clock,
+            )
+            if not isinstance(reduced, TradeStreamSnapshot):
+                raise WrongSourceError("Trade reduction did not return a snapshot.")
+            return reduced
+        batch = self._source.fetch_ordered_trades(
+            identity=identity,
+            instrument=instrument,
+            start=window_start,
+            end=window_end,
+            source_connection_id=lineage,
+            receive_at=clock,
+        )
+        assembler = TradeStreamAssembler(
+            identity,
+            connected_at=clock,
+            connection_identity=lineage,
+            expected_contiguous_count=len(batch.trades),
+        )
+        return assembler.ingest_batch(batch, observed_at=clock)
 
     def _default_clock(self) -> datetime:
         if self._clock is not None:

@@ -1956,4 +1956,53 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-069
 - Note: Do not deploy, arm Watcher, or activate Telegram.
 
+### AT-088 — Interactive agent foundation
+- Priority: P1 · Status: DONE · Dependencies: conversation, journal, strategy,
+  and knowledge stores · Risk: Medium (chat must not gain a live-trading path)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`; no
+  deploy; no Render change; no Watcher or Telegram activation
+- Goal: Backend orchestration for an Agent surface that proposes structured
+  actions and reads existing authorities.
+- Branch: `cursor/interactive-agent-foundation-4807`
+- Alembic: unchanged. No new revision.
+- ADR: AT-ADR-074
+- Remaining: screenshot and voice implementations, and default Qdrant retrieval.
+  The simplified UI is integrated on the release-candidate branch. Voice and
+  screenshot stay unimplemented.
+- Note: Do not deploy or enable real trading.
+
+### AT-089 — Reviewed paper release candidate
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-088 and the enrollment
+  and worker-memory branches · Risk: Medium (integration must not widen
+  trading authority)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`; no
+  deploy; no Render change; no additional symbols; no Telegram arm
+- Goal: Integrate PR 146, PR 149, PR 145, and PR 147. Exclude PR 148.
+- Branch: `cursor/release-candidate-146-149-145-147-5354`
+- Alembic: head `a8c3e1b94d20` must be applied before the paper worker starts.
+  Staging is not migrated by this task.
+- ADR: AT-ADR-072, AT-ADR-073, AT-ADR-074, AT-ADR-075
+- Note: Do not merge to main, deploy, or enable real trading.
+
+### AT-090 — Configurable five-symbol paper Watcher
+- Priority: P1 · Status: DONE · Dependencies: PR 150 head
+  `33287b6a872beed9846828853930e867d1c892c2` · Risk: Medium (market identity)
+- Safety classification: Paper only. Real trading stays disabled. No Render
+  deploy, no Telegram arm, no Alembic migration.
+- Goal: One Watcher process with five configurable slots. BTC is no longer the
+  only valid market identity. Unsupported symbols fail closed.
+- Branch: `cursor/watchlist_v1`
+- ADR: AT-ADR-076
+- Validation: `tests/test_watcher_five_symbol_watchlist.py` (15 passed),
+  `tests/test_watcher_paper_runtime.py`, `tests/test_bybit_usdt_perpetual_evidence.py`,
+  `tests/test_phase6_fusion_evaluator.py::test_wrong_instrument_fail_closed`,
+  `tests/test_phase6_fusion_evaluator.py::test_stale_evidence_fail_closed`,
+  frontend `WatcherWatchlistSection.test.tsx` and settings page tests (8 passed).
+  mypy on the touched modules reported no issues. `tsc --noEmit` passed.
+- Blocker: Bybit `instruments-info` returned HTTP 403, so Bybit listings for
+  the non-BTC symbols are not proven. Binance USD-M rows for all five symbols
+  were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
+  returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
+- Note: Do not merge automatically. Do not deploy.
+
 
