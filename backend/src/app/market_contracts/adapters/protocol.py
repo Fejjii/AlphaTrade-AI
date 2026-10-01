@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from app.market_contracts.derivatives import DerivativeMetric, DerivativeObservation
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries
 from app.market_contracts.trades import OrderedTradeBatch
@@ -14,10 +15,19 @@ from app.schemas.common import Timeframe
 
 
 class PerpetualMarketSource(Protocol):
-    """Read-only source of perpetual OHLCV and aggregate trades."""
+    """Read-only source of perpetual OHLCV, aggregate trades, OI and funding."""
 
     name: str
     kind: ProviderKind
+
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation: ...
 
     def fetch_closed_ohlcv(
         self,

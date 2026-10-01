@@ -59,6 +59,8 @@ class EvidenceRole(StrEnum):
     STRUCTURE = "structure"
     TRADE_EVENT = "trade_event"
     ORDER_BOOK = "order_book"
+    OPEN_INTEREST = "open_interest"
+    FUNDING = "funding"
     PUBLIC_EXTERNAL_SIGNAL = "public_external_signal"
 
 

@@ -12,6 +12,7 @@ from uuid import UUID
 
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
 from app.market_contracts.cursor import TradeStreamSnapshot
+from app.market_contracts.derivatives import DerivativeMetric, DerivativeObservation
 from app.market_contracts.errors import (
     EvidenceSourceSwitchRequiredError,
     RateLimitedError,
@@ -83,6 +84,25 @@ class FailoverPerpetualSource:
         if self._using_secondary:
             return self._secondary_instrument
         return self._primary_instrument
+
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation:
+        self._require_active_identity(identity, instrument)
+        try:
+            return self.active_source.fetch_derivative_observation(
+                identity=identity,
+                instrument=instrument,
+                metric=metric,
+                observed_at=observed_at,
+            )
+        except _SWITCH_ERRORS as exc:
+            self._switch(exc)
 
     def fetch_closed_ohlcv(
         self,
