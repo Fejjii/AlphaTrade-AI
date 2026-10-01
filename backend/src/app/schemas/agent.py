@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.agent_paper import AgentPaperResult
 from app.schemas.analysis import TradingAnalysisDetail
 from app.schemas.audit import AuditEvent
 from app.schemas.common import Confidence, RiskSeverity, SafetyVerdict, Symbol, Timeframe
@@ -53,6 +54,8 @@ class Intent(StrEnum):
     MARKET_ANALYSIS = "market_analysis"
     SETUP_ANALYSIS = "setup_analysis"
     PLAN_TRADE = "plan_trade"
+    PREPARE_PAPER_TRADE = "prepare_paper_trade"
+    CONFIRM_PAPER_EXECUTION = "confirm_paper_execution"
     REVIEW_TRADE = "review_trade"
     MANAGE_POSITION = "manage_position"
     JOURNAL = "journal"
@@ -274,6 +277,7 @@ class AgentState(BaseModel):
 
     # Output
     citations: list[Citation] = Field(default_factory=list)
+    paper_execution: AgentPaperResult | None = None
     final_answer: str | None = None
     analysis_detail: TradingAnalysisDetail | None = None
     narrative_detail: TradingNarrativeDetail | None = None

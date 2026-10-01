@@ -19,6 +19,7 @@ from app.interactive_agent.actions import (
     JournalCreateInput,
     JournalNoteInput,
     KnowledgeInput,
+    PaperExecutionInput,
     PaperTradeInput,
     StrategyInput,
     StrategyValidationInput,
@@ -37,6 +38,7 @@ from app.schemas.common import DocumentSourceType, RiskAction, StrictModel
 from app.schemas.journal import JournalEntryUpdate
 from app.schemas.rag import IngestDocumentRequest
 from app.schemas.watcher_watchlist import WatcherWatchlistReplace
+from app.services.agent_paper_execution import AgentPaperExecutionService
 from app.services.audit_service import AuditService
 from app.services.canonical_serialization import canonical_sha256
 from app.services.journal_service import JournalService
@@ -58,6 +60,7 @@ def propose_action(
     inputs: StrictModel,
     conversation: Conversation,
     source_message_id: UUID,
+    paper_execution: AgentPaperExecutionService | None = None,
 ) -> StructuredActionProposal:
     """Draft one action, with no application or execution permission."""
     linked: UUID | None = None
@@ -179,6 +182,16 @@ def propose_action(
             payload["provenance"] = provenance
     elif isinstance(inputs, WatcherChangeInput):
         payload, missing = _watcher_preview(session, conversation.organization_id, inputs)
+    elif isinstance(inputs, PaperExecutionInput):
+        if paper_execution is None:
+            raise TradingPolicyError("Canonical paper execution authority is unavailable.")
+        result = paper_execution.prepare(
+            inputs.trade,
+            organization_id=conversation.organization_id,
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+        )
+        payload["paper_execution"] = result.model_dump(mode="json")
     elif isinstance(inputs, PaperTradeInput):
         payload = _paper_preview(session, conversation, inputs)
         missing = [
@@ -197,7 +210,15 @@ def propose_action(
     summary += f"Missing fields: {', '.join(missing)}." if missing else "Ready for explicit review."
     if tool.name == "paper_trade.propose":
         summary += f" Risk: {payload['risk_state']}. No execution permission."
-    return build_proposal(
+    if isinstance(inputs, PaperExecutionInput):
+        summary += (
+            f" PAPER {result.plan.side.value} {inputs.trade.symbol}, "
+            f"quantity {result.plan.quantity.value}, entry {inputs.trade.entry}, "
+            f"stop {inputs.trade.stop}, targets {', '.join(map(str, inputs.trade.targets))}; "
+            f"maximum loss {result.plan.risk_and_exits.maximum_loss.value} USDT. "
+            "Confirm this exact proposal hash to execute through the canonical paper gateway."
+        )
+    proposal = build_proposal(
         conversation_id=conversation.id,
         organization_id=conversation.organization_id,
         user_id=conversation.user_id,
@@ -210,6 +231,11 @@ def propose_action(
         authority=tool.authority,
         linked_strategy_proposal_id=linked,
     )
+    if isinstance(inputs, PaperExecutionInput):
+        # Canonical plan preparation changes plan/lineage records, while the
+        # paper action remains unapproved and unexecuted until confirmation.
+        proposal = proposal.model_copy(update={"authority_mutated": True})
+    return proposal
 
 
 def _validation_preview(

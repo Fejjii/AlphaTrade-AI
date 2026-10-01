@@ -55,3 +55,25 @@ class LossAcceptanceResult(StrictModel):
     status: str
     recommendation: str
     can_execute_paper: bool
+
+
+class PaperPositionSizingRequest(StrictModel):
+    """Server-bound cash budget and instrument policy; never accepted from chat."""
+
+    approved_risk_amount: Decimal = Field(gt=0)
+    maximum_notional: Decimal = Field(gt=0)
+    entry: Decimal = Field(gt=0)
+    stop: Decimal = Field(gt=0)
+    lot_size: Decimal = Field(gt=0)
+    minimum_quantity: Decimal = Field(gt=0)
+    minimum_notional: Decimal = Field(ge=0)
+    fee_allowance: Decimal = Field(default=Decimal("0"), ge=0)
+    funding_allowance: Decimal = Field(default=Decimal("0"), ge=0)
+    slippage_allowance: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class PaperPositionSizingResult(StrictModel):
+    raw_quantity: Decimal
+    quantity: Decimal
+    maximum_loss: Decimal
+    conservative_remainder: Decimal

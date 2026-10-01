@@ -797,11 +797,20 @@ def test_agent_cannot_enable_real_trading(
 
 
 def test_package_has_no_real_trading_enablement() -> None:
+    import ast
+
     root = Path(__file__).resolve().parents[1] / "src" / "app" / "interactive_agent"
     text = "\n".join(path.read_text(encoding="utf-8") for path in root.glob("*.py"))
     assert "enable_real_trading = True" not in text
     assert "real_trading_enabled = True" not in text
-    assert "ExecutionService" not in text
+    # The Agent may orchestrate the governed paper adapter; it must not import
+    # or directly call the execution authority outside that adapter's gates.
+    for path in root.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom):
+                assert node.module != "app.services.execution_service"
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                assert node.func.attr not in {"execute_paper_plan", "apply_paper_plan_fill"}
 
 
 def test_agent_http_journal_confirm_and_capability_catalog(
