@@ -20,6 +20,7 @@ from app.db.models import CompiledSetupDefinition, UserStrategyVersion
 from app.evidence_pipeline.canonical import MANDATORY_ROLES
 from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
 from app.schemas.common import SetupCompileStatus, StrategyLifecycleState
+from app.schemas.nested_continuation import NESTED_KIND, NestedContinuationSpec
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.strategy_pattern_spec import FirstSliceAuthoredPatternSpec
 from app.schemas.structured_rules import StructuredRules
@@ -27,7 +28,7 @@ from app.services.setup_ast_compiler import compile_from_authored
 from app.services.strategy_versioning import CrossTenantStrategyError, StrategyVersioningService
 from app.signal_fusion.adapters import AssessmentCommand
 from app.signal_fusion.assessment import SetupAssessment
-from app.signal_fusion.enums import SetupIdentityKind
+from app.signal_fusion.enums import EvidenceRole, SetupIdentityKind
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.policy import (
@@ -41,7 +42,7 @@ from app.signal_fusion.strategy_evaluation_policy import (
     build_executable_strategy_policy,
     evaluate_canonical_strategy,
 )
-from app.signal_fusion.types import ExecutableSetupRef, RuleWeight
+from app.signal_fusion.types import ExecutableSetupRef, RoleTimeframeBinding, RuleWeight
 
 
 def resolve_executable_strategy_policy(
@@ -129,6 +130,7 @@ def resolve_executable_strategy_policy(
         organization_id=organization_id,
         strategy_version_id=version.id,
         compiled=compiled,
+        spec=spec,
     )
     return build_executable_strategy_policy(
         organization_id=organization_id,
@@ -174,13 +176,17 @@ def evaluate_canonical_strategy_for_version(
     )
 
 
-def _parse_authored_spec(version: UserStrategyVersion) -> FirstSliceAuthoredPatternSpec:
+def _parse_authored_spec(
+    version: UserStrategyVersion,
+) -> FirstSliceAuthoredPatternSpec | NestedContinuationSpec:
     if version.pattern_spec is None:
         raise StrategyEvaluationPolicyError(
             "Executable evaluation requires a stored pattern_spec on the version.",
             reason_code="unsupported_strategy_rule",
         )
     try:
+        if version.pattern_spec.get("kind") == NESTED_KIND:
+            return NestedContinuationSpec.model_validate(version.pattern_spec)
         return FirstSliceAuthoredPatternSpec.model_validate(version.pattern_spec)
     except ValidationError as exc:
         raise StrategyEvaluationPolicyError(
@@ -194,18 +200,28 @@ def _fusion_policy_for_compiled(
     organization_id: UUID,
     strategy_version_id: UUID,
     compiled: CompiledSetupDefinition,
+    spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec,
 ) -> FusionPolicy:
     setup = ExecutableSetupRef(
         setup_definition_id=compiled.id,
         kind=SetupIdentityKind.COMPILED_SETUP_DEFINITION,
         content_hash=compiled.content_hash,
     )
+    nested = isinstance(spec, NestedContinuationSpec)
     return build_fusion_policy(
-        policy_version=DEFAULT_FUSION_POLICY_VERSION,
+        role_timeframes=(
+            RoleTimeframeBinding(role=EvidenceRole.TRIGGER_OHLCV, timeframe=spec.trigger_timeframe),
+            RoleTimeframeBinding(role=EvidenceRole.STRUCTURE, timeframe=spec.trigger_timeframe),
+        )
+        if nested
+        else None,
+        policy_version=NESTED_KIND if nested else DEFAULT_FUSION_POLICY_VERSION,
         organization_id=organization_id,
         strategy_version_id=strategy_version_id,
         executable_setup=setup,
-        required_roles=MANDATORY_ROLES,
+        required_roles=(EvidenceRole.TRIGGER_OHLCV, EvidenceRole.STRUCTURE)
+        if nested
+        else MANDATORY_ROLES,
         thresholds=FusionThresholds(
             confirmation_score=Decimal("1.0"),
             weights=(RuleWeight(rule_id="mandatory_evidence", weight=Decimal("1.0")),),

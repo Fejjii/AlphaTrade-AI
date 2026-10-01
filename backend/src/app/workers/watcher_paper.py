@@ -813,6 +813,11 @@ class WatcherPaperRuntime:
             ),
         )
         report = self._continue_paper_loop(session, target, report, evidence)
+        from app.strategy_brain.assembly import record_paper_link
+
+        record_paper_link(
+            session, target=target, report=report, evidence=evidence, now=self._clock.now()
+        )
         self._notify_scan(report)
         observe_scan(report.reason_code)
         logger.info(
@@ -877,7 +882,13 @@ class WatcherPaperRuntime:
         return self._store.put_policy_version(hashed)
 
     def _idempotency_key(self, target: PaperScanTarget) -> str:
-        closed = last_closed_interval_end(self._clock.now())
+        from app.market_contracts.identity import interval_timedelta
+        from app.schemas.common import Timeframe
+
+        seconds = int(interval_timedelta(Timeframe(target.timeframe)).total_seconds())
+        closed = datetime.fromtimestamp(
+            int(self._clock.now().timestamp()) // seconds * seconds, UTC
+        )
         stamp = closed.strftime("%Y%m%dT%H%M%SZ")
         return f"watcher-paper:{target.policy_id}:{target.symbol}:{stamp}"
 

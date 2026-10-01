@@ -216,5 +216,5 @@ def _target_from_executable(
         compiled_content_hash=executable.compiled_content_hash,
         fusion_policy_version=str(executable.fusion_policy.policy_version),
         symbol=symbol.strip().upper(),
-        timeframe=FIRST_SLICE_TIMEFRAME,
+        timeframe=executable.authored_spec.trigger_timeframe,
     )

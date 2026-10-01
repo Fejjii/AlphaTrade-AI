@@ -23,6 +23,7 @@ class AgentCapability(StrEnum):
 
     GENERAL_CONVERSATION = "general_conversation"
     MARKET_AND_PORTFOLIO = "market_and_portfolio"
+    STRATEGY_BRAIN = "strategy_brain"
     STRATEGY_RETRIEVAL = "strategy_retrieval"
     STRATEGY_AUTHORING = "strategy_authoring"
     PATTERN_AND_RULE_CAPTURE = "pattern_and_rule_capture"

@@ -1,5 +1,7 @@
 "use client";
 
+import { NestedContinuationPanel } from "@/components/strategies/NestedContinuationPanel";
+
 import { useCallback } from "react";
 
 import { ErrorState, LoadingState } from "@/components/states";
@@ -26,5 +28,5 @@ export default function StrategiesPage() {
   if (error || !data) {
     return <ErrorState message={error ?? "Strategies unavailable"} onRetry={() => void reload()} />;
   }
-  return <TraderStrategiesView data={data} />;
+  return <><NestedContinuationPanel /><TraderStrategiesView data={data} /></>;
 }

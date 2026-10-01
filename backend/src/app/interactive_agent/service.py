@@ -689,6 +689,8 @@ def _reply(
             f"Drafted {proposal.artifact_kind.value} proposal {proposal.proposal_id}. "
             f"{proposal.summary}"
         )
+    elif classification.capability is AgentCapability.STRATEGY_BRAIN:
+        text = bundle.brain_summary or "No stored setup evidence was available."
     elif classification.capability is AgentCapability.STRATEGY_RETRIEVAL:
         text = _strategy_reply(strategies)
     elif classification.capability is AgentCapability.KNOWLEDGE_RETRIEVAL:

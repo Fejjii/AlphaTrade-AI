@@ -207,6 +207,7 @@ class StrategyId(StrEnum):
     PROFIT_PROTECTION = "profit_protection"
     GREEN_DAY_GUARD = "green_day_guard"
     MENTAL_CAPITAL_GUARD = "mental_capital_guard"
+    NESTED_CONTINUATION = "nested_continuation"
     MANUAL_REVIEW = "manual_review"
 
 
@@ -1122,6 +1123,11 @@ class StrategyProposalStatus(StrEnum):
 class StrategyLifecycleState(StrEnum):
     """Append-only lifecycle projection. Not Pattern Card content."""
 
+    OBSERVATION = "observation"
+    HYPOTHESIS = "hypothesis"
+    TESTING = "testing"
+    PAPER_ACTIVE = "paper_active"
+    PAUSED = "paused"
     DRAFT = "draft"
     STRUCTURED = "structured"
     HISTORICALLY_VALIDATED = "historically_validated"

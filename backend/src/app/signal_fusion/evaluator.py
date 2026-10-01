@@ -114,6 +114,7 @@ def evaluate_setup(
     account_context: object | None = None,
     evaluation_params: FirstSliceEvaluationParams | None = None,
     market_symbol: str | None = None,
+    nested_spec: object | None = None,
 ) -> SetupAssessment:
     """Evaluate first-slice setup truth. Account/risk context is ignored.
 
@@ -124,6 +125,16 @@ def evaluate_setup(
     canonical first-slice symbol so existing BTC evaluations stay unchanged.
     """
     del account_context
+    if nested_spec is not None:
+        from app.strategy_brain.assessment import evaluate_nested_setup
+
+        return evaluate_nested_setup(
+            policy=policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            spec=nested_spec,
+        )
     params = resolve_evaluation_params(evaluation_params)
     resolved_market = FIRST_SLICE_SYMBOL if market_symbol is None else market_symbol.strip().upper()
     evaluated = evaluated_at.astimezone(UTC)

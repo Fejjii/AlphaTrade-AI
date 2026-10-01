@@ -93,11 +93,11 @@ class AssembledCanonicalEvidence(CanonicalModel):
     evaluated_at: datetime
     identity: EvidenceMarketIdentity
     trigger_bar: OhlcvBar
-    context_bar: OhlcvBar
+    context_bar: OhlcvBar | None
     series_15m: ClosedOhlcvSeries
-    series_4h: ClosedOhlcvSeries
-    cvd: CvdWindow
-    signed_flow: SignedQuoteFlow
+    series_4h: ClosedOhlcvSeries | None
+    cvd: CvdWindow | None
+    signed_flow: SignedQuoteFlow | None
     current_price: CurrentPriceQuote | None
     completeness: CompletenessReport
     freshness_state: FreshnessState
