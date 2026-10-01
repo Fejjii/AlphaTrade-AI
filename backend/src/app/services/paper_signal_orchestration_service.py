@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import ExecutionMode, Settings, get_settings
 from app.core.errors import NotFoundError, ServiceUnavailableError, ValidationAppError
-from app.db.models import BloFinDemoSyncSnapshot, Position
+from app.db.models import BloFinDemoSyncSnapshot
 from app.db.models import PaperSignalOrchestrationDecision as DecisionModel
 from app.db.models import TradingViewSignal as SignalModel
 from app.repositories.paper_signal_orchestration import PaperSignalOrchestrationRepository
@@ -33,7 +33,6 @@ from app.schemas.common import (
     PaperSignalOrchestrationMode,
     PaperSignalOrchestrationStatus,
     PaperValidationCandidateStatus,
-    PositionStatus,
     RiskSeverity,
     StrategyId,
     Timeframe,
@@ -846,18 +845,15 @@ class PaperSignalOrchestrationService:
         if cooldown_seconds <= 0:
             return daily_ok, daily_detail, True, "Cooldown disabled."
 
-        since = datetime.now(UTC) - timedelta(seconds=cooldown_seconds)
-        loss = self._session.scalars(
-            select(Position).where(
-                Position.organization_id == organization_id,
-                Position.user_id == user_id,
-                Position.status == PositionStatus.CLOSED,
-                Position.closed_at.is_not(None),
-                Position.closed_at >= since,
-                Position.realized_pnl < 0,
-            )
-        ).first()
-        if loss is not None:
+        from app.services.risk.paper_cooldown import paper_loss_cooldown_active
+
+        if paper_loss_cooldown_active(
+            self._session,
+            organization_id=organization_id,
+            user_id=user_id,
+            seconds=cooldown_seconds,
+            now=datetime.now(UTC),
+        ):
             return (
                 daily_ok,
                 daily_detail,

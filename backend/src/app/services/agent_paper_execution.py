@@ -47,6 +47,7 @@ from app.services.pretrade_analysis_service import PreTradeAnalysisService
 from app.services.quota_service import QuotaService
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.kill_switch import KillSwitchService
+from app.services.risk.paper_cooldown import paper_loss_cooldown_active
 from app.services.risk.rules import RiskEvaluationContext, default_is_weekend
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
@@ -544,6 +545,16 @@ class AgentPaperExecutionService:
         maximum_loss: Decimal,
     ) -> RiskCheckResult:
         snapshot = self._daily.sync_from_portfolio(organization_id=organization_id, user_id=user_id)
+        if paper_loss_cooldown_active(
+            self._session,
+            organization_id=organization_id,
+            user_id=user_id,
+            seconds=self._settings.paper_signal_cooldown_after_loss_seconds,
+            now=self._runtime.clock.now(),
+        ):
+            raise TradingPolicyError(
+                "Paper cooldown active.", details={"reason": "cooldown_active"}
+            )
         settings = self._risk_settings.get(organization_id=organization_id, user_id=user_id)
         approved_cash = (
             snapshot.account_equity * settings.max_risk_per_trade_percent / Decimal("100")
