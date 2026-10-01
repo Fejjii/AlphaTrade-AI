@@ -1,5 +1,5 @@
 /**
- * Browser smoke for the five trader destinations and retained routes.
+ * Browser smoke for the six trader destinations and retained routes.
  * Screenshots are written for the release-candidate review.
  */
 import path from "node:path";
@@ -13,12 +13,13 @@ const SHOTS = process.env.SIMPLIFIED_UI_SHOTS ?? "/opt/cursor/artifacts/screensh
 const DESTINATIONS = [
   { route: "/", heading: "Dashboard", file: "dashboard" },
   { route: "/agent", heading: "Agent", file: "agent" },
-  { route: "/strategies", heading: "Strategies", file: "strategies" },
   { route: "/journal", heading: "Journal", file: "journal" },
+  { route: "/strategies", heading: "Strategies", file: "strategies" },
+  { route: "/knowledge", heading: "Knowledge", file: "knowledge" },
   { route: "/settings", heading: "Settings", file: "settings" },
 ] as const;
 
-const RETAINED = ["/strategy-lab", "/knowledge", "/lessons", "/settings/advanced"] as const;
+const RETAINED = ["/strategy-lab", "/lessons", "/settings/advanced"] as const;
 
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const overflow = await page.evaluate(
@@ -28,7 +29,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 test.describe("Simplified trader UI", () => {
-  test("desktop and mobile widths keep the five destinations and retained routes", async ({
+  test("desktop and mobile widths keep the six destinations and retained routes", async ({
     page,
     request,
   }) => {
@@ -46,7 +47,10 @@ test.describe("Simplified trader UI", () => {
       { width: 1280, height: 900, label: "desktop" },
       { width: 390, height: 844, label: "mobile" },
     ] as const) {
-      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.setViewportSize({
+        width: viewport.width,
+        height: viewport.height,
+      });
       for (const destination of DESTINATIONS) {
         await page.goto(destination.route);
         await expect(
@@ -73,15 +77,31 @@ test.describe("Simplified trader UI", () => {
           const portal = document.querySelector("nextjs-portal");
           if (portal instanceof HTMLElement) portal.style.pointerEvents = "none";
         });
-        for (const name of ["Dashboard", "Agent", "Strategies", "Journal", "Settings"]) {
+        for (const name of [
+          "Dashboard",
+          "Agent",
+          "Journal",
+          "Strategies",
+          "Knowledge",
+          "Settings",
+        ]) {
           await nav.getByRole("link", { name }).click();
           await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
         }
       } else {
-        const nav = page.getByRole("navigation", { name: "Primary destinations" });
+        const nav = page.getByRole("navigation", {
+          name: "Primary destinations",
+        });
         await expect(nav).toBeVisible();
         await expect(page.getByTestId("mobile-bottom-navigation")).toBeHidden();
-        for (const name of ["Agent", "Strategies", "Journal", "Settings", "Dashboard"]) {
+        for (const name of [
+          "Agent",
+          "Journal",
+          "Strategies",
+          "Knowledge",
+          "Settings",
+          "Dashboard",
+        ]) {
           await nav.getByRole("link", { name }).click();
           await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
         }

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpen, Bot, Layers, LayoutDashboard, Settings, SlidersHorizontal } from "lucide-react";
+import { BookOpen, Bot, Library, Layers, LayoutDashboard, Settings, SlidersHorizontal } from "lucide-react";
 
 import {
   ADVANCED_ROUTES,
@@ -9,7 +9,7 @@ import {
   SETTINGS_ROUTE_PREFIXES,
 } from "@/components/layout/advanced-routes";
 
-export type DestinationId = "dashboard" | "agent" | "strategies" | "journal" | "settings";
+export type DestinationId = "dashboard" | "agent" | "journal" | "strategies" | "knowledge" | "settings";
 
 export type NavLink = {
   href: string;
@@ -32,7 +32,7 @@ export type SecondaryNavGroup = {
   items: readonly NavLink[];
 };
 
-/** Five trader destinations. Engineering routes live under Settings / Advanced. */
+/** Six trader destinations. Specialized routes stay contextual or under Settings / Advanced. */
 export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   {
     id: "dashboard",
@@ -49,6 +49,13 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
     ariaLabel: "Agent",
   },
   {
+    id: "journal",
+    label: "Journal",
+    href: "/journal",
+    icon: BookOpen,
+    ariaLabel: "Journal",
+  },
+  {
     id: "strategies",
     label: "Strategies",
     href: "/strategies",
@@ -56,11 +63,11 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
     ariaLabel: "Strategies",
   },
   {
-    id: "journal",
-    label: "Journal",
-    href: "/journal",
-    icon: BookOpen,
-    ariaLabel: "Journal",
+    id: "knowledge",
+    label: "Knowledge",
+    href: "/knowledge",
+    icon: Library,
+    ariaLabel: "Knowledge",
   },
   {
     id: "settings",
@@ -75,13 +82,15 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
 export const MOBILE_BOTTOM_DESTINATION_IDS: readonly DestinationId[] = [
   "dashboard",
   "agent",
-  "strategies",
   "journal",
+  "strategies",
+  "knowledge",
   "settings",
 ] as const;
 
-const JOURNAL_PREFIXES = ["/journal", "/lessons", "/learning-analytics", "/coaching"] as const;
-const STRATEGY_PREFIXES = ["/strategies", "/strategy-lab", "/knowledge"] as const;
+const JOURNAL_PREFIXES = ["/journal", "/learning-analytics", "/coaching"] as const;
+const STRATEGY_PREFIXES = ["/strategies", "/strategy-lab"] as const;
+const KNOWLEDGE_PREFIXES = ["/knowledge", "/lessons"] as const;
 const AGENT_PREFIXES = ["/agent"] as const;
 
 export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
@@ -98,6 +107,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
 const DESTINATION_MATCHERS: readonly { id: DestinationId; match: (pathname: string) => boolean }[] =
   [
     { id: "journal", match: (pathname) => matchesAnyPrefix(pathname, JOURNAL_PREFIXES) },
+    { id: "knowledge", match: (pathname) => matchesAnyPrefix(pathname, KNOWLEDGE_PREFIXES) },
     { id: "strategies", match: (pathname) => matchesAnyPrefix(pathname, STRATEGY_PREFIXES) },
     { id: "agent", match: (pathname) => matchesAnyPrefix(pathname, AGENT_PREFIXES) },
     {

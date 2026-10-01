@@ -58,7 +58,7 @@ export default function SettingsPage() {
           <a
             key={id}
             href={`#${id}`}
-            className="rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary hover:bg-surface-2"
+            className="inline-flex min-h-11 items-center rounded-control border border-border-subtle px-3 py-2 text-sm text-text-secondary hover:bg-surface-2"
           >
             {title}
           </a>

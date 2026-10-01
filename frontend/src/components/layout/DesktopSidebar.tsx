@@ -70,7 +70,9 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
         )}
       >
         <div className={cn("min-w-0 flex-1", collapsed && "sr-only")}>
-          <p className="text-caption uppercase tracking-[0.16em] text-accent">{appConfig.appName}</p>
+          <p className="text-caption uppercase tracking-[0.16em] text-accent">
+            {appConfig.appName}
+          </p>
           <p className="mt-1 text-sm font-semibold text-text-primary">Trading Copilot</p>
         </div>
         <IconButton
@@ -98,14 +100,18 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
               aria-label={ariaLabel}
               aria-current={active ? "page" : undefined}
               data-destination={destination.id}
+              data-primary-workspace={destination.id === "agent" ? "true" : undefined}
               title={collapsed ? label : undefined}
               className={cn(
-                "flex items-center rounded-control text-sm font-medium transition-colors",
+                "flex items-center rounded-control border text-sm font-medium transition-colors",
+                destination.id === "agent" ? "border-accent-border" : "border-transparent",
                 "min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                 collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
                 active
                   ? "bg-surface-2 text-text-primary"
-                  : "text-text-muted hover:bg-surface-1 hover:text-text-secondary",
+                  : destination.id === "agent"
+                    ? "text-accent hover:bg-accent-muted"
+                    : "text-text-secondary hover:bg-surface-1 hover:text-text-primary",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
