@@ -24,6 +24,11 @@ from app.market_contracts.adapters.request_budget import SlidingWeightBudget, re
 from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.cursor import TradeStreamSnapshot
+from app.market_contracts.derivatives import (
+    DerivativeMetric,
+    DerivativeObservation,
+    derivative_observation,
+)
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
     FallbackForbiddenError,
@@ -62,6 +67,7 @@ from app.market_contracts.trades import (
 )
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
+from app.schemas.nested_continuation import EvidenceAvailability
 
 _BINANCE_INTERVAL = {
     Timeframe.M15: "15m",
@@ -125,6 +131,54 @@ class BinanceUsdmPerpetualSource:
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
         self._regional_failure = False
+
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation:
+        self._assert_request(identity, instrument, None)
+        try:
+            self.verify_exchange_info(instrument)
+        except (WrongInstrumentError, WrongMarketError):
+            return derivative_observation(
+                identity=identity,
+                metric=metric,
+                observed_at=observed_at,
+                availability=EvidenceAvailability.UNSUPPORTED,
+                reason="provider_contract_not_verified",
+            )
+        params: dict[str, str | int] = {"symbol": instrument.provider_symbol}
+        if metric is DerivativeMetric.OPEN_INTEREST:
+            payload = self._get("/fapi/v1/openInterest", params)
+            row = payload if isinstance(payload, dict) else None
+            value_key, time_key = "openInterest", "time"
+            malformed = row is None or row.get("symbol") != instrument.provider_symbol
+        else:
+            params.update({"limit": 1, "endTime": int(observed_at.timestamp() * 1000)})
+            payload = self._get("/fapi/v1/fundingRate", params)
+            row = payload[0] if isinstance(payload, list) and len(payload) == 1 else None
+            malformed = (
+                not isinstance(payload, list)
+                or len(payload) > 1
+                or (bool(payload) and not isinstance(row, dict))
+            )
+            if isinstance(row, dict) and row.get("symbol") != instrument.provider_symbol:
+                malformed = True
+            value_key, time_key = "fundingRate", "fundingTime"
+        return derivative_observation(
+            identity=identity,
+            metric=metric,
+            observed_at=observed_at,
+            row=row if isinstance(row, dict) else None,
+            value_key=value_key,
+            time_key=time_key,
+            availability=EvidenceAvailability.INCOMPLETE if malformed else None,
+            reason="malformed_provider_payload" if malformed else None,
+        )
 
     def fetch_closed_ohlcv(
         self,
@@ -333,7 +387,17 @@ class BinanceUsdmPerpetualSource:
     def verify_exchange_info(self, instrument: InstrumentIdentity) -> None:
         payload = self._get("/fapi/v1/exchangeInfo", {"symbol": instrument.provider_symbol})
         if not isinstance(payload, dict):
-            raise WrongMarketError("exchangeInfo payload is not an object.")
+            raise WrongSourceError("exchangeInfo payload is not an object.")
+        rows = payload.get("symbols")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise WrongSourceError("exchangeInfo symbols are malformed.")
+        required_fields = {"symbol", "contractType", "quoteAsset", "baseAsset", "status"}
+        for row in rows:
+            if (
+                row.get("symbol") == instrument.provider_symbol
+                and not required_fields <= row.keys()
+            ):
+                raise WrongSourceError("exchangeInfo contract fields are incomplete.")
         contract = contract_from_binance_exchange_info(
             payload,
             requested_symbol=instrument.provider_symbol,

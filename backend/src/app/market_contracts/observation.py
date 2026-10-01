@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, Field
 
 from app.market_contracts.coverage import TradeWindowCoverageProof
 from app.market_contracts.cvd import CvdWindow
+from app.market_contracts.derivatives import DerivativeObservation
 from app.market_contracts.enums import Finality, FreshnessState, ObservationType, PrivacyClass
 from app.market_contracts.flow import SignedQuoteFlow
 from app.market_contracts.hashing import with_content_hash
@@ -16,6 +17,36 @@ from app.market_contracts.identity import EvidenceMarketIdentity
 from app.market_contracts.models import CanonicalModel
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for
 from app.market_contracts.trades import TradeEvent
+from app.schemas.nested_continuation import EvidenceAvailability
+
+
+def observation_from_derivative(item: DerivativeObservation) -> PublicMarketObservation:
+    """Bind only usable provider facts to the existing public evidence envelope."""
+    if (
+        item.availability is not EvidenceAvailability.AVAILABLE
+        or item.event_time is None
+        or item.freshness is None
+    ):
+        raise ValueError("Unavailable OI/funding cannot satisfy public evidence roles.")
+    source_event_id = f"{item.metric.value}:{item.content_hash}"
+    return with_content_hash(
+        PublicMarketObservation(
+            observation_id=observation_id_for(source_event_id, finality=Finality.FINAL, revision=1),
+            identity=item.identity,
+            observation_type=ObservationType(item.metric.value),
+            source_event_id=source_event_id,
+            event_time=item.event_time,
+            source_time=item.event_time,
+            observed_at=item.observed_at,
+            receive_time=item.observed_at,
+            finality=Finality.FINAL,
+            revision=1,
+            freshness_state=item.freshness.state,
+            payload_content_hash=item.content_hash,
+            content_hash="0" * 64,
+            recorded_at=item.observed_at,
+        )
+    )
 
 
 class PublicMarketObservation(CanonicalModel):

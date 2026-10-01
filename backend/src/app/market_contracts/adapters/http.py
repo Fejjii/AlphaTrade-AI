@@ -40,6 +40,8 @@ ALLOWED_PATHS = frozenset(
         "/fapi/v1/exchangeInfo",
         "/fapi/v1/klines",
         "/fapi/v1/aggTrades",
+        "/fapi/v1/openInterest",
+        "/fapi/v1/fundingRate",
     }
 )
 APPROVED_BINANCE_USDM_REST_HOSTS = frozenset({"fapi.binance.com"})
@@ -137,7 +139,7 @@ class ReadOnlyHttpGetClient:
             self._budget.acquire(weight, sleeper=self._sleep)
             try:
                 response = self._exchange_get(url, params)
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+            except httpx.TransportError as exc:
                 record_request(weight=weight, retry=attempt > 0)
                 if attempt + 1 >= attempts:
                     raise RegionalProviderFailureError(

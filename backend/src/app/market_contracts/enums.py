@@ -84,6 +84,8 @@ class ObservationType(StrEnum):
     ORDER_BOOK = "order_book"
     VOLUME = "volume"
     STRUCTURE = "structure"
+    OPEN_INTEREST = "open_interest"
+    FUNDING = "funding"
 
 
 class QuantityKind(StrEnum):
