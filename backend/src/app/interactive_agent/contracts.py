@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.common import StrictModel
+from app.schemas.strategy_analytics import StrategyAnalyticsFilters, StrategyAnalyticsReport
 
 SCHEMA_VERSION: Literal["InteractiveAgent/v1"] = "InteractiveAgent/v1"
 PAYLOAD_KEY = "interactive_agent"
@@ -24,6 +25,7 @@ class AgentCapability(StrEnum):
     GENERAL_CONVERSATION = "general_conversation"
     MARKET_AND_PORTFOLIO = "market_and_portfolio"
     STRATEGY_BRAIN = "strategy_brain"
+    STRATEGY_ANALYTICS = "strategy_analytics"
     STRATEGY_RETRIEVAL = "strategy_retrieval"
     STRATEGY_AUTHORING = "strategy_authoring"
     PATTERN_AND_RULE_CAPTURE = "pattern_and_rule_capture"
@@ -96,6 +98,7 @@ class AgentTurnRequest(StrictModel):
     strategy_id: UUID | None = None
     symbol: str | None = Field(default=None, max_length=30)
     timeframe: str | None = Field(default=None, max_length=16)
+    analytics_filters: StrategyAnalyticsFilters | None = None
 
 
 class ProposalDecisionRequest(StrictModel):
@@ -243,6 +246,7 @@ class AgentTurnResult(StrictModel):
     market_quote: MarketQuoteView | None = None
     portfolio_summary: str | None = None
     statistics_summary: str | None = None
+    strategy_analytics: list[StrategyAnalyticsReport] = Field(default_factory=list)
     paper_safety: PaperSafetyContract
     screenshot: ScreenshotAnalysisContract | None = None
     voice: VoiceIoContract | None = None

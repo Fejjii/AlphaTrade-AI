@@ -16,6 +16,7 @@ from app.interactive_agent.contracts import (
     StructuredActionKind,
     TurnOperation,
 )
+from app.interactive_agent.strategy_analytics import is_strategy_analytics_question
 from app.schemas.common import StrictModel
 
 _LIVE_TRADING = re.compile(
@@ -203,6 +204,8 @@ def classify_turn(message: str) -> TurnClassification:
         capability = AgentCapability.TRADE_DISCUSSION
         operation = TurnOperation.PROPOSE
         action = StructuredActionKind.PROPOSE_TRADE_DECISION
+    elif is_strategy_analytics_question(message):
+        capability = AgentCapability.STRATEGY_ANALYTICS
     elif re.search(
         r"\b(?:nested|setups?|watching|N[1-3]|N4\s*(?:plus|\+)|blocked|"
         r"previous setup|missing data|data is missing|strategy version generated|"

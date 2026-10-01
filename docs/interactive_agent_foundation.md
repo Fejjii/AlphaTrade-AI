@@ -4,6 +4,8 @@ Paper-only orchestration for the Agent workspace. This layer does not replace
 the existing conversational model. `/chat` remains the LangGraph entry point.
 `POST /agent/turns` asks the existing model router (`general_agent_synthesis`)
 for the assistant prose and stores that prose on the conversation transcript.
+Strategy analytics turns use deterministic canonical metrics without model prose;
+see [Agent Strategy Analytics 001](agent_strategy_analytics_001.md).
 
 Model text is not mutation authority. A reply that says "I confirm" does not
 write a journal row, strategy version, rule, or lesson. Confirm and reject are
@@ -20,7 +22,8 @@ and the proposal content hash.
 | Journal rows | `JournalService` | Written only by `POST /agent/proposals/{id}/confirm` |
 | Knowledge | `documents` and `chunks` | Lexical retrieval. Optional vector hits are reloaded from those rows |
 | Portfolio | `PaperPortfolioService` | Read only |
-| Performance | `PerformanceService.build_report` | Read only. No snapshot write |
+| Performance | `PerformanceService.build_report` | Legacy statistics read only. No snapshot write |
+| Strategy analytics | `StrategyAnalyticsService.compute` | Read only canonical reports; full evidence retained |
 | Coaching | `CoachingService.summary` | Read only. Lessons are not accepted |
 | Watcher | `MarketWatcherObservationRepository` | Read only, provenance `watcher_observed` |
 | Market quotes | `CanonicalEvidenceService` | Perpetual evidence only. Unavailable and stale stay labeled. No price is invented. `fallback_used` stays false |
