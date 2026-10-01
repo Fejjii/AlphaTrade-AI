@@ -47,7 +47,29 @@ function Sources({ sources }: { sources: ReviewSource[] }) {
   );
 }
 
-export function DailyReviewContent({ review }: { review: DailyReview }) {
+function hasReviewContent(review: DailyReview | null | undefined): review is DailyReview {
+  return review?.schema_version === "DailyReview/v1"
+    && typeof review.window?.day === "string"
+    && typeof review.window?.timezone === "string"
+    && typeof review.generated_at === "string"
+    && review.counts != null
+    && Object.keys(TOPICS).every((topic) =>
+      typeof review.counts[topic as ReviewTopic] === "number",
+    )
+    && Array.isArray(review.daily_pnl)
+    && Array.isArray(review.limitations)
+    && SECTIONS.every(([key]) => Array.isArray(review[key]));
+}
+
+export function DailyReviewContent({ review }: { review?: DailyReview | null }) {
+  if (!hasReviewContent(review)) {
+    return (
+      <p className="text-sm text-text-muted" data-testid="daily-review-unavailable">
+        Daily Review unavailable — no review data was returned.
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-3 text-sm" data-testid="daily-review-content">
       <p className="text-xs text-text-muted">
@@ -142,7 +164,7 @@ export function DailyReviewCard() {
             <p>Daily Review unavailable. Check the date and IANA timezone, then retry.</p>
             <button type="button" onClick={() => void reload()} className="mt-1 underline">Retry</button>
           </div>
-        ) : data ? <DailyReviewContent review={data} /> : null}
+        ) : <DailyReviewContent review={data} />}
       </CardContent>
     </Card>
   );

@@ -36,3 +36,17 @@ ESLint checks are included.
 No core Agent orchestration, execution, Telegram, scheduler, worker, persistence or
 schema changes. Review this draft after PR169; Agent Paper Execution V4 remains
 separate. Stop after push and draft PR creation: no CI wait, merge or deployment.
+
+## Dashboard robustness follow-up
+
+The seven frontend CI failures came from older dashboard hook fixtures being read
+as Daily Review data. Guard the review contract before rendering content and show
+an explicit unavailable state for missing or incomplete review payloads. Loading
+and error/retry states take precedence over stale content. Successful review
+rendering, dashboard safety posture and other metrics remain unchanged; no fallback
+zero metrics are supplied.
+
+Validation: all seven previously failing tests pass; 38 tests pass across dashboard
+page/fallback, DailyReviewCard, dashboard view model, safety posture, async hook and
+review API client. Frontend typecheck, focused ESLint and diff checks pass. Push
+updates PR172 and permits normal GitHub CI; no CI wait or deployment.

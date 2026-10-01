@@ -65,6 +65,8 @@ describe("Trader dashboard unavailable sources", () => {
     expect(screen.getByTestId("dashboard-market-evidence")).toHaveTextContent("Unavailable");
     expect(screen.getByTestId("dashboard-alerts")).toHaveTextContent("Alerts unavailable");
     expect(screen.queryByText("No open positions")).not.toBeInTheDocument();
+    expect(screen.getByTestId("daily-review-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
   });
 
   it("treats an empty open-position list as empty, not unavailable", () => {
