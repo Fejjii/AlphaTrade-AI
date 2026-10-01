@@ -8,7 +8,10 @@ import { UNAVAILABLE } from "@/lib/format";
 import type { PaginatedPositions } from "@/lib/api/types";
 
 vi.mock("@/contexts/AppContext", () => ({
-  useSafetyPosture: () => ({ executionMode: "paper", realTradingEnabled: false }),
+  useSafetyPosture: () => ({
+    executionMode: "paper",
+    realTradingEnabled: false,
+  }),
 }));
 
 function failedDashboard(): TraderDashboardData {
@@ -48,32 +51,51 @@ afterEach(() => {
 describe("Trader dashboard unavailable sources", () => {
   it("renders unavailable figures instead of zeros", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(UNAVAILABLE);
+    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
+      UNAVAILABLE,
+    );
     expect(screen.getByTestId("dashboard-pnl")).toHaveTextContent(UNAVAILABLE);
-    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(UNAVAILABLE);
-    expect(screen.getByTestId("dashboard-equity")).not.toHaveTextContent("0.00");
+    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(
+      UNAVAILABLE,
+    );
+    expect(screen.getByTestId("dashboard-equity")).not.toHaveTextContent(
+      "0.00",
+    );
     expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
       "Open positions unavailable",
     );
     expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent(
       "Recent trades unavailable",
     );
-    expect(screen.getByTestId("dashboard-strategy-performance")).toHaveTextContent(
-      "Strategy performance unavailable",
+    expect(
+      screen.getByTestId("dashboard-strategy-performance"),
+    ).toHaveTextContent("Journal strategy performance unavailable");
+    expect(screen.getByTestId("dashboard-watcher-status")).toHaveTextContent(
+      "Unavailable",
     );
-    expect(screen.getByTestId("dashboard-watcher-status")).toHaveTextContent("Unavailable");
-    expect(screen.getByTestId("dashboard-market-evidence")).toHaveTextContent("Unavailable");
-    expect(screen.getByTestId("dashboard-alerts")).toHaveTextContent("Alerts unavailable");
+    expect(screen.getByTestId("dashboard-market-evidence")).toHaveTextContent(
+      "Unavailable",
+    );
+    expect(screen.getByTestId("dashboard-alerts")).toHaveTextContent(
+      "Alerts unavailable",
+    );
     expect(screen.queryByText("No open positions")).not.toBeInTheDocument();
   });
 
   it("treats an empty open-position list as empty, not unavailable", () => {
     asyncState.data = {
       ...failedDashboard(),
-      positions: okSource({ items: [], total: 0, limit: 20, offset: 0 } as PaginatedPositions),
+      positions: okSource({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      } as PaginatedPositions),
     };
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("No open positions");
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
+      "No open positions",
+    );
     expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("0");
   });
 });
