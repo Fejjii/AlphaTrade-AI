@@ -21,6 +21,7 @@ from app.db.models import Membership
 from app.interactive_agent.actions import (
     ActionDescriptor,
     ActionRequest,
+    DailyReviewInput,
     EmptyInput,
     JournalCreateInput,
     JournalNoteInput,
@@ -37,6 +38,7 @@ from app.interactive_agent.contracts import (
     ProposalDecisionRequest,
     StructuredActionKind,
 )
+from app.interactive_agent.daily_review import route_daily_review
 from app.interactive_agent.parsing import extract_direction, extract_symbol, extract_timeframe
 from app.schemas.common import MembershipRole, StrictModel
 
@@ -61,7 +63,9 @@ class Tool:
             required_permissions=[f"membership:{self.behavior}"],
             explicit_confirmation_required=self.behavior != "read",
             result_record_identity=(
-                "conversation_messages.id"
+                "DailyReview/v1.review_id; source record_type/record_id in daily_review"
+                if self.name == "daily_review.read"
+                else "conversation_messages.id"
                 if self.behavior == "read"
                 else "conversation_messages.payload.interactive_agent.proposals[].proposal_id; "
                 "linked_strategy_proposal_id/resulting_record_id when available"
@@ -101,6 +105,20 @@ def _tool(
 
 
 _TOOLS = [
+    Tool(
+        "daily_review.read",
+        DailyReviewInput,
+        "DailyReviewService",
+        StructuredActionKind.NONE,
+        ArtifactKind.OBSERVATION,
+        AgentCapability.DAILY_REVIEW,
+        (
+            "Existing DailyReview/v1 sources only; facts, observations, inference and research "
+            "remain separate. UTC calendar day by default; supply timezone explicitly.",
+            "Today's review is a current snapshot. No forecast, scheduling or delivery.",
+        ),
+        behavior="read",
+    ),
     Tool(
         "context.read",
         EmptyInput,
@@ -377,4 +395,4 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
                 "strategy_id": str(request.strategy_id) if request.strategy_id else None,
             }
         return ActionRequest(name="paper_trade.propose", arguments=paper)
-    return None
+    return route_daily_review(request.message)
