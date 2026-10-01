@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { DailyReviewCard } from "./DailyReviewCard";
+
 import {
   bucketWinRate,
   closedStrategyRows,
@@ -139,6 +141,8 @@ export function TraderDashboardView({ data, posture }: TraderDashboardViewProps)
           />
         </CardContent>
       </Card>
+
+      <DailyReviewCard />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card data-testid="dashboard-open-positions">

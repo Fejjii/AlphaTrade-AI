@@ -1,3 +1,4 @@
+import type { DailyReview } from "./daily-review-types";
 import type { BrainOverview, BrainSetup } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
@@ -762,6 +763,8 @@ export const api = {
       }),
   },
   dashboard: {
+    dailyReview: (params?: { date?: string; timezone?: string }) =>
+      apiFetch<DailyReview>("/dashboard/daily-review", { query: params, auth: true }),
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
   },
   knowledge: {
