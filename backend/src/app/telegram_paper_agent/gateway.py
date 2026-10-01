@@ -299,6 +299,13 @@ class TelegramPaperAgent:
             text=footer,
             idempotency_key=_thread_key(persisted.identity_hash),
             binding_id=recipient.binding_id,
+            notification_event=(
+                alert.outbox.notification_event.model_copy(
+                    update={"duplicate_key": f"{alert.intent.identity_hash}:footer"}
+                )
+                if alert.outbox.notification_event is not None
+                else None
+            ),
         )
         return PaperNotificationProjection(
             intent=persisted,
@@ -331,7 +338,9 @@ class TelegramPaperAgent:
             content_hash=digest,
             text=text,
         )
-        return self._project_simple(intent=intent, recipient=recipient, text=text)
+        return self._project_simple(
+            intent=intent, recipient=recipient, text=text, notification_symbol=view.symbol
+        )
 
     def handle_inbound_message(
         self,
@@ -555,6 +564,7 @@ class TelegramPaperAgent:
             text=text,
             resource_type=PAPER_RESOURCE_WATCHER,
             resource_id=resource_id,
+            notification_symbol=notice.symbol,
         )
 
     def _project_simple(
@@ -565,6 +575,7 @@ class TelegramPaperAgent:
         text: str,
         resource_type: str | None = None,
         resource_id: UUID | None = None,
+        notification_symbol: str | None = None,
     ) -> PaperNotificationProjection:
         prior = self._store.get_notification_by_hash(intent.identity_hash)
         persisted = self._store.get_or_insert_notification(intent)
@@ -580,6 +591,7 @@ class TelegramPaperAgent:
             text=text,
             idempotency_key=_notify_key(persisted.identity_hash),
             binding_id=recipient.binding_id,
+            notification_event=_paper_notification_event(persisted, symbol=notification_symbol),
         )
         thread = self._thread_for(
             recipient=recipient,
@@ -1015,6 +1027,25 @@ def _require_binding_id(binding_id: UUID | None) -> UUID:
 
 def _notify_key(identity_hash: str) -> str:
     return f"{PAPER_NOTIFY_OUTBOX_PREFIX}{identity_hash}"[:128]
+
+
+def _paper_notification_event(intent: PaperNotificationIntent, *, symbol: str | None):
+    from app.schemas.telegram_policy import (
+        NotificationEventType,
+        NotificationSeverity,
+        TelegramNotificationEvent,
+    )
+
+    blocked = intent.kind == PaperNotificationKind.WATCHER_SCAN_BLOCKED
+    return TelegramNotificationEvent(
+        event_type=NotificationEventType.RISK
+        if blocked
+        else NotificationEventType.PAPER_TRADE_CLOSED,
+        severity=NotificationSeverity.WATCH if blocked else NotificationSeverity.INFO,
+        symbol=symbol,
+        duplicate_key=intent.identity_hash,
+        occurred_at=intent.created_at,
+    )
 
 
 def _thread_key(identity_hash: str) -> str:

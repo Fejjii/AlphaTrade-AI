@@ -50,6 +50,7 @@ from app.persistence.telegram_postgres import PostgresTelegramSecurityStore
 from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
 from app.persistence.watcher_postgres import PostgresWatcherStore
 from app.services.canonical_trade_plan import CanonicalTradePlanService
+from app.services.notifications.preferences_service import build_telegram_policy_loader
 from app.signal_fusion.action_eligibility import ActionEligibilityService
 from app.signal_fusion.lifecycle import CandidateLifecycleService
 from app.signal_fusion.ports import Clock as CandidateClock
@@ -234,6 +235,7 @@ def build_postgres_telegram_security_protocol(
         outbox_lease=outbox_lease,
         lease_owner=lease_owner,
         retry_backoff=retry_backoff,
+        notification_policy_loader=build_telegram_policy_loader(session_factory),
     )
 
 

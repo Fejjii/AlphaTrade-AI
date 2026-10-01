@@ -530,6 +530,24 @@ class PostgresTelegramSecurityStore:
 
         self._run(work)
 
+    def notification_history(
+        self, *, organization_id: UUID, user_id: UUID, bot_id: str, chat_id: str, since: datetime
+    ) -> list[OutboxRecord]:
+        def work(session: Session) -> list[OutboxRecord]:
+            rows = session.scalars(
+                select(TelegramOutboxRow).where(
+                    TelegramOutboxRow.organization_id == organization_id,
+                    TelegramOutboxRow.user_id == user_id,
+                    TelegramOutboxRow.bot_id == bot_id,
+                    TelegramOutboxRow.chat_id == chat_id,
+                    TelegramOutboxRow.notification_event.is_not(None),
+                    or_(TelegramOutboxRow.created_at >= since, TelegramOutboxRow.sent_at >= since),
+                )
+            )
+            return [_outbox_from_row(row) for row in rows]
+
+        return self._run(work)
+
     def list_audits(self) -> list[ProtocolAuditEvent]:
         def work(session: Session) -> list[ProtocolAuditEvent]:
             rows = session.scalars(
@@ -826,6 +844,12 @@ def _reject_conflicting_outbox_binding(existing: TelegramOutboxRow, incoming: Ou
         or existing.idempotency_key != incoming.idempotency_key
         or existing.kind != incoming.kind.value
         or existing.text != incoming.text
+        or existing.notification_event
+        != (
+            incoming.notification_event.model_dump(mode="json")
+            if incoming.notification_event is not None
+            else None
+        )
         or _aware(existing.created_at) != _aware(incoming.created_at)
     ):
         raise TelegramSecurityError(
@@ -1151,11 +1175,17 @@ def _outbox_to_row(row: OutboxRecord) -> TelegramOutboxRow:
         idempotency_key=row.idempotency_key,
         kind=row.kind.value,
         text=row.text,
+        notification_event=(
+            row.notification_event.model_dump(mode="json")
+            if row.notification_event is not None
+            else None
+        ),
         state=row.state.value,
         attempt=row.attempt,
         lease_owner=row.lease_owner,
         lease_until=row.lease_until,
         transport_message_id=row.transport_message_id,
+        sent_at=row.sent_at,
         last_error=row.last_error,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -1168,6 +1198,7 @@ def _apply_outbox_lifecycle(current: TelegramOutboxRow, row: OutboxRecord) -> No
     current.lease_owner = row.lease_owner
     current.lease_until = row.lease_until
     current.transport_message_id = row.transport_message_id
+    current.sent_at = row.sent_at
     current.last_error = row.last_error
     current.updated_at = row.updated_at
 
@@ -1183,11 +1214,13 @@ def _outbox_from_row(row: TelegramOutboxRow) -> OutboxRecord:
         idempotency_key=row.idempotency_key,
         kind=OutboxKind(row.kind),
         text=row.text,
+        notification_event=row.notification_event,
         state=OutboxState(row.state),
         attempt=row.attempt,
         lease_owner=row.lease_owner,
         lease_until=_aware_opt(row.lease_until),
         transport_message_id=row.transport_message_id,
+        sent_at=_aware_opt(row.sent_at),
         last_error=row.last_error,
         created_at=_aware(row.created_at),
         updated_at=_aware(row.updated_at),

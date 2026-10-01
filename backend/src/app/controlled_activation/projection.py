@@ -20,6 +20,7 @@ from app.controlled_activation.profile import controlled_telegram_projection
 from app.core.config import Settings, TelegramInboundMode
 from app.paper_interaction.durable_context import build_durable_discussion_context
 from app.runtime.canonical import ProductionCanonicalRuntime, build_production_canonical_runtime
+from app.services.notifications.preferences_service import build_telegram_policy_loader
 from app.signal_fusion.candidate import Candidate
 from app.signal_fusion.memory import UtcClock
 from app.telegram_activation.controller import TelegramPaperActivation
@@ -118,6 +119,7 @@ def build_controlled_scan_hook(
         clock=resolved_clock,
         enabled=True,
         retry_backoff=PAPER_ACTIVATION_BACKOFF,
+        notification_policy_loader=build_telegram_policy_loader(session_factory),
     )
     canonical = build_production_canonical_runtime(
         session_factory,
