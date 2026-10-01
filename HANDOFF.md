@@ -1,23 +1,24 @@
 Status: REVIEW_REQUIRED
-Last Updated: 2026-10-01T18:05:00+02:00
-Task: AlphaTrade Knowledge workspace 001
+Last Updated: 2026-10-01T16:46:00Z
+Task: AlphaTrade primary navigation simplification
 Current Phase: COMPLETE — draft review handoff; stopped
-Progress: Five trader categories, canonical search/provenance/relationships, note ingestion, responsive states and focused frontend validation complete; committed and pushed
+Progress: Exactly six primary destinations on desktop and mobile; contextual Knowledge and Settings access; navigation tests and screenshots complete; committed and pushed
 Blocker: None
-Human Action Needed: Review draft PR #163 stacked on trader interface polish #157
-Next Step: Read docs/knowledge_workspace_001_handoff.md and https://github.com/Fejjii/AlphaTrade-AI/pull/163
+Human Action Needed: Review draft PR #166 stacked on #157; optional physical iPhone/Safari verification
+Next Step: Read docs/primary_navigation_6_workspace_handoff.md and https://github.com/Fejjii/AlphaTrade-AI/pull/166
 
-Branch: codex/knowledge_workspace_001
-Implementation commit: 44f7e8e6473188ced565b172bc4d7757e1f8ddbf
-Exact base: 94954e7d243be0c03ce667403964adb6e4e2b850
-PR base: codex/trader-interface-polish
+Branch: codex/primary_navigation_6_workspace_001
+Implementation commit: 036965cf1c9747f402a973ef5e6d12ec879abd3f
+Exact stack base: 94954e7d243be0c03ce667403964adb6e4e2b850
+Primary order: Dashboard, Agent, Journal, Strategies, Knowledge, Settings
 
-Validation: 47 focused frontend tests across six files, four desktop/iPhone
-frontend fixture browser tests, full frontend TypeScript check, zero-warning
-ESLint, diff checks and protected-scope comparison passed. Watermarked fixture
-screenshots and coverage/verification limits are documented in the handoff.
+Validation: 120 focused unit tests and 5 frontend fixture browser tests passed;
+focused ESLint, typecheck, exact-base and retained-path checks passed. All 47
+existing navigation/catalog paths remain reachable. Six watermarked screenshots
+are in docs/screenshots/primary-navigation-6.
 
-No new storage layer, backend/API changes, Agent orchestration, execution,
-Telegram or Strategy Brain detector changes. No document editing API was added.
+The detailed handoff contains route ownership, changed surfaces, reproduction
+commands, screenshots, and verification limits. Backend/API contracts, active
+Strategies, Telegram, and page routes are unchanged.
 
-No CI wait or polling, merge, deployment or follow-up automation. Stop here.
+No CI wait, merge, or deployment. Stop here.
