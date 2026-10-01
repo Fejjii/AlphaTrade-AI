@@ -39,7 +39,7 @@ describe("WatcherWatchlistEditor", () => {
     expect(screen.getAllByTestId(/watchlist-slot-/)).toHaveLength(5);
     expect(screen.getByLabelText("Symbol for slot 1")).toHaveValue("BTCUSDT");
     expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("replay");
-    expect(screen.getByTestId("watchlist-status-2")).toHaveTextContent("contract_unverified");
+    expect(screen.getByTestId("watchlist-status-2")).toHaveTextContent("contract unverified");
   });
 
   it("toggles enable, edits a symbol, and reorders", () => {
@@ -78,7 +78,7 @@ describe("symbol and revision status boundaries", () => {
     const reordered = [DEFAULT_WATCHLIST_SLOTS[1]!, DEFAULT_WATCHLIST_SLOTS[0]!, ...DEFAULT_WATCHLIST_SLOTS.slice(2)]
       .map((slot, index) => ({...slot, position: index + 1}));
     view.rerender(<WatcherWatchlistEditor {...props} slots={reordered} />);
-    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("contract_unverified");
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("contract unverified");
     expect(screen.getByTestId("watchlist-status-2")).toHaveTextContent("replay");
     const replaced = reordered.map((slot, index) => index === 1 ? {...slot, symbol: "SOLUSDT"} : slot);
     view.rerender(<WatcherWatchlistEditor {...props} slots={replaced} />);
@@ -160,10 +160,10 @@ describe("watchlist request coordination", () => {
       .mockImplementation(() => new Promise(() => {}));
     let view!: ReturnType<typeof render>;
     await act(async () => { view = render(<WatcherWatchlistSection />); });
-    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh_closed_candle");
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh closed candle");
     await act(async () => { await vi.advanceTimersByTimeAsync(89999); });
     expect(readStatus).toHaveBeenCalledTimes(2);
-    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh_closed_candle");
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh closed candle");
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
     await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
@@ -229,5 +229,31 @@ describe("watchlist request coordination", () => {
     expect(screen.getByLabelText("Symbol for slot 1")).toHaveValue("SOLUSDT");
     expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh-saved");
     expect(screen.getByTestId("watchlist-save")).not.toBeDisabled();
+  });
+});
+
+
+describe("market configuration availability", () => {
+  it("shows saved markets even when provider status is unavailable", async () => {
+    const { api } = await import("@/lib/api");
+    vi.spyOn(api.watcherWatchlist, "configuration").mockResolvedValue({
+      revision: 4, slots: DEFAULT_WATCHLIST_SLOTS, max_enabled: 5, paper_only: true, updated_at: new Date().toISOString(),
+    });
+    vi.spyOn(api.watcherWatchlist, "status").mockRejectedValue(new Error("Unavailable"));
+    render(<WatcherWatchlistSection />);
+    expect(await screen.findByLabelText("Symbol for slot 1")).toHaveValue("BTCUSDT");
+    expect(screen.getByTestId("watchlist-save")).not.toBeDisabled();
+    expect(screen.getByText("Market availability unavailable. Your saved watchlist is shown.")).toBeInTheDocument();
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+  });
+
+  it("labels failed configuration without inventing default market slots", async () => {
+    const { api } = await import("@/lib/api");
+    vi.spyOn(api.watcherWatchlist, "configuration").mockRejectedValue(new Error("Unavailable"));
+    vi.spyOn(api.watcherWatchlist, "status").mockRejectedValue(new Error("Unavailable"));
+    render(<WatcherWatchlistSection />);
+    await screen.findByText("Watchlist configuration unavailable. Reload to try again.");
+    expect(screen.queryByLabelText("Symbol for slot 1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("watchlist-save")).toBeDisabled();
   });
 });

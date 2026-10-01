@@ -127,7 +127,7 @@ describe("AT-040 Phase B AppShell", () => {
     expect(screen.getByRole("option", { name: /Strategy Lab/i })).toBeInTheDocument();
   });
 
-  it("shows Account and Advanced under Settings", () => {
+  it("shows Workspace and Advanced under Settings", () => {
     navigationState.pathname = "/settings";
     render(
       <AppShell>
@@ -136,7 +136,7 @@ describe("AT-040 Phase B AppShell", () => {
     );
     const secondary = screen.getByTestId("secondary-navigation");
     expect(secondary).toHaveAttribute("data-destination", "settings");
-    expect(within(secondary).getByRole("link", { name: "Account" })).toHaveAttribute(
+    expect(within(secondary).getByRole("link", { name: "Workspace" })).toHaveAttribute(
       "href",
       "/settings",
     );

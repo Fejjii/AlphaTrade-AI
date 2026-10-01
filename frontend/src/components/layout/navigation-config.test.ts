@@ -85,7 +85,7 @@ describe("Trader primary navigation", () => {
     expect(isPrimaryDestinationActive("/agent", PRIMARY_DESTINATIONS[1]!)).toBe(true);
   });
 
-  it("keeps Settings secondary navigation to Account and Advanced", () => {
+  it("keeps Settings secondary navigation to Workspace and Advanced", () => {
     const settings = getSecondaryItems("settings");
     expect(settings.map((item) => item.href)).toEqual(["/settings", "/settings/advanced"]);
     expect(getSecondaryItems("dashboard")).toEqual([]);
