@@ -1,10 +1,10 @@
 # Trader interface polish handoff
 
-Status: REVIEW_REQUIRED  
-Updated: 2026-10-01 15:56 Europe/Berlin (13:56 UTC)  
-Draft PR: [#157](https://github.com/Fejjii/AlphaTrade-AI/pull/157)  
-Branch: `codex/trader-interface-polish`  
-Implementation commit: `a05d5c1024996bb01ba9478f3dddb0ce0dd881a0`  
+Status: REVIEW_REQUIRED
+Updated: 2026-10-01 15:56 Europe/Berlin (13:56 UTC)
+Draft PR: [#157](https://github.com/Fejjii/AlphaTrade-AI/pull/157)
+Branch: `codex/trader-interface-polish`
+Implementation commit: `a05d5c1024996bb01ba9478f3dddb0ce0dd881a0`
 Stack base: PR [#153](https://github.com/Fejjii/AlphaTrade-AI/pull/153), `codex/strategy_brain_vertical_001` at `79b76d6313c7d1a269a9e32d67f89e39eca9df96`.
 
 ## Result
