@@ -58,7 +58,14 @@ function LinkedDocument({ id, retryKey }: { id: string; retryKey: number }) {
   const { data, loading, error, reload } = useAsyncData(loader, [id, retryKey]);
   if (loading) return <LoadingState label="Opening linked knowledge…" />;
   if (error)
-    return <ErrorState message={error} onRetry={() => void reload()} />;
+    return (
+      <div data-testid="knowledge-document-stale">
+        <ErrorState
+          message={`Document ${id}: ${error}`}
+          onRetry={() => void reload()}
+        />
+      </div>
+    );
   if (!data) return null;
   return (
     <section

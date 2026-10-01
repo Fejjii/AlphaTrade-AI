@@ -68,7 +68,9 @@ export async function findKnowledgeDocument(id: string) {
     const match = page.items.find((document) => document.id === id);
     if (match) return match;
     if (offset + page.items.length >= page.total)
-      throw new Error("This document is no longer available.");
+      throw new Error(
+        "This document was not found in the available knowledge documents. No unrelated record was opened.",
+      );
     if (!page.items.length)
       throw new Error(
         "The document list returned incomplete coverage. Try again.",

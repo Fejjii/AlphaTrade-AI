@@ -272,11 +272,65 @@ describe("Knowledge trader workspace", () => {
     ).not.toBeInTheDocument();
     expect(mocks.documents).toHaveBeenCalledWith({ limit: 200, offset: 200 });
   });
-  it("reports stale links without opening unrelated records", async () => {
-    search.set("document", "missing");
+  it.each(["missing-document-id", "missing-for-readiness"])(
+    "restores the stale-document contract for %s without losing category context",
+    async (id) => {
+      search.set("document", id);
+      search.set("q", "Knowledge");
+      search.set("category", "rules");
+      search.set("source", "risk_policy");
+      search.set("offset", "50");
+      mocks.documents.mockResolvedValue(page([doc("present", "risk_policy")]));
+      render(<KnowledgePage />);
+      const notice = await screen.findByTestId("knowledge-document-stale");
+      expect(notice).toHaveTextContent(id);
+      expect(notice).toHaveTextContent(/not found/i);
+      expect(notice).toHaveTextContent("No unrelated record was opened.");
+      expect(search.get("document")).toBe(id);
+      expect(search.get("q")).toBe("Knowledge");
+      expect(search.get("category")).toBe("rules");
+      expect(search.get("source")).toBe("risk_policy");
+      expect(search.get("offset")).toBe("50");
+      const nav = screen.getByRole("navigation", { name: "Knowledge categories" });
+      expect(within(nav).getByRole("link", { name: "Trading Rules" })).toHaveAttribute(
+        "aria-current", "page",
+      );
+      expect(within(nav).getByRole("link", { name: "All knowledge" })).toHaveAttribute(
+        "href", `/knowledge?document=${id}&q=Knowledge`,
+      );
+      expect(mocks.chunks).not.toHaveBeenCalled();
+    },
+  );
+  it("shows the bounded lookup window in the same stale-document state", async () => {
+    search.set("document", "outside-window");
+    mocks.documents.mockImplementation(({ limit, offset }) =>
+      Promise.resolve(page(
+        Array.from({ length: limit }, (_, index) => doc(`present-${offset + index}`)),
+        4001,
+        offset,
+      )),
+    );
     render(<KnowledgePage />);
-    await screen.findByText("This document is no longer available.");
+    const notice = await screen.findByTestId("knowledge-document-stale");
+    expect(notice).toHaveTextContent("outside-window");
+    expect(notice).toHaveTextContent(/not found in the first 4,000 records/i);
+    expect(mocks.documents).toHaveBeenCalledTimes(21);
     expect(mocks.chunks).not.toHaveBeenCalled();
+  });
+  it("retries unresolved links and removes the stale notice after resolution", async () => {
+    search.set("document", "linked");
+    let lookups = 0;
+    mocks.documents.mockImplementation(({ limit }) => {
+      if (limit === 50) return Promise.resolve(page([doc("present")]));
+      if (lookups++ === 0) return Promise.reject(new Error("Knowledge lookup unavailable"));
+      return Promise.resolve(page([doc("linked")]));
+    });
+    render(<KnowledgePage />);
+    const notice = await screen.findByTestId("knowledge-document-stale");
+    expect(notice).toHaveTextContent("Knowledge lookup unavailable");
+    fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+    await screen.findByTestId("knowledge-document-card-linked");
+    expect(screen.queryByTestId("knowledge-document-stale")).not.toBeInTheDocument();
   });
   it("allows collapsing a deep-linked document", async () => {
     search.set("document", "playbook");
