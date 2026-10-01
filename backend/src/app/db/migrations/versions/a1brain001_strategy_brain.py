@@ -1,14 +1,14 @@
 """Durable Strategy Brain setup and event projections.
 
 Revision ID: a1brain001
-Revises: f1a2b3c4d5e6
+Revises: b6f2d9a10e73
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "a1brain001"
-down_revision = "f1a2b3c4d5e6"
+down_revision = "b6f2d9a10e73"
 branch_labels = None
 depends_on = None
 
