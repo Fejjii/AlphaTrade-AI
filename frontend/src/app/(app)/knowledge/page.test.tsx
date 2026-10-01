@@ -195,9 +195,45 @@ describe("KnowledgePage hub", () => {
   });
 
   it("shows honest empty state", async () => {
-    asyncState.data!.documents = ok({ items: [], total: 0, limit: 50, offset: 0 });
+    asyncState.data!.documents = ok({
+      items: [],
+      total: 0,
+      limit: 50,
+      offset: 0,
+    });
     render(<KnowledgePage />);
     expect(await screen.findByTestId("knowledge-recent-empty")).toBeInTheDocument();
+  });
+
+  it("exposes existing knowledge sections and preserves document/search deep links", async () => {
+    search.set("source", "risk_policy");
+    search.set("document", "doc-playbook");
+    search.set("q", "pullback");
+    render(<KnowledgePage />);
+    const nav = within(await screen.findByRole("navigation", { name: "Knowledge sections" }));
+    expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Knowledge",
+      "Rules",
+      "Playbook",
+      "Lessons",
+      "Notes & research",
+    ]);
+    expect(nav.getByRole("link", { name: "Lessons" })).toHaveAttribute("href", "/lessons");
+    for (const [label, source] of [
+      ["Rules", "risk_policy"],
+      ["Playbook", "trading_playbook"],
+      ["Notes & research", "general_note"],
+    ]) {
+      const url = new URL(
+        nav.getByRole("link", { name: label }).getAttribute("href")!,
+        "https://example.test",
+      );
+      expect(url.pathname).toBe("/knowledge");
+      expect(url.searchParams.get("source")).toBe(source);
+      expect(url.searchParams.get("document")).toBe("doc-playbook");
+      expect(url.searchParams.get("q")).toBe("pullback");
+    }
+    expect(nav.getByRole("link", { name: "Rules" })).toHaveAttribute("aria-current", "page");
   });
 
   it("does not show empty list when documents source failed", async () => {
@@ -228,7 +264,9 @@ describe("KnowledgePage hub", () => {
     expect(await screen.findByTestId("knowledge-coverage-truncated")).toHaveTextContent(
       /only 1 of 4 knowledge documents are loaded/i,
     );
-    expect(screen.getByTestId("knowledge-count-loaded")).toHaveTextContent(/1 of 4 documents loaded/i);
+    expect(screen.getByTestId("knowledge-count-loaded")).toHaveTextContent(
+      /1 of 4 documents loaded/i,
+    );
     expect(screen.queryByTestId("knowledge-count-complete")).not.toBeInTheDocument();
     expect(screen.getByTestId("knowledge-categories-truncated")).toBeInTheDocument();
     expect(screen.getByTestId("knowledge-category-presence-manually_stored")).toHaveTextContent(
@@ -295,7 +333,9 @@ describe("KnowledgePage hub", () => {
     render(<KnowledgePage />);
     expect(await screen.findByTestId("knowledge-categories-truncated")).toBeInTheDocument();
     expect(screen.getByTestId("knowledge-category-presence-manually_stored")).toBeInTheDocument();
-    expect(screen.queryByTestId("knowledge-category-count-manually_stored")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("knowledge-category-count-manually_stored"),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("knowledge-category-presence-journal_derived")).toHaveTextContent(
       /not seen in loaded page/i,
     );
@@ -336,7 +376,9 @@ describe("KnowledgePage hub", () => {
     expect(screen.getByTestId("knowledge-category-presence-journal_derived")).toHaveTextContent(
       /present in loaded page/i,
     );
-    expect(screen.queryByTestId("knowledge-category-count-journal_derived")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("knowledge-category-count-journal_derived"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByTestId("knowledge-category-manually_stored")).not.toBeInTheDocument();
   });
 
@@ -358,9 +400,7 @@ describe("KnowledgePage hub", () => {
   it("highlights a valid deep-linked document in the list", async () => {
     search.set("document", "doc-playbook");
     render(<KnowledgePage />);
-    expect(await screen.findByTestId("knowledge-document-card-doc-playbook")).toHaveClass(
-      /ring-2/,
-    );
+    expect(await screen.findByTestId("knowledge-document-card-doc-playbook")).toHaveClass(/ring-2/);
     expect(screen.queryByTestId("knowledge-deeplink-only")).not.toBeInTheDocument();
     expect(screen.queryByTestId("knowledge-document-stale")).not.toBeInTheDocument();
   });
@@ -389,7 +429,9 @@ describe("KnowledgePage hub", () => {
     expect(within(deeplink).getByTestId("knowledge-filter-mismatch-notice")).toHaveTextContent(
       /active source filter/i,
     );
-    expect(within(deeplink).queryByTestId("knowledge-query-mismatch-notice")).not.toBeInTheDocument();
+    expect(
+      within(deeplink).queryByTestId("knowledge-query-mismatch-notice"),
+    ).not.toBeInTheDocument();
   });
 
   it("uses library-query mismatch wording when only q excludes a deep-linked document", async () => {
@@ -400,7 +442,9 @@ describe("KnowledgePage hub", () => {
     expect(within(deeplink).getByTestId("knowledge-query-mismatch-notice")).toHaveTextContent(
       /library search query/i,
     );
-    expect(within(deeplink).queryByTestId("knowledge-filter-mismatch-notice")).not.toBeInTheDocument();
+    expect(
+      within(deeplink).queryByTestId("knowledge-filter-mismatch-notice"),
+    ).not.toBeInTheDocument();
     expect(within(deeplink).getByTestId("knowledge-query-mismatch-notice")).not.toHaveTextContent(
       /source filter/i,
     );
@@ -454,7 +498,12 @@ describe("KnowledgePage hub", () => {
       limit: 50,
       offset: 0,
     });
-    listChunksMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
+    listChunksMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 1,
+      offset: 0,
+    });
     render(<KnowledgePage />);
     expect(await screen.findByTestId("knowledge-document-stale")).toHaveTextContent(
       /missing-doc.*most recent 50 knowledge documents/i,
@@ -540,7 +589,8 @@ describe("KnowledgePage hub", () => {
       items: [
         documentFixture({
           id: "doc-long-id-abcdefghijklmnopqrstuvwxyz",
-          title: "Very long knowledge title that should wrap on narrow mobile viewports without overflow",
+          title:
+            "Very long knowledge title that should wrap on narrow mobile viewports without overflow",
           source_uri: "journal://entry-very-long-identifier-that-must-break-all",
         }),
       ],
@@ -635,9 +685,9 @@ describe("KnowledgePage hub", () => {
     listChunksMock.mockRejectedValueOnce(new Error("chunks down"));
     render(<KnowledgePage />);
     fireEvent.click(await screen.findByTestId("knowledge-expand-doc-playbook"));
-    expect(await screen.findByTestId("knowledge-detail-unavailable-doc-playbook")).toHaveTextContent(
-      /chunks down/i,
-    );
+    expect(
+      await screen.findByTestId("knowledge-detail-unavailable-doc-playbook"),
+    ).toHaveTextContent(/chunks down/i);
     expect(screen.getByTestId("knowledge-detail-retry-doc-playbook")).toBeInTheDocument();
     expect(screen.getByTestId("knowledge-document-card-doc-playbook")).toBeInTheDocument();
     expect(screen.getByTestId("knowledge-document-card-doc-journal")).toBeInTheDocument();

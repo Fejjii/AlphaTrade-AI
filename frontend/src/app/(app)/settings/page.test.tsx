@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "@/app/(app)/settings/page";
@@ -46,6 +46,24 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsPage", () => {
+  it("links workspace parameters to existing panels and specialized pages", () => {
+    render(<SettingsPage />);
+    const nav = within(screen.getByRole("navigation", { name: "Workspace settings" }));
+    for (const [label, href] of [
+      ["Markets", "#settings-markets"],
+      ["Strategies", "/strategy-lab"],
+      ["Notifications", "#settings-notifications"],
+      ["Risk", "/risk"],
+      ["System parameters", "#settings-system"],
+    ]) {
+      expect(nav.getByRole("link", { name: label })).toHaveAttribute("href", href);
+      if (href!.startsWith("#")) expect(document.querySelector(href!)).not.toBeNull();
+    }
+    expect(screen.getByRole("link", { name: /Open advanced pages/i })).toHaveAttribute(
+      "href",
+      "/settings/advanced",
+    );
+  });
   it("shows email verification with non-colour meaning (FP2-205)", () => {
     render(<SettingsPage />);
     const verified = screen.getByTestId("settings-email-verified");
@@ -60,15 +78,15 @@ describe("SettingsPage", () => {
       /Open Dashboard for live workspace status/i,
     );
     expect(
-      screen.getByRole("link", { name: /Open Dashboard for live workspace status/i }),
+      screen.getByRole("link", {
+        name: /Open Dashboard for live workspace status/i,
+      }),
     ).toHaveAttribute("href", "/");
   });
 
   it("shows verified runtime posture when /health confirms paper (FP2-104)", () => {
     render(<SettingsPage />);
-    expect(screen.getByTestId("settings-posture-execution")).toHaveTextContent(
-      "Execution: PAPER",
-    );
+    expect(screen.getByTestId("settings-posture-execution")).toHaveTextContent("Execution: PAPER");
     expect(screen.getByTestId("settings-posture-real-trading")).toHaveTextContent(
       "Real trading: disabled",
     );

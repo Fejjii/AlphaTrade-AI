@@ -24,14 +24,21 @@ describe("AT-040 collapsible DesktopSidebar", () => {
 
   afterEach(() => cleanup());
 
-  it("defaults expanded with five destinations and accessible labels", () => {
+  it("defaults expanded with six destinations and accessible labels", () => {
     const onOpen = vi.fn();
     render(<DesktopSidebar onOpenCommandMenu={onOpen} />);
     const sidebar = screen.getByTestId("desktop-sidebar");
     expect(sidebar).toHaveAttribute("data-collapsed", "false");
     expect(sidebar.className).toContain("w-60");
-    const nav = within(sidebar).getByRole("navigation", { name: "Primary destinations" });
-    expect(within(nav).getAllByRole("link")).toHaveLength(5);
+    const nav = within(sidebar).getByRole("navigation", {
+      name: "Primary destinations",
+    });
+    expect(within(nav).getAllByRole("link")).toHaveLength(6);
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["Dashboard", "Agent", "Journal", "Strategies", "Knowledge", "Settings"]);
     expect(within(nav).getByRole("link", { name: "Journal" })).toHaveAttribute(
       "aria-current",
       "page",
@@ -48,6 +55,7 @@ describe("AT-040 collapsible DesktopSidebar", () => {
     expect(sidebar.className).toContain("w-16");
     expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe("1");
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Knowledge" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Journal" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("sidebar-command-menu")).toHaveAttribute(
       "aria-label",

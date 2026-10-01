@@ -17,6 +17,7 @@ import {
   KnowledgeSemanticSearch,
   KnowledgeSourceAvailability,
   KnowledgeStorePanel,
+  knowledgeSourceFilterHref,
   latestDocumentTimestamp,
   parseKnowledgeQuery,
   type KnowledgeLibraryStatus,
@@ -319,12 +320,20 @@ export default function KnowledgePage() {
   return (
     <JournalHubChrome
       title="Knowledge"
-      description="What trading knowledge have I stored, where did it come from, and how can I find and use it again?"
+      description="Rules, playbook, lessons, and research notes. Find and reuse your recorded trading knowledge."
       posture={posture}
       providerMode={providerMode}
       freshnessSources={freshnessSources}
       testId="knowledge-hub-page"
-      activeHref="/knowledge"
+      activeHref={knowledgeSourceFilterHref(context.sourceFilter, context)}
+      navLabel="Knowledge sections"
+      navItems={[
+        { href: knowledgeSourceFilterHref("all", context), label: "Knowledge" },
+        { href: knowledgeSourceFilterHref("risk_policy", context), label: "Rules" },
+        { href: knowledgeSourceFilterHref("trading_playbook", context), label: "Playbook" },
+        { href: "/lessons", label: "Lessons" },
+        { href: knowledgeSourceFilterHref("general_note", context), label: "Notes & research" },
+      ]}
     >
       <div
         className="flex flex-wrap items-center gap-2"
