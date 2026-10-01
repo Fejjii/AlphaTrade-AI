@@ -83,9 +83,9 @@ export function WatcherWatchlistEditor({
   return (
     <Card data-testid="watcher-watchlist">
       <CardHeader>
-        <CardTitle className="text-base">Watcher watchlist</CardTitle>
+        <CardTitle className="text-base">Watcher markets</CardTitle>
         <p className="text-xs text-text-muted">
-          Five paper slots. One Watcher scans them in order. Unsupported markets stay unavailable.
+          Five paper markets, scanned in order. Unsupported markets stay unavailable.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -98,11 +98,12 @@ export function WatcherWatchlistEditor({
               className="grid gap-2 border-b border-border pb-3 md:grid-cols-[auto_1fr_auto]"
               data-testid={`watchlist-slot-${slot.position}`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="w-12 text-xs text-text-muted">Slot {slot.position}</span>
                 <Input
                   aria-label={`Symbol for slot ${slot.position}`}
                   value={slot.symbol}
+                  disabled={saving}
                   className="w-36"
                   onChange={(event) => {
                     const next = slots.slice();
@@ -116,6 +117,7 @@ export function WatcherWatchlistEditor({
                   <input
                     type="checkbox"
                     checked={slot.enabled}
+                    disabled={saving}
                     aria-label={`Enable slot ${slot.position}`}
                     onChange={(event) => {
                       const next = slots.slice();
@@ -125,7 +127,7 @@ export function WatcherWatchlistEditor({
                       onChange(next);
                     }}
                   />
-                  Enabled
+                  {slot.enabled ? "Enabled" : "Disabled"}
                 </label>
               </div>
               <p className="text-xs text-zinc-300" data-testid={`watchlist-status-${slot.position}`}>
@@ -135,9 +137,9 @@ export function WatcherWatchlistEditor({
                       label={statusLabel(status.error_state, status.market_source)}
                       tone={status.error_state ? "warn" : "healthy"}
                     />{" "}
-                    {status.freshness} · {status.setup_state}
-                    {status.alert_state !== "none" ? ` · ${status.alert_state}` : ""}
-                    {status.error_state ? ` · ${status.error_state}` : ""}
+                    {status.freshness.replace(/_/g, " ")} · {status.setup_state.replace(/_/g, " ")}
+                    {status.alert_state !== "none" ? ` · ${status.alert_state.replace(/_/g, " ")}` : ""}
+                    {status.error_state ? ` · ${status.error_state.replace(/_/g, " ")}` : ""}
                   </>
                 ) : (
                   "Pending / unscanned"
@@ -149,7 +151,7 @@ export function WatcherWatchlistEditor({
                   variant="secondary"
                   size="sm"
                   aria-label={`Move slot ${slot.position} up`}
-                  disabled={index === 0}
+                  disabled={saving || index === 0}
                   onClick={() => onChange(moveSlot(slots, index, -1))}
                 >
                   Up
@@ -159,7 +161,7 @@ export function WatcherWatchlistEditor({
                   variant="secondary"
                   size="sm"
                   aria-label={`Move slot ${slot.position} down`}
-                  disabled={index === slots.length - 1}
+                  disabled={saving || index === slots.length - 1}
                   onClick={() => onChange(moveSlot(slots, index, 1))}
                 >
                   Down
@@ -198,13 +200,15 @@ export function WatcherWatchlistSection() {
     pollRequest.current = null;
     try {
       const [config, status] = await Promise.all([
-        api.watcherWatchlist.configuration(), api.watcherWatchlist.status(),
+        api.watcherWatchlist.configuration(), api.watcherWatchlist.status().catch(() => null),
       ]);
       if (!mounted.current || request !== generation.current) return;
       setSlots(config.slots);
       setRevision(config.revision);
-      setStatuses(status.configuration_revision === config.revision ? status.symbols : []);
-      setStaleAfter(status.stale_after_seconds);
+      setStatuses(status?.configuration_revision === config.revision ? status.symbols : []);
+      if (status) setStaleAfter(status.stale_after_seconds);
+      setMessage(status ? null : "Market availability unavailable. Your saved watchlist is shown.");
+      return status !== null;
     } finally {
       if (refreshRequest.current === request) refreshRequest.current = null;
     }
@@ -213,7 +217,7 @@ export function WatcherWatchlistSection() {
   useEffect(() => {
     mounted.current = true;
     void refresh().catch(() => {
-      if (mounted.current) setMessage("Watchlist configuration is not loaded yet.");
+      if (mounted.current) setMessage("Watchlist configuration unavailable. Reload to try again.");
     });
     // Leave capacity in the shared 120/hour read quota for configuration and saves.
     const timer = setInterval(() => {
@@ -257,8 +261,10 @@ export function WatcherWatchlistSection() {
         void api.watcherWatchlist
           .replace(slots.map((slot) => ({ symbol: slot.symbol, enabled: slot.enabled })), revision)
           .then(async () => {
-            await refresh();
-            if (mounted.current) setMessage("Watchlist saved. Paper only.");
+            const availabilityLoaded = await refresh();
+            if (mounted.current) setMessage(availabilityLoaded
+              ? "Watchlist saved. Paper only."
+              : "Watchlist saved. Market availability unavailable. Paper only.");
           })
           .catch(() => {
             if (mounted.current) setMessage("Save or refresh failed. Reload before trying again.");
