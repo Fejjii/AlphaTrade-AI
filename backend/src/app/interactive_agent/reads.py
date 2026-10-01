@@ -21,6 +21,7 @@ from app.interactive_agent.contracts import (
 from app.interactive_agent.parsing import extract_symbol, query_tokens
 from app.repositories.market_watcher import MarketWatcherObservationRepository
 from app.schemas.common import StrictModel, TradeResult
+from app.schemas.strategy_analytics import StrategyAnalyticsFilters, StrategyAnalyticsReport
 from app.services.audit_service import AuditService
 from app.services.coaching.service import CoachingService
 from app.services.journal_service import JournalService
@@ -39,6 +40,8 @@ class MarketQuoteReader(Protocol):
 
 class ReadBundle(StrictModel):
     brain_summary: str | None = None
+    strategy_analytics: list[StrategyAnalyticsReport] = Field(default_factory=list)
+    analytics_summary: str | None = None
     market_quote: MarketQuoteView | None = None
     market_availability: str | None = None
     market_reason: str | None = None
@@ -61,9 +64,30 @@ def gather_reads(
     strategy_id: uuid.UUID | None,
     market_reader: MarketQuoteReader | None,
     symbol: str | None = None,
+    timeframe: str | None = None,
+    analytics_filters: StrategyAnalyticsFilters | None = None,
+    max_rows: int = 10_000,
 ) -> ReadBundle:
     """Read existing authorities for this turn. No snapshots or journal writes."""
     bundle = ReadBundle()
+    if capability is AgentCapability.STRATEGY_ANALYTICS:
+        from app.interactive_agent.strategy_analytics import read_strategy_analytics
+
+        reports, summary, limitations = read_strategy_analytics(
+            session,
+            organization_id=organization_id,
+            user_id=user_id,
+            message=message,
+            strategy_id=strategy_id,
+            symbol=symbol,
+            timeframe=timeframe,
+            filters=analytics_filters,
+            max_rows=max_rows,
+        )
+        bundle.strategy_analytics = reports
+        bundle.analytics_summary = summary
+        bundle.limitations.extend(limitations)
+        return bundle
     if capability is AgentCapability.STRATEGY_BRAIN:
         from app.strategy_brain.agent import read_brain
 

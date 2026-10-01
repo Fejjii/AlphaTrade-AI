@@ -112,4 +112,3 @@ class DailyReviewInput(StrictModel):
         except (ValueError, ZoneInfoNotFoundError) as exc:
             raise ValueError("Use an IANA timezone such as Europe/Berlin.") from exc
         return value
-

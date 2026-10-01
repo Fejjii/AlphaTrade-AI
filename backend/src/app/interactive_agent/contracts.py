@@ -15,6 +15,7 @@ from pydantic import Field
 from app.daily_review.contracts import DailyReview
 from app.interactive_agent.actions import ActionDescriptor, ActionRequest
 from app.schemas.common import StrictModel
+from app.schemas.strategy_analytics import StrategyAnalyticsFilters, StrategyAnalyticsReport
 
 SCHEMA_VERSION: Literal["InteractiveAgent/v1"] = "InteractiveAgent/v1"
 PAYLOAD_KEY = "interactive_agent"
@@ -26,6 +27,7 @@ class AgentCapability(StrEnum):
     GENERAL_CONVERSATION = "general_conversation"
     MARKET_AND_PORTFOLIO = "market_and_portfolio"
     STRATEGY_BRAIN = "strategy_brain"
+    STRATEGY_ANALYTICS = "strategy_analytics"
     STRATEGY_RETRIEVAL = "strategy_retrieval"
     STRATEGY_AUTHORING = "strategy_authoring"
     PATTERN_AND_RULE_CAPTURE = "pattern_and_rule_capture"
@@ -105,6 +107,7 @@ class AgentTurnRequest(StrictModel):
     symbol: str | None = Field(default=None, max_length=30)
     timeframe: str | None = Field(default=None, max_length=16)
     action: ActionRequest | None = None
+    analytics_filters: StrategyAnalyticsFilters | None = None
 
 
 class ProposalDecisionRequest(StrictModel):
@@ -254,6 +257,7 @@ class AgentTurnResult(StrictModel):
     portfolio_summary: str | None = None
     statistics_summary: str | None = None
     daily_review: DailyReview | None = None
+    strategy_analytics: list[StrategyAnalyticsReport] = Field(default_factory=list)
     paper_safety: PaperSafetyContract
     screenshot: ScreenshotAnalysisContract | None = None
     voice: VoiceIoContract | None = None
