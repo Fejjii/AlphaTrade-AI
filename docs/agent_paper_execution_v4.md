@@ -1,7 +1,10 @@
 # Agent paper execution V4 handoff
 
 Branch: `codex/agent_paper_execution_v4_001`
-Exact parent: `7df8bcc6e42ba68ab2194b980de1792abeceabcc`
+Exact starting base (PR167): `7df8bcc6e42ba68ab2194b980de1792abeceabcc`
+Draft PR: [#171](https://github.com/Fejjii/AlphaTrade-AI/pull/171), stacked on #167
+Implementation commits: `dadae5ef85a285deb0e75cb3f346013140c42328`,
+`6d2311dfe3552b47c85a0b8c996f182c6dc0810b`
 
 ## Behavior
 
@@ -29,6 +32,13 @@ maximum risk percentage. `PositionSizingService.calculate_paper` sizes from that
 ceiling and the RiskEngine notional cap, preserves cost allowances and rounds down
 to the existing internal paper lot size. The Agent cannot supply cash risk, equity,
 quantity, leverage, instrument rules, fees or execution policy overrides.
+
+Shared DailyRiskAccounting includes canonical lifecycle-bound paper journal net
+outcomes, trade counts and open exposure. Imported/unbound journals and legacy
+linked-position mirrors are excluded from these additional totals. The existing
+loss cooldown is shared between the Agent and signal orchestration, and includes
+both legacy position losses and canonical paper journal closes. These limits are
+checked before preparation and again before confirmation.
 
 `CanonicalTradePlanService` creates the immutable revision and existing
 `ApprovalService` creates its pending decision. The proposal displays entry, stop,
@@ -171,16 +181,32 @@ PR; merge and deployment are outside this handoff.
 
 ## Verification
 
-- 56 new paper-flow cases cover both conversation adapters, including the HTTP
-  preparation/confirmation path, using real PostgreSQL authorities.
-- 202 selected Agent, canonical plan/execution and paper-loop regressions passed.
-- 38 checks passed after the final preparation metadata change.
-- Repository Ruff lint/format checks and focused strict mypy checks passed.
-- The full backend run produced 2,977 passes, 20 skips and five failures. The Agent
-  import-boundary assertion was updated to check actual direct execution imports
-  and calls, and passed on rerun. The validation-script self-check passed with a
-  writable `UV_CACHE_DIR`.
-- The remaining three failures in `test_controlled_paper_activation_rehearsal.py`
-  reproduced identically on the untouched exact V3 base: the live-evidence
+- Final backend matrix: **3,022 passed, 3 failed, zero skipped**, covering all
+  3,025 collected tests across 215 modules. All **62 V4 cases** pass, including
+  the HTTP and legacy conversation paths and the six added daily-stop/cooldown
+  regressions. No new V4 regression remains.
+- Existing failures in `test_controlled_paper_activation_rehearsal.py` reproduce
+  identically on an untouched checkout of the exact starting SHA: the live-evidence
   rehearsal returns `provider_unreachable`, and the outage/stale cases return
-  `blocked` where their assertions expect `failed`. They remain outside V4 scope.
+  `blocked` where their assertions expect `failed`. The full suite is therefore
+  not green; these baseline failures are recorded for review and left outside V4.
+- Final source: `.venv/bin/ruff check src tests` and
+  `.venv/bin/ruff format --check src tests` pass (981 files formatted);
+  `git diff --check` passes. Focused mypy on the changed Agent execution, daily
+  accounting and cooldown modules passes with `--follow-imports=silent`.
+- Full-run command: `UV_CACHE_DIR=/tmp/alphatrade-uv .venv/bin/python /tmp/alphatrade-v4-suite.py`.
+  This temporary test runner collects every test, partitions complete modules
+  across four processes with separate local PostgreSQL databases through
+  `PHASE1_POSTGRES_URL` and `AT028_POSTGRES_URL`, and invokes each with
+  `pytest -q -o addopts='' --tb=short`. The two Watcher migration tests run
+  serially afterward in the required ephemeral `alphatrade_test` database and
+  pass. The aggregate exit is 1 solely for the three baseline failures.
+- Base comparison command: `pytest -q -o addopts='' --tb=short tests/test_controlled_paper_activation_rehearsal.py`
+  from a detached checkout at the exact starting SHA, with an isolated PostgreSQL
+  database: 1 passed, 3 failed, exit 1 with the same assertions.
+
+The requested branch and draft PR already existed when publishing was attempted.
+Their canonical implementation was preserved, and the daily-accounting/cooldown
+fixes were added with a fast-forward continuation. No competing execution adapter
+is present on this branch. Review draft PR171 and the root `HANDOFF.md`; the task
+stops after pushing this handoff. No merge or deployment follows.
