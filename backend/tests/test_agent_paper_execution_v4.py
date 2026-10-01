@@ -779,3 +779,113 @@ def test_interactive_http_paper_execution(interactive_world, monkeypatch):
         assert replayed.json()["application_result"] == receipt
     w.session.expire_all()
     assert count(w, ExecutionCommand) == count(w, ExecutionFillFact) == count(w, JournalTrade) == 1
+
+
+@requires_postgres
+@pytest.mark.parametrize("at_confirmation", [False, True])
+@pytest.mark.parametrize("source", ["canonical", "legacy"])
+def test_loss_cooldown_rechecked_for_paper_intent(paper_world, at_confirmation, source):
+    from app.db.models import Position
+    from app.schemas.common import JournalTradeSource, JournalTradeStatus, PositionStatus
+
+    w = paper_world
+    proposal = prepare(w) if at_confirmation else None
+    if source == "canonical":
+        loss = JournalTrade(
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+            execution_lifecycle_id=uuid4(),
+            source=JournalTradeSource.PAPER_EXECUTION,
+            status=JournalTradeStatus.CLOSED,
+            symbol="BTCUSDT",
+            timeframe="15m",
+            direction="short",
+            entry_time=w.clock.now() - timedelta(minutes=2),
+            exit_time=w.clock.now() - timedelta(seconds=30),
+            net_pnl=Decimal("-1"),
+        )
+    else:
+        loss = Position(
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+            symbol="BTCUSDT",
+            direction="short",
+            status=PositionStatus.CLOSED,
+            size=Decimal("0.001"),
+            entry_price=Decimal("100000"),
+            leverage=Decimal("1"),
+            opened_at=w.clock.now() - timedelta(minutes=2),
+            closed_at=w.clock.now() - timedelta(seconds=30),
+            realized_pnl=Decimal("-1"),
+        )
+    w.session.add(loss)
+    w.session.commit()
+    response = (
+        run(w, proposal.paper_execution.confirmation_message, proposal.conversation_id)
+        if proposal
+        else prepare(w)
+    )
+    assert response.approval_status == "blocked", response.reply
+    assert "cooldown" in response.reply.lower()
+    assert count(w, ExecutionCommand) == count(w, ExecutionFillFact) == 0
+    assert count(w, ApprovalAuthorization) == 0
+
+
+@requires_postgres
+@pytest.mark.parametrize("at_confirmation", [False, True])
+def test_canonical_loss_triggers_daily_stop(paper_world, at_confirmation):
+    from datetime import UTC
+
+    from app.schemas.common import JournalTradeSource, JournalTradeStatus
+    from app.schemas.risk import UserRiskSettingsUpdate
+    from app.services.audit_service import AuditService
+    from app.services.risk.daily_risk_accounting import DailyRiskAccounting
+    from app.services.risk.settings_service import RiskSettingsService
+
+    w = paper_world
+    w.settings.paper_signal_cooldown_after_loss_seconds = 0
+    proposal = prepare(w) if at_confirmation else None
+    risk_settings = RiskSettingsService(w.session, AuditService(w.session))
+    configured = risk_settings.update(
+        UserRiskSettingsUpdate(daily_loss_limit=Decimal("25")),
+        organization_id=ORG_ID,
+        user_id=USER_ID,
+    )
+    for source, lifecycle, pnl in (
+        (JournalTradeSource.PAPER_EXECUTION, uuid4(), "-50"),
+        (JournalTradeSource.IMPORTED, uuid4(), "-900"),
+        (JournalTradeSource.PAPER_EXECUTION, None, "-900"),
+    ):
+        w.session.add(
+            JournalTrade(
+                organization_id=ORG_ID,
+                user_id=USER_ID,
+                source=source,
+                execution_lifecycle_id=lifecycle,
+                status=JournalTradeStatus.CLOSED,
+                symbol="BTCUSDT",
+                timeframe="15m",
+                direction="short",
+                entry_time=datetime.now(UTC),
+                exit_time=datetime.now(UTC),
+                net_pnl=Decimal(pnl),
+            )
+        )
+    w.session.flush()
+    snapshot = DailyRiskAccounting(w.session, risk_settings).sync_from_portfolio(
+        organization_id=ORG_ID,
+        user_id=USER_ID,
+    )
+    assert snapshot.realized_pnl == Decimal("-50")
+    assert snapshot.account_equity == configured.default_account_balance - Decimal("50")
+    assert snapshot.trade_count == 1 and snapshot.daily_locked
+    w.session.commit()
+    response = (
+        run(w, proposal.paper_execution.confirmation_message, proposal.conversation_id)
+        if proposal
+        else prepare(w)
+    )
+    assert response.approval_status == "blocked", response.reply
+    assert "Risk BLOCK is final" in response.reply
+    assert count(w, ExecutionCommand) == count(w, ExecutionFillFact) == 0
+    assert count(w, ApprovalAuthorization) == 0
