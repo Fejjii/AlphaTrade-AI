@@ -103,8 +103,12 @@ class RagService:
         self._session.commit()
         return _document_to_schema(entity)
 
-    def ingest(self, data: IngestDocumentRequest) -> IngestDocumentResponse:
-        """Normalize, chunk, embed, and persist a text document."""
+    def ingest(self, data: IngestDocumentRequest, *, commit: bool = True) -> IngestDocumentResponse:
+        """Normalize, chunk, embed, and persist a text document.
+
+        Composing authorities can retain their row locks by owning the commit.
+        Vector upserts remain the existing external, non-transactional operation.
+        """
         if self._documents is None or self._chunks is None:
             raise RuntimeError("Database session required for ingestion.")
 
@@ -218,7 +222,10 @@ class RagService:
                 "Knowledge ingestion failed: vector store unavailable.",
                 details={"reason": "vector_upsert_failed"},
             ) from exc
-        self._session.commit()
+        if commit:
+            self._session.commit()
+        else:
+            self._session.flush()
         logger.info(
             "rag_ingest_complete",
             document_id=str(document_id),

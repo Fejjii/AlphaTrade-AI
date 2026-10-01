@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, Request
 
-from app.core.dependencies import SessionDep, SettingsDep
+from app.core.dependencies import AuditServiceDep, SessionDep, SettingsDep
 from app.evidence_pipeline.service import CanonicalEvidenceService
 from app.interactive_agent.canonical_market import CanonicalPerpetualQuoteReader
 from app.interactive_agent.contracts import (
@@ -18,6 +18,7 @@ from app.interactive_agent.contracts import (
     AgentTurnRequest,
     AgentTurnResult,
     ProposalDecisionRequest,
+    ProposalLifecycle,
     ScreenshotAnalysisContract,
     ScreenshotAnalysisRequest,
     StructuredActionProposal,
@@ -26,10 +27,15 @@ from app.interactive_agent.contracts import (
     VoiceOutputRequest,
 )
 from app.interactive_agent.conversation import ModelConversationalResponder
+from app.interactive_agent.proposals import find_proposal
 from app.interactive_agent.service import InteractiveAgentService
+from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import TraderDep
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+_knowledge_application_rate_limit = tenant_rate_limit_dependency(
+    "knowledge:ingest", limit=20, window_seconds=3600, ip_limit=40, user_limit=20
+)
 
 
 def _service(
@@ -86,14 +92,43 @@ async def confirm_agent_proposal(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    audit_service: AuditServiceDep,
 ) -> StructuredActionProposal:
-    result = _service(session, settings, tenant.organization_id).confirm(
+    _, pending = find_proposal(
+        session,
+        conversation_id=body.conversation_id,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        proposal_id=proposal_id,
+        lock=True,
+    )
+    if pending.status is ProposalLifecycle.PROPOSED and pending.payload.get("ingest_request"):
+        _knowledge_application_rate_limit(
+            request=request, tenant=tenant, session=session, audit_service=audit_service
+        )
+    service = _service(session, settings, tenant.organization_id)
+    result = service.confirm(
         proposal_id,
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
     )
     session.commit()
+    if (
+        service.confirmation_changed
+        and result.application_result.get("record_type") == "backtest_runs"
+    ):
+        from app.api.routes.backtests import enqueue_backtest_if_needed
+        from app.schemas.backtest import BacktestRun
+
+        enqueue_backtest_if_needed(
+            result=BacktestRun.model_validate(result.application_result["backtest"]),
+            session=session,
+            settings=settings,
+            background_tasks=background_tasks,
+        )
     return result
 
 

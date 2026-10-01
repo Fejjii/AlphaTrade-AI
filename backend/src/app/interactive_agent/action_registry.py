@@ -27,6 +27,7 @@ from app.interactive_agent.actions import (
     KnowledgeInput,
     PaperTradeInput,
     StrategyInput,
+    StrategyValidationInput,
     WatcherChangeInput,
 )
 from app.interactive_agent.contracts import (
@@ -69,9 +70,6 @@ class Tool:
         )
 
 
-_PROPOSAL_ONLY = (
-    "Confirmation records intent only; the existing domain gateway must apply it separately.",
-)
 _JOURNAL = (
     "JournalService applies a complete draft only after explicit hash-protected confirmation.",
 )
@@ -80,7 +78,8 @@ _JOURNAL_NOTE = (
     "Confirmation refuses a journal entry changed since this proposal was drafted.",
 )
 _STRATEGY = (
-    "No strategy version, compiled identity, Strategy Brain setup or evaluation is changed.",
+    "No strategy version, compiled identity, Strategy Brain setup or activation is changed.",
+    "Confirmation ingests research notes and links; refinements retain a canonical DRAFT.",
 )
 _PAPER = (
     "This is a handoff to pretrade or the existing proposal authority, never execution approval.",
@@ -141,12 +140,17 @@ _TOOLS = [
     *[
         _tool(
             f"strategy.{name}",
-            StrategyInput,
+            StrategyValidationInput if name == "request_validation" else StrategyInput,
             authority,
             kind,
             artifact,
             AgentCapability.STRATEGY_AUTHORING,
-            _STRATEGY + _PROPOSAL_ONLY,
+            (
+                *_STRATEGY,
+                "Complete backtest inputs create an observable canonical backtest request."
+                if name == "request_validation"
+                else "Explicit hash-protected confirmation is required for application.",
+            ),
         )
         for name, authority, kind, artifact in (
             (
@@ -157,13 +161,13 @@ _TOOLS = [
             ),
             (
                 "observation",
-                "conversation_messages",
+                "documents_and_chunks",
                 StructuredActionKind.PROPOSE_OBSERVATION,
                 ArtifactKind.OBSERVATION,
             ),
             (
                 "hypothesis",
-                "conversation_messages",
+                "documents_and_chunks",
                 StructuredActionKind.PROPOSE_HYPOTHESIS,
                 ArtifactKind.HYPOTHESIS,
             ),
@@ -175,13 +179,13 @@ _TOOLS = [
             ),
             (
                 "associate_evidence",
-                "strategy_conversation_proposals",
+                "documents_and_chunks",
                 StructuredActionKind.PROPOSE_STRATEGY_EVIDENCE,
                 ArtifactKind.OBSERVATION,
             ),
             (
                 "request_validation",
-                "conversation_messages",
+                "backtest_runs",
                 StructuredActionKind.PROPOSE_VALIDATION_REQUEST,
                 ArtifactKind.HYPOTHESIS,
             ),
@@ -194,10 +198,7 @@ _TOOLS = [
         StructuredActionKind.PROPOSE_KNOWLEDGE,
         ArtifactKind.LESSON,
         AgentCapability.PATTERN_AND_RULE_CAPTURE,
-        (
-            *_PROPOSAL_ONLY,
-            "Canonical RagService ingestion, quota checks and vector linking remain separate.",
-        ),
+        ("Confirmation uses canonical RagService ingestion, quota checks and vector linking.",),
     ),
     _tool(
         "watcher.change",
@@ -207,8 +208,7 @@ _TOOLS = [
         ArtifactKind.OBSERVATION,
         AgentCapability.STRATEGY_BRAIN,
         (
-            *_PROPOSAL_ONLY,
-            "Existing five-slot validation and revision fencing are required at application.",
+            "Confirmation applies through the existing five-slot validation and revision fence.",
             "Does not activate the Watcher worker or change Telegram preferences.",
         ),
     ),
@@ -219,7 +219,10 @@ _TOOLS = [
         StructuredActionKind.PROPOSE_TRADE_DECISION,
         ArtifactKind.TRADE_DECISION,
         AgentCapability.PRE_TRADE_REASONING,
-        _PAPER + _PROPOSAL_ONLY,
+        (
+            *_PAPER,
+            "Complete explicit account and risk inputs may run canonical pretrade analysis.",
+        ),
     ),
     Tool(
         "proposal.confirm",
@@ -362,5 +365,16 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
         targets = re.search(r"\btargets?\s*[:=@]?\s*((?:\d+(?:\.\d+)?\s*[, ]?\s*)+)", lower)
         if targets:
             paper["targets"] = re.findall(r"\d+(?:\.\d+)?", targets.group(1))[:10]
+        account = re.search(r"\baccount(?: size| balance| equity)\s*[:=]?\s*(\d+(?:\.\d+)?)", lower)
+        risk = re.search(r"\b(?:max risk|risk per trade)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%", lower)
+        if account and risk and all(paper.get(key) for key in ("symbol", "timeframe", "direction")):
+            paper["pretrade"] = {
+                "symbol": paper["symbol"],
+                "timeframe": paper["timeframe"],
+                "direction": paper["direction"],
+                "account_size": account.group(1),
+                "max_risk_per_trade": risk.group(1),
+                "strategy_id": str(request.strategy_id) if request.strategy_id else None,
+            }
         return ActionRequest(name="paper_trade.propose", arguments=paper)
     return None
