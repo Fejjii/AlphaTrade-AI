@@ -552,6 +552,7 @@ def test_governed_candidate_restart_replay_uses_existing_authority_and_never_exe
     runtime, restart, policy, now = runtime_world(postgres_store, bearish=bearish)
     report = runtime.run_cycle()
     assert report.scans and report.scans[0].candidate_ids, report
+    assert report.scans[0].nested_alert is None
     scan = report.scans[0]
     assert len(calls) == 1 and calls[0].assessment.state is SetupAssessmentState.CONFIRMED_SETUP
     assert scan.paper_loop_reason == "sfp_execution_plan_not_authorized", scan

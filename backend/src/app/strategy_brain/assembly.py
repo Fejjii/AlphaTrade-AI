@@ -319,6 +319,11 @@ def record_paper_link(
             now=now,
         )
 
+    # SFP persists its canonical paper link, but has no accepted Telegram producer.
+    # The Nested-only alert adapter cannot interpret SFP detection fields.
+    if isinstance(policy.authored_spec, SfpSpec):
+        return None
+
     latest = events[-1]
     if (
         latest.state.value != "CONFIRMED"

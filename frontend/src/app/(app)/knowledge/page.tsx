@@ -341,7 +341,10 @@ export default function KnowledgePage() {
       </section>
       <p className="text-xs text-text-muted">
         Source types organize existing knowledge. Strategy and lesson changes
-        are reviewed in their own workspaces.
+        are reviewed in their own workspaces.{" "}
+        <Link href="/lessons" className="underline">
+          Review lessons
+        </Link>
       </p>
     </div>
   );

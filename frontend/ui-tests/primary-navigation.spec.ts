@@ -169,18 +169,18 @@ test("contextual access preserves Knowledge deep links and retained specialized 
   page,
 }) => {
   await installUnavailableSources(page);
-  await page.goto("/knowledge?source=risk_policy&document=doc-existing&q=discipline");
-  const sections = page.getByRole("navigation", { name: "Knowledge sections" });
-  await expect(sections.getByRole("link", { name: "Rules", exact: true })).toHaveAttribute(
+  await page.goto("/knowledge?category=rules&source=risk_policy&document=doc-existing&q=discipline");
+  const sections = page.getByRole("navigation", { name: "Knowledge categories" });
+  await expect(sections.getByRole("link", { name: "Trading Rules", exact: true })).toHaveAttribute(
     "aria-current",
     "page",
   );
   await sections.getByRole("link", { name: "Playbook", exact: true }).click();
-  await expect(page).toHaveURL(/source=trading_playbook/);
+  await expect(page).toHaveURL(/category=playbook/);
   const url = new URL(page.url());
   expect(url.searchParams.get("q")).toBe("discipline");
   expect(url.searchParams.get("document")).toBe("doc-existing");
-  await sections.getByRole("link", { name: "Lessons", exact: true }).click();
+  await page.getByRole("link", { name: "Review lessons", exact: true }).click();
   await expect(page).toHaveURL(/\/lessons$/);
   await expect(
     page
@@ -189,19 +189,20 @@ test("contextual access preserves Knowledge deep links and retained specialized 
   ).toHaveAttribute("aria-current", "page");
   await page.goto("/settings");
   const parameters = page.getByRole("navigation", {
-    name: "Workspace settings",
+    name: "Settings sections",
   });
   await parameters.getByRole("link", { name: "Markets", exact: true }).click();
-  await expect(page).toHaveURL(/#settings-markets$/);
-  await expect(page.getByRole("region", { name: "Market settings" })).toBeVisible();
+  await expect(page).toHaveURL(/#markets$/);
+  await expect(page.getByRole("region", { name: "Markets", exact: true })).toBeVisible();
   await parameters.getByRole("link", { name: "Notifications", exact: true }).click();
-  await expect(page).toHaveURL(/#settings-notifications$/);
-  await expect(page.getByRole("region", { name: "Notification settings" })).toBeVisible();
-  await parameters.getByRole("link", { name: "System parameters", exact: true }).click();
-  await expect(page).toHaveURL(/#settings-system$/);
+  await expect(page).toHaveURL(/#notifications$/);
+  await expect(page.getByRole("region", { name: "Notifications", exact: true })).toBeVisible();
+  await parameters.getByRole("link", { name: "Account and system", exact: true }).click();
+  await expect(page).toHaveURL(/#account-system$/);
   await expect(page.getByTestId("settings-runtime-posture")).toBeVisible();
   await parameters.getByRole("link", { name: "Strategies", exact: true }).click();
-  await expect(page).toHaveURL(/\/strategy-lab$/);
+  await expect(page).toHaveURL(/#strategies$/);
+  await expect(page.getByRole("region", { name: "Strategies", exact: true })).toBeVisible();
   for (const retained of ["/risk", "/watcher", "/market", "/settings/advanced"]) {
     await page.goto(retained);
     expect(new URL(page.url()).pathname).toBe(retained);
