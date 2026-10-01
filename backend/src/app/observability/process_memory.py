@@ -9,7 +9,10 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import gc
+import os
 import resource
+import subprocess
+import sys
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -52,10 +55,13 @@ def read_process_memory() -> ProcessMemory:
 
     rss_kb, peak_kb = _proc_status_kb()
     if rss_kb is None:
-        # Linux reports ru_maxrss in kilobytes. It is a peak, not the current size.
+        # Darwin reports ru_maxrss in bytes; Linux reports KiB. A high-water
+        # mark cannot measure release, so sample current RSS separately on Mac.
+        current_kb = _darwin_rss_kb() if sys.platform == "darwin" else None
         peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        rss_kb = peak
-        peak_kb = peak
+        peak_kb = peak // 1024 if sys.platform == "darwin" else peak
+        rss_kb = peak_kb if current_kb is None else current_kb
+        peak_kb = max(peak_kb, rss_kb)
     if peak_kb is None:
         peak_kb = rss_kb
     sample = ProcessMemory(rss_bytes=rss_kb * 1024, peak_rss_bytes=peak_kb * 1024)
@@ -94,6 +100,23 @@ def _proc_status_kb() -> tuple[int | None, int | None]:
     except OSError:
         return None, None
     return rss_kb, peak_kb
+
+
+def _darwin_rss_kb() -> int | None:
+    """Read this process's current RSS using macOS ps (which reports KiB)."""
+
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-o", "rss=", "-p", str(os.getpid())],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=1,
+        )
+        value = int(result.stdout.strip())
+        return value if value > 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
 
 
 def _observe(sample: ProcessMemory) -> None:

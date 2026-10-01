@@ -1984,4 +1984,25 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-072, AT-ADR-073, AT-ADR-074, AT-ADR-075
 - Note: Do not merge to main, deploy, or enable real trading.
 
+### AT-090 — Configurable five-symbol paper Watcher
+- Priority: P1 · Status: DONE · Dependencies: PR 150 head
+  `33287b6a872beed9846828853930e867d1c892c2` · Risk: Medium (market identity)
+- Safety classification: Paper only. Real trading stays disabled. No Render
+  deploy, no Telegram arm, no Alembic migration.
+- Goal: One Watcher process with five configurable slots. BTC is no longer the
+  only valid market identity. Unsupported symbols fail closed.
+- Branch: `cursor/watchlist_v1`
+- ADR: AT-ADR-076
+- Validation: `tests/test_watcher_five_symbol_watchlist.py` (15 passed),
+  `tests/test_watcher_paper_runtime.py`, `tests/test_bybit_usdt_perpetual_evidence.py`,
+  `tests/test_phase6_fusion_evaluator.py::test_wrong_instrument_fail_closed`,
+  `tests/test_phase6_fusion_evaluator.py::test_stale_evidence_fail_closed`,
+  frontend `WatcherWatchlistSection.test.tsx` and settings page tests (8 passed).
+  mypy on the touched modules reported no issues. `tsc --noEmit` passed.
+- Blocker: Bybit `instruments-info` returned HTTP 403, so Bybit listings for
+  the non-BTC symbols are not proven. Binance USD-M rows for all five symbols
+  were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
+  returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
+- Note: Do not merge automatically. Do not deploy.
+
 

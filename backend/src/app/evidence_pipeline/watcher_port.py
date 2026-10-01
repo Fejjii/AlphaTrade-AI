@@ -19,6 +19,7 @@ from app.evidence_pipeline.manual_resistance import persisted_resistance_evidenc
 from app.evidence_pipeline.types import AssembledCanonicalEvidence
 from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
+    ContractUnavailableError,
     MarketContractError,
     RegionalProviderFailureError,
     StaleEvidenceError,
@@ -174,6 +175,10 @@ class AssemblingWatcherScanEvidence:
                 adapter_kind=EvidenceAdapterKind.WATCHER,
                 resistances=resistances,
             )
+        except ContractUnavailableError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Selected perpetual contract is unavailable.", reason_code=exc.reason
+            ) from exc
         except StaleEvidenceError as exc:
             raise WatcherEvidenceUnavailableError(
                 "Canonical scan evidence is stale.",
@@ -232,7 +237,12 @@ class AssemblingWatcherScanEvidence:
     def _monitor_snapshot(self) -> SymbolMonitorSnapshot | None:
         if self._monitor is None:
             return None
-        snapshot = self._monitor.latest(self._symbol)
+        try:
+            snapshot = self._monitor.latest(self._symbol)
+        except ContractUnavailableError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Selected perpetual contract is unavailable.", reason_code=exc.reason
+            ) from exc
         if not isinstance(snapshot, SymbolMonitorSnapshot):
             raise WatcherEvidenceUnavailableError(
                 "Canonical scan evidence is unavailable.",

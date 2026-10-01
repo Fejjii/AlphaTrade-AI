@@ -113,6 +113,7 @@ from app.db.watcher_orchestration import (  # noqa: F401
     WatcherSubscriptionEvalAttemptRow,
     WatcherWorkerLeaseRow,
 )
+from app.db.watcher_watchlist import WatcherSymbolStatusRow, WatcherWatchlistRow  # noqa: F401
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,

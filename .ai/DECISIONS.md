@@ -2600,4 +2600,81 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - **Consequences:** `docs/interactive_agent_foundation.md` and
   `docs/controlled_paper_activation.md`. PR 148 remains excluded.
 
+## AT-ADR-076 — Paper Watcher uses five logical symbol slots
+- **Date:** 2026-09-30
+- **Status:** Accepted
+- **Context:** The paper Watcher treated BTCUSDT as the only market identity.
+  PR 148 gated extra symbols behind a flag and still forced BTCUSDT into the
+  active set. Live Binance and Bybit contract checks were not reachable from
+  this environment (HTTP 451 and HTTP 403).
+- **Decision:**
+  1. One paper Watcher process owns five ordered slots. The default symbols are
+     BTCUSDT, ZECUSDT, ETHUSDT, TAOUSDT, and HYPEUSDT. Operators can enable,
+     disable, replace, and reorder them through `PUT /watcher/watchlist`
+     without a code deployment. The file store is `var/watcher-watchlist.json`
+     unless `WATCHER_WATCHLIST_PATH` is set. No Alembic migration is added.
+  2. A symbol is scan-eligible only when the active evidence venue has a
+     verified linear USDT perpetual contract for that exact symbol. The
+     in-repo book verifies BTCUSDT on Binance USD-M and Bybit linear. Other
+     symbols stay unavailable. A payload for a different symbol is rejected.
+  3. Generic market identity follows the symbol being evaluated. The canonical
+     first-slice evaluator still defaults to BTCUSDT when no symbol is passed,
+     and compiled BTC strategies still match only BTCUSDT. No new setup rules
+     are added.
+  4. Symbols are scanned one at a time. One failure does not stop the others.
+     Historical trade windows are released after each symbol. Risk BLOCK and
+     the kill switch stay in force. Real trading stays disabled.
+- **Alternatives considered:** Cherry-pick PR 148 (rejected: it still forced
+  BTC as the only active identity). Mark ZEC, ETH, TAO, and HYPE as verified
+  without a provider payload (rejected: those listings were not verified here).
+- **Safety impact:** Paper only. No Render deploy, no Telegram arm, no live
+  orders, no shared database migration.
+- **Consequences:** `GET /watcher/watchlist` is configuration.
+  `GET /watcher/watchlist/status` is per-symbol runtime status. Settings shows
+  the five slots.
 
+## AT-ADR-077 — USD-M contract checks must not treat a blocked host as a delisting
+- **Date:** 2026-09-30
+- **Status:** Accepted
+- **Context:** PR 151 left ETHUSDT, ZECUSDT, TAOUSDT, and HYPEUSDT as
+  `contract_unverified` because `fapi.binance.com` returned HTTP 451 and
+  `api.bybit.com` returned HTTP 403. `www.binance.com/fapi/v1/exchangeInfo`
+  returned a `futuresType=U_MARGINED` book. That host ignores the symbol query
+  and returns the full book, whose first row is BTCUSDT.
+- **Decision:**
+  1. Select the exchangeInfo row with the exact symbol. A different row is not
+     a substitute.
+  2. The five Binance USD-M perpetual rows proven on 2026-09-30 are the catalog
+     the Watcher may scan. A later USD-M payload replaces a row. A missing row
+     in a successful book is `unsupported_contract`.
+  3. HTTP 451, 403, a redirect, or a transport failure is
+     `provider_unreachable`. It does not delete a proven contract and it does
+     not invent a Bybit listing.
+  4. Live candle reads stay on `https://fapi.binance.com`. This decision does
+     not change execution mode, real trading, Telegram, or the kill switch.
+- **Safety impact:** Paper only. No deploy.
+- **Consequences:** `backend/src/app/market_contracts/contract_discovery.py`.
+
+
+
+
+## AT-ADR-WATCHER-TENANT-20260930 — organization-owned durable Watcher state
+
+Status: accepted by the PR152 remediation contract; implementation under validation.
+
+The five-slot process file could cross tenant boundaries and did not connect API and dedicated worker services. Watcher configuration now belongs to an organization in the existing SQLAlchemy database, with monotonic revisions. Latest per-symbol observations and the legacy runtime summary carry that organization, revision and observation time; stale or old-revision observations are pending, and obsolete symbol rows are removed. The API derives ownership from authenticated membership. Optimistic configuration updates and revision-fenced worker publication prevent stale writers.
+
+The worker visits organizations in deterministic round-robin order, loading one organization per bounded cycle from the shared database. Per-symbol market composition and latest status remain bounded; no tenant strategy data enters shared public-market caches. Configuration changes are observed on the tenant's next turn; delayed/missing worker observations expire visibly. Exact provider contract verification gates acquisition, and no-strategy monitoring reads only a bounded closed-candle sample without producing Candidates. This probe is not current-price or full CVD evidence.
+
+Existing activation, kill-switch, paper execution and Telegram tenant controls remain authoritative. Migration b6f2d9a10e73 is for isolated validation only in this task; shared database rollout, merge and deployment require their existing human gates. Acceptance requires regression tests, exact-revision CI and a fresh independent review.
+
+
+## AT-ADR-WATCHER-BYBIT-CONTINUITY-20260930 — bounded ranks and lineage proofs
+
+Status: PR152 independent-review correction under validation.
+
+The organization-owned database decision above supersedes AT-ADR-076's historical process-file authority. The legacy path setting remains only for local/test helpers.
+
+Bybit execution ranks now identify observations of one exact symbol/source independently of a caller's retrieval lineage. The persistent monitor and historical canonical assembly keep separate proof tails (at most two recent lineages). A failed historical request cannot reset the monitor's sequence. The execution ledger retains only the current provider page plus those bounded proofs, including signatures to reject changed duplicate executions. Bulk cleanup trims each proof to one provider page, preserving overlap identity and anchors. During reads, each proof has a ten-page and 15-minute bound. Discarded prefixes, including any partially retained millisecond bucket, are unavailable rather than fabricated complete coverage. Gaps, wrong instruments/sources and freshness checks remain authoritative. This bound is not a staging RSS claim.
+
+Contract eligibility refusals cross the strategy evidence boundary as typed errors retaining unsupported versus unreachable reasons, matching the existing read-only probe path. No new acquisition, Candidate, execution or activation authority is added.

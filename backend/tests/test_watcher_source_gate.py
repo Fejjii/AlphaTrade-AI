@@ -140,3 +140,18 @@ def test_correct_live_assembles() -> None:
     loaded = port.load(_evaluation_command(ORG_ID))
     assert loaded is not None
     assert loaded.organization_id == ORG_ID
+
+
+@pytest.mark.parametrize("reason", ["unsupported_contract", "provider_unreachable"])
+def test_assembly_refusal_keeps_the_verified_contract_reason(reason):
+    from app.market_contracts.errors import ContractUnavailableError
+
+    class RefusedAssembler(FirstSliceEvidenceAssembler):
+        def assemble(self, **_kwargs):
+            raise ContractUnavailableError(reason)
+
+    port = _port(RefusedAssembler(ReplayPerpetualSource(), replay=True), None)
+    with pytest.raises(WatcherEvidenceUnavailableError) as exc:
+        port.load(_evaluation_command(ORG_ID))
+    assert exc.value.reason_code == reason
+    assert port.last_assembly() is None

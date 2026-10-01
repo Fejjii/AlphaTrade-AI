@@ -203,6 +203,9 @@ class Settings(BaseSettings):
     watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["BTCUSDT"]
     )
+    # Legacy local/test file helper. Production watchlists and runtime status
+    # use organization-owned database rows, shared by API and dedicated worker.
+    watcher_watchlist_path: str = ""
     watcher_paper_poll_interval_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
     watcher_paper_max_scopes_per_cycle: int = Field(default=20, ge=1, le=200)
     watcher_paper_worker_id: str = Field(default="watcher-paper-1", min_length=1, max_length=80)

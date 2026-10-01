@@ -52,6 +52,7 @@ from app.market_contracts.first_slice import (
     FIRST_SLICE_MIN_FINAL_4H,
     FIRST_SLICE_MIN_FINAL_15M,
     FIRST_SLICE_PATTERN_NAME,
+    FIRST_SLICE_SYMBOL,
     FIRST_SLICE_TRIGGER_TIMEFRAME,
 )
 from app.market_contracts.flow import bar_signed_quote_flow
@@ -61,8 +62,7 @@ from app.market_contracts.freshness import (
     live_confirmation_window_open,
 )
 from app.market_contracts.identity import (
-    binance_usdm_btcusdt,
-    bybit_usdt_perpetual_btcusdt,
+    instrument_matches_requested_symbol,
     interval_timedelta,
 )
 from app.market_contracts.observation import PublicMarketObservation
@@ -113,15 +113,19 @@ def evaluate_setup(
     previous_assessment: SetupAssessment | None = None,
     account_context: object | None = None,
     evaluation_params: FirstSliceEvaluationParams | None = None,
+    market_symbol: str | None = None,
 ) -> SetupAssessment:
     """Evaluate first-slice setup truth. Account/risk context is ignored.
 
     ``evaluation_params`` are the first-slice compatibility adapter. Product
     callers must pass params bound from an approved compiled spec; omitting
     them keeps adapter-level tests on the canonical first-slice constants.
+    ``market_symbol`` is the market under evaluation. Omitting it keeps the
+    canonical first-slice symbol so existing BTC evaluations stay unchanged.
     """
     del account_context
     params = resolve_evaluation_params(evaluation_params)
+    resolved_market = FIRST_SLICE_SYMBOL if market_symbol is None else market_symbol.strip().upper()
     evaluated = evaluated_at.astimezone(UTC)
     rules = {rule_id: _pending_rule(rule_id) for rule_id in FIRST_SLICE_RULE_IDS}
     window_hash: str | None = None
@@ -150,7 +154,7 @@ def evaluate_setup(
         identity_reason = _classify_contract_error(exc)
         window_hash = _fail_closed_hash(command, reason=identity_reason)
 
-    _evaluate_market_identity(command, rules, identity_reason)
+    _evaluate_market_identity(command, rules, identity_reason, market_symbol=resolved_market)
     series_15m, series_4h = _evaluate_series(command, evidence, evaluated, rules)
     atr_15m = _evaluate_atr(
         series_15m,
@@ -288,15 +292,13 @@ def _evaluate_market_identity(
     command: AssessmentCommand,
     rules: dict[str, RuleResult],
     identity_reason: str | None,
+    *,
+    market_symbol: str,
 ) -> None:
     identity = command.evidence_identity
-    if identity.venue is VenueId.BYBIT:
-        expected_instrument = bybit_usdt_perpetual_btcusdt()
-    else:
-        expected_instrument = binance_usdm_btcusdt()
     venue_ok = identity.venue in {VenueId.BINANCE, VenueId.BYBIT}
     market_ok = identity.market_type is MarketType.PERPETUAL
-    instrument_ok = identity.instrument.instrument_id == expected_instrument.instrument_id
+    instrument_ok = instrument_matches_requested_symbol(identity, market_symbol)
     timeframe_ok = identity.timeframe is FIRST_SLICE_TRIGGER_TIMEFRAME
     fallback_used = identity.provenance.fallback_used
     if identity_reason == "wrong_venue_or_market" or not (venue_ok and market_ok and timeframe_ok):

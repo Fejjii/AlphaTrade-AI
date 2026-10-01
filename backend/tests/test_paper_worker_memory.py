@@ -321,6 +321,7 @@ _RETENTION_FLOOR = 4 * 1024 * 1024
 
 _ISOLATED_RSS_PROBE = """
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -350,29 +351,32 @@ release_allocator_memory()
 before = read_process_memory().rss_bytes
 start = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
 instrument = binance_usdm_btcusdt()
-retained = [one(index, start, instrument) for index in range(1, 5001)]
-held = read_process_memory().rss_bytes
-del retained
-release_allocator_memory()
-end = start + timedelta(minutes=15)
-market = first_slice_identity(timeframe=Timeframe.M15, replay=False, is_live=True)
-released = build_released_trade_snapshot(
-    (one(index, start, instrument) for index in range(1, 5001)),
-    identity=market,
-    lineage_id=CONNECTION,
-    window_start=start,
-    window_end=end,
-    observed_at=EVALUATED_AT,
-)
-release_allocator_memory()
-after = read_process_memory().rss_bytes
-tape = released.released_tape
-print(json.dumps({
-    "retain_delta": held - before,
-    "release_delta": after - before,
-    "trades": len(released.trades),
-    "event_count": None if tape is None else tape.event_count,
-}))
+if sys.argv[1] == "retain":
+    retained = [one(index, start, instrument) for index in range(1, 5001)]
+    after = read_process_memory().rss_bytes
+    payload = {"delta": after - before, "trades": len(retained)}
+else:
+    end = start + timedelta(minutes=15)
+    market = first_slice_identity(timeframe=Timeframe.M15, replay=False, is_live=True)
+    released = build_released_trade_snapshot(
+        (one(index, start, instrument) for index in range(1, 5001)),
+        identity=market,
+        lineage_id=CONNECTION,
+        window_start=start,
+        window_end=end,
+        observed_at=EVALUATED_AT,
+    )
+    release_allocator_memory()
+    after = read_process_memory().rss_bytes
+    tape = released.released_tape
+    payload = {
+        "delta": after - before,
+        "trades": len(released.trades),
+        "event_count": None if tape is None else tape.event_count,
+        "trade_set_hash": None if tape is None else tape.trade_set_hash,
+        "event_set_hash": None if tape is None else tape.event_set_hash,
+    }
+print(json.dumps(payload))
 """
 
 
@@ -413,30 +417,63 @@ def test_traced_trade_retention_exceeds_the_released_tape() -> None:
 
 
 def test_retained_trades_cost_more_rss_than_a_released_tape() -> None:
-    """RSS gate in a fresh interpreter.
+    """Compare fresh interpreters so neither probe inherits the other's arenas.
 
-    The same assertion inside the pytest process reused freed arenas and grew
-    only 765952 bytes on PR 149 CI run 36395949966. That sample is not the
-    retention cost. This probe trims the allocator before and after the hold.
+    Measuring inside pytest reused freed arenas on PR 149; sequential probes
+    in one child still retain malloc arenas on Darwin even after GC. Keep both
+    fixture sizes and the retention floor, but isolate each allocator history.
     """
     backend = Path(__file__).resolve().parents[1]
-    completed = subprocess.run(
-        [sys.executable, "-c", _ISOLATED_RSS_PROBE],
+    measurements = {}
+    for mode in ("retain", "release"):
+        completed = subprocess.run(
+            [sys.executable, "-c", _ISOLATED_RSS_PROBE, mode],
+            cwd=backend,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(("src", str(backend)))},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        assert completed.returncode == 0, completed.stderr
+        measurements[mode] = json.loads(completed.stdout)
+    retained = measurements["retain"]
+    released = measurements["release"]
+    assert retained["trades"] == 5_000
+    assert released["trades"] == 0
+    assert released["event_count"] == 5_000
+    assert released["trade_set_hash"]
+    assert released["event_set_hash"]
+    assert retained["delta"] > _RETENTION_FLOOR
+    assert released["delta"] < retained["delta"]
+
+
+def test_repeated_reduction_does_not_grow_rss() -> None:
+    """Keep the 8x25,000 workload and limits; isolate unrelated pytest arenas.
+
+    A prior test's arena release caused max(early peak)-min(later RSS) to exceed
+    80 MiB even though retained memory fell. A fresh process measures this
+    workload's complete peak/release range rather than unrelated suite history.
+    """
+    backend = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from tests.test_paper_worker_memory import _measure_repeated_reduction; "
+            "_measure_repeated_reduction()",
+        ],
         cwd=backend,
         env={**os.environ, "PYTHONPATH": os.pathsep.join(("src", str(backend)))},
         capture_output=True,
         text=True,
+        timeout=180,
         check=False,
     )
-    assert completed.returncode == 0, completed.stderr
-    payload = json.loads(completed.stdout)
-    assert payload["trades"] == 0
-    assert payload["event_count"] == 5_000
-    assert payload["retain_delta"] > _RETENTION_FLOOR
-    assert payload["release_delta"] < payload["retain_delta"]
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_repeated_reduction_does_not_grow_rss() -> None:
+def _measure_repeated_reduction() -> None:
     start = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
     end = start + timedelta(minutes=15)
     market = first_slice_identity(timeframe=Timeframe.M15, replay=False, is_live=True)

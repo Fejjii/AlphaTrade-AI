@@ -42,6 +42,7 @@ from app.market_contracts.identity import (
     ADAPTER_VERSION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
+    binance_usdm_perpetual,
     require_instrument,
     require_perpetual,
 )
@@ -51,6 +52,7 @@ from app.market_contracts.ohlcv import (
     build_ohlcv_bar,
     require_closed_series,
 )
+from app.market_contracts.provider_contracts import contract_from_binance_exchange_info
 from app.market_contracts.trade_reduction import build_released_trade_snapshot
 from app.market_contracts.trades import (
     OrderedTradeBatch,
@@ -316,24 +318,30 @@ class BinanceUsdmPerpetualSource:
                 error_message=self._last_error,
             )
 
+    def release_symbol_history(self, symbol: str) -> None:
+        """Release cached trade windows for one symbol after its evaluation."""
+
+        self._trade_cache.drop_symbol(symbol)
+        self._reduced_cache.drop_symbol(symbol)
+
+    def allow_verified_contract(self, symbol: str) -> None:
+        """Add one catalog identity after that exact USD-M contract is verified."""
+
+        instrument = binance_usdm_perpetual(symbol)
+        self._catalog = self._catalog.extend(instrument)
+
     def verify_exchange_info(self, instrument: InstrumentIdentity) -> None:
         payload = self._get("/fapi/v1/exchangeInfo", {"symbol": instrument.provider_symbol})
         if not isinstance(payload, dict):
             raise WrongMarketError("exchangeInfo payload is not an object.")
-        symbols = payload.get("symbols")
-        if not isinstance(symbols, list) or not symbols:
-            raise WrongInstrumentError(f"USD-M exchangeInfo missing {instrument.provider_symbol}.")
-        info = symbols[0]
-        if str(info.get("symbol", "")).upper() != instrument.provider_symbol:
-            raise WrongInstrumentError(
-                "exchangeInfo symbol does not match the requested instrument."
-            )
-        contract_type = str(info.get("contractType", "")).upper()
-        if contract_type != "PERPETUAL":
-            raise WrongMarketError(f"USD-M contractType {contract_type} is not PERPETUAL.")
-        quote = str(info.get("quoteAsset", "")).upper()
-        if quote != instrument.quote_asset:
+        contract = contract_from_binance_exchange_info(
+            payload,
+            requested_symbol=instrument.provider_symbol,
+        )
+        if contract.quote_asset != instrument.quote_asset:
             raise WrongMarketError("USD-M quote asset does not match the contracted instrument.")
+        if contract.base_asset != instrument.base_asset:
+            raise WrongInstrumentError("USD-M base asset does not match the contracted instrument.")
 
     def _assert_request(
         self,

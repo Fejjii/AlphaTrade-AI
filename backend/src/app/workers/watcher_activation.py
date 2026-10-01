@@ -548,7 +548,7 @@ def _self_check() -> int:
     from app.workers.watcher_paper import new_worker_instance_id
 
     head = expected_migration_head()
-    if head != "a8c3e1b94d20":
+    if head != "b6f2d9a10e73":
         print(f"FAIL: migration head {head!r}", file=sys.stderr)
         return 1
     config = _sample_config()
@@ -869,7 +869,8 @@ def _architecture_pins() -> _ArchitecturePins:
     from app.services.risk.engine import _ACTION_RANK
     from app.watcher.orchestrator import _CONFIRMED_SETUP
     from app.workers import watcher_paper
-    from app.workers.watcher_paper_targets import list_paper_scan_targets
+    from app.workers.watcher_market import SymbolMarketFactory
+    from app.workers.watcher_paper_targets import list_watchlist_scan_targets
 
     postgres = "build_postgres_watcher_store" in inspect.getsource(
         watcher_paper.build_watcher_paper_runtime
@@ -879,7 +880,7 @@ def _architecture_pins() -> _ArchitecturePins:
         > _ACTION_RANK[RiskAction.WARN]
         >= _ACTION_RANK[RiskAction.ALLOW]
     )
-    target_source = inspect.getsource(list_paper_scan_targets)
+    target_source = inspect.getsource(list_watchlist_scan_targets)
     return _ArchitecturePins(
         postgres_leases=postgres,
         fencing_enabled=postgres,
@@ -888,8 +889,11 @@ def _architecture_pins() -> _ArchitecturePins:
             getattr(watcher_paper.WatcherPaperRuntime, "_idempotency_key", None)
         ),
         approved_compiled_only="resolve_executable_strategy_policy" in target_source,
-        canonical_assembler="FirstSliceEvidenceAssembler"
-        in inspect.getsource(watcher_paper.default_paper_evidence_factory),
+        canonical_assembler=(
+            "SymbolMarketFactory" in inspect.getsource(watcher_paper.default_paper_evidence_factory)
+            and "FirstSliceEvidenceAssembler" in inspect.getsource(SymbolMarketFactory.__call__)
+            and "AssemblingWatcherScanEvidence" in inspect.getsource(SymbolMarketFactory.__call__)
+        ),
         freshness_fail_closed=callable(watcher_evidence_error_for_monitor),
         confirmed_setup_only=_CONFIRMED_SETUP == "confirmed_setup",
         risk_block_final=risk_final,

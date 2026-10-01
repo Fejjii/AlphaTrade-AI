@@ -106,6 +106,23 @@ class ClosedAggTradeCache:
                 self._locks[key] = current
             return current
 
+    def drop_symbol(self, symbol: str) -> int:
+        """Drop cached windows for one symbol. Other symbols stay."""
+
+        token = symbol.strip().upper()
+        with self._guard:
+            keys = [key for key in self._entries if len(key) > 1 and key[1] == token]
+            for key in keys:
+                self._entries.pop(key, None)
+            idle = [
+                key
+                for key, lock in self._locks.items()
+                if len(key) > 1 and key[1] == token and not lock.locked()
+            ]
+            for key in idle:
+                self._locks.pop(key, None)
+            return len(keys)
+
     def release_idle(self, key: CacheKey) -> None:
         """Drop a lock left by a failed fetch so unique misses cannot grow forever."""
 
@@ -201,6 +218,16 @@ class TtlValueCache:
                 return None
             self._entries.move_to_end(key)
             return value
+
+    def drop_symbol(self, symbol: str) -> int:
+        """Drop reduced snapshots for one symbol."""
+
+        token = symbol.strip().upper()
+        with self._guard:
+            keys = [key for key in self._entries if len(key) > 1 and key[1] == token]
+            for key in keys:
+                self._entries.pop(key, None)
+            return len(keys)
 
     def put(self, key: CacheKey, value: Any) -> None:
         stored_at = self._clock()
