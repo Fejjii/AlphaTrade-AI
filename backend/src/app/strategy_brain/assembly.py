@@ -11,6 +11,7 @@ from uuid import uuid5
 
 from sqlalchemy.orm import Session
 
+from app.candidate_alerts.nested import NestedAlertSummary, required_evidence_fresh
 from app.evidence_pipeline.canonical import semantic_source_from_identity
 from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.types import (
@@ -175,8 +176,8 @@ def record_paper_link(
     report: object,
     evidence: object,
     now: object,
-) -> None:
-    if session is None or report.discussion is None:
+) -> NestedAlertSummary | None:
+    if report.discussion is None:
         return
     last = getattr(evidence, "last_assembly", lambda: None)()
     if last is None:
@@ -194,12 +195,32 @@ def record_paper_link(
     identity = scoped_setup_id(
         target.organization_id, target.strategy_version_id, events[-1].setup_id
     )
-    attach_paper_result(
-        session,
+    if session is not None:
+        attach_paper_result(
+            session,
+            organization_id=target.organization_id,
+            setup_id=identity,
+            candidate_id=report.discussion.candidate.candidate_id,
+            assessment_id=report.discussion.assessment.assessment_id,
+            proof=report,
+            now=now,
+        )
+
+    latest = events[-1]
+    if (
+        latest.state.value != "CONFIRMED"
+        or latest.confirmed_index != len(assembled.bundle.bars_15m) - 1
+        or not required_evidence_fresh(report.discussion.assessment, assembled.evidence_window, now)
+    ):
+        return None
+    return NestedAlertSummary(
         organization_id=target.organization_id,
+        strategy_version_id=target.strategy_version_id,
         setup_id=identity,
-        candidate_id=report.discussion.candidate.candidate_id,
-        assessment_id=report.discussion.assessment.assessment_id,
-        proof=report,
-        now=now,
+        symbol=policy.authored_spec.symbol,
+        stage=latest.stage,
+        evidence_at=latest.detected_at,
+        decision=report.paper_loop_reason or "not_evaluated",
+        risk_state=report.eligibility_state or "not_evaluated",
+        reasons=tuple(dict.fromkeys([*latest.reason_codes, report.paper_loop_reason])),
     )

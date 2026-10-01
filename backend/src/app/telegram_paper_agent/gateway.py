@@ -189,6 +189,13 @@ class TelegramPaperAgent:
             and assessment is not None
             and window is not None
         )
+        from app.schemas.nested_continuation import NESTED_KIND
+
+        nested_strategy = notice.nested_strategy or (
+            candidate is not None and candidate.fusion_policy_version == NESTED_KIND
+        )
+        if nested_strategy and (notice.nested is None or not confirmed):
+            return None
         if confirmed:
             assert candidate is not None
             assert assessment is not None
@@ -212,7 +219,7 @@ class TelegramPaperAgent:
         window: CanonicalEvidenceWindowV1,
         recipient: PaperAlertRecipient,
         watcher_notice: WatcherScanNotice | None = None,
-    ) -> PaperNotificationProjection:
+    ) -> PaperNotificationProjection | None:
         self._require_enabled()
         self._require_recipient_org(recipient, candidate.organization_id)
         require_active_binding(self._protocol.store, _as_candidate_recipient(recipient))
@@ -221,7 +228,35 @@ class TelegramPaperAgent:
             assessment=assessment,
             window=window,
             recipient=_as_candidate_recipient(recipient),
+            nested=None if watcher_notice is None else watcher_notice.nested,
         )
+        if alert is None:
+            return None
+        if alert.intent.content.nested is not None:
+            # One informational outbox event; no action confirmations or second footer.
+            intent = self._notification(
+                recipient=recipient,
+                kind=PaperNotificationKind.WATCHER_CONFIRMED_SETUP,
+                resource_type=PAPER_RESOURCE_CANDIDATE,
+                resource_id=alert.intent.content.nested.setup_id,
+                content_hash=alert.intent.identity_hash,
+                text=alert.outbox.text,
+                candidate_id=alert.intent.candidate_id,
+            )
+            persisted = self._store.get_or_insert_notification(intent)
+            thread = self._thread_for(
+                recipient=recipient,
+                resource_type=PAPER_RESOURCE_CANDIDATE,
+                resource_id=alert.intent.candidate_id,
+                notification_id=persisted.intent_id,
+            )
+            return PaperNotificationProjection(
+                intent=persisted,
+                outbox=alert.outbox,
+                thread=thread,
+                candidate_alert=alert,
+                converged=alert.converged,
+            )
         kind = (
             PaperNotificationKind.WATCHER_CONFIRMED_SETUP
             if watcher_notice is not None and watcher_notice.published
