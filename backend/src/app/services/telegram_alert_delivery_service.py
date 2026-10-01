@@ -278,6 +278,30 @@ class TelegramAlertDeliveryService:
 
         prefs = self._preferences.get(organization_id=organization_id, user_id=user_id)
         chat_id = (prefs.telegram_chat_id or self._settings.telegram_chat_id or "").strip()
+        from app.services.notifications.paper_alert_policy import paper_telegram_policy_reason
+
+        policy_reason = paper_telegram_policy_reason(
+            self._session,
+            row,
+            prefs.telegram_policy,
+            organization_id=organization_id,
+            user_id=user_id,
+            chat_id=chat_id,
+            bot_id=self._settings.telegram_bot_id,
+            now=datetime.now(UTC),
+        )
+        if policy_reason is not None:
+            return self._finalize(
+                organization_id=organization_id,
+                user_id=user_id,
+                alert_id=alert_id,
+                response=TelegramAlertDeliveryResponse(
+                    status="blocked",
+                    alert_id=alert_id,
+                    error_code=policy_reason,
+                    error_message="Telegram notification policy filtered this alert.",
+                ),
+            )
         base_payload = AlertDeliveryService.build_payload(row)
         payload = replace(
             base_payload,
@@ -300,6 +324,9 @@ class TelegramAlertDeliveryService:
             row.last_delivery_error = None
             meta = dict(row.metadata_json or {})
             meta["telegram_manual_delivered"] = True
+            meta["telegram_policy_chat_id"] = chat_id
+            meta["telegram_policy_user_id"] = str(user_id)
+            meta["telegram_policy_bot_id"] = self._settings.telegram_bot_id
             meta["telegram_delivery_id"] = delivery_id
             row.metadata_json = meta
             response = TelegramAlertDeliveryResponse(

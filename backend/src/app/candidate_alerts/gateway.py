@@ -178,6 +178,10 @@ class CandidateAlertGateway:
                 or existing_before.bot_id != recipient.bot_id
             ):
                 raise ValueError("Nested episode is bound to a different Telegram recipient.")
+            from app.telegram_security.contracts import OutboxState
+
+            if existing_before.state is OutboxState.SUPPRESSED:
+                return None
             return CandidateAlertProjection(
                 intent=persisted, outbox=existing_before, converged=True
             )
@@ -189,7 +193,14 @@ class CandidateAlertGateway:
             text=format_candidate_alert_text(persisted.content),
             idempotency_key=_outbox_key(persisted.identity_hash),
             binding_id=recipient.binding_id,
+            notification_event=_candidate_notification_event(
+                persisted, symbol=stored.evidence_identity.instrument.provider_symbol
+            ),
         )
+        from app.telegram_security.contracts import OutboxState
+
+        if outbox.state is OutboxState.SUPPRESSED:
+            return None
         return CandidateAlertProjection(
             intent=persisted,
             outbox=outbox,
@@ -521,6 +532,28 @@ def _parse_action(action: TelegramRemoteAction | str) -> TelegramRemoteAction:
 
 def _outbox_key(identity_hash: str) -> str:
     return f"{CANDIDATE_ALERT_OUTBOX_PREFIX}{identity_hash}"
+
+
+def _candidate_notification_event(intent: CandidateAlertIntent, *, symbol: str):
+    from app.schemas.telegram_policy import (
+        AlertPhase,
+        NotificationEventType,
+        NotificationSeverity,
+        TelegramNotificationEvent,
+    )
+
+    nested = intent.content.nested
+    return TelegramNotificationEvent(
+        event_type=NotificationEventType.SETUP,
+        severity=NotificationSeverity.INFO,
+        strategy_id=intent.strategy_version_id,
+        symbol=symbol,
+        setup_stage=nested.stage if nested else None,
+        phase=AlertPhase.CONFIRMED,
+        quality=None,
+        duplicate_key=intent.identity_hash,
+        occurred_at=intent.content.trigger_context.interval_end,
+    )
 
 
 def _transition_key(action: TelegramRemoteAction, intent_id: UUID) -> str:

@@ -292,3 +292,45 @@ def test_legacy_candidate_alert_content_keeps_its_serialized_shape():
     )
     assert "nested" not in alert.intent.content.model_dump(mode="json")
     assert "nested" not in alert.intent.model_dump(mode="json")["content"]
+
+
+@pytest.mark.parametrize(
+    "changes,blocked",
+    [
+        ({"setup_stages": ["N2"]}, True),
+        ({"setup_stages": ["N1"]}, False),
+        ({"minimum_quality": 0}, True),
+        ({"confirmed_alerts": False}, True),
+        ({"forming_alerts": False}, False),
+        ({"symbol_subscriptions": ["ETHUSDT"]}, True),
+        ({"strategy_subscriptions": []}, True),
+    ],
+)
+def test_nested_uses_versioned_recipient_policy(nested_world, changes, blocked):
+    from app.schemas.telegram_policy import TelegramNotificationPolicyV2
+    from app.telegram_security.contracts import OutboxState
+
+    w = nested_world
+    assert w.summary.stage == "N1"
+    original = w.candidate.model_dump(mode="json")
+    policy = TelegramNotificationPolicyV2(**changes)
+    protocol = TelegramSecurityProtocol(
+        store=w.protocol.store,
+        transport=w.transport,
+        clock=w.clock,
+        enabled=True,
+        notification_policy_loader=lambda org, user: policy,
+    )
+    w.gateway = CandidateAlertGateway(
+        lifecycle=w.gateway.lifecycle, protocol=protocol, clock=w.clock
+    )
+    result = project(w)
+    assert (result is None) == blocked
+    # Replaying a filtered episode must not revive a notification or add actions.
+    assert (project(w) is None) == blocked
+    rows = protocol.store.list_outbox(organization_id=w.recipient.organization_id)
+    assert rows[-1].state == (OutboxState.SUPPRESSED if blocked else OutboxState.PENDING)
+    assert rows[-1].notification_event.quality is None
+    assert rows[-1].notification_event.strategy_id == w.candidate.strategy_version_id
+    assert w.candidate.model_dump(mode="json") == original
+    assert w.transport.sent == []

@@ -223,6 +223,25 @@ class TelegramAutomaticDeliveryService:
                 now=generated_at,
             )
             if status == "eligible":
+                from app.services.notifications.paper_alert_policy import (
+                    paper_telegram_policy_reason,
+                )
+
+                policy_reason = paper_telegram_policy_reason(
+                    self._session,
+                    row,
+                    prefs.telegram_policy,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    chat_id=(
+                        prefs.telegram_chat_id or self._settings.telegram_chat_id or ""
+                    ).strip(),
+                    now=generated_at,
+                    bot_id=self._settings.telegram_bot_id,
+                )
+                if policy_reason is not None:
+                    status, reason = "skipped", policy_reason
+            if status == "eligible":
                 eligible_count += 1
             elif status == "already_delivered":
                 already_delivered_count += 1
@@ -281,6 +300,25 @@ class TelegramAutomaticDeliveryService:
                 enabled_alert_types=enabled_types,
                 now=now,
             )
+            if status == "eligible":
+                from app.services.notifications.paper_alert_policy import (
+                    paper_telegram_policy_reason,
+                )
+
+                policy_reason = paper_telegram_policy_reason(
+                    self._session,
+                    row,
+                    prefs.telegram_policy,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    chat_id=(
+                        prefs.telegram_chat_id or self._settings.telegram_chat_id or ""
+                    ).strip(),
+                    now=now,
+                    bot_id=self._settings.telegram_bot_id,
+                )
+                if policy_reason is not None:
+                    status = "skipped"
             if status == "eligible":
                 eligible += 1
             elif status == "already_delivered":
