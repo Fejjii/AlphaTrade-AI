@@ -1,12 +1,13 @@
 "use client";
 
-import { ImageIcon, Mic, Send, MessageSquare } from "lucide-react";
+import { ImageIcon, Send, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   AGENT_CAPABILITIES,
   type AgentCapability,
 } from "@/components/agent/agent-contracts";
+import { AgentVoiceControls } from "@/components/agent/AgentVoiceControls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ type LoadState<T> = {
 };
 
 const emptyLoad = { items: [], error: null, loading: true };
+export const AGENT_TURN_TIMEOUT_MS = 45_000;
 
 function messageLabel(role: ConversationMessageRecord["role"]): string {
   if (role === "user") return "You";
@@ -57,6 +59,10 @@ function CapabilityList({ items }: { items: readonly AgentCapability[] }) {
 export function AgentWorkspace() {
   const { killSwitchActive, health } = useAppContext();
   const threadRef = useRef<HTMLDivElement>(null);
+  const sendInFlight = useRef(false);
+  const turnAbort = useRef<AbortController | null>(null);
+  const turnConversation = useRef<string | null>(null);
+  const [voiceContextKey, setVoiceContextKey] = useState(0);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesRetry, setMessagesRetry] = useState(0);
   const [conversations, setConversations] =
@@ -80,6 +86,8 @@ export function AgentWorkspace() {
   const [latest, setLatest] = useState<AgentTurnResult | null>(null);
   const [proposals, setProposals] = useState<AgentStructuredProposal[]>([]);
   const [decidingId, setDecidingId] = useState<string | null>(null);
+
+  useEffect(() => () => turnAbort.current?.abort(), []);
 
   const refreshConversations = useCallback(async () => {
     setConversations((current) => ({ ...current, loading: true, error: null }));
@@ -135,6 +143,11 @@ export function AgentWorkspace() {
       setMessagesLoading(false);
       return;
     }
+    // The turn loads its own messages; avoid a competing history read on creation.
+    if (turnConversation.current === conversationId) {
+      turnConversation.current = null;
+      return;
+    }
     let cancelled = false;
     setMessages([]);
     setMessagesError(null);
@@ -188,35 +201,57 @@ export function AgentWorkspace() {
     };
   }, [symbol]);
 
-  async function sendMessage() {
-    const text = draft.trim();
-    if (!text || sending || killSwitchActive) return;
+  async function sendMessage(
+    message = draft,
+    source: "text" | "voice" = "text",
+  ): Promise<boolean> {
+    const text = message.trim();
+    if (
+      !text ||
+      sendInFlight.current ||
+      killSwitchActive ||
+      messagesLoading ||
+      messagesError
+    )
+      return false;
+    sendInFlight.current = true;
+    const controller = new AbortController();
+    turnAbort.current = controller;
+    const timeout = setTimeout(() => controller.abort(), AGENT_TURN_TIMEOUT_MS);
     setSending(true);
     setSendError(null);
     try {
-      const result = await api.agent.turn({
-        message: text,
-        conversation_id: conversationId ?? undefined,
-        symbol: symbol.trim() || undefined,
-        timeframe: timeframe.trim() || undefined,
-        strategy_id: strategyId || undefined,
-      });
+      const result = await api.agent.turn(
+        {
+          message: text,
+          conversation_id: conversationId ?? undefined,
+          symbol: symbol.trim() || undefined,
+          timeframe: timeframe.trim() || undefined,
+          strategy_id: strategyId || undefined,
+        },
+        { signal: controller.signal },
+      );
       setLatest(result);
       setProposals(result.proposals);
+      if (conversationId !== result.conversation_id)
+        turnConversation.current = result.conversation_id;
       setConversationId(result.conversation_id);
-      setDraft("");
+      if (source === "text")
+        setDraft((current) => (current.trim() === text ? "" : current));
       try {
         const page = await api.conversations.listMessages(
           result.conversation_id,
           { limit: 100 },
+          { signal: controller.signal },
         );
         setMessages(page.items);
         setMessagesError(null);
       } catch {
+        const localTurnId = crypto.randomUUID();
         setMessages((current) => [
           ...current,
           {
-            id: `local-user-${result.conversation_id}`,
+            id: `local-user-${localTurnId}`,
             conversation_id: result.conversation_id,
             organization_id: "",
             user_id: "",
@@ -225,7 +260,7 @@ export function AgentWorkspace() {
             created_at: new Date().toISOString(),
           },
           {
-            id: `local-agent-${result.conversation_id}`,
+            id: `local-agent-${localTurnId}`,
             conversation_id: result.conversation_id,
             organization_id: "",
             user_id: "",
@@ -236,9 +271,20 @@ export function AgentWorkspace() {
         ]);
       }
       void refreshConversations();
+      return true;
     } catch (error) {
-      setSendError(error instanceof Error ? error.message : "Message failed");
+      setSendError(
+        controller.signal.aborted
+          ? "Agent response timed out. The request may have completed; check conversation history before resending."
+          : error instanceof Error
+            ? error.message
+            : "Message failed",
+      );
+      return false;
     } finally {
+      clearTimeout(timeout);
+      turnAbort.current = null;
+      sendInFlight.current = false;
       setSending(false);
     }
   }
@@ -303,6 +349,7 @@ export function AgentWorkspace() {
               className="min-h-11"
               disabled={sending}
               onClick={() => {
+                setVoiceContextKey((value) => value + 1);
                 setConversationId(null);
                 setMessages([]);
                 setLatest(null);
@@ -372,6 +419,7 @@ export function AgentWorkspace() {
                     }
                     onClick={() => {
                       if (sending || item.id === conversationId) return;
+                      setVoiceContextKey((value) => value + 1);
                       setLatest(null);
                       setProposals([]);
                       setSendError(null);
@@ -692,32 +740,31 @@ export function AgentWorkspace() {
                     <ImageIcon className="h-4 w-4" aria-hidden="true" />
                     Attach screenshot
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled
-                    data-testid="agent-voice"
-                    aria-describedby="agent-voice-contract"
-                  >
-                    <Mic className="h-4 w-4" aria-hidden="true" />
-                    Voice
-                  </Button>
                 </div>
-                <p className="text-xs text-text-secondary">
-                  Text conversation · screenshots and voice unavailable.
-                </p>
+                <AgentVoiceControls
+                  disabled={
+                    sending ||
+                    messagesLoading ||
+                    Boolean(messagesError) ||
+                    killSwitchActive
+                  }
+                  conversationKey={String(voiceContextKey)}
+                  reply={
+                    latest?.reply ??
+                    [...messages]
+                      .reverse()
+                      .find((message) => message.role === "assistant")
+                      ?.content ??
+                    null
+                  }
+                  onSend={(transcript) => sendMessage(transcript, "voice")}
+                />
                 <p
                   id="agent-attachment-contract"
                   className="text-caption text-text-muted"
                 >
                   Screenshot analysis is not available. No image is uploaded or
                   interpreted.
-                </p>
-                <p
-                  id="agent-voice-contract"
-                  className="text-caption text-text-muted"
-                >
-                  Voice is not available. No audio is transcribed or played.
                 </p>
                 {killSwitchActive ? (
                   <p className="text-sm text-danger">

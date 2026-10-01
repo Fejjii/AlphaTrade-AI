@@ -108,9 +108,9 @@ export const AGENT_CAPABILITIES: readonly AgentCapability[] = [
   {
     id: "voice",
     label: "Voice interaction",
-    status: "missing",
+    status: "wired",
     contract:
-      "Voice input and output are not implemented. No audio is transcribed or played.",
+      "Supported browsers transcribe your speech. Review and send it through the same Agent conversation. Reply playback is optional. Proposals still need explicit confirmation.",
   },
   {
     id: "refinement",

@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -7,8 +8,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AgentWorkspace } from "@/components/agent/AgentWorkspace";
+import {
+  AgentWorkspace,
+  AGENT_TURN_TIMEOUT_MS,
+} from "@/components/agent/AgentWorkspace";
 import { missingAgentCapabilities } from "@/components/agent/agent-contracts";
+import * as browserVoice from "@/lib/voice/browser-voice-provider";
+import type { VoiceProvider } from "@/lib/voice/types";
 
 const apiMocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
@@ -19,6 +25,7 @@ const apiMocks = vi.hoisted(() => ({
   listPositions: vi.fn(),
   listStrategies: vi.fn(),
   marketStatus: vi.fn(),
+  killSwitchActive: false,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -40,7 +47,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/contexts/AppContext", () => ({
-  useAppContext: () => ({ killSwitchActive: false }),
+  useAppContext: () => ({ killSwitchActive: apiMocks.killSwitchActive }),
 }));
 
 describe("Agent workspace", () => {
@@ -113,6 +120,155 @@ describe("Agent workspace", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    apiMocks.killSwitchActive = false;
+  });
+
+  function enableVoice(text: string) {
+    const provider: VoiceProvider = {
+      capabilities: { input: true, output: true },
+      listen: vi.fn((callbacks) => {
+        callbacks.onComplete(text);
+        return { stop: vi.fn(), cancel: vi.fn() };
+      }),
+      speak: vi.fn(() => ({ stop: vi.fn(), cancel: vi.fn() })),
+      dispose: vi.fn(),
+    };
+    vi.spyOn(browserVoice, "createBrowserVoiceProvider").mockReturnValue(
+      provider,
+    );
+    return provider;
+  }
+
+  it.each(["journal", "strategy", "knowledge", "Watcher", "trading", "risk"])(
+    "routes a voice request about %s through the governed Agent turn",
+    async (topic) => {
+      const text = `Review my ${topic}`;
+      enableVoice(text);
+      render(<AgentWorkspace />);
+      fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
+      await screen.findAllByTestId("agent-message");
+      fireEvent.click(screen.getByRole("button", { name: /BTCUSDT/ }));
+      fireEvent.change(screen.getByLabelText("Timeframe"), {
+        target: { value: "4h" },
+      });
+      fireEvent.change(screen.getByLabelText("Message"), {
+        target: { value: "Keep my typed draft" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+      expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+      await waitFor(() =>
+        expect(apiMocks.agentTurn).toHaveBeenCalledExactlyOnceWith(
+          {
+            message: text,
+            conversation_id: "c1",
+            symbol: "BTCUSDT",
+            timeframe: "4h",
+            strategy_id: undefined,
+          },
+          { signal: expect.any(AbortSignal) },
+        ),
+      );
+      expect(await screen.findByText("Transcript sent")).toBeInTheDocument();
+      expect(screen.getByLabelText("Message")).toHaveValue(
+        "Keep my typed draft",
+      );
+      expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+      expect(apiMocks.rejectProposal).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a failed voice transcript and displays the Agent reply if history fails", async () => {
+    enableVoice("Review risk before trading");
+    apiMocks.agentTurn.mockRejectedValueOnce(new Error("Turn unavailable"));
+    apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
+    render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Turn unavailable",
+    );
+    expect(screen.getByTestId("agent-voice-transcript")).toHaveTextContent(
+      "Review risk before trading",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    expect(await screen.findByText("Transcript sent")).toBeInTheDocument();
+    expect(screen.getAllByTestId("agent-message")[0]).toHaveTextContent(
+      "Review risk before trading",
+    );
+    expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent(
+      "Recorded facts",
+    );
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+  });
+
+  it("pauses voice through the same kill switch as typed messages", async () => {
+    const provider = enableVoice("Buy now");
+    apiMocks.killSwitchActive = true;
+    render(<AgentWorkspace />);
+    await screen.findByRole("button", { name: "BTC plan" });
+    expect(
+      screen.getByRole("button", { name: "Start recording" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Send transcript" }),
+    ).toBeDisabled();
+    expect(provider.listen).not.toHaveBeenCalled();
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+  });
+
+  it("bounds a stalled Agent turn, retains the transcript, and does not retry automatically", async () => {
+    enableVoice("Review my journal");
+    apiMocks.agentTurn.mockImplementationOnce(
+      (_body, { signal }: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        }),
+    );
+    render(<AgentWorkspace />);
+    await screen.findByRole("button", { name: "BTC plan" });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "check conversation history before resending",
+    );
+    expect(screen.getByTestId("agent-voice-transcript")).toHaveTextContent(
+      "Review my journal",
+    );
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+  });
+
+  it("shows a completed turn even when its history reload stalls", async () => {
+    enableVoice("Review risk before trading");
+    apiMocks.listMessages.mockImplementationOnce(
+      (_id, _params, { signal }: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        }),
+    );
+    render(<AgentWorkspace />);
+    await screen.findByRole("button", { name: "BTC plan" });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
+    expect(screen.getByTestId("agent-voice-status")).toHaveTextContent(
+      "Transcript sent",
+    );
+    expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent(
+      "Recorded facts",
+    );
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
 
   it("separates user and agent messages and keeps attachment controls unwired", async () => {
@@ -136,7 +292,7 @@ describe("Agent workspace", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Voice is not available. No audio is transcribed or played.",
+        "Voice input is unavailable in this browser. Use a supported browser over HTTPS or type your message.",
       ),
     ).toBeInTheDocument();
     for (const missing of missingAgentCapabilities()) {
@@ -155,13 +311,16 @@ describe("Agent workspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1));
-    expect(apiMocks.agentTurn).toHaveBeenCalledWith({
-      message: "Review this long.",
-      conversation_id: undefined,
-      symbol: "BTCUSDT",
-      timeframe: "1h",
-      strategy_id: undefined,
-    });
+    expect(apiMocks.agentTurn).toHaveBeenCalledWith(
+      {
+        message: "Review this long.",
+        conversation_id: undefined,
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        strategy_id: undefined,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
     expect(apiMocks.rejectProposal).not.toHaveBeenCalled();
     expect(await screen.findByTestId("agent-market-context")).toHaveTextContent(
