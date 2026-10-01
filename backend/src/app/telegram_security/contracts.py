@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.telegram_policy import TelegramNotificationEvent
 from app.telegram_security.actions import ActionEffectKind, TelegramRemoteAction
 
 
@@ -58,6 +59,7 @@ class OutboxState(StrEnum):
     ACKNOWLEDGED = "ACKNOWLEDGED"
     RETRYABLE = "RETRYABLE"
     DEAD_LETTER = "DEAD_LETTER"
+    SUPPRESSED = "SUPPRESSED"
 
 
 class OutboxKind(StrEnum):
@@ -241,11 +243,13 @@ class OutboxRecord(FrozenContract):
     idempotency_key: str = Field(min_length=1, max_length=128)
     kind: OutboxKind
     text: str = Field(min_length=1, max_length=4096)
+    notification_event: TelegramNotificationEvent | None = None
     state: OutboxState
     attempt: int = Field(ge=0)
     lease_owner: str | None = None
     lease_until: datetime | None = None
     transport_message_id: str | None = None
+    sent_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime
     updated_at: datetime

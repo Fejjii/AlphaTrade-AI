@@ -378,6 +378,28 @@ class AlertDeliveryService:
         payload = self.build_payload(row)
         if provider.channel == AlertDeliveryChannel.TELEGRAM:
             chat_id = prefs.telegram_chat_id or self._settings.telegram_chat_id or None
+            from app.services.notifications.paper_alert_policy import paper_telegram_policy_reason
+
+            policy_reason = paper_telegram_policy_reason(
+                self._session,
+                row,
+                prefs.telegram_policy,
+                organization_id=organization_id,
+                user_id=prefs.user_id,
+                chat_id=chat_id or "",
+                bot_id=self._settings.telegram_bot_id,
+                now=datetime.now(UTC),
+            )
+            if policy_reason is not None:
+                self._store_skipped_reason(row, policy_reason)
+                row.delivery_status = AlertDeliveryStatus.SKIPPED
+                row.delivery_channel = AlertDeliveryChannel.IN_APP
+                return AlertDeliverResult(
+                    alert=PaperAlertService._to_schema(row),
+                    delivered=False,
+                    channel=AlertDeliveryChannel.IN_APP,
+                    message=policy_reason,
+                )
             payload = AlertDeliveryPayload(
                 alert_id=payload.alert_id,
                 organization_id=payload.organization_id,
@@ -403,6 +425,13 @@ class AlertDeliveryService:
         max_retries = self._max_retries_for(provider.channel)
         if outcome.success:
             row.delivery_status = AlertDeliveryStatus.DELIVERED
+            if provider.channel == AlertDeliveryChannel.TELEGRAM:
+                row.metadata_json = {
+                    **(row.metadata_json or {}),
+                    "telegram_policy_chat_id": payload.telegram_chat_id,
+                    "telegram_policy_user_id": str(prefs.user_id),
+                    "telegram_policy_bot_id": self._settings.telegram_bot_id,
+                }
             row.delivered_at = now
             row.last_delivery_error = None
             row.next_retry_at = None

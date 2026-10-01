@@ -13,11 +13,15 @@ from app.schemas.common import (
     PaperAlertType,
     StrictModel,
 )
+from app.schemas.telegram_policy import TelegramNotificationPolicyV2
 
 
 class NotificationPreferencesResponse(StrictModel):
     organization_id: UUID
     user_id: UUID
+    telegram_policy: TelegramNotificationPolicyV2 = Field(
+        default_factory=TelegramNotificationPolicyV2
+    )
     in_app_enabled: bool = True
     webhook_enabled: bool = False
     telegram_enabled: bool = False
@@ -36,6 +40,7 @@ class NotificationPreferencesResponse(StrictModel):
 
 
 class NotificationPreferencesUpdate(StrictModel):
+    telegram_policy: TelegramNotificationPolicyV2 | None = None
     in_app_enabled: bool | None = None
     webhook_enabled: bool | None = None
     telegram_enabled: bool | None = None

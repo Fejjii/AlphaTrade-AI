@@ -2565,6 +2565,7 @@ class UserNotificationPreferences(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     webhook_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     telegram_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     min_severity: Mapped[PaperAlertSeverity] = mapped_column(
         _enum(PaperAlertSeverity), default=PaperAlertSeverity.INFO
     )

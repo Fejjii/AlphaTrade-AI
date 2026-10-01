@@ -285,6 +285,31 @@ def test_deliver_telegram_success_mocked(
     assert "999888777" not in raw
 
 
+def test_manual_delivery_applies_policy_before_any_transport(
+    telegram_configured_client,
+    monkeypatch,
+):
+    test_client, factory = telegram_configured_client
+    post = MagicMock()
+    monkeypatch.setattr("app.providers.alert_delivery.telegram.httpx.post", post)
+    headers, org_id, user_id = _register_owner(test_client, email="policy-filter@example.com")
+    alert_id = _create_alert(factory, org_id=org_id, user_id=user_id)
+    update = test_client.patch(
+        "/notifications/preferences",
+        headers=headers,
+        json={"telegram_policy": {"schema_version": 2, "minimum_quality": "0"}},
+    )
+    assert update.status_code == 200
+    assert update.json()["telegram_enabled"] is False
+    result = _post_deliver(test_client, alert_id, headers)
+    assert result.json()["status"] == "blocked"
+    assert result.json()["error_code"] == "POLICY_QUALITY_MISSING"
+    post.assert_not_called()
+    with factory() as session:
+        row = session.get(PaperValidationAlert, alert_id)
+        assert row.delivery_attempts == 0
+
+
 def test_deliver_telegram_already_delivered(
     telegram_configured_client: tuple[TestClient, sessionmaker[Session]],
     monkeypatch: pytest.MonkeyPatch,
