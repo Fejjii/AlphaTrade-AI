@@ -40,7 +40,7 @@ WORKER_PROCESS_MEMORY = "a8c3e1b94d20"
 WATCHER_TENANT_WATCHLIST = "b6f2d9a10e73"
 STRATEGY_BRAIN = "a1brain001"
 TELEGRAM_POLICY_V2 = "a2tgpolicy002"
-CURRENT_HEAD = TELEGRAM_POLICY_V2
+CURRENT_HEAD = "a2sfp002"
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -198,7 +198,8 @@ def test_alembic_single_head() -> None:
     assert script.get_revision(STRATEGY_BRAIN).down_revision == WATCHER_TENANT_WATCHLIST
     assert script.get_revision(WATCHER_TENANT_WATCHLIST).down_revision == WORKER_PROCESS_MEMORY
     assert script.get_revision(WORKER_PROCESS_MEMORY).down_revision == CONTROLLED_RUNTIME_STATUS
-    revisions = {rev.revision for rev in script.walk_revisions()}
+    revisions = {rev.revision for rev in script.walk_revisions(base="base", head=CURRENT_HEAD)}
+    assert STRATEGY_BRAIN in revisions
     assert LEARNING_ATTRIBUTION_PERSISTENCE in revisions
     assert TELEGRAM_PAPER_ACTIVATION in revisions
 
