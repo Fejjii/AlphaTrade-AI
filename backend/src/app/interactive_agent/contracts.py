@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.daily_review.contracts import DailyReview
 from app.interactive_agent.actions import ActionDescriptor, ActionRequest
 from app.schemas.common import StrictModel
 
@@ -37,6 +38,7 @@ class AgentCapability(StrEnum):
     SCREENSHOT_ANALYSIS = "screenshot_analysis"
     VOICE_IO = "voice_io"
     PERSISTENT_CONTEXT = "persistent_context"
+    DAILY_REVIEW = "daily_review"
 
 
 class CapabilityStatus(StrEnum):
@@ -251,6 +253,7 @@ class AgentTurnResult(StrictModel):
     market_quote: MarketQuoteView | None = None
     portfolio_summary: str | None = None
     statistics_summary: str | None = None
+    daily_review: DailyReview | None = None
     paper_safety: PaperSafetyContract
     screenshot: ScreenshotAnalysisContract | None = None
     voice: VoiceIoContract | None = None

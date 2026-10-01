@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.schemas.backtest import BacktestRunCreate
 from app.schemas.common import PositiveDecimal, StrictModel, Symbol, Timeframe, TradeDirection
@@ -79,3 +81,29 @@ class PaperTradeInput(StrictModel):
 
 class EmptyInput(StrictModel):
     pass
+
+
+class DailyReviewInput(StrictModel):
+    day: date | None = None
+    relative_day: Literal["today", "yesterday"] = "today"
+    timezone: str = Field(default="UTC", min_length=1, max_length=80)
+    focus: Literal[
+        "summary",
+        "setups",
+        "trades",
+        "blocked",
+        "performance",
+        "mistakes",
+        "lessons",
+        "evidence",
+        "tomorrow",
+    ] = "summary"
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise ValueError("Use an IANA timezone such as Europe/Berlin.") from exc
+        return value
