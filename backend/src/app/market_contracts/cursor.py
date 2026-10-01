@@ -11,6 +11,7 @@ from app.market_contracts.coverage import (
     TradeWindowCoverageProof,
     build_partial_assembly_coverage,
     require_trade_matches_identity,
+    verify_released_trade_tape,
     verify_trade_window_coverage,
 )
 from app.market_contracts.enums import DataCompleteness, GapState, ReconnectState, WarmUpStatus
@@ -26,6 +27,7 @@ from app.market_contracts.errors import (
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import EvidenceMarketIdentity, require_perpetual
 from app.market_contracts.models import CanonicalModel
+from app.market_contracts.released_tape import ReleasedTradeTape
 from app.market_contracts.trades import OrderedTradeBatch, TradeEvent, order_trades
 
 _MIN_COVERAGE_INTERVAL = timedelta(microseconds=1)
@@ -67,15 +69,27 @@ class TradeStreamSnapshot(CanonicalModel):
     trades: list[TradeEvent]
     coverage: TradeWindowCoverageProof
     usable: bool
+    released_tape: ReleasedTradeTape | None = None
 
     @model_validator(mode="after")
     def _coverage_matches_cursor(self) -> TradeStreamSnapshot:
-        verify_trade_window_coverage(
-            self.coverage,
-            identity=self.cursor.identity,
-            lineage_id=self.cursor.connection_identity,
-            trades=self.trades,
-        )
+        tape = self.released_tape
+        if tape is not None:
+            if self.trades:
+                raise ValueError("A released trade tape cannot retain trade objects.")
+            verify_released_trade_tape(
+                self.coverage,
+                tape,
+                identity=self.cursor.identity,
+                lineage_id=self.cursor.connection_identity,
+            )
+        else:
+            verify_trade_window_coverage(
+                self.coverage,
+                identity=self.cursor.identity,
+                lineage_id=self.cursor.connection_identity,
+                trades=self.trades,
+            )
         expected_usable = (
             self.cursor.gap_state is GapState.NONE
             and self.cursor.warm_up_status is WarmUpStatus.COMPLETE
@@ -194,6 +208,40 @@ class TradeStreamAssembler:
 
     def accepted_trades(self) -> list[TradeEvent]:
         return list(self._ordered)
+
+    def terminal_trade(self) -> TradeEvent | None:
+        """Last accepted trade. Does not copy the book."""
+
+        if not self._ordered:
+            return None
+        return self._ordered[-1]
+
+    def forget_trades_before(self, cutoff: datetime) -> None:
+        """Drop trades strictly before ``cutoff``. Keep the boundary timestamp group.
+
+        The next fetch is inclusive of ``last_event_at``, so trades that share
+        that timestamp must stay for duplicate detection. The cursor is unchanged.
+        """
+
+        if not self._ordered:
+            return
+        cutoff_utc = cutoff.astimezone(UTC)
+        kept = [trade for trade in self._ordered if trade.event_timestamp >= cutoff_utc]
+        if not kept:
+            kept = [self._ordered[-1]]
+        if len(kept) == len(self._ordered):
+            return
+        self._ordered = kept
+        kept_ids = {trade.venue_trade_id for trade in kept}
+        self._by_id = {
+            trade_id: trade for trade_id, trade in self._by_id.items() if trade_id in kept_ids
+        }
+
+    def drop_retained_trades(self) -> None:
+        """Forget retained trades without moving the cursor."""
+
+        self._ordered.clear()
+        self._by_id.clear()
 
     def ingest(
         self,

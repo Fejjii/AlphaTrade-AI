@@ -42,6 +42,8 @@ class RuntimeStatusWrite:
     request_weight: int = 0
     rate_limited_count: int = 0
     cache_hits: int = 0
+    process_rss_bytes: int | None = None
+    process_rss_peak_bytes: int | None = None
     preserve_lease: bool = False
 
 
@@ -139,6 +141,8 @@ def _row_from_snapshot(snapshot: RuntimeStatusWrite) -> ControlledRuntimeStatusR
         request_weight=snapshot.request_weight,
         rate_limited_count=snapshot.rate_limited_count,
         cache_hits=snapshot.cache_hits,
+        process_rss_bytes=snapshot.process_rss_bytes,
+        process_rss_peak_bytes=snapshot.process_rss_peak_bytes,
     )
 
 
@@ -169,3 +173,5 @@ def _apply_snapshot(row: ControlledRuntimeStatusRow, snapshot: RuntimeStatusWrit
     row.request_weight = snapshot.request_weight
     row.rate_limited_count = snapshot.rate_limited_count
     row.cache_hits = snapshot.cache_hits
+    row.process_rss_bytes = snapshot.process_rss_bytes
+    row.process_rss_peak_bytes = snapshot.process_rss_peak_bytes

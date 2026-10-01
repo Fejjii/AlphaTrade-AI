@@ -63,7 +63,9 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src/app/learning_attributi
 PERSISTENCE_MODULE = (
     Path(__file__).resolve().parents[1] / "src/app/persistence/attribution_postgres.py"
 )
-HEAD = "f1a2b3c4d5e6"
+HEAD = "a1brain001"
+WATCHER_TENANT_WATCHLIST = "b6f2d9a10e73"
+PHASE8_REVISION = "d4f7a2c8e901"
 PREVIOUS_HEAD = "c9e2b4a1d078"
 FORBIDDEN_SNIPPETS = (
     "app.services.execution",
@@ -475,8 +477,12 @@ def test_learning_does_not_write_historical_candles(
 
 
 def test_alembic_single_head_includes_phase8() -> None:
-    heads = ScriptDirectory.from_config(_alembic_config()).get_heads()
-    assert heads == [HEAD]
+    script = ScriptDirectory.from_config(_alembic_config())
+    assert script.get_heads() == [HEAD]
+    ancestry = {revision.revision for revision in script.walk_revisions(base="base", head=HEAD)}
+    assert WATCHER_TENANT_WATCHLIST in ancestry
+    assert PHASE8_REVISION in ancestry
+    assert script.get_revision(PHASE8_REVISION).down_revision == PREVIOUS_HEAD
 
 
 @requires_postgres

@@ -101,3 +101,11 @@ class EvidenceSourceSwitchRequiredError(MarketContractError):
     def __init__(self, message: str, *, instrument: object) -> None:
         super().__init__(message)
         self.instrument = instrument
+
+
+class ContractUnavailableError(RuntimeError):
+    """Verified eligibility refusal; preserve its reason at the evidence boundary."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)

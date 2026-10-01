@@ -10,7 +10,7 @@ Official USD-M `GET /fapi/v1/aggTrades` constraints encoded here:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -213,3 +213,86 @@ def fetch_complete_agg_trade_rows(
                 "AggTrade pagination exceeded the per-chunk page bound; window is incomplete."
             )
     return prove_aggtrade_coverage(collected, start=start, end=end)
+
+
+def _row_signature(row: Mapping[str, Any]) -> tuple[str, str, int, bool]:
+    return (str(row.get("p")), str(row.get("q")), int(row["T"]), bool(row.get("m")))
+
+
+def iter_contiguous_agg_trade_rows(
+    *,
+    get_json: JsonGetter,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+) -> Iterator[dict[str, Any]]:
+    """Yield in-window aggTrades in id order without retaining the window.
+
+    Adjacent repeats of the same id and payload are skipped. A non-adjacent
+    duplicate or a broken id run fails closed. ``fetch_complete_agg_trade_rows``
+    keeps the full-list proof path.
+    """
+
+    start_ms, last_ms = inclusive_ms_window(start, end)
+    previous_id: int | None = None
+    previous_signature: tuple[str, str, int, bool] | None = None
+    chunks = iter_aggtrade_time_chunks(start, end)
+    for chunk_start_ms, chunk_end_ms in chunks:
+        from_id: int | None = None
+        for _page in range(AGGTRADE_MAX_PAGES_PER_CHUNK):
+            query = (
+                AggTradeQuery(symbol=symbol, from_id=from_id)
+                if from_id is not None
+                else AggTradeQuery(
+                    symbol=symbol,
+                    start_time_ms=chunk_start_ms,
+                    end_time_ms=chunk_end_ms,
+                )
+            )
+            payload = get_json(AGGTRADE_PATH, query.params())
+            if not isinstance(payload, list):
+                raise WrongMarketError("USD-M aggTrades payload is not a list.")
+            if not payload:
+                break
+            page_rows: list[dict[str, Any]] = []
+            for raw in payload:
+                if not isinstance(raw, dict):
+                    raise WrongMarketError("USD-M aggTrade row is malformed.")
+                page_rows.append(raw)
+            page_rows.sort(key=_row_id)
+            crossed_chunk_end = False
+            for row in page_rows:
+                event_ms = _row_event_ms(row)
+                if event_ms > last_ms:
+                    crossed_chunk_end = True
+                    continue
+                if from_id is not None and event_ms > chunk_end_ms:
+                    crossed_chunk_end = True
+                    continue
+                if event_ms < chunk_start_ms and from_id is None:
+                    continue
+                if event_ms < start_ms or event_ms > last_ms:
+                    continue
+                agg_id = _row_id(row)
+                signature = _row_signature(row)
+                if previous_id is not None:
+                    if agg_id == previous_id:
+                        if signature != previous_signature:
+                            raise DuplicateDataError(
+                                f"Conflicting aggTrade content for id {agg_id}."
+                            )
+                        continue
+                    if agg_id != previous_id + 1:
+                        raise IncompleteTradeWindowError(
+                            f"Confirmed sequence gap {previous_id + 1}-{agg_id - 1}."
+                        )
+                previous_id = agg_id
+                previous_signature = signature
+                yield dict(row)
+            if crossed_chunk_end or len(payload) < AGGTRADE_PAGE_LIMIT:
+                break
+            from_id = _row_id(page_rows[-1]) + 1
+        else:
+            raise IncompleteTradeWindowError(
+                "AggTrade pagination exceeded the per-chunk page bound; window is incomplete."
+            )

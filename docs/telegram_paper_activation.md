@@ -89,7 +89,7 @@ The script does not edit environment files, `render.yaml`, or a deployment.
 
 ## Schema
 
-Alembic `e0f1a2b3c4d5` revises `d9e0f1a2b3c4` and adds the activation cursor and send ledger. Current head `f1a2b3c4d5e6` adds `controlled_runtime_status`. The earlier revision adds:
+Alembic `e0f1a2b3c4d5` revises `d9e0f1a2b3c4` and adds the activation cursor and send ledger. `f1a2b3c4d5e6` adds `controlled_runtime_status`. Current head `a8c3e1b94d20` adds nullable worker RSS columns. The earlier revision adds:
 
 - `telegram_activation_inbound_cursors`
 - `telegram_activation_send_ledger`

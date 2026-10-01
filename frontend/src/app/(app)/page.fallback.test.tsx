@@ -1,137 +1,79 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
+import type { TraderDashboardData } from "@/components/dashboard/TraderDashboardView";
+import { failedSource, okSource } from "@/components/workflows/sourceResult";
+import { UNAVAILABLE } from "@/lib/format";
+import type { PaginatedPositions } from "@/lib/api/types";
 
 vi.mock("@/contexts/AppContext", () => ({
-  useAppContext: () => ({
-    providers: { providers: [] },
-    health: { version: "0.1.0", status: "ok" },
-  }),
   useSafetyPosture: () => ({ executionMode: "paper", realTradingEnabled: false }),
 }));
 
-vi.mock("@/contexts/ShellFreshnessContext", () => ({
-  useShellFreshness: () => ({
-    freshness: { state: null },
-    setFreshness: vi.fn(),
-    clearFreshness: vi.fn(),
-  }),
-}));
-
-function ok<T>(data: T) {
-  return { data, available: true, error: null, fallbackUsed: false };
-}
-
-function failed() {
-  return { data: null, available: false, error: "unavailable", fallbackUsed: false };
-}
-
-function buildDashboardData(overrides: Record<string, unknown> = {}) {
+function failedDashboard(): TraderDashboardData {
   return {
-    summary: failed(),
-    approvals: ok({ items: [], total: 0, limit: 50, offset: 0 }),
-    proposals: ok({ items: [], total: 0, limit: 50, offset: 0 }),
-    tvSignals: ok({ items: [], total: 0, limit: 50, offset: 0 }),
-    setupReviewSummary: failed(),
-    paperDraftSummary: failed(),
-    paperCandidateSummary: failed(),
-    paperRunPlanSummary: failed(),
-    paperRunSessions: failed(),
-    alertRouting: failed(),
-    watcherSummary: failed(),
-    watcherMonitoring: failed(),
-    discipline: failed(),
-    risk: ok({
-      daily_loss_warnings: 0,
-      green_day_warnings: 0,
-      overtrading_warnings: 0,
-    }),
-    tradeReview: ok({ total_journaled_trades: 2 }),
-    ...overrides,
+    portfolio: failedSource("portfolio down"),
+    positions: failedSource("positions down"),
+    journal: failedSource("journal down"),
+    strategyStats: failedSource("stats down"),
+    summary: failedSource("summary down"),
+    watcher: failedSource("watcher down"),
+    market: failedSource("market down"),
+    alerts: failedSource("alerts down"),
   };
 }
 
 const asyncState: {
-  data: ReturnType<typeof buildDashboardData> | null;
+  data: TraderDashboardData | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
 } = {
-  data: buildDashboardData(),
+  data: failedDashboard(),
   loading: false,
   error: null,
   reload: vi.fn(),
 };
 
 vi.mock("@/hooks/useAsyncData", () => ({
-  useAsyncData: () => ({ ...asyncState }),
+  useAsyncData: () => asyncState,
 }));
 
-beforeEach(() => {
-  asyncState.data = buildDashboardData();
-  asyncState.loading = false;
-  asyncState.error = null;
+afterEach(() => {
+  cleanup();
+  asyncState.data = failedDashboard();
 });
 
-afterEach(cleanup);
-
-describe("DashboardPage fallback", () => {
-  it("still renders discipline card when summary endpoint is unavailable", () => {
+describe("Trader dashboard unavailable sources", () => {
+  it("renders unavailable figures instead of zeros", () => {
     render(<DashboardPage />);
-    fireEvent.click(screen.getByText(/today's discipline snapshot/i));
-    expect(screen.getByTestId("todays-discipline-card")).toBeInTheDocument();
-    expect(screen.getByTestId("trades-today")).toHaveTextContent("2");
-    expect(screen.getByTestId("discipline-limitations")).toHaveTextContent("fallback");
-    expect(screen.getByTestId("dashboard-summary-unavailable")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(UNAVAILABLE);
+    expect(screen.getByTestId("dashboard-pnl")).toHaveTextContent(UNAVAILABLE);
+    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(UNAVAILABLE);
+    expect(screen.getByTestId("dashboard-equity")).not.toHaveTextContent("0.00");
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
+      "Open positions unavailable",
+    );
+    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent(
+      "Recent trades unavailable",
+    );
+    expect(screen.getByTestId("dashboard-strategy-performance")).toHaveTextContent(
+      "Strategy performance unavailable",
+    );
+    expect(screen.getByTestId("dashboard-watcher-status")).toHaveTextContent("Unavailable");
+    expect(screen.getByTestId("dashboard-market-evidence")).toHaveTextContent("Unavailable");
+    expect(screen.getByTestId("dashboard-alerts")).toHaveTextContent("Alerts unavailable");
+    expect(screen.queryByText("No open positions")).not.toBeInTheDocument();
   });
 
-  it("keeps measured risk protections honest while never fabricating a discipline status (FP2-102)", () => {
+  it("treats an empty open-position list as empty, not unavailable", () => {
+    asyncState.data = {
+      ...failedDashboard(),
+      positions: okSource({ items: [], total: 0, limit: 20, offset: 0 } as PaginatedPositions),
+    };
     render(<DashboardPage />);
-    fireEvent.click(screen.getByText(/today's discipline snapshot/i));
-
-    // Risk fallback loaded with zero warnings — "clear" is a measured fact here.
-    expect(screen.getByTestId("discipline-loss-protection")).toHaveTextContent(
-      "Loss protection: clear",
-    );
-    // But the fallback never measures a discipline status — no fabricated "calm".
-    expect(screen.getByTestId("discipline-status-badge")).toHaveTextContent(
-      "status unavailable",
-    );
-    expect(screen.getByTestId("discipline-status-badge")).not.toHaveTextContent("calm");
-  });
-
-  it("renders unmeasured fields as unavailable, never as zeros or clear (FP2-102)", () => {
-    asyncState.data = buildDashboardData({
-      risk: failed(),
-      tradeReview: failed(),
-      discipline: ok({ improvement_suggestions: ["Review your last session."] }),
-    });
-
-    render(<DashboardPage />);
-    fireEvent.click(screen.getByText(/today's discipline snapshot/i));
-
-    // Trades today is unmeasured (trade-review fallback failed) — never 0.
-    expect(screen.getByTestId("trades-today")).toHaveTextContent("Trades today: —");
-    expect(screen.getByTestId("trades-today")).not.toHaveTextContent("0");
-
-    // Risk fallback failed — protections are unknown, never "clear" badges.
-    expect(screen.getByTestId("discipline-loss-protection")).toHaveTextContent(
-      "Loss protection: unknown",
-    );
-    expect(screen.getByTestId("discipline-green-day-protection")).toHaveTextContent(
-      "Green-day protection: unknown",
-    );
-    expect(screen.getByTestId("discipline-frequency-notice")).toHaveTextContent(
-      "Frequency notice: unknown",
-    );
-
-    // Unavailable sources are named in the limitations.
-    expect(screen.getByTestId("discipline-limitations")).toHaveTextContent(
-      "Trades-today fallback unavailable.",
-    );
-    expect(screen.getByTestId("discipline-limitations")).toHaveTextContent(
-      "Risk-behavior fallback unavailable.",
-    );
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("No open positions");
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("0");
   });
 });

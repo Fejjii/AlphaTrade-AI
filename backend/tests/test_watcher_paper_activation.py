@@ -207,6 +207,11 @@ def test_unhealthy_migration_cannot_start() -> None:
         _config(),
         _observations(worker_id, expected_migration_revision=None),
     )
+    _refuses(
+        "migration_unhealthy",
+        _config(),
+        _observations(worker_id, migration_revision="b6f2d9a10e73"),
+    )
 
 
 def test_settings_cannot_construct_real_trading_or_armed_replay() -> None:
@@ -391,7 +396,20 @@ def test_migration_reader_fails_closed_without_one_revision() -> None:
         session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('other')"))
         session.commit()
         assert read_migration_revision(session) is None
-    assert expected_migration_head() == "f1a2b3c4d5e6"
+    assert expected_migration_head() == "a1brain001"
+
+
+@pytest.mark.parametrize(
+    ("heads", "expected"),
+    [([], None), (["a1brain001", "b6f2d9a10e73"], None), (["future-head"], "future-head")],
+)
+def test_expected_migration_head_requires_one_alembic_head(
+    monkeypatch: pytest.MonkeyPatch, heads: list[str], expected: str | None
+) -> None:
+    from alembic.script import ScriptDirectory
+
+    monkeypatch.setattr(ScriptDirectory, "get_heads", lambda _self: heads)
+    assert expected_migration_head() == expected
 
 
 def test_runtime_gate_stops_before_scan() -> None:

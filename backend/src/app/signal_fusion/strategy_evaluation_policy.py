@@ -22,6 +22,7 @@ from uuid import UUID
 
 from app.market_contracts.models import CanonicalModel
 from app.schemas.common import StrategyLifecycleState
+from app.schemas.nested_continuation import NestedContinuationSpec, NestedParameters
 from app.schemas.setup_ast import COMPILER_VERSION, GRAMMAR_VERSION
 from app.schemas.strategy_pattern_spec import FirstSliceAuthoredPatternSpec
 from app.signal_fusion.adapters import AssessmentCommand
@@ -57,9 +58,11 @@ class ExecutableStrategyPolicy(CanonicalModel):
     compiler_version: str
     grammar_version: str
     fusion_policy: FusionPolicy
-    adapter_id: Literal["first_slice_compatibility/v1"] = FIRST_SLICE_ADAPTER_ID
-    authored_spec: FirstSliceAuthoredPatternSpec
-    evaluation_params: FirstSliceEvaluationParams
+    adapter_id: Literal["first_slice_compatibility/v1", "operational_nested_continuation/v1"] = (
+        FIRST_SLICE_ADAPTER_ID
+    )
+    authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec
+    evaluation_params: FirstSliceEvaluationParams | NestedParameters
     content_hash: Sha256Hex
 
 
@@ -75,7 +78,7 @@ def build_executable_strategy_policy(
     compiler_version: str,
     grammar_version: str,
     fusion_policy: FusionPolicy,
-    authored_spec: FirstSliceAuthoredPatternSpec,
+    authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec,
 ) -> ExecutableStrategyPolicy:
     """Bind an approved compiled version onto the first-slice adapter."""
 
@@ -87,8 +90,12 @@ def build_executable_strategy_policy(
         compiled_setup_definition_id=compiled_setup_definition_id,
         compiled_content_hash=compiled_content_hash,
     )
-    spec = FirstSliceAuthoredPatternSpec.model_validate(authored_spec.model_dump())
-    params = bind_first_slice_compatibility_adapter(spec)
+    spec = authored_spec
+    params = (
+        spec.parameters
+        if isinstance(spec, NestedContinuationSpec)
+        else bind_first_slice_compatibility_adapter(spec)
+    )
     draft = ExecutableStrategyPolicy(
         organization_id=organization_id,
         strategy_id=strategy_id,
@@ -100,6 +107,9 @@ def build_executable_strategy_policy(
         compiler_version=compiler_version,
         grammar_version=grammar_version,
         fusion_policy=fusion_policy,
+        adapter_id=spec.kind
+        if isinstance(spec, NestedContinuationSpec)
+        else FIRST_SLICE_ADAPTER_ID,
         authored_spec=spec,
         evaluation_params=params,
         content_hash="0" * 64,
@@ -112,7 +122,7 @@ def executable_policy_from_fusion_policy(
     *,
     strategy_id: UUID,
     strategy_version_content_hash: str,
-    authored_spec: FirstSliceAuthoredPatternSpec,
+    authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec,
     lifecycle_state: StrategyLifecycleState = StrategyLifecycleState.APPROVED,
     compiler_version: str = COMPILER_VERSION,
     grammar_version: str = GRAMMAR_VERSION,
@@ -151,6 +161,20 @@ def evaluate_canonical_strategy(
     del account_context
     _assert_executable_lifecycle(executable_policy.lifecycle_state)
     _assert_command_matches_policy(executable_policy, command)
+    if isinstance(executable_policy.authored_spec, NestedContinuationSpec):
+        if executable_policy.evaluation_params != executable_policy.authored_spec.parameters:
+            raise StrategyEvaluationPolicyError(
+                "Nested parameters do not match immutable policy.",
+                reason_code="unsupported_strategy_rule",
+            )
+        return evaluate_setup(
+            policy=executable_policy.fusion_policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            previous_assessment=previous_assessment,
+            nested_spec=executable_policy.authored_spec,
+        )
     bound = bind_first_slice_compatibility_adapter(executable_policy.authored_spec)
     if bound != executable_policy.evaluation_params:
         raise StrategyEvaluationPolicyError(
@@ -165,6 +189,7 @@ def evaluate_canonical_strategy(
         previous_assessment=previous_assessment,
         account_context=None,
         evaluation_params=bound,
+        market_symbol=executable_policy.authored_spec.symbol,
     )
 
 

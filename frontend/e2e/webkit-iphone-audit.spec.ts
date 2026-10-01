@@ -86,16 +86,12 @@ test.describe("WebKit iPhone 15 Pro emulation audit", () => {
     // Safe-area utility classes must be present on chrome (runtime inset values
     // are physical-device dependent and often 0 under Playwright emulation).
     await expect(bottomNav).toHaveClass(/safe-area-inset-bottom/);
-
-    await page.getByTestId("mobile-menu-button").click();
-    const sheet = page.getByTestId("mobile-menu-sheet");
-    await expect(sheet).toBeVisible();
-    const sheetPanel = sheet.getByRole("dialog", { name: /More destinations/i });
-    await expect(sheetPanel).toBeVisible();
-    await expect(sheetPanel).toHaveClass(/safe-area-inset-bottom/);
-    await expect(sheetPanel.getByRole("link").first()).toBeVisible();
-    await page.getByLabel("Close navigation menu").first().click();
-    await expect(sheet).toHaveCount(0);
+    await expect(bottomNav.getByRole("link", { name: "Dashboard" })).toBeVisible();
+    await expect(bottomNav.getByRole("link", { name: "Agent" })).toBeVisible();
+    await expect(bottomNav.getByRole("link", { name: "Strategies" })).toBeVisible();
+    await expect(bottomNav.getByRole("link", { name: "Journal" })).toBeVisible();
+    await expect(bottomNav.getByRole("link", { name: "Settings" })).toBeVisible();
+    await expect(page.getByTestId("mobile-menu-button")).toHaveCount(0);
   });
 
   test("Portfolio and Analytics scroll without trapping horizontal overflow", async ({
@@ -152,10 +148,7 @@ test.describe("WebKit iPhone 15 Pro emulation audit", () => {
     await installSharedE2ESession(page, request);
     await settledGoto(page, "/");
 
-    // TopBar Search is md+; sidebar command is lg+. Phone uses Menu sheet control.
-    await page.getByTestId("mobile-menu-button").click();
-    await expect(page.getByTestId("mobile-menu-sheet")).toBeVisible();
-    await page.getByTestId("mobile-menu-command").click();
+    await page.getByTestId("topbar-search").click();
     await expect(page.getByTestId("command-menu")).toBeVisible();
     await expect(page.getByTestId("command-menu").getByRole("option").first()).toBeVisible();
   });

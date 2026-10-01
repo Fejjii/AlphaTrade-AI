@@ -15,7 +15,7 @@ from app.market_contracts.adapters.failover import FailoverPerpetualSource
 from app.market_contracts.adapters.replay import ReplayPerpetualSource
 from app.market_contracts.catalog import PerpetualInstrumentCatalog
 from app.market_contracts.errors import FallbackForbiddenError
-from app.market_contracts.identity import binance_usdm_btcusdt, bybit_usdt_perpetual_btcusdt
+from app.market_contracts.identity import binance_usdm_perpetual, bybit_usdt_perpetual
 
 PerpetualEvidenceSource = (
     ReplayPerpetualSource
@@ -63,19 +63,27 @@ def resolve_perpetual_evidence_source(
     transport: httpx.BaseTransport | None = None,
     catalog: PerpetualInstrumentCatalog | None = None,
     shared: bool = False,
+    symbol: str = "BTCUSDT",
 ) -> PerpetualEvidenceSource:
     mode = settings.perpetual_evidence_source.strip().lower()
     secondary = settings.perpetual_evidence_secondary_source.strip().lower()
+    if catalog is None and symbol != "BTCUSDT":
+        from app.market_contracts.catalog import catalog_for_symbols
+        from app.market_contracts.enums import VenueId
+
+        catalog = catalog_for_symbols(
+            [symbol], venue=VenueId.BYBIT if mode == "bybit_usdt_perpetual" else VenueId.BINANCE
+        )
     if mode in REPLAY_MODES:
         return ReplayPerpetualSource()
     if mode == "bybit_usdt_perpetual":
-        return _bybit_source(settings, transport=transport)
+        return _bybit_source(settings, transport=transport, symbol=symbol)
     if mode in LIVE_MODES and secondary == "bybit_usdt_perpetual":
         return FailoverPerpetualSource(
             _binance_source(settings, transport=transport, catalog=catalog, shared=shared),
-            _bybit_source(settings, transport=transport),
-            primary_instrument=binance_usdm_btcusdt(),
-            secondary_instrument=bybit_usdt_perpetual_btcusdt(),
+            _bybit_source(settings, transport=transport, symbol=symbol),
+            primary_instrument=binance_usdm_perpetual(symbol),
+            secondary_instrument=bybit_usdt_perpetual(symbol),
         )
     if mode in LIVE_MODES:
         return _binance_source(settings, transport=transport, catalog=catalog, shared=shared)
@@ -102,7 +110,9 @@ def _binance_source(
         max_backoff_seconds=settings.binance_request_max_backoff_seconds,
         trade_cache_entries=settings.binance_evidence_cache_entries,
         cache_ttl_seconds=settings.binance_evidence_cache_ttl_seconds,
+        max_cached_rows=settings.binance_evidence_cache_max_rows,
         trade_cache=None if pool is None else pool.cache,
+        reduced_cache=None if pool is None else pool.reduced,
         budget=None if pool is None else pool.budget,
     )
 
@@ -111,8 +121,10 @@ def _bybit_source(
     settings: Settings,
     *,
     transport: httpx.BaseTransport | None,
+    symbol: str = "BTCUSDT",
 ) -> BybitUsdtPerpetualSource:
     return BybitUsdtPerpetualSource(
+        instrument=bybit_usdt_perpetual(symbol),
         base_url=settings.bybit_perpetual_base_url,
         timeout_seconds=settings.perpetual_evidence_timeout_seconds,
         transport=transport,
