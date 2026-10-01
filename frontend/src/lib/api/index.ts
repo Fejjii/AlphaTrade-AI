@@ -376,10 +376,11 @@ export const api = {
       strategy_id?: string;
       symbol?: string;
       timeframe?: string;
-    }) =>
+    }, options?: { signal?: AbortSignal }) =>
       apiFetch<AgentTurnResult>("/agent/turns", {
         method: "POST",
         body: JSON.stringify(body),
+        signal: options?.signal,
       }),
     confirmProposal: (
       proposalId: string,
@@ -408,10 +409,11 @@ export const api = {
         auth: true,
       }),
     get: (id: string) => apiFetch<ConversationSummary>(`/conversations/${id}`, { auth: true }),
-    listMessages: (id: string, params?: { limit?: number; offset?: number }) =>
+    listMessages: (id: string, params?: { limit?: number; offset?: number }, options?: { signal?: AbortSignal }) =>
       apiFetch<PaginatedConversationMessages>(`/conversations/${id}/messages`, {
         query: params,
         auth: true,
+        signal: options?.signal,
       }),
     listProposals: (
       id: string,
