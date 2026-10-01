@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentWorkspace } from "@/components/agent/AgentWorkspace";
@@ -47,8 +53,18 @@ describe("Agent workspace", () => {
     });
     apiMocks.listMessages.mockResolvedValue({
       items: [
-        { id: "m1", role: "user", content: "Is this a pullback?", created_at: "2026-01-01" },
-        { id: "m2", role: "assistant", content: "Paper only: wait for confirmation.", created_at: "2026-01-01" },
+        {
+          id: "m1",
+          role: "user",
+          content: "Is this a pullback?",
+          created_at: "2026-01-01",
+        },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "Paper only: wait for confirmation.",
+          created_at: "2026-01-01",
+        },
       ],
       total: 2,
       limit: 100,
@@ -60,8 +76,16 @@ describe("Agent workspace", () => {
       limit: 20,
       offset: 0,
     });
-    apiMocks.listStrategies.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
-    apiMocks.marketStatus.mockResolvedValue({ availability: "fresh", symbol: "BTCUSDT" });
+    apiMocks.listStrategies.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 50,
+      offset: 0,
+    });
+    apiMocks.marketStatus.mockResolvedValue({
+      availability: "fresh",
+      symbol: "BTCUSDT",
+    });
     apiMocks.agentTurn.mockResolvedValue({
       conversation_id: "c1",
       reply: "Noted.\n\nRecorded facts (not a confirmation):\nDraft only.",
@@ -106,9 +130,15 @@ describe("Agent workspace", () => {
       "Image and screenshot attachment",
     );
     expect(
-      screen.getByText("Screenshot analysis is not available. No image is uploaded or interpreted."),
+      screen.getByText(
+        "Screenshot analysis is not available. No image is uploaded or interpreted.",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Voice is not available. No audio is transcribed or played.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Voice is not available. No audio is transcribed or played.",
+      ),
+    ).toBeInTheDocument();
     for (const missing of missingAgentCapabilities()) {
       expect(screen.getByText(missing.label)).toBeInTheDocument();
     }
@@ -117,8 +147,12 @@ describe("Agent workspace", () => {
   it("sends text with trade context and does not invent an attachment payload", async () => {
     render(<AgentWorkspace />);
     fireEvent.click(await screen.findByRole("button", { name: /BTCUSDT/ }));
-    fireEvent.change(screen.getByLabelText("Timeframe"), { target: { value: "1h" } });
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Review this long." } });
+    fireEvent.change(screen.getByLabelText("Timeframe"), {
+      target: { value: "1h" },
+    });
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Review this long." },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1));
     expect(apiMocks.agentTurn).toHaveBeenCalledWith({
@@ -130,7 +164,9 @@ describe("Agent workspace", () => {
     });
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
     expect(apiMocks.rejectProposal).not.toHaveBeenCalled();
-    expect(await screen.findByTestId("agent-market-context")).toHaveTextContent("fresh");
+    expect(await screen.findByTestId("agent-market-context")).toHaveTextContent(
+      "fresh",
+    );
   });
 
   it("confirms a proposal only from the explicit button", async () => {
@@ -158,17 +194,54 @@ describe("Agent workspace", () => {
       real_trading_enabled: false,
     });
     render(<AgentWorkspace />);
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Journal this trade." } });
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Journal this trade." },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent("proposed");
+    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent(
+      "proposed",
+    );
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Confirm proposal" }));
-    await waitFor(() => expect(apiMocks.confirmProposal).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(apiMocks.confirmProposal).toHaveBeenCalledTimes(1),
+    );
     expect(apiMocks.confirmProposal).toHaveBeenCalledWith("p1", {
       conversation_id: "c1",
       expected_content_hash: "a".repeat(64),
       statement: "I confirm",
     });
-    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent("applied");
+    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent(
+      "applied",
+    );
+  });
+
+  it("clears the previous conversation while loading another and preserves failed message drafts", async () => {
+    apiMocks.listConversations.mockResolvedValue({
+      items: [
+        { id: "c1", title: "BTC plan" },
+        { id: "c2", title: "ETH review" },
+      ],
+    });
+    render(<AgentWorkspace />);
+    fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
+    await screen.findAllByTestId("agent-message");
+    apiMocks.listMessages.mockRejectedValue(new Error("History offline"));
+    fireEvent.click(screen.getByRole("button", { name: "ETH review" }));
+    expect(screen.queryByText("Is this a pullback?")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/Conversation unavailable: History offline/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("What are you working through?"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    apiMocks.agentTurn.mockRejectedValue(new Error("Agent offline"));
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Review my risk" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Agent offline");
+    expect(screen.getByLabelText("Message")).toHaveValue("Review my risk");
   });
 });

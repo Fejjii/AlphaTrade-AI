@@ -2,13 +2,18 @@
 
 import { useCallback } from "react";
 
-import { TraderJournalView, type TraderJournalData } from "@/components/journal/TraderJournalView";
+import {
+  TraderJournalView,
+  type TraderJournalData,
+} from "@/components/journal/TraderJournalView";
 import { ErrorState, LoadingState } from "@/components/states";
-import { loadSource } from "@/components/workflows";
+import { describeSafetyPosture, loadSource } from "@/components/workflows";
+import { useSafetyPosture } from "@/contexts/AppContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 
 export function TraderJournalScreen() {
+  const { executionMode, realTradingEnabled } = useSafetyPosture();
   const loader = useCallback(async (): Promise<TraderJournalData> => {
     const [entries, trades, lessons, coaching] = await Promise.all([
       loadSource(api.journal.list({ limit: 30 })),
@@ -22,7 +27,19 @@ export function TraderJournalScreen() {
   const { data, loading, error, reload } = useAsyncData(loader, []);
   if (loading && !data) return <LoadingState label="Loading journal…" />;
   if (error || !data) {
-    return <ErrorState message={error ?? "Journal unavailable"} onRetry={() => void reload()} />;
+    return (
+      <ErrorState
+        message={error ?? "Journal unavailable"}
+        onRetry={() => void reload()}
+      />
+    );
   }
-  return <TraderJournalView data={data} />;
+  return (
+    <TraderJournalView
+      data={data}
+      posture={describeSafetyPosture(executionMode, realTradingEnabled)}
+      onRetry={() => void reload()}
+      refreshing={loading}
+    />
+  );
 }

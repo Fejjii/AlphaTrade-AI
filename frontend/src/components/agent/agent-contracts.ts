@@ -21,20 +21,20 @@ export const AGENT_CAPABILITIES: readonly AgentCapability[] = [
     label: "Text conversation",
     status: "wired",
     contract:
-      "POST /agent/turns stores the existing model reply. That text does not confirm or write records.",
+      "Discuss a trade in text. Replies do not confirm proposals or write trading records.",
   },
   {
     id: "history",
     label: "Conversation history",
     status: "wired",
-    contract: "GET/POST /conversations and GET /conversations/{id}/messages.",
+    contract: "Return to saved conversations and their messages.",
   },
   {
     id: "trade-context",
     label: "Symbol, timeframe, and strategy context",
     status: "wired",
     contract:
-      "Symbol, timeframe, and strategy_id are sent on the agent turn. Open positions come from GET /positions.",
+      "Set a symbol, timeframe, and strategy for your next message, or select an open position.",
   },
   {
     id: "response-fields",
@@ -48,26 +48,28 @@ export const AGENT_CAPABILITIES: readonly AgentCapability[] = [
     label: "Strategy capture",
     status: "wired",
     contract:
-      "A strategy proposal can be confirmed explicitly. That records confirmed_unapplied and does not change the strategy version.",
+      "Confirm records your strategy request. The preview stays a draft and the strategy version stays unchanged.",
   },
   {
     id: "rule-capture",
     label: "Rule capture",
     status: "wired",
-    contract: "A rule proposal stays unapplied after confirm. Structured rules are not written.",
+    contract:
+      "A rule proposal stays unapplied after confirm. Structured rules are not written.",
   },
   {
     id: "journaling",
     label: "Journaling",
     status: "wired",
     contract:
-      "A complete journal proposal is written only by POST /agent/proposals/{id}/confirm. Sending a message does not write it.",
+      "Confirm a complete journal proposal to save one entry. Sending a message does not save it.",
   },
   {
     id: "knowledge",
     label: "Knowledge retrieval",
     status: "wired",
-    contract: "Knowledge matches are read during the turn. There is no separate retrieval button.",
+    contract:
+      "Knowledge matches are read during the turn. There is no separate retrieval button.",
   },
   {
     id: "portfolio-questions",
@@ -86,13 +88,15 @@ export const AGENT_CAPABILITIES: readonly AgentCapability[] = [
     id: "pre-trade",
     label: "Pre-trade reasoning",
     status: "wired",
-    contract: "A selected strategy can be discussed. The turn does not submit an order.",
+    contract:
+      "A selected strategy can be discussed. The turn does not submit an order.",
   },
   {
     id: "reflection",
     label: "Post-trade reflection",
     status: "wired",
-    contract: "A lesson proposal is not accepted by the reply. Confirm leaves it unapplied.",
+    contract:
+      "A lesson proposal is not accepted by the reply. Confirm leaves it unapplied.",
   },
   {
     id: "image",
@@ -105,13 +109,15 @@ export const AGENT_CAPABILITIES: readonly AgentCapability[] = [
     id: "voice",
     label: "Voice interaction",
     status: "missing",
-    contract: "Voice input and output are not implemented. No audio is transcribed or played.",
+    contract:
+      "Voice input and output are not implemented. No audio is transcribed or played.",
   },
   {
     id: "refinement",
     label: "Strategy refinement",
     status: "missing",
-    contract: "Version edits stay in Strategy Lab. This workspace does not apply refinements.",
+    contract:
+      "Version edits stay in Strategy Lab. This workspace does not apply refinements.",
   },
 ] as const;
 
