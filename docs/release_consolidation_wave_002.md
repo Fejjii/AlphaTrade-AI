@@ -2,15 +2,18 @@
 
 Branch: `codex/release_consolidation_wave_002`.
 Exact base: `78635e60e4f745fd50d6dc181b555a6948562077` (green PR160).
+Finalization baseline: `fed937fe11fb4656ad4ad0be750bd7c03975250f` (green PR176).
 Repository verified from the supplied PRs and SHAs: `Fejjii/AlphaTrade-AI`.
 
 ## Accepted scope and provenance
 
 PR160 already contains PR154–PR158. Its existing history is inherited once.
-Twenty-two unique commits from the following thirteen feature heads are cherry-picked
-in this dependency order with `-x` source provenance. Every source head was verified
-against its fetched PR ref and a completed successful GitHub CI run before integration.
-PR171, PR174, and PR175 are excluded regardless of later CI status.
+The initial consolidation cherry-picked twenty-two unique commits from thirteen
+feature heads. Finalization continues that same branch and adds seven unique commits
+from PR171, PR174, PR175, and PR177, in that order: twenty-nine source commits across
+seventeen accepted heads. Every source head was verified against its fetched PR ref
+and a completed successful GitHub CI run before integration. Every pick carries
+`-x` provenance; inherited feature history is not replayed.
 
 | PR | Accepted feature | Exact green source SHA |
 | --- | --- | --- |
@@ -27,14 +30,51 @@ PR171, PR174, and PR175 are excluded regardless of later CI status.
 | #170 | Add verified read-only perpetual open interest and funding evidence | `3fc730347e450f537a9fdd708b4a0570555cd794` |
 | #172 | Expose Daily Review as a tenant-scoped dashboard feature | `3e491561ac8ccddb795f8c6d3a04d39fdf7afa1d` |
 | #173 | Strategy replay and experiments 001: deterministic Nested replay | `dff0f619a4afe5de9e9bf94dc4c900bc2b857200` |
+| #171 | Agent Paper Execution V4 | `34a93110841ee75f061be58efa63ec56b49d2400` |
+| #174 | Agent Daily Review | `255ef43320b27c80b12b6488fc4340adb2ab1f84` |
+| #175 | Agent Strategy Analytics | `a8b0986b77c3bf00d878b24a940d9f0cb5c44482` |
+| #177 | Verified CVD and five-minute order flow | `c91f283274c5a630dc34f8fa157584ddd83201a3` |
 
 Source-only ranges use each PR's accepted base, rather than replaying all history
 since main. In particular, PR167 excludes inherited PR159, PR168 excludes inherited
 PR158, PR169 excludes inherited PR167, and PR172 excludes inherited PR169.
-All 22 source commits occur exactly once in the branch's provenance trailers.
+Finalization excludes PR171's inherited PR167, PR174's inherited PR169,
+PR175's inherited PR165, and PR177's inherited PR170. Their unique ranges contain
+three, one, one, and two commits respectively. All 29 source commits occur exactly
+once in the branch's provenance trailers.
 Source refs remain unchanged.
 
-## Conflict resolutions
+## Finalization conflict resolutions
+
+- PR171 and PR177 conflict in `HANDOFF.md`: replace independent current summaries
+  with the canonical release handoff; retain all dedicated feature documentation.
+- PR174 conflicts in `interactive_agent/actions.py`: retain both typed
+  `PaperExecutionInput` and `DailyReviewInput` contracts.
+- PR174 conflicts in `interactive_agent/service.py`: retain paper preparation and
+  Daily Review routing, with deterministic replies bypassing the narrative model.
+- PR175 conflicts in `interactive_agent/contracts.py`: retain both typed action
+  requests and analytics filters, and both structured Daily Review and analytics
+  result fields.
+- PR175 conflicts in `interactive_agent/service.py`: keep governed action routing,
+  membership checks, canonical paper proposal/confirmation handling, Daily Review
+  reads, analytics gathering, both structured transcript fields, and both result
+  fields. Analytics also bypasses model prose. Reject analytics filters combined
+  with a typed action before writing a transcript, preventing filters from
+  reinterpreting an authorized action.
+- PR177's automatic family dispatch merge leaves SFP outside the shared required
+  print gate. SFP now uses the same `require_bound_order_flow` helper as Nested.
+  Required CVD/flow must bind to the venue, instrument, trigger close, and selected
+  hashed public observations. Missing or substituted candle evidence cannot
+  confirm SFP. Optional flow retains the inherited SFP assessment behavior.
+
+The resulting Agent retains governed journal, Knowledge, Watcher and strategy
+research actions; paper pretrade and canonical execution; Daily Review and Strategy
+Analytics reads; voice transport; live trading refusal; hash-protected confirmations;
+tenant isolation; and final Risk/ActionEligibility decisions. The new combined
+regression performs both reads between a paper proposal and its confirmation, then
+proves one fill and one canonical journal despite repeated confirmation.
+
+## Initial consolidation conflict resolutions
 
 - `HANDOFF.md` conflicted in PR161, PR162, PR163, PR166, PR170, and PR173 because
   independent branches replace the current task summary. Each source's dedicated
@@ -69,8 +109,9 @@ The no-op merge revision has exactly these parents:
 `("a2tgpolicy002", "a2sfp002")`. Both original revisions still descend from
 `a1brain001` and are byte-for-byte identical to their accepted source files.
 All older migration files remain unchanged.
+Finalization adds no migration and leaves `a3release002` as the only head.
 
-The focused PostgreSQL migration regression covers upgrade from each accepted
+The initial focused PostgreSQL migration regression covered upgrade from each accepted
 branch, convergence on the merge, preservation of original SFP receipt content,
 an explicit-parent downgrade that removes only the merge, reupgrade, downgrade
 through both branches to `a1brain001`, and another reupgrade. Relative `-1`
@@ -82,9 +123,12 @@ checks also run against the disposable database.
 
 Paper execution only. The inherited configuration keeps `ENABLE_REAL_TRADING=false`.
 CandidateLifecycleService remains canonical, and RiskEngine and ActionEligibility
-remain final. Their implementation/persistence paths, execution eligibility gates,
-Watcher workers, five-market defaults, accepted Nested and SFP detectors, environment
-examples, deployment configuration, and CI configuration are unchanged from PR160.
+remain final. PR171 delegates sizing to PositionSizingService and execution to the
+existing canonical paper authorities, rechecking risk and eligibility at confirmation.
+Agent does not mint Candidates or invent sizing. Accepted canonical paper fills now
+participate in the shared risk accounting and loss cooldown. Five-market Watcher,
+accepted Nested/SFP detectors, environment examples, deployment and CI configuration
+remain preserved.
 
 No alternative execution engine, synthesized production market data, Telegram
 network arming, worker activation, shared database migration, deployment, or merge.
@@ -92,7 +136,67 @@ The replay implementation uses the accepted existing backtest authorities.
 SFP execution remains refused with `sfp_execution_plan_not_authorized`.
 Test payloads/clocks are explicit fixtures and are not claims of live market evidence.
 
-## Verification
+PR170's OI and Funding remain present. PR177 adds real trade-print aggressive buy
+and sell base/quote volume, five-minute delta and imbalance, print counts, freshness
+and availability, plus bounded ten-minute rolling CVD/change/slope. The signed sum
+starts at zero for each window and venue switch; it is not absolute provider CVD.
+Unproven trade coverage remains unavailable/incomplete. Failover discards earlier
+venue facts; candle volume never substitutes for prints.
+
+## Finalization verification
+
+- **742 distinct focused backend cases passed, zero skipped**, using each case's
+  latest result once. The 738-case matrix passed 737 and exposed the new combined
+  test's fixture registration issue when its source module was also collected.
+  Local fixture registration fixed it; all three combined Agent regressions then
+  passed against disposable PostgreSQL. Four new SFP required-print cases passed
+  for both directions and both roles; affected SFP runtime cases passed again.
+- **189 focused frontend cases passed across 20 files**, covering Agent/voice,
+  Daily Review Dashboard, Knowledge, Settings, and six-destination navigation.
+  Full frontend TypeScript checking passed. No frontend code changed in finalization.
+- Scoped backend Ruff lint/format and targeted Agent/SFP mypy checks passed.
+  One-head verification passed: `a3release002`. No migration files changed.
+- Disposable PostgreSQL **17.11**, loopback port 55432 and task-owned database,
+  exercised Agent action application, canonical paper execution, concurrent and
+  repeated confirmations, tenant/hash/risk refusals, and SFP runtime integration.
+  All PostgreSQL runs explicitly selected the disposable URL and safe paper,
+  Telegram and worker settings. The server was stopped after verification.
+- No full local repository suite, new migration cycle, deployment, activation,
+  or merge. The unchanged migration graph already passed the initial upgrade,
+  downgrade and reupgrade checks below. GitHub CI is allowed to run and is not awaited.
+
+Finalization backend selection (relative to backend):
+
+```text
+tests/test_agent_action_application.py
+tests/test_agent_action_application_postgres.py
+tests/test_agent_action_orchestration.py
+tests/test_agent_paper_execution_v4.py
+tests/test_agent_daily_review.py
+tests/test_agent_strategy_analytics.py
+tests/test_interactive_agent_foundation.py
+tests/test_release_wave002_agent_finalization.py
+tests/test_strategy_brain_nested.py
+tests/test_sfp_strategy_brain_runtime.py
+tests/test_strategy_replay_001.py
+tests/test_market_intelligence_oi_funding.py
+tests/test_market_intelligence_cvd_orderflow.py
+tests/test_phase5_cvd_flow.py
+tests/test_canonical_evidence_http.py
+tests/test_watcher_bybit_continuity.py
+tests/test_at067_canonical_strategy_evaluation_policy.py
+tests/test_telegram_notification_policy_v2.py
+tests/test_daily_review.py
+tests/test_daily_review_api.py
+tests/test_strategy_analytics_api_v2.py
+tests/test_phase2_4_alembic_postgres.py::test_alembic_single_head
+tests/test_at012_paper_risk_at_execution.py
+tests/test_automated_paper_loop.py
+tests/test_strategy_slice_33.py
+tests/test_phase7_eligibility_postgres.py
+```
+
+## Initial consolidation verification
 
 - **938 distinct focused backend cases passed, zero skipped.** The initial 905-case
   matrix passed 899 and exposed four SFP/Nested adapter failures plus two ambiguous

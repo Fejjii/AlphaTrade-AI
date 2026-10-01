@@ -27,6 +27,7 @@ from app.services.compiled_setup_service import CompiledSetupService
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.enums import EvidenceAdapterKind, EvidenceRole, SetupAssessmentState
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
+from app.signal_fusion.evaluator import evaluate_setup
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.strategy_evaluation_policy import evaluate_canonical_strategy
 from app.signal_fusion.types import HalfOpenInterval, TriggerIdentity
@@ -184,6 +185,38 @@ def test_canonical_assessment_forming_confirmed_and_old_confirmation(store, bear
     foreign = command_for(policy, bars, obs).model_copy(update={"organization_id": uuid4()})
     with pytest.raises(StrategyEvaluationPolicyError):
         evaluate(policy, bars, obs, command=foreign)
+
+
+@pytest.mark.parametrize("bearish", [False, True])
+@pytest.mark.parametrize("role", [EvidenceRole.CVD_5M, EvidenceRole.ORDER_FLOW_5M])
+def test_sfp_dispatch_requires_bound_print_evidence(store, bearish, role):
+    session, org, user, _ = store
+    policy = approve(session, org, user, spec(bearish=bearish))
+    bars, observations = evidence(BEAR if bearish else BULL)
+    assert evaluate(policy, bars, observations).state is SetupAssessmentState.CONFIRMED_SETUP
+    fusion = policy.fusion_policy.model_copy(
+        update={"required_roles": (*policy.fusion_policy.required_roles, role)}
+    )
+    original = command_for(policy, bars, observations)
+    # A candle selected as a flow role cannot substitute for bound trade prints.
+    command = original.model_copy(
+        update={
+            "mandatory_evidence_roles": fusion.required_roles,
+            "public_observations": (*original.public_observations, observations[-1]),
+            "selected_roles": (*original.selected_roles, role),
+        }
+    )
+    result = evaluate_setup(
+        policy=fusion,
+        command=command,
+        evidence=FirstSliceEvidenceBundle(bars_15m=bars),
+        evaluated_at=bars[-1].interval_end,
+        sfp_spec=policy.authored_spec,
+    )
+    assert result.state is SetupAssessmentState.NO_SETUP
+    assert not next(
+        rule for rule in result.rule_results if rule.rule_id == "required_order_flow_binding"
+    ).passed
 
 
 @pytest.mark.parametrize("missing", [True, False])

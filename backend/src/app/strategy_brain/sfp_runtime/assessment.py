@@ -5,12 +5,14 @@ from decimal import Decimal
 from uuid import uuid5
 
 from app.market_contracts.enums import Finality, MarketType
+from app.market_contracts.errors import MarketContractError
 from app.market_contracts.ohlcv import OhlcvBar
 from app.schemas.nested_continuation import BrainSetupState, EvidenceAvailability
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment, build_setup_assessment
 from app.signal_fusion.enums import AssessmentReasonCode, SetupAssessmentState
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
+from app.signal_fusion.order_flow_inputs import ORDER_FLOW_ROLES, require_bound_order_flow
 from app.signal_fusion.policy import FusionPolicy
 from app.signal_fusion.types import RuleResult
 from app.strategy_brain.sfp.contracts import SFP_NAMESPACE, SfpDetection, SfpScan, SfpSpec
@@ -85,6 +87,19 @@ def evaluate_sfp_setup(
         and policy.role_timeframes == command.role_timeframes
     )
     available = scan.required_evidence is EvidenceAvailability.AVAILABLE
+    order_flow_required = any(role in ORDER_FLOW_ROLES for role in policy.required_roles)
+    order_flow_ok = True
+    if order_flow_required:
+        try:
+            require_bound_order_flow(
+                evidence.order_flow,
+                command=command,
+                required_roles=policy.required_roles,
+                evaluated_at=evaluated_at,
+                trigger_end=bars[-1].interval_end if bars else None,
+            )
+        except (MarketContractError, ValueError):
+            order_flow_ok = False
     final = bool(bars) and bars[-1].finality is Finality.FINAL and bars[-1].provider_complete
     current_confirmation = (
         latest is not None
@@ -96,7 +111,7 @@ def evaluate_sfp_setup(
             and latest.observed_at <= evaluated_at < latest.expires_at
         )
     )
-    checks = (
+    checks: tuple[tuple[str, bool], ...] = (
         ("market_identity", identity_ok),
         ("trigger_binding", bound),
         ("compiled_policy_binding", policy_ok),
@@ -104,13 +119,15 @@ def evaluate_sfp_setup(
         ("closed_candle_confirmation", final),
         ("sfp_confirmation", current_confirmation),
     )
+    if order_flow_required:
+        checks += (("required_order_flow_binding", order_flow_ok),)
     mapping = {
         BrainSetupState.FORMING: SetupAssessmentState.PARTIAL_MATCH,
         BrainSetupState.CONFIRMED: SetupAssessmentState.WATCH,
         BrainSetupState.INVALIDATED: SetupAssessmentState.INVALIDATED,
         BrainSetupState.EXPIRED: SetupAssessmentState.EXPIRED,
     }
-    quality = identity_ok and bound and policy_ok and available
+    quality = identity_ok and bound and policy_ok and available and order_flow_ok
     state = (
         mapping.get(latest.state, SetupAssessmentState.NO_SETUP)
         if latest and quality
