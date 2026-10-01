@@ -108,6 +108,7 @@ class BacktestService:
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        execute_inline: bool = True,
     ) -> BacktestRun:
         if payload.idempotency_key:
             existing = self._runs.get_by_idempotency_key(
@@ -227,7 +228,7 @@ class BacktestService:
             )
         )
 
-        if dataset.candle_count <= self._settings.backtest_sync_max_bars:
+        if execute_inline and dataset.candle_count <= self._settings.backtest_sync_max_bars:
             return self.execute_run(run.id, organization_id=organization_id)
 
         return self._to_schema(run)

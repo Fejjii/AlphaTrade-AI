@@ -22,6 +22,7 @@ from app.core.errors import (
 )
 from app.db.canonical_candidates import CanonicalCandidateRow
 from app.db.models import (
+    Chunk,
     Conversation,
     Document,
     Membership,
@@ -232,7 +233,9 @@ def test_strategy_note_proposal_does_not_mutate_brain_or_strategy(agent_db, name
         versions = _count(session, UserStrategyVersion)
         assert result.operation is TurnOperation.PROPOSE
         assert result.proposals[0].payload["strategy_id"] == str(target.id)
-        assert confirm(service, result).status is ProposalLifecycle.CONFIRMED_UNAPPLIED
+        applied = confirm(service, result)
+        assert applied.status is ProposalLifecycle.APPLIED
+        assert session.get(Document, applied.resulting_record_id).user_id == USER_A
         session.commit()
         assert _count(session, UserStrategyVersion) == versions
         assert _count(session, StrategyConversationProposal) == 0
@@ -267,7 +270,9 @@ def test_refinement_uses_existing_proposal_service_and_evidence_refs(agent_db):
         assert row.status is StrategyProposalStatus.DRAFT
         assert row.context_refs["evidence_document_ids"] == [str(doc.id)]
         assert row.content_hash == proposal.payload["strategy_preview_hash"]
-        assert confirm(service, result).status is ProposalLifecycle.CONFIRMED_UNAPPLIED
+        applied = confirm(service, result)
+        assert applied.status is ProposalLifecycle.APPLIED
+        assert applied.resulting_record_id == row.id
         session.commit()
         assert row.status is StrategyProposalStatus.DRAFT
         assert _count(session, UserStrategyVersion) == versions
@@ -298,7 +303,7 @@ def test_replay_and_association_are_explicit_unapplied_requests(agent_db):
 
 
 @pytest.mark.parametrize("kind", ["lesson", "rule", "observation"])
-def test_knowledge_proposal_uses_canonical_ingest_contract_without_duplicate_store(agent_db, kind):
+def test_knowledge_confirmation_uses_canonical_ingest_contract(agent_db, kind):
     factory, settings = agent_db
     with factory() as session:
         target = strategy(session)
@@ -318,8 +323,11 @@ def test_knowledge_proposal_uses_canonical_ingest_contract_without_duplicate_sto
         assert ingest.strategy_tag == str(target.id)
         assert proposal.artifact_kind.value == kind
         assert proposal.payload["ingested"] is False
-        assert confirm(service, result).status is ProposalLifecycle.CONFIRMED_UNAPPLIED
-        assert _count(session, Document) == 0
+        applied = confirm(service, result)
+        assert applied.status is ProposalLifecycle.APPLIED
+        assert applied.resulting_record_id == session.scalar(select(Document.id))
+        assert _count(session, Document) == 1
+        assert _count(session, Chunk) > 0
 
 
 @pytest.mark.parametrize(
@@ -389,7 +397,7 @@ def test_journal_append_without_target_stays_unapplied_and_stale_target_conflict
         },
     ],
 )
-def test_watcher_proposals_use_current_validation_without_applying(agent_db, arguments):
+def test_watcher_confirmation_applies_current_validated_configuration(agent_db, arguments):
     factory, settings = agent_db
     with factory() as session:
         repo = WatcherWatchlistRepository(session)
@@ -399,8 +407,11 @@ def test_watcher_proposals_use_current_validation_without_applying(agent_db, arg
         assert proposal.payload["validation_passed"] is True
         assert proposal.payload["replace_request"]["revision"] == before.revision
         assert repo.load(ORG_A) == before
-        assert confirm(service, result).status is ProposalLifecycle.CONFIRMED_UNAPPLIED
-        assert repo.load(ORG_A) == before
+        applied = confirm(service, result)
+        assert applied.status is ProposalLifecycle.APPLIED
+        assert applied.resulting_record_id == ORG_A
+        assert repo.load(ORG_A).revision == before.revision + 1
+        assert confirm(service, result) == applied
 
 
 def test_watcher_rejects_invalid_or_stale_inputs(agent_db):

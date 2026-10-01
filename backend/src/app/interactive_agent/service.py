@@ -107,6 +107,7 @@ class InteractiveAgentService:
         self._vector_retriever = vector_retriever
         self._responder = responder
         self._conversations = ConversationService(session)
+        self.confirmation_changed = False
 
     def catalog(self) -> AgentCapabilityCatalog:
         catalog = capability_catalog(self._settings)
@@ -292,6 +293,7 @@ class InteractiveAgentService:
         user_id: uuid.UUID,
     ) -> StructuredActionProposal:
         """Apply the explicit confirm boundary for one stored proposal."""
+        self.confirmation_changed = False
         paper_safety_contract(self._settings)
         self._conversations.require(
             body.conversation_id,
@@ -304,6 +306,7 @@ class InteractiveAgentService:
             organization_id=organization_id,
             user_id=user_id,
             proposal_id=proposal_id,
+            lock=True,
         )
         updated = confirm_proposal(
             self._session,
@@ -313,8 +316,10 @@ class InteractiveAgentService:
             proposal_id=proposal_id,
             expected_content_hash=body.expected_content_hash,
             statement=body.statement,
+            settings=self._settings,
         )
         if before.status != updated.status:
+            self.confirmation_changed = True
             self._conversations.append_message(
                 conversation=self._conversations.require(
                     body.conversation_id,
@@ -830,6 +835,7 @@ def _decision_reply(proposal: StructuredActionProposal, *, verb: str) -> str:
     return (
         f"Proposal {proposal.proposal_id} {verb}. "
         f"Status {proposal.status.value}. Authority mutated: {mutated}. "
+        f"Resulting record: {proposal.resulting_record_id}. "
         "Real trading remains disabled."
     )[:4000]
 

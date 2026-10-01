@@ -7,7 +7,9 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.schemas.backtest import BacktestRunCreate
 from app.schemas.common import PositiveDecimal, StrictModel, Symbol, Timeframe, TradeDirection
+from app.schemas.pretrade import PreTradeAnalyzeBody
 from app.schemas.watcher_watchlist import WatcherWatchlistSlotWrite
 
 
@@ -51,6 +53,10 @@ class KnowledgeInput(StrategyInput):
     kind: Literal["lesson", "rule", "observation"] = "lesson"
 
 
+class StrategyValidationInput(StrategyInput):
+    backtest: BacktestRunCreate | None = None
+
+
 class WatcherChangeInput(StrictModel):
     operation: Literal["enable", "disable", "replace", "reorder", "universe"]
     revision: int | None = Field(default=None, ge=0)
@@ -68,6 +74,7 @@ class PaperTradeInput(StrictModel):
     stop: PositiveDecimal | None = None
     targets: list[PositiveDecimal] = Field(default_factory=list, max_length=10)
     trade_proposal_id: UUID | None = None
+    pretrade: PreTradeAnalyzeBody | None = None
 
 
 class EmptyInput(StrictModel):

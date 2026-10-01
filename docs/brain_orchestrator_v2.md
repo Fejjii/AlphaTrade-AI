@@ -1,5 +1,9 @@
 # Governed Agent action orchestration V2
 
+The next application layer is documented in
+[Agent action application V3](agent_action_application_v3.md). The behavior below
+describes the V2 baseline.
+
 Extends `interactive_agent` at base
 `79b76d6313c7d1a269a9e32d67f89e39eca9df96` (PR153). The existing Agent,
 ConversationService, model responder, retrieval, Strategy Brain reads and paper
