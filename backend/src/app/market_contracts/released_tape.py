@@ -24,6 +24,8 @@ class ClosedBarFlow(CanonicalModel):
     total_quote_volume: CanonicalDecimal
     buy_quote_volume: CanonicalDecimal
     sell_quote_volume: CanonicalDecimal
+    buy_base_volume: CanonicalDecimal | None = None
+    sell_base_volume: CanonicalDecimal | None = None
     event_count: int = Field(ge=0)
     event_time_max: AwareDatetime
     terminal_price: PositiveCanonicalDecimal

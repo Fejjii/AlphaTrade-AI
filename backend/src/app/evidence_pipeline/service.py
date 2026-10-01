@@ -22,7 +22,7 @@ from app.evidence_pipeline.http_schemas import (
     CanonicalSetupEvidenceRead,
     CanonicalSourceIdentityRead,
 )
-from app.evidence_pipeline.market_intelligence import read_market_intelligence
+from app.evidence_pipeline.market_intelligence import read_market_intelligence, read_order_flow
 from app.evidence_pipeline.setup_lifetime import SetupLifetimePort
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
@@ -166,6 +166,12 @@ class CanonicalEvidenceService:
             instrument=instrument,
             observed_at=evaluated_at,
         )
+        order_flow = read_order_flow(
+            self._source,
+            identity=identity,
+            instrument=instrument,
+            observed_at=evaluated_at,
+        )
         unavailable = None
         if not price_read.usable_as_current_market_price:
             unavailable = price_reason or price_read.presentation
@@ -178,6 +184,7 @@ class CanonicalEvidenceService:
             current_price=price_read,
             setup_evidence=setup_read,
             market_intelligence=intelligence,
+            order_flow=order_flow,
             timestamps={
                 "evaluated_at": evaluated_at,
                 "current_price_source_time": price_read.source_time,

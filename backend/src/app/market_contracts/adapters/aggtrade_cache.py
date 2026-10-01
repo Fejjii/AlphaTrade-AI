@@ -48,7 +48,7 @@ def agg_trade_fingerprint(rows: tuple[Any, ...] | list[Any]) -> str:
                 "p": "" if row.get("p") is None else str(row.get("p")),
                 "q": "" if row.get("q") is None else str(row.get("q")),
                 "T": row.get("T"),
-                "m": bool(row.get("m")),
+                "m": row.get("m"),
             }
         )
     return canonical_sha256({"rows": projected})

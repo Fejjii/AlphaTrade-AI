@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import uuid5
 
 from app.market_contracts.enums import Finality, FreshnessState, MarketType
+from app.market_contracts.errors import MarketContractError
 from app.market_contracts.identity import interval_timedelta
 from app.schemas.nested_continuation import BrainSetupState, NestedContinuationSpec
 from app.services.canonical_serialization import canonical_sha256
@@ -12,6 +13,7 @@ from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_a
 from app.signal_fusion.assessment import SetupAssessment, build_setup_assessment
 from app.signal_fusion.enums import AssessmentReasonCode, SetupAssessmentState
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
+from app.signal_fusion.order_flow_inputs import ORDER_FLOW_ROLES, require_bound_order_flow
 from app.signal_fusion.policy import FusionPolicy
 from app.signal_fusion.types import RuleResult
 from app.strategy_brain.detector import NAMESPACE, detect_nested
@@ -66,6 +68,19 @@ def evaluate_nested_setup(
         and policy.executable_setup == command.executable_setup
         and policy.organization_id == command.organization_id
     )
+    order_flow_ok = True
+    order_flow_required = any(role in ORDER_FLOW_ROLES for role in policy.required_roles)
+    if order_flow_required:
+        try:
+            require_bound_order_flow(
+                evidence.order_flow,
+                command=command,
+                required_roles=policy.required_roles,
+                evaluated_at=evaluated_at,
+                trigger_end=bars[-1].interval_end if bars else None,
+            )
+        except (MarketContractError, ValueError):
+            order_flow_ok = False
     rules = tuple(
         RuleResult(
             rule_id=name,
@@ -80,6 +95,7 @@ def evaluate_nested_setup(
             ("trigger_binding", bound),
             ("required_observation_binding", observations_ok),
             ("compiled_policy_binding", policy_ok),
+            ("required_order_flow_binding", order_flow_ok),
             (
                 "nested_confirmation",
                 latest is not None
@@ -87,8 +103,17 @@ def evaluate_nested_setup(
                 and latest.confirmed_index == len(bars) - 1,
             ),
         )
+        if name != "required_order_flow_binding" or order_flow_required
     )
-    quality = identity_ok and fresh and final and bound and observations_ok and policy_ok
+    quality = (
+        identity_ok
+        and fresh
+        and final
+        and bound
+        and observations_ok
+        and policy_ok
+        and order_flow_ok
+    )
     mapping = {
         BrainSetupState.WATCH: SetupAssessmentState.WATCH,
         BrainSetupState.FORMING: SetupAssessmentState.PARTIAL_MATCH,

@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.market_contracts.coverage import build_complete_trade_window_coverage
+from app.market_contracts.cursor import TradeStreamSnapshot
 from app.market_contracts.cvd import select_trades_in_window
 from app.market_contracts.derivatives import (
     DerivativeMetric,
@@ -15,6 +16,7 @@ from app.market_contracts.derivatives import (
 from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
     FormingCandleError,
+    UnsupportedTradeContractError,
     WrongMarketError,
     WrongSourceError,
 )
@@ -39,6 +41,20 @@ class ReplayPerpetualSource:
 
     name = "binance-usdm-perpetual-replay"
     kind = ProviderKind.MARKET_DATA
+
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        raise UnsupportedTradeContractError(
+            "Replay fixture has no live five-minute trade contract."
+        )
 
     def fetch_derivative_observation(
         self,

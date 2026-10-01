@@ -123,6 +123,9 @@ def test_replay_evidence_is_not_a_live_mark(evidence_client: TestClient) -> None
     assert body["source"]["market_type"] == "perpetual"
     assert "BTCUSDT" in body["source"]["instrument_id"]
     assert body["source"]["fallback_used"] is False
+    assert body["order_flow"]["availability"] == "UNSUPPORTED"
+    assert body["order_flow"]["rolling_cvd"] is None
+    assert body["order_flow"]["windows"] == []
 
 
 def test_wrong_symbol_is_rejected(evidence_client: TestClient) -> None:
