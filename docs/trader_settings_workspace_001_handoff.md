@@ -1,6 +1,8 @@
 # Trader Settings workspace 001
 
 Status: REVIEW_REQUIRED
+Draft PR: https://github.com/Fejjii/AlphaTrade-AI/pull/161
+Implementation commit: `1508613331a5c96815f1ab5ebc9d4b12ab30b8e1`
 Date: 2026-10-01
 Branch: `codex/trader_settings_workspace_001`
 Exact base: `94954e7d243be0c03ce667403964adb6e4e2b850`
