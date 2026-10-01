@@ -203,6 +203,9 @@ class Settings(BaseSettings):
     watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["BTCUSDT"]
     )
+    # Legacy local/test file helper. Production watchlists and runtime status
+    # use organization-owned database rows, shared by API and dedicated worker.
+    watcher_watchlist_path: str = ""
     watcher_paper_poll_interval_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
     watcher_paper_max_scopes_per_cycle: int = Field(default=20, ge=1, le=200)
     watcher_paper_worker_id: str = Field(default="watcher-paper-1", min_length=1, max_length=80)
@@ -301,6 +304,8 @@ class Settings(BaseSettings):
     # Closed aggTrade windows are reused only until this TTL. A later payload
     # with a different fingerprint replaces the entry (exchange correction).
     binance_evidence_cache_ttl_seconds: float = Field(default=120.0, gt=0.0, le=3600.0)
+    # Raw aggTrade rows above this count are not cached. Reduced snapshots are.
+    binance_evidence_cache_max_rows: int = Field(default=4096, ge=1, le=100_000)
     # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
     perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
     perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)

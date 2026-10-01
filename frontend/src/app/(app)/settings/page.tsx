@@ -1,6 +1,7 @@
 "use client";
 
 import { EmailVerificationNotice } from "@/components/account/EmailVerificationNotice";
+import { WatcherWatchlistSection } from "@/components/WatcherWatchlistSection";
 import { NotificationSettingsPanel } from "@/components/NotificationSettingsPanel";
 import { PaperModeBanner } from "@/components/PaperModeBanner";
 import { SafetyDisclaimers } from "@/components/SafetyDisclaimers";
@@ -21,6 +22,7 @@ export default function SettingsPage() {
         <p className="text-sm text-zinc-400">Environment and safety configuration for this workspace.</p>
       </div>
       <PaperModeBanner />
+      <WatcherWatchlistSection />
       <EmailVerificationNotice />
       <Card>
         <CardHeader>
@@ -46,6 +48,17 @@ export default function SettingsPage() {
               Billing &amp; Usage
             </Link>
           </span>
+        </CardContent>
+      </Card>
+      <Card data-testid="settings-advanced-link">
+        <CardHeader>
+          <CardTitle>Advanced</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-zinc-300">
+          <p>Operational, audit, validation, billing, provider, and engineering pages.</p>
+          <Link href="/settings/advanced" className="text-emerald-400 hover:underline">
+            Open advanced pages
+          </Link>
         </CardContent>
       </Card>
       <Card data-testid="settings-runtime-posture">

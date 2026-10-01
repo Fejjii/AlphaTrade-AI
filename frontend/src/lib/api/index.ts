@@ -1,6 +1,9 @@
+import type { BrainOverview, BrainSetup } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
   AgentMessageResponse,
+  AgentStructuredProposal,
+  AgentTurnResult,
   ApprovalRequest,
   AuditRecord,
   AuthResponse,
@@ -174,6 +177,9 @@ import type {
   OHLCVResponse,
   TickerResponse,
   WatchlistItem,
+  WatcherWatchlistConfiguration,
+  WatcherWatchlistSlot,
+  WatcherWatchlistStatus,
   ExchangeDiagnosticsSummary,
   AlertDeliveryPreviewResponse,
   AlertRoutingSummary,
@@ -201,6 +207,14 @@ export const CREATE_TRADINGVIEW_PAPER_CANDIDATE = "CREATE_TRADINGVIEW_PAPER_CAND
 export const APPROVE_PAPER_SIGNAL_PROPOSAL = "APPROVE_PAPER_SIGNAL_PROPOSAL";
 
 export const api = {
+  strategyBrain: {
+    overview: () => apiFetch<BrainOverview>("/strategy-brain/overview", { auth: true }),
+    setup: (id: string) => apiFetch<BrainSetup>(`/strategy-brain/setups/${id}`, { auth: true }),
+    createNested: (body: { symbol: string; direction: "long" | "short"; trigger_timeframe: string }) =>
+      apiFetch<{ strategy_id: string; version_id: string }>("/strategy-brain/templates/nested", {
+        method: "POST", auth: true, body: JSON.stringify(body),
+      }),
+  },
   auth: {
     register: (body: { email: string; password: string; organization_name: string }) =>
       apiFetch<AuthResponse>("/auth/register", {
@@ -351,6 +365,35 @@ export const api = {
       timeframe?: string;
     }) =>
       apiFetch<AgentMessageResponse>("/chat/message", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  },
+  agent: {
+    turn: (body: {
+      message: string;
+      conversation_id?: string;
+      strategy_id?: string;
+      symbol?: string;
+      timeframe?: string;
+    }) =>
+      apiFetch<AgentTurnResult>("/agent/turns", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    confirmProposal: (
+      proposalId: string,
+      body: { conversation_id: string; expected_content_hash: string; statement: string },
+    ) =>
+      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/confirm`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    rejectProposal: (
+      proposalId: string,
+      body: { conversation_id: string; expected_content_hash: string; statement: string },
+    ) =>
+      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/reject`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
@@ -907,6 +950,17 @@ export const api = {
       }),
     sendTest: () =>
       apiFetch<NotificationTestResult>("/notifications/test", { method: "POST", auth: true }),
+  },
+  watcherWatchlist: {
+    configuration: () =>
+      apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", { auth: true }),
+    replace: (slots: Array<Pick<WatcherWatchlistSlot, "symbol" | "enabled">>, revision: number) =>
+      apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", {
+        method: "PUT",
+        auth: true,
+        body: JSON.stringify({ slots, revision }),
+      }),
+    status: () => apiFetch<WatcherWatchlistStatus>("/watcher/watchlist/status", { auth: true }),
   },
   marketWatcher: {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),

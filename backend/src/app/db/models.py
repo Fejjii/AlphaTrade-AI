@@ -85,6 +85,7 @@ from app.db.paper_evaluation import (
 )
 from app.db.runtime_status import ControlledRuntimeStatusRow  # noqa: F401
 from app.db.setup_lifetime import SetupLifetimePin  # noqa: F401
+from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow  # noqa: F401
 from app.db.strategy_immutability import (
     register_strategy_immutability as _register_strategy_immutability,
 )
@@ -113,6 +114,7 @@ from app.db.watcher_orchestration import (  # noqa: F401
     WatcherSubscriptionEvalAttemptRow,
     WatcherWorkerLeaseRow,
 )
+from app.db.watcher_watchlist import WatcherSymbolStatusRow, WatcherWatchlistRow  # noqa: F401
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,

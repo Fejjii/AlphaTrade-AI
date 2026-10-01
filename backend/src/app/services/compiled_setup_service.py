@@ -22,6 +22,10 @@ from app.services.strategy_versioning import StrategyVersioningService
 
 _COMPILABLE_STATES = frozenset(
     {
+        StrategyLifecycleState.OBSERVATION,
+        StrategyLifecycleState.HYPOTHESIS,
+        StrategyLifecycleState.TESTING,
+        StrategyLifecycleState.PAPER_ACTIVE,
         StrategyLifecycleState.DRAFT,
         StrategyLifecycleState.STRUCTURED,
         StrategyLifecycleState.HISTORICALLY_VALIDATED,
@@ -36,6 +40,10 @@ _APPROVE_CONVERGE_STATES = frozenset(
 )
 _APPROVE_FROM_STATES = frozenset(
     {
+        StrategyLifecycleState.OBSERVATION,
+        StrategyLifecycleState.HYPOTHESIS,
+        StrategyLifecycleState.TESTING,
+        StrategyLifecycleState.PAPER_ACTIVE,
         StrategyLifecycleState.DRAFT,
         StrategyLifecycleState.STRUCTURED,
         StrategyLifecycleState.HISTORICALLY_VALIDATED,
@@ -104,6 +112,10 @@ class CompiledSetupService:
                 content_hash=result.document.content_hash,
             )
             if state in {
+                StrategyLifecycleState.OBSERVATION,
+                StrategyLifecycleState.HYPOTHESIS,
+                StrategyLifecycleState.TESTING,
+                StrategyLifecycleState.PAPER_ACTIVE,
                 StrategyLifecycleState.DRAFT,
                 StrategyLifecycleState.STRUCTURED,
                 StrategyLifecycleState.HISTORICALLY_VALIDATED,

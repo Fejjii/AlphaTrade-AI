@@ -1595,6 +1595,40 @@ export interface AgentMessageResponse {
   history_injected?: number;
 }
 
+export interface AgentStructuredProposal {
+  proposal_id: string;
+  conversation_id: string;
+  kind: string;
+  artifact_kind: string;
+  status: "proposed" | "confirmed_unapplied" | "applied" | "rejected" | "refused" | string;
+  summary: string;
+  content_hash: string;
+  applied: boolean;
+  authority_mutated: boolean;
+  resulting_record_id?: string | null;
+}
+
+export interface AgentTurnResult {
+  conversation_id: string;
+  reply: string;
+  capability: string;
+  operation: string;
+  proposals: AgentStructuredProposal[];
+  limitations: string[];
+  market_quote?: {
+    symbol: string;
+    last_price: string;
+    source: string;
+    is_live: boolean;
+    is_stale: boolean;
+    fallback_used: boolean;
+    provider_name: string;
+  } | null;
+  authority_mutated: false;
+  execution_attempted: false;
+  real_trading_enabled: false;
+}
+
 export type ConversationStatus = "active" | "archived";
 export type ConversationMessageRole = "user" | "assistant" | "system";
 export type StrategyProposalStatus = "draft" | "confirmed" | "rejected" | "superseded";
@@ -4420,4 +4454,43 @@ export interface PaginatedJournalImportBatches {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface WatcherWatchlistSlot {
+  position: number;
+  symbol: string;
+  enabled: boolean;
+}
+
+export interface WatcherWatchlistConfiguration {
+  revision: number;
+  updated_at: string;
+  max_enabled: number;
+  slots: WatcherWatchlistSlot[];
+  paper_only: boolean;
+}
+
+export interface WatcherSymbolRuntimeStatus {
+  configuration_revision: number;
+  observed_at: string | null;
+  position: number;
+  symbol: string;
+  enabled: boolean;
+  market_source: string;
+  freshness: string;
+  last_successful_scan: string | null;
+  last_failed_scan: string | null;
+  setup_state: string;
+  strategy_matches: string[];
+  alert_state: string;
+  error_state: string | null;
+}
+
+export interface WatcherWatchlistStatus {
+  configuration_revision: number;
+  observed_at: string;
+  stale_after_seconds: number;
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+  symbols: WatcherSymbolRuntimeStatus[];
 }

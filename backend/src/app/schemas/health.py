@@ -45,6 +45,8 @@ class WorkerComponentObservation(BaseModel):
     request_weight: int = 0
     rate_limited_count: int = 0
     cache_hits: int = 0
+    process_rss_bytes: int | None = None
+    process_rss_peak_bytes: int | None = None
     health_state: WorkerHealthState = "UNAVAILABLE"
     heartbeat_age_seconds: float | None = None
     heartbeat_stale_after_seconds: int = 90

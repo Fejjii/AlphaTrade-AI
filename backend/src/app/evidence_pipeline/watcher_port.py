@@ -19,6 +19,7 @@ from app.evidence_pipeline.manual_resistance import persisted_resistance_evidenc
 from app.evidence_pipeline.types import AssembledCanonicalEvidence
 from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
+    ContractUnavailableError,
     MarketContractError,
     RegionalProviderFailureError,
     StaleEvidenceError,
@@ -124,6 +125,31 @@ class AssemblingWatcherScanEvidence:
 
         return self._last_assembly
 
+    def candidate_episode(self):
+        """Lock the durable Nested episode under the existing Candidate fence."""
+        if self._last_assembly is None:
+            return None
+        assembled, executable = self._last_assembly
+        from app.schemas.nested_continuation import NestedContinuationSpec
+        from app.strategy_brain.detector import detect_nested
+        from app.strategy_brain.records import lock_candidate_episode
+
+        if not isinstance(executable.authored_spec, NestedContinuationSpec):
+            return None
+        if self._session is None:
+            raise ValueError("Nested Candidate persistence requires a database session")
+        events = detect_nested(
+            assembled.bundle.bars_15m, executable.authored_spec, evaluated_at=assembled.evaluated_at
+        )
+        if not events:
+            raise ValueError("No Nested structural episode")
+        return lock_candidate_episode(
+            self._session,
+            organization_id=executable.organization_id,
+            version_id=executable.strategy_version_id,
+            detection=events[-1],
+        )
+
     def _load_uncached(self, command: EvaluationCommand) -> WatcherCanonicalScanEvidence | None:
         organization_id = command.request.organization_id
         production_authority = self._session is not None and self._store is not None
@@ -132,12 +158,17 @@ class AssemblingWatcherScanEvidence:
                 "Production Watcher Candidate authority requires a market monitor.",
                 reason_code="missing_monitor",
             )
-        monitor_snapshot = self._monitor_snapshot()
+        executable = self._resolve_executable(command)
+        from app.schemas.nested_continuation import NestedContinuationSpec
+
+        nested = executable is not None and isinstance(
+            executable.authored_spec, NestedContinuationSpec
+        )
+        monitor_snapshot = None if nested else self._monitor_snapshot()
         if monitor_snapshot is not None:
             gated = watcher_evidence_error_for_monitor(monitor_snapshot)
             if gated is not None:
                 raise gated
-        executable = self._resolve_executable(command)
         authority = (
             ExecutablePolicyAuthority.PERSISTED_APPROVED_COMPILED
             if self._session is not None and self._store is not None
@@ -167,13 +198,27 @@ class AssemblingWatcherScanEvidence:
                 symbol=self._symbol,
             )
         try:
-            assembled = self._assembler.assemble(
-                organization_id=organization_id,
-                symbol=self._symbol,
-                policy=policy,
-                adapter_kind=EvidenceAdapterKind.WATCHER,
-                resistances=resistances,
-            )
+            if nested:
+                from app.strategy_brain.assembly import assemble_nested
+
+                assembled = assemble_nested(
+                    self._assembler,
+                    executable=executable,
+                    organization_id=organization_id,
+                    session=self._session,
+                )
+            else:
+                assembled = self._assembler.assemble(
+                    organization_id=organization_id,
+                    symbol=self._symbol,
+                    policy=policy,
+                    adapter_kind=EvidenceAdapterKind.WATCHER,
+                    resistances=resistances,
+                )
+        except ContractUnavailableError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Selected perpetual contract is unavailable.", reason_code=exc.reason
+            ) from exc
         except StaleEvidenceError as exc:
             raise WatcherEvidenceUnavailableError(
                 "Canonical scan evidence is stale.",
@@ -232,7 +277,12 @@ class AssemblingWatcherScanEvidence:
     def _monitor_snapshot(self) -> SymbolMonitorSnapshot | None:
         if self._monitor is None:
             return None
-        snapshot = self._monitor.latest(self._symbol)
+        try:
+            snapshot = self._monitor.latest(self._symbol)
+        except ContractUnavailableError as exc:
+            raise WatcherEvidenceUnavailableError(
+                "Selected perpetual contract is unavailable.", reason_code=exc.reason
+            ) from exc
         if not isinstance(snapshot, SymbolMonitorSnapshot):
             raise WatcherEvidenceUnavailableError(
                 "Canonical scan evidence is unavailable.",

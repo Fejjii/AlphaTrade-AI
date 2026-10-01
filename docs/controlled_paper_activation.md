@@ -27,7 +27,7 @@ and every later flag below, is a human action.
 | Watcher | dedicated process `python -m app.workers.watcher_paper`. Unique worker id. PostgreSQL leases and fencing. Approved compiled strategy only. `CONFIRMED_SETUP` is the only Candidate authority. |
 | Telegram | verified private binding, idempotent outbox, retry/backoff, restart recovery, audit, explicit confirmation. |
 | Telegram authority | cannot mint a Candidate, override SetupAssessment, override risk, activate a strategy, place an order, or enable live trading. |
-| Migration head | `f1a2b3c4d5e6` (revises `e0f1a2b3c4d5`). Do not downgrade Alembic as part of rollback. |
+| Migration head | `a8c3e1b94d20` (revises `f1a2b3c4d5e6`). Do not downgrade Alembic as part of rollback. |
 
 Production refuses `binance_usdm`, the Watcher arm, and every Telegram arming
 flag. Defaults stay disarmed.
@@ -53,10 +53,50 @@ Run, without changing environment variables:
 `telegram-paper-activation-preflight.sh` must exit 0 while the process is still
 disarmed (`NOT_ARMED`).
 
-### 2. Migrations
+### 2. Migrations — before the paper worker starts
 
-Apply Alembic through head `f1a2b3c4d5e6` on the staging database. Confirm a
-single head. Do not downgrade.
+Apply Alembic through head `a8c3e1b94d20` (revises `f1a2b3c4d5e6`) on the
+database that worker will use. Confirm a single head and that
+`alembic_version` equals `a8c3e1b94d20`. Do not downgrade.
+
+Do this before `python -m app.workers.paper_worker` or
+`python -m app.workers.watcher_paper`. The revision adds nullable
+`process_rss_bytes` and `process_rss_peak_bytes` on
+`controlled_runtime_status`. The worker writes those columns when it publishes
+status. Starting it against `f1a2b3c4d5e6` fails those writes. A migration
+mismatch also skips Watcher scans (`migration_unhealthy`) and leaves the
+process up.
+
+This integration applied `alembic upgrade head` on a disposable local
+PostgreSQL 16 database created for the check. `alembic_version` was
+`a8c3e1b94d20`, and `controlled_runtime_status` gained nullable bigint
+columns `process_rss_bytes` and `process_rss_peak_bytes`. Staging was not
+migrated and the staging worker was not restarted.
+
+### Memory measurement limits
+
+RSS figures are the local worker process only (`process_rss_bytes` and
+`process_rss_peak_bytes`). They are not account data and they are not a
+guarantee that a 512 MB host will stay under its limit. Peak RSS does not
+fall during the life of the process. A 10-minute monitor stall can still
+materialize that short window. Live BTCUSDT trade counts were not measured
+from the integration environment (HTTP 451). Replay fixtures keep the full
+trade list; scan retrieval releases it after the coverage proof is bound.
+
+The release proof stays structural: after the coverage hash and bar sums are
+bound, `trades` is empty and `ReleasedTradeTape.event_count` matches the
+stream. Process RSS is a separate gate, and it is measured in a fresh
+interpreter after `malloc_trim`. Inside the pytest process, freed arenas are
+reused, so holding 5,000 `TradeEvent` objects moved RSS by only 765952 bytes
+on PR 149 CI (run 36395949966) and by 3141632 bytes on this host on
+2026-09-28. Those samples do not replace the 4 MiB gate. A fresh interpreter
+on this host held the same 5,000 trades above that floor, and the released
+tape, after the allocator was trimmed, stayed below the retained delta.
+Traced Python allocations for the live trade list are also required to exceed
+4 MiB and to exceed the released tape.
+
+Retest the staging worker only after a human applies `a8c3e1b94d20` and
+restarts the worker. This task does not do that.
 
 ### 3. Live market activation
 

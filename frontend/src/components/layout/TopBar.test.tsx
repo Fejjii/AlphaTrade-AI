@@ -176,25 +176,27 @@ describe("TopBar page identity and account control", () => {
     expect(within(screen.getByTestId("topbar-page-identity")).getByText("Dashboard")).toBeInTheDocument();
   });
 
-  it("shows Signals title", () => {
+  it("shows Settings with the signals inbox subtitle on the retained route", () => {
     navigationState.pathname = "/tradingview-signals";
     renderTopBar();
-    expect(within(screen.getByTestId("topbar-page-identity")).getByText("Signals")).toBeInTheDocument();
+    const identity = screen.getByTestId("topbar-page-identity");
+    expect(identity).toHaveTextContent("Settings");
+    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Signals inbox");
   });
 
   it("shows nested Alerts Review breadcrumb subtitle", () => {
     navigationState.pathname = "/alerts/review";
     renderTopBar();
     const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Signals");
-    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Signals / Setup Review");
+    expect(identity).toHaveTextContent("Settings");
+    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Settings / Setup Review");
   });
 
   it("falls back safely for validation candidate detail", () => {
     navigationState.pathname = "/paper-validation/candidates/cand-123";
     renderTopBar();
     const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Validate");
+    expect(identity).toHaveTextContent("Settings");
     expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Candidates");
   });
 
