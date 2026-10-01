@@ -171,6 +171,7 @@ def test_repeated_bybit_monitor_cleanup_and_canonical_reads(
 @pytest.mark.parametrize("release", [False, True])
 def test_bybit_retention_is_bounded_and_evicted_prefixes_fail_closed(release):
     from app.market_contracts.adapters.bybit_usdt_perpetual import (
+        _MAX_LINEAGE_PROOFS,
         _MAX_PROVEN_TRADES,
         _RECENT_TRADE_LIMIT,
         BybitUsdtPerpetualSource,
@@ -245,7 +246,7 @@ def test_bybit_retention_is_bounded_and_evicted_prefixes_fail_closed(release):
             if release:
                 source.release_symbol_history("BTCUSDT")
             limit = _RECENT_TRADE_LIMIT if release else _MAX_PROVEN_TRADES
-            assert len(source._lineages) <= 2
+            assert len(source._lineages) <= _MAX_LINEAGE_PROOFS
             assert all(len(p.proven) <= limit for p in source._lineages.values())
             assert len(source._rank_by_exec) <= 2 * limit + _RECENT_TRADE_LIMIT
             assert source._signature_by_exec.keys() == source._rank_by_exec.keys()

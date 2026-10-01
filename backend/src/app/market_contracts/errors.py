@@ -87,6 +87,14 @@ class IncompleteTradeWindowError(GapDetectedError):
     """Live aggTrade retrieval could not prove complete coverage of the requested window."""
 
 
+class UnsupportedTradeContractError(MarketContractError):
+    """The provider cannot verify this instrument as a supported trade product."""
+
+
+class EmptyTradeWindowError(IncompleteTradeWindowError):
+    """A drained supported trade window contains no prints."""
+
+
 class UnapprovedEvidenceHostError(WrongMarketError):
     """Evidence host is not an approved public perpetual HTTPS identity."""
 

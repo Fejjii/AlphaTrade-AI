@@ -18,6 +18,7 @@ from app.market_contracts.cursor import TradeStreamCursor, TradeStreamSnapshot, 
 from app.market_contracts.enums import AggressorSide, GapState, ReconnectState, WarmUpStatus
 from app.market_contracts.errors import (
     DuplicateDataError,
+    EmptyTradeWindowError,
     GapDetectedError,
     IncompleteTradeWindowError,
     OutOfOrderTradesError,
@@ -42,6 +43,8 @@ class _BarAccum:
     total: Decimal
     buy: Decimal
     sell: Decimal
+    buy_base: Decimal
+    sell_base: Decimal
     count: int
     event_time_max: datetime
     terminal_price: Decimal
@@ -136,7 +139,7 @@ def build_released_trade_snapshot(
         or receive_time_max is None
         or terminal_price is None
     ):
-        raise IncompleteTradeWindowError("AggTrade window contained no trades.")
+        raise EmptyTradeWindowError("AggTrade window contained no trades.")
 
     closed_bars = tuple(
         ClosedBarFlow(
@@ -146,6 +149,8 @@ def build_released_trade_snapshot(
             total_quote_volume=bar.total,
             buy_quote_volume=bar.buy,
             sell_quote_volume=bar.sell,
+            buy_base_volume=bar.buy_base,
+            sell_base_volume=bar.sell_base,
             event_count=bar.count,
             event_time_max=bar.event_time_max,
             terminal_price=bar.terminal_price,
@@ -239,6 +244,10 @@ def _add_bar(
             total=quote,
             buy=buy,
             sell=sell,
+            buy_base=trade.quantity if trade.aggressor_side is AggressorSide.BUY else Decimal("0"),
+            sell_base=trade.quantity
+            if trade.aggressor_side is AggressorSide.SELL
+            else Decimal("0"),
             count=1,
             event_time_max=trade.event_timestamp,
             terminal_price=trade.price,
@@ -248,6 +257,10 @@ def _add_bar(
     current.total += quote
     current.buy += buy
     current.sell += sell
+    if trade.aggressor_side is AggressorSide.BUY:
+        current.buy_base += trade.quantity
+    else:
+        current.sell_base += trade.quantity
     current.count += 1
     current.event_time_max = trade.event_timestamp
     current.terminal_price = trade.price

@@ -14,6 +14,7 @@ import httpx
 
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
 from app.market_contracts.coverage import build_complete_trade_window_coverage
+from app.market_contracts.cursor import TradeStreamSnapshot
 from app.market_contracts.derivatives import (
     DerivativeMetric,
     DerivativeObservation,
@@ -28,6 +29,7 @@ from app.market_contracts.errors import (
     RateLimitedError,
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
+    UnsupportedTradeContractError,
     WrongInstrumentError,
     WrongMarketError,
     WrongSourceError,
@@ -50,7 +52,9 @@ from app.market_contracts.ohlcv import (
     build_ohlcv_bar,
     require_closed_series,
 )
+from app.market_contracts.order_flow import require_order_flow_request
 from app.market_contracts.provider_contracts import contract_from_bybit_instruments
+from app.market_contracts.trade_reduction import build_released_trade_snapshot
 from app.market_contracts.trades import (
     OrderedTradeBatch,
     TradeEvent,
@@ -77,8 +81,8 @@ BYBIT_ALLOWED_HOSTS = frozenset({"api.bybit.com"})
 _BYBIT_INTERVAL = {Timeframe.M15: "15", Timeframe.H4: "240"}
 _RECENT_TRADE_LIMIT = 1000
 _PROVEN_TAIL_RETENTION = timedelta(minutes=15)
-# Two consumers: the persistent monitor and the current canonical window.
-_MAX_LINEAGE_PROOFS = 2
+# Three bounded consumers: monitor, canonical setup, and five-minute intelligence.
+_MAX_LINEAGE_PROOFS = 3
 # A finite ten-page proof budget, also limited by the existing 15-minute horizon.
 # Evicted prefixes become unavailable; they are never reported as complete.
 _MAX_PROVEN_TRADES = 10 * _RECENT_TRADE_LIMIT
@@ -89,6 +93,7 @@ class _LineageProof:
     proven: list[dict[str, Any]] = field(default_factory=list)
     proven_from_ms: int | None = None
     anchor_exec_id: str | None = None
+    initial_oldest_ms: int | None = None
 
 
 class BybitUsdtPerpetualSource:
@@ -306,6 +311,75 @@ class BybitUsdtPerpetualSource:
             content_hash="0" * 64,
         )
         return with_content_hash(batch)
+
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        require_order_flow_request(
+            identity=identity,
+            start=start,
+            end=end,
+            observed_at=receive_at,
+        )
+        self._assert_request(identity, instrument)
+        contract = self._public_result(
+            "/v5/market/instruments-info", {"category": BYBIT_CATEGORY, "symbol": self._symbol}
+        )
+        self._assert_linear(contract)
+        rows = contract.get("list")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise WrongSourceError("Bybit instruments-info list is malformed.")
+        required_fields = {"symbol", "contractType", "quoteCoin", "baseCoin", "status"}
+        if any(
+            row.get("symbol") == self._symbol and not required_fields <= row.keys() for row in rows
+        ):
+            raise WrongSourceError("Bybit instruments-info contract fields are incomplete.")
+        try:
+            contract_from_bybit_instruments({"result": contract}, requested_symbol=self._symbol)
+        except (WrongMarketError, WrongInstrumentError) as exc:
+            raise UnsupportedTradeContractError("Trade contract not verified.") from exc
+        batch = self.fetch_ordered_trades(
+            identity=identity,
+            instrument=instrument,
+            start=start,
+            end=end,
+            source_connection_id=source_connection_id,
+            receive_at=receive_at,
+        )
+        proof = self._lineages[source_connection_id]
+        if (
+            proof.initial_oldest_ms is None
+            or int(start.timestamp() * 1000) <= proof.initial_oldest_ms
+        ):
+            raise IncompleteTradeWindowError(
+                "Bybit initial page does not prove the entire start bucket."
+            )
+        if not proof.proven or int(proof.proven[-1]["time_ms"]) < int(end.timestamp() * 1000):
+            raise IncompleteTradeWindowError("Bybit tail does not prove the closed window end.")
+        # The existing ledger proves overlap; its synthetic rank is transport history.
+        # Window-local ordinals keep identical execution sets stable across poll histories.
+        normalized = (
+            with_content_hash(
+                trade.model_copy(update={"sequence": index}),
+                extra_exclude=frozenset({"source_connection_id"}),
+            )
+            for index, trade in enumerate(batch.trades)
+        )
+        return build_released_trade_snapshot(
+            normalized,
+            identity=identity,
+            lineage_id=source_connection_id,
+            window_start=start,
+            window_end=end,
+            observed_at=receive_at,
+        )
 
     def status(self) -> ProviderStatus:
         try:
@@ -556,6 +630,7 @@ class BybitUsdtPerpetualSource:
             )
         self._require_rank_tail(proven)
         proof.proven = proven
+        proof.initial_oldest_ms = int(prints[0]["time_ms"])
         proof.proven_from_ms = start_ms
         proof.anchor_exec_id = str(proven[-1]["exec_id"])
         self._trim_proven_prefix(proof)

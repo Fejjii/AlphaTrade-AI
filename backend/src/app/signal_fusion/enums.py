@@ -53,6 +53,8 @@ class EvidenceRole(StrEnum):
     CONTEXT_OHLCV = "context_ohlcv"
     TRIGGER = "trigger"
     SWING = "swing"
+    CVD_5M = "cvd_5m"
+    ORDER_FLOW_5M = "order_flow_5m"
     CVD_WINDOW = "cvd_window"
     SIGNED_FLOW = "signed_flow"
     VOLUME = "volume"

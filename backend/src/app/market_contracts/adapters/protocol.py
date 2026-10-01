@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from app.market_contracts.cursor import TradeStreamSnapshot
 from app.market_contracts.derivatives import DerivativeMetric, DerivativeObservation
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries
@@ -19,6 +20,17 @@ class PerpetualMarketSource(Protocol):
 
     name: str
     kind: ProviderKind
+
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot: ...
 
     def fetch_derivative_observation(
         self,

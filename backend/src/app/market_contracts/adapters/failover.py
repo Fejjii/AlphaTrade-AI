@@ -194,6 +194,32 @@ class FailoverPerpetualSource:
         except _SWITCH_ERRORS as exc:
             self._switch(exc)
 
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        self._require_active_identity(identity, instrument)
+        try:
+            fetch = getattr(self.active_source, "fetch_order_flow_snapshot", None)
+            if not callable(fetch):
+                raise WrongSourceError("Active provider has no verified order-flow contract.")
+            return fetch(
+                identity=identity,
+                instrument=instrument,
+                start=start,
+                end=end,
+                source_connection_id=source_connection_id,
+                receive_at=receive_at,
+            )
+        except _SWITCH_ERRORS as exc:
+            self._switch(exc)
+
     def status(self) -> ProviderStatus:
         return self.active_source.status()
 
