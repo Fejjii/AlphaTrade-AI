@@ -88,7 +88,7 @@ export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "settings",
     items: [
-      { href: "/settings", label: "Account", icon: Settings },
+      { href: "/settings", label: "Workspace", icon: Settings },
       { href: "/settings/advanced", label: "Advanced", icon: SlidersHorizontal, advanced: true },
     ],
   },
