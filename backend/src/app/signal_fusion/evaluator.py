@@ -115,6 +115,7 @@ def evaluate_setup(
     evaluation_params: FirstSliceEvaluationParams | None = None,
     market_symbol: str | None = None,
     nested_spec: object | None = None,
+    sfp_spec: object | None = None,
 ) -> SetupAssessment:
     """Evaluate first-slice setup truth. Account/risk context is ignored.
 
@@ -125,6 +126,18 @@ def evaluate_setup(
     canonical first-slice symbol so existing BTC evaluations stay unchanged.
     """
     del account_context
+    if sfp_spec is not None:
+        if nested_spec is not None:
+            raise ValueError("Exactly one strategy family may occupy evaluate_setup")
+        from app.strategy_brain.sfp_runtime.assessment import evaluate_sfp_setup
+
+        return evaluate_sfp_setup(
+            policy=policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            spec=sfp_spec,
+        )
     if nested_spec is not None:
         from app.strategy_brain.assessment import evaluate_nested_setup
 

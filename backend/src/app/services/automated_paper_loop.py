@@ -194,9 +194,10 @@ class AutomatedPaperLoop:
         if evidence is not None:
             return _proof(candidate, "skipped", evidence)
         from app.schemas.nested_continuation import NestedContinuationSpec
+        from app.strategy_brain.sfp.contracts import SfpSpec
 
         if candidate.direction is not TradeDirection.SHORT and not isinstance(
-            policy.authored_spec, NestedContinuationSpec
+            policy.authored_spec, (NestedContinuationSpec, SfpSpec)
         ):
             return _proof(candidate, "skipped", "direction_not_paper_executable")
         return None
@@ -709,6 +710,10 @@ def _plan_terms(
     eligibility_valid_until: datetime,
     eligibility_id: UUID,
 ) -> TradePlanRevisionCreate | str:
+    from app.strategy_brain.sfp.contracts import SfpSpec
+
+    if isinstance(policy.authored_spec, SfpSpec):
+        return "sfp_execution_plan_not_authorized"
     quote = assembled.current_price
     if quote is None:
         return "evidence_unavailable"

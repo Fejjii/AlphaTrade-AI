@@ -14,6 +14,7 @@ from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, mod
 
 from app.schemas.common import StrictModel, TradeDirection
 from app.schemas.nested_continuation import NestedContinuationSpec
+from app.strategy_brain.sfp.contracts import SfpSpec
 
 COMPILER_VERSION = "setup-ast/v1"
 GRAMMAR_VERSION = "setup-ast-grammar/v1"
@@ -196,6 +197,7 @@ class PatternAst(StrictModel):
     compiler_version: str = COMPILER_VERSION
     grammar_version: str = GRAMMAR_VERSION
     nested_spec: NestedContinuationSpec | None = None
+    sfp_spec: SfpSpec | None = None
     symbols: list[str] = Field(min_length=1)
     trigger_timeframe: str = Field(min_length=1, max_length=8)
     context_timeframe: str | None = Field(default=None, max_length=8)
@@ -205,13 +207,23 @@ class PatternAst(StrictModel):
     sequence: list[PatternStep] = Field(min_length=1)
     trigger: AstExpr
     invalidation: list[AstExpr] = Field(min_length=1)
-    expiration_final_bars: int = Field(ge=1, le=500)
+    expiration_final_bars: int = Field(ge=1, le=2000)
+
+    @model_validator(mode="after")
+    def one_family(self) -> Self:
+        if self.nested_spec is not None and self.sfp_spec is not None:
+            raise ValueError("A pattern must bind exactly one family")
+        if self.sfp_spec is None and self.expiration_final_bars > 500:
+            raise ValueError("Legacy pattern expiration_final_bars must be <= 500")
+        return self
 
     @model_serializer(mode="wrap")
     def preserve_legacy_serialization(self, handler: SerializerFunctionWrapHandler) -> dict:
         payload = handler(self)
         if self.nested_spec is None:
             payload.pop("nested_spec", None)
+        if self.sfp_spec is None:
+            payload.pop("sfp_spec", None)
         return payload
 
 
