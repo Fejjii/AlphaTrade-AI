@@ -31,6 +31,7 @@ from app.interactive_agent.proposals import find_proposal
 from app.interactive_agent.service import InteractiveAgentService
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import TraderDep
+from app.services.agent_paper_execution import AgentPaperExecutionService
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 _knowledge_application_rate_limit = tenant_rate_limit_dependency(
@@ -42,6 +43,7 @@ def _service(
     session: SessionDep,
     settings: SettingsDep,
     organization_id: uuid.UUID,
+    paper_execution: AgentPaperExecutionService | None = None,
 ) -> InteractiveAgentService:
     """Wire canonical evidence and the existing model. Neither path confirms."""
     return InteractiveAgentService(
@@ -52,6 +54,21 @@ def _service(
             organization_id,
         ),
         responder=ModelConversationalResponder(session, settings),
+        paper_execution=paper_execution,
+    )
+
+
+def _paper_authority(
+    request: Request, session: SessionDep, settings: SettingsDep
+) -> AgentPaperExecutionService:
+    from app.db.session import get_session_factory
+    from app.runtime.canonical import ProductionCanonicalRuntime, build_production_canonical_runtime
+
+    runtime = getattr(request.app.state, "canonical_runtime", None)
+    if not isinstance(runtime, ProductionCanonicalRuntime):
+        runtime = build_production_canonical_runtime(get_session_factory(), settings=settings)
+    return AgentPaperExecutionService(
+        session, settings, runtime, CanonicalEvidenceService(settings, session=session)
     )
 
 
@@ -71,8 +88,22 @@ async def agent_turn(
     tenant: TraderDep,
     session: SessionDep,
     settings: SettingsDep,
+    request: Request,
 ) -> AgentTurnResult:
-    result = _service(session, settings, tenant.organization_id).handle_turn(
+    from app.interactive_agent.action_registry import route_action
+
+    action = route_action(body)
+    service = (
+        _service(
+            session,
+            settings,
+            tenant.organization_id,
+            paper_execution=_paper_authority(request, session, settings),
+        )
+        if action is not None and action.name == "paper_trade.prepare_execution"
+        else _service(session, settings, tenant.organization_id)
+    )
+    result = service.handle_turn(
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
@@ -108,7 +139,16 @@ async def confirm_agent_proposal(
         _knowledge_application_rate_limit(
             request=request, tenant=tenant, session=session, audit_service=audit_service
         )
-    service = _service(session, settings, tenant.organization_id)
+    service = (
+        _service(
+            session,
+            settings,
+            tenant.organization_id,
+            paper_execution=_paper_authority(request, session, settings),
+        )
+        if (pending.payload.get("action") or {}).get("name") == "paper_trade.prepare_execution"
+        else _service(session, settings, tenant.organization_id)
+    )
     result = service.confirm(
         proposal_id,
         body,

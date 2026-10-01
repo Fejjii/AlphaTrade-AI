@@ -1,7 +1,7 @@
 """Closed, typed tool registry and deterministic intent routing.
 
 Permissions come from persisted membership, never from a prompt or model reply.
-There is deliberately no Candidate, sizing, order, or live-trading tool.
+Canonical paper execution is proposed here and applied only by its confirmation gateway.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from app.interactive_agent.actions import (
     JournalCreateInput,
     JournalNoteInput,
     KnowledgeInput,
+    PaperExecutionInput,
     PaperTradeInput,
     StrategyInput,
     StrategyValidationInput,
@@ -101,6 +102,20 @@ def _tool(
 
 
 _TOOLS = [
+    _tool(
+        "paper_trade.prepare_execution",
+        PaperExecutionInput,
+        "canonical_paper_execution",
+        StructuredActionKind.PROPOSE_TRADE_DECISION,
+        ArtifactKind.TRADE_DECISION,
+        AgentCapability.PRE_TRADE_REASONING,
+        (
+            "An existing Candidate and current ActionEligibility are required.",
+            "Risk and size come from deterministic authorities; risk BLOCK is final.",
+            "Separate hash-protected confirmation rechecks current state before paper execution.",
+            "Live trading is refused.",
+        ),
+    ),
     Tool(
         "context.read",
         EmptyInput,
@@ -275,6 +290,17 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
     if request.action is not None:
         return request.action
     text = request.message.strip()
+    if text.lower().startswith("prepare paper trade "):
+        from app.agents.paper_intent import parse_paper_intent
+
+        try:
+            trade = parse_paper_intent(text)
+        except (ValidationError, ValueError) as exc:
+            raise ValidationAppError("Paper trade details are invalid.") from exc
+        return ActionRequest(
+            name="paper_trade.prepare_execution",
+            arguments={"trade": trade.model_dump(mode="json")},
+        )
     lower = text.lower()
     args: dict[str, Any] = {"text": text[:4000]}
     strategy_args = dict(args, strategy_id=request.strategy_id)

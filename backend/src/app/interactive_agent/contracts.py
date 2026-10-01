@@ -257,7 +257,7 @@ class AgentTurnResult(StrictModel):
     limitations: list[str] = Field(default_factory=list)
     execution_attempted: Literal[False] = False
     real_trading_enabled: Literal[False] = False
-    authority_mutated: Literal[False] = False
+    authority_mutated: bool = False
 
 
 class CapabilityDescriptor(StrictModel):

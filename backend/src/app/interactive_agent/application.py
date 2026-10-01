@@ -1,4 +1,4 @@
-"""Confirmed applications through existing domain authorities, never execution."""
+"""Confirmed applications through existing domain authorities and the paper gateway."""
 
 from __future__ import annotations
 
@@ -11,15 +11,22 @@ from app.core.config import Settings
 from app.core.errors import ConflictError, QuotaExceededError
 from app.db.models import Conversation
 from app.interactive_agent.action_registry import Tool
-from app.interactive_agent.actions import PaperTradeInput, StrategyInput, WatcherChangeInput
+from app.interactive_agent.actions import (
+    PaperExecutionInput,
+    PaperTradeInput,
+    StrategyInput,
+    WatcherChangeInput,
+)
 from app.interactive_agent.contracts import StructuredActionProposal
 from app.repositories.conversations import StrategyConversationProposalRepository
 from app.repositories.watcher_watchlist import WatcherWatchlistRepository
+from app.schemas.agent_paper import AgentPaperConfirmation, AgentPaperResult
 from app.schemas.backtest import BacktestRunCreate
 from app.schemas.common import ConversationMessageRole, StrategyProposalStatus, StrictModel
 from app.schemas.pretrade import PreTradeAnalyzeRequest
 from app.schemas.rag import IngestDocumentRequest
 from app.schemas.watcher_watchlist import WatcherWatchlistReplace
+from app.services.agent_paper_execution import AgentPaperExecutionService
 from app.services.audit_service import AuditService
 from app.services.backtest_service import BacktestService
 from app.services.canonical_serialization import canonical_sha256
@@ -38,6 +45,7 @@ def apply_confirmed_action(
     tool: Tool,
     inputs: StrictModel,
     settings: Settings,
+    paper_execution: AgentPaperExecutionService | None = None,
 ) -> tuple[UUID | None, dict[str, Any]]:
     """The caller holds the transcript lock and owns the database commit.
 
@@ -48,6 +56,24 @@ def apply_confirmed_action(
         return None, {
             "reason": "missing_inputs",
             "missing_fields": proposal.payload["missing_fields"],
+        }
+    if isinstance(inputs, PaperExecutionInput):
+        if paper_execution is None:
+            raise ConflictError("Canonical paper execution authority is unavailable.")
+        presented = AgentPaperResult.model_validate(proposal.payload.get("paper_execution"))
+        result = paper_execution.confirm_presented(
+            presented,
+            AgentPaperConfirmation(
+                revision_id=presented.plan.revision_id,
+                plan_content_hash=presented.plan.content_hash,
+            ),
+            organization_id=conversation.organization_id,
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+        )
+        return result.paper_action_id if result.stage == "executed" else None, {
+            "record_type": "canonical_paper_execution",
+            **result.model_dump(mode="json"),
         }
     if proposal.payload.get("ingest_request"):
         audit = AuditService(session, strict_mode=settings.observability_strict_mode)

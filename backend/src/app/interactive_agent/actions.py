@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.schemas.agent_paper import AgentPaperTradeIntent
 from app.schemas.backtest import BacktestRunCreate
 from app.schemas.common import PositiveDecimal, StrictModel, Symbol, Timeframe, TradeDirection
 from app.schemas.pretrade import PreTradeAnalyzeBody
@@ -79,3 +80,7 @@ class PaperTradeInput(StrictModel):
 
 class EmptyInput(StrictModel):
     pass
+
+
+class PaperExecutionInput(StrictModel):
+    trade: AgentPaperTradeIntent

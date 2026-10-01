@@ -6,7 +6,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, Request
 
-from app.core.dependencies import SessionDep
+from app.core.dependencies import (
+    CanonicalEvidenceServiceDep,
+    CanonicalRuntimeDep,
+    SessionDep,
+    SettingsDep,
+)
 from app.schemas.chat import AgentMessageResponse, ChatMessageRequest
 from app.security.quota_enforcement import require_quota
 from app.security.rate_limit import tenant_rate_limit_dependency
@@ -39,12 +44,20 @@ async def send_message(
     request: Request,
     tenant: TraderDep,
     session: SessionDep,
+    settings: SettingsDep,
+    canonical_runtime: CanonicalRuntimeDep,
+    canonical_evidence: CanonicalEvidenceServiceDep,
 ) -> AgentMessageResponse:
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     conv_id = parse_conversation_id(body.conversation_id)
     strategy_id = parse_conversation_id(body.strategy_id)
 
-    service = build_agent_service(session=session)
+    service = build_agent_service(
+        session=session,
+        settings=settings,
+        canonical_runtime=canonical_runtime,
+        canonical_evidence=canonical_evidence,
+    )
     return service.run(
         body.message,
         AgentInvokeContext(

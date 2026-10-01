@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,9 @@ from app.services.strategy_service import StrategyService
 from app.services.usage_service import UsageService
 from app.services.workflow_persistence_service import WorkflowPersistenceService
 from app.tools.registry import ToolRegistry, build_default_registry
+
+if TYPE_CHECKING:
+    from app.services.agent_paper_execution import AgentPaperExecutionService
 
 
 @dataclass
@@ -44,6 +48,7 @@ class AgentRuntime:
     observability: ObservabilityEmitter | None = None
     workflow_persistence: WorkflowPersistenceService | None = None
     session: Session | None = None
+    paper_execution_service: AgentPaperExecutionService | None = None
     quota_exceeded: bool = False
     rate_limited: bool = False
 

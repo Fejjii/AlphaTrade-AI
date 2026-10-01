@@ -32,6 +32,7 @@ from app.interactive_agent.safety import refuse_real_trading_enablement
 from app.repositories.conversations import ConversationMessageRepository
 from app.schemas.common import Timeframe, TradeDirection
 from app.schemas.journal import JournalEntryCreate
+from app.services.agent_paper_execution import AgentPaperExecutionService
 from app.services.audit_service import AuditService
 from app.services.canonical_serialization import canonical_sha256
 from app.services.journal_service import JournalService
@@ -216,6 +217,7 @@ def confirm_proposal(
     expected_content_hash: str,
     statement: str,
     settings: Settings,
+    paper_execution: AgentPaperExecutionService | None = None,
 ) -> StructuredActionProposal:
     """Confirm and apply supported actions through their canonical authorities."""
     from app.interactive_agent.action_registry import require_action_permission
@@ -317,6 +319,7 @@ def confirm_proposal(
                 tool=action[0],
                 inputs=action[1],
                 settings=settings,
+                paper_execution=paper_execution,
             )
             if action is not None
             else (None, {"reason": "no_suitable_canonical_authority"})
