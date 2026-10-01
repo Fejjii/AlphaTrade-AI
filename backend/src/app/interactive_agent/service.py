@@ -12,6 +12,7 @@ import structlog
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.errors import ValidationAppError
 from app.db.models import Conversation
 from app.interactive_agent.classify import TurnClassification, classify_turn
 from app.interactive_agent.contracts import (
@@ -117,6 +118,12 @@ class InteractiveAgentService:
         """Persist the turn, read existing stores, and propose rather than mutate."""
         safety = paper_safety_contract(self._settings)
         classification = classify_turn(request.message)
+        if request.analytics_filters is not None:
+            if classification.operation is not TurnOperation.READ:
+                raise ValidationAppError("Analytics filters require a read-only turn.")
+            classification = classification.model_copy(
+                update={"capability": AgentCapability.STRATEGY_ANALYTICS}
+            )
         conversation = self._conversations.get_or_create(
             organization_id=organization_id,
             user_id=user_id,
@@ -151,21 +158,25 @@ class InteractiveAgentService:
         if classification.operation is not TurnOperation.REFUSE and (
             classification.capability not in _SKIP_RETRIEVAL
         ):
-            knowledge, knowledge_notes = retrieve_knowledge(
-                self._session,
-                organization_id=organization_id,
-                user_id=user_id,
-                query=request.message,
-                vector_retriever=self._vector_retriever,
-            )
-            strategies, strategy_notes = retrieve_strategies(
-                self._session,
-                organization_id=organization_id,
-                user_id=user_id,
-                query=request.message,
-                list_all=classification.capability is AgentCapability.STRATEGY_RETRIEVAL,
-                strategy_id=request.strategy_id or conversation.strategy_id,
-            )
+            if classification.capability is AgentCapability.STRATEGY_ANALYTICS:
+                knowledge_notes: list[str] = []
+                strategy_notes: list[str] = []
+            else:
+                knowledge, knowledge_notes = retrieve_knowledge(
+                    self._session,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    query=request.message,
+                    vector_retriever=self._vector_retriever,
+                )
+                strategies, strategy_notes = retrieve_strategies(
+                    self._session,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    query=request.message,
+                    list_all=classification.capability is AgentCapability.STRATEGY_RETRIEVAL,
+                    strategy_id=request.strategy_id or conversation.strategy_id,
+                )
             bundle = gather_reads(
                 self._session,
                 organization_id=organization_id,
@@ -175,6 +186,9 @@ class InteractiveAgentService:
                 strategy_id=request.strategy_id or conversation.strategy_id,
                 market_reader=self._market_reader,
                 symbol=_context_token(request.symbol),
+                timeframe=_context_token(request.timeframe),
+                analytics_filters=request.analytics_filters,
+                max_rows=self._settings.journal_stats_max_rows,
             )
             limitations.extend(knowledge_notes)
             limitations.extend(strategy_notes)
@@ -200,7 +214,12 @@ class InteractiveAgentService:
             prior_user_messages=prior,
         )
         reply = factual
-        if self._responder is not None:
+        if classification.capability is AgentCapability.STRATEGY_ANALYTICS:
+            limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
+            limitations.append(
+                "Analytics replies use canonical recorded metrics without model prose."
+            )
+        elif self._responder is not None:
             model_text = self._responder.compose(
                 organization_id=organization_id,
                 user_id=user_id,
@@ -222,6 +241,9 @@ class InteractiveAgentService:
                     "capability": classification.capability.value,
                     "operation": classification.operation.value,
                     "proposals": [item.model_dump(mode="json") for item in proposals],
+                    "strategy_analytics": [
+                        report.model_dump(mode="json") for report in bundle.strategy_analytics
+                    ],
                 }
             },
         )
@@ -242,6 +264,7 @@ class InteractiveAgentService:
             market_quote=bundle.market_quote,
             portfolio_summary=bundle.portfolio_summary,
             statistics_summary=bundle.statistics_summary,
+            strategy_analytics=bundle.strategy_analytics,
             paper_safety=safety,
             screenshot=_screenshot_contract(classification.screenshot_requested),
             voice=_voice_contract(classification.voice_requested),
@@ -689,6 +712,8 @@ def _reply(
             f"Drafted {proposal.artifact_kind.value} proposal {proposal.proposal_id}. "
             f"{proposal.summary}"
         )
+    elif classification.capability is AgentCapability.STRATEGY_ANALYTICS:
+        text = bundle.analytics_summary or "Strategy analytics unavailable; no values estimated."
     elif classification.capability is AgentCapability.STRATEGY_BRAIN:
         text = bundle.brain_summary or "No stored setup evidence was available."
     elif classification.capability is AgentCapability.STRATEGY_RETRIEVAL:

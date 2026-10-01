@@ -68,6 +68,16 @@ def capability_catalog(settings: Settings) -> AgentCapabilityCatalog:
             ),
         ),
         CapabilityDescriptor(
+            capability=AgentCapability.STRATEGY_ANALYTICS,
+            status=CapabilityStatus.READ_THROUGH,
+            authority="StrategyAnalyticsService.compute /strategy-analytics/report",
+            notes=(
+                "Reads closed canonical journal outcomes with strategy/version/stage filters. "
+                "Retains metric samples, confidence, missing-data warnings and limitations. "
+                "Descriptive history never establishes profitability."
+            ),
+        ),
+        CapabilityDescriptor(
             capability=AgentCapability.STRATEGY_RETRIEVAL,
             status=CapabilityStatus.IMPLEMENTED,
             authority="StrategyLibraryService",
