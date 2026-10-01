@@ -14,6 +14,11 @@ import httpx
 
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
 from app.market_contracts.coverage import build_complete_trade_window_coverage
+from app.market_contracts.derivatives import (
+    DerivativeMetric,
+    DerivativeObservation,
+    derivative_observation,
+)
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
     DuplicateDataError,
@@ -45,6 +50,7 @@ from app.market_contracts.ohlcv import (
     build_ohlcv_bar,
     require_closed_series,
 )
+from app.market_contracts.provider_contracts import contract_from_bybit_instruments
 from app.market_contracts.trades import (
     OrderedTradeBatch,
     TradeEvent,
@@ -53,6 +59,7 @@ from app.market_contracts.trades import (
 )
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
+from app.schemas.nested_continuation import EvidenceAvailability
 
 BYBIT_SYMBOL = "BTCUSDT"
 BYBIT_CATEGORY = "linear"
@@ -61,6 +68,9 @@ BYBIT_ALLOWED_PATHS = frozenset(
         "/v5/market/time",
         "/v5/market/kline",
         "/v5/market/recent-trade",
+        "/v5/market/instruments-info",
+        "/v5/market/open-interest",
+        "/v5/market/funding/history",
     }
 )
 BYBIT_ALLOWED_HOSTS = frozenset({"api.bybit.com"})
@@ -137,6 +147,69 @@ class BybitUsdtPerpetualSource:
 
     def active_instrument(self) -> InstrumentIdentity:
         return self._instrument
+
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation:
+        self._assert_request(identity, instrument)
+        params: dict[str, str | int] = {"category": BYBIT_CATEGORY, "symbol": self._symbol}
+        contract = self._public_result("/v5/market/instruments-info", params)
+        self._assert_linear(contract)
+        rows = contract.get("list")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise WrongSourceError("Bybit instruments-info list is malformed.")
+        required_fields = {"symbol", "contractType", "quoteCoin", "baseCoin", "status"}
+        for row in rows:
+            if row.get("symbol") == self._symbol and not required_fields <= row.keys():
+                raise WrongSourceError("Bybit instruments-info contract fields are incomplete.")
+        try:
+            contract_from_bybit_instruments({"result": contract}, requested_symbol=self._symbol)
+        except (WrongInstrumentError, WrongMarketError):
+            return derivative_observation(
+                identity=identity,
+                metric=metric,
+                observed_at=observed_at,
+                availability=EvidenceAvailability.UNSUPPORTED,
+                reason="provider_contract_not_verified",
+            )
+        params.update({"limit": 1, "endTime": int(observed_at.timestamp() * 1000)})
+        if metric is DerivativeMetric.OPEN_INTEREST:
+            params["intervalTime"] = "5min"
+            path, value_key, time_key = "/v5/market/open-interest", "openInterest", "timestamp"
+        else:
+            path, value_key, time_key = (
+                "/v5/market/funding/history",
+                "fundingRate",
+                "fundingRateTimestamp",
+            )
+        result = self._public_result(path, params)
+        self._assert_linear(result)
+        rows = result.get("list")
+        row = rows[0] if isinstance(rows, list) and len(rows) == 1 else None
+        malformed = (
+            not isinstance(rows, list)
+            or len(rows) > 1
+            or (bool(rows) and not isinstance(row, dict))
+        )
+        if metric is DerivativeMetric.OPEN_INTEREST and result.get("symbol") != self._symbol:
+            malformed = True
+        if metric is DerivativeMetric.FUNDING and isinstance(row, dict):
+            malformed = malformed or row.get("symbol") != self._symbol
+        return derivative_observation(
+            identity=identity,
+            metric=metric,
+            observed_at=observed_at,
+            row=row if isinstance(row, dict) else None,
+            value_key=value_key,
+            time_key=time_key,
+            availability=EvidenceAvailability.INCOMPLETE if malformed else None,
+            reason="malformed_provider_payload" if malformed else None,
+        )
 
     def fetch_closed_ohlcv(
         self,

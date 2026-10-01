@@ -12,6 +12,11 @@ from app.evidence_pipeline.canonical import (
     timeframe_identity,
 )
 from app.evidence_pipeline.current_price import quote_current_price
+from app.evidence_pipeline.market_intelligence import (
+    DERIVATIVE_ROLES,
+    read_market_intelligence,
+    require_market_intelligence,
+)
 from app.evidence_pipeline.setup_lifetime import (
     SetupLifetimePort,
     SetupLifetimeStore,
@@ -63,6 +68,7 @@ from app.market_contracts.freshness import (
     live_confirmation_window_open,
 )
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
+from app.market_contracts.observation import observation_from_derivative
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
@@ -284,6 +290,40 @@ class FirstSliceEvidenceAssembler:
             tenant_assertions=tenant_assertions,
             manual_level_revision=selected_revision,
         )
+        required_metrics = tuple(
+            DERIVATIVE_ROLES[role]
+            for role in bound_policy.required_roles
+            if role in DERIVATIVE_ROLES
+        )
+        intelligence = read_market_intelligence(
+            self._source,
+            identity=trigger_identity,
+            instrument=instrument,
+            observed_at=clock,
+            metrics=required_metrics,
+        )
+        require_market_intelligence(
+            intelligence,
+            required_roles=bound_policy.required_roles,
+            identity=trigger_identity,
+            evaluated_at=clock,
+        )
+        if intelligence:
+            command = command.model_copy(
+                update={
+                    "mandatory_evidence_roles": tuple(
+                        dict.fromkeys(
+                            (*command.mandatory_evidence_roles, *bound_policy.required_roles)
+                        )
+                    ),
+                    "public_observations": command.public_observations
+                    + tuple(observation_from_derivative(item) for item in intelligence),
+                    "selected_roles": command.selected_roles
+                    + tuple(
+                        role for role in bound_policy.required_roles if role in DERIVATIVE_ROLES
+                    ),
+                }
+            )
         window = evidence_window_from_assessment_command(command)
         bundle = FirstSliceEvidenceBundle(
             bars_15m=tuple(series_15m.bars),
@@ -291,6 +331,7 @@ class FirstSliceEvidenceAssembler:
             snapshot=snapshot,
             subsequent_final_15m=subsequent,
             resistances=resistances,
+            market_intelligence=intelligence,
         )
         completeness = CompletenessReport(
             ohlcv_15m=DataCompleteness.COMPLETE,

@@ -28,6 +28,7 @@ from app.market_contracts.cvd import (
     signed_quote_delta_until,
     snapshot_terminal_event_time,
 )
+from app.market_contracts.derivatives import DerivativeMetric, require_derivative_observations
 from app.market_contracts.enums import (
     Finality,
     FreshnessState,
@@ -46,6 +47,7 @@ from app.market_contracts.errors import (
     StaleEvidenceError,
     WrongInstrumentError,
     WrongMarketError,
+    WrongSourceError,
 )
 from app.market_contracts.first_slice import (
     FIRST_SLICE_CONTEXT_TIMEFRAME,
@@ -65,7 +67,7 @@ from app.market_contracts.identity import (
     instrument_matches_requested_symbol,
     interval_timedelta,
 )
-from app.market_contracts.observation import PublicMarketObservation
+from app.market_contracts.observation import PublicMarketObservation, observation_from_derivative
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
 from app.schemas.common import Timeframe, TradeDirection
 from app.services.canonical_serialization import canonical_sha256
@@ -93,6 +95,11 @@ from app.signal_fusion.first_slice_types import (
 from app.signal_fusion.policy import DEFAULT_FUSION_POLICY_VERSION, FusionPolicy
 from app.signal_fusion.swings import most_recent_confirmed_swing_high
 from app.signal_fusion.types import HalfOpenInterval, RuleResult
+
+DERIVATIVE_ROLES = {
+    EvidenceRole.OPEN_INTEREST: DerivativeMetric.OPEN_INTEREST,
+    EvidenceRole.FUNDING: DerivativeMetric.FUNDING,
+}
 
 _ASSESSMENT_NAMESPACE = UUID("9c4e1d70-2b8a-4f11-9d55-6a1f0c3e8b27")
 _LIVE_STATES = frozenset(
@@ -195,6 +202,40 @@ def evaluate_setup(
         params=params,
     )
 
+    try:
+        require_derivative_observations(
+            evidence.market_intelligence,
+            required_metrics=tuple(
+                DERIVATIVE_ROLES[r] for r in policy.required_roles if r in DERIVATIVE_ROLES
+            ),
+            identity=command.evidence_identity,
+            evaluated_at=evaluated,
+        )
+        for role in policy.required_roles:
+            if role not in DERIVATIVE_ROLES:
+                continue
+            item = next(
+                item
+                for item in evidence.market_intelligence
+                if item.metric is DERIVATIVE_ROLES[role]
+            )
+            selected = [
+                obs
+                for obs, selected_role in zip(
+                    command.public_observations, command.selected_roles, strict=True
+                )
+                if selected_role is role
+            ]
+            if selected != [observation_from_derivative(item)]:
+                raise WrongSourceError("Required OI/funding payload is not bound to the command.")
+    except (MarketContractError, ValueError) as exc:
+        rules["complete_warmup"] = _rule(
+            "complete_warmup",
+            False,
+            "required_source_stale"
+            if isinstance(exc, StaleEvidenceError)
+            else "missing_required_evidence",
+        )
     quality_ok = all(rules[rule_id].passed for rule_id in QUALITY_RULE_IDS)
     all_passed = all(rules[rule_id].passed for rule_id in FIRST_SLICE_RULE_IDS)
     state, reason_codes = _resolve_state(

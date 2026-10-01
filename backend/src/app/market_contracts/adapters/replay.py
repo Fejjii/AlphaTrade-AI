@@ -7,6 +7,11 @@ from uuid import UUID
 
 from app.market_contracts.coverage import build_complete_trade_window_coverage
 from app.market_contracts.cvd import select_trades_in_window
+from app.market_contracts.derivatives import (
+    DerivativeMetric,
+    DerivativeObservation,
+    derivative_observation,
+)
 from app.market_contracts.enums import SourceFamily
 from app.market_contracts.errors import (
     FormingCandleError,
@@ -26,6 +31,7 @@ from app.market_contracts.replay_fixtures import canonical_first_slice_fixture
 from app.market_contracts.trades import OrderedTradeBatch, TradeEvent, order_trades
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
+from app.schemas.nested_continuation import EvidenceAvailability
 
 
 class ReplayPerpetualSource:
@@ -33,6 +39,24 @@ class ReplayPerpetualSource:
 
     name = "binance-usdm-perpetual-replay"
     kind = ProviderKind.MARKET_DATA
+
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation:
+        require_perpetual(identity)
+        require_instrument(identity, instrument)
+        return derivative_observation(
+            identity=identity,
+            metric=metric,
+            observed_at=observed_at,
+            availability=EvidenceAvailability.UNSUPPORTED,
+            reason="replay_fixture_has_no_verified_oi_or_funding",
+        )
 
     def __init__(
         self,
