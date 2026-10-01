@@ -5,6 +5,8 @@ import {
   importantAlerts,
   marketEvidenceLabel,
   portfolioEquity,
+  portfolioExpectancy,
+  openPositionCount,
   portfolioWinRate,
   watcherTraderLabel,
 } from "@/components/dashboard/trader-dashboard";
@@ -41,11 +43,44 @@ describe("trader dashboard view model", () => {
       okSource({
         total: 2,
         items: [
-          { id: "read", message: "Old", severity: "info", read_at: "2026-01-01T00:00:00Z", created_at: "2026-01-02T00:00:00Z" },
-          { id: "new", message: "New", severity: "high", read_at: null, created_at: "2026-01-01T00:00:00Z" },
+          {
+            id: "read",
+            message: "Old",
+            severity: "info",
+            read_at: "2026-01-01T00:00:00Z",
+            created_at: "2026-01-02T00:00:00Z",
+          },
+          {
+            id: "new",
+            message: "New",
+            severity: "high",
+            read_at: null,
+            created_at: "2026-01-01T00:00:00Z",
+          },
         ] as PaperAlert[],
       }),
     );
     expect(alerts?.map((item) => item.id)).toEqual(["new", "read"]);
+  });
+
+  it("uses the total position count instead of the truncated display window", () => {
+    expect(openPositionCount(okSource({ total: 25 }))).toBe("25");
+    expect(openPositionCount(failedSource("down"))).toBe(UNAVAILABLE);
+  });
+
+  it("shows recorded zero expectancy, but never measures an empty or failed sample", () => {
+    const source = (tradeCount: number) =>
+      okSource({
+        metrics: { trade_count: tradeCount, expectancy: "0" },
+      } as PaperPortfolioResponse);
+    expect(portfolioExpectancy(source(0))).toEqual({
+      value: UNAVAILABLE,
+      note: "No closed trades yet",
+    });
+    expect(portfolioExpectancy(source(4))).toEqual({
+      value: "+0.00",
+      note: "Per trade · 4 closed trades",
+    });
+    expect(portfolioExpectancy(failedSource("down")).value).toBe(UNAVAILABLE);
   });
 });

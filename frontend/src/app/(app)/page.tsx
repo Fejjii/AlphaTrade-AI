@@ -16,17 +16,25 @@ export default function DashboardPage() {
   const { executionMode, realTradingEnabled } = useSafetyPosture();
 
   const loader = useCallback(async (): Promise<TraderDashboardData> => {
-    const [portfolio, positions, journal, strategyStats, summary, watcher, market, alerts] =
-      await Promise.all([
-        loadSource(api.performance.portfolio()),
-        loadSource(api.positions.list({ status: "open", limit: 20 })),
-        loadSource(api.journal.list({ limit: 8 })),
-        loadSource(api.journal.statistics({ group_by: "strategy", limit: 8 })),
-        loadSource(api.dashboard.summary()),
-        loadSource(api.marketWatcher.monitoring()),
-        loadSource(api.canonical.getMarketStatus()),
-        loadSource(api.alerts.list({ limit: 8 })),
-      ]);
+    const [
+      portfolio,
+      positions,
+      journal,
+      strategyStats,
+      summary,
+      watcher,
+      market,
+      alerts,
+    ] = await Promise.all([
+      loadSource(api.performance.portfolio()),
+      loadSource(api.positions.list({ status: "open", limit: 20 })),
+      loadSource(api.journal.list({ limit: 8 })),
+      loadSource(api.journal.statistics({ group_by: "strategy", limit: 8 })),
+      loadSource(api.dashboard.summary()),
+      loadSource(api.marketWatcher.monitoring()),
+      loadSource(api.canonical.getMarketStatus()),
+      loadSource(api.alerts.list({ limit: 8 })),
+    ]);
     return {
       portfolio,
       positions,
@@ -45,7 +53,12 @@ export default function DashboardPage() {
     return <LoadingState label="Loading dashboard…" />;
   }
   if (error || !data) {
-    return <ErrorState message={error ?? "Dashboard unavailable"} onRetry={() => void reload()} />;
+    return (
+      <ErrorState
+        message={error ?? "Dashboard unavailable"}
+        onRetry={() => void reload()}
+      />
+    );
   }
 
   const posture = describeSafetyPosture(
@@ -53,5 +66,12 @@ export default function DashboardPage() {
     data.summary.data?.safety.real_trading_enabled ?? realTradingEnabled,
   );
 
-  return <TraderDashboardView data={data} posture={posture} />;
+  return (
+    <TraderDashboardView
+      data={data}
+      posture={posture}
+      onRetry={() => void reload()}
+      refreshing={loading}
+    />
+  );
 }

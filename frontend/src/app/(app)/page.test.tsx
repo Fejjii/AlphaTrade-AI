@@ -27,12 +27,20 @@ vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => safetyPosture,
 }));
 
-function portfolio(tradeCount: number, winRate: number): PaperPortfolioResponse {
+function portfolio(
+  tradeCount: number,
+  winRate: number,
+): PaperPortfolioResponse {
   return {
     account: { current_equity: "1000.50" },
     metrics: { trade_count: tradeCount, win_rate: winRate, net_pnl: "12.50" },
     breakdowns: {
-      by_strategy: [{ key: "HTF Pullback", metrics: { net_pnl: "12.50", trade_count: tradeCount } }],
+      by_strategy: [
+        {
+          key: "HTF Pullback",
+          metrics: { net_pnl: "12.50", trade_count: tradeCount },
+        },
+      ],
     },
   } as PaperPortfolioResponse;
 }
@@ -87,7 +95,14 @@ function dashboardData(
       availability: "fresh",
     } as CanonicalMarketMonitorStatusRead),
     alerts: okSource({
-      items: [{ id: "a1", message: "Paper target reached", severity: "high", created_at: "2026-01-01" } as PaperAlert],
+      items: [
+        {
+          id: "a1",
+          message: "Paper target reached",
+          severity: "high",
+          created_at: "2026-01-01",
+        } as PaperAlert,
+      ],
       total: 1,
     }),
   };
@@ -122,16 +137,22 @@ afterEach(() => {
 describe("Trader dashboard", () => {
   it("shows confirmed paper posture only when verified", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent("PAPER mode");
-    expect(screen.getByTestId("dashboard-real-trading-status")).toHaveTextContent(
-      "Real trading disabled",
+    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent(
+      "PAPER mode",
     );
-    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent("Paper only");
+    expect(
+      screen.getByTestId("dashboard-real-trading-status"),
+    ).toHaveTextContent("Real trading disabled");
+    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
+      "Paper only",
+    );
     expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
       "aria-label",
       "Paper mode active",
     );
-    expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Dashboard" }),
+    ).toBeInTheDocument();
   });
 
   it("shows safety conflict when real trading is enabled", () => {
@@ -142,7 +163,9 @@ describe("Trader dashboard", () => {
       } as DashboardSummary),
     });
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-safety-conflict")).toHaveTextContent(/safety conflict/i);
+    expect(screen.getByTestId("dashboard-safety-conflict")).toHaveTextContent(
+      /safety conflict/i,
+    );
     expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
       "aria-label",
       "Paper mode not confirmed",
@@ -154,7 +177,9 @@ describe("Trader dashboard", () => {
     safetyPosture.realTradingEnabled = null;
     asyncState.data = dashboardData({ summary: failedSource("summary down") });
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent("Execution unverified");
+    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent(
+      "Execution unverified",
+    );
     expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
       "Runtime posture unverified",
     );
@@ -162,25 +187,70 @@ describe("Trader dashboard", () => {
 
   it("shows paper value, pnl, win rate, positions, and trader watcher status", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(formatCurrency("1000.50"));
-    expect(screen.getByTestId("dashboard-pnl")).toHaveTextContent(formatMonetary("12.50"));
+    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
+      formatCurrency("1000.50"),
+    );
+    expect(screen.getByTestId("dashboard-pnl")).toHaveTextContent(
+      formatMonetary("12.50"),
+    );
     expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent("50.0%");
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("BTCUSDT");
-    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent("ETHUSDT");
-    expect(screen.getByTestId("dashboard-strategy-performance")).toHaveTextContent("HTF Pullback");
-    expect(screen.getByTestId("dashboard-watcher-status")).toHaveTextContent("Stopped");
-    expect(screen.getByTestId("dashboard-market-evidence")).toHaveTextContent("Healthy");
-    expect(screen.getByTestId("dashboard-alerts")).toHaveTextContent("Paper target reached");
-    expect(screen.queryByTestId("watcher-monitoring-card")).not.toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
+      "BTCUSDT",
+    );
+    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent(
+      "ETHUSDT",
+    );
+    expect(
+      screen.getByTestId("dashboard-strategy-performance"),
+    ).toHaveTextContent("HTF Pullback");
+    expect(screen.getByTestId("dashboard-watcher-status")).toHaveTextContent(
+      "Stopped",
+    );
+    expect(screen.getByTestId("dashboard-market-evidence")).toHaveTextContent(
+      "Healthy",
+    );
+    expect(screen.getByTestId("dashboard-alerts")).toHaveTextContent(
+      "Paper target reached",
+    );
+    expect(
+      screen.queryByTestId("watcher-monitoring-card"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("RUNNING")).not.toBeInTheDocument();
   });
 
   it("does not present an unmeasured win rate as zero", () => {
     asyncState.data = dashboardData({ portfolio: okSource(portfolio(0, 0)) });
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(UNAVAILABLE);
-    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent("No closed trades yet");
-    expect(screen.getByTestId("dashboard-win-rate")).not.toHaveTextContent("0.0%");
+    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(
+      UNAVAILABLE,
+    );
+    expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(
+      "No closed trades yet",
+    );
+    expect(screen.getByTestId("dashboard-win-rate")).not.toHaveTextContent(
+      "0.0%",
+    );
+  });
+
+  it("keeps unavailable daily status explicit and reports total open positions", () => {
+    const data = dashboardData();
+    asyncState.data = dashboardData({
+      positions: okSource({ ...data.positions.data!, total: 25 }),
+    });
+    render(<DashboardPage />);
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("25");
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
+      "Showing 1 of 25",
+    );
+    expect(screen.getByTestId("dashboard-daily-status")).toHaveTextContent(
+      "Daily status unavailable",
+    );
+    expect(screen.getByTestId("dashboard-daily-pnl")).toHaveTextContent(
+      UNAVAILABLE,
+    );
+    expect(screen.getByTestId("dashboard-expectancy")).toHaveTextContent(
+      "Expectancy unavailable",
+    );
   });
 
   it("shows loading and error states", () => {

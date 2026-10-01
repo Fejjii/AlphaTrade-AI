@@ -1,5 +1,11 @@
 import type { SourceResult } from "@/components/workflows/sourceResult";
-import { formatCount, formatCurrency, formatMonetary, formatPercent, UNAVAILABLE } from "@/lib/format";
+import {
+  formatCount,
+  formatCurrency,
+  formatMonetary,
+  formatPercent,
+  UNAVAILABLE,
+} from "@/lib/format";
 import type {
   CanonicalMarketMonitorStatusRead,
   JournalEntry,
@@ -30,7 +36,9 @@ export function watcherTraderLabel(
   }
 }
 
-export function marketEvidenceLabel(availability: string | null | undefined): string {
+export function marketEvidenceLabel(
+  availability: string | null | undefined,
+): string {
   switch (availability) {
     case "fresh":
       return "Healthy";
@@ -47,17 +55,23 @@ export function marketEvidenceLabel(availability: string | null | undefined): st
   }
 }
 
-export function portfolioEquity(portfolio: SourceResult<PaperPortfolioResponse>): string {
+export function portfolioEquity(
+  portfolio: SourceResult<PaperPortfolioResponse>,
+): string {
   if (!portfolio.available || !portfolio.data) return UNAVAILABLE;
   return formatCurrency(portfolio.data.account.current_equity);
 }
 
-export function portfolioPnl(portfolio: SourceResult<PaperPortfolioResponse>): string {
+export function portfolioPnl(
+  portfolio: SourceResult<PaperPortfolioResponse>,
+): string {
   if (!portfolio.available || !portfolio.data) return UNAVAILABLE;
   return formatMonetary(portfolio.data.metrics.net_pnl);
 }
 
-export function portfolioWinRate(portfolio: SourceResult<PaperPortfolioResponse>): {
+export function portfolioWinRate(
+  portfolio: SourceResult<PaperPortfolioResponse>,
+): {
   value: string;
   note: string | null;
 } {
@@ -72,6 +86,37 @@ export function portfolioWinRate(portfolio: SourceResult<PaperPortfolioResponse>
     value: formatPercent(metrics.win_rate),
     note: `${formatCount(metrics.trade_count)} closed trades`,
   };
+}
+
+export function portfolioExpectancy(
+  portfolio: SourceResult<PaperPortfolioResponse>,
+): {
+  value: string;
+  note: string;
+} {
+  if (!portfolio.available || !portfolio.data) {
+    return { value: UNAVAILABLE, note: "Portfolio unavailable" };
+  }
+  const metrics = portfolio.data.metrics;
+  if (metrics.trade_count <= 0) {
+    return { value: UNAVAILABLE, note: "No closed trades yet" };
+  }
+  const value = formatMonetary(metrics.expectancy);
+  return {
+    value,
+    note:
+      value === UNAVAILABLE
+        ? "Expectancy unavailable"
+        : `Per trade · ${formatCount(metrics.trade_count)} closed trades`,
+  };
+}
+
+export function openPositionCount(
+  positions: SourceResult<{ total: number }>,
+): string {
+  return positions.available && positions.data
+    ? formatCount(positions.data.total)
+    : UNAVAILABLE;
 }
 
 export function openPositionRows(
@@ -102,7 +147,10 @@ export function closedStrategyRows(
   return portfolio.data.breakdowns.by_strategy.slice(0, 8);
 }
 
-export function bucketWinRate(tradeCount: number, winRate: number | null): string {
+export function bucketWinRate(
+  tradeCount: number,
+  winRate: number | null,
+): string {
   if (tradeCount <= 0 || winRate == null) return UNAVAILABLE;
   return formatPercent(winRate);
 }
@@ -116,6 +164,17 @@ export function importantAlerts(
       const leftUnread = left.read_at ? 1 : 0;
       const rightUnread = right.read_at ? 1 : 0;
       if (leftUnread !== rightUnread) return leftUnread - rightUnread;
+      const priority: Record<string, number> = {
+        critical: 0,
+        high: 1,
+        warning: 2,
+        medium: 2,
+        info: 3,
+        low: 3,
+      };
+      const severityDifference =
+        (priority[left.severity] ?? 3) - (priority[right.severity] ?? 3);
+      if (severityDifference !== 0) return severityDifference;
       return right.created_at.localeCompare(left.created_at);
     })
     .slice(0, 5);
