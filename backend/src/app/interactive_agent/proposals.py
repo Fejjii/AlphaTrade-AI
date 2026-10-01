@@ -1,8 +1,4 @@
-"""Transcript proposals with explicit, hash-protected journal confirmation.
-
-Journal create/append alone may apply here. Other actions remain handoffs to
-their existing domain authorities. Strategy versions and orders are never written.
-"""
+"""Transcript proposals with explicit, hash-protected canonical application."""
 
 from __future__ import annotations
 
@@ -19,6 +15,7 @@ from app.agents.mutation_policy import (
     rejected_proposal_id,
     rejection_authorizes_mutation,
 )
+from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.db.models import Conversation, ConversationMessage, TradeJournal
 from app.interactive_agent.contracts import (
@@ -138,6 +135,7 @@ def find_proposal(
     organization_id: uuid.UUID,
     user_id: uuid.UUID,
     proposal_id: uuid.UUID,
+    lock: bool = False,
 ) -> tuple[ConversationMessage, StructuredActionProposal]:
     """Load a proposal from the caller's transcript. Other tenants get not-found."""
     rows, _total = ConversationMessageRepository(session).list_for_conversation(
@@ -159,6 +157,14 @@ def find_proposal(
             proposal = StructuredActionProposal.model_validate(item)
             if proposal.organization_id != organization_id or proposal.user_id != user_id:
                 raise NotFoundError("Agent proposal not found.")
+            if lock:
+                return _lock_proposal(
+                    session,
+                    row,
+                    proposal_id=proposal_id,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                )
             return row, proposal
     raise NotFoundError("Agent proposal not found.")
 
@@ -209,10 +215,12 @@ def confirm_proposal(
     proposal_id: uuid.UUID,
     expected_content_hash: str,
     statement: str,
+    settings: Settings,
 ) -> StructuredActionProposal:
-    """Confirm one proposal. Journal writes alone may apply at this boundary."""
+    """Confirm and apply supported actions through their canonical authorities."""
     from app.interactive_agent.action_registry import require_action_permission
     from app.interactive_agent.actions import JournalNoteInput
+    from app.interactive_agent.application import apply_confirmed_action
     from app.interactive_agent.orchestration import (
         apply_journal_note,
         check_action_confirmation,
@@ -250,9 +258,16 @@ def confirm_proposal(
         or conversation.user_id != user_id
     ):
         raise NotFoundError("Conversation not found.")
-    action = check_action_confirmation(session, proposal, conversation)
     if proposal.status is ProposalLifecycle.REJECTED:
         raise ConflictError("This proposal cannot be confirmed.")
+    # Replays must not reapply or fail against the revision produced by the
+    # successful application. The seal and persisted permission still hold.
+    if (
+        proposal.status is ProposalLifecycle.APPLIED
+        and proposal.kind is not StructuredActionKind.PROPOSE_JOURNAL_ENTRY
+    ) or proposal.status is ProposalLifecycle.CONFIRMED_UNAPPLIED:
+        return proposal
+    action = check_action_confirmation(session, proposal, conversation)
     if proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
         existing = _existing_journal_id(
             session,
@@ -264,8 +279,6 @@ def confirm_proposal(
             return _replay_journal(session, message, proposal, existing)
         if proposal.status not in {ProposalLifecycle.PROPOSED, ProposalLifecycle.APPLIED}:
             raise ConflictError("This proposal cannot be confirmed.")
-    elif proposal.status in {ProposalLifecycle.APPLIED, ProposalLifecycle.CONFIRMED_UNAPPLIED}:
-        return proposal
     elif proposal.status is not ProposalLifecycle.PROPOSED:
         raise ConflictError("This proposal cannot be confirmed.")
     if proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
@@ -296,11 +309,29 @@ def confirm_proposal(
             }
         )
     else:
+        applied_record_id, receipt = (
+            apply_confirmed_action(
+                session,
+                proposal=proposal,
+                conversation=conversation,
+                tool=action[0],
+                inputs=action[1],
+                settings=settings,
+            )
+            if action is not None
+            else (None, {"reason": "no_suitable_canonical_authority"})
+        )
         updated = proposal.model_copy(
             update={
-                "status": ProposalLifecycle.CONFIRMED_UNAPPLIED,
-                "applied": False,
-                "authority_mutated": False,
+                "status": ProposalLifecycle.APPLIED
+                if applied_record_id
+                else ProposalLifecycle.CONFIRMED_UNAPPLIED,
+                "applied": applied_record_id is not None,
+                "authority_mutated": receipt.get(
+                    "authority_mutated", applied_record_id is not None
+                ),
+                "resulting_record_id": applied_record_id,
+                "application_result": receipt,
             }
         )
     write_proposal(message, updated)

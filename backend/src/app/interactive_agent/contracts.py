@@ -231,6 +231,7 @@ class StructuredActionProposal(StrictModel):
     authority_mutated: bool = False
     linked_strategy_proposal_id: UUID | None = None
     resulting_record_id: UUID | None = None
+    application_result: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentTurnResult(StrictModel):

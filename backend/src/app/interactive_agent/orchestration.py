@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from typing import Any
 from uuid import UUID
@@ -20,6 +21,7 @@ from app.interactive_agent.actions import (
     KnowledgeInput,
     PaperTradeInput,
     StrategyInput,
+    StrategyValidationInput,
     WatcherChangeInput,
 )
 from app.interactive_agent.contracts import (
@@ -29,7 +31,7 @@ from app.interactive_agent.contracts import (
     StructuredActionProposal,
 )
 from app.interactive_agent.proposals import build_proposal, parse_journal_draft
-from app.repositories.strategy_library import UserStrategyRepository
+from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
 from app.repositories.watcher_watchlist import WatcherWatchlistRepository
 from app.schemas.common import DocumentSourceType, RiskAction, StrictModel
 from app.schemas.journal import JournalEntryUpdate
@@ -96,17 +98,6 @@ def propose_action(
         )
         if isinstance(inputs, KnowledgeInput):
             artifact = ArtifactKind(inputs.kind)
-            ingest = IngestDocumentRequest(
-                organization_id=conversation.organization_id,
-                user_id=conversation.user_id,
-                source_type=DocumentSourceType.TRADING_PLAYBOOK
-                if inputs.kind == "rule"
-                else DocumentSourceType.GENERAL_NOTE,
-                title=inputs.title,
-                text=inputs.text,
-                strategy_tag=str(target) if target else None,
-            )
-            payload["ingest_request"] = ingest.model_dump(mode="json")
             payload["handoff"] = {"method": "POST", "path": "/knowledge/ingest"}
             payload["ingested"] = False
         elif tool.name in {"strategy.create", "strategy.refinement"}:
@@ -131,6 +122,9 @@ def propose_action(
                 linked = record.id
                 payload["linked_preview_stored"] = True
                 payload["strategy_preview_hash"] = record.content_hash
+                payload["strategy_preview_snapshot"] = record.model_dump(
+                    mode="json", exclude={"created_at", "updated_at"}
+                )
                 payload["handoff"] = {
                     "method": "POST",
                     "path": f"/conversations/{conversation.id}/proposals/{linked}/confirm",
@@ -142,6 +136,47 @@ def propose_action(
         elif tool.name == "strategy.request_validation":
             missing = ["strategy_id"] if target is None else []
             payload.update({"validation_ran": False, "replay_ran": False, "scheduled": False})
+            if isinstance(inputs, StrategyValidationInput):
+                request, fields = _validation_preview(session, target, inputs)
+                payload["backtest_request"] = request
+                missing.extend(fields)
+        elif target is None:
+            missing = ["strategy_id"]
+        if isinstance(inputs, KnowledgeInput) or tool.name in {
+            "strategy.observation",
+            "strategy.hypothesis",
+            "strategy.associate_evidence",
+        }:
+            # Provenance is part of the ingested text and seal, so org-wide content
+            # deduplication cannot return another user's private document.
+            provenance = {
+                "action": tool.name,
+                "conversation_id": str(conversation.id),
+                "source_message_id": str(source_message_id),
+                "organization_id": str(conversation.organization_id),
+                "user_id": str(conversation.user_id),
+                "strategy_id": str(target) if target else None,
+                "evidence_document_ids": evidence,
+            }
+            ingest = IngestDocumentRequest(
+                organization_id=conversation.organization_id,
+                user_id=conversation.user_id,
+                source_type=(
+                    DocumentSourceType.TRADING_PLAYBOOK
+                    if isinstance(inputs, KnowledgeInput) and inputs.kind == "rule"
+                    else DocumentSourceType.REVIEW_NOTE
+                    if not isinstance(inputs, KnowledgeInput)
+                    else DocumentSourceType.GENERAL_NOTE
+                ),
+                title=inputs.title if isinstance(inputs, KnowledgeInput) else tool.name,
+                text=(
+                    inputs.text + "\n\nAgent provenance: " + json.dumps(provenance, sort_keys=True)
+                ),
+                source_uri=f"conversation://{conversation.id}/messages/{source_message_id}",
+                strategy_tag=str(target) if target else None,
+            )
+            payload["ingest_request"] = ingest.model_dump(mode="json")
+            payload["provenance"] = provenance
     elif isinstance(inputs, WatcherChangeInput):
         payload, missing = _watcher_preview(session, conversation.organization_id, inputs)
     elif isinstance(inputs, PaperTradeInput):
@@ -151,11 +186,13 @@ def propose_action(
             for key in ("symbol", "timeframe", "direction", "entry", "stop", "targets")
             if not payload.get(key)
         ]
+        if inputs.trade_proposal_id is None:
+            missing.extend(payload["pretrade_missing_fields"])
     else:
         raise ValidationAppError("Action has no proposal adapter.")
     payload["missing_fields"] = missing
     payload["action"] = tool.descriptor().model_dump(exclude={"input_contract"})
-    payload["action_input"] = inputs.model_dump(mode="json")
+    payload["action_input"] = inputs.model_dump(mode="json", exclude_unset=True)
     summary = f"{tool.name} proposal. "
     summary += f"Missing fields: {', '.join(missing)}." if missing else "Ready for explicit review."
     if tool.name == "paper_trade.propose":
@@ -173,6 +210,39 @@ def propose_action(
         authority=tool.authority,
         linked_strategy_proposal_id=linked,
     )
+
+
+def _validation_preview(
+    session: Session, target: UUID | None, inputs: StrategyValidationInput
+) -> tuple[dict[str, Any] | None, list[str]]:
+    if inputs.backtest is None or inputs.backtest.assumptions is None:
+        return None, ["backtest.assumptions"]
+    assumptions = inputs.backtest.assumptions
+    missing = [
+        f"backtest.assumptions.{field}"
+        for field in ("symbol", "timeframe", "start_date", "end_date")
+        if field not in assumptions.model_fields_set or getattr(assumptions, field) is None
+    ]
+    if (
+        assumptions.start_date
+        and assumptions.end_date
+        and assumptions.start_date > assumptions.end_date
+    ):
+        raise ValidationAppError("Backtest start date must not follow end date.")
+    if target is None:
+        return None, missing
+    versions = UserStrategyVersionRepository(session)
+    version = (
+        versions.get_by_id(inputs.backtest.strategy_version_id)
+        if inputs.backtest.strategy_version_id
+        else versions.latest(target)
+    )
+    if version is None or version.strategy_id != target:
+        raise NotFoundError("Strategy version not found.")
+    request = inputs.backtest.model_copy(
+        update={"strategy_version_id": version.id, "idempotency_key": None}
+    )
+    return request.model_dump(mode="json"), missing
 
 
 def _require_refs(
@@ -308,6 +378,30 @@ def _paper_preview(
             "handoff": {"method": "POST", "path": "/pretrade/analyze"},
         }
     )
+    pretrade = inputs.pretrade
+    fields: list[str] = []
+    if pretrade is None:
+        fields = ["pretrade.account_size", "pretrade.max_risk_per_trade"]
+    else:
+        if inputs.trade_proposal_id is not None:
+            raise ValidationAppError("Choose an existing proposal or a pretrade request.")
+        for field in ("symbol", "timeframe", "direction"):
+            if getattr(pretrade, field) != getattr(inputs, field):
+                raise ValidationAppError("Pretrade context must match the stated trade request.")
+        if "max_risk_per_trade" not in pretrade.model_fields_set:
+            fields.append("pretrade.max_risk_per_trade")
+        _require_refs(session, conversation, pretrade.strategy_id, [])
+        if pretrade.manual_level_ids:
+            from app.repositories.manual_levels import ManualChartLevelRepository
+
+            levels = ManualChartLevelRepository(session).get_many_scoped(
+                pretrade.manual_level_ids,
+                organization_id=conversation.organization_id,
+                user_id=conversation.user_id,
+            )
+            if {row.id for row in levels} != set(pretrade.manual_level_ids):
+                raise NotFoundError("Manual chart level not found.")
+    payload["pretrade_missing_fields"] = fields
     if inputs.trade_proposal_id is not None:
         proposal = ProposalService(session, AuditService(session)).get(
             inputs.trade_proposal_id,
@@ -362,12 +456,22 @@ def check_action_confirmation(
     ):
         raise ConflictError("Stored action contract does not match its authority.")
     if isinstance(inputs, StrategyInput):
+        captured_target = proposal.payload.get("strategy_id")
         _require_refs(
             session,
             conversation,
-            inputs.strategy_id or conversation.strategy_id,
+            UUID(captured_target) if captured_target else None,
             inputs.evidence_document_ids,
         )
+        if isinstance(inputs, StrategyValidationInput) and proposal.payload.get("backtest_request"):
+            from app.schemas.backtest import BacktestRunCreate
+
+            request = BacktestRunCreate.model_validate(proposal.payload["backtest_request"])
+            if request.strategy_version_id is None:
+                raise NotFoundError("Strategy version not found.")
+            version = UserStrategyVersionRepository(session).get_by_id(request.strategy_version_id)
+            if version is None or str(version.strategy_id) != captured_target:
+                raise NotFoundError("Strategy version not found.")
     if isinstance(inputs, WatcherChangeInput):
         current = WatcherWatchlistRepository(session).load(conversation.organization_id)
         if current.revision != proposal.payload["configuration_revision"]:
