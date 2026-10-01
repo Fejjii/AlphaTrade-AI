@@ -147,6 +147,32 @@ describe("watchlist request coordination", () => {
     expect(readStatus).toHaveBeenCalledTimes(2);
   });
 
+  it("expires a displayed observation while the next status poll remains unresolved", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T00:00:00Z"));
+    const { api } = await import("@/lib/api");
+    const { config, status } = responses();
+    const freshStatus = { ...status, symbols: statuses.map(row => ({
+      ...row, observed_at: new Date().toISOString(), freshness: "fresh_closed_candle",
+    })) };
+    vi.spyOn(api.watcherWatchlist, "configuration").mockResolvedValue(config);
+    const readStatus = vi.spyOn(api.watcherWatchlist, "status").mockResolvedValueOnce(freshStatus)
+      .mockImplementation(() => new Promise(() => {}));
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<WatcherWatchlistSection />); });
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh_closed_candle");
+    await act(async () => { await vi.advanceTimersByTimeAsync(89999); });
+    expect(readStatus).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("fresh_closed_candle");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(screen.getByTestId("watchlist-status-1")).toHaveTextContent("Pending / unscanned");
+    expect(readStatus).toHaveBeenCalledTimes(2);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("does not overlap or discard a slow status poll", async () => {
     vi.useFakeTimers();
     const { api } = await import("@/lib/api");

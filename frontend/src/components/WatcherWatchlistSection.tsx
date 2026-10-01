@@ -56,10 +56,30 @@ export function WatcherWatchlistEditor({
   onChange: (slots: WatcherWatchlistSlot[]) => void;
   onSave: () => void;
 }) {
+  const [, setExpiryTick] = useState(0);
   const statusBySymbol = new Map(statuses.filter((row) => {
     const age = row.observed_at ? Date.now() - Date.parse(row.observed_at) : Number.NaN;
-    return row.configuration_revision === configurationRevision && age >= 0 && age <= staleAfterSeconds * 1000;
+    return row.configuration_revision === configurationRevision && age >= 0 && age < staleAfterSeconds * 1000;
   }).map((row) => [row.symbol.trim().toUpperCase(), row]));
+
+  // One local timer expires displayed rows even when the network poll is stalled.
+  // Replace it on every render so refreshed observations and edited slots own it.
+  useEffect(() => {
+    const deadlines = slots.flatMap((slot) => {
+      const row = statusBySymbol.get(slot.symbol.trim().toUpperCase());
+      return row?.enabled === slot.enabled && row.observed_at
+        ? [Date.parse(row.observed_at) + staleAfterSeconds * 1000]
+        : [];
+    });
+    const nextExpiry = Math.min(...deadlines);
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(
+      () => setExpiryTick((tick) => tick + 1),
+      Math.min(2147483647, Math.max(0, nextExpiry - Date.now())),
+    );
+    return () => clearTimeout(timer);
+  });
+
   return (
     <Card data-testid="watcher-watchlist">
       <CardHeader>
