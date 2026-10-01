@@ -67,6 +67,8 @@ def notice_from_scan_report(report: WatcherPaperScanReport) -> WatcherScanNotice
         candidate_ids=report.candidate_ids,
         request_hash=_sha256_or_none(report.request_hash),
         lineage_id=report.lineage_id,
+        nested=report.nested_alert,
+        nested_strategy=report.nested_strategy,
     )
 
 

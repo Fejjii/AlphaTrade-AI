@@ -27,6 +27,7 @@ from uuid import UUID, uuid4
 import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.candidate_alerts.nested import NestedAlertSummary
 from app.core.config import Environment, ExecutionMode, Settings
 from app.market_contracts.enums import VenueId
 from app.market_contracts.provider_contracts import (
@@ -40,6 +41,7 @@ from app.runtime_safety.paper_actions import (
     automated_paper_actions_blocked,
     read_kill_switch_active,
 )
+from app.schemas.nested_continuation import NESTED_KIND
 from app.signal_fusion.lifecycle import CandidateLifecycleService
 from app.watcher.contracts import (
     EvaluationMode,
@@ -127,6 +129,8 @@ class WatcherPaperScanReport:
     paper_fill_id: UUID | None = None
     journal_trade_id: UUID | None = None
     journal_status: str | None = None
+    nested_alert: NestedAlertSummary | None = None
+    nested_strategy: bool = False
     market_read_completed: bool = False
 
     @property
@@ -706,6 +710,7 @@ class WatcherPaperRuntime:
                 candidate_ids=(),
                 kill_switch_active=self._kill_switch_is_active(session, target.organization_id),
                 user_id=target.user_id,
+                nested_strategy=target.fusion_policy_version == NESTED_KIND,
             )
 
     def _scan_target(
@@ -724,6 +729,7 @@ class WatcherPaperRuntime:
                 candidate_ids=(),
                 kill_switch_active=True,
                 user_id=target.user_id,
+                nested_strategy=target.fusion_policy_version == NESTED_KIND,
             )
             observe_scan(report.reason_code)
             logger.info(
@@ -751,6 +757,7 @@ class WatcherPaperRuntime:
                 candidate_ids=(),
                 kill_switch_active=False,
                 user_id=target.user_id,
+                nested_strategy=target.fusion_policy_version == NESTED_KIND,
             )
         read_count = getattr(self._evidence_factory, "read_count", lambda _symbol: 0)
         reads_before = read_count(target.symbol)
@@ -815,8 +822,13 @@ class WatcherPaperRuntime:
         report = self._continue_paper_loop(session, target, report, evidence)
         from app.strategy_brain.assembly import record_paper_link
 
-        record_paper_link(
+        nested_alert = record_paper_link(
             session, target=target, report=report, evidence=evidence, now=self._clock.now()
+        )
+        report = replace(
+            report,
+            nested_alert=nested_alert,
+            nested_strategy=target.fusion_policy_version == NESTED_KIND,
         )
         self._notify_scan(report)
         observe_scan(report.reason_code)
