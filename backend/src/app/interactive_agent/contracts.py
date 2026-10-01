@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.interactive_agent.actions import ActionDescriptor, ActionRequest
 from app.schemas.common import StrictModel
 
 SCHEMA_VERSION: Literal["InteractiveAgent/v1"] = "InteractiveAgent/v1"
@@ -73,6 +74,11 @@ class StructuredActionKind(StrEnum):
     PROPOSE_JOURNAL_ENTRY = "propose_journal_entry"
     PROPOSE_TRADE_DECISION = "propose_trade_decision"
     PROPOSE_LESSON = "propose_lesson"
+    PROPOSE_JOURNAL_APPEND = "propose_journal_append"
+    PROPOSE_STRATEGY_EVIDENCE = "propose_strategy_evidence"
+    PROPOSE_VALIDATION_REQUEST = "propose_validation_request"
+    PROPOSE_KNOWLEDGE = "propose_knowledge"
+    PROPOSE_WATCHER_CHANGE = "propose_watcher_change"
     ENABLE_REAL_TRADING = "enable_real_trading"
 
 
@@ -96,6 +102,7 @@ class AgentTurnRequest(StrictModel):
     strategy_id: UUID | None = None
     symbol: str | None = Field(default=None, max_length=30)
     timeframe: str | None = Field(default=None, max_length=16)
+    action: ActionRequest | None = None
 
 
 class ProposalDecisionRequest(StrictModel):
@@ -265,3 +272,4 @@ class AgentCapabilityCatalog(StrictModel):
     items: list[CapabilityDescriptor]
     artifact_kinds: list[ArtifactKind]
     provenance_sources: list[ProvenanceSource]
+    actions: list[ActionDescriptor] = Field(default_factory=list)
