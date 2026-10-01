@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -212,6 +213,18 @@ class BacktestJournalService:
         user_id: uuid.UUID,
         external_ref: str,
     ) -> JournalTrade:
+        replay_trade: dict[str, Any] = (
+            next(
+                (
+                    item
+                    for item in (run.result or {}).get("trades", [])
+                    if item.get("sequence") == trade.sequence
+                ),
+                {},
+            )
+            if (run.result or {}).get("replay")
+            else {}
+        )
         net_pnl = trade.net_pnl
         result = _result_from_pnl(net_pnl)
         capture_float = float(trade.capture_pct) if trade.capture_pct is not None else None
@@ -241,7 +254,10 @@ class BacktestJournalService:
             net_pnl=net_pnl,
             result=result,
             planned_stop_price=trade.stop_loss,
-            planned_targets=[],
+            planned_targets=[
+                {"price": price, "label": f"TP{index + 1}"}
+                for index, price in enumerate(replay_trade.get("planned_targets", []))
+            ],
             runner_enabled=runner_enabled,
             mfe_price=trade.mfe_price,
             mae_price=trade.mae_price,
