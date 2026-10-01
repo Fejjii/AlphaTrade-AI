@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
@@ -98,6 +99,11 @@ class BacktestTradeRecord(StrictModel):
     split_label: BacktestSplitLabel = BacktestSplitLabel.IN_SAMPLE
     split_index: int = 0
     sequence: int | None = None
+    planned_targets: list[Decimal] = Field(default_factory=list)
+    r_result: Decimal | None = None
+    holding_bars: int | None = None
+    holding_seconds: int | None = None
+    setup_id: UUID | None = None
 
 
 class EquityCurvePoint(StrictModel):
@@ -177,6 +183,7 @@ class BacktestResult(StrictModel):
     cancelled: bool = False
     processed_bars: int | None = None
     total_bars: int | None = None
+    replay: dict[str, Any] | None = None
 
 
 # Backward-compatible alias for older tests/docs
@@ -198,6 +205,7 @@ class BacktestRun(ORMModel):
     engine_version: str | None = None
     result_hash: str | None = None
     idempotency_key: str | None = None
+    replay_config: dict[str, Any] | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     cancel_requested_at: datetime | None = None

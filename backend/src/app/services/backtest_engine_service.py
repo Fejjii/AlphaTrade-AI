@@ -807,6 +807,7 @@ class BacktestEngineService:
         split_label: BacktestSplitLabel,
         split_index: int,
         sequence: int,
+        deduct_slippage_cost: bool = True,
     ) -> tuple[BacktestTradeRecord, Decimal]:
         slip = exit_price * slip_rate
         fill = exit_price - slip if trade.direction == TradeDirection.LONG else exit_price + slip
@@ -819,7 +820,9 @@ class BacktestEngineService:
         total_fees = trade.entry_fees + exit_fees
         total_slip = trade.entry_slippage + slip * trade.size
         funding = trade.funding_cost
-        net = gross - total_fees - total_slip - funding
+        # Legacy v2 subtracts the reported cost as well as slipping fills.
+        # Replay opts out: its gross PnL already includes both slipped fills.
+        net = gross - total_fees - (total_slip if deduct_slippage_cost else _ZERO) - funding
 
         mfe_price = trade.mfe_price if trade.mfe_price is not None else trade.entry_price
         mae_price = trade.mae_price if trade.mae_price is not None else trade.entry_price
