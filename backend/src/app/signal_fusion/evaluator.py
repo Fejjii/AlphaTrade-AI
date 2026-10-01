@@ -67,7 +67,10 @@ from app.market_contracts.identity import (
     instrument_matches_requested_symbol,
     interval_timedelta,
 )
-from app.market_contracts.observation import PublicMarketObservation, observation_from_derivative
+from app.market_contracts.observation import (
+    PublicMarketObservation,
+    observation_from_derivative,
+)
 from app.market_contracts.ohlcv import OhlcvBar, observation_id_for, require_closed_series
 from app.schemas.common import Timeframe, TradeDirection
 from app.services.canonical_serialization import canonical_sha256
@@ -92,6 +95,7 @@ from app.signal_fusion.first_slice_types import (
     FirstSliceEvidenceBundle,
     ManualResistanceEvidence,
 )
+from app.signal_fusion.order_flow_inputs import ORDER_FLOW_ROLES, require_bound_order_flow
 from app.signal_fusion.policy import DEFAULT_FUSION_POLICY_VERSION, FusionPolicy
 from app.signal_fusion.swings import most_recent_confirmed_swing_high
 from app.signal_fusion.types import HalfOpenInterval, RuleResult
@@ -236,6 +240,23 @@ def evaluate_setup(
             if isinstance(exc, StaleEvidenceError)
             else "missing_required_evidence",
         )
+    if any(role in ORDER_FLOW_ROLES for role in policy.required_roles):
+        try:
+            require_bound_order_flow(
+                evidence.order_flow,
+                command=command,
+                required_roles=policy.required_roles,
+                evaluated_at=evaluated,
+                trigger_end=trigger.interval_end if trigger else None,
+            )
+        except (MarketContractError, ValueError) as exc:
+            rules["complete_warmup"] = _rule(
+                "complete_warmup",
+                False,
+                "required_source_stale"
+                if isinstance(exc, StaleEvidenceError)
+                else "missing_required_evidence",
+            )
     quality_ok = all(rules[rule_id].passed for rule_id in QUALITY_RULE_IDS)
     all_passed = all(rules[rule_id].passed for rule_id in FIRST_SLICE_RULE_IDS)
     state, reason_codes = _resolve_state(

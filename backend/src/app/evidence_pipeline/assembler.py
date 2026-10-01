@@ -14,7 +14,9 @@ from app.evidence_pipeline.canonical import (
 from app.evidence_pipeline.current_price import quote_current_price
 from app.evidence_pipeline.market_intelligence import (
     DERIVATIVE_ROLES,
+    ORDER_FLOW_ROLES,
     read_market_intelligence,
+    read_order_flow,
     require_market_intelligence,
 )
 from app.evidence_pipeline.setup_lifetime import (
@@ -68,11 +70,15 @@ from app.market_contracts.freshness import (
     live_confirmation_window_open,
 )
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
-from app.market_contracts.observation import observation_from_derivative
+from app.market_contracts.observation import (
+    observation_from_derivative,
+    observation_from_order_flow,
+)
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
+from app.market_contracts.order_flow import require_order_flow
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
-from app.signal_fusion.enums import EvidenceAdapterKind
+from app.signal_fusion.enums import EvidenceAdapterKind, EvidenceRole
 from app.signal_fusion.first_slice_types import (
     FIRST_SLICE_EXPIRY_BARS,
     FirstSliceEvidenceBundle,
@@ -324,6 +330,30 @@ class FirstSliceEvidenceAssembler:
                     ),
                 }
             )
+        order_flow = None
+        flow_roles = tuple(role for role in bound_policy.required_roles if role in ORDER_FLOW_ROLES)
+        if flow_roles:
+            order_flow = read_order_flow(
+                self._source,
+                identity=trigger_identity,
+                instrument=instrument,
+                observed_at=clock,
+                window_end=trigger.interval_end,
+            )
+            require_order_flow(order_flow, identity=trigger_identity, evaluated_at=clock)
+            command = command.model_copy(
+                update={
+                    "mandatory_evidence_roles": tuple(
+                        dict.fromkeys((*command.mandatory_evidence_roles, *flow_roles))
+                    ),
+                    "public_observations": command.public_observations
+                    + tuple(
+                        observation_from_order_flow(order_flow, cvd=role is EvidenceRole.CVD_5M)
+                        for role in flow_roles
+                    ),
+                    "selected_roles": command.selected_roles + flow_roles,
+                }
+            )
         window = evidence_window_from_assessment_command(command)
         bundle = FirstSliceEvidenceBundle(
             bars_15m=tuple(series_15m.bars),
@@ -332,6 +362,7 @@ class FirstSliceEvidenceAssembler:
             subsequent_final_15m=subsequent,
             resistances=resistances,
             market_intelligence=intelligence,
+            order_flow=order_flow,
         )
         completeness = CompletenessReport(
             ohlcv_15m=DataCompleteness.COMPLETE,

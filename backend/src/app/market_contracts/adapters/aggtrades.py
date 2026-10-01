@@ -125,7 +125,8 @@ def _dedupe_row(existing: Mapping[str, Any], incoming: Mapping[str, Any], agg_id
         str(existing.get("p")) != str(incoming.get("p"))
         or str(existing.get("q")) != str(incoming.get("q"))
         or int(existing["T"]) != int(incoming["T"])
-        or bool(existing.get("m")) != bool(incoming.get("m"))
+        or existing.get("m") != incoming.get("m")
+        or type(existing.get("m")) is not type(incoming.get("m"))
     ):
         raise DuplicateDataError(f"Conflicting aggTrade content for id {agg_id}.")
 
@@ -185,6 +186,10 @@ def fetch_complete_agg_trade_rows(
             payload = get_json(AGGTRADE_PATH, query.params())
             if not isinstance(payload, list):
                 raise WrongMarketError("USD-M aggTrades payload is not a list.")
+            if len(payload) > AGGTRADE_PAGE_LIMIT:
+                raise IncompleteTradeWindowError(
+                    "AggTrade page exceeds its provider contract bound."
+                )
             if not payload:
                 break
             page_rows: list[dict[str, Any]] = []
@@ -216,7 +221,9 @@ def fetch_complete_agg_trade_rows(
 
 
 def _row_signature(row: Mapping[str, Any]) -> tuple[str, str, int, bool]:
-    return (str(row.get("p")), str(row.get("q")), int(row["T"]), bool(row.get("m")))
+    if not isinstance(row.get("m"), bool):
+        raise WrongMarketError("USD-M aggTrade requires a boolean buyer-is-maker flag.")
+    return (str(row.get("p")), str(row.get("q")), int(row["T"]), row["m"])
 
 
 def iter_contiguous_agg_trade_rows(
@@ -252,6 +259,10 @@ def iter_contiguous_agg_trade_rows(
             payload = get_json(AGGTRADE_PATH, query.params())
             if not isinstance(payload, list):
                 raise WrongMarketError("USD-M aggTrades payload is not a list.")
+            if len(payload) > AGGTRADE_PAGE_LIMIT:
+                raise IncompleteTradeWindowError(
+                    "AggTrade page exceeds its provider contract bound."
+                )
             if not payload:
                 break
             page_rows: list[dict[str, Any]] = []

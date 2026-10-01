@@ -35,6 +35,7 @@ from app.market_contracts.errors import (
     FormingCandleError,
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
+    UnsupportedTradeContractError,
     UpstreamBanError,
     WrongInstrumentError,
     WrongMarketError,
@@ -57,6 +58,7 @@ from app.market_contracts.ohlcv import (
     build_ohlcv_bar,
     require_closed_series,
 )
+from app.market_contracts.order_flow import require_order_flow_request
 from app.market_contracts.provider_contracts import contract_from_binance_exchange_info
 from app.market_contracts.trade_reduction import build_released_trade_snapshot
 from app.market_contracts.trades import (
@@ -295,7 +297,8 @@ class BinanceUsdmPerpetualSource:
         key_lock = self._trade_cache.lock_for(key)
         try:
             with key_lock:
-                cached = self._reduced_cache.get(key)
+                reduced_key = (key[0] + ":" + str(identity.timeframe), *key[1:])
+                cached = self._reduced_cache.get(reduced_key)
                 if isinstance(cached, TradeStreamSnapshot):
                     record_cache_hit()
                     return cached.model_copy(update={"trades": []})
@@ -313,10 +316,40 @@ class BinanceUsdmPerpetualSource:
                     window_end=end,
                     observed_at=receive_at,
                 )
-                self._reduced_cache.put(key, snapshot)
+                self._reduced_cache.put(reduced_key, snapshot)
                 return snapshot
         finally:
             self._trade_cache.release_idle(key)
+
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        require_order_flow_request(
+            identity=identity,
+            start=start,
+            end=end,
+            observed_at=receive_at,
+        )
+        self._assert_request(identity, instrument, identity.timeframe)
+        try:
+            self.verify_exchange_info(instrument)
+        except (WrongMarketError, WrongInstrumentError) as exc:
+            raise UnsupportedTradeContractError("Trade contract not verified.") from exc
+        return self.reduce_ordered_trades(
+            identity=identity,
+            instrument=instrument,
+            start=start,
+            end=end,
+            source_connection_id=source_connection_id,
+            receive_at=receive_at,
+        )
 
     def status(self) -> ProviderStatus:
         try:
@@ -485,7 +518,7 @@ class BinanceUsdmPerpetualSource:
     ) -> TradeEvent:
         if not isinstance(row, dict):
             raise WrongMarketError("USD-M aggTrade row is malformed.")
-        if "m" not in row:
+        if not isinstance(row.get("m"), bool):
             raise WrongMarketError("USD-M aggTrade is missing buyer-is-maker flag.")
         venue_trade_id = str(row["a"])
         event_ms = int(row["T"])
@@ -495,7 +528,7 @@ class BinanceUsdmPerpetualSource:
             sequence=int(row["a"]),
             price=Decimal(str(row["p"])),
             quantity=Decimal(str(row["q"])),
-            buyer_is_maker=bool(row["m"]),
+            buyer_is_maker=row["m"],
             event_timestamp=datetime.fromtimestamp(event_ms / 1000, tz=UTC),
             receive_timestamp=receive_at.astimezone(UTC),
             source_connection_id=source_connection_id,
