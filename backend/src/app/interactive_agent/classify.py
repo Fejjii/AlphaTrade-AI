@@ -22,6 +22,7 @@ _LIVE_TRADING = re.compile(
     r"("
     r"enable real trading|enable live trading|enable live orders|"
     r"enable_real_trading|real_trading_enabled|"
+    r"\blive (?:trading|orders?|trades?)\b|"
     r"execution_mode\s*=\s*trade|exchange_mode\s*=\s*trade_live|"
     r"\btrade live\b|\btrade_live\b|\bgo live\b|\bswitch to live\b|"
     r"\blive account\b|\breal money\b|\bwithdraw(?:al)?\b|"

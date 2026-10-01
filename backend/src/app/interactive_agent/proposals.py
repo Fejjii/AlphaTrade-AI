@@ -1,8 +1,7 @@
-"""Structured action proposals stored on the conversation transcript.
+"""Transcript proposals with explicit, hash-protected journal confirmation.
 
-Journal rows are the only domain write, and only after an explicit confirm
-whose statement and content hash match. Strategy versions, rules, lessons,
-and orders are not written here.
+Journal create/append alone may apply here. Other actions remain handoffs to
+their existing domain authorities. Strategy versions and orders are never written.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from app.agents.mutation_policy import (
     rejection_authorizes_mutation,
 )
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
-from app.db.models import ConversationMessage, TradeJournal
+from app.db.models import Conversation, ConversationMessage, TradeJournal
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
     ArtifactKind,
@@ -211,7 +210,14 @@ def confirm_proposal(
     expected_content_hash: str,
     statement: str,
 ) -> StructuredActionProposal:
-    """Confirm one proposal. Journal capture is the only applied domain write."""
+    """Confirm one proposal. Journal writes alone may apply at this boundary."""
+    from app.interactive_agent.action_registry import require_action_permission
+    from app.interactive_agent.actions import JournalNoteInput
+    from app.interactive_agent.orchestration import (
+        apply_journal_note,
+        check_action_confirmation,
+    )
+
     if not confirmation_authorizes_mutation(statement):
         raise ValidationAppError(
             "Explicit confirmation is required. Questions, quotes, and retrieved "
@@ -236,6 +242,15 @@ def confirm_proposal(
     )
     _require_hash(proposal, expected_content_hash)
     _guard_live_trading(proposal)
+    require_action_permission(session, organization_id=organization_id, user_id=user_id)
+    conversation = session.get(Conversation, conversation_id)
+    if (
+        conversation is None
+        or conversation.organization_id != organization_id
+        or conversation.user_id != user_id
+    ):
+        raise NotFoundError("Conversation not found.")
+    action = check_action_confirmation(session, proposal, conversation)
     if proposal.status is ProposalLifecycle.REJECTED:
         raise ConflictError("This proposal cannot be confirmed.")
     if proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
@@ -268,6 +283,18 @@ def confirm_proposal(
                 "resulting_record_id": record_id,
             }
         )
+    elif action is not None and isinstance(action[1], JournalNoteInput):
+        note_record_id = apply_journal_note(session, proposal, conversation, action[0], action[1])
+        updated = proposal.model_copy(
+            update={
+                "status": ProposalLifecycle.APPLIED
+                if note_record_id
+                else ProposalLifecycle.CONFIRMED_UNAPPLIED,
+                "applied": note_record_id is not None,
+                "authority_mutated": note_record_id is not None,
+                "resulting_record_id": note_record_id,
+            }
+        )
     else:
         updated = proposal.model_copy(
             update={
@@ -292,6 +319,8 @@ def reject_proposal(
     statement: str,
 ) -> StructuredActionProposal:
     """Reject a proposal without writing journal, strategy, or order rows."""
+    from app.interactive_agent.action_registry import require_action_permission
+
     if not rejection_authorizes_mutation(statement):
         raise ValidationAppError(
             "Explicit rejection is required. Questions, quotes, and retrieved "
@@ -316,6 +345,7 @@ def reject_proposal(
     )
     _require_hash(proposal, expected_content_hash)
     _guard_live_trading(proposal)
+    require_action_permission(session, organization_id=organization_id, user_id=user_id)
     if proposal.status is ProposalLifecycle.REJECTED:
         return proposal
     if proposal.status is not ProposalLifecycle.PROPOSED:
