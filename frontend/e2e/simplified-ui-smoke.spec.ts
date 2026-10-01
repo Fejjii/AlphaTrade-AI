@@ -33,6 +33,13 @@ test.describe("Simplified trader UI", () => {
     request,
   }) => {
     test.setTimeout(180_000);
+    // Keep the supported Voice V1 state deterministic across browser builds.
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "SpeechRecognition", {
+        configurable: true,
+        value: class {},
+      });
+    });
     await installSharedE2ESession(page, request);
 
     for (const viewport of [
@@ -85,9 +92,10 @@ test.describe("Simplified trader UI", () => {
     await page.goto("/agent");
     await expect(page.getByTestId("agent-workspace")).toBeVisible();
     await expect(page.getByTestId("agent-attach-image")).toBeDisabled();
-    await expect(page.getByTestId("agent-voice")).toBeDisabled();
+    await expect(page.getByTestId("agent-voice")).toBeVisible();
+    await expect(page.getByTestId("agent-voice")).toBeEnabled();
     await expect(page.getByText("Screenshot analysis is not available.")).toBeVisible();
-    await expect(page.getByText("Voice is not available.")).toBeVisible();
+    await expect(page.getByText("Voice is not available.")).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toHaveCount(0);
 
     for (const route of RETAINED) {
