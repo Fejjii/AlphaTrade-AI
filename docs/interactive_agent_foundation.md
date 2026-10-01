@@ -1,5 +1,10 @@
 # Interactive agent foundation
 
+The governed action extension is described in
+[Brain orchestrator V2](brain_orchestrator_v2.md). Its typed tools reuse this
+foundation's transcript proposals and confirmation boundary. The sections below
+describe the original V1 baseline.
+
 Paper-only orchestration for the Agent workspace. This layer does not replace
 the existing conversational model. `/chat` remains the LangGraph entry point.
 `POST /agent/turns` asks the existing model router (`general_agent_synthesis`)

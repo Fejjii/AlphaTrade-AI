@@ -13,6 +13,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import Conversation
+from app.interactive_agent.action_registry import (
+    TOOLS,
+    Tool,
+    require_action_permission,
+    resolve_action,
+    route_action,
+)
 from app.interactive_agent.classify import TurnClassification, classify_turn
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
@@ -42,6 +49,7 @@ from app.interactive_agent.conversation import (
     ConversationalResponder,
     compose_visible_reply,
 )
+from app.interactive_agent.orchestration import propose_action
 from app.interactive_agent.proposals import (
     build_proposal,
     confirm_proposal,
@@ -60,7 +68,7 @@ from app.interactive_agent.safety import (
     paper_safety_contract,
     refuse_real_trading_enablement,
 )
-from app.schemas.common import ConversationMessageRole, DocumentSourceType
+from app.schemas.common import ConversationMessageRole, DocumentSourceType, StrictModel
 from app.services.conversation_service import ConversationService
 from app.services.strategy_proposal_service import StrategyProposalService
 
@@ -101,7 +109,9 @@ class InteractiveAgentService:
         self._conversations = ConversationService(session)
 
     def catalog(self) -> AgentCapabilityCatalog:
-        return capability_catalog(self._settings)
+        catalog = capability_catalog(self._settings)
+        catalog.actions = [tool.descriptor() for tool in TOOLS.values()]
+        return catalog
 
     def apply_real_trading_enablement(self) -> None:
         """Refuse. No trading flag is assigned."""
@@ -117,6 +127,28 @@ class InteractiveAgentService:
         """Persist the turn, read existing stores, and propose rather than mutate."""
         safety = paper_safety_contract(self._settings)
         classification = classify_turn(request.message)
+        action: tuple[Tool, StrictModel] | None = None
+        if classification.operation is not TurnOperation.REFUSE:
+            routed = route_action(request)
+            if routed is not None:
+                action = resolve_action(routed)
+                tool, _inputs = action
+                require_action_permission(
+                    self._session,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    read=tool.behavior == "read",
+                )
+                classification = TurnClassification(
+                    capability=tool.capability,
+                    operation=TurnOperation.READ
+                    if tool.behavior == "read"
+                    else TurnOperation.PROPOSE,
+                    artifact_kinds=[tool.artifact],
+                    action_kind=tool.kind,
+                    screenshot_requested=classification.screenshot_requested,
+                    voice_requested=classification.voice_requested,
+                )
         conversation = self._conversations.get_or_create(
             organization_id=organization_id,
             user_id=user_id,
@@ -145,6 +177,8 @@ class InteractiveAgentService:
             },
         )
         limitations = list(_BASE_LIMITATIONS if self._responder is None else _MODEL_LIMITATIONS)
+        if action is not None:
+            limitations.extend(action[0].limitations)
         knowledge: list[KnowledgeHit] = []
         strategies: list[StrategyHit] = []
         bundle = ReadBundle()
@@ -189,6 +223,7 @@ class InteractiveAgentService:
             strategy_id=request.strategy_id,
             bundle=bundle,
             limitations=limitations,
+            action=action,
         )
         connections = _connections(knowledge, strategies, bundle.connections)
         factual = _reply(
@@ -445,7 +480,18 @@ class InteractiveAgentService:
         strategy_id: uuid.UUID | None,
         bundle: ReadBundle,
         limitations: list[str],
+        action: tuple[Tool, StrictModel] | None = None,
     ) -> list[StructuredActionProposal]:
+        if action is not None and action[0].behavior == "propose":
+            return [
+                propose_action(
+                    self._session,
+                    tool=action[0],
+                    inputs=action[1],
+                    conversation=conversation,
+                    source_message_id=source_message_id,
+                )
+            ]
         if classification.action_kind is StructuredActionKind.NONE:
             return []
         if classification.action_kind is StructuredActionKind.ENABLE_REAL_TRADING:
@@ -662,6 +708,19 @@ def _reply(
         text = "Screenshot analysis is not implemented. No image was interpreted."
     elif classification.capability is AgentCapability.VOICE_IO:
         text = "Voice input and output are not implemented. No audio was transcribed."
+    elif proposal is not None and proposal.payload.get("action"):
+        text = f"Drafted proposal {proposal.proposal_id}. {proposal.summary} "
+        text += "Use the separate confirmation request with this proposal's content hash. "
+        if proposal.payload["action"]["name"] == "paper_trade.propose":
+            text += (
+                f"Entry: {proposal.payload.get('entry')}; stop: {proposal.payload.get('stop')}; "
+                f"targets: {proposal.payload.get('targets')}; "
+                f"risk: {proposal.payload['risk_state']}. "
+                "Current confirmation, risk and canonical execution gates remain required. "
+                "No order was submitted."
+            )
+        else:
+            text += "Domain application remains behind the declared authority."
     elif proposal is not None and proposal.kind is StructuredActionKind.PROPOSE_JOURNAL_ENTRY:
         text = (
             f"Drafted journal proposal {proposal.proposal_id}. It is not saved. "
