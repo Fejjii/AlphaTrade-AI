@@ -193,7 +193,11 @@ class AutomatedPaperLoop:
         evidence = _evidence_refusal(assembled, now=self._clock.now())
         if evidence is not None:
             return _proof(candidate, "skipped", evidence)
-        if candidate.direction is not TradeDirection.SHORT:
+        from app.schemas.nested_continuation import NestedContinuationSpec
+
+        if candidate.direction is not TradeDirection.SHORT and not isinstance(
+            policy.authored_spec, NestedContinuationSpec
+        ):
             return _proof(candidate, "skipped", "direction_not_paper_executable")
         return None
 
@@ -270,6 +274,7 @@ class AutomatedPaperLoop:
             equity=_equity(session, target),
             now=self._clock.now(),
             eligibility_valid_until=eligibility.eligibility.valid_until,
+            eligibility_id=eligibility.eligibility.eligibility_id,
         )
         if isinstance(terms, str):
             return AutomatedPaperLoopProof(
@@ -702,28 +707,54 @@ def _plan_terms(
     equity: Decimal,
     now: datetime,
     eligibility_valid_until: datetime,
+    eligibility_id: UUID,
 ) -> TradePlanRevisionCreate | str:
     quote = assembled.current_price
     if quote is None:
         return "evidence_unavailable"
     entry = quote.price
-    stop = first_slice_short_invalidation_price(
-        trigger=assembled.trigger_bar,
-        bars_15m=assembled.bundle.bars_15m,
-        tick_size=assembled.bundle.tick_size,
-        params=policy.evaluation_params,
-    )
+    from app.schemas.nested_continuation import NestedContinuationSpec
+    from app.strategy_brain.detector import detect_nested
+    from app.strategy_brain.records import scoped_setup_id
+
+    nested = isinstance(policy.authored_spec, NestedContinuationSpec)
+    nested_target = None
+    if nested:
+        events = detect_nested(
+            assembled.bundle.bars_15m, policy.authored_spec, evaluated_at=assembled.evaluated_at
+        )
+        if not events or events[-1].state.value != "CONFIRMED":
+            return "setup_not_confirmed"
+        stop = events[-1].stop
+        nested_target = events[-1].targets[0] if events[-1].targets else None
+    else:
+        stop = first_slice_short_invalidation_price(
+            trigger=assembled.trigger_bar,
+            bars_15m=assembled.bundle.bars_15m,
+            tick_size=assembled.bundle.tick_size,
+            params=policy.evaluation_params,
+        )
     if stop is None:
         return "invalidation_unavailable"
-    stop = _ceil_to_tick(stop, assembled.bundle.tick_size)
-    if stop <= entry:
+    is_long = candidate.direction is TradeDirection.LONG
+    stop = (
+        _floor_to_lot(stop, assembled.bundle.tick_size)
+        if is_long
+        else _ceil_to_tick(stop, assembled.bundle.tick_size)
+    )
+    if (is_long and stop >= entry) or (not is_long and stop <= entry):
         return "invalidated_by_price"
-    distance = stop - entry
+    distance = abs(stop - entry)
     quantity = _quantity(equity=equity, entry=entry, distance=distance)
     if quantity is None:
         return "size_below_minimum"
-    target = entry - distance
-    if target <= 0:
+    target = nested_target if nested else entry - distance
+    if (
+        target is None
+        or target <= 0
+        or (is_long and target <= entry)
+        or (not is_long and target >= entry)
+    ):
         return "invalidation_unavailable"
     observed = quote.source_time
     if observed > now:
@@ -762,7 +793,7 @@ def _plan_terms(
             "execution_instrument": symbol,
             "timeframe": candidate.timeframe.value,
             "instrument_mapping_version": f"paper-internal-{symbol.lower()}-v1",
-            "side": EntrySide.SELL.value,
+            "side": EntrySide.BUY.value if is_long else EntrySide.SELL.value,
             "quantity": {"value": str(quantity), "unit": QuantityUnit.BASE.value},
             "quantity_unit": QuantityUnit.BASE.value,
             "order_type": EntryOrderType.MARKET.value,
@@ -785,7 +816,7 @@ def _plan_terms(
             "instrument_rules": {
                 "contract_multiplier": "1",
                 "contract_type": ContractType.LINEAR.value,
-                "base_currency": "BTC",
+                "base_currency": symbol.removesuffix("USDT"),
                 "quote_currency": "USDT",
                 "settlement_currency": "USDT",
                 "tick_size": str(assembled.bundle.tick_size),
@@ -816,7 +847,12 @@ def _plan_terms(
                         "order": 1,
                         "price": {"value": str(target), "unit": "USDT"},
                         "quantity_fraction": "1",
-                        "derivation": {"formula_id": "paper-internal-1r", "formula_version": "1"},
+                        "derivation": {
+                            "formula_id": "nested-measured-impulse"
+                            if nested
+                            else "paper-internal-1r",
+                            "formula_version": "1",
+                        },
                     }
                 ],
                 "runner": {
@@ -850,6 +886,17 @@ def _plan_terms(
             "presentation_metadata": {
                 "channel": AuthorizationChannel.API.value,
                 "display_title": "Internal paper confirmed setup",
+                "strategy_id": str(policy.strategy_id),
+                "strategy_version_id": str(candidate.strategy_version_id),
+                "setup_id": str(
+                    scoped_setup_id(
+                        policy.organization_id, policy.strategy_version_id, events[-1].setup_id
+                    )
+                )
+                if nested
+                else str(candidate.setup_definition_id),
+                "evidence_reference": candidate.evidence_window_hash,
+                "decision_reference": str(eligibility_id),
             },
         }
     )

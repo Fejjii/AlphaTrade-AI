@@ -185,7 +185,9 @@ def classify_turn(message: str) -> TurnClassification:
         capability = AgentCapability.STRATEGY_AUTHORING
         operation = TurnOperation.PROPOSE
         action = StructuredActionKind.PROPOSE_STRATEGY
-    elif _RULE_CAPTURE.search(message):
+    elif _RULE_CAPTURE.search(message) or re.search(
+        r"\b(?:change|update|refine|rewrite)\b.{0,60}\brules?\b", message, re.IGNORECASE
+    ):
         capability = AgentCapability.PATTERN_AND_RULE_CAPTURE
         operation = TurnOperation.PROPOSE
         action = StructuredActionKind.PROPOSE_RULE
@@ -201,6 +203,14 @@ def classify_turn(message: str) -> TurnClassification:
         capability = AgentCapability.TRADE_DISCUSSION
         operation = TurnOperation.PROPOSE
         action = StructuredActionKind.PROPOSE_TRADE_DECISION
+    elif re.search(
+        r"\b(?:nested|setups?|watching|N[1-3]|N4\s*(?:plus|\+)|blocked|"
+        r"previous setup|missing data|data is missing|strategy version generated|"
+        r"(?:paper trade|journal entry).{0,30}connected)\b",
+        message,
+        re.IGNORECASE,
+    ):
+        capability = AgentCapability.STRATEGY_BRAIN
     elif _STRATEGY_READ.search(message) and _STRATEGY_LIST.search(message):
         capability = AgentCapability.STRATEGY_RETRIEVAL
     elif _STATISTICS.search(message):

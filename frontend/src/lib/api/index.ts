@@ -1,3 +1,4 @@
+import type { BrainOverview, BrainSetup } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
   AgentMessageResponse,
@@ -206,6 +207,14 @@ export const CREATE_TRADINGVIEW_PAPER_CANDIDATE = "CREATE_TRADINGVIEW_PAPER_CAND
 export const APPROVE_PAPER_SIGNAL_PROPOSAL = "APPROVE_PAPER_SIGNAL_PROPOSAL";
 
 export const api = {
+  strategyBrain: {
+    overview: () => apiFetch<BrainOverview>("/strategy-brain/overview", { auth: true }),
+    setup: (id: string) => apiFetch<BrainSetup>(`/strategy-brain/setups/${id}`, { auth: true }),
+    createNested: (body: { symbol: string; direction: "long" | "short"; trigger_timeframe: string }) =>
+      apiFetch<{ strategy_id: string; version_id: string }>("/strategy-brain/templates/nested", {
+        method: "POST", auth: true, body: JSON.stringify(body),
+      }),
+  },
   auth: {
     register: (body: { email: string; password: string; organization_name: string }) =>
       apiFetch<AuthResponse>("/auth/register", {

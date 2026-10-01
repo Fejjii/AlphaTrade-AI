@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from app.schemas.common import (
     BacktestStatus,
@@ -17,12 +17,14 @@ from app.schemas.common import (
     StrictModel,
     Timeframe,
 )
+from app.schemas.nested_continuation import StrategyBrainDefinition
 from app.schemas.paper_eligibility import LessonSourceMetadata
 
 
 class StrategyCard(StrictModel):
     """Structured strategy card per v5 brief."""
 
+    brain: StrategyBrainDefinition | None = None
     strategy_name: str = Field(min_length=1, max_length=120)
     market_type: MarketType = MarketType.CRYPTO_PERP
     asset_universe: list[str] = Field(default_factory=list)
@@ -39,6 +41,13 @@ class StrategyCard(StrictModel):
     backtest_rules: list[str] = Field(default_factory=list)
     success_criteria: list[str] = Field(default_factory=list)
     validation_status: StrategyValidationStatus = StrategyValidationStatus.DRAFT
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_serialization(self, handler: SerializerFunctionWrapHandler) -> dict:
+        payload = handler(self)
+        if self.brain is None:
+            payload.pop("brain", None)
+        return payload
 
     @model_validator(mode="after")
     def _require_core_fields(self) -> StrategyCard:
@@ -90,6 +99,7 @@ class UserStrategyCreate(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     setup_type: StrategyId
     card: StrategyCard
+    pattern_spec: dict[str, object] | None = None
     notes: str | None = Field(default=None, max_length=4000)
 
 
@@ -99,6 +109,7 @@ class StrategyLibraryCreate(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     setup_type: StrategyId
     card: StrategyCard
+    pattern_spec: dict[str, object] | None = None
     notes: str | None = Field(default=None, max_length=4000)
 
 

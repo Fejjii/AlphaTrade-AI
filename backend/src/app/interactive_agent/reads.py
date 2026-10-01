@@ -38,6 +38,7 @@ class MarketQuoteReader(Protocol):
 
 
 class ReadBundle(StrictModel):
+    brain_summary: str | None = None
     market_quote: MarketQuoteView | None = None
     market_availability: str | None = None
     market_reason: str | None = None
@@ -63,6 +64,16 @@ def gather_reads(
 ) -> ReadBundle:
     """Read existing authorities for this turn. No snapshots or journal writes."""
     bundle = ReadBundle()
+    if capability is AgentCapability.STRATEGY_BRAIN:
+        from app.strategy_brain.agent import read_brain
+
+        summary, refs, limitations = read_brain(
+            session, organization_id=organization_id, message=message, symbol=symbol
+        )
+        bundle.brain_summary = summary
+        bundle.connections.extend(refs)
+        bundle.limitations.extend(limitations)
+        return bundle
     if capability is AgentCapability.MARKET_AND_PORTFOLIO:
         _read_quote(bundle, message, market_reader, symbol_hint=symbol)
         _read_portfolio(session, bundle, organization_id=organization_id, user_id=user_id)
