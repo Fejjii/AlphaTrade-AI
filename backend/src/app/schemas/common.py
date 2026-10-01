@@ -208,6 +208,7 @@ class StrategyId(StrEnum):
     GREEN_DAY_GUARD = "green_day_guard"
     MENTAL_CAPITAL_GUARD = "mental_capital_guard"
     NESTED_CONTINUATION = "nested_continuation"
+    SFP = "sfp"
     MANUAL_REVIEW = "manual_review"
 
 

@@ -507,7 +507,9 @@ class WatcherFusionEvaluationService:
                     evidence_window=window,
                     executable_setup=bound_command.executable_setup,
                     evidence_identity=bound_command.evidence_identity,
-                    idempotency_key=f"watcher:nested:{episode.id}"
+                    idempotency_key=(
+                        f"watcher:{episode.payload.get('family', 'nested')}:{episode.id}"
+                    )
                     if episode is not None
                     else f"watcher:{assessment.evidence_window_hash}",
                     correlation_id=assessment.correlation_id,

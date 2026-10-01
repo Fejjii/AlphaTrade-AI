@@ -11,6 +11,7 @@ from app.db.canonical_eligibility import ActionEligibilityEvaluationRow
 from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow
 from app.schemas.nested_continuation import BrainSetupState
 from app.strategy_brain.detector import NAMESPACE, NestedDetection, detection_hash
+from app.strategy_brain.sfp.contracts import SfpDetection
 
 TERMINAL = {"INVALIDATED", "EXPIRED", "COMPLETED"}
 ALLOWED = {
@@ -256,7 +257,11 @@ def record_journal_close(session: Session, trade: object) -> None:
 
 
 def lock_candidate_episode(
-    session: Session, *, organization_id: UUID, version_id: UUID, detection: NestedDetection
+    session: Session,
+    *,
+    organization_id: UUID,
+    version_id: UUID,
+    detection: NestedDetection | SfpDetection,
 ) -> BrainSetupRow:
     """Structural uniqueness supplements canonical evidence-window uniqueness."""
     identity = scoped_setup_id(organization_id, version_id, detection.setup_id)
@@ -270,5 +275,5 @@ def lock_candidate_episode(
         .with_for_update()
     )
     if row is None:
-        raise ValueError("Missing persisted Nested structural episode")
+        raise ValueError("Missing persisted Brain structural episode")
     return row

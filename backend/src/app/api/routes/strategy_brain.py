@@ -10,12 +10,13 @@ from app.core.dependencies import SessionDep
 from app.core.errors import ValidationAppError
 from app.db.strategy_brain import BrainSetupEventRow
 from app.schemas.common import StrategyLifecycleState, StrictModel
-from app.schemas.nested_continuation import NestedContinuationSpec
+from app.schemas.nested_continuation import NESTED_KIND, NestedContinuationSpec
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import ReaderDep, TraderDep
 from app.services.strategy_versioning import StrategyVersioningService
 from app.strategy_brain.records import _insert_once
 from app.strategy_brain.service import create_template, details, overview
+from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
 
 router = APIRouter(
     prefix="/strategy-brain",
@@ -40,6 +41,15 @@ async def read_setup(setup_id: UUID, tenant: ReaderDep, session: SessionDep) -> 
 async def propose_nested(
     body: NestedContinuationSpec, tenant: TraderDep, session: SessionDep
 ) -> dict:
+    result = create_template(
+        session, organization_id=tenant.organization_id, user_id=tenant.user_id, spec=body
+    )
+    session.commit()
+    return result
+
+
+@router.post("/templates/sfp", status_code=201)
+async def propose_sfp(body: SfpSpec, tenant: TraderDep, session: SessionDep) -> dict:
     result = create_template(
         session, organization_id=tenant.organization_id, user_id=tenant.user_id, spec=body
     )
@@ -104,9 +114,9 @@ async def research_lifecycle(
     if (
         version is None
         or not version.pattern_spec
-        or version.pattern_spec.get("kind") != "operational_nested_continuation/v1"
+        or version.pattern_spec.get("kind") not in {NESTED_KIND, SFP_KIND}
     ):
-        raise ValidationAppError("Not a Nested Continuation strategy version.")
+        raise ValidationAppError("Not a registered Strategy Brain strategy version.")
     latest = service.latest_lifecycle_event_for_version(version.id)
     state = latest.new_state.value if latest else "draft"
     allowed = {
