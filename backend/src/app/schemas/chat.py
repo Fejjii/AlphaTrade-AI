@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
+from app.schemas.agent_paper import AgentPaperResult
 from app.schemas.analysis import TradingAnalysisDetail
 from app.schemas.common import ORMModel, RiskSeverity, StrictModel
 from app.schemas.conversation import StrategyProposalRecord
@@ -45,6 +46,7 @@ class AgentMessageResponse(StrictModel):
     analysis: TradingAnalysisDetail | None = None
     narrative: TradingNarrativeDetail | None = None
     narrative_meta: NarrativeMetadata | None = None
+    paper_execution: AgentPaperResult | None = None
     pending_proposal: StrategyProposalRecord | None = None
     history_injected: int = 0
 

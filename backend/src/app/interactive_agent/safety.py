@@ -94,8 +94,12 @@ def capability_catalog(settings: Settings) -> AgentCapabilityCatalog:
         CapabilityDescriptor(
             capability=AgentCapability.PRE_TRADE_REASONING,
             status=CapabilityStatus.IMPLEMENTED,
-            authority="strategy card read plus proposal",
-            notes="Reasoning is a proposal. It does not create a trade plan or paper order.",
+            authority="canonical pretrade, risk, sizing, plan and paper execution authorities",
+            notes=(
+                "paper_trade.prepare_execution prepares an exact canonical paper plan. "
+                "Separate explicit hash-protected confirmation rechecks risk and executes "
+                "through the existing paper gateway. Live trading remains disabled."
+            ),
         ),
         CapabilityDescriptor(
             capability=AgentCapability.JOURNAL_CAPTURE,

@@ -69,6 +69,7 @@ from app.interactive_agent.safety import (
     refuse_real_trading_enablement,
 )
 from app.schemas.common import ConversationMessageRole, DocumentSourceType, StrictModel
+from app.services.agent_paper_execution import AgentPaperExecutionService
 from app.services.conversation_service import ConversationService
 from app.services.strategy_proposal_service import StrategyProposalService
 
@@ -100,12 +101,14 @@ class InteractiveAgentService:
         market_reader: MarketQuoteReader | None = None,
         vector_retriever: VectorKnowledgeRetriever | None = None,
         responder: ConversationalResponder | None = None,
+        paper_execution: AgentPaperExecutionService | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
         self._market_reader = market_reader
         self._vector_retriever = vector_retriever
         self._responder = responder
+        self._paper_execution = paper_execution
         self._conversations = ConversationService(session)
         self.confirmation_changed = False
 
@@ -125,7 +128,7 @@ class InteractiveAgentService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> AgentTurnResult:
-        """Persist the turn, read existing stores, and propose rather than mutate."""
+        """Persist a turn and prepare proposals through bounded canonical authorities."""
         safety = paper_safety_contract(self._settings)
         classification = classify_turn(request.message)
         action: tuple[Tool, StrictModel] | None = None
@@ -183,8 +186,10 @@ class InteractiveAgentService:
         knowledge: list[KnowledgeHit] = []
         strategies: list[StrategyHit] = []
         bundle = ReadBundle()
-        if classification.operation is not TurnOperation.REFUSE and (
-            classification.capability not in _SKIP_RETRIEVAL
+        if (
+            classification.operation is not TurnOperation.REFUSE
+            and (classification.capability not in _SKIP_RETRIEVAL)
+            and (action is None or action[0].name != "paper_trade.prepare_execution")
         ):
             knowledge, knowledge_notes = retrieve_knowledge(
                 self._session,
@@ -236,7 +241,9 @@ class InteractiveAgentService:
             prior_user_messages=prior,
         )
         reply = factual
-        if self._responder is not None:
+        if self._responder is not None and not (
+            action is not None and action[0].name == "paper_trade.prepare_execution"
+        ):
             model_text = self._responder.compose(
                 organization_id=organization_id,
                 user_id=user_id,
@@ -271,6 +278,7 @@ class InteractiveAgentService:
             artifact_kinds=classification.artifact_kinds,
             reply=reply,
             proposals=proposals,
+            authority_mutated=any(proposal.authority_mutated for proposal in proposals),
             knowledge=knowledge,
             strategies=strategies,
             connections=connections,
@@ -317,6 +325,7 @@ class InteractiveAgentService:
             expected_content_hash=body.expected_content_hash,
             statement=body.statement,
             settings=self._settings,
+            paper_execution=self._paper_execution,
         )
         if before.status != updated.status:
             self.confirmation_changed = True
@@ -495,6 +504,7 @@ class InteractiveAgentService:
                     inputs=action[1],
                     conversation=conversation,
                     source_message_id=source_message_id,
+                    paper_execution=self._paper_execution,
                 )
             ]
         if classification.action_kind is StructuredActionKind.NONE:
@@ -744,10 +754,8 @@ def _reply(
         coaching = bundle.coaching_note or "No coaching summary was attached."
         text = f"Drafted lesson proposal {proposal.proposal_id}. It was not accepted. {coaching}"
     elif proposal is not None and proposal.kind is StructuredActionKind.PROPOSE_TRADE_DECISION:
-        text = (
-            f"Drafted trade-decision proposal {proposal.proposal_id}. "
-            "execution_attempted is false. No paper order was created."
-        )
+        text = f"Drafted trade-decision proposal {proposal.proposal_id}. {proposal.summary}"
+        text += " execution_attempted is false. No paper order was created."
     elif proposal is not None:
         text = (
             f"Drafted {proposal.artifact_kind.value} proposal {proposal.proposal_id}. "

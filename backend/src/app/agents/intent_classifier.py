@@ -258,6 +258,24 @@ def classify_intent_decision(
     channel: AgentChannel = AgentChannel.WEB,
 ) -> IntentDecision:
     """Return the immutable IntentDecision for one request."""
+    from app.agents.paper_intent import CONFIRM_PREFIX, PREPARE_PREFIX
+
+    token = message.strip().lower()
+    if token.startswith((PREPARE_PREFIX, CONFIRM_PREFIX)):
+        confirming = token.startswith(CONFIRM_PREFIX)
+        return _decision(
+            intent=Intent.CONFIRM_PAPER_EXECUTION if confirming else Intent.PREPARE_PAPER_TRADE,
+            operation_class=OperationClass.EXECUTION if confirming else OperationClass.PLAN,
+            organization_id=organization_id,
+            user_id=user_id,
+            channel=channel,
+            message=message,
+            requested_action=RequestedAction.EXECUTE_PAPER_PLAN
+            if confirming
+            else RequestedAction.CREATE_PLAN,
+            explicit_confirmation=confirming,
+        )
+
     explicit = has_explicit_confirmation(message)
     question = is_question_message(message)
     lowered = message.lower()
