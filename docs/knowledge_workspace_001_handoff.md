@@ -1,6 +1,9 @@
 # Knowledge workspace 001 handoff
 
 Status: REVIEW_REQUIRED
+
+Draft PR: [#163](https://github.com/Fejjii/AlphaTrade-AI/pull/163)
+Implementation commit: `44f7e8e6473188ced565b172bc4d7757e1f8ddbf`
 Branch: `codex/knowledge_workspace_001`
 Exact base: `94954e7d243be0c03ce667403964adb6e4e2b850` (`codex/trader-interface-polish`, PR #157)
 
