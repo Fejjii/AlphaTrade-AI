@@ -1,47 +1,90 @@
-# AlphaTrade paper release consolidation wave 002 — finalized candidate
+# AlphaTrade SFP replay adapter 001
 
 Repository: `Fejjii/AlphaTrade-AI`.
-Existing branch: `codex/release_consolidation_wave_002`.
-Existing draft: https://github.com/Fejjii/AlphaTrade-AI/pull/176.
-Original exact PR160 base: `78635e60e4f745fd50d6dc181b555a6948562077`.
-Accepted green finalization baseline: `fed937fe11fb4656ad4ad0be750bd7c03975250f`.
+Branch: `codex/sfp_replay_adapter_001`.
+Exact parent: `5f4f0a467ce8f68f9c7a82d3b32307d559a9f092` (PR176).
+Draft review target: `codex/release_consolidation_wave_002`.
 
-The initial thirteen accepted feature heads remain inherited. Finalization adds
-only the seven unique commits from these four exact green heads, in order:
+SFP research now runs through PR173's existing deterministic replay jobs, frozen
+datasets/configuration, worker/background execution, results, cancellation,
+verification, comparisons, tenant/RBAC fences and audit authority. Detection,
+structural proof/knowability, setup lifecycle and quality components come from the
+canonical SFP modules consolidated in PR176.
 
-1. PR171 Agent Paper Execution V4: `34a93110841ee75f061be58efa63ec56b49d2400`.
-2. PR174 Agent Daily Review: `255ef43320b27c80b12b6488fc4340adb2ab1f84`.
-3. PR175 Agent Strategy Analytics: `a8b0986b77c3bf00d878b24a940d9f0cb5c44482`.
-4. PR177 Verified CVD and five-minute order flow: `c91f283274c5a630dc34f8fa157584ddd83201a3`.
+Explicit canonical historical candle proofs preserve actual receipt clocks.
+Historical rows alone cannot establish SFP knowability. Missing, forming, stale
+and late proofs remain visible evidence gaps; later evidence cannot repair an
+earlier gap retrospectively. HTF context, volume, native CVD/five-minute flow,
+OI/funding, missing/stale evidence, target space and every canonical lifecycle
+event remain observable. Window samples and research buckets expose symbol,
+timeframe, direction, level type, exact version, measured-component coverage and
+directional-efficiency bands.
 
-Shared Agent conflicts retain typed actions, paper execution, Daily Review,
-analytics filters/results, governed membership checks and transcript fields.
-Canonical reads and paper preparation bypass narrative prose. Analytics filters
-cannot reinterpret a typed action. The combined PostgreSQL regression performs
-Daily Review and analytics reads between a sealed proposal and confirmation, then
-proves repeated confirmation produces exactly one fill and canonical journal.
+**No SFP execution plan is authorized.** Trade metrics are null; trade lists are
+empty; entry, stop, execution targets, R and PnL are not inferred. Structurally
+confirmed setups do not imply Candidate or ActionEligibility approval. RiskEngine
+is not invoked without an authorized plan and sizing. No Candidates, paper
+trades, journals, operational Brain episodes or account/risk state are written.
+Available target space is descriptive structure, not a trade target. Existing
+Nested simulation/risk behavior continues unchanged.
 
-SFP now applies PR177's shared required-print binding gate on its family dispatch
-path. Both bullish/bearish directions reject missing CVD and order-flow evidence;
-optional flow preserves inherited behavior. OI/Funding, Nested, SFP, deterministic
-replay, five-market Watcher, Knowledge, Settings, voice, Telegram Policy V2 and six
-workspace destinations remain present.
+Baseline/proposed comparisons require identical candle/evidence inputs and
+receipt clocks. Both immutable versions' lifecycle counts and buckets are
+returned. SFP net-PnL difference stays null and `improvement_claim=false`.
+Insufficient samples and missing evidence remain explicit.
 
-Single Alembic head: `a3release002`; parents `a2tgpolicy002` and `a2sfp002`.
-Finalization adds no migration. Earlier disposable PostgreSQL upgrade/downgrade/
-reupgrade verification remains documented in the release record.
+Frozen hashes bind versions, parameters, adapter, every evidence clock, freshness,
+dataset, trace, counts and buckets. Verification checks recomputed immutable
+strategy content and stored output identity. Restart tests use a fresh Session,
+database reload and altered Decimal arithmetic contexts. An independent replay
+against the exact base reproduced the unchanged Nested result hash:
+`b31440f48ac0382386a34610fb427add41a253d94dd377daa4a3ac4447555761`.
 
-Final validation: **742 distinct focused backend cases passed, zero skipped**;
-**189 frontend cases passed**; frontend typecheck, scoped Ruff and targeted mypy
-passed. Disposable PostgreSQL 17.11 ran on loopback 55432 and was stopped afterward.
-No full repository suite or repeated unchanged-architecture audit was run.
+## Validation
 
-Paper only, `ENABLE_REAL_TRADING=false`. CandidateLifecycleService is canonical;
-Risk and ActionEligibility are final. Agent does not mint Candidates or invent
-sizing. No Telegram network arming, shared database migration, deployment or main
-merge. Public-print evidence never substitutes candle volume and resets at each
-venue/window boundary.
+**462 distinct focused backend cases passed, zero skipped.** The combined suite
+passed 459 cases. Final replay checks passed 54 cases (27 SFP, 27 Nested), including
+three additional future-evidence, API and malformed-result tamper cases.
+Relevant commands from `backend/`:
 
-All seventeen exact source heads, conflict resolutions and test selections:
-`docs/release_consolidation_wave_002.md`. Dedicated feature documents are retained.
-PR176 is updated on the same branch. Allow GitHub CI to run; do not await it. STOP.
+```sh
+.venv/bin/pytest tests/test_sfp_replay_adapter_001.py tests/test_strategy_replay_001.py tests/test_sfp_detector.py tests/test_market_intelligence_oi_funding.py tests/test_market_intelligence_cvd_orderflow.py tests/test_at034_engine.py tests/test_at034_integration.py tests/test_at034_api.py tests/test_phase3_strategy_immutability.py tests/test_deployment_safety.py -q
+.venv/bin/pytest tests/test_sfp_replay_adapter_001.py tests/test_strategy_replay_001.py -q
+```
+
+Coverage includes both directions, exact canonical event projection, future
+pivots/context/optional evidence, delayed receipts, required-proof gaps, native
+evidence freshness, failed reclaims, invalidations, expiry, version forks, hash
+tampering, restarts, cancellation, idempotency, background execution, null metrics,
+empty persisted trade/Candidate/journal tables and tenant/Trader API access.
+
+Scoped Ruff lint/format passed for the nine affected Python files. Targeted mypy
+passed for the eight affected source modules. **Six frontend cases passed** for
+the backtest detail page, including completed/cancelled SFP research with null
+metrics; full frontend `npm run typecheck` passed. Diff whitespace checks passed.
+TestClient requires the execution tool's network-enabled sandbox for its local
+AnyIO wakeup sockets; providers remain mocked and no venue is contacted.
+
+No full repository suite or PostgreSQL-only runtime persistence suite was run.
+No migration/dependency/lockfile change is present; Alembic remains `a3release002`.
+No live trading, market acquisition, deployment, worker/Telegram activation,
+strategy promotion, main merge or CI wait occurred.
+
+## Research limits and review entry points
+
+Trigger detector histories are independent across windows and required-evidence
+gaps. Expiries/invalidation counts are observed canonical events; no missing price
+path is interpolated. Optional native evidence is descriptive and leaves canonical
+SFP confirmation/policy unchanged. Quality buckets count measured components, not
+confidence or performance; efficiency bands are not a validated regime classifier.
+The minimum sample threshold counts unique observed SFP episodes. Meeting it is
+descriptive only. This task supplies no real historical performance experiment.
+
+Adapter: `backend/src/app/services/sfp_replay_adapter.py`.
+Shared engine/service/contracts: existing `strategy_replay_*` modules.
+Regression coverage: `backend/tests/test_sfp_replay_adapter_001.py`.
+API, evidence contract and count semantics: `docs/sfp_replay_adapter_001.md`.
+Prior release provenance remains in `docs/release_consolidation_wave_002.md`.
+
+Delivery is a pushed draft for review on the branch above; the task's final
+handoff links its PR and commit. Leave CI to run; STOP after handoff.
