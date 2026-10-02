@@ -28,6 +28,12 @@ class NotificationEventType(StrEnum):
     PARTIAL_PROFIT = "PARTIAL_PROFIT"
     DAILY_REVIEW = "DAILY_REVIEW"
     OTHER = "OTHER"
+    SFP_SWEEP_DETECTED = "SFP_SWEEP_DETECTED"
+    SFP_RECLAIM_FORMING = "SFP_RECLAIM_FORMING"
+    SFP_CONFIRMED = "SFP_CONFIRMED"
+    SFP_INVALIDATED = "SFP_INVALIDATED"
+    SFP_EXPIRED = "SFP_EXPIRED"
+    SFP_BLOCKED_BY_RISK = "SFP_BLOCKED_BY_RISK"
 
 
 class AlertPhase(StrEnum):
@@ -93,7 +99,7 @@ class TelegramNotificationPolicyV2(StrictModel):
 
 
 class TelegramNotificationEvent(StrictModel):
-    """Producer facts only. Future SFP producers can use this same contract."""
+    """Producer facts only, shared by all strategy notification projections."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     schema_version: Literal[1] = 1

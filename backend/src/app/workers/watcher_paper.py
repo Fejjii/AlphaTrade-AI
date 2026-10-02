@@ -28,6 +28,7 @@ import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.candidate_alerts.nested import NestedAlertSummary
+from app.candidate_alerts.sfp import SfpAlertSummary
 from app.core.config import Environment, ExecutionMode, Settings
 from app.market_contracts.enums import VenueId
 from app.market_contracts.provider_contracts import (
@@ -131,6 +132,8 @@ class WatcherPaperScanReport:
     journal_status: str | None = None
     nested_alert: NestedAlertSummary | None = None
     nested_strategy: bool = False
+    sfp_strategy: bool = False
+    sfp_alerts: tuple[SfpAlertSummary, ...] = ()
     market_read_completed: bool = False
 
     @property
@@ -686,6 +689,7 @@ class WatcherPaperRuntime:
             report = self._scan_target(session, target)
             if session is not None:
                 session.commit()
+            self._notify_scan(report)
             return report
         except Exception:
             if session is not None:
@@ -830,7 +834,22 @@ class WatcherPaperRuntime:
             nested_alert=nested_alert,
             nested_strategy=target.fusion_policy_version == NESTED_KIND,
         )
-        self._notify_scan(report)
+        from app.strategy_brain.sfp.contracts import SFP_KIND
+        from app.strategy_brain.sfp_runtime.notifications import sfp_notification_summaries
+
+        if target.fusion_policy_version == SFP_KIND:
+            report = replace(
+                report,
+                sfp_strategy=True,
+                sfp_alerts=()
+                if session is None
+                else sfp_notification_summaries(
+                    session,
+                    organization_id=target.organization_id,
+                    strategy_version_id=target.strategy_version_id,
+                    now=self._clock.now(),
+                ),
+            )
         observe_scan(report.reason_code)
         logger.info(
             "watcher_paper_scan",

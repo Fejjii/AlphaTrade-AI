@@ -183,6 +183,18 @@ class TelegramPaperAgent:
         """Project a meaningful Watcher event. Empty scans are not alerts."""
         self._require_enabled()
         self._require_recipient_org(recipient, notice.organization_id)
+        from app.strategy_brain.sfp.contracts import SFP_KIND
+
+        if notice.sfp_strategy or (
+            candidate is not None and candidate.fusion_policy_version == SFP_KIND
+        ):
+            if notice.user_id != recipient.user_id:
+                raise ValueError("SFP scan user does not match recipient.")
+            for summary in notice.sfp_alerts:
+                self._candidates.project_sfp_event(
+                    summary=summary, recipient=_as_candidate_recipient(recipient)
+                )
+            return None
         confirmed = (
             notice.published
             and candidate is not None
