@@ -84,6 +84,12 @@ class EmptyInput(StrictModel):
     pass
 
 
+class LearningStatusInput(StrictModel):
+    strategy_id: UUID | None = None
+    proposal_id: UUID | None = None
+    limit: int = Field(default=5, ge=1, le=10)
+
+
 class PaperExecutionInput(StrictModel):
     trade: AgentPaperTradeIntent
 

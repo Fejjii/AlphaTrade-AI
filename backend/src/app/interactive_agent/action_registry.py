@@ -26,6 +26,7 @@ from app.interactive_agent.actions import (
     JournalCreateInput,
     JournalNoteInput,
     KnowledgeInput,
+    LearningStatusInput,
     PaperExecutionInput,
     PaperTradeInput,
     StrategyInput,
@@ -106,6 +107,19 @@ def _tool(
 
 
 _TOOLS = [
+    Tool(
+        "strategy.learning_status",
+        LearningStatusInput,
+        "StrategyPromotionService",
+        StructuredActionKind.NONE,
+        ArtifactKind.OBSERVATION,
+        AgentCapability.GOVERNED_LEARNING,
+        (
+            "Bounded canonical status reads only. Agent prose cannot approve, promote, "
+            "roll back or enable live execution.",
+        ),
+        behavior="read",
+    ),
     _tool(
         "paper_trade.prepare_execution",
         PaperExecutionInput,
@@ -320,6 +334,15 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
             arguments={"trade": trade.model_dump(mode="json")},
         )
     lower = text.lower()
+    if re.search(
+        r"\b(?:strategy changes.*proposed|change.*proposed|been replayed|"
+        r"outperform.*baseline|completed paper validation|version.*paper active|"
+        r"roll ?back|governed learning|promotion status|approve.*promotion|promote.*strategy)\b",
+        lower,
+    ):
+        return ActionRequest(
+            name="strategy.learning_status", arguments={"strategy_id": request.strategy_id}
+        )
     args: dict[str, Any] = {"text": text[:4000]}
     strategy_args = dict(args, strategy_id=request.strategy_id)
     if re.search(
