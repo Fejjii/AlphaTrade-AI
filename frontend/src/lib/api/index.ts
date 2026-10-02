@@ -1,3 +1,4 @@
+import type { AttentionQueue } from "./attention-types";
 import type { DailyReview } from "./daily-review-types";
 import type { BrainOverview, BrainSetup } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
@@ -765,6 +766,7 @@ export const api = {
       }),
   },
   dashboard: {
+    attention: () => apiFetch<AttentionQueue>("/dashboard/attention", { auth: true }),
     dailyReview: (params?: { date?: string; timezone?: string }) =>
       apiFetch<DailyReview>("/dashboard/daily-review", { query: params, auth: true }),
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
