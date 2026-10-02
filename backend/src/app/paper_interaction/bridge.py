@@ -12,7 +12,7 @@ The paper worker leaves the scan hook unset unless a caller supplies one.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
@@ -100,6 +100,15 @@ def project_scan_report(
     if notice is None:
         return None
     resolved = evidence if evidence is not None else confirmed_evidence_from_report(report)
+    if evidence is None and resolved is not None and not notice.sfp_strategy:
+        # The paper loop can commit a newer Candidate revision after the scan
+        # snapshot was captured. Project current canonical facts for worker-owned
+        # reports; explicit evidence still undergoes the original authority checks.
+        current = agent.candidates.lifecycle.get_by_candidate_id(
+            report.organization_id, resolved.candidate.candidate_id
+        )
+        if current is not None:
+            resolved = replace(resolved, candidate=current)
     return agent.project_watcher_notice(
         notice=notice,
         recipient=recipient,
