@@ -15,6 +15,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
 import structlog
 from sqlalchemy import text
@@ -795,10 +796,16 @@ def _probe_failed_observations(worker_instance_id: str) -> ActivationObservation
 def _probe_lineage(session: Session, settings: Settings) -> bool:
     from app.workers.watcher_paper_targets import lineage_targets_are_valid, list_paper_scan_targets
 
+    scoped_org = (
+        UUID(settings.watcher_paper_organization_id)
+        if settings.watcher_paper_organization_id
+        else None
+    )
     try:
         targets = list_paper_scan_targets(
             session,
             symbols=settings.watcher_paper_symbols,
+            organization_id=scoped_org,
             limit=settings.watcher_paper_max_scopes_per_cycle,
         )
     except Exception:
