@@ -69,6 +69,8 @@ def notice_from_scan_report(report: WatcherPaperScanReport) -> WatcherScanNotice
         lineage_id=report.lineage_id,
         nested=report.nested_alert,
         nested_strategy=report.nested_strategy,
+        sfp_strategy=report.sfp_strategy,
+        sfp_alerts=report.sfp_alerts,
     )
 
 

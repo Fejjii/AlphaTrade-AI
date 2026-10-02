@@ -44,6 +44,7 @@ from app.candidate_alerts.identity import (
 )
 from app.candidate_alerts.memory import CandidateAlertStore, InMemoryCandidateAlertStore
 from app.candidate_alerts.nested import NestedAlertSummary, required_evidence_fresh
+from app.candidate_alerts.sfp import SfpAlertSummary
 from app.services.canonical_serialization import canonical_sha256
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.candidate import Candidate
@@ -63,6 +64,7 @@ from app.telegram_security.contracts import (
     ActionReceiptState,
     CallbackIdentity,
     IssueNonceResult,
+    OutboxRecord,
     TelegramInboundUpdate,
 )
 from app.telegram_security.errors import TelegramSecurityError, TelegramSecurityReason
@@ -116,6 +118,40 @@ class CandidateAlertGateway:
     def store(self) -> CandidateAlertStore:
         return self._store
 
+    def project_sfp_event(
+        self, *, summary: SfpAlertSummary, recipient: CandidateAlertRecipient
+    ) -> OutboxRecord:
+        """Canonical setup history -> policy-controlled informational outbox row.
+
+        Forming/terminal setups need no Candidate. No alert action intent or nonce
+        is created, including for confirmed events with ACTION severity.
+        """
+        from app.candidate_alerts.errors import CandidateAlertTenantError
+
+        if summary.organization_id != recipient.organization_id:
+            raise CandidateAlertTenantError("SFP event organization does not match recipient.")
+        require_active_binding(self._protocol.store, recipient)
+        event = summary.notification_event()
+        identity = canonical_sha256(
+            {
+                "event": event.duplicate_key,
+                "user": recipient.user_id,
+                "binding": recipient.binding_id,
+                "bot": recipient.bot_id,
+                "chat": recipient.chat_id,
+            }
+        )
+        return self._protocol.enqueue_outbound(
+            organization_id=recipient.organization_id,
+            user_id=recipient.user_id,
+            bot_id=recipient.bot_id,
+            chat_id=recipient.chat_id,
+            binding_id=recipient.binding_id,
+            text=summary.text(),
+            idempotency_key=_outbox_key(identity),
+            notification_event=event,
+        )
+
     def project_canonical_candidate(
         self,
         *,
@@ -133,6 +169,11 @@ class CandidateAlertGateway:
         require_recipient_matches_candidate(candidate=stored, recipient=recipient)
         require_active_binding(self._protocol.store, recipient)
         from app.schemas.nested_continuation import NESTED_KIND
+        from app.strategy_brain.sfp.contracts import SFP_KIND
+
+        if stored.fusion_policy_version == SFP_KIND:
+            # SFP facts use the journal projection, never generic Candidate actions.
+            return None
 
         if stored.fusion_policy_version == NESTED_KIND:
             if nested is None:
