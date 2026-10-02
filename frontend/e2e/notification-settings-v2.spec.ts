@@ -1,11 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installSmokeSession } from "./helpers/staging-smoke-auth";
 import { telegramPolicyFixture } from "../src/components/settings/telegram-policy.fixture";
+import {
+  SESSION_MARKER_COOKIE,
+  SESSION_MARKER_VALUE,
+} from "../src/lib/auth/boundary";
 
 test.use({ actionTimeout: 15_000 });
 
+const FIXTURE_ACCESS_TOKEN = "notification-settings-fixture-session";
+
 async function installNotificationFixture(page: Page, supported = true) {
-  await installSmokeSession(page, "notification-settings-fixture-session");
+  await installSmokeSession(page, FIXTURE_ACCESS_TOKEN);
   let prefs = {
     in_app_enabled: true,
     telegram_enabled: true,
@@ -47,8 +53,11 @@ async function installNotificationFixture(page: Page, supported = true) {
       },
     }),
   );
-  await page.route("**/auth/me", (route) =>
-    route.fulfill({
+  await page.route("**/auth/me", async (route) => {
+    expect(route.request().headers().authorization).toBe(
+      `Bearer ${FIXTURE_ACCESS_TOKEN}`,
+    );
+    await route.fulfill({
       json: {
         user: {
           id: "fixture-user",
@@ -64,12 +73,14 @@ async function installNotificationFixture(page: Page, supported = true) {
           is_active: true,
         },
       },
-    }),
-  );
+    });
+  });
   // Unrelated Settings reads are deliberately unavailable, never fabricated.
+  // Watchlist reads must not reach the backend with the synthetic fixture token:
+  // a real 401 would correctly clear the session and redirect to /login.
   await page.route(
     (url) =>
-      /\/(health|providers\/status|risk\/|market-watcher\/|strategies\/)/.test(
+      /\/(health|providers\/status|risk\/|market-watcher\/|strategies\/|watcher\/watchlist(?:\/status)?$)/.test(
         url.pathname,
       ),
     (route) =>
@@ -79,6 +90,28 @@ async function installNotificationFixture(page: Page, supported = true) {
       }),
   );
   return writes;
+}
+
+async function expectNotificationSession(page: Page) {
+  await expect(page).toHaveURL(/\/settings#notifications$/);
+  const marker = (await page.context().cookies(page.url())).find(
+    (cookie) => cookie.name === SESSION_MARKER_COOKIE,
+  );
+  expect(marker).toMatchObject({
+    value: SESSION_MARKER_VALUE,
+    domain: new URL(page.url()).hostname,
+    path: "/",
+    httpOnly: false,
+    sameSite: "Lax",
+  });
+  expect(
+    await page.evaluate(() => sessionStorage.getItem("alphatrade_access_token")),
+  ).toBe(FIXTURE_ACCESS_TOKEN);
+  const settings = page.getByTestId("settings-workspace");
+  await expect(
+    settings.getByText("fixture@example.com", { exact: true }),
+  ).toBeVisible();
+  await expect(settings.getByText("Fixture", { exact: true })).toBeVisible();
 }
 
 for (const viewport of [
@@ -96,6 +129,10 @@ for (const viewport of [
     await expect(page.getByTestId("settings-telegram-state")).toContainText(
       "disabled",
     );
+    await expectNotificationSession(page);
+    await expect(
+      page.getByText("Watchlist configuration unavailable. Reload to try again."),
+    ).toBeVisible();
     await expect(
       form.getByLabel("Enable Telegram notification policy"),
     ).toBeChecked();
@@ -139,6 +176,7 @@ for (const viewport of [
       form.getByLabel("Watched symbols", { exact: true }),
     ).toHaveValue("none");
     await expect(form.getByLabel("Cooldown (seconds)")).toHaveValue("300");
+    await expectNotificationSession(page);
     expect(
       await page.evaluate(
         () =>
@@ -163,5 +201,6 @@ test("unsupported Policy V2 has an unavailable label and no policy form", async 
     page.getByText(/Telegram Policy V2 settings: Unavailable/),
   ).toBeVisible();
   await expect(page.getByTestId("telegram-policy-v2")).toHaveCount(0);
+  await expectNotificationSession(page);
   expect(writes).toEqual([]);
 });

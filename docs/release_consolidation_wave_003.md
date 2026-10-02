@@ -139,9 +139,9 @@ The 40-cycle five-market mocked regression retained bounded inspected structures
 its warmed cleanup RSS slope was about 2.3 KB/cycle. Pytest process RSS is not
 staging worker steady state. The disposable server was stopped after validation.
 
-No full local repository suite, browser/device run, production build, repeated
-unchanged-architecture audit, deployment, activation or merge. Push a draft and
-allow GitHub CI; do not wait for its outcome.
+The initial consolidation ran no full local repository suite, browser/device run,
+production build, repeated unchanged-architecture audit, deployment, activation
+or merge. Push a draft and allow GitHub CI; do not wait for its outcome.
 
 ## Executed focused selections
 
@@ -222,3 +222,74 @@ src/components/dashboard/AttentionCard.test.tsx
 src/lib/api/attention.test.ts
 src/app/(app)/backtests/[id]/page.test.tsx
 ```
+
+## PR185 final Notification Settings V2 E2E auth fix
+
+Starting branch: `codex/release_consolidation_wave_003`, exact parent
+`c8153ef6d7fc32474192d62eab095a3994813d07`.
+
+The middleware did recognize the smoke session marker. A local reproduction of
+the failing 390px spec with `CI=true` and tracing showed the initial `/settings`
+document returning **200**, with `Cookie: alphatrade_session=1`. The helper installs
+the shared non-sensitive marker on `PLAYWRIGHT_BASE_URL` (default
+`http://localhost:3000`), with frontend hostname, root path and SameSite=Lax, before
+navigation in the same per-test browser context. Its init script supplies the
+access token in sessionStorage. CI uses the same base URL; its retry/server-reuse
+settings do not change cookie origin or context lifetime.
+
+The notification fixture's unavailable-read matcher omitted
+`GET /watcher/watchlist` and `GET /watcher/watchlist/status`. These Settings reads
+reached the real API with the synthetic fixture token and returned **401**.
+`POST /auth/refresh` also returned 401. The API client's existing fail-closed path
+then cleared the access token and marker and assigned
+`/login?next=%2Fsettings`. Response timing explains why CI sometimes reached the
+form before redirecting and why retry outcomes varied.
+
+The fix adds those two exact watchlist paths to the fixture's unavailable **503**
+responses. It does not fabricate watchlist/runtime evidence. Production middleware,
+session handling, backend authorization, the shared smoke installer and Playwright
+configuration are unchanged. No timeout increase or authentication bypass was added.
+
+Browser assertions now verify the marker's shared value, frontend domain, `/` path,
+SameSite=Lax and non-HttpOnly contract; the fixture access token in sessionStorage;
+the bearer header on mocked `/auth/me`; and the fixture user/organization displayed
+in Settings. The successful mobile save/reload checks repeat the session assertions.
+The direct edge auth spec explicitly checks `/settings#notifications` redirects to
+login without a marker and renders no policy form. Existing stale-marker-without-token,
+login, logout/back navigation, public-route and security-header checks still pass.
+
+Final focused results, all without retries:
+
+- Notification Settings V2 browser spec: **3 passed** (390px, 320px, unsupported V2).
+- Direct auth boundary browser spec: **6 passed**.
+- Existing primary navigation smoke: **1 passed** (desktop/mobile six destinations,
+  navigation and retained routes).
+- Direct auth/session/API-client and Settings unit selections: **46 passed in 8 files**.
+- Scoped ESLint on the two changed browser specs and `git diff --check`: passed.
+
+Final notification traces show `/settings` 200 before/after reload, `/auth/me` 200,
+both watchlist reads 503, and no 401 or refresh request. Local browser validation used
+the existing executable override with system Chromium; GitHub's bundled Chromium
+result remains for CI to establish. Tests used the existing disposable SQLite/mock
+API setup. No production database, migration or deployment changed.
+
+Executed commands, relative to `frontend`:
+
+```bash
+# Shared local browser environment; CI still uses its existing workflow/config.
+export CI=true
+export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+export UV_CACHE_DIR=/tmp/alphatrade-pr185-uv-cache
+export SIMPLIFIED_UI_SHOTS=/tmp/alphatrade-pr185-navigation-shots
+
+# Auth and navigation passed here. A new email assertion initially matched both
+# shell and Settings; it was scoped to Settings, then the notification spec passed.
+npm run test:e2e -- e2e/notification-settings-v2.spec.ts e2e/auth-boundary.spec.ts e2e/simplified-ui-smoke.spec.ts --retries=0 --output=/tmp/alphatrade-pr185-e2e-results
+npm run test:e2e -- e2e/notification-settings-v2.spec.ts --retries=0 --trace=on --output=/tmp/alphatrade-pr185-notification-results
+
+npm run test -- src/lib/auth/boundary.test.ts src/lib/auth/session.test.ts src/contexts/AuthContext.test.tsx src/lib/api/client.test.ts 'src/app/(app)/settings/page.test.tsx' 'src/app/(app)/settings/advanced/page.test.tsx' src/components/NotificationSettingsPanel.test.tsx src/components/settings/TelegramPolicyForm.test.tsx
+npx eslint e2e/notification-settings-v2.spec.ts e2e/auth-boundary.spec.ts
+```
+
+Publish one focused commit to the existing PR185 branch, allow GitHub CI, and STOP.
+Do not wait for CI, deploy, merge, or activate Telegram/trading.
