@@ -271,7 +271,7 @@ class AutomatedPaperLoop:
             assembled=assembled,
             policy=policy,
             account_id=account.id,
-            equity=_equity(session, target),
+            equity=_equity(session, target, now=self._clock.now()),
             now=self._clock.now(),
             eligibility_valid_until=eligibility.eligibility.valid_until,
             eligibility_id=eligibility.eligibility.eligibility_id,
@@ -595,8 +595,8 @@ def _paper_account(session: Session, target: PaperScanTarget) -> ExecutionAccoun
     )
 
 
-def _equity(session: Session, target: PaperScanTarget) -> Decimal:
-    accounting = DailyRiskAccounting(session, _risk_settings(session))
+def _equity(session: Session, target: PaperScanTarget, *, now: datetime) -> Decimal:
+    accounting = DailyRiskAccounting(session, _risk_settings(session), clock=lambda: now)
     snapshot = accounting.sync_from_portfolio(
         organization_id=target.organization_id,
         user_id=target.user_id,
@@ -623,7 +623,7 @@ def _eligibility_command(
     quote = assembled.current_price
     if quote is None:
         raise ValueError("Paper loop eligibility requires a current price.")
-    accounting = DailyRiskAccounting(session, _risk_settings(session))
+    accounting = DailyRiskAccounting(session, _risk_settings(session), clock=lambda: now)
     snapshot = accounting.sync_from_portfolio(
         organization_id=target.organization_id,
         user_id=target.user_id,

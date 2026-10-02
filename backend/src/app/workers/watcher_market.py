@@ -318,3 +318,49 @@ class SymbolMarketFactory:
             release = getattr(source, "release_symbol_history", None)
             if callable(release):
                 release(symbol)
+
+    def memory_counts(self) -> dict[str, int]:
+        """Cardinalities only, sampled by the owning Watcher thread after cleanup."""
+
+        counts = dict.fromkeys(
+            (
+                "market_compositions",
+                "monitor_trades",
+                "monitor_ohlcv_bars",
+                "raw_cache_entries",
+                "raw_cache_rows",
+                "reduced_cache_entries",
+                "cache_locks",
+                "bybit_lineages",
+                "bybit_proven_prints",
+                "bybit_ranks",
+            ),
+            0,
+        )
+        counts["market_compositions"] = len(self._entries)
+        seen_caches: set[int] = set()
+        for _, _, monitor, sources in self._entries.values():
+            for runtime in monitor._runtimes.values():
+                counts["monitor_trades"] += len(runtime._assembler._ordered)
+                for series in (runtime._series_15m, runtime._series_4h):
+                    counts["monitor_ohlcv_bars"] += len(series.bars) if series else 0
+            for source in sources:
+                for attr in ("_trade_cache", "_reduced_cache"):
+                    cache = getattr(source, attr, None)
+                    if cache is None or id(cache) in seen_caches:
+                        continue
+                    seen_caches.add(id(cache))
+                    with cache._guard:
+                        if attr == "_trade_cache":
+                            counts["raw_cache_entries"] += len(cache._entries)
+                            counts["raw_cache_rows"] += sum(
+                                len(entry.rows) for entry in cache._entries.values()
+                            )
+                            counts["cache_locks"] += len(cache._locks)
+                        else:
+                            counts["reduced_cache_entries"] += len(cache._entries)
+                lineages = getattr(source, "_lineages", {})
+                counts["bybit_lineages"] += len(lineages)
+                counts["bybit_proven_prints"] += sum(len(p.proven) for p in lineages.values())
+                counts["bybit_ranks"] += len(getattr(source, "_rank_by_exec", {}))
+        return counts
