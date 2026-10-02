@@ -2,6 +2,24 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-078 — Advisory attention is a read-only record projection
+
+- Date: 2026-10-02
+- Status: Accepted for proactive attention queue 001.
+- Decision: Derive tenant/user attention through SELECT-only adapters and a pure
+  reducer with an explicit clock. Preserve source provenance, stable semantic
+  identity, fixed expiry, existing acknowledgement states and deterministic
+  risk-first ordering. Missing records confer no facts or action authority.
+- Ownership: Market/setup/Watcher records are organization-shared; journal,
+  risk, research, proposals and delivery remain user-scoped except explicitly
+  organization-owned alerts. Exclude global operational rows without ownership.
+- Safety: No queue persistence, acknowledgement writes, providers, delivery,
+  approval, execution, risk evaluation or worker activation. All next actions
+  are human review recommendations. Agent integration is deferred to avoid
+  shared Agent implementation changes. Existing authorities remain final.
+- Reference: `docs/proactive_attention_queue_001.md`; exact base
+  `5f4f0a467ce8f68f9c7a82d3b32307d559a9f092`.
+
 ---
 
 ## AT-ADR-001 — Adopt private `.ai/` collaboration + iCloud handoff workflow
