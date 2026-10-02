@@ -1,7 +1,7 @@
 """Focused SFP canonical binding, persistence and governed Candidate integration."""
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -388,9 +388,9 @@ def test_public_receipt_is_durable_and_conflicting_revision_is_not_rewritten(sto
     engine.dispose()
 
 
-def padded_evidence(path=BULL):
+def padded_evidence(path=BULL, *, start=START):
     return evidence(
-        [*([(102, 104, 101, 103)] * 256), *path], start=START - timedelta(minutes=256 * 15)
+        [*([(102, 104, 101, 103)] * 256), *path], start=start - timedelta(minutes=256 * 15)
     )
 
 
@@ -473,7 +473,7 @@ def postgres_store(monkeypatch):
         yield session, org, user, factory
 
 
-def runtime_world(postgres_store, *, bearish=False, risk_block=False, forming=False):
+def runtime_world(postgres_store, *, bearish=False, risk_block=False, forming=False, start=START):
     from app.db.models import DailyRiskState, ExecutionAccount, Membership
     from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
     from app.schemas.common import MembershipRole
@@ -498,7 +498,7 @@ def runtime_world(postgres_store, *, bearish=False, risk_block=False, forming=Fa
         )
     )
     path = BEAR if bearish else BULL
-    bars, _ = padded_evidence(path)
+    bars, _ = padded_evidence(path, start=start)
     # Actual observations are acquired in chronological scans; no historical backdating.
     assemble_prefix(session, policy, bars[:260], replay=False)
     session.commit()
@@ -621,10 +621,24 @@ def test_governed_candidate_restart_replay_uses_existing_authority_and_never_exe
 
 
 @pytest.mark.parametrize("bearish", [False, True])
-def test_existing_daily_risk_lock_is_authoritative_for_sfp(postgres_store, bearish):
-    from app.db.models import ExecutionFillFact, TradePlanRevision
+@pytest.mark.parametrize(
+    "start",
+    [
+        datetime(2024, 2, 29, 10, tzinfo=UTC),
+        START,
+        datetime(2026, 10, 2, 23, tzinfo=UTC),
+        datetime(2030, 1, 1, 10, tzinfo=UTC),
+    ],
+    ids=["leap_day", "release_day", "utc_midnight", "future_year"],
+)
+def test_existing_daily_risk_lock_is_authoritative_for_sfp(postgres_store, bearish, start):
+    from app.db.canonical_candidates import CanonicalCandidateRow
+    from app.db.models import DailyRiskState, ExecutionFillFact, TradePlanRevision
 
-    runtime, _, _, now = runtime_world(postgres_store, bearish=bearish, risk_block=True)
+    runtime, _, _, now = runtime_world(
+        postgres_store, bearish=bearish, risk_block=True, start=start
+    )
+    runtime._settings.paper_worker_memory_diagnostics_enabled = True
     report = runtime.run_cycle()
     assert report.scans and report.scans[0].candidate_ids, report
     scan = report.scans[0]
@@ -636,6 +650,9 @@ def test_existing_daily_risk_lock_is_authoritative_for_sfp(postgres_store, beari
     ]
     assert linked[0]["state"] == "BLOCKED_BY_RISK"
     assert "blocked_daily_loss" in linked[0]["risk_reason_codes"]
+    assert session.scalar(select(func.count()).select_from(CanonicalCandidateRow)) == 1
+    risk_rows = session.scalars(select(DailyRiskState)).all()
+    assert len(risk_rows) == 1 and risk_rows[0].day == now.date() and risk_rows[0].locked
     assert session.scalar(select(func.count()).select_from(TradePlanRevision)) == 0
     assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 0
 

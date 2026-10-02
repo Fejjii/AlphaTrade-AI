@@ -146,6 +146,11 @@ def run(symbol, failover, release, assemble_between=False):
             canonical = False
         if release:
             factory.release_symbol_history(symbol)
+        counts = factory.memory_counts()
+        assert counts["market_compositions"] == 1
+        assert 1 <= counts["bybit_lineages"] <= 3
+        assert counts["bybit_ranks"] == len(raw[-1]._rank_by_exec)
+        assert counts["bybit_proven_prints"] <= 3 * (1000 if release else 10000)
     factory.retain(())
     assert not factory._entries
     assert not factory._reads
