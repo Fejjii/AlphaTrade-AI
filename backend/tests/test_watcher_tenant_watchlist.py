@@ -16,7 +16,7 @@ from app.core.errors import ConflictError
 from app.db.base import Base
 from app.db.models import Organization
 from app.db.session import get_session
-from app.db.watcher_watchlist import WatcherSymbolStatusRow
+from app.db.watcher_watchlist import WatcherSymbolStatusRow, WatcherWatchlistRow
 from app.main import create_app
 from app.market_contracts.errors import StaleEvidenceError, WrongInstrumentError
 from app.market_contracts.provider_contracts import ContractBook
@@ -163,8 +163,21 @@ class PublicMarket:
         raise AssertionError(f"Unexpected market request: {path}")
 
 
-def runtime(db, market, *, enabled=True, source="binance_usdm", secondary="", target_loader=None):
-    cfg = settings(perpetual_evidence_source=source, perpetual_evidence_secondary_source=secondary)
+def runtime(
+    db,
+    market,
+    *,
+    enabled=True,
+    source="binance_usdm",
+    secondary="",
+    target_loader=None,
+    organization_id="",
+):
+    cfg = settings(
+        perpetual_evidence_source=source,
+        perpetual_evidence_secondary_source=secondary,
+        watcher_paper_organization_id=organization_id,
+    )
     factory = SymbolMarketFactory(cfg, transport=market.transport)
     candidates = InMemoryCandidateRepository()
     worker = build_watcher_paper_runtime(
@@ -178,6 +191,23 @@ def runtime(db, market, *, enabled=True, source="binance_usdm", secondary="", ta
         enabled=enabled,
     )
     return worker, factory, candidates
+
+
+def test_configured_organization_scope_pins_one_tenant(db):
+    market = PublicMarket()
+    worker, _, _ = runtime(db, market, organization_id=str(OTHER))
+
+    report = worker.run_cycle()
+
+    assert report.reason_code == "completed"
+    with db() as session:
+        rows = list(session.scalars(select(WatcherWatchlistRow)))
+        assert [row.organization_id for row in rows] == [OTHER]
+
+
+def test_invalid_configured_organization_scope_is_rejected():
+    with pytest.raises(ValueError, match="watcher_paper_organization_id must be a UUID"):
+        settings(watcher_paper_organization_id="not-a-uuid")
 
 
 def test_repeated_worker_cycles_release_history_and_keep_compositions_bounded(db, capsys):
