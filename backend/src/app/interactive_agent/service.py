@@ -6,6 +6,7 @@ that proposal, submit an order, or change trading mode.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -22,7 +23,7 @@ from app.interactive_agent.action_registry import (
     resolve_action,
     route_action,
 )
-from app.interactive_agent.actions import DailyReviewInput
+from app.interactive_agent.actions import DailyReviewInput, LearningStatusInput
 from app.interactive_agent.classify import TurnClassification, classify_turn
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
@@ -73,11 +74,39 @@ from app.interactive_agent.safety import (
     refuse_real_trading_enablement,
 )
 from app.schemas.common import ConversationMessageRole, DocumentSourceType, StrictModel
+from app.schemas.governed_learning import GovernedLearningStatus
 from app.services.agent_paper_execution import AgentPaperExecutionService
 from app.services.conversation_service import ConversationService
 from app.services.strategy_proposal_service import StrategyProposalService
 
 logger = structlog.get_logger(__name__)
+
+
+def _learning_status_reply(items: list[GovernedLearningStatus]) -> str:
+    lines = [
+        "Governed strategy learning status. Human approval uses the typed paper promotion "
+        "endpoint; Agent prose cannot approve it."
+    ]
+    for item in items:
+        lines.append(
+            f"Proposal {item.proposal_id}; state={item.approval_state}; "
+            f"base={item.base_version_id}; candidate={item.proposed_version_id}. "
+            f"Recorded reason={json.dumps(item.reason[:160])}. "
+            f"Replayed={item.replayed}; observed baseline delta={item.observed_net_pnl_delta}; "
+            f"outperformed={item.outperformed_baseline}; improvement claim=false. "
+            f"Paper validation completed={item.paper_validation_completed}; "
+            f"insufficient evidence={item.insufficient_evidence}; "
+            f"paper active={item.paper_active_version_id}; "
+            f"can roll back={item.can_roll_back}; rollback version={item.rollback_version_id}. "
+            f"Blockers={json.dumps(item.blockers)[:200]}"
+        )
+    if not items:
+        lines.append("No governed proposals were found in the requested scope.")
+    lines.append(
+        "Paper only. Replay and paper evidence are separate; ACTIVE grants no live permission."
+    )
+    return "\n\n".join(lines)[:4000]
+
 
 _BASE_LIMITATIONS = (
     "Free-form agent text does not mutate strategies, rules, or journal records.",
@@ -196,6 +225,29 @@ class InteractiveAgentService:
             limitations.extend(action[0].limitations)
         daily_review = None
         review_inputs = None
+        learning_status: list[GovernedLearningStatus] = []
+        learning_read = action is not None and action[0].name == "strategy.learning_status"
+        if learning_read:
+            from app.services.strategy_promotion import StrategyPromotionService
+
+            assert isinstance(action[1], LearningStatusInput)
+            inputs = action[1]
+            promotion = StrategyPromotionService(self._session, self._settings)
+            if inputs.proposal_id is not None:
+                learning_status = [
+                    promotion.status(
+                        inputs.proposal_id, organization_id=organization_id, user_id=user_id
+                    )
+                ]
+            else:
+                learning_status = promotion.list_status(
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    strategy_id=inputs.strategy_id
+                    or request.strategy_id
+                    or conversation.strategy_id,
+                    limit=inputs.limit,
+                ).items
         if action is not None and action[0].name == "daily_review.read":
             assert isinstance(action[1], DailyReviewInput)
             review_inputs = action[1]
@@ -212,6 +264,7 @@ class InteractiveAgentService:
         bundle = ReadBundle()
         if (
             classification.operation is not TurnOperation.REFUSE
+            and not learning_read
             and (classification.capability not in _SKIP_RETRIEVAL)
             and (action is None or action[0].name != "paper_trade.prepare_execution")
         ):
@@ -275,6 +328,8 @@ class InteractiveAgentService:
             factual = render_daily_review(daily_review, review_inputs)
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
             limitations.extend(_BASE_LIMITATIONS)
+        if learning_read:
+            factual = _learning_status_reply(learning_status)
         reply = factual
         if classification.capability is AgentCapability.STRATEGY_ANALYTICS:
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
@@ -283,6 +338,7 @@ class InteractiveAgentService:
             )
         elif (
             self._responder is not None
+            and not learning_read
             and daily_review is None
             and not (action is not None and action[0].name == "paper_trade.prepare_execution")
         ):
@@ -315,6 +371,7 @@ class InteractiveAgentService:
                     "strategy_analytics": [
                         report.model_dump(mode="json") for report in bundle.strategy_analytics
                     ],
+                    "governed_learning": [item.model_dump(mode="json") for item in learning_status],
                 }
             },
         )
@@ -338,6 +395,7 @@ class InteractiveAgentService:
             statistics_summary=bundle.statistics_summary,
             daily_review=daily_review,
             strategy_analytics=bundle.strategy_analytics,
+            governed_learning=learning_status,
             paper_safety=safety,
             screenshot=_screenshot_contract(classification.screenshot_requested),
             voice=_voice_contract(classification.voice_requested),

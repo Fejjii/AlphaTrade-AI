@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.mutation_policy import confirmation_authorizes_mutation
 from app.core.errors import NotFoundError, ValidationAppError
-from app.db.models import UserStrategy, UserStrategyVersion
+from app.db.models import StrategyConversationProposal, UserStrategy, UserStrategyVersion
 from app.schemas.common import SetupCompileStatus, StrategyLifecycleState
+from app.schemas.governed_learning import GOVERNED_LEARNING
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.strategy_lifecycle import (
     CompiledSetupDefinitionRecord,
@@ -162,6 +164,16 @@ class CompiledSetupService:
             strategy_id=strategy_id,
         )
         state = self._version_state(version.id)
+        proposal = self._session.scalar(
+            select(StrategyConversationProposal).where(
+                StrategyConversationProposal.resulting_version_id == version.id,
+                StrategyConversationProposal.organization_id == organization_id,
+            )
+        )
+        if proposal is not None and GOVERNED_LEARNING in proposal.context_refs:
+            raise ValidationAppError(
+                "Governed candidates require explicit evidence-bound paper promotion approval."
+            )
         if state in _APPROVE_CONVERGE_STATES:
             latest = self._versions.latest_lifecycle_event_for_version(version.id)
             if latest is None:

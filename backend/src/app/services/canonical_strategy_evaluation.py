@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
 from app.core.errors import NotFoundError
-from app.db.models import CompiledSetupDefinition, UserStrategyVersion
+from app.db.models import CompiledSetupDefinition, PaperValidationRun, UserStrategyVersion
 from app.evidence_pipeline.canonical import MANDATORY_ROLES
 from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
 from app.schemas.common import SetupCompileStatus, StrategyLifecycleState
@@ -52,6 +52,7 @@ def resolve_executable_strategy_policy(
     organization_id: UUID,
     strategy_version_id: UUID,
     user_id: UUID | None = None,
+    paper_validation_run_id: UUID | None = None,
 ) -> ExecutableStrategyPolicy:
     """Load one approved compiled version as executable evaluation policy."""
 
@@ -76,7 +77,28 @@ def resolve_executable_strategy_policy(
             "Draft strategy versions cannot be evaluated as trading authority.",
             reason_code="draft_not_executable",
         )
-    if state not in {StrategyLifecycleState.APPROVED, StrategyLifecycleState.ACTIVE}:
+    validation_scope = False
+    if state is StrategyLifecycleState.PAPER_VALIDATING and paper_validation_run_id is not None:
+        run = session.get(PaperValidationRun, paper_validation_run_id)
+        if (
+            run is not None
+            and run.organization_id == organization_id
+            and run.user_id == user_id
+            and run.strategy_version_id == version.id
+            and lifecycle.evidence_snapshot.get("paper_validation_run_id") == str(run.id)
+        ):
+            from app.services.strategy_promotion import StrategyPromotionService
+
+            StrategyPromotionService(session).require_candidate_replay(
+                version.id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+            validation_scope = True
+    if not validation_scope and state not in {
+        StrategyLifecycleState.APPROVED,
+        StrategyLifecycleState.ACTIVE,
+    }:
         raise StrategyEvaluationPolicyError(
             "Only approved or active strategy versions may become evaluation policy.",
             reason_code="strategy_not_approved",
@@ -112,7 +134,7 @@ def resolve_executable_strategy_policy(
             if version.structured_rules
             else None
         ),
-        pattern_spec=spec,
+        pattern_spec=spec.model_dump(mode="json"),
         strategy_version_id=version.id,
         organization_id=organization_id,
     )
@@ -145,6 +167,7 @@ def resolve_executable_strategy_policy(
         grammar_version=compiled.grammar_version,
         fusion_policy=fusion_policy,
         authored_spec=spec,
+        execution_scope="paper_validation" if validation_scope else "paper",
     )
 
 

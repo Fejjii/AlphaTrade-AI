@@ -35,6 +35,7 @@ def evaluate_paper_promotion(
     runtime_windows_count: int = 0,
     data_stale: bool = False,
     provider_failures: bool = False,
+    minimum_paper_trades: int = MIN_PAPER_TRADES,
 ) -> PaperPromotionDecision:
     blockers: list[str] = []
 
@@ -91,9 +92,9 @@ def evaluate_paper_promotion(
             paper_validated=False,
         )
 
-    if metrics.paper_trades_count < MIN_PAPER_TRADES:
+    if metrics.paper_trades_count < minimum_paper_trades:
         blockers.append(
-            f"Need at least {MIN_PAPER_TRADES} closed paper trades "
+            f"Need at least {minimum_paper_trades} closed paper trades "
             f"(have {metrics.paper_trades_count})."
         )
         return PaperPromotionDecision(
@@ -139,7 +140,7 @@ def evaluate_paper_promotion(
         if metrics.paper_trades_count
         else 0.0
     )
-    if stop_respect_rate < 0.8 and metrics.paper_trades_count >= MIN_PAPER_TRADES:
+    if stop_respect_rate < 0.8 and metrics.paper_trades_count >= minimum_paper_trades:
         blockers.append("Stop rules not consistently respected in paper simulation.")
 
     if not min_runtime_days_met:

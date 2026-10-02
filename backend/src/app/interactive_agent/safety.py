@@ -87,6 +87,13 @@ def capability_catalog(settings: Settings) -> AgentCapabilityCatalog:
             ),
         ),
         CapabilityDescriptor(
+            capability=AgentCapability.GOVERNED_LEARNING,
+            status=CapabilityStatus.READ_THROUGH,
+            authority="StrategyPromotionService",
+            notes="Bounded proposal, replay, paper validation, active-version and rollback reads. "
+            "Agent prose cannot approve promotion or enable live execution.",
+        ),
+        CapabilityDescriptor(
             capability=AgentCapability.STRATEGY_RETRIEVAL,
             status=CapabilityStatus.IMPLEMENTED,
             authority="StrategyLibraryService",
