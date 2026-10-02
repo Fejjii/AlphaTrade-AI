@@ -5,6 +5,20 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-091 — Proactive attention queue 001
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: exact base
+  `5f4f0a467ce8f68f9c7a82d3b32307d559a9f092` · Risk: Low (read-only projection).
+- Branch: `codex/proactive_attention_queue_001`.
+- Goal: Deterministic tenant/user attention from recorded Watcher/setup, risk,
+  paper positions, review lessons, validation/replay, evidence, delivery and
+  pending strategy proposal records, with semantic deduplication and expiry.
+- Safety: No trade execution, strategy approval, risk bypass, Telegram send,
+  worker activation, migration or deployment. Agent integration deferred.
+- Validation: Attention reducer/reader/API cases, Dashboard card/API tests,
+  existing Daily Review/Brain regressions, lint and type checks.
+- Handoff: `docs/proactive_attention_queue_001.md`, branch root `HANDOFF.md` and
+  `CHANGELOG_SESSION.md`; draft PR targets the exact release baseline branch.
+
 ---
 
 ## AT-000 — Bootstrap + install Master Workflow v2.0
@@ -2004,5 +2018,4 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
   returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
 - Note: Do not merge automatically. Do not deploy.
-
 
