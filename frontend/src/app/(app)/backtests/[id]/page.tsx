@@ -368,6 +368,7 @@ export default function BacktestRunDetailPage() {
   }
 
   const metrics = run.result?.metrics;
+  const research = run.result?.replay?.mode === "sfp_research" ? run.result.replay : null;
   const splitMetrics = run.result?.split_metrics ?? [];
   const oosMetrics = run.result?.oos_metrics;
   const datasetSummary = run.result?.dataset_summary;
@@ -377,7 +378,7 @@ export default function BacktestRunDetailPage() {
       : null;
   const canCancel = run.status === "queued" || run.status === "running";
   const showResults =
-    run.status === "completed" || (run.status === "cancelled" && run.result?.metrics);
+    run.status === "completed" || (run.status === "cancelled" && (metrics || research));
 
   const journalWouldCreate =
     journalDryRun?.results.filter((r) => r.outcome === "would_create").length ?? 0;
@@ -443,6 +444,68 @@ export default function BacktestRunDetailPage() {
         <Card>
           <CardContent className="pt-6 text-sm text-zinc-400">
             This run was cancelled before producing results.
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showResults && research ? (
+        <Card data-testid="sfp-replay-research">
+          <CardHeader>
+            <CardTitle>SFP research replay</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <p>
+              No SFP execution plan is authorized. This replay reports setups and evidence.
+              Trade returns are unavailable.
+            </p>
+            <p className="text-zinc-400">Strategy version: {research.strategy_version_id}</p>
+            {research.samples.map((sample) => (
+              <div key={sample.split_label} className="space-y-1">
+                <p>{sample.split_label}: {sample.status.replaceAll("_", " ")}</p>
+                <p>
+                  {sample.candle_count} candles · {sample.setup_count ?? 0} setups · {" "}
+                  {sample.candidate_count} confirmed setups
+                </p>
+                <p className="text-zinc-400">
+                  {Object.entries(sample.lifecycle_counts ?? {})
+                    .map(([key, count]) => `${key.replaceAll("_", " ")}: ${count}`)
+                    .join(" · ")}
+                </p>
+              </div>
+            ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <caption className="pb-2 text-left">
+                  Setup sample counts. Quality buckets count measured components;
+                  regime bands describe directional efficiency.
+                </caption>
+                <thead>
+                  <tr>
+                    {["Window", "Symbol", "Timeframe", "Direction", "Level", "Quality",
+                      "Regime", "Setups", "Confirmed"].map((label) => (
+                      <th key={label} className="p-2">{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {research.research_buckets?.map((bucket, index) => (
+                    <tr key={index}>
+                      {[bucket.split_label, bucket.symbol, bucket.timeframe, bucket.direction,
+                        bucket.level_type, bucket.quality_bucket, bucket.regime, bucket.setup_count,
+                        bucket.confirmed_count].map((value, column) => (
+                        <td key={column} className="p-2">{value}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>Missing evidence: {research.missing_evidence.join(", ") || "none recorded"}</p>
+            <p>Stale evidence: {research.stale_evidence?.join(", ") || "none recorded"}</p>
+            <p>Results are descriptive. No improvement is claimed.</p>
+            <ul className="list-disc pl-5 text-zinc-400">
+              {run.result?.limitations?.map((limitation) => <li key={limitation}>{limitation}</li>)}
+            </ul>
           </CardContent>
         </Card>
       ) : null}

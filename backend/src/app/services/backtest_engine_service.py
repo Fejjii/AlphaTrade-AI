@@ -410,6 +410,7 @@ class BacktestEngineService:
         *,
         persist: bool = True,
     ) -> BacktestResult:
+        assert result.metrics is not None  # Legacy simulations always carry trade metrics.
         result_hash = self._hash_result(result.trades, result.metrics)
         result = result.model_copy(
             update={

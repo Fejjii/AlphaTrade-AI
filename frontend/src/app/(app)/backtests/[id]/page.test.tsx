@@ -450,6 +450,37 @@ describe("BacktestRunDetailPage", () => {
     expect(await screen.findByTestId("journal-dry-run-summary")).toHaveTextContent("Would create: 2");
   });
 
+  it.each(["completed", "cancelled"] as const)("renders %s SFP research without trade returns", (status) => {
+    currentRun = {
+      ...completedRun,
+      status,
+      result: {
+        metrics: null,
+        trades: [],
+        recommendation: "needs_review",
+        replay: {
+          mode: "sfp_research",
+          strategy_version_id: "sfp-version-001",
+          parameter_hash: "sfp-parameters",
+          improvement_claim: false,
+          samples: [{split_label: "out_of_sample", status: "insufficient_sample", candle_count: 6, setup_count: 1, candidate_count: 1, lifecycle_counts: {sweeps: 1, reclaims: 1}}],
+          missing_evidence: ["funding"],
+          stale_evidence: ["cvd"],
+          research_buckets: [{split_label: "out_of_sample", symbol: "BTCUSDT", timeframe: "15m", direction: "long", level_type: "swing_low", strategy_version_id: "sfp-version-001", quality_bucket: "measured_6_of_8", regime: "efficiency_lt_1_3", setup_count: 1, confirmed_count: 1}],
+        },
+      },
+    };
+    render(<BacktestRunDetailPage />);
+    expect(screen.getByTestId("sfp-replay-research")).toBeInTheDocument();
+    expect(screen.getByText(/Trade returns are unavailable/)).toBeInTheDocument();
+    expect(screen.getByText(/insufficient sample/)).toBeInTheDocument();
+    expect(screen.getByText("swing_low")).toBeInTheDocument();
+    expect(screen.getByText("Missing evidence: funding")).toBeInTheDocument();
+    expect(screen.getByText("Stale evidence: cvd")).toBeInTheDocument();
+    expect(screen.queryByTestId("backtest-metrics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Net PnL")).not.toBeInTheDocument();
+  });
+
   it("renders failed run state", () => {
     currentRun = {
       ...completedRun,

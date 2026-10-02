@@ -1,7 +1,7 @@
-"""Family adapter seam. SFP can implement this after PR168 consolidation.
+"""Family adapter seam shared by Nested simulation and canonical SFP research.
 
 Adapters must emit prefix-stable events in candle order; event timestamps are
-closed-candle times. They never choose fills, account risk, or promote versions.
+closed-candle knowledge times. They never choose fills, risk, or promote versions.
 """
 
 from collections.abc import Iterator
