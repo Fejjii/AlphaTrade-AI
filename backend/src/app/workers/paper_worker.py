@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Environment, Settings
 from app.observability.process_memory import read_process_memory, release_allocator_memory
+from app.observability.worker_memory import CycleMemorySampler, WorkerMemoryDiagnostics
 from app.workers.watcher_paper import (
     WatcherPaperCycleReport,
     WatcherPaperRuntime,
@@ -169,6 +170,7 @@ class PaperWorkerSupervisor:
         watcher_authority: tuple[AuthorityProbe, AuthorityRestore] | None = None,
         telegram_authority: tuple[AuthorityProbe, AuthorityRestore] | None = None,
         on_stop: Callable[[], None] | None = None,
+        memory_diagnostics_enabled: bool = False,
     ) -> None:
         self._poll_seconds = poll_seconds
         self._join_timeout_seconds = join_timeout_seconds
@@ -181,6 +183,7 @@ class PaperWorkerSupervisor:
         self._authority_intact = True
         self._watcher = _Component("watcher", watcher_cycle, _guard(watcher_authority))
         self._telegram = _Component("telegram", telegram_cycle, _guard(telegram_authority))
+        self._memory_diagnostics = WorkerMemoryDiagnostics() if memory_diagnostics_enabled else None
 
     def snapshot(self) -> PaperWorkerHealth:
         """Copy both health records. Callers cannot mutate the supervisor."""
@@ -294,6 +297,7 @@ class PaperWorkerSupervisor:
         self._mark_stopped(component)
 
     def _step(self, component: _Component) -> None:
+        sampler = CycleMemorySampler() if self._memory_diagnostics is not None else None
         try:
             if self._stop.is_set():
                 self._mark_stopped(component)
@@ -310,7 +314,12 @@ class PaperWorkerSupervisor:
                 return
             self._succeed(component, outcome)
         finally:
-            release_allocator_memory()
+            if sampler is not None:
+                sampler.stop()
+            after = release_allocator_memory()
+            if sampler is not None:
+                assert self._memory_diagnostics is not None
+                self._memory_diagnostics.finish(component.name, sampler, after)
 
     def _revert(self, component: _Component) -> None:
         guard = component.guard
@@ -469,6 +478,7 @@ def build_paper_worker_supervisor(settings: Settings) -> PaperWorkerSupervisor:
             poll_seconds=float(settings.watcher_paper_poll_interval_seconds),
             watcher_authority=authority_binding(watcher_settings),
             telegram_authority=authority_binding(telegram_settings),
+            memory_diagnostics_enabled=settings.paper_worker_memory_diagnostics_enabled,
         )
     return _build_armed_supervisor(watcher_settings, telegram_settings)
 
@@ -599,6 +609,7 @@ def _build_armed_supervisor(
         watcher_authority=authority_binding(watcher_settings),
         telegram_authority=authority_binding(telegram_settings),
         on_stop=on_stop,
+        memory_diagnostics_enabled=watcher_settings.paper_worker_memory_diagnostics_enabled,
     )
 
 

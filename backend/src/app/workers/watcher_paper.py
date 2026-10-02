@@ -594,6 +594,25 @@ class WatcherPaperRuntime:
         from app.observability.process_memory import read_process_memory
 
         memory = read_process_memory()
+        if self._settings is not None and self._settings.paper_worker_memory_diagnostics_enabled:
+            counts: dict[str, int] = getattr(self._history_source, "memory_counts", lambda: {})()
+            logger.info(
+                "watcher_paper_memory_structures",
+                cycle=self._status.cycles_completed,
+                history_held=int(self._history.held_symbol is not None),
+                history_completed=len(self._history.completed),
+                fencing_tokens=len(self._held_fencing_tokens),
+                last_scan_reports=len(self._status.last_scans),
+                last_candidates=sum(len(s.candidate_ids) for s in self._status.last_scans),
+                last_evidence_components=sum(
+                    len(s.discussion.window.selected_public_observations) if s.discussion else 0
+                    for s in self._status.last_scans
+                ),
+                session_identity_map=len(session.identity_map) if session else 0,
+                session_new=len(session.new) if session else 0,
+                session_dirty=len(session.dirty) if session else 0,
+                **counts,
+            )
         logger.info(
             "watcher_paper_cycle",
             worker_id=self._worker_id,

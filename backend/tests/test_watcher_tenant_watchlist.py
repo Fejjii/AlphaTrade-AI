@@ -180,6 +180,57 @@ def runtime(db, market, *, enabled=True, source="binance_usdm", secondary="", ta
     return worker, factory, candidates
 
 
+def test_repeated_worker_cycles_release_history_and_keep_compositions_bounded(db, capsys):
+    import json
+
+    from app.observability.process_memory import read_process_memory, release_allocator_memory
+    from app.workers.paper_worker import (
+        CycleOutcome,
+        PaperWorkerSupervisor,
+        outcome_from_watcher_report,
+    )
+
+    market = PublicMarket()
+    worker, factory, candidates = runtime(db, market)
+    worker._settings.paper_worker_memory_diagnostics_enabled = True
+    supervisor = PaperWorkerSupervisor(
+        watcher_cycle=lambda: outcome_from_watcher_report(worker.run_cycle()),
+        telegram_cycle=lambda: CycleOutcome(status="disarmed"),
+        memory_diagnostics_enabled=True,
+    )
+    before = release_allocator_memory().rss_bytes
+    rss = []
+    try:
+        for _ in range(40):
+            health = supervisor.run_round()
+            rss.append(read_process_memory().rss_bytes)
+            counts = factory.memory_counts()
+            assert health.watcher.last_error == ""
+            assert worker.history.held_symbol is None
+            assert len(worker.history.completed) <= 5
+            assert counts["market_compositions"] == 5
+            assert counts["raw_cache_rows"] == counts["reduced_cache_entries"] == 0
+            assert counts["monitor_trades"] == counts["bybit_proven_prints"] == 0
+            assert len(factory._reads) <= 5
+            assert len(worker.symbol_status.snapshot()) == 5
+            assert candidates.list_for_organization(ORG) == ((), 0)
+            market.calls.clear()  # The test recorder is not a production retained structure.
+    finally:
+        factory.retain(())
+    # Record measurements; assert logical bounds, never a platform-specific absolute RSS.
+    with capsys.disabled():
+        print(
+            json.dumps(
+                {
+                    "workload": "40 five-market no-strategy cycles; mocked GET; Telegram disarmed",
+                    "baseline_rss_bytes": before,
+                    "rss_after_cleanup_bytes": rss,
+                    "growth_bytes_per_cycle_after_warmup": (rss[-1] - rss[9]) / 30,
+                }
+            )
+        )
+
+
 def test_database_revision_restart_and_stale_worker_fence(db):
     with db() as session:
         repo = WatcherWatchlistRepository(session)
