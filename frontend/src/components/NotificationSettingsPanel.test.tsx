@@ -1,7 +1,14 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
+import { telegramPolicyFixture } from "./settings/telegram-policy.fixture";
 import { api } from "@/lib/api";
 import type { NotificationPreferences } from "@/lib/api/types";
 
@@ -173,5 +180,75 @@ describe("Trader notification settings", () => {
     });
     await screen.findByText("Alert preferences unavailable.");
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+});
+
+describe("Policy V2 settings integration", () => {
+  it("loads the backend policy, refreshes the saved values and never exposes credentials", async () => {
+    const initial = {
+      ...prefs,
+      telegram_policy: telegramPolicyFixture,
+      telegram_chat_id: "private-recipient",
+    };
+    const updated = {
+      ...initial,
+      telegram_policy: {
+        ...telegramPolicyFixture,
+        minimum_severity: "ACTION" as const,
+      },
+    };
+    vi.mocked(api.notifications.preferences)
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue(updated);
+    render(<NotificationSettingsPanel />);
+    fireEvent.change(
+      await screen.findByLabelText("Minimum Telegram severity"),
+      { target: { value: "ACTION" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save Telegram policy" }),
+    );
+    await screen.findByText("Telegram policy saved.");
+    expect(screen.getByLabelText("Minimum Telegram severity")).toHaveValue(
+      "ACTION",
+    );
+    expect(screen.queryByText("private-recipient")).not.toBeInTheDocument();
+    expect(screen.getByTestId("settings-telegram-state")).toHaveTextContent(
+      "disabled",
+    );
+    expect(api.notifications.updatePreferences).toHaveBeenCalledExactlyOnceWith(
+      { telegram_enabled: true, telegram_policy: updated.telegram_policy },
+    );
+  });
+
+  it("labels absent V2 support unavailable and does not offer its controls", async () => {
+    render(<NotificationSettingsPanel />);
+    await screen.findByText(/Telegram Policy V2 settings: Unavailable/);
+    expect(screen.queryByTestId("telegram-policy-v2")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save Telegram policy" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears stale V2 controls if the read after saving fails", async () => {
+    vi.mocked(api.notifications.preferences)
+      .mockResolvedValueOnce({
+        ...prefs,
+        telegram_policy: telegramPolicyFixture,
+      })
+      .mockRejectedValue(new Error("offline"));
+    render(<NotificationSettingsPanel />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save Telegram policy" }),
+    );
+    await screen.findByText("Alert preferences unavailable.");
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("telegram-policy-v2"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("settings-telegram-state")).toHaveTextContent(
+      "disabled",
+    );
   });
 });
