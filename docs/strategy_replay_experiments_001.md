@@ -154,14 +154,14 @@ replay result or the sample threshold is met. A single holdout result does not
 establish significance, robustness or future performance. Repeated verification
 of one dataset is not independent evidence.
 
-## SFP seam
+## SFP seam (subsequently implemented)
 
-`ReplayAdapter.events` separates family detection from fill/risk/account logic.
-A future SFP adapter must emit chronological, prefix-stable closed-candle events
-with exact structural entry/stop/targets and evidence availability. After PR168
-consolidation, register its validated immutable family spec and adapter here;
-retain the same job, trade, journal and audit authorities and the prefix/leakage
-tests. This PR registers only Nested and rejects other family versions.
+PR173 originally registered only Nested. After PR176 consolidation,
+`sfp_replay_adapter_001` adds canonical SFP lifecycle research through the same
+jobs, results, verification, comparison and audit authorities. SFP does not have
+an authorized execution plan: entry/stop/targets and trade returns must never be
+inferred to satisfy the adapter seam. See `docs/sfp_replay_adapter_001.md` for the
+explicit historical evidence contract and research-only output.
 
 ## Validation and handoff
 

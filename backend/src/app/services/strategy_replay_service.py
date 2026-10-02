@@ -25,6 +25,7 @@ from app.schemas.common import AuditEventType, BacktestRunStatus, BacktestSplitL
 from app.schemas.nested_continuation import NestedContinuationSpec
 from app.schemas.strategy_replay import (
     REPLAY_ENGINE,
+    SFP_REPLAY_ADAPTER,
     ReplayComparison,
     ReplayComparisonRequest,
     ReplayReport,
@@ -36,7 +37,9 @@ from app.services.backtest_hashing import (
     dataset_content_hash,
 )
 from app.services.risk.limits import RiskLimits
+from app.services.sfp_replay_adapter import validate_replay_evidence
 from app.services.strategy_replay_engine import StrategyReplayEngine, replay_input_hash
+from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
 
 
 class StrategyReplayService:
@@ -65,10 +68,18 @@ class StrategyReplayService:
         if content_hash != version.content_hash:
             raise ValidationAppError("Strategy version content hash mismatch.")
         try:
-            spec = NestedContinuationSpec.model_validate(version.pattern_spec)
+            spec = (
+                SfpSpec.model_validate(version.pattern_spec)
+                if (version.pattern_spec or {}).get("kind") == SFP_KIND
+                else NestedContinuationSpec.model_validate(version.pattern_spec)
+            )
+            if request.sfp_evidence is not None:
+                if not isinstance(spec, SfpSpec):
+                    raise ValueError("SFP evidence requires an SFP version.")
+                validate_replay_evidence(request.sfp_evidence)
         except ValueError as exc:
             raise ValidationAppError(
-                "Replay 001 supports exact Nested Continuation versions only."
+                f"Replay requires a valid immutable Nested or SFP spec and evidence: {exc}"
             ) from exc
         dataset = self._session.get(BacktestDataset, request.dataset_id)
         if dataset is None:
@@ -94,6 +105,8 @@ class StrategyReplayService:
         limits = asdict(RiskLimits())
         limits["supported_symbols"] = sorted(limits["supported_symbols"])
         request_payload = request.model_dump(mode="json", exclude={"idempotency_key"})
+        if not isinstance(spec, SfpSpec):
+            request_payload.pop("sfp_evidence", None)
         snapshot = {
             "engine_version": REPLAY_ENGINE,
             "pattern_spec": spec.model_dump(mode="json"),
@@ -104,6 +117,9 @@ class StrategyReplayService:
             "dataset_hash": dataset.dataset_hash,
             "input_hash": replay_input_hash(rows),
         }
+        if isinstance(spec, SfpSpec):
+            snapshot["adapter_version"] = SFP_REPLAY_ADAPTER
+            snapshot["evidence_hash"] = canonical_json_hash(request_payload["sfp_evidence"])
         # Idempotency identifies one exact intent; conflicting content cannot be reused.
         config_hash = canonical_json_hash(snapshot)
         existing = self._runs.get_by_idempotency_key(
@@ -159,11 +175,40 @@ class StrategyReplayService:
         if (
             request.strategy_version_id != run.strategy_version_id
             or request.dataset_id != run.dataset_id
+            or snapshot["assumptions"] != run.assumptions
+            or snapshot["assumptions"] != request.assumptions.model_dump(mode="json")
+            or run.engine_version != REPLAY_ENGINE
         ):
             raise ValidationAppError("Replay run identity differs from its frozen configuration.")
         version = self._session.get(UserStrategyVersion, run.strategy_version_id)
         if version is None or version.content_hash != snapshot["strategy_content_hash"]:
             raise ValidationAppError("Replay immutable strategy version mismatch.")
+        if (
+            strategy_version_content_hash(
+                card=version.card,
+                structured_rules=version.structured_rules,
+                lesson_source_metadata=version.lesson_source_metadata,
+                pattern_spec=version.pattern_spec,
+            )
+            != version.content_hash
+        ):
+            raise ValidationAppError("Replay immutable strategy content changed.")
+        try:
+            canonical_spec = (
+                SfpSpec.model_validate(version.pattern_spec)
+                if snapshot["pattern_spec"].get("kind") == SFP_KIND
+                else NestedContinuationSpec.model_validate(version.pattern_spec)
+            )
+        except ValueError as exc:
+            raise ValidationAppError("Replay immutable strategy spec invalid.") from exc
+        if canonical_spec.model_dump(mode="json") != snapshot["pattern_spec"]:
+            raise ValidationAppError("Replay immutable strategy spec changed.")
+        if snapshot["pattern_spec"].get("kind") == SFP_KIND and (
+            snapshot.get("adapter_version") != SFP_REPLAY_ADAPTER
+            or snapshot.get("evidence_hash")
+            != canonical_json_hash(snapshot["replay_request"].get("sfp_evidence"))
+        ):
+            raise ValidationAppError("SFP replay adapter or evidence binding mismatch.")
         dataset = self._session.get(BacktestDataset, run.dataset_id)
         if dataset is None:
             raise ValidationAppError("Replay dataset missing.")
@@ -173,11 +218,14 @@ class StrategyReplayService:
             or replay_input_hash(rows) != snapshot["input_hash"]
         ):
             raise ValidationAppError("Replay dataset content changed.")
-        result = StrategyReplayEngine(self._backtests._engine).run(
-            rows=rows,
-            snapshot=snapshot,
-            should_cancel=(lambda: self._backtests._should_cancel(run.id)) if persist else None,
-        )
+        try:
+            result = StrategyReplayEngine(self._backtests._engine).run(
+                rows=rows,
+                snapshot=snapshot,
+                should_cancel=(lambda: self._backtests._should_cancel(run.id)) if persist else None,
+            )
+        except ValueError as exc:
+            raise ValidationAppError(f"Replay evidence validation failed: {exc}") from exc
         if persist:
             for trade in result.trades:
                 data = trade.model_dump(
@@ -226,6 +274,13 @@ class StrategyReplayService:
                 != proposed.config_snapshot["replay_request"][key]
             ):
                 raise ValidationAppError(f"Comparison requires identical {key}.")
+        for key in ("adapter_version", "evidence_hash"):
+            if baseline.config_snapshot.get(key) != proposed.config_snapshot.get(key):
+                raise ValidationAppError(f"Comparison requires identical {key}.")
+        if baseline.config_snapshot["replay_request"].get(
+            "sfp_evidence"
+        ) != proposed.config_snapshot["replay_request"].get("sfp_evidence"):
+            raise ValidationAppError("Comparison requires identical historical SFP evidence.")
         base_spec, prop_spec = (
             baseline.config_snapshot["pattern_spec"],
             proposed.config_snapshot["pattern_spec"],
@@ -233,10 +288,23 @@ class StrategyReplayService:
         for key in ("kind", "symbol", "trigger_timeframe", "direction"):
             if base_spec[key] != prop_spec[key]:
                 raise ValidationAppError(f"Comparison requires identical strategy {key}.")
-        results = [BacktestResult.model_validate(run.result) for run in runs]
+        try:
+            results = [BacktestResult.model_validate(run.result) for run in runs]
+        except ValueError as exc:
+            raise ValidationAppError("Stored replay result invalid.") from exc
         for run, result in zip(runs, results, strict=True):
+            assert run.config_snapshot is not None
             if canonical_json_hash(run.config_snapshot) != run.config_hash:
                 raise ValidationAppError("Stored replay config hash mismatch.")
+            frozen_request = StrategyReplayCreate.model_validate(
+                run.config_snapshot["replay_request"]
+            )
+            if (
+                frozen_request.strategy_version_id != run.strategy_version_id
+                or frozen_request.dataset_id != run.dataset_id
+                or frozen_request.assumptions.model_dump(mode="json") != run.assumptions
+            ):
+                raise ValidationAppError("Stored replay run identity mismatch.")
             if result.result_hash != run.result_hash:
                 raise ValidationAppError("Stored replay result identity mismatch.")
             if (
@@ -264,17 +332,25 @@ class StrategyReplayService:
             baseline_samples=reports[0].samples,
             proposed_samples=reports[1].samples,
             evaluation_net_pnl_delta=None
-            if any(s.status == "missing_data" for s in evaluation)
-            else evaluation[1].net_pnl - evaluation[0].net_pnl,
+            if any(s.status == "missing_data" or s.net_pnl is None for s in evaluation)
+            else (evaluation[1].net_pnl or 0) - (evaluation[0].net_pnl or 0),
+            baseline_research_buckets=reports[0].research_buckets,
+            proposed_research_buckets=reports[1].research_buckets,
             limitations=[
                 "Observed differences are descriptive; no performance improvement claim.",
                 "No automatic parameter selection, promotion, or evaluation-window training.",
                 *[
-                    f"{name}: {sample.status} ({sample.trade_count} evaluation trades)."
+                    f"{name}: {sample.status} ({sample.setup_count} setup episodes, "
+                    f"{sample.trade_count} evaluation trades)."
                     for name, sample in zip(("baseline", "proposed"), evaluation, strict=True)
                 ],
             ],
         )
+        if reports[0].mode == "sfp_research":
+            comparison.limitations.append(
+                "SFP comparison measures lifecycle and evidence counts only. "
+                "Execution plan unauthorized; return delta is null."
+            )
 
         self._backtests._audit_lifecycle(
             baseline,
