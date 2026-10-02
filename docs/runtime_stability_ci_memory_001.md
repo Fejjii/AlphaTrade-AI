@@ -41,6 +41,31 @@ OHLCV `recorded_at` still represents recording wall time. SFP availability uses
 clocks. It is not the cause of these failures and was not changed. Freshness
 tolerances, market facts, receipt preservation and risk reasons were not changed.
 
+## Final PR184 Nested fixture correction
+
+The remaining CI failure was a stale test fixture. `nested_runtime_world`
+still seeded `DailyRiskState.day` from `datetime.now(UTC).date()`, although
+its Watcher evaluates at the existing synthetic `now` derived from the last
+candle. With canonical daily-risk clock propagation, that wall-clock row
+does not lock the fixture's evaluation day. The unchanged test reproduced
+`paper_loop_reason=open_journal` on October 2, 2026.
+
+The fixture now uses `day=now.date()`. Production risk semantics and all test
+expectations are unchanged: the confirmed Nested setup creates its canonical
+Candidate, the existing lock records `BLOCKED_BY_RISK` and `blocked_daily_loss`,
+and the paper loop is blocked with `risk_block`. No TradePlan, fill or Journal
+trade is produced.
+
+Final focused validation: **21 passed, zero skipped** on disposable PostgreSQL
+17.11: the Nested daily-risk test, all eight SFP daily-risk clock matrix cases,
+all six Automated Paper Loop tests (including daily-risk and kill-switch
+blocking), and six daily-risk clock cases. Ruff lint/format and whitespace
+checks pass. No full repository suite was run.
+
+```sh
+.venv/bin/pytest tests/test_strategy_brain_nested.py::test_existing_daily_risk_lock_blocks_nested_paper_execution tests/test_sfp_strategy_brain_runtime.py::test_existing_daily_risk_lock_is_authoritative_for_sfp tests/test_automated_paper_loop.py tests/test_daily_risk_clock.py
+```
+
 ## Memory findings
 
 The Render restart is evidence of exceeding that container's limit. The CI

@@ -346,7 +346,7 @@ def nested_runtime_world(tenant_store, monkeypatch, *, forming=False, risk_block
             DailyRiskState(
                 organization_id=org,
                 user_id=user,
-                day=datetime.now(UTC).date(),
+                day=now.date(),
                 realized_pnl=Decimal(0),
                 unrealized_pnl=Decimal(0),
                 locked=True,
