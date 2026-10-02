@@ -3487,7 +3487,36 @@ export interface ChannelProviderStatus {
   status_label: string;
 }
 
+export type TelegramPolicySeverity = "INFO" | "WATCH" | "ACTION" | "CRITICAL";
+export type TelegramPolicyEventType =
+  | "SETUP" | "RISK" | "PAPER_TRADE_OPENED" | "PAPER_TRADE_CLOSED"
+  | "STOP" | "PARTIAL_PROFIT" | "DAILY_REVIEW" | "OTHER";
+
+/** Backend Policy V2: nested PATCH is a full replacement, null lists allow all. */
+export interface TelegramNotificationPolicyV2 {
+  schema_version: 2;
+  strategy_subscriptions: string[] | null;
+  symbol_subscriptions: string[] | null;
+  setup_stages: string[] | null;
+  event_types: TelegramPolicyEventType[] | null;
+  severities: TelegramPolicySeverity[] | null;
+  minimum_severity: TelegramPolicySeverity;
+  minimum_quality: number | string | null;
+  forming_alerts: boolean;
+  confirmed_alerts: boolean;
+  risk_alerts: boolean;
+  paper_trade_opened: boolean;
+  paper_trade_closed: boolean;
+  stop_event: boolean;
+  partial_profit_event: boolean;
+  daily_review_event: boolean;
+  cooldown_seconds: number;
+  duplicate_suppression_seconds: number;
+  quiet_hours: { start: string; end: string; timezone: string } | null;
+}
+
 export interface NotificationPreferences {
+  telegram_policy?: TelegramNotificationPolicyV2 | null;
   in_app_enabled: boolean;
   webhook_enabled: boolean;
   telegram_enabled: boolean;

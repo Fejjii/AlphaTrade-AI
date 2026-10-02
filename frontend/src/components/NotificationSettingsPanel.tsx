@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 
+import { TelegramPolicyForm } from "@/components/settings/TelegramPolicyForm";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -80,8 +81,8 @@ export function NotificationSettingsPanel({
           {telegram
             ? `Telegram configuration: ${telegram.configured ? "configured" : "not configured"}. `
             : ""}
-          Connection is not verified by this API. Delivery controls are
-          unavailable here.
+          Connection is not verified by this API. Network activation remains
+          separate and is unavailable here.
         </p>
         {delivery.error ? (
           <SettingsUnavailable
@@ -98,6 +99,10 @@ export function NotificationSettingsPanel({
           />
         ) : (
           <>
+            <p className="text-xs text-text-muted">
+              Existing channel routing preferences apply alongside Telegram
+              Policy V2.
+            </p>
             <SettingsReadout
               rows={[
                 ["In-app alerts", prefs.in_app_enabled ? "On" : "Off"],
@@ -147,6 +152,25 @@ export function NotificationSettingsPanel({
                 <option value="critical">Critical</option>
               </select>
             </label>
+            {prefs.telegram_policy?.schema_version === 2 ? (
+              <TelegramPolicyForm
+                key={JSON.stringify([
+                  prefs.telegram_policy,
+                  prefs.telegram_enabled,
+                ])}
+                policy={prefs.telegram_policy}
+                enabled={prefs.telegram_enabled}
+                onSaved={async () => {
+                  await reload();
+                  setMessage("Telegram policy saved.");
+                }}
+              />
+            ) : (
+              <p className="text-xs text-text-muted">
+                Telegram Policy V2 settings: Unavailable — not returned by the
+                current API.
+              </p>
+            )}
             {prefs.using_defaults ? (
               <p className="text-xs text-text-muted">
                 Using default alert preferences.
@@ -184,7 +208,7 @@ export function NotificationSettingsPanel({
           />
           <p className="text-xs text-text-muted">
             This is the reported monitoring context, not a notification filter.
-            Per-market and per-strategy notification settings are unavailable.
+            Configure supported subscriptions in Telegram Policy V2 above.
           </p>
         </div>
         {message ? (
