@@ -20,6 +20,7 @@ from app.db.strategy_immutability import strategy_version_content_hash
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
 from app.schemas.common import StrategyChangeSource, StrategyLifecycleState
 from app.schemas.strategy_library import StrategyCard
+from app.services.backtest_hashing import canonical_json_hash
 from app.services.canonical_serialization import canonical_sha256
 from app.services.setup_ast_compiler import assert_canonical_alias
 
@@ -103,6 +104,7 @@ class StrategyVersioningService:
             "reason": reason,
             "occurred_at": occurred,
             "event_id": str(event_id),
+            "evidence_snapshot_hash": canonical_json_hash(evidence_snapshot or {}),
         }
         event = StrategyLifecycleEvent(
             id=event_id,
@@ -158,6 +160,7 @@ class StrategyVersioningService:
         reason: str | None,
         validation_status: Any | None = None,
         pattern_spec: dict[str, Any] | None | object = _KEEP,
+        select_version: bool = True,
     ) -> UserStrategyVersion:
         resolved_spec = parent.pattern_spec if pattern_spec is _KEEP else pattern_spec
         if resolved_spec is not None and not isinstance(resolved_spec, dict):
@@ -203,7 +206,8 @@ class StrategyVersioningService:
             content_hash=content_hash,
         )
         self._versions.add(version)
-        strategy.current_version = next_version
+        if select_version:
+            strategy.current_version = next_version
         lifecycle_state = (
             StrategyLifecycleState.STRUCTURED if structured_rules else StrategyLifecycleState.DRAFT
         )

@@ -21,10 +21,18 @@ from app.schemas.nested_continuation import StrategyBrainDefinition
 from app.schemas.paper_eligibility import LessonSourceMetadata
 
 
+class StrategyPromotionRequirements(StrictModel):
+    """Authored requirements; absent values require explicit evidence review."""
+
+    minimum_replay_trades: int | None = Field(default=None, ge=2)
+    minimum_paper_trades: int | None = Field(default=None, ge=2)
+
+
 class StrategyCard(StrictModel):
     """Structured strategy card per v5 brief."""
 
     brain: StrategyBrainDefinition | None = None
+    promotion_requirements: StrategyPromotionRequirements | None = None
     strategy_name: str = Field(min_length=1, max_length=120)
     market_type: MarketType = MarketType.CRYPTO_PERP
     asset_universe: list[str] = Field(default_factory=list)
@@ -47,6 +55,8 @@ class StrategyCard(StrictModel):
         payload = handler(self)
         if self.brain is None:
             payload.pop("brain", None)
+        if self.promotion_requirements is None:
+            payload.pop("promotion_requirements", None)
         return payload
 
     @model_validator(mode="after")

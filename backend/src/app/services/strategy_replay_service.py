@@ -200,7 +200,12 @@ class StrategyReplayService:
         return result
 
     def compare(
-        self, request: ReplayComparisonRequest, *, organization_id: UUID
+        self,
+        request: ReplayComparisonRequest,
+        *,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+        persist_audit: bool = True,
     ) -> ReplayComparison:
         found = [
             self._runs.get_scoped(identity, organization_id=organization_id)
@@ -210,8 +215,12 @@ class StrategyReplayService:
             raise NotFoundError("Replay run not found.")
         runs = [run for run in found if run is not None]
         baseline, proposed = runs
-        assert baseline.config_snapshot is not None and proposed.config_snapshot is not None
-        assert baseline.strategy_version_id is not None and proposed.strategy_version_id is not None
+        if user_id is not None and any(run.user_id != user_id for run in runs):
+            raise NotFoundError("Replay run not found.")
+        if any(not run.config_snapshot or not run.strategy_version_id for run in runs):
+            raise ValidationAppError("Comparison requires frozen strategy version identities.")
+        if baseline.strategy_id != proposed.strategy_id:
+            raise ValidationAppError("Comparison requires versions of the same strategy.")
         if any(
             run.status != BacktestRunStatus.COMPLETED or run.engine_version != REPLAY_ENGINE
             for run in runs
@@ -235,6 +244,21 @@ class StrategyReplayService:
                 raise ValidationAppError(f"Comparison requires identical strategy {key}.")
         results = [BacktestResult.model_validate(run.result) for run in runs]
         for run, result in zip(runs, results, strict=True):
+            version = self._session.get(UserStrategyVersion, run.strategy_version_id)
+            if version is None or version.content_hash != run.config_snapshot.get(
+                "strategy_content_hash"
+            ):
+                raise ValidationAppError("Comparison immutable strategy version mismatch.")
+            if (
+                strategy_version_content_hash(
+                    card=version.card,
+                    structured_rules=version.structured_rules,
+                    lesson_source_metadata=version.lesson_source_metadata,
+                    pattern_spec=version.pattern_spec,
+                )
+                != version.content_hash
+            ):
+                raise ValidationAppError("Comparison strategy semantic content changed.")
             if canonical_json_hash(run.config_snapshot) != run.config_hash:
                 raise ValidationAppError("Stored replay config hash mismatch.")
             if result.result_hash != run.result_hash:
@@ -245,6 +269,15 @@ class StrategyReplayService:
             ):
                 raise ValidationAppError("Stored replay result hash mismatch.")
         reports = [ReplayReport.model_validate(result.replay) for result in results]
+        for run, report in zip(runs, reports, strict=True):
+            if (
+                report.strategy_version_id != run.strategy_version_id
+                or report.strategy_content_hash != run.config_snapshot["strategy_content_hash"]
+                or report.input_hash != run.config_snapshot["input_hash"]
+            ):
+                raise ValidationAppError("Replay report differs from its frozen version/input.")
+            if not any(s.split_label is BacktestSplitLabel.OUT_OF_SAMPLE for s in report.samples):
+                raise ValidationAppError("Replay evaluation sample is missing.")
         evaluation = [
             next(s for s in report.samples if s.split_label is BacktestSplitLabel.OUT_OF_SAMPLE)
             for report in reports
@@ -276,17 +309,18 @@ class StrategyReplayService:
             ],
         )
 
-        self._backtests._audit_lifecycle(
-            baseline,
-            AuditEventType.BACKTEST_RUN_VERIFIED,
-            {
-                "operation": "strategy_replay_comparison",
-                "comparison_hash": comparison.comparison_hash,
-                "baseline_run_id": str(baseline.id),
-                "proposed_run_id": str(proposed.id),
-                "baseline_result_hash": baseline.result_hash,
-                "proposed_result_hash": proposed.result_hash,
-                "improvement_claim": False,
-            },
-        )
+        if persist_audit:
+            self._backtests._audit_lifecycle(
+                baseline,
+                AuditEventType.BACKTEST_RUN_VERIFIED,
+                {
+                    "operation": "strategy_replay_comparison",
+                    "comparison_hash": comparison.comparison_hash,
+                    "baseline_run_id": str(baseline.id),
+                    "proposed_run_id": str(proposed.id),
+                    "baseline_result_hash": baseline.result_hash,
+                    "proposed_result_hash": proposed.result_hash,
+                    "improvement_claim": False,
+                },
+            )
         return comparison

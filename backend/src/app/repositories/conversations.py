@@ -172,7 +172,12 @@ class StrategyConversationProposalRepository(SQLAlchemyRepository[StrategyConver
         ]
         if conversation_id is not None:
             filters.append(StrategyConversationProposal.conversation_id == conversation_id)
-        stmt = select(StrategyConversationProposal).where(*filters).with_for_update()
+        stmt = (
+            select(StrategyConversationProposal)
+            .where(*filters)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return self._session.scalar(stmt)
 
     def list_for_conversation(

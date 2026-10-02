@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,12 +29,14 @@ from app.schemas.conversation import (
     StrategyProposalRecord,
     StrategyVersionProvenance,
 )
+from app.schemas.governed_learning import GOVERNED_LEARNING, GovernedProposalCreate
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.structured_rules import (
     StructuredRules,
     StructuredRulesValidation,
     StructureFromTextRequest,
 )
+from app.services.backtest_hashing import canonical_json_hash
 from app.services.canonical_serialization import canonical_sha256
 from app.services.strategy_versioning import StrategyVersioningService
 from app.services.structure_from_text_service import StructureFromTextService
@@ -98,6 +101,221 @@ class StrategyProposalService:
         self._versions = UserStrategyVersionRepository(session)
         self._versioning = StrategyVersioningService(session)
         self._structure = StructureFromTextService()
+
+    def create_governed(
+        self,
+        strategy_id: uuid.UUID,
+        payload: GovernedProposalCreate,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> StrategyProposalRecord:
+        """Capture a hypothesis and exact change; no version or active rule is written."""
+        from app.interactive_agent.actions import DailyReviewInput
+        from app.interactive_agent.daily_review import read_daily_review
+        from app.schemas.strategy_analytics import StrategyAnalyticsFilters
+        from app.services.conversation_service import ConversationService
+        from app.services.strategy_analytics_service import StrategyAnalyticsService
+        from app.services.strategy_discussion_context_service import (
+            StrategyDiscussionContextService,
+        )
+
+        conversation = ConversationService(self._session).require(
+            payload.conversation_id, organization_id=organization_id, user_id=user_id
+        )
+        strategy = self._versioning.require_strategy(
+            strategy_id, organization_id=organization_id, user_id=user_id
+        )
+        parent = self._versioning.selected_version(strategy)
+        if parent is None or parent.id != payload.base_version_id:
+            raise ConflictError("Proposal must name the exact selected base version.")
+        if conversation.strategy_id not in {None, strategy_id}:
+            raise ConflictError("Conversation is bound to a different strategy.")
+        for ref in [*payload.source_observations, *payload.evidence_ids]:
+            self._require_learning_evidence(ref.kind, ref.id, organization_id, user_id)
+        context = StrategyDiscussionContextService(self._session).gather(
+            organization_id=organization_id,
+            user_id=user_id,
+            strategy_id=strategy_id,
+            query=payload.reason,
+        )
+        analytics = StrategyAnalyticsService(self._session).compute(
+            organization_id=organization_id,
+            user_id=user_id,
+            filters=StrategyAnalyticsFilters(
+                strategy_id=strategy_id, strategy_version_id=parent.id
+            ),
+        )
+        metadata = payload.model_dump(
+            mode="json", exclude={"card", "structured_rules", "pattern_spec"}
+        )
+        parameters = (payload.pattern_spec or {}).get("parameters", {})
+        if not isinstance(parameters, dict):
+            raise ValidationAppError("Proposed parameters must be a JSON object.")
+        metadata["proposed_parameters"] = parameters
+        metadata["context"] = context.model_dump(mode="json")
+        metadata["analytics"] = analytics.model_dump(mode="json")
+        if payload.review_day is not None:
+            review = read_daily_review(
+                self._session,
+                DailyReviewInput(day=payload.review_day, timezone=payload.review_timezone),
+                organization_id=organization_id,
+                user_id=user_id,
+                now=datetime.now(UTC),
+            )
+            metadata["daily_review"] = review.model_dump(mode="json")
+        row = StrategyConversationProposal(
+            conversation_id=conversation.id,
+            organization_id=organization_id,
+            user_id=user_id,
+            target_strategy_id=strategy_id,
+            parent_version_id=parent.id,
+            status=StrategyProposalStatus.DRAFT,
+            proposed_card=payload.card.model_dump(mode="json"),
+            proposed_structured_rules=payload.structured_rules.model_dump(mode="json")
+            if payload.structured_rules
+            else None,
+            proposed_pattern_spec=payload.pattern_spec,
+            validation={"valid": True, "errors": [], "warnings": []},
+            limitations=payload.sample_limitations,
+            context_refs={GOVERNED_LEARNING: metadata},
+        )
+        row.content_hash = self._payload_hash(row)
+        self._proposals.add(row)
+        return _record(row)
+
+    def _require_learning_evidence(
+        self,
+        kind: str,
+        identity: uuid.UUID,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        from app.db.models import (
+            BacktestRun,
+            ConversationMessage,
+            Document,
+            JournalTrade,
+            JournalTradeObservation,
+            PaperValidationRun,
+        )
+
+        models: dict[str, Any] = {
+            "conversation_message": ConversationMessage,
+            "document": Document,
+            "journal_trade": JournalTrade,
+            "journal_observation": JournalTradeObservation,
+            "backtest_run": BacktestRun,
+            "paper_validation_run": PaperValidationRun,
+        }
+        row: Any = self._session.get(models[kind], identity)
+        if row is None or row.organization_id != organization_id:
+            raise NotFoundError("Learning evidence not found in your scope.")
+        if kind == "journal_observation":
+            journal = self._session.get(JournalTrade, row.journal_trade_id)
+            if journal is None or journal.user_id != user_id:
+                raise NotFoundError("Learning evidence not found in your scope.")
+        elif row.user_id != user_id and not (kind == "document" and row.user_id is None):
+            raise NotFoundError("Learning evidence not found in your scope.")
+
+    def request_governed_validation(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        expected_content_hash: str,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> StrategyProposalRecord:
+        """Materialize an immutable candidate without selecting it for paper activity."""
+        from app.db.models import StrategyVersionConversationLink
+        from app.schemas.common import (
+            BacktestStatus,
+            PaperValidationStatus,
+            StrategyLifecycleState,
+            StrategyValidationStatus,
+        )
+        from app.services.compiled_setup_service import CompiledSetupService
+
+        row = self._proposals.get_scoped_for_update(
+            proposal_id, organization_id=organization_id, user_id=user_id
+        )
+        if row is None or GOVERNED_LEARNING not in row.context_refs:
+            raise NotFoundError("Governed strategy proposal not found.")
+        self.assert_governed_identity(row, expected_content_hash)
+        if row.resulting_version_id is not None:
+            return _record(row)
+        if row.status is not StrategyProposalStatus.DRAFT:
+            raise ConflictError("Only an open proposal can request validation.")
+        strategy = self._session.scalar(
+            select(UserStrategy)
+            .where(
+                UserStrategy.id == row.target_strategy_id,
+                UserStrategy.organization_id == organization_id,
+                UserStrategy.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if strategy is None:
+            raise NotFoundError("Strategy not found.")
+        parent = self._versioning.selected_version(strategy)
+        if parent is None or parent.id != row.parent_version_id:
+            raise ConflictError("Proposal base version is stale.")
+        with self._session.begin_nested():
+            version = self._versioning.fork_semantic_update(
+                strategy,
+                parent=parent,
+                card=row.proposed_card or parent.card,
+                structured_rules=row.proposed_structured_rules,
+                lesson_source_metadata=parent.lesson_source_metadata,
+                pattern_spec=row.proposed_pattern_spec,
+                actor_user_id=user_id,
+                source=StrategyChangeSource.CONVERSATION_CONFIRM,
+                reason=f"Governed validation candidate for proposal {row.id}",
+                select_version=False,
+            )
+            if version.id == parent.id:
+                raise ValidationAppError("Proposal must contain a semantic strategy change.")
+            version.backtest_status = BacktestStatus.NOT_RUN
+            version.paper_validation_status = PaperValidationStatus.NOT_STARTED
+            version.validation_status = StrategyValidationStatus.DRAFT
+            compiled = CompiledSetupService(self._session).compile_version(
+                version.id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+            if compiled.compiled is None:
+                raise ValidationAppError(
+                    "Validation requires a supported executable strategy spec."
+                )
+            row.status = StrategyProposalStatus.CONFIRMED
+            row.resulting_strategy_id = strategy.id
+            row.resulting_version_id = version.id
+            row.resulting_content_hash = version.content_hash
+            self._links.add(
+                StrategyVersionConversationLink(
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    strategy_id=strategy.id,
+                    strategy_version_id=version.id,
+                    conversation_id=row.conversation_id,
+                    proposal_id=row.id,
+                )
+            )
+            self._versioning.append_lifecycle(
+                organization_id=organization_id,
+                strategy_id=strategy.id,
+                strategy_version_id=version.id,
+                new_state=StrategyLifecycleState.TESTING,
+                actor_user_id=user_id,
+                reason="governed validation request; paper candidate only",
+                evidence_snapshot={"proposal_id": str(row.id), "base_version_id": str(parent.id)},
+            )
+            self._session.flush()
+        return _record(row)
+
+    def assert_governed_identity(self, row: StrategyConversationProposal, expected: str) -> None:
+        if row.content_hash != expected or row.content_hash != self._payload_hash(row):
+            raise ConflictError("Governed proposal content identity mismatch.")
 
     def require(
         self,
@@ -210,7 +428,7 @@ class StrategyProposalService:
                 stop_loss=["Stop at invalidation"],
             ).model_dump(mode="json")
 
-        payload = {
+        payload: dict[str, Any] = {
             "structured_rules": rules_dump,
             "pattern_spec": pattern_dump,
             "card": card_dump,
@@ -277,6 +495,10 @@ class StrategyProposalService:
         )
         if row is None:
             raise NotFoundError("Strategy proposal not found.")
+        if GOVERNED_LEARNING in row.context_refs:
+            raise ValidationAppError(
+                "Governed proposals require the typed validation and promotion endpoints."
+            )
         if row.status is StrategyProposalStatus.CONFIRMED:
             return _record(row)
         if row.status is StrategyProposalStatus.REJECTED:
@@ -395,6 +617,14 @@ class StrategyProposalService:
             )
         if row.target_strategy_id is not None and strategy.id != row.target_strategy_id:
             raise ConflictError("Proposal target strategy does not match the captured strategy.")
+        from app.schemas.common import StrategyLifecycleState
+
+        lifecycle = self._versioning.latest_lifecycle_event_for_version(parent.id)
+        preserve_active_selection = lifecycle is not None and lifecycle.new_state in {
+            StrategyLifecycleState.APPROVED,
+            StrategyLifecycleState.ACTIVE,
+            StrategyLifecycleState.PAPER_ACTIVE,
+        }
         version = self._versioning.fork_semantic_update(
             strategy,
             parent=parent,
@@ -408,6 +638,7 @@ class StrategyProposalService:
                 f"conversation={row.conversation_id} proposal={row.id}"
             ),
             pattern_spec=row.proposed_pattern_spec,
+            select_version=not preserve_active_selection,
         )
         now = datetime.now(UTC)
         row.status = StrategyProposalStatus.CONFIRMED
@@ -436,13 +667,18 @@ class StrategyProposalService:
         return _record(row)
 
     def _payload_hash(self, row: StrategyConversationProposal) -> str:
-        return canonical_sha256(
-            {
-                "structured_rules": row.proposed_structured_rules,
-                "pattern_spec": row.proposed_pattern_spec,
-                "card": row.proposed_card,
-            }
-        )
+        payload: dict[str, Any] = {
+            "structured_rules": row.proposed_structured_rules,
+            "pattern_spec": row.proposed_pattern_spec,
+            "card": row.proposed_card,
+        }
+        if GOVERNED_LEARNING in row.context_refs:
+            payload["governed_learning_hash"] = canonical_json_hash(
+                row.context_refs[GOVERNED_LEARNING]
+            )
+            payload["base_version_id"] = str(row.parent_version_id)
+            payload["strategy_id"] = str(row.target_strategy_id)
+        return canonical_sha256(payload)
 
     def _assert_confirmation_identity(
         self,
