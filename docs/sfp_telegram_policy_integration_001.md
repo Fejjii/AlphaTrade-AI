@@ -78,3 +78,42 @@ Validation used a disposable local PostgreSQL 16 database:
   modules with `--follow-imports=silent`. `git diff --check` passed.
 - One existing Starlette/httpx deprecation warning. The full backend suite was
   not run. No migration was applied to a deployed environment.
+
+## PR179 backend CI remediation
+
+The controlled paper activation rehearsal exposed
+`CandidateAlertTenantError: Presented Candidate content hash does not match
+canonical storage.` The scan captured an ACTIVE Candidate, then the paper loop
+committed its PLAN_CREATED revision. Moving notification admission after the
+transaction commit exposed that older report snapshot to the gateway's existing
+canonical content-hash check. The scan, paper fill and journal opening succeeded,
+but no confirmed-setup notification was enqueued.
+
+The scan bridge now reloads the current canonical Candidate for its worker-owned
+non-SFP discussion snapshot before projection. It preserves the original
+assessment, evidence window and report; the existing gateway still checks tenant,
+content hash and canonical evidence binding. Explicitly supplied evidence is
+unchanged and still rejects stale Candidate hashes. SFP reports continue using
+their stored `sfp_alerts` without requiring a Candidate or offering actions.
+
+The existing Nested scan-bridge test now advances the Candidate before projection
+and checks its current hash/state, episode idempotency and informational behavior.
+The same agent and outbox then project an SFP confirmation twice, yielding one
+Nested and one SFP row. The test also proves explicit stale evidence is rejected.
+The controlled rehearsal stubs only its external contract-discovery dependency,
+matching its existing scripted market source and fake Telegram transport; its
+paper execution, journal and confirmed-notification assertions remain intact.
+
+No exception handling, policy filtering, security checks, risk rules, execution
+authority, activation flags, credentials or live-trading settings changed.
+After pushing this remediation, leave GitHub CI to run without waiting. No
+deployment or Telegram network activation is part of this handoff.
+
+Remediation validation: **163 passed, no skips** across the previously failing
+controlled activation test, SFP Telegram integration, Telegram Policy V2,
+Candidate gateway, Nested Candidate alerts, Telegram evaluation integration and
+Watcher paper runtime tests. Repository-wide Ruff checks and formatting passed
+(1,038 Python files); the changed bridge passed mypy with
+`--follow-imports=silent`. The rehearsal also passed independently. The only
+warning is the existing Starlette/httpx deprecation. The full backend test suite
+was not run locally.
