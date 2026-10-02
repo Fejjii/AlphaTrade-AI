@@ -230,6 +230,7 @@ class InteractiveAgentService:
         if learning_read:
             from app.services.strategy_promotion import StrategyPromotionService
 
+            assert action is not None
             assert isinstance(action[1], LearningStatusInput)
             inputs = action[1]
             promotion = StrategyPromotionService(self._session, self._settings)

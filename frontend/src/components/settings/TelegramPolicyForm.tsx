@@ -206,8 +206,9 @@ export function TelegramPolicyForm({
           stage filter excludes events without a matching stage.
         </p>
         <p className="text-xs text-text-muted">
-          SFP event filters: Unavailable — no SFP producer or specific filter is
-          supported by the current API.
+          SFP lifecycle notifications use the shared phase, severity and event
+          filters. SFP has no setup stage, so a selected Nested stage filter
+          excludes SFP events. Dedicated SFP controls are unavailable here.
         </p>
         <label className="block space-y-1">
           <span>Minimum Telegram severity</span>
@@ -245,7 +246,7 @@ export function TelegramPolicyForm({
             }
           />
           <span className="block text-xs text-text-muted">
-            Leave blank for no threshold. Current Candidate/Nested alerts have
+            Leave blank for no threshold. Current Candidate, Nested and SFP alerts have
             no quality score and are excluded by any threshold, including zero.
           </span>
         </label>
@@ -265,9 +266,10 @@ export function TelegramPolicyForm({
               </label>
             ))}
             <p className="text-xs text-text-muted">
-              Forming and daily review preferences are supported, but this API
-              adds no producers for them. Nested notifications remain
-              confirmed-only. Mandatory risk bypasses these policy filters.
+              Forming preferences apply to SFP sweep and reclaim notices. Nested
+              notifications remain confirmed-only. Daily review preferences do
+              not create a notification producer. Mandatory risk bypasses these
+              policy filters.
             </p>
           </div>
         </details>

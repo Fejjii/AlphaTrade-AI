@@ -100,7 +100,7 @@ for (const viewport of [
       form.getByLabel("Enable Telegram notification policy"),
     ).toBeChecked();
     await expect(
-      form.getByText(/SFP event filters: Unavailable/),
+      form.getByText(/SFP lifecycle notifications use the shared/),
     ).toBeVisible();
     const nav = page.getByTestId("mobile-bottom-navigation");
     await expect(nav).toBeVisible();

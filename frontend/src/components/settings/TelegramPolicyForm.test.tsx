@@ -23,10 +23,10 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-function mount() {
+function mount(savedPolicy = policy) {
   const onSaved = vi.fn().mockResolvedValue(undefined);
   render(
-    <TelegramPolicyForm policy={policy} enabled={true} onSaved={onSaved} />,
+    <TelegramPolicyForm policy={savedPolicy} enabled={true} onSaved={onSaved} />,
   );
   return onSaved;
 }
@@ -35,6 +35,22 @@ function save() {
 }
 
 describe("Telegram policy V2 full replacement", () => {
+  it("preserves SFP lifecycle allowlists while editing shared phase preferences", async () => {
+    const savedPolicy = {
+      ...policy,
+      setup_stages: null,
+      event_types: ["SFP_CONFIRMED", "SFP_BLOCKED_BY_RISK"],
+    } satisfies typeof policy;
+    mount(savedPolicy);
+    fireEvent.click(screen.getByLabelText("Forming setup notifications"));
+    save();
+    await waitFor(() =>
+      expect(api.notifications.updatePreferences).toHaveBeenCalledExactlyOnceWith({
+        telegram_enabled: true,
+        telegram_policy: { ...savedPolicy, forming_alerts: true },
+      }),
+    );
+  });
   it("renders actual saved filters and submits edited fields with unedited filters intact", async () => {
     const onSaved = mount();
     expect(screen.getByLabelText("Watched symbols identifiers")).toHaveValue(

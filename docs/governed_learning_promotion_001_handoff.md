@@ -39,7 +39,7 @@ Optional `StrategyCard.promotion_requirements` stores authored `minimum_replay_t
 
 No new universal statistical sample threshold is introduced. Missing authored requirements remain explicitly insufficient evidence and require a recorded `evidence_review` in human approval. Limited samples and an unchanged or worse observed baseline also require review. A single replay trade or single paper trade cannot establish promotion, including with review text.
 
-This lifecycle accepts the existing exact Strategy Replay comparison authority. Replay 001 currently supports Nested Continuation versions. Unsupported strategies/configurations fail closed and must gain support through the existing evaluator/replay authorities; this change does not add a second strategy engine or reinterpret legacy backtest recommendations as human approval.
+This lifecycle accepts the existing exact Strategy Replay comparison authority. Its source implementation supports Nested Continuation versions. Wave 003 also integrates SFP structural replay through that same authority; SFP returns remain unavailable and explicitly block trade promotion. Unsupported strategies/configurations fail closed; this change does not add a second strategy engine or reinterpret legacy backtest recommendations as human approval.
 
 ## Validation
 

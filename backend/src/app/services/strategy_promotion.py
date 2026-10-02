@@ -302,16 +302,23 @@ class StrategyPromotionService:
             requirements = (
                 StrategyCard.model_validate(parent.card).promotion_requirements if parent else None
             )
-            replay_counts = (
+            replay_samples = (
                 [
-                    s.trade_count
+                    s
                     for s in [*comparison.baseline_samples, *comparison.proposed_samples]
                     if s.split_label is BacktestSplitLabel.OUT_OF_SAMPLE
                 ]
                 if comparison
                 else []
             )
-            if comparison and (not replay_counts or min(replay_counts) <= 1):
+            replay_counts = [s.trade_count for s in replay_samples]
+            if comparison and (
+                not replay_samples or any(s.net_pnl is None for s in replay_samples)
+            ):
+                result.blockers.append(
+                    "Replay lacks authorized trade-return evidence for promotion."
+                )
+            elif comparison and min(replay_counts) <= 1:
                 result.blockers.append("One winning trade cannot establish a strategy promotion.")
             if result.paper_validation_completed and paper_count <= 1:
                 result.blockers.append("One paper trade cannot establish strategy validation.")

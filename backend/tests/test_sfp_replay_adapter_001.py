@@ -154,6 +154,105 @@ def complete(store, request=None):
     return run
 
 
+def test_governed_learning_keeps_sfp_research_out_of_trade_promotion(sfp_store, settings):
+    from app.db.models import Membership
+    from app.schemas.common import ConversationMessageRole, MembershipRole
+    from app.schemas.governed_learning import (
+        GovernedProposalCreate,
+        LearningEvidenceRef,
+        LearningPromotionApproval,
+        LearningValidationEvidence,
+    )
+    from app.schemas.strategy_library import StrategyCard
+    from app.services.compiled_setup_service import CompiledSetupService
+    from app.services.conversation_service import ConversationService
+    from app.services.strategy_promotion import StrategyPromotionService
+    from app.services.strategy_proposal_service import StrategyProposalService
+
+    session, org, user, request, _, _ = sfp_store
+    parent = session.get(UserStrategyVersion, request.strategy_version_id)
+    session.add(Membership(organization_id=org, user_id=user, role=MembershipRole.OWNER))
+    compiled = CompiledSetupService(session)
+    compiled.compile_version(parent.id, organization_id=org, user_id=user)
+    compiled.approve_version(
+        parent.id, organization_id=org, user_id=user, confirm_message="I confirm"
+    )
+    conversations = ConversationService(session)
+    conversation = conversations.get_or_create(
+        organization_id=org, user_id=user, strategy_id=parent.strategy_id, conversation_id=None
+    )
+    message = conversations.append_message(
+        conversation=conversation,
+        role=ConversationMessageRole.USER,
+        content="Review SFP sweep-depth sensitivity using structural replay.",
+    )
+    proposals = StrategyProposalService(session)
+    proposal = proposals.create_governed(
+        parent.strategy_id,
+        GovernedProposalCreate(
+            conversation_id=conversation.id,
+            base_version_id=parent.id,
+            source_observations=[LearningEvidenceRef(kind="conversation_message", id=message.id)],
+            hypothesis="Compare larger SFP sweep depth.",
+            reason="Recorded structural review only.",
+            validation_plan="Structural replay cannot substitute for trade-return evidence.",
+            card=StrategyCard.model_validate(parent.card),
+            pattern_spec=spec(minimum_sweep_depth="0.03").model_dump(mode="json"),
+        ),
+        organization_id=org,
+        user_id=user,
+    )
+    candidate = proposals.request_governed_validation(
+        proposal.id,
+        expected_content_hash=proposal.content_hash,
+        organization_id=org,
+        user_id=user,
+    )
+    session.commit()
+    baseline = complete(sfp_store)
+    proposed = complete(
+        sfp_store,
+        request.model_copy(
+            update={
+                "strategy_version_id": candidate.resulting_version_id,
+                "idempotency_key": "candidate",
+            }
+        ),
+    )
+    promotion = StrategyPromotionService(session, settings)
+    status = promotion.record_validation(
+        proposal.id,
+        LearningValidationEvidence(
+            expected_content_hash=proposal.content_hash,
+            baseline_run_id=baseline.id,
+            proposed_run_id=proposed.id,
+        ),
+        organization_id=org,
+        user_id=user,
+    )
+    assert status.replayed
+    assert status.observed_net_pnl_delta is None and status.outperformed_baseline is None
+    assert not status.improvement_claim and status.insufficient_evidence
+    assert "Replay lacks authorized trade-return evidence for promotion." in status.blockers
+    with pytest.raises(ValidationAppError, match="Promotion blocked"):
+        promotion.promote(
+            proposal.id,
+            LearningPromotionApproval(
+                confirm="APPROVE_PAPER_PROMOTION",
+                expected_content_hash=proposal.content_hash,
+                expected_version_id=candidate.resulting_version_id,
+                expected_comparison_hash=status.comparison_hash,
+                expected_paper_validation_run_id=uuid4(),
+                evidence_review="Structural observations cannot supply execution returns.",
+            ),
+            organization_id=org,
+            user_id=user,
+        )
+    assert session.get(UserStrategy, parent.strategy_id).current_version == parent.version
+    assert session.scalar(select(func.count()).select_from(BacktestTrade)) == 0
+    assert session.scalar(select(func.count()).select_from(JournalTrade)) == 0
+
+
 @pytest.mark.parametrize("sfp_store", [False, True], indirect=True)
 def test_both_directions_real_detector_restart_and_no_execution(sfp_store, monkeypatch):
     session, org, user, request, backtests, service = sfp_store

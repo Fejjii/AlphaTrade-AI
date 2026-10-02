@@ -3519,8 +3519,20 @@ export interface ChannelProviderStatus {
 
 export type TelegramPolicySeverity = "INFO" | "WATCH" | "ACTION" | "CRITICAL";
 export type TelegramPolicyEventType =
-  | "SETUP" | "RISK" | "PAPER_TRADE_OPENED" | "PAPER_TRADE_CLOSED"
-  | "STOP" | "PARTIAL_PROFIT" | "DAILY_REVIEW" | "OTHER";
+  | "SETUP"
+  | "RISK"
+  | "PAPER_TRADE_OPENED"
+  | "PAPER_TRADE_CLOSED"
+  | "STOP"
+  | "PARTIAL_PROFIT"
+  | "DAILY_REVIEW"
+  | "OTHER"
+  | "SFP_SWEEP_DETECTED"
+  | "SFP_RECLAIM_FORMING"
+  | "SFP_CONFIRMED"
+  | "SFP_INVALIDATED"
+  | "SFP_EXPIRED"
+  | "SFP_BLOCKED_BY_RISK";
 
 /** Backend Policy V2: nested PATCH is a full replacement, null lists allow all. */
 export interface TelegramNotificationPolicyV2 {

@@ -267,6 +267,7 @@ class StrategyReplayService:
             raise NotFoundError("Replay run not found.")
         if any(not run.config_snapshot or not run.strategy_version_id for run in runs):
             raise ValidationAppError("Comparison requires frozen strategy version identities.")
+        assert baseline.config_snapshot is not None and proposed.config_snapshot is not None
         if baseline.strategy_id != proposed.strategy_id:
             raise ValidationAppError("Comparison requires versions of the same strategy.")
         if any(
@@ -338,6 +339,7 @@ class StrategyReplayService:
                 raise ValidationAppError("Stored replay result hash mismatch.")
         reports = [ReplayReport.model_validate(result.replay) for result in results]
         for run, report in zip(runs, reports, strict=True):
+            assert run.config_snapshot is not None
             if (
                 report.strategy_version_id != run.strategy_version_id
                 or report.strategy_content_hash != run.config_snapshot["strategy_content_hash"]

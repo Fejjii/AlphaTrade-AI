@@ -450,14 +450,9 @@ def test_incremental_scan_survives_restart(store):
 
 
 @pytest.fixture
-def postgres_store(monkeypatch):
-    from app.services.risk.daily_risk_accounting import DailyRiskAccounting
+def postgres_store():
     from tests.support.postgres_persistence import phase7_plan_session_factory, postgres_available
 
-    # Synthetic candles and the runtime clock use START, rather than today's date.
-    monkeypatch.setattr(
-        DailyRiskAccounting, "resolve_day", lambda self, **kwargs: (START.date(), "UTC")
-    )
     if not postgres_available():
         pytest.skip("SFP governed runtime persistence requires local PostgreSQL")
     factory = phase7_plan_session_factory()
