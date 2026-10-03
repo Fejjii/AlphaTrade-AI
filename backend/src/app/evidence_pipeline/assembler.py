@@ -23,6 +23,7 @@ from app.evidence_pipeline.setup_lifetime import (
     SetupLifetimeStore,
     SetupTriggerPin,
     lifetime_key_from_policy,
+    setup_trigger_lifetime_elapsed,
     utc_trigger_end,
 )
 from app.evidence_pipeline.types import (
@@ -273,12 +274,50 @@ class FirstSliceEvidenceAssembler:
             )
             probe.observe(series_4h)
         with diagnostics.stage(Component.TRIGGER) as probe:
-            trigger, subsequent, series_15m = _trigger_and_subsequent(
-                series_15m,
-                identity=trigger_identity,
-                evaluated_at=clock,
-                setup_trigger_end=pinned_trigger_end,
-            )
+            try:
+                trigger, subsequent, series_15m = _trigger_and_subsequent(
+                    series_15m,
+                    identity=trigger_identity,
+                    evaluated_at=clock,
+                    setup_trigger_end=pinned_trigger_end,
+                )
+            except FormingCandleError:
+                if (
+                    pinned_trigger_end is None
+                    or not series_15m.bars
+                    or series_15m.bars[-1].interval_end > utc_trigger_end(clock)
+                    or any(
+                        bar.interval_end == utc_trigger_end(pinned_trigger_end)
+                        for bar in series_15m.bars
+                    )
+                    or not setup_trigger_lifetime_elapsed(
+                        pinned_trigger_end,
+                        latest_closed_end=series_15m.bars[-1].interval_end,
+                    )
+                ):
+                    raise
+                # An explicit historical request must not retire a different,
+                # valid current pin that happens to share the same semantic key.
+                if self._lifetime.active_trigger_end(lifetime_key) == utc_trigger_end(
+                    pinned_trigger_end
+                ):
+                    self._lifetime.expire(lifetime_key)
+                diagnostics.record(
+                    Component.TRIGGER,
+                    timeframe=Timeframe.M15,
+                    status=DiagnosticStatus.UNAVAILABLE,
+                    reason=DiagnosticReason.STALE,
+                    source_time=utc_trigger_end(pinned_trigger_end),
+                    historical=True,
+                )
+                # Retry selection once over the already validated FINAL series.
+                # Current forming candles and incomplete acquisition still fail closed.
+                trigger, subsequent, series_15m = _trigger_and_subsequent(
+                    series_15m,
+                    identity=trigger_identity,
+                    evaluated_at=clock,
+                    setup_trigger_end=None,
+                )
             context = _context_bar(series_4h, trigger)
         window_start = first_slice_baseline_open(trigger)
         window_end = trigger.interval_end

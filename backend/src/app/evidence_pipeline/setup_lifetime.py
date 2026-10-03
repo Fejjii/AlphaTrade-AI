@@ -13,6 +13,7 @@ from threading import RLock
 from typing import Protocol
 from uuid import UUID
 
+from app.market_contracts.identity import interval_timedelta
 from app.schemas.common import Timeframe
 from app.services.canonical_serialization import canonical_sha256
 from app.signal_fusion.first_slice_types import FIRST_SLICE_EXPIRY_BARS
@@ -63,7 +64,7 @@ class SetupLifetimeStore:
 
     def active_trigger_end(self, key: SetupLifetimeKey) -> datetime | None:
         pin = self.get(key)
-        return None if pin is None else pin.trigger_end
+        return None if pin is None or pin.expired else pin.trigger_end
 
     def get(self, key: SetupLifetimeKey) -> SetupTriggerPin | None:
         with self._lock:
@@ -101,6 +102,17 @@ def utc_trigger_end(value: datetime) -> datetime:
 
 def expiry_bars() -> int:
     return FIRST_SLICE_EXPIRY_BARS
+
+
+def setup_trigger_lifetime_elapsed(trigger_end: datetime, *, latest_closed_end: datetime) -> bool:
+    """Two canonical final 15m intervals expire the first-slice setup.
+
+    The caller supplies a validated closed-series clock, not a quote timestamp
+    or the process wall clock. An unavailable current candle proves nothing.
+    """
+
+    expiry_end = utc_trigger_end(trigger_end) + interval_timedelta(Timeframe.M15) * expiry_bars()
+    return utc_trigger_end(latest_closed_end) >= expiry_end
 
 
 def setup_lifetime_lineage_hash(
@@ -208,5 +220,6 @@ __all__ = [
     "expiry_bars",
     "lifetime_key_from_policy",
     "setup_lifetime_lineage_hash",
+    "setup_trigger_lifetime_elapsed",
     "utc_trigger_end",
 ]
