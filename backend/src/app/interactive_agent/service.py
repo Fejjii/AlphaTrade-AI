@@ -23,7 +23,11 @@ from app.interactive_agent.action_registry import (
     resolve_action,
     route_action,
 )
-from app.interactive_agent.actions import DailyReviewInput, LearningStatusInput
+from app.interactive_agent.actions import (
+    DailyReviewInput,
+    LearningStatusInput,
+    PaperExecutionExplanationInput,
+)
 from app.interactive_agent.classify import TurnClassification, classify_turn
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
@@ -55,6 +59,7 @@ from app.interactive_agent.conversation import (
 )
 from app.interactive_agent.daily_review import read_daily_review, render_daily_review
 from app.interactive_agent.orchestration import propose_action
+from app.interactive_agent.paper_execution_explanation import read_paper_execution
 from app.interactive_agent.proposals import (
     build_proposal,
     confirm_proposal,
@@ -223,6 +228,17 @@ class InteractiveAgentService:
         limitations = list(_BASE_LIMITATIONS if self._responder is None else _MODEL_LIMITATIONS)
         if action is not None:
             limitations.extend(action[0].limitations)
+        execution_explanation = None
+        explanation_read = action is not None and action[0].name == "paper_trade.explain_execution"
+        if explanation_read:
+            assert action is not None and isinstance(action[1], PaperExecutionExplanationInput)
+            execution_explanation = read_paper_execution(
+                self._session,
+                settings=self._settings,
+                organization_id=organization_id,
+                user_id=user_id,
+                command_id=action[1].command_id,
+            )
         daily_review = None
         review_inputs = None
         learning_status: list[GovernedLearningStatus] = []
@@ -266,6 +282,7 @@ class InteractiveAgentService:
         if (
             classification.operation is not TurnOperation.REFUSE
             and not learning_read
+            and not explanation_read
             and (classification.capability not in _SKIP_RETRIEVAL)
             and (action is None or action[0].name != "paper_trade.prepare_execution")
         ):
@@ -331,6 +348,11 @@ class InteractiveAgentService:
             limitations.extend(_BASE_LIMITATIONS)
         if learning_read:
             factual = _learning_status_reply(learning_status)
+        if execution_explanation is not None:
+            factual = execution_explanation.reply
+            connections = execution_explanation.connections
+            limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
+            limitations.extend(_BASE_LIMITATIONS)
         reply = factual
         if classification.capability is AgentCapability.STRATEGY_ANALYTICS:
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
@@ -340,6 +362,7 @@ class InteractiveAgentService:
         elif (
             self._responder is not None
             and not learning_read
+            and not explanation_read
             and daily_review is None
             and not (action is not None and action[0].name == "paper_trade.prepare_execution")
         ):
@@ -367,6 +390,16 @@ class InteractiveAgentService:
                     **(
                         {"daily_review": daily_review.model_dump(mode="json")}
                         if daily_review is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "paper_execution_explanation": {
+                                "source_message_id": str(execution_explanation.source_message_id),
+                                "sources": [item.model_dump(mode="json") for item in connections],
+                            }
+                        }
+                        if execution_explanation is not None
                         else {}
                     ),
                     "strategy_analytics": [

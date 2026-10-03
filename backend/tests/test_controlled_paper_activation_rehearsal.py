@@ -282,14 +282,17 @@ def _count(factory: sessionmaker[Session], model: type[object]) -> int:
     return int(found or 0)
 
 
-@requires_postgres
-def test_rehearsal_projects_live_evidence_through_paper_and_telegram(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Market acquisition is scripted; keep contract discovery offline as well.
+@pytest.fixture(autouse=True)
+def offline_contract_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    # All rehearsal cases use scripted market acquisition. The outage/stale
+    # cases must reach their evidence source rather than external discovery.
     monkeypatch.setattr(
         "app.workers.watcher_paper._live_contract_discoverer", lambda settings: None
     )
+
+
+@requires_postgres
+def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
     install_persistence_firewall()
     factory = phase7_plan_session_factory()
     settings = _package_settings()
