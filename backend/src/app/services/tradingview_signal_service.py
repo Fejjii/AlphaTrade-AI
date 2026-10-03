@@ -16,6 +16,7 @@ from typing import Any
 import structlog
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -215,7 +216,25 @@ class TradingViewSignalService:
             backtest_run_id=None,
             journal_trade_id=None,
         )
-        self._signals.add(row)
+        try:
+            with self._session.begin_nested():
+                self._signals.add(row)
+        except IntegrityError:
+            # A concurrent signed retry may win either organization-scoped unique key.
+            # Recover only a proven duplicate; unrelated FK/constraint failures still fail.
+            winner = self._signals.get_by_idempotency(
+                organization_id=payload.organization_id, idempotency_key=payload.idempotency_key
+            ) or self._signals.get_by_alert_id(
+                organization_id=payload.organization_id, external_alert_id=payload.alert_id
+            )
+            if winner is None:
+                raise
+            return self.intake_webhook(
+                raw_body,
+                signature_header=signature_header,
+                timestamp_header=timestamp_header,
+                request_id=request_id,
+            )
         self._record_audit(
             AuditEventType.TRADINGVIEW_SIGNAL_RECEIVED,
             organization_id=payload.organization_id,
@@ -294,7 +313,7 @@ class TradingViewSignalService:
                 "Exact confirmation required to create a paper validation candidate.",
                 details={"required_confirm": CREATE_TRADINGVIEW_CANDIDATE_CONFIRM},
             )
-        row = self._signals.get_for_org(signal_id, organization_id=organization_id)
+        row = self._signals.get_for_org(signal_id, organization_id=organization_id, for_update=True)
         if row is None:
             raise NotFoundError("TradingView signal not found.")
         if row.candidate_id is not None:

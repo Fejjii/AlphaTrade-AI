@@ -91,6 +91,9 @@ class HealthResponse(BaseModel):
     telegram_paper_activation_armed: bool = False
     telegram_inbound_mode: str = "off"
     telegram_network_permitted: bool = False
+    blofin_readonly_sync_enabled: bool = False
+    blofin_readonly_sync_credentials_configured: bool = False
+    blofin_readonly_sync_origin_configured: bool = False
     perpetual_evidence_source: Literal["replay", "binance_usdm", "bybit_usdt_perpetual"]
     perpetual_evidence_secondary_source: Literal["none", "bybit_usdt_perpetual"] = "none"
     perpetual_evidence_activation: Literal["inactive", "active", "refused"]
