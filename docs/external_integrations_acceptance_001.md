@@ -1,7 +1,7 @@
 # External integration staging acceptance
 
 Base: `codex/release_consolidation_wave_003` at
-`8673d8f69779ea516ca97456baea7b3064daf089`.
+`87885e591714f44843eddb46c9549417a50b9a9e` (includes PR186/PR187/PR188/PR189/PR191).
 Branch: `codex/external_integrations_acceptance_001`.
 
 This work adds external acceptance without enabling real trading, demo orders,
@@ -38,15 +38,22 @@ TELEGRAM_INTERACTION_ENABLED=false
 TELEGRAM_NETWORK_PERMITTED=false
 TELEGRAM_PAPER_ACTIVATION_ARMED=false
 AUTOMATIC_TELEGRAM_DELIVERY_ENABLED=false
+TELEGRAM_INBOUND_MODE=off
 PERPETUAL_EVIDENCE_SOURCE=binance_usdm
 PERPETUAL_EVIDENCE_SECONDARY_SOURCE=bybit_usdt_perpetual
-TRADINGVIEW_WEBHOOK_ENABLED=true
+TRADINGVIEW_WEBHOOK_ENABLED=false
 TRADINGVIEW_AUTO_CREATE_CANDIDATE=false
 PAPER_SIGNAL_ORCHESTRATION_ENABLED=true
 PAPER_SIGNAL_ORCHESTRATION_MODE=observe_only
-BLOFIN_READONLY_SYNC_ENABLED=true
+BLOFIN_READONLY_SYNC_ENABLED=false
 BLOFIN_DEMO_REST_BASE_URL=https://demo-trading-openapi.blofin.com
 ```
+
+These are documented acceptance values; this PR changes no staging or production
+environment variables. TradingView and BloFin are optional and stay disabled until
+their external configuration is available. Enable `TRADINGVIEW_WEBHOOK_ENABLED`
+only with the signing relay/secret, and `BLOFIN_READONLY_SYNC_ENABLED` only with
+the dedicated credentials and demo origin configured.
 
 Set `TRADINGVIEW_WEBHOOK_SECRET` securely. A trusted TradingView signing relay
 must attach `X-AT-Timestamp` and `X-AT-Signature`; native TradingView alert delivery
@@ -60,7 +67,15 @@ Set **dedicated read-only demo credentials** as `BLOFIN_READONLY_API_KEY`,
 `BLOFIN_READONLY_API_SECRET`, and `BLOFIN_READONLY_API_PASSPHRASE`. The old
 `BLOFIN_API_*` execution credentials are not reused by this capability. The
 read-only flag defaults to false; credential presence alone enables no network
-call or execution. `/health` exposes only sync-enabled/credential-present booleans.
+call or execution. `/health` exposes only sync-enabled, credential-present and
+demo-origin-present booleans. Missing credentials or origin return NOT CONFIGURED
+before the acceptance harness requests a sync.
+
+Internal paper signal orchestration skips optional BloFin context when sync is
+disabled or credentials/demo origin are missing, including any retained unusable
+snapshot. Once sync is enabled and configured, missing, stale, future-dated or
+unhealthy snapshots still block that signal's orchestration. Risk and approval
+checks remain mandatory in either case.
 
 Apply existing migrations to staging PostgreSQL. Supply an owner access token
 for the acceptance organization. Standard staging auth, database and Redis
@@ -107,8 +122,10 @@ Page gaps, truncated history, unavailable derivatives or stale data still FAIL.
 The harness never fabricates historical prints or relaxes freshness to pass.
 
 Each integration has exactly one top-level `status`: **PASS**, **FAIL**, or
-**NOT CONFIGURED**. Exit code is zero only when all five PASS. Missing API
-credentials, webhook secret, disabled integration or missing sync credentials
+**NOT CONFIGURED**. Exit code is nonzero when any integration FAILs; missing
+optional configuration alone does not fail the gate. A zero exit code does not
+certify live acceptance of a NOT CONFIGURED integration. Missing API credentials,
+webhook secret, disabled integration or missing sync credentials/demo origin
 never become PASS. Failure output excludes raw responses/exception strings that
 could contain secrets. The harness does not intentionally fail the live primary;
 failover is verified using deterministic mocked failures in automated tests.
@@ -149,35 +166,38 @@ hosts are not enabled in the network policy.
 
 ## Verification results
 
-- Focused integration, signal lifecycle, tenant isolation, idempotency, risk,
-  deployment-safety and market-contract run: **671 passed**. This included
-  `test_at037_tradingview_blofin.py`, `test_at038_paper_signal_orchestration.py`,
-  `test_binance_usdm_staging_reliability.py`,
-  `test_bybit_usdt_perpetual_evidence.py`, `test_blofin_provider.py`, and
-  `test_blofin_execution.py`, plus the new external integration regressions and
-  PostgreSQL intake/Candidate race test.
-- Final harness additions: **34 cases** covered in the broader run; targeted
-  checks for the final warmup/CLI/disabled-webhook edits: **4 passed**.
-- Broader backend suite run **once**, with disposable PostgreSQL:
-  **3,802 passed, 3 failed, 6 skipped** (2,791.41 seconds).
-- The script self-check failure was environmental: uv's default cache path is
-  read-only in this workspace. A targeted rerun with
-  `UV_CACHE_DIR=/tmp/alphatrade-uv-cache` **passed**.
-- The six skipped Agent proposal PostgreSQL tests require the hardcoded
-  `pr150_journal_fix` database. After creating it in the disposable local
-  PostgreSQL container, their targeted rerun **passed all six**.
-- Ruff: **PASS** (`ruff check src tests`). Format check: **PASS**
-  (`ruff format --check src tests`, 1,058 files). `git diff --check`: **PASS**.
+- PR190 rebased onto the exact baseline above with **no conflicts**. The accepted
+  release evidence pipeline, Watcher, canonical paper execution and PR191 setup
+  lifetime fix are unchanged. No migration or deployment configuration changed.
+- Refresh validation: **51 passed** in `test_external_integrations_acceptance.py`
+  (61.01 seconds). No conflicts or production/test code changes were required;
+  all PR189 files and previously validated PR190 production/test files are preserved.
+- Previous validation at `33a86e922d6f638d822f486db48e9563e585c0a9`
+  covered `test_external_integrations_acceptance.py`,
+  `test_external_integrations_postgres.py`, `test_at037_tradingview_blofin.py`,
+  `test_at038_paper_signal_orchestration.py`, `test_blofin_provider.py`, and
+  `test_blofin_execution.py`: **144 passed, 1 skipped** (97.43 seconds). The
+  PostgreSQL concurrency case is skipped because no local test database is
+  reachable; GitHub CI provides PostgreSQL. All external HTTP calls in this run
+  use deterministic mocks. The command sandbox required network permission for
+  FastAPI TestClient's local event loop; no application fix was needed for that.
+- Ruff lint and format checks: **PASS** for all 14 changed Python files.
+  `git diff --check`: **PASS**.
+- No broad backend rerun or repeated staging Watcher campaign. Previous full-suite
+  figures and failures belong to the older baseline; GitHub CI supplies the normal
+  current-baseline full gate, including its PostgreSQL service.
 
-Two inherited failures remain in the PR188-owned
-`backend/tests/test_controlled_paper_activation_rehearsal.py`:
+The existing real BTCUSDT Watcher scans, API health 200 and stable retained worker
+structures are accepted staging evidence supplied for this rebase, not new live
+claims from these local tests. Binance/Bybit adapter acceptance uses deterministic
+GET-only transports here. TradingView Inbox/Candidate flow and paper signal
+orchestration are exercised against authenticated isolated test apps; BloFin sync
+uses a GET-only mock demo venue with read-only permissions.
 
-- `test_provider_outage_does_not_mint`
-- `test_stale_live_window_does_not_mint`
-
-Both expect scan status `failed`; the implementation returns `blocked` and
-creates zero Candidates. Both reproduce in an isolated checkout of the exact
-base commit `8673d8f69779ea516ca97456baea7b3064daf089`. This change leaves the
-PR188 test file untouched. They block an entirely green backend suite, while the
-external integration focused checks pass. Live staging checks remain pending
-configuration and deployment as listed above.
+This workspace has no TradingView signing secret/relay configuration, dedicated
+BloFin sync credentials/demo origin, or acceptance API URL/owner token/organization.
+Those live checks remain **NOT CONFIGURED**, rather than core MVP blockers. An
+actual chart alert through the relay and a permission-verified BloFin account
+snapshot require external setup. Telegram remains off and real exchange execution
+remains disabled. No deployment, Telegram message, exchange order or funds change
+is performed by this completion work.

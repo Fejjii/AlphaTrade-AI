@@ -826,6 +826,22 @@ class PaperSignalOrchestrationService:
         return True, "No conflicting validated signal in window."
 
     def _check_market_context(self, *, organization_id: uuid.UUID) -> tuple[bool, str]:
+        readonly_expected = (
+            self._settings.blofin_readonly_sync_enabled
+            and self._settings.blofin_readonly_configured
+        )
+        demo_expected = (
+            self._settings.exchange_demo_active
+            and self._settings.blofin_demo_enabled
+            and self._settings.blofin_demo_configured
+        )
+        if not (
+            (readonly_expected or demo_expected)
+            and self._settings.blofin_demo_rest_base_url.strip()
+        ):
+            # Optional account sync cannot gate internal paper signals, including
+            # when a previous disabled/unconfigured sync left an unusable snapshot.
+            return True, "No BloFin snapshot required (account sync not configured)."
         snap = self._session.scalars(
             select(BloFinDemoSyncSnapshot)
             .where(BloFinDemoSyncSnapshot.organization_id == organization_id)
@@ -833,10 +849,7 @@ class PaperSignalOrchestrationService:
             .limit(1)
         ).first()
         if snap is None:
-            # Fail closed only when exchange demo sync is expected; otherwise allow.
-            if self._settings.blofin_demo_enabled or self._settings.blofin_readonly_sync_enabled:
-                return False, "BloFin demo sync required but no snapshot available."
-            return True, "No BloFin snapshot required (demo sync disabled)."
+            return False, "BloFin demo sync required but no snapshot available."
         synced_at = snap.synced_at
         if synced_at.tzinfo is None:
             synced_at = synced_at.replace(tzinfo=UTC)

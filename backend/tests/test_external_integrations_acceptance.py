@@ -14,7 +14,7 @@ from sqlalchemy import select
 from structlog.testing import capture_logs
 
 from app.core.blofin_readonly_access import BloFinReadOnlyClient, get_readonly_account_provider
-from app.core.config import Settings
+from app.core.config import Settings, TelegramInboundMode
 from app.core.errors import ExchangeDemoInactiveError
 from app.db.models import BloFinDemoSyncSnapshot, PaperValidationCandidate, TradeProposal
 from app.external_integrations.acceptance import FAIL, NOT_CONFIGURED, PASS, ApiAcceptance, run
@@ -183,8 +183,20 @@ def test_opaque_credentials_echoed_by_venue_are_redacted() -> None:
 
 
 @pytest.mark.parametrize("age,health", [(301, "ok"), (-30, "ok"), (0, "degraded")])
-def test_orchestration_rechecks_snapshot_age_and_health(pso_client, age, health) -> None:
-    client, factory, _settings = pso_client
+@pytest.mark.parametrize(
+    "configuration", ["configured", "disabled", "missing_secret", "missing_origin"]
+)
+def test_orchestration_rechecks_snapshot_age_and_health(
+    pso_client, age, health, configuration
+) -> None:
+    client, factory, settings = pso_client
+    settings.blofin_readonly_sync_enabled = configuration != "disabled"
+    settings.blofin_readonly_api_key = SECRETS[0]
+    settings.blofin_readonly_api_secret = "" if configuration == "missing_secret" else SECRETS[1]
+    settings.blofin_readonly_api_passphrase = SECRETS[2]
+    settings.blofin_demo_rest_base_url = (
+        "" if configuration == "missing_origin" else "https://demo-trading-openapi.blofin.com"
+    )
     signal_id = _ingest(client, alert_id="freshness-regression")
     with factory() as session:
         session.add(
@@ -210,9 +222,41 @@ def test_orchestration_rechecks_snapshot_age_and_health(pso_client, age, health)
         f"/paper-signal-orchestration/signals/{signal_id}/orchestrate", headers=headers
     )
     assert response.status_code == 200
-    assert response.json()["decision"]["status"] == "blocked"
-    assert "market_context_unavailable" in response.json()["decision"]["reason_codes"]
+    decision = response.json()["decision"]
+    if configuration == "configured":
+        assert decision["status"] == "blocked"
+        assert "market_context_unavailable" in decision["reason_codes"]
+    else:
+        assert decision["status"] == "eligible"
+        assert "market_context_unavailable" not in decision["reason_codes"]
     with factory() as session:
+        assert session.scalar(select(TradeProposal)) is None
+
+
+@pytest.mark.parametrize("configuration", ["configured", "missing_secret", "missing_origin"])
+def test_missing_blofin_configuration_does_not_block_internal_paper_signals(
+    pso_client, configuration
+) -> None:
+    client, factory, settings = pso_client
+    settings.blofin_readonly_sync_enabled = True
+    settings.blofin_readonly_api_key = SECRETS[0]
+    settings.blofin_readonly_api_secret = "" if configuration == "missing_secret" else SECRETS[1]
+    settings.blofin_readonly_api_passphrase = SECRETS[2]
+    settings.blofin_demo_rest_base_url = (
+        "" if configuration == "missing_origin" else "https://demo-trading-openapi.blofin.com"
+    )
+    client.headers.update(_login(client, "at038-a@test.example"))
+    api = ApiAcceptance(client, ORG_A, settings.tradingview_webhook_secret)
+    if configuration != "configured":
+        assert api.blofin()["status"] == NOT_CONFIGURED
+    assert api.tradingview()["status"] == PASS
+    if configuration == "configured":
+        with pytest.raises(ValueError, match="Signal must be eligible"):
+            api.orchestration()
+    else:
+        assert api.orchestration()["status"] == PASS
+    with factory() as session:
+        assert session.scalar(select(BloFinDemoSyncSnapshot)) is None
         assert session.scalar(select(TradeProposal)) is None
 
 
@@ -280,9 +324,13 @@ def test_missing_api_credentials_never_pass_and_public_outages_are_fail() -> Non
     assert len(seen) == 2
 
 
-def test_unsafe_harness_does_no_network() -> None:
+@pytest.mark.parametrize(
+    "field,value",
+    [("telegram_network_permitted", True), ("telegram_inbound_mode", TelegramInboundMode.WEBHOOK)],
+)
+def test_unsafe_harness_does_no_network(field, value) -> None:
     settings = readonly_settings()
-    settings.telegram_network_permitted = True
+    setattr(settings, field, value)
 
     def forbidden(request: httpx.Request) -> httpx.Response:
         raise AssertionError("Unsafe settings must prevent all probes")
@@ -296,6 +344,16 @@ def test_unsafe_harness_does_no_network() -> None:
         market_transport=httpx.MockTransport(forbidden),
     )
     assert all(item["status"] == FAIL for item in report["results"])
+
+
+def test_harness_rejects_telegram_inbound_before_deployed_writes(pso_client) -> None:
+    client, factory, settings = pso_client
+    settings.telegram_inbound_mode = TelegramInboundMode.WEBHOOK
+    client.headers.update(_login(client, "at038-a@test.example"))
+    with pytest.raises(ValueError, match="Telegram disarmed"):
+        ApiAcceptance(client, ORG_A, settings.tradingview_webhook_secret).safety()
+    with factory() as session:
+        assert session.scalar(select(PaperValidationCandidate)) is None
 
 
 def test_signed_tenant_tamper_and_future_timestamp_are_rejected(tv_client) -> None:
@@ -571,6 +629,31 @@ def test_invalid_cli_settings_emit_fail_without_secret_echo(monkeypatch, capsys)
     assert "opaque-secret-in-validator-input" not in output
     assert len(json.loads(output)["results"]) == 5
     assert all(r["status"] == FAIL for r in json.loads(output)["results"])
+
+
+@pytest.mark.parametrize(
+    "statuses,exit_code",
+    [([PASS] * 5, 0), ([PASS, PASS] + [NOT_CONFIGURED] * 3, 0), ([FAIL] + [PASS] * 4, 1)],
+)
+def test_cli_missing_optional_configuration_is_reported_without_failing_gate(
+    monkeypatch, capsys, statuses, exit_code
+) -> None:
+    from app.external_integrations import acceptance
+
+    monkeypatch.setattr("sys.argv", ["external-acceptance"])
+    monkeypatch.setattr(acceptance, "Settings", readonly_settings)
+    monkeypatch.setattr(
+        acceptance,
+        "run",
+        lambda *args, **kwargs: {
+            "results": [
+                acceptance.result(name, status, "test evidence")
+                for name, status in zip(acceptance.INTEGRATIONS, statuses, strict=True)
+            ]
+        },
+    )
+    assert acceptance.main() == exit_code
+    assert [r["status"] for r in json.loads(capsys.readouterr().out)["results"]] == statuses
 
 
 def test_disabled_webhook_is_not_configured(pso_client) -> None:

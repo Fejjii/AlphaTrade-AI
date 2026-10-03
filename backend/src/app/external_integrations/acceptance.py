@@ -194,7 +194,8 @@ class ApiAcceptance:
             health.get("execution_mode") == "paper"
             and health.get("real_trading_enabled") is False
             and health.get("exchange_mode") == "paper_internal"
-            and all(health.get(flag) is False for flag in _TELEGRAM_FLAGS),
+            and all(health.get(flag) is False for flag in _TELEGRAM_FLAGS)
+            and health.get("telegram_inbound_mode") == "off",
             "Deployment must use paper_internal with Telegram disarmed.",
         )
         identity = self.data("GET", "/auth/me")
@@ -331,11 +332,12 @@ class ApiAcceptance:
         if (
             config.get("blofin_readonly_sync_enabled") is False
             or config.get("blofin_readonly_sync_credentials_configured") is False
+            or config.get("blofin_readonly_sync_origin_configured") is False
         ):
             return result(
                 "BloFin demo sync",
                 NOT_CONFIGURED,
-                "Dedicated demo sync is disabled or credentials are missing.",
+                "Dedicated demo sync is disabled or credentials/demo origin are missing.",
             )
         snap = self.data("POST", "/exchange/blofin/sync")["snapshot"]
         if (
@@ -394,6 +396,7 @@ def run(
         and not settings.enable_real_trading
         and settings.exchange_mode is ExchangeMode.PAPER_INTERNAL
         and all(getattr(settings, flag) is False for flag in _TELEGRAM_FLAGS)
+        and settings.telegram_inbound_mode.value == "off"
     )
     if not safe:
         return {
@@ -506,7 +509,7 @@ def main() -> int:
     if args.output:
         args.output.write_text(encoded + "\n")
     print(encoded)
-    return 0 if all(r["status"] == PASS for r in report["results"]) else 1
+    return 1 if any(r["status"] == FAIL for r in report["results"]) else 0
 
 
 if __name__ == "__main__":
