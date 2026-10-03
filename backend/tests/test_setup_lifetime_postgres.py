@@ -17,6 +17,7 @@ from app.db.models import Organization
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
 from app.evidence_pipeline.setup_lifetime import (
     SetupLifetimeStore,
+    SetupTriggerPin,
     setup_lifetime_lineage_hash,
     utc_trigger_end,
 )
@@ -145,13 +146,18 @@ def test_restart_between_detection_and_later_bars_still_expires() -> None:
         pin = store.get(_lifetime_key(policy))
         assert pin is not None
         assert pin.expired is True
-        resurrect = FirstSliceEvidenceAssembler(later_source, replay=True, lifetime=store).assemble(
-            organization_id=ORG_ID,
-            policy=policy,
-            evaluated_at=extra[-1].interval_end + timedelta(seconds=5),
+        assert store.active_trigger_end(_lifetime_key(policy)) is None
+        # A retry of retired lineage cannot reactivate it. Current assembly must
+        # acquire its own complete trade window before evaluating a new trigger.
+        store.remember(
+            _lifetime_key(policy),
+            SetupTriggerPin(
+                trigger_end=first.trigger_bar.interval_end,
+                trigger_bar_hash=first.trigger_bar.content_hash,
+            ),
         )
-        assert resurrect.trigger_bar.interval_end == first.trigger_bar.interval_end
-        assert resurrect.clocks.setup_expired is True
+        assert store.active_trigger_end(_lifetime_key(policy)) is None
+        assert store.get(_lifetime_key(policy)).expired is True
         assert pin.trigger_end == utc_trigger_end(first.trigger_bar.interval_end)
 
 

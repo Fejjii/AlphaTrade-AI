@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.attention.contracts import AttentionQueue
+from app.attention.reader import AttentionQueueService
 from app.core.dependencies import DashboardSummaryServiceDep, SessionDep
 from app.daily_review.contracts import DailyReview
 from app.daily_review.reader import DailyReviewService
@@ -20,6 +22,19 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 _DASHBOARD_READ_LIMIT = Depends(
     tenant_rate_limit_dependency("dashboard:read", limit=120, window_seconds=3600, user_limit=120)
 )
+
+
+@router.get(
+    "/attention",
+    response_model=AttentionQueue,
+    summary="Read-only paper attention queue for the current tenant and user",
+    dependencies=[_DASHBOARD_READ_LIMIT],
+)
+def attention_queue(tenant: ReaderDep, session: SessionDep, response: Response) -> AttentionQueue:
+    response.headers["Cache-Control"] = "private, no-store"
+    return AttentionQueueService(session).queue(
+        organization_id=tenant.organization_id, user_id=tenant.user_id, now=datetime.now(UTC)
+    )
 
 
 @router.get(

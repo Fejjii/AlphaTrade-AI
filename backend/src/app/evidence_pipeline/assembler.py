@@ -17,13 +17,13 @@ from app.evidence_pipeline.market_intelligence import (
     ORDER_FLOW_ROLES,
     read_market_intelligence,
     read_order_flow,
-    require_market_intelligence,
 )
 from app.evidence_pipeline.setup_lifetime import (
     SetupLifetimePort,
     SetupLifetimeStore,
     SetupTriggerPin,
     lifetime_key_from_policy,
+    setup_trigger_lifetime_elapsed,
     utc_trigger_end,
 )
 from app.evidence_pipeline.types import (
@@ -38,13 +38,20 @@ from app.market_contracts.catalog import (
     default_perpetual_catalog,
     instrument_for_source,
 )
+from app.market_contracts.coverage import require_complete_window_coverage
 from app.market_contracts.cursor import TradeStreamAssembler, TradeStreamSnapshot
 from app.market_contracts.cvd import (
     FIRST_SLICE_CVD_LOOKBACK_BARS,
     first_slice_baseline_open,
     first_slice_cvd_window,
+    require_cvd_stream_proof,
     snapshot_terminal_event_time,
     snapshot_terminal_price,
+)
+from app.market_contracts.derivatives import (
+    DerivativeMetric,
+    DerivativeObservation,
+    require_derivative_observations,
 )
 from app.market_contracts.enums import DataCompleteness, Finality, FreshnessState, MarketType
 from app.market_contracts.errors import (
@@ -55,6 +62,15 @@ from app.market_contracts.errors import (
     SpotFallbackRejectedError,
     StaleEvidenceError,
     WrongSourceError,
+)
+from app.market_contracts.evidence_diagnostics import (
+    DiagnosticReason,
+    DiagnosticStatus,
+    EvidenceComponentDiagnostic,
+    EvidenceDiagnostics,
+)
+from app.market_contracts.evidence_diagnostics import (
+    EvidenceComponent as Component,
 )
 from app.market_contracts.first_slice import (
     FIRST_SLICE_MIN_FINAL_4H,
@@ -75,7 +91,7 @@ from app.market_contracts.observation import (
     observation_from_order_flow,
 )
 from app.market_contracts.ohlcv import ClosedOhlcvSeries, OhlcvBar, require_closed_series
-from app.market_contracts.order_flow import require_order_flow
+from app.market_contracts.order_flow import OrderFlowObservation, require_order_flow
 from app.schemas.common import Timeframe
 from app.signal_fusion.adapters import evidence_window_from_assessment_command
 from app.signal_fusion.enums import EvidenceAdapterKind, EvidenceRole
@@ -104,6 +120,7 @@ class FirstSliceEvidenceAssembler:
         lifetime: SetupLifetimePort | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        self._diagnostics: tuple[EvidenceComponentDiagnostic, ...] = ()
         self._source = source
         self._replay = replay
         self._catalog = catalog if catalog is not None else default_perpetual_catalog()
@@ -126,12 +143,18 @@ class FirstSliceEvidenceAssembler:
         connection_id: UUID | None = None,
         setup_trigger_end: datetime | None = None,
     ) -> AssembledCanonicalEvidence:
-        for attempt in range(2):
-            try:
-                return self._assemble_once(
+        diagnostics = EvidenceDiagnostics(
+            self._source, symbol, evaluated_at or self._default_clock()
+        )
+        self._diagnostics = ()
+        try:
+            return self._assemble_diagnosed(
+                diagnostics=diagnostics,
+                operation=lambda: self._assemble_once(
+                    diagnostics=diagnostics,
                     organization_id=organization_id,
                     symbol=symbol,
-                    evaluated_at=evaluated_at,
+                    evaluated_at=diagnostics.evaluated_at,
                     policy=policy,
                     adapter_kind=adapter_kind,
                     tenant_assertions=tenant_assertions,
@@ -139,8 +162,37 @@ class FirstSliceEvidenceAssembler:
                     resistances=resistances,
                     connection_id=connection_id,
                     setup_trigger_end=setup_trigger_end,
+                ),
+            )
+        finally:
+            self._diagnostics = diagnostics.items
+
+    @property
+    def diagnostics(self) -> tuple[EvidenceComponentDiagnostic, ...]:
+        return self._diagnostics
+
+    def _assemble_diagnosed(
+        self,
+        *,
+        diagnostics: EvidenceDiagnostics,
+        operation: Callable[[], AssembledCanonicalEvidence],
+    ) -> AssembledCanonicalEvidence:
+        for attempt in range(2):
+            diagnostics.attempt = attempt + 1
+            diagnostics.identity = None
+            try:
+                return diagnostics.run(
+                    Component.CONTRACT,
+                    operation,
+                    success=False,
                 )
             except EvidenceSourceSwitchRequiredError:
+                diagnostics.failover_attempted = True
+                diagnostics.record(
+                    Component.FAILOVER,
+                    status=DiagnosticStatus.SWITCH_REQUIRED,
+                    reason=DiagnosticReason.SWITCH_REQUIRED,
+                )
                 if attempt == 1:
                     raise
         raise WrongSourceError("Perpetual evidence source switch did not settle.")
@@ -148,6 +200,7 @@ class FirstSliceEvidenceAssembler:
     def _assemble_once(
         self,
         *,
+        diagnostics: EvidenceDiagnostics,
         organization_id: UUID,
         symbol: str,
         evaluated_at: datetime | None,
@@ -159,68 +212,113 @@ class FirstSliceEvidenceAssembler:
         connection_id: UUID | None,
         setup_trigger_end: datetime | None,
     ) -> AssembledCanonicalEvidence:
-        instrument = instrument_for_source(self._source, self._catalog, symbol)
-        clock = evaluated_at or self._default_clock()
-        bound_policy = policy or first_slice_read_policy(organization_id)
-        if bound_policy.organization_id != organization_id:
-            raise WrongSourceError(
-                "Fusion policy organization_id does not match the caller tenant."
+        with diagnostics.stage(Component.INSTRUMENT) as probe:
+            instrument = instrument_for_source(self._source, self._catalog, symbol)
+            clock = evaluated_at or self._default_clock()
+            bound_policy = policy or first_slice_read_policy(organization_id)
+            if bound_policy.organization_id != organization_id:
+                raise WrongSourceError(
+                    "Fusion policy organization_id does not match the caller tenant."
+                )
+            lifetime_key = lifetime_key_from_policy(
+                organization_id=organization_id,
+                symbol=instrument.provider_symbol,
+                timeframe=Timeframe.M15,
+                strategy_version_id=bound_policy.strategy_version_id,
+                compiled_setup_definition_id=bound_policy.executable_setup.setup_definition_id,
+                compiled_content_hash=bound_policy.executable_setup.content_hash,
             )
-        lifetime_key = lifetime_key_from_policy(
-            organization_id=organization_id,
-            symbol=instrument.provider_symbol,
-            timeframe=Timeframe.M15,
-            strategy_version_id=bound_policy.strategy_version_id,
-            compiled_setup_definition_id=bound_policy.executable_setup.setup_definition_id,
-            compiled_content_hash=bound_policy.executable_setup.content_hash,
-        )
-        pinned_trigger_end = setup_trigger_end
-        if pinned_trigger_end is None:
-            pinned_trigger_end = self._lifetime.active_trigger_end(lifetime_key)
-        trigger_identity = first_slice_identity(
-            timeframe=Timeframe.M15,
-            replay=self._replay,
-            is_live=not self._replay,
-            instrument=instrument,
-        )
-        context_identity = timeframe_identity(trigger_identity, Timeframe.H4)
-        self._assert_live_contract(trigger_identity)
+            pinned_trigger_end = setup_trigger_end
+            if pinned_trigger_end is None:
+                pinned_trigger_end = self._lifetime.active_trigger_end(lifetime_key)
+            trigger_identity = first_slice_identity(
+                timeframe=Timeframe.M15,
+                replay=self._replay,
+                is_live=not self._replay,
+                instrument=instrument,
+            )
+            context_identity = timeframe_identity(trigger_identity, Timeframe.H4)
+            self._assert_live_contract(trigger_identity)
+            diagnostics.identity = trigger_identity
 
         min_15m = FIRST_SLICE_MIN_FINAL_15M
         if pinned_trigger_end is not None:
             min_15m = FIRST_SLICE_MIN_FINAL_15M + FIRST_SLICE_EXPIRY_BARS + 2
-        try:
-            series_15m = self._source.fetch_closed_ohlcv(
-                identity=trigger_identity,
+        with diagnostics.stage(Component.OHLCV_15M, timeframe=Timeframe.M15) as probe:
+            try:
+                series_15m = self._source.fetch_closed_ohlcv(
+                    identity=trigger_identity,
+                    instrument=instrument,
+                    timeframe=Timeframe.M15,
+                    min_final_bars=min_15m,
+                    evaluated_at=clock,
+                )
+            except FormingCandleError:
+                if pinned_trigger_end is None:
+                    raise
+                series_15m = self._source.fetch_closed_ohlcv(
+                    identity=trigger_identity,
+                    instrument=instrument,
+                    timeframe=Timeframe.M15,
+                    min_final_bars=FIRST_SLICE_MIN_FINAL_15M,
+                    evaluated_at=clock,
+                )
+            probe.observe(series_15m)
+        with diagnostics.stage(Component.OHLCV_4H, timeframe=Timeframe.H4) as probe:
+            series_4h = self._source.fetch_closed_ohlcv(
+                identity=context_identity,
                 instrument=instrument,
-                timeframe=Timeframe.M15,
-                min_final_bars=min_15m,
+                timeframe=Timeframe.H4,
+                min_final_bars=FIRST_SLICE_MIN_FINAL_4H,
                 evaluated_at=clock,
             )
-        except FormingCandleError:
-            if pinned_trigger_end is None:
-                raise
-            series_15m = self._source.fetch_closed_ohlcv(
-                identity=trigger_identity,
-                instrument=instrument,
-                timeframe=Timeframe.M15,
-                min_final_bars=FIRST_SLICE_MIN_FINAL_15M,
-                evaluated_at=clock,
-            )
-        series_4h = self._source.fetch_closed_ohlcv(
-            identity=context_identity,
-            instrument=instrument,
-            timeframe=Timeframe.H4,
-            min_final_bars=FIRST_SLICE_MIN_FINAL_4H,
-            evaluated_at=clock,
-        )
-        trigger, subsequent, series_15m = _trigger_and_subsequent(
-            series_15m,
-            identity=trigger_identity,
-            evaluated_at=clock,
-            setup_trigger_end=pinned_trigger_end,
-        )
-        context = _context_bar(series_4h, trigger)
+            probe.observe(series_4h)
+        with diagnostics.stage(Component.TRIGGER) as probe:
+            try:
+                trigger, subsequent, series_15m = _trigger_and_subsequent(
+                    series_15m,
+                    identity=trigger_identity,
+                    evaluated_at=clock,
+                    setup_trigger_end=pinned_trigger_end,
+                )
+            except FormingCandleError:
+                if (
+                    pinned_trigger_end is None
+                    or not series_15m.bars
+                    or series_15m.bars[-1].interval_end > utc_trigger_end(clock)
+                    or any(
+                        bar.interval_end == utc_trigger_end(pinned_trigger_end)
+                        for bar in series_15m.bars
+                    )
+                    or not setup_trigger_lifetime_elapsed(
+                        pinned_trigger_end,
+                        latest_closed_end=series_15m.bars[-1].interval_end,
+                    )
+                ):
+                    raise
+                # An explicit historical request must not retire a different,
+                # valid current pin that happens to share the same semantic key.
+                if self._lifetime.active_trigger_end(lifetime_key) == utc_trigger_end(
+                    pinned_trigger_end
+                ):
+                    self._lifetime.expire(lifetime_key)
+                diagnostics.record(
+                    Component.TRIGGER,
+                    timeframe=Timeframe.M15,
+                    status=DiagnosticStatus.UNAVAILABLE,
+                    reason=DiagnosticReason.STALE,
+                    source_time=utc_trigger_end(pinned_trigger_end),
+                    historical=True,
+                )
+                # Retry selection once over the already validated FINAL series.
+                # Current forming candles and incomplete acquisition still fail closed.
+                trigger, subsequent, series_15m = _trigger_and_subsequent(
+                    series_15m,
+                    identity=trigger_identity,
+                    evaluated_at=clock,
+                    setup_trigger_end=None,
+                )
+            context = _context_bar(series_4h, trigger)
         window_start = first_slice_baseline_open(trigger)
         window_end = trigger.interval_end
         lineage = connection_id or uuid5(
@@ -228,58 +326,89 @@ class FirstSliceEvidenceAssembler:
             f"{instrument.instrument_id}:{self._source.name}:"
             f"{window_start.isoformat()}:{window_end.isoformat()}",
         )
-        snapshot = self._load_trade_snapshot(
-            identity=trigger_identity,
-            instrument=instrument,
-            window_start=window_start,
-            window_end=window_end,
-            lineage=lineage,
-            clock=clock,
-        )
+        with diagnostics.stage(Component.TRADES, timeframe=Timeframe.M15) as probe:
+            snapshot = self._load_trade_snapshot(
+                identity=trigger_identity,
+                instrument=instrument,
+                window_start=window_start,
+                window_end=window_end,
+                lineage=lineage,
+                clock=clock,
+            )
+            probe.source_time = snapshot_terminal_event_time(snapshot)
+            probe.historical = True
+            probe.trade_freshness(clock)
+        with diagnostics.stage(Component.COVERAGE, timeframe=Timeframe.M15):
+            require_cvd_stream_proof(snapshot)
+            require_complete_window_coverage(
+                snapshot.coverage,
+                identity=trigger_identity,
+                lineage_id=snapshot.cursor.connection_identity,
+                trades=snapshot.trades,
+                required_start=window_start,
+                required_end=window_end,
+                released=snapshot.released_tape,
+            )
         live_window = live_confirmation_window_open(
             closed_interval_end=trigger.interval_end,
             evaluated_at=clock,
         )
-        cvd = first_slice_cvd_window(
-            identity=trigger_identity,
-            series_15m=series_15m,
-            snapshot=snapshot,
-            created_at=clock,
-            require_live_freshness=live_window,
-        )
-        signed_flow = bar_signed_quote_flow(
-            identity=trigger_identity,
-            bar=trigger,
-            snapshot=snapshot,
-            evaluated_at=clock,
-            require_live_freshness=live_window,
-        )
-        freshness = evaluate_freshness(
-            source_time=cvd.event_time_max or snapshot_terminal_event_time(snapshot),
-            evaluated_at=clock,
-            policy=first_slice_freshness_policy(),
-            require_fresh=live_window,
-        )
-        current: CurrentPriceQuote | None
-        try:
-            current = quote_current_price(
-                self._source,
+        with diagnostics.stage(Component.CVD, timeframe=Timeframe.M15) as probe:
+            cvd = first_slice_cvd_window(
                 identity=trigger_identity,
-                instrument=instrument,
-                evaluated_at=clock,
-                connection_id=lineage,
-                replay=self._replay,
+                series_15m=series_15m,
+                snapshot=snapshot,
+                created_at=clock,
+                require_live_freshness=live_window,
             )
-        except (StaleEvidenceError, IncompleteWarmUpError):
-            if live_window:
-                raise
-            current = None
-        selected_revision = manual_level_revision or _nearest_resistance_ref(
-            series_15m=series_15m,
-            trigger=trigger,
-            identity=trigger_identity,
-            resistances=resistances,
-        )
+            probe.observe(cvd, historical=not live_window)
+            probe.trade_freshness(clock)
+        with diagnostics.stage(Component.SIGNED_FLOW, timeframe=Timeframe.M15) as probe:
+            signed_flow = bar_signed_quote_flow(
+                identity=trigger_identity,
+                bar=trigger,
+                snapshot=snapshot,
+                evaluated_at=clock,
+                require_live_freshness=live_window,
+            )
+            probe.observe(signed_flow, historical=not live_window)
+            probe.trade_freshness(clock)
+        with diagnostics.stage(Component.FRESHNESS) as probe:
+            freshness = evaluate_freshness(
+                source_time=cvd.event_time_max or snapshot_terminal_event_time(snapshot),
+                evaluated_at=clock,
+                policy=first_slice_freshness_policy(),
+                require_fresh=live_window,
+            )
+            probe.observe(freshness, historical=not live_window)
+        current: CurrentPriceQuote | None
+        with diagnostics.stage(Component.PRICE) as probe:
+            try:
+                current = quote_current_price(
+                    self._source,
+                    identity=trigger_identity,
+                    instrument=instrument,
+                    evaluated_at=clock,
+                    connection_id=lineage,
+                    replay=self._replay,
+                )
+            except (StaleEvidenceError, IncompleteWarmUpError) as exc:
+                probe.unavailable(exc)
+                if live_window:
+                    raise
+                current = None
+            if current is not None:
+                probe.observe(current)
+        with diagnostics.stage(Component.RESISTANCE, timeframe=Timeframe.H4) as probe:
+            selected_revision = manual_level_revision or _nearest_resistance_ref(
+                series_15m=series_15m,
+                trigger=trigger,
+                identity=trigger_identity,
+                resistances=resistances,
+            )
+            if selected_revision is None:
+                probe.status = DiagnosticStatus.UNAVAILABLE
+                probe.reason = DiagnosticReason.MISSING
         command = build_first_slice_assessment_command(
             organization_id=organization_id,
             policy=bound_policy,
@@ -301,19 +430,29 @@ class FirstSliceEvidenceAssembler:
             for role in bound_policy.required_roles
             if role in DERIVATIVE_ROLES
         )
-        intelligence = read_market_intelligence(
-            self._source,
-            identity=trigger_identity,
-            instrument=instrument,
-            observed_at=clock,
-            metrics=required_metrics,
+        intelligence = tuple(
+            diagnostics.run(
+                Component(metric.value),
+                lambda metric=metric: _required_derivative(
+                    self._source,
+                    metric=metric,
+                    identity=trigger_identity,
+                    instrument=instrument,
+                    observed_at=clock,
+                ),
+                timeframe=Timeframe.M5
+                if trigger_identity.venue.value == "bybit" and metric.value == "open_interest"
+                else None,
+            )
+            for metric in required_metrics
         )
-        require_market_intelligence(
-            intelligence,
-            required_roles=bound_policy.required_roles,
-            identity=trigger_identity,
-            evaluated_at=clock,
-        )
+        for component in (Component.OPEN_INTEREST, Component.FUNDING):
+            if component.value not in {metric.value for metric in required_metrics}:
+                diagnostics.record(
+                    component,
+                    status=DiagnosticStatus.NOT_REQUIRED,
+                    reason=DiagnosticReason.NOT_REQUIRED,
+                )
         if intelligence:
             command = command.model_copy(
                 update={
@@ -333,14 +472,18 @@ class FirstSliceEvidenceAssembler:
         order_flow = None
         flow_roles = tuple(role for role in bound_policy.required_roles if role in ORDER_FLOW_ROLES)
         if flow_roles:
-            order_flow = read_order_flow(
-                self._source,
-                identity=trigger_identity,
-                instrument=instrument,
-                observed_at=clock,
-                window_end=trigger.interval_end,
-            )
-            require_order_flow(order_flow, identity=trigger_identity, evaluated_at=clock)
+            with diagnostics.stage(Component.ORDER_FLOW, timeframe=Timeframe.M5) as probe:
+                order_flow = read_order_flow(
+                    self._source,
+                    identity=trigger_identity,
+                    instrument=instrument,
+                    observed_at=clock,
+                    window_end=trigger.interval_end,
+                )
+                _require_order_flow_diagnosed(
+                    order_flow, identity=trigger_identity, evaluated_at=clock
+                )
+                probe.observe(order_flow, historical=True)
             command = command.model_copy(
                 update={
                     "mandatory_evidence_roles": tuple(
@@ -354,7 +497,16 @@ class FirstSliceEvidenceAssembler:
                     "selected_roles": command.selected_roles + flow_roles,
                 }
             )
-        window = evidence_window_from_assessment_command(command)
+        if not flow_roles:
+            diagnostics.record(
+                Component.ORDER_FLOW,
+                timeframe=Timeframe.M5,
+                status=DiagnosticStatus.NOT_REQUIRED,
+                reason=DiagnosticReason.NOT_REQUIRED,
+            )
+        window = diagnostics.run(
+            Component.CONTRACT, lambda: evidence_window_from_assessment_command(command)
+        )
         bundle = FirstSliceEvidenceBundle(
             bars_15m=tuple(series_15m.bars),
             bars_4h=tuple(series_4h.bars),
@@ -577,3 +729,68 @@ def _context_bar(series: ClosedOhlcvSeries, trigger: OhlcvBar) -> OhlcvBar:
     if not eligible:
         raise FormingCandleError("No final 4h context bar is closed at or before the 15m trigger.")
     return eligible[-1]
+
+
+def _availability_reason(item: DerivativeObservation | OrderFlowObservation) -> DiagnosticReason:
+    # Only finite contract values, never provider reason text.
+    for error_type, reason in (
+        ("RateLimitedError", DiagnosticReason.RATE_LIMITED),
+        ("UpstreamBanError", DiagnosticReason.UPSTREAM_BAN),
+        ("RegionalProviderFailureError", DiagnosticReason.REGIONAL_FAILURE),
+        ("WrongInstrumentError", DiagnosticReason.WRONG_INSTRUMENT),
+        ("WrongMarketError", DiagnosticReason.WRONG_MARKET),
+        ("WrongSourceError", DiagnosticReason.WRONG_SOURCE),
+        ("SpotFallbackRejectedError", DiagnosticReason.SPOT_REJECTED),
+        ("FallbackForbiddenError", DiagnosticReason.FALLBACK_FORBIDDEN),
+        ("StaleEvidenceError", DiagnosticReason.STALE),
+        ("IncompleteTradeWindowError", DiagnosticReason.COVERAGE_INCOMPLETE),
+        ("GapDetectedError", DiagnosticReason.GAP),
+        ("DuplicateDataError", DiagnosticReason.DUPLICATE),
+        ("OutOfOrderTradesError", DiagnosticReason.OUT_OF_ORDER),
+        ("UnknownAggressorError", DiagnosticReason.UNKNOWN_AGGRESSOR),
+        ("UnsupportedTradeContractError", DiagnosticReason.UNSUPPORTED),
+    ):
+        if item.reason in {f"provider_failure:{error_type}", f"trade_print_failure:{error_type}"}:
+            return reason
+    return {
+        "MISSING": DiagnosticReason.MISSING,
+        "UNSUPPORTED": DiagnosticReason.UNSUPPORTED,
+        "INCOMPLETE": DiagnosticReason.INCOMPLETE,
+        "STALE": DiagnosticReason.STALE,
+    }.get(item.availability.value, DiagnosticReason.INVALID_CONTRACT)
+
+
+def _required_derivative(
+    source: PerpetualMarketSource,
+    *,
+    metric: DerivativeMetric,
+    identity: EvidenceMarketIdentity,
+    instrument: InstrumentIdentity,
+    observed_at: datetime,
+) -> DerivativeObservation:
+    observations = read_market_intelligence(
+        source, identity=identity, instrument=instrument, observed_at=observed_at, metrics=(metric,)
+    )
+    try:
+        require_derivative_observations(
+            observations, required_metrics=(metric,), identity=identity, evaluated_at=observed_at
+        )
+    except Exception as exc:
+        if observations and observations[0].availability.value != "AVAILABLE":
+            exc.canonical_reason = _availability_reason(observations[0])
+        raise
+    return observations[0]
+
+
+def _require_order_flow_diagnosed(
+    item: OrderFlowObservation | None,
+    *,
+    identity: EvidenceMarketIdentity,
+    evaluated_at: datetime,
+) -> None:
+    try:
+        require_order_flow(item, identity=identity, evaluated_at=evaluated_at)
+    except Exception as exc:
+        if item is not None and item.availability.value != "AVAILABLE":
+            exc.canonical_reason = _availability_reason(item)
+        raise

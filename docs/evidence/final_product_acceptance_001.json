@@ -1,0 +1,246 @@
+{
+  "prepared_at": "2026-10-03T18:15:00.673963+02:00",
+  "verdict": "BLOCKED",
+  "base_sha": "8673d8f69779ea516ca97456baea7b3064daf089",
+  "branch": "codex/final_product_acceptance_001",
+  "safety": {
+    "ENABLE_REAL_TRADING": false,
+    "EXECUTION_MODE": "paper",
+    "EXCHANGE_MODE": "paper_internal",
+    "TELEGRAM_NETWORK_PERMITTED": false,
+    "telegram_api_requests": 0,
+    "production_source_files_changed": 0,
+    "execution_authority_changed": false
+  },
+  "backend": {
+    "unique_passed": 396,
+    "final_unresolved_skips": 0,
+    "batches": [
+      {
+        "name": "telegram",
+        "tests": 364,
+        "passed": 316,
+        "skipped": 48,
+        "failures": 0,
+        "errors": 0
+      },
+      {
+        "name": "telegram-postgres",
+        "tests": 65,
+        "passed": 65,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0
+      },
+      {
+        "name": "harness-final",
+        "tests": 32,
+        "passed": 32,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0
+      }
+    ],
+    "suite_counts": {
+      "tests.test_deployment_safety": 51,
+      "tests.test_deployment_scripts": 14,
+      "tests.test_final_product_acceptance": 32,
+      "tests.test_health": 7,
+      "tests.test_phase6_candidate_telegram_alerts": 26,
+      "tests.test_sfp_telegram_policy_integration": 18,
+      "tests.test_telegram_alert_delivery": 16,
+      "tests.test_telegram_automatic_delivery": 11,
+      "tests.test_telegram_bot_identity": 2,
+      "tests.test_telegram_enrollment_kill_switch_scope": 7,
+      "tests.test_telegram_evaluation_integration": 4,
+      "tests.test_telegram_notification_policy_v2": 70,
+      "tests.test_telegram_paper_activation": 10,
+      "tests.test_telegram_paper_activation_postgres": 2,
+      "tests.test_telegram_paper_agent": 28,
+      "tests.test_telegram_paper_agent_postgres": 4,
+      "tests.test_telegram_postgres_store": 34,
+      "tests.test_telegram_security_protocol": 47,
+      "tests.test_telegram_test_alert": 13
+    },
+    "note": "Initial 48 PostgreSQL skips resolved by the 65-case PostgreSQL run; overlapping cases counted once."
+  },
+  "frontend_unit": {
+    "files_passed": 218,
+    "tests_passed": 1316
+  },
+  "browser": {
+    "total_passed": 75,
+    "suites": [
+      {
+        "suite": "offline product/Voice/navigation/Knowledge/polish",
+        "passed": 46,
+        "engine": "Chromium",
+        "physical_device": false
+      },
+      {
+        "suite": "local paper API workspaces/Watcher",
+        "passed": 7,
+        "engine": "Chromium",
+        "physical_device": false
+      },
+      {
+        "suite": "existing mobile portrait/landscape specs in Chromium",
+        "passed": 22,
+        "engine": "Chromium",
+        "physical_device": false
+      }
+    ]
+  },
+  "checks": {
+    "frontend_typecheck": "PASS",
+    "frontend_lint": "PASS",
+    "acceptance_file_eslint": "PASS",
+    "frontend_build": "PASS (test-only offline font fixture)",
+    "python_ruff": "PASS",
+    "python_format": "PASS",
+    "shell_syntax": "PASS",
+    "production_build_voice_asset_GET_contract": "PASS (local artifact; GET only)"
+  },
+  "telegram_preflight": {
+    "automatic_telegram_delivery_enabled": false,
+    "blockers": [
+      "activation_not_armed",
+      "interaction_disabled",
+      "inbound_mode_off",
+      "recipient_binding_missing",
+      "protocol_disabled",
+      "outbound_transport_disabled"
+    ],
+    "confirmation_identity_required": true,
+    "defaults_safe": true,
+    "enable_real_trading": false,
+    "environment": "local",
+    "exchange_mode": "paper_internal",
+    "execution_mode": "paper",
+    "forbidden": {
+      "activate_strategy": false,
+      "create_live_order": false,
+      "enable_live_trading": false,
+      "mint_candidate": false,
+      "override_risk": false,
+      "override_setup_assessment": false
+    },
+    "inbound_cursor_present": false,
+    "market_watcher_enabled": false,
+    "outbox": null,
+    "private_chat": false,
+    "real_trading_enabled": false,
+    "recipient_bound": false,
+    "runtime_armable": false,
+    "telegram_alerts_enabled": false,
+    "telegram_inbound_mode": "off",
+    "telegram_interaction_enabled": false,
+    "telegram_network_permitted": false,
+    "telegram_paper_activation_armed": false,
+    "tenant_isolated": false,
+    "verdict": "NOT_ARMED",
+    "warnings": [
+      "network_disabled"
+    ],
+    "watcher_orchestration_enabled": false,
+    "webhook_mounted": false
+  },
+  "telegram_preparation": {
+    "status": "BLOCKED",
+    "blockers": [
+      "numeric_bot_identity_and_matching_secret_required",
+      "verified_private_chat_id_required",
+      "use_check_binding_with_expected_tenant_and_user"
+    ],
+    "network_activated": false
+  },
+  "frontend_fixture_asset_pin": {
+    "build_kind": "offline_font_fixture_only_not_a_deployment_pin",
+    "path": "/_next/static/chunks/app/(app)/agent/page-0cc3d9134e3afbae.js",
+    "sha256": "6f932551c5c40a1fffe15a30aa0b8eefc3c8dcd23489c75607f143c7304c64be"
+  },
+  "blocking_prerequisites": [
+    "WebKit browser installation denied by managed download policy (Domain forbidden); Chromium mobile coverage is not WebKit.",
+    "Real staging API/frontend origins and authenticated session were not supplied; real staging package NOT_RUN."
+  ],
+  "human_checks": {
+    "real iPhone microphone": "NOT_TESTED",
+    "Safari speech recognition availability": "NOT_TESTED",
+    "Safari speech output": "NOT_TESTED",
+    "real Telegram message": "NOT_TESTED"
+  },
+  "source_sha256": {
+    "scripts/final-product-acceptance.py": "485c89742b004e6a1328b0efb680668f2a89c40c49fbc90673cc5031cff13bc8",
+    "scripts/telegram-staging-readiness.py": "e2d1594e6b650961374f804da24525bdcbe26d7eb5978910d794406a6a401c02",
+    "scripts/run-final-product-tests.sh": "78df88bb9c92cfc9705780bc670855fc71857b23c717b3db4c104a0d29dc13a5",
+    "scripts/lib/offline_acceptance.py": "64b3b7fed50df9059e2ff920e4d3bc60b7dac8cf7aa4fb185a4ee19b826a7220",
+    "backend/tests/test_final_product_acceptance.py": "a482908dcfea1098a8da4ae86ff0ff22bfe265d4eb6c5d0043ba96ef6ba2a01e",
+    "frontend/playwright.acceptance.config.ts": "0bba5ef7d6ff10fa20b979480d374c898772c6767730e3ee4901fae173babdc7",
+    "frontend/playwright.acceptance-mobile.config.ts": "2789a997a9d98c1a7e6063b4aa31691cd0be1141ca8ba2eb018f41f9ce172505",
+    "frontend/ui-tests/final-product.spec.ts": "9344321098e9f76a8bbedbebb1f942423b82a856c4950e9cf53bec60deb96293",
+    "frontend/ui-tests/voice-agent.spec.ts": "71dd6535f47c39f1a7d4f8cc214cf084538c45c05948bf85f9b87036b3a88009",
+    "frontend/ui-tests/trader-polish.spec.ts": "ed1ff94d4273698def758c427fa0fb7226440587596545d54f25c280b8df86f4",
+    "frontend/e2e/final-workspaces.spec.ts": "5bd6b19511b4925775ab940ec0ff40e1f1aa4b36e4ffe608f8d7e008db338457",
+    "frontend/test-fixtures/offline-fonts.cjs": "3e64f5eec05b24950987436d70fae033987b817d8f895d081c0387263967f020"
+  },
+  "evidence_scope": "Original acceptance campaign at base_sha; current integration validation is recorded separately in integration_rebase.",
+  "integration_rebase": {
+    "baseline_sha": "8147caf9c9042c5bbc944e5911ea79d0bfbb1e7b",
+    "original_head_sha": "c81175a6039b9861427accd6f468ab5e6ff931fb",
+    "conflicts": [],
+    "acceptance_commit_replayed_unchanged": true,
+    "production_source_files_changed": 0,
+    "normal_full_gate": "GitHub CI; not rerun locally",
+    "validation": {
+      "backend_harness": {
+        "passed": 27,
+        "skipped": 5,
+        "failed": 0,
+        "skip_reason": "Local PostgreSQL unavailable; existing binding cases remain covered by the normal GitHub backend job."
+      },
+      "affected_chromium_fixtures": {
+        "passed": 37,
+        "failed": 0,
+        "files": [
+          "frontend/ui-tests/final-product.spec.ts",
+          "frontend/ui-tests/trader-polish.spec.ts",
+          "frontend/ui-tests/voice-agent.spec.ts"
+        ]
+      },
+      "local_paper_api_workspaces": {
+        "passed": 3,
+        "failed": 0,
+        "viewports": [
+          "desktop",
+          "phone",
+          "phone-landscape"
+        ]
+      },
+      "login_browser_render": "PASS; form controls present, no framework error overlay",
+      "frontend_typecheck": "PASS",
+      "affected_frontend_eslint": "PASS",
+      "affected_python_lint_and_format": "PASS",
+      "shell_syntax": "PASS",
+      "diff_check": "PASS",
+      "original_source_hashes": "PASS",
+      "production_and_safety_configuration_diff": "EMPTY",
+      "dev_server_fonts": "Existing offline test fixture; no production build repeated",
+      "full_suite": "NOT_RUN; delegated to the normal GitHub CI gate",
+      "staging_and_physical_device_checks": "NOT_RUN; no acceptance claims added"
+    },
+    "validated_at": "2026-10-03T19:43:26.705812+00:00",
+    "safety": {
+      "EXECUTION_MODE": "paper",
+      "ENABLE_REAL_TRADING": false,
+      "EXCHANGE_MODE": "paper_internal",
+      "TELEGRAM_ALERTS_ENABLED": false,
+      "TELEGRAM_INTERACTION_ENABLED": false,
+      "AUTOMATIC_TELEGRAM_DELIVERY_ENABLED": false,
+      "TELEGRAM_PAPER_ACTIVATION_ARMED": false,
+      "TELEGRAM_INBOUND_MODE": "off",
+      "TELEGRAM_NETWORK_PERMITTED": false
+    },
+    "code_integration_blockers": [],
+    "readiness": "READY_FOR_GITHUB_CI_AND_MERGE_REVIEW; normal CI must pass before merge"
+  }
+}

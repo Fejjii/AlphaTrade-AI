@@ -1,4 +1,4 @@
-"""Chronological Nested replay using existing backtest fills and metrics.
+"""Chronological family replay using the existing backtest job/result authorities.
 
 No provider, wall-clock, database writes, live account, or strategy promotion.
 """
@@ -26,12 +26,18 @@ from app.schemas.common import (
     RiskAction,
     TradeDirection,
 )
-from app.schemas.nested_continuation import NestedContinuationSpec
+from app.schemas.nested_continuation import (
+    BrainSetupState,
+    EvidenceAvailability,
+    NestedContinuationSpec,
+)
 from app.schemas.risk import RiskCheckRequest
 from app.schemas.strategy_replay import (
     REPLAY_ENGINE,
+    SFP_REPLAY_ADAPTER,
     ReplayCandidate,
     ReplayReport,
+    ReplayResearchBucket,
     ReplaySample,
     StrategyReplayCreate,
 )
@@ -40,7 +46,9 @@ from app.services.backtest_hashing import canonical_json_hash
 from app.services.risk.engine import RiskEngine
 from app.services.risk.limits import RiskLimits
 from app.services.risk.rules import RiskEvaluationContext
+from app.services.sfp_replay_adapter import SfpReplayAdapter
 from app.services.strategy_replay_adapter import NestedReplayAdapter, ReplayAdapter
+from app.strategy_brain.sfp.contracts import SFP_KIND, SfpCondition, SfpSpec
 
 ZERO = Decimal("0")
 
@@ -96,6 +104,8 @@ class StrategyReplayEngine:
         should_cancel: Callable[[], bool] | None,
     ) -> BacktestResult:
         request = StrategyReplayCreate.model_validate(snapshot["replay_request"])
+        if snapshot["pattern_spec"].get("kind") == SFP_KIND:
+            return self._sfp_run(rows, snapshot, request, should_cancel)
         spec = NestedContinuationSpec.model_validate(snapshot["pattern_spec"])
         assumptions = request.assumptions
         raw_limits: dict[str, Any] = {
@@ -216,7 +226,30 @@ class StrategyReplayEngine:
             cancelled=cancelled,
             processed_bars=processed_bars,
             total_bars=sum(s.candle_count for s in report.samples),
-            replay=report.model_dump(mode="json"),
+            # Preserve the PR173 v1 Nested result shape and historical hashes.
+            replay=report.model_dump(
+                mode="json",
+                exclude={
+                    "mode": True,
+                    "adapter_version": True,
+                    "evidence_hash": True,
+                    "structural_levels": True,
+                    "evidence_gaps": True,
+                    "evidence_frames": True,
+                    "research_buckets": True,
+                    "stale_evidence": True,
+                    "candidates": {
+                        "__all__": {
+                            "sfp_detection",
+                            "research_evidence",
+                            "stale_evidence",
+                            "candidate_creation_eligibility",
+                            "risk_applicability",
+                        }
+                    },
+                    "samples": {"__all__": {"setup_count", "lifecycle_counts"}},
+                },
+            ),
             limitations=[
                 "Descriptive research only; a better replay does not establish improvement.",
                 "Independent training/evaluation accounts and detector state; no automatic tuning.",
@@ -235,10 +268,258 @@ class StrategyReplayEngine:
         )
         return result
 
+    def _sfp_run(
+        self,
+        rows: list[HistoricalCandle],
+        snapshot: dict[str, Any],
+        request: StrategyReplayCreate,
+        should_cancel: Callable[[], bool] | None,
+    ) -> BacktestResult:
+        spec = SfpSpec.model_validate(snapshot["pattern_spec"])
+        report = ReplayReport(
+            strategy_version_id=request.strategy_version_id,
+            strategy_content_hash=snapshot["strategy_content_hash"],
+            parameter_hash=canonical_json_hash(spec.parameters.model_dump(mode="json")),
+            input_hash=replay_input_hash(rows),
+            evidence_hash=canonical_json_hash(
+                request.sfp_evidence.model_dump(mode="json") if request.sfp_evidence else None
+            ),
+            mode="sfp_research",
+            adapter_version=SFP_REPLAY_ADAPTER,
+            risk_scope=(
+                "No authorized SFP execution plan. Candidate creation and RiskEngine "
+                "are not evaluated; no price/sizing inputs are invented."
+            ),
+        )
+        adapter = SfpReplayAdapter(request.sfp_evidence)
+        cancelled, processed = False, 0
+        windows = request.windows
+        for label, start, end in (
+            (BacktestSplitLabel.IN_SAMPLE, windows.training_start, windows.training_end),
+            (BacktestSplitLabel.OUT_OF_SAMPLE, windows.evaluation_start, windows.evaluation_end),
+        ):
+            selected = [row for row in rows if start <= aware(row.open_time) < end]
+            bars, errors = self._closed_bars(
+                selected, spec, request.assumptions, start, end, windows.as_of
+            )
+            cancelled |= bool(should_cancel and should_cancel())
+            before = len(adapter.gaps)
+            levels_before = len(adapter.levels)
+            candidates = []
+            if not errors and not cancelled:
+                previous: datetime | None = None
+                for index, candidate in adapter.events(bars, spec.model_dump(mode="json"), label):
+                    if should_cancel and should_cancel():
+                        cancelled = True
+                        break
+                    if (
+                        (previous and candidate.detected_at < previous)
+                        or candidate.detected_at < bars[index].interval_end
+                        or candidate.detected_at > end
+                    ):
+                        raise ValueError(
+                            "SFP events must be chronological closed-candle decisions."
+                        )
+                    previous = candidate.detected_at
+                    candidates.append(candidate)
+                processed += len(bars) if not cancelled else 0
+            report.candidates.extend(candidates)
+            setups = {candidate.setup_id for candidate in candidates}
+            confirmed = {
+                candidate.setup_id
+                for candidate in candidates
+                if candidate.state == BrainSetupState.CONFIRMED
+            }
+            counts = self._sfp_counts(candidates)
+            segment_levels = adapter.levels[levels_before:]
+            counts["structural_levels_considered"] = len(
+                {item.level.level_id for item in segment_levels}
+            )
+            counts["level_considerations"] = len(segment_levels)
+            report.samples.append(
+                ReplaySample(
+                    split_label=label,
+                    candle_count=len(selected),
+                    candidate_count=len(confirmed),
+                    setup_count=len(setups),
+                    lifecycle_counts=counts,
+                    blocked_count=0,
+                    trade_count=0,
+                    status="cancelled"
+                    if cancelled
+                    else "missing_data"
+                    if errors or len(adapter.gaps) > before
+                    else "insufficient_sample"
+                    if len(setups) < request.minimum_sample
+                    else "descriptive_only",
+                    net_pnl=None,
+                )
+            )
+            report.missing_evidence.extend(errors)
+            report.research_buckets.extend(self._sfp_buckets(candidates, spec, request))
+        report.structural_levels = adapter.levels
+        report.evidence_gaps = adapter.gaps
+        report.evidence_frames = sorted(adapter.frames, key=lambda item: item.decision_at)
+        report.missing_evidence = sorted(
+            set(report.missing_evidence)
+            | {reason for gap in adapter.gaps for reason in gap.reasons}
+            | {key for candidate in report.candidates for key in candidate.missing_evidence}
+            | {
+                key
+                for frame in adapter.frames
+                for key, value in frame.evidence.items()
+                if value["availability"] != EvidenceAvailability.AVAILABLE
+            }
+        )
+        if not request.sfp_evidence or not request.sfp_evidence.order_flow:
+            report.missing_evidence = sorted(set(report.missing_evidence) | {"cvd", "order_flow"})
+        if not request.sfp_evidence or not request.sfp_evidence.derivatives:
+            report.missing_evidence = sorted(
+                set(report.missing_evidence) | {"open_interest", "funding"}
+            )
+        if any(row.source == "mock" for row in rows):
+            report.missing_evidence.append("synthetic_mock_candles")
+        report.stale_evidence = sorted(
+            {key for candidate in report.candidates for key in candidate.stale_evidence}
+            | {
+                key
+                for frame in adapter.frames
+                for key, value in frame.evidence.items()
+                if value["availability"] == EvidenceAvailability.STALE
+            }
+            | {
+                reason
+                for gap in adapter.gaps
+                if gap.availability == EvidenceAvailability.STALE
+                for reason in gap.reasons
+            }
+        )
+        incomplete = any(sample.status == "missing_data" for sample in report.samples)
+        result = BacktestResult(
+            metrics=None,
+            trades=[],
+            recommendation=BacktestRecommendation.UNRELIABLE_DATA
+            if incomplete
+            else BacktestRecommendation.NEEDS_REVIEW,
+            data_quality="unreliable" if incomplete else "ok",
+            engine_version=REPLAY_ENGINE,
+            rule_engine_source="sfp_canonical_research_adapter",
+            cancelled=cancelled,
+            processed_bars=processed,
+            total_bars=sum(sample.candle_count for sample in report.samples),
+            replay=report.model_dump(mode="json"),
+            note="SFP lifecycle research only. No execution plan or trade-return metrics.",
+            limitations=[
+                "No SFP entry, stop, trade target, R, PnL, fill, or paper trade is inferred.",
+                "Candle receipt clocks are preserved; proofs received after a window are missing.",
+                "Required evidence gaps reset history; earlier observations stay recorded.",
+                "Training/evaluation histories are independent; no tuning or improvement claim.",
+                "Quality buckets count measured components; regime bands describe efficiency.",
+                "Directional efficiency is a research proxy, not a validated regime classifier.",
+                "Available target space describes opposing structure, not an execution target.",
+                "Optional evidence does not change SFP confirmation or authorize Candidates.",
+                *[
+                    f"{sample.split_label.value}: {sample.status} "
+                    f"({sample.setup_count} unique setup episodes)."
+                    for sample in report.samples
+                ],
+                "Missing evidence: " + ", ".join(report.missing_evidence),
+            ],
+        )
+        result.result_hash = canonical_json_hash(
+            result.model_dump(mode="json", exclude={"result_hash"})
+        )
+        return result
+
+    @staticmethod
+    def _sfp_counts(candidates: list[ReplayCandidate]) -> dict[str, int]:
+        events = [candidate.sfp_detection for candidate in candidates if candidate.sfp_detection]
+        return {
+            "sweeps": len({event.setup_id for event in events}),
+            "forming_setups": len(
+                {event.setup_id for event in events if event.state is BrainSetupState.FORMING}
+            ),
+            "reclaims": len({event.setup_id for event in events if event.reclaim_observation_id}),
+            "confirmed_setups": len(
+                {event.setup_id for event in events if event.confirmation_observation_id}
+            ),
+            "failed_reclaims": len(
+                {
+                    event.setup_id
+                    for event in events
+                    if event.condition is SfpCondition.FAILED_RECLAIM
+                }
+            ),
+            "invalidations": len(
+                {event.setup_id for event in events if event.state is BrainSetupState.INVALIDATED}
+            ),
+            "expiries": len(
+                {event.setup_id for event in events if event.state is BrainSetupState.EXPIRED}
+            ),
+        }
+
+    @staticmethod
+    def _sfp_buckets(
+        candidates: list[ReplayCandidate], spec: SfpSpec, request: StrategyReplayCreate
+    ) -> list[ReplayResearchBucket]:
+        latest = {candidate.setup_id: candidate for candidate in candidates}
+        buckets: dict[tuple[BacktestSplitLabel, str, str, str], list[ReplayCandidate]] = (
+            defaultdict(list)
+        )
+        for candidate in latest.values():
+            event = candidate.sfp_detection
+            assert event is not None
+            components = event.quality.model_dump(mode="json")
+            # Coverage, not a confidence score: fixed eight price/volume components.
+            measured = sum(
+                component["availability"] == EvidenceAvailability.AVAILABLE
+                for key, component in components.items()
+                if key not in {"cvd", "order_flow", "open_interest"}
+            )
+            value = event.quality.market_regime.value
+            regime = (
+                "unmeasured"
+                if value is None
+                else "efficiency_lt_1_3"
+                if value < Decimal(1) / 3
+                else "efficiency_lt_2_3"
+                if value < Decimal(2) / 3
+                else "efficiency_ge_2_3"
+            )
+            buckets[
+                (
+                    candidate.split_label,
+                    event.sweep.reference_level.kind.value,
+                    f"measured_{measured}_of_8",
+                    regime,
+                )
+            ].append(candidate)
+        return [
+            ReplayResearchBucket(
+                split_label=key[0],
+                symbol=spec.symbol,
+                timeframe=spec.trigger_timeframe.value,
+                direction=spec.direction,
+                level_type=key[1],
+                strategy_version_id=request.strategy_version_id,
+                quality_bucket=key[2],
+                regime=key[3],
+                setup_count=len(group),
+                confirmed_count=sum(
+                    bool(
+                        candidate.sfp_detection
+                        and candidate.sfp_detection.confirmation_observation_id
+                    )
+                    for candidate in group
+                ),
+            )
+            for key, group in sorted(buckets.items())
+        ]
+
     @staticmethod
     def _closed_bars(
         rows: list[HistoricalCandle],
-        spec: NestedContinuationSpec,
+        spec: NestedContinuationSpec | SfpSpec,
         assumptions: BacktestAssumptions,
         start: datetime,
         end: datetime,

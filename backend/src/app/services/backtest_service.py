@@ -442,7 +442,7 @@ class BacktestService:
                 self._audit_lifecycle(
                     run,
                     AuditEventType.BACKTEST_RUN_COMPLETED,
-                    {"trade_count": result.metrics.trade_count},
+                    {"trade_count": len(result.trades)},
                 )
         except Exception as exc:
             run.status = BacktestRunStatus.FAILED
@@ -545,7 +545,18 @@ class BacktestService:
                     dataset_ok=False,
                     detail=str(exc),
                 )
-            stored_result = BacktestResult.model_validate(run.result)
+            try:
+                stored_result = BacktestResult.model_validate(run.result)
+            except ValueError:
+                self._audit_verify(run, user_id=user_id, match=False, dataset_ok=True)
+                return BacktestVerifyResult(
+                    run_id=run.id,
+                    result_hash_stored=run.result_hash,
+                    result_hash_recomputed=recomputed.result_hash,
+                    match=False,
+                    dataset_ok=True,
+                    detail="stored_replay_result_invalid",
+                )
             stored_content_hash = canonical_json_hash(
                 stored_result.model_dump(mode="json", exclude={"result_hash"})
             )
@@ -664,7 +675,7 @@ class BacktestService:
         return card, setup_type, structured, assumptions.start_date, assumptions.end_date
 
     def _apply_promotion(self, run: BacktestRunModel, result: BacktestResult) -> None:
-        if run.strategy_version_id is None or result.cancelled:
+        if run.strategy_version_id is None or result.cancelled or result.metrics is None:
             return
         version = self._versions.get_by_id(run.strategy_version_id)
         if version is None:

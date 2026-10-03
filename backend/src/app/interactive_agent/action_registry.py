@@ -26,6 +26,8 @@ from app.interactive_agent.actions import (
     JournalCreateInput,
     JournalNoteInput,
     KnowledgeInput,
+    LearningStatusInput,
+    PaperExecutionExplanationInput,
     PaperExecutionInput,
     PaperTradeInput,
     StrategyInput,
@@ -106,6 +108,29 @@ def _tool(
 
 
 _TOOLS = [
+    Tool(
+        "paper_trade.explain_execution",
+        PaperExecutionExplanationInput,
+        "canonical_paper_execution_records",
+        StructuredActionKind.NONE,
+        ArtifactKind.TRADE_DECISION,
+        AgentCapability.PRE_TRADE_REASONING,
+        ("Historical canonical facts only; no model calculation, approval or execution.",),
+        behavior="read",
+    ),
+    Tool(
+        "strategy.learning_status",
+        LearningStatusInput,
+        "StrategyPromotionService",
+        StructuredActionKind.NONE,
+        ArtifactKind.OBSERVATION,
+        AgentCapability.GOVERNED_LEARNING,
+        (
+            "Bounded canonical status reads only. Agent prose cannot approve, promote, "
+            "roll back or enable live execution.",
+        ),
+        behavior="read",
+    ),
     _tool(
         "paper_trade.prepare_execution",
         PaperExecutionInput,
@@ -308,6 +333,13 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
     if request.action is not None:
         return request.action
     text = request.message.strip()
+    explanation = re.fullmatch(
+        r"Explain paper execution command=([a-f0-9-]{36})", text, re.IGNORECASE
+    )
+    if explanation:
+        return ActionRequest(
+            name="paper_trade.explain_execution", arguments={"command_id": explanation.group(1)}
+        )
     if text.lower().startswith("prepare paper trade "):
         from app.agents.paper_intent import parse_paper_intent
 
@@ -320,6 +352,15 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
             arguments={"trade": trade.model_dump(mode="json")},
         )
     lower = text.lower()
+    if re.search(
+        r"\b(?:strategy changes.*proposed|change.*proposed|been replayed|"
+        r"outperform.*baseline|completed paper validation|version.*paper active|"
+        r"roll ?back|governed learning|promotion status|approve.*promotion|promote.*strategy)\b",
+        lower,
+    ):
+        return ActionRequest(
+            name="strategy.learning_status", arguments={"strategy_id": request.strategy_id}
+        )
     args: dict[str, Any] = {"text": text[:4000]}
     strategy_args = dict(args, strategy_id=request.strategy_id)
     if re.search(

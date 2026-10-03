@@ -401,6 +401,28 @@ def test_recorder_copies_stale_and_invalidated_watcher_outcomes() -> None:
     assert facts.data_quality.stale_count == 1
 
 
+def test_component_reason_codes_preserve_stale_and_outage_measurement() -> None:
+    store = InMemoryPaperEvaluationStore()
+    recorder = PaperEvaluationRecorder(store)
+    for reason in ("canonical_open_interest_stale", "canonical_ohlcv_15m_regional_failure"):
+        command = make_eval_command()
+        recorder.record_watcher_outcome(
+            command,
+            make_eval_outcome(command, status=EvaluationStatus.FAILED, reason_code=reason),
+        )
+    facts = rollup_facts(
+        PaperEvaluationInput(
+            organization_id=ORG_ID,
+            generated_at=GENERATED_AT,
+            observations=store.list_for_organization(ORG_ID),
+        )
+    )
+    assert facts.watcher.stale_evidence_count == 1
+    assert facts.watcher.provider_outage_count == 1
+    assert facts.data_quality.stale_count == 1
+    assert facts.data_quality.unavailable_count == 1
+
+
 def test_query_narrative_is_sibling_not_fact() -> None:
     query = PaperEvaluationQueryService(InMemoryPaperEvaluationStore())
     summary = query.summary(

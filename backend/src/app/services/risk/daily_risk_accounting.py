@@ -7,6 +7,7 @@ Reads portfolio/order facts from the database, writes them through to
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -45,9 +46,16 @@ class AuthoritativeDailySnapshot:
 class DailyRiskAccounting:
     """Compute and persist daily risk state from paper portfolio facts."""
 
-    def __init__(self, session: Session, risk_settings: RiskSettingsService) -> None:
+    def __init__(
+        self,
+        session: Session,
+        risk_settings: RiskSettingsService,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._session = session
         self._settings = risk_settings
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
 
     @property
     def risk_settings(self) -> RiskSettingsService:
@@ -64,10 +72,11 @@ class DailyRiskAccounting:
             user_id=user_id,
         )
         tz_name, _ = normalize_timezone(user_settings.timezone)
+        now = self._clock().astimezone(UTC)
         try:
-            today = datetime.now(UTC).astimezone(ZoneInfo(tz_name)).date()
+            today = now.astimezone(ZoneInfo(tz_name)).date()
         except Exception:
-            today = date.today()
+            today = now.date()
             tz_name = "UTC"
         return today, tz_name
 

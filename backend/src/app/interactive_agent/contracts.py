@@ -15,6 +15,7 @@ from pydantic import Field
 from app.daily_review.contracts import DailyReview
 from app.interactive_agent.actions import ActionDescriptor, ActionRequest
 from app.schemas.common import StrictModel
+from app.schemas.governed_learning import GovernedLearningStatus
 from app.schemas.strategy_analytics import StrategyAnalyticsFilters, StrategyAnalyticsReport
 
 SCHEMA_VERSION: Literal["InteractiveAgent/v1"] = "InteractiveAgent/v1"
@@ -28,6 +29,7 @@ class AgentCapability(StrEnum):
     MARKET_AND_PORTFOLIO = "market_and_portfolio"
     STRATEGY_BRAIN = "strategy_brain"
     STRATEGY_ANALYTICS = "strategy_analytics"
+    GOVERNED_LEARNING = "governed_learning"
     STRATEGY_RETRIEVAL = "strategy_retrieval"
     STRATEGY_AUTHORING = "strategy_authoring"
     PATTERN_AND_RULE_CAPTURE = "pattern_and_rule_capture"
@@ -258,6 +260,7 @@ class AgentTurnResult(StrictModel):
     statistics_summary: str | None = None
     daily_review: DailyReview | None = None
     strategy_analytics: list[StrategyAnalyticsReport] = Field(default_factory=list)
+    governed_learning: list[GovernedLearningStatus] = Field(default_factory=list)
     paper_safety: PaperSafetyContract
     screenshot: ScreenshotAnalysisContract | None = None
     voice: VoiceIoContract | None = None

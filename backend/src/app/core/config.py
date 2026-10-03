@@ -10,6 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -207,6 +208,10 @@ class Settings(BaseSettings):
     # use organization-owned database rows, shared by API and dedicated worker.
     watcher_watchlist_path: str = ""
     watcher_paper_poll_interval_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
+    # Optional tenant pin for controlled staging acceptance. Empty preserves
+    # the normal round-robin tenant scheduler.
+    watcher_paper_organization_id: str = ""
+    paper_worker_memory_diagnostics_enabled: bool = False
     watcher_paper_max_scopes_per_cycle: int = Field(default=20, ge=1, le=200)
     watcher_paper_worker_id: str = Field(default="watcher-paper-1", min_length=1, max_length=80)
 
@@ -501,6 +506,20 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return [str(item).strip().upper() for item in value if str(item).strip()]
         return value
+
+    @field_validator("watcher_paper_organization_id", mode="before")
+    @classmethod
+    def _validate_watcher_paper_organization_id(cls, value: object) -> str:
+        if value is None:
+            return ""
+        token = str(value).strip()
+        if not token:
+            return ""
+        try:
+            UUID(token)
+        except ValueError as exc:
+            raise ValueError("watcher_paper_organization_id must be a UUID") from exc
+        return token.lower()
 
     @field_validator("redis_url", mode="before")
     @classmethod

@@ -282,6 +282,15 @@ def _count(factory: sessionmaker[Session], model: type[object]) -> int:
     return int(found or 0)
 
 
+@pytest.fixture(autouse=True)
+def offline_contract_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    # All rehearsal cases use scripted market acquisition. The outage/stale
+    # cases must reach their evidence source rather than external discovery.
+    monkeypatch.setattr(
+        "app.workers.watcher_paper._live_contract_discoverer", lambda settings: None
+    )
+
+
 @requires_postgres
 def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
     install_persistence_firewall()

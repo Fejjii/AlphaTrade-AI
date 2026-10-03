@@ -2459,7 +2459,7 @@ export interface BacktestDatasetSummary {
 }
 
 export interface BacktestResult {
-  metrics: BacktestMetrics;
+  metrics: BacktestMetrics | null;
   trades?: BacktestTradeRecord[];
   recommendation: BacktestRecommendation | string;
   meets_success_criteria?: boolean;
@@ -2475,6 +2475,36 @@ export interface BacktestResult {
   cancelled?: boolean;
   processed_bars?: number | null;
   total_bars?: number | null;
+  replay?: StrategyReplayReport | null;
+}
+
+export interface StrategyReplayReport {
+  mode?: "trade_simulation" | "sfp_research";
+  strategy_version_id: string;
+  parameter_hash: string;
+  improvement_claim: false;
+  missing_evidence: string[];
+  stale_evidence?: string[];
+  samples: {
+    split_label: string;
+    status: string;
+    candle_count: number;
+    setup_count?: number;
+    candidate_count: number;
+    lifecycle_counts?: Record<string, number>;
+  }[];
+  research_buckets?: {
+    split_label: string;
+    symbol: string;
+    timeframe: string;
+    direction: string;
+    level_type: string;
+    strategy_version_id: string;
+    quality_bucket: string;
+    regime: string;
+    setup_count: number;
+    confirmed_count: number;
+  }[];
 }
 
 export interface BacktestTradeRecord {
@@ -3487,7 +3517,48 @@ export interface ChannelProviderStatus {
   status_label: string;
 }
 
+export type TelegramPolicySeverity = "INFO" | "WATCH" | "ACTION" | "CRITICAL";
+export type TelegramPolicyEventType =
+  | "SETUP"
+  | "RISK"
+  | "PAPER_TRADE_OPENED"
+  | "PAPER_TRADE_CLOSED"
+  | "STOP"
+  | "PARTIAL_PROFIT"
+  | "DAILY_REVIEW"
+  | "OTHER"
+  | "SFP_SWEEP_DETECTED"
+  | "SFP_RECLAIM_FORMING"
+  | "SFP_CONFIRMED"
+  | "SFP_INVALIDATED"
+  | "SFP_EXPIRED"
+  | "SFP_BLOCKED_BY_RISK";
+
+/** Backend Policy V2: nested PATCH is a full replacement, null lists allow all. */
+export interface TelegramNotificationPolicyV2 {
+  schema_version: 2;
+  strategy_subscriptions: string[] | null;
+  symbol_subscriptions: string[] | null;
+  setup_stages: string[] | null;
+  event_types: TelegramPolicyEventType[] | null;
+  severities: TelegramPolicySeverity[] | null;
+  minimum_severity: TelegramPolicySeverity;
+  minimum_quality: number | string | null;
+  forming_alerts: boolean;
+  confirmed_alerts: boolean;
+  risk_alerts: boolean;
+  paper_trade_opened: boolean;
+  paper_trade_closed: boolean;
+  stop_event: boolean;
+  partial_profit_event: boolean;
+  daily_review_event: boolean;
+  cooldown_seconds: number;
+  duplicate_suppression_seconds: number;
+  quiet_hours: { start: string; end: string; timezone: string } | null;
+}
+
 export interface NotificationPreferences {
+  telegram_policy?: TelegramNotificationPolicyV2 | null;
   in_app_enabled: boolean;
   webhook_enabled: boolean;
   telegram_enabled: boolean;
