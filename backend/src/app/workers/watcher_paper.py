@@ -468,25 +468,42 @@ class WatcherPaperRuntime:
         from app.repositories.watcher_watchlist import WatcherWatchlistRepository
 
         assert self._session_factory is not None
-        # One organization per cycle, round-robin by durable key. No unbounded
-        # tenant runtime cache or global symbol status shared across tenants.
+        # One organization per cycle, round-robin by durable key. Controlled
+        # staging acceptance may pin one tenant explicitly; an empty setting
+        # preserves the normal scheduler and production behavior.
+        scoped_org: UUID | None = None
+        if self._settings is not None and self._settings.watcher_paper_organization_id:
+            scoped_org = UUID(self._settings.watcher_paper_organization_id)
         with self._session_factory() as session:
             query = select(Organization.id).order_by(Organization.id).limit(1)
-            org = (
-                session.scalar(query.where(Organization.id > self._organization_cursor))
-                if self._organization_cursor
-                else session.scalar(query)
-            )
+            if scoped_org is not None:
+                org = session.scalar(select(Organization.id).where(Organization.id == scoped_org))
+            else:
+                org = (
+                    session.scalar(query.where(Organization.id > self._organization_cursor))
+                    if self._organization_cursor
+                    else session.scalar(query)
+                )
+                if org is None:
+                    org = session.scalar(query)
             if org is None:
-                org = session.scalar(query)
-            if org is None:
-                report = WatcherPaperCycleReport("idle", self._enabled, (), 0, False)
+                reason = "organization_scope_unavailable" if scoped_org is not None else "idle"
+                report = WatcherPaperCycleReport(
+                    reason,
+                    False if scoped_org is not None else self._enabled,
+                    (),
+                    0,
+                    False,
+                )
+                self._organization_id = None
                 self._watchlist = None
                 self._symbol_status.restore(())
                 self._remember_cycle(report)
                 return report
             repo = WatcherWatchlistRepository(session)
-            self._organization_id = self._organization_cursor = org
+            self._organization_id = org
+            if scoped_org is None:
+                self._organization_cursor = org
             self._watchlist = repo.load(org)
             self._symbol_status.restore(repo.previous(org))
         report = self._run_cycle()
