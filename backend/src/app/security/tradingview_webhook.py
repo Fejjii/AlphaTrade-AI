@@ -36,7 +36,7 @@ def verify_tradingview_signature(
     signature = signature_header.strip().lower()
     if signature.startswith("sha256="):
         signature = signature.removeprefix("sha256=")
-    if len(signature) != 64:
+    if len(signature) != 64 or any(char not in "0123456789abcdef" for char in signature):
         return False
     signed = f"{timestamp}.".encode() + payload
     expected = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()

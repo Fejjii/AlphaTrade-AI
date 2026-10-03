@@ -24,11 +24,14 @@ class TradingViewSignalRepository:
         signal_id: uuid.UUID,
         *,
         organization_id: uuid.UUID,
+        for_update: bool = False,
     ) -> SignalModel | None:
         stmt = select(SignalModel).where(
             SignalModel.id == signal_id,
             SignalModel.organization_id == organization_id,
         )
+        if for_update:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         return self._session.scalars(stmt).first()
 
     def get_by_idempotency(
