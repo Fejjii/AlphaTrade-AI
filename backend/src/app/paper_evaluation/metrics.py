@@ -12,6 +12,11 @@ from app.learning_attribution.contracts import (
     AttributionRecord,
     RiskAdherence,
 )
+from app.market_contracts.evidence_diagnostics import (
+    PROVIDER_FAILURE_REASONS,
+    DiagnosticReason,
+    canonical_diagnostic_reason,
+)
 from app.paper_evaluation.contracts import (
     BlockedTradeFacts,
     DataQualityClass,
@@ -151,8 +156,18 @@ def _watcher_facts(observations: tuple[PaperEvaluationObservation, ...]) -> Watc
         blocked_count=sum(1 for item in scans if (item.scan_status or "") == "blocked"),
         skipped_count=sum(1 for item in scans if (item.scan_status or "") == "skipped"),
         replay_count=sum(1 for item in scans if item.replayed),
-        stale_evidence_count=sum(1 for reason in reasons if reason in _STALE_REASONS),
-        provider_outage_count=sum(1 for reason in reasons if reason in _OUTAGE_REASONS),
+        stale_evidence_count=sum(
+            1
+            for reason in reasons
+            if reason in _STALE_REASONS
+            or canonical_diagnostic_reason(reason) is DiagnosticReason.STALE
+        ),
+        provider_outage_count=sum(
+            1
+            for reason in reasons
+            if reason in _OUTAGE_REASONS
+            or canonical_diagnostic_reason(reason) in PROVIDER_FAILURE_REASONS
+        ),
         confirmed_setup_count=sum(
             1 for state in assessment_states if state is SetupAssessmentState.CONFIRMED_SETUP
         ),
