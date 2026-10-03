@@ -14,11 +14,13 @@ from typing import Any
 import structlog
 from sqlalchemy.orm import Session
 
+from app.core.blofin_readonly_access import get_readonly_account_provider
 from app.core.config import Settings, get_settings
 from app.core.errors import NotFoundError
 from app.core.exchange_demo_access import ensure_demo_exchange_access, get_demo_account_provider
 from app.db.models import BloFinDemoSyncSnapshot as SnapshotModel
 from app.guardrails.redaction import redact_text
+from app.providers.base import ProviderHealth
 from app.providers.exchange.base import ExchangeBalance, ExchangePositionData
 from app.providers.exchange.errors import ExchangeError
 from app.repositories.blofin_sync import BloFinSyncRepository
@@ -68,16 +70,28 @@ class BloFinSyncService:
             "read_only": True,
             "order_mutations": False,
             "synced_at": now.isoformat(),
-            "credentials_configured": self._settings.blofin_demo_configured,
+            "credentials_configured": (
+                self._settings.blofin_readonly_configured
+                if self._settings.blofin_readonly_sync_enabled
+                else self._settings.blofin_demo_configured
+            ),
+            "readonly_sync_enabled": self._settings.blofin_readonly_sync_enabled,
             "demo_active": self._settings.exchange_demo_active,
         }
 
         try:
-            ensure_demo_exchange_access(self._settings)
-            provider = get_demo_account_provider(self._settings)
+            if self._settings.blofin_readonly_sync_enabled:
+                provider = get_readonly_account_provider(self._settings)
+            else:
+                ensure_demo_exchange_access(self._settings)
+                provider = get_demo_account_provider(self._settings)
+            permissions = provider.get_account_permissions()
+            if self._settings.blofin_readonly_sync_enabled and permissions.can_trade:
+                raise ValueError("Dedicated BloFin sync key must be read-only.")
+            if permissions.can_withdraw or permissions.can_transfer or not permissions.can_read:
+                raise ValueError("BloFin sync requires read access without money-movement scopes.")
             balances = provider.get_balances()
             open_positions = provider.get_positions()
-            permissions = provider.get_account_permissions()
             provider_status = provider.status()
 
             max_balances = self._settings.blofin_sync_max_balances
@@ -96,8 +110,16 @@ class BloFinSyncService:
                     "can_withdraw": permissions.can_withdraw,
                     "can_transfer": permissions.can_transfer,
                     # Never persist raw secret-bearing material; scopes are tokens only.
-                    "raw_scopes": list(permissions.raw_scopes)[:20],
-                    "response_keys": list(permissions.response_keys)[:40],
+                    "raw_scopes": [
+                        scope
+                        for scope in permissions.raw_scopes
+                        if scope in {"read", "readonly", "read_only", "trade", "trading"}
+                    ][:20],
+                    "response_keys": [
+                        key
+                        for key in permissions.response_keys
+                        if key in {"readOnly", "read_only", "permissions", "permission", "scopes"}
+                    ][:40],
                 },
                 "provider_status": {
                     "name": provider_status.name,
@@ -124,14 +146,14 @@ class BloFinSyncService:
                 "note": "Market context limited to open demo position symbols.",
             }
             provenance["provider_name"] = provider.name
-            provenance["fetched_at"] = now.isoformat()
+            provenance["fetched_at"] = datetime.now(UTC).isoformat()
 
-            if permissions.can_withdraw or permissions.can_transfer:
+            if (
+                provider_status.health is not ProviderHealth.HEALTHY
+                or provider_status.using_fallback
+            ):
                 health = BloFinSyncHealthStatus.DEGRADED
-                error_summary = "Demo key reports money-movement scopes; treat as degraded."
-            elif not permissions.can_read:
-                health = BloFinSyncHealthStatus.DEGRADED
-                error_summary = "Demo key cannot read account data."
+                error_summary = "Demo account provider is degraded or using fallback."
             else:
                 health = BloFinSyncHealthStatus.OK
         except Exception as exc:
@@ -189,7 +211,7 @@ class BloFinSyncService:
                 },
             )
         )
-        return BloFinSyncResult(snapshot=self._to_item(row))
+        return BloFinSyncResult(snapshot=self._to_item(row, mark_stale=True))
 
     def latest(
         self,

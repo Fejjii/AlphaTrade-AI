@@ -118,7 +118,14 @@ class BloFinClient:
 
     @property
     def last_error(self) -> str | None:
-        return redact_text(self._last_error) if self._last_error else None
+        return self._redact(self._last_error) if self._last_error else None
+
+    def _redact(self, message: str) -> str:
+        # Venue/proxy failures can echo opaque credentials without field labels.
+        for secret in (self._api_key, self._api_secret.decode("utf-8"), self._api_passphrase):
+            if secret:
+                message = message.replace(secret, "[REDACTED]")
+        return redact_text(message)
 
     def _sign(self, *, method: str, path: str, timestamp: str, nonce: str, body: str) -> str:
         """BloFin signature: base64(hex(HMAC_SHA256(secret, path+method+ts+nonce+body)))."""
@@ -195,14 +202,14 @@ class BloFinClient:
                 return self._handle_response(response, method=method, path=path)
             except (ExchangeRateLimitError, ExchangeUnavailableError) as exc:
                 last_exc = exc
-                self._last_error = redact_text(str(exc))
+                self._last_error = self._redact(str(exc))
                 attempt += 1
                 if attempt > self._max_retries:
                     break
                 self._backoff(attempt)
             except httpx.HTTPError as exc:
-                last_exc = ExchangeUnavailableError(redact_text(str(exc)))
-                self._last_error = redact_text(str(exc))
+                last_exc = ExchangeUnavailableError(self._redact(str(exc)))
+                self._last_error = self._redact(str(exc))
                 attempt += 1
                 if attempt > self._max_retries:
                     break
@@ -276,7 +283,7 @@ class BloFinClient:
             payload = response.json()
         except Exception as exc:  # malformed body
             raise ExchangeUnavailableError(
-                f"BloFin returned non-JSON body: {redact_text(str(exc))}",
+                f"BloFin returned non-JSON body: {self._redact(str(exc))}",
                 details=VenueErrorDetails(http_status=status, endpoint_name=endpoint),
             ) from exc
 
@@ -286,9 +293,9 @@ class BloFinClient:
             inner_code, inner_msg = _first_order_error(payload.get("data"))
             venue_code = inner_code if inner_code is not None else code
             if inner_msg is not None:
-                venue_msg = redact_text(inner_msg)
+                venue_msg = self._redact(inner_msg)
             else:
-                venue_msg = redact_text(str(payload.get("msg", "")))
+                venue_msg = self._redact(str(payload.get("msg", "")))
             details = VenueErrorDetails(
                 venue_error_code=venue_code,
                 venue_error_message=venue_msg or None,

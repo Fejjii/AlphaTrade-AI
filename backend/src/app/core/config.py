@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     blofin_api_key: str = Field(default="", repr=False)
     blofin_api_secret: str = Field(default="", repr=False)
     blofin_api_passphrase: str = Field(default="", repr=False)
+    # Dedicated read-only demo sync credentials never open the execution gate.
+    blofin_readonly_sync_enabled: bool = False
+    blofin_readonly_api_key: str = Field(default="", repr=False)
+    blofin_readonly_api_secret: str = Field(default="", repr=False)
+    blofin_readonly_api_passphrase: str = Field(default="", repr=False)
     blofin_demo_rest_base_url: str = ""
     blofin_demo_ws_url: str = ""
     blofin_request_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
@@ -225,7 +230,7 @@ class Settings(BaseSettings):
 
     # --- TradingView signal intake (AT-037 — disabled by default; paper-only) ---
     tradingview_webhook_enabled: bool = False
-    tradingview_webhook_secret: str = ""
+    tradingview_webhook_secret: str = Field(default="", repr=False)
     tradingview_webhook_max_skew_seconds: int = Field(default=300, ge=30, le=3600)
     tradingview_webhook_rate_limit: int = Field(default=60, ge=1, le=600)
     tradingview_webhook_rate_window_seconds: int = Field(default=3600, ge=60, le=86400)
@@ -645,6 +650,15 @@ class Settings(BaseSettings):
         remains fail-closed even if a future caller bypasses Settings validators.
         """
         return False
+
+    @property
+    def blofin_readonly_configured(self) -> bool:
+        """Presence of dedicated sync credentials; never execution authority."""
+        return bool(
+            self.blofin_readonly_api_key.strip()
+            and self.blofin_readonly_api_secret.strip()
+            and self.blofin_readonly_api_passphrase.strip()
+        )
 
     @property
     def blofin_demo_configured(self) -> bool:
