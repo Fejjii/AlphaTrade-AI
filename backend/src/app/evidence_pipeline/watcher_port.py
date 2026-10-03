@@ -9,6 +9,7 @@ Staging/production Watcher flags stay false.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import NoReturn
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,7 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     StaleEvidenceError,
 )
+from app.market_contracts.evidence_diagnostics import diagnostic_from_exception
 from app.market_contracts.request_progress import notify_market_request_progress
 from app.market_monitor.monitor import PerpetualMarketMonitor
 from app.market_monitor.types import MarketMode, SymbolMonitorSnapshot
@@ -116,6 +118,8 @@ class AssemblingWatcherScanEvidence:
         if key in self._load_cache:
             return self._load_cache[key]
         self._last_assembly = None
+        # Evaluation and Candidate persistence share one scan, not every historical scan.
+        self._load_cache.clear()
         loaded = self._load_uncached(command)
         self._load_cache[key] = loaded
         return loaded
@@ -248,25 +252,15 @@ class AssemblingWatcherScanEvidence:
                     adapter_kind=EvidenceAdapterKind.WATCHER,
                     resistances=resistances,
                 )
-        except ContractUnavailableError as exc:
-            raise WatcherEvidenceUnavailableError(
-                "Selected perpetual contract is unavailable.", reason_code=exc.reason
-            ) from exc
-        except StaleEvidenceError as exc:
-            raise WatcherEvidenceUnavailableError(
-                "Canonical scan evidence is stale.",
-                reason_code="stale_evidence",
-            ) from exc
-        except RegionalProviderFailureError as exc:
-            raise WatcherEvidenceUnavailableError(
-                "Perpetual market provider is unavailable.",
-                reason_code="provider_outage",
-            ) from exc
-        except MarketContractError as exc:
-            raise WatcherEvidenceUnavailableError(
-                "Canonical scan evidence is unavailable.",
-                reason_code="canonical_evidence_unavailable",
-            ) from exc
+        except Exception as exc:
+            diagnostic = diagnostic_from_exception(exc)
+            if diagnostic is not None:
+                raise WatcherEvidenceUnavailableError(
+                    diagnostic.watcher_reason,
+                    reason_code=diagnostic.watcher_reason,
+                    diagnostics=self._assembler.diagnostics,
+                ) from exc
+            return self._raise_undiagnosed(exc)
         if assembled.organization_id != organization_id:
             raise WatcherTenantMismatchError(
                 "Assembled evidence belongs to a different organization."
@@ -289,7 +283,34 @@ class AssemblingWatcherScanEvidence:
             evidence=assembled.bundle,
             evaluated_at=assembled.evaluated_at,
             policy_authority=authority,
+            evidence_diagnostics=() if ohlcv_family else self._assembler.diagnostics,
         )
+
+    @staticmethod
+    def _raise_undiagnosed(exc: Exception) -> NoReturn:
+        if isinstance(exc, ContractUnavailableError):
+            raise WatcherEvidenceUnavailableError(
+                "Selected perpetual contract is unavailable.", reason_code=exc.reason
+            ) from exc
+        if isinstance(exc, StaleEvidenceError):
+            raise WatcherEvidenceUnavailableError(
+                "Canonical scan evidence is stale.",
+                reason_code="stale_evidence",
+            ) from exc
+        if isinstance(exc, RegionalProviderFailureError):
+            raise WatcherEvidenceUnavailableError(
+                "Perpetual market provider is unavailable.",
+                reason_code="provider_outage",
+            ) from exc
+        if isinstance(exc, MarketContractError):
+            raise WatcherEvidenceUnavailableError(
+                "Canonical scan evidence is unavailable.",
+                reason_code="canonical_contract_invalid_contract",
+            ) from exc
+        raise WatcherEvidenceUnavailableError(
+            "Canonical contract failed with an unexpected error.",
+            reason_code="canonical_contract_unexpected_error",
+        ) from exc
 
     def _resolve_executable(self, command: EvaluationCommand) -> ExecutableStrategyPolicy | None:
         if self._session is not None and self._store is not None:
@@ -318,8 +339,8 @@ class AssemblingWatcherScanEvidence:
             ) from exc
         if not isinstance(snapshot, SymbolMonitorSnapshot):
             raise WatcherEvidenceUnavailableError(
-                "Canonical scan evidence is unavailable.",
-                reason_code="canonical_evidence_unavailable",
+                "Canonical market monitor contract is invalid.",
+                reason_code="canonical_market_monitor_invalid_contract",
             )
         return snapshot
 

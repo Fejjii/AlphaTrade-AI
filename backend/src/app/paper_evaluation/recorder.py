@@ -252,10 +252,18 @@ def _setup_quality(state: SetupAssessmentState | None) -> PlannedSetupQuality | 
 
 
 def _data_quality_for(outcome: EvaluationOutcome, *, replayed: bool) -> DataQualityClass:
+    from app.market_contracts.evidence_diagnostics import (
+        DiagnosticReason,
+        canonical_diagnostic_reason,
+    )
+
     if replayed:
         return DataQualityClass.REPLAY
     reason = outcome.reason_code
-    if reason in {"stale_evidence", "stale"}:
+    if (
+        reason in {"stale_evidence", "stale"}
+        or canonical_diagnostic_reason(reason) is DiagnosticReason.STALE
+    ):
         return DataQualityClass.STALE
     if reason in {"provider_outage", "canonical_evidence_unavailable"}:
         return DataQualityClass.UNAVAILABLE

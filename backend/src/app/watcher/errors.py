@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.core.errors import AppError, ConflictError
+from app.market_contracts.evidence_diagnostics import EvidenceComponentDiagnostic
 
 
 class WatcherError(AppError):
@@ -46,9 +47,17 @@ class WatcherEvidenceUnavailableError(WatcherError):
     code = "canonical_evidence_unavailable"
     status_code = 503
 
-    def __init__(self, message: str, *, reason_code: str, details: dict[str, object] | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str,
+        details: dict[str, object] | None = None,
+        diagnostics: tuple[EvidenceComponentDiagnostic, ...] = (),
+    ):
         super().__init__(message, details=details)
         self.reason_code = reason_code
+        self.diagnostics = diagnostics
 
 
 class WatcherContractError(WatcherError):
