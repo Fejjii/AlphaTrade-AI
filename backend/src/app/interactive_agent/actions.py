@@ -90,6 +90,10 @@ class LearningStatusInput(StrictModel):
     limit: int = Field(default=5, ge=1, le=10)
 
 
+class PaperExecutionExplanationInput(StrictModel):
+    command_id: UUID
+
+
 class PaperExecutionInput(StrictModel):
     trade: AgentPaperTradeIntent
 

@@ -27,6 +27,7 @@ from app.interactive_agent.actions import (
     JournalNoteInput,
     KnowledgeInput,
     LearningStatusInput,
+    PaperExecutionExplanationInput,
     PaperExecutionInput,
     PaperTradeInput,
     StrategyInput,
@@ -107,6 +108,16 @@ def _tool(
 
 
 _TOOLS = [
+    Tool(
+        "paper_trade.explain_execution",
+        PaperExecutionExplanationInput,
+        "canonical_paper_execution_records",
+        StructuredActionKind.NONE,
+        ArtifactKind.TRADE_DECISION,
+        AgentCapability.PRE_TRADE_REASONING,
+        ("Historical canonical facts only; no model calculation, approval or execution.",),
+        behavior="read",
+    ),
     Tool(
         "strategy.learning_status",
         LearningStatusInput,
@@ -322,6 +333,13 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
     if request.action is not None:
         return request.action
     text = request.message.strip()
+    explanation = re.fullmatch(
+        r"Explain paper execution command=([a-f0-9-]{36})", text, re.IGNORECASE
+    )
+    if explanation:
+        return ActionRequest(
+            name="paper_trade.explain_execution", arguments={"command_id": explanation.group(1)}
+        )
     if text.lower().startswith("prepare paper trade "):
         from app.agents.paper_intent import parse_paper_intent
 

@@ -5,6 +5,27 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-092 — Full governed paper closed loop acceptance 001
+- Priority: P1 · Status: DONE · Dependencies: pinned release baseline
+  `8673d8f69779ea516ca97456baea7b3064daf089` · Risk: Medium (paper Journal projection).
+- Branch: `codex/full_paper_closed_loop_acceptance_001`.
+- Goal: One deterministic supported strategy through canonical evidence, Watcher,
+  assessment/Candidate, eligibility/Risk, immutable plan, explicit confirmation,
+  internal paper fill, Journal, attribution/Analytics, Daily Review, Attention
+  and a canonical read-only Agent explanation; notification outbox without delivery.
+- Safety: Real trading false; execution paper; exchange paper_internal; Telegram
+  network disabled. No diagnostic branch dependency, deployment or transfer paths.
+- Validation: Twelve new PostgreSQL acceptance cases; all requested lifecycle,
+  authority, review, Agent, notification, isolation/idempotency and safety suites;
+  full backend/frontend, evaluation and deployment self-checks.
+- Result: All 3,788 backend cases verified passing with zero skips after harness
+  retries; 12 acceptance + four rehearsal cases pass. Frontend 1,316 cases,
+  evaluations 16/5/7, lint/types, fixture-font build and nine safety checks pass.
+- Evidence: `docs/full_paper_closed_loop_acceptance_001.md` and captured proof /
+  verification JSON reports. Draft PR targets the exact pinned release branch.
+
+---
+
 ## AT-091 — Proactive attention queue 001
 - Priority: P1 · Status: DONE · Dependencies: exact base
   `5f4f0a467ce8f68f9c7a82d3b32307d559a9f092` · Risk: Low (read-only projection).
