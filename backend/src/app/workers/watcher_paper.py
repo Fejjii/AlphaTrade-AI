@@ -44,6 +44,7 @@ from app.runtime_safety.paper_actions import (
 )
 from app.schemas.nested_continuation import NESTED_KIND
 from app.signal_fusion.lifecycle import CandidateLifecycleService
+from app.signal_fusion.policy import DEFAULT_FUSION_POLICY_VERSION
 from app.watcher.contracts import (
     EvaluationMode,
     ScanRequest,
@@ -814,6 +815,12 @@ class WatcherPaperRuntime:
             idempotency_key=self._idempotency_key(target),
         )
         evidence = self._build_evidence(session, target.symbol)
+        if target.fusion_policy_version == DEFAULT_FUSION_POLICY_VERSION:
+            # Successful evaluations replay until the next 15m bar. The live
+            # monitor still needs ticks inside its bounded backfill horizon.
+            poll_monitor = getattr(self._evidence_factory, "poll_monitor", None)
+            if callable(poll_monitor):
+                poll_monitor(target.symbol)
         evaluator = build_fusion_evaluation_service(
             evidence=evidence,
             lifecycle=self._lifecycle,
