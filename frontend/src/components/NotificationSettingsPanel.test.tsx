@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { telegramPolicyFixture } from "./settings/telegram-policy.fixture";
 import { api } from "@/lib/api";
+import { appConfig } from "@/lib/config";
 import type { NotificationPreferences } from "@/lib/api/types";
 
 const prefs: NotificationPreferences = {
@@ -51,6 +52,79 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+
+describe("Private-chat Telegram enrollment", () => {
+  const challenge = {
+    challenge_id: "00000000-0000-0000-0000-000000000001",
+    expires_at: "2099-01-01T12:15:00Z",
+    token: "one-time-private-chat-token",
+    bot_id: "123456789",
+  };
+
+  afterEach(() => sessionStorage.clear());
+
+  it("starts authenticated enrollment on request and shows the exact private-chat message without claiming verification", async () => {
+    sessionStorage.setItem("alphatrade_access_token", "test-enrollment-session");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(challenge), { status: 200 }),
+    );
+    const legacyTest = vi.spyOn(api.notifications, "sendTest");
+    render(<NotificationSettingsPanel />);
+    const connect = await screen.findByRole("button", {
+      name: "Connect Telegram",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(connect);
+    expect(
+      await screen.findByLabelText("One-time Telegram enrollment token"),
+    ).toHaveValue(challenge.token);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      new URL("/telegram-paper/enrollment/start", appConfig.apiBaseUrl).toString(),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-enrollment-session",
+        }),
+      }),
+    );
+    expect(fetch.mock.calls[0][1]?.body).toBeUndefined();
+    expect(
+      screen.getByText(/as the entire message, without a \/start prefix/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Enrollment is pending/)).toBeInTheDocument();
+    expect(screen.getByText(/Expires:/).querySelector("time")).toHaveAttribute(
+      "datetime",
+      challenge.expires_at,
+    );
+    expect(legacyTest).not.toHaveBeenCalled();
+    expect(api.notifications.updatePreferences).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(1);
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("clears the previous token before a reissue and exposes the API's enrollment blocker", async () => {
+    const start = vi
+      .spyOn(api.notifications, "startTelegramEnrollment")
+      .mockResolvedValueOnce(challenge)
+      .mockRejectedValueOnce(new Error("Telegram bot is not configured."));
+    render(<NotificationSettingsPanel />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Connect Telegram" }),
+    );
+    await screen.findByLabelText("One-time Telegram enrollment token");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Get a new Telegram token" }),
+    );
+    expect(
+      screen.queryByLabelText("One-time Telegram enrollment token"),
+    ).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Telegram bot is not configured.",
+    );
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Connect Telegram" })).toBeEnabled();
+  });
+});
 
 describe("Trader notification settings", () => {
   it("distinguishes saved Telegram preferences from delivery availability and shows existing alert preferences", async () => {

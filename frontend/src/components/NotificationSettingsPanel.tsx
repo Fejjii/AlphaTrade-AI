@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 
 import { TelegramPolicyForm } from "@/components/settings/TelegramPolicyForm";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   SettingsReadout,
@@ -13,6 +14,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 import type {
   NotificationPreferences,
+  TelegramEnrollmentStartResponse,
   WatcherMonitoringSnapshot,
 } from "@/lib/api/types";
 import { formatReasonCode } from "@/lib/watcher-monitoring";
@@ -24,6 +26,10 @@ export function NotificationSettingsPanel({
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrollment, setEnrollment] =
+    useState<TelegramEnrollmentStartResponse | null>(null);
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const loader = useCallback(() => api.notifications.preferences(), []);
   const statusLoader = useCallback(() => api.alerts.deliveryStatus(), []);
   const { data: prefs, loading, error, reload } = useAsyncData(loader, []);
@@ -43,6 +49,23 @@ export function NotificationSettingsPanel({
       setMessage("Preferences could not be saved. Please try again.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function startEnrollment() {
+    setEnrolling(true);
+    setEnrollment(null);
+    setEnrollmentError(null);
+    try {
+      setEnrollment(await api.notifications.startTelegramEnrollment());
+    } catch (err) {
+      setEnrollmentError(
+        err instanceof Error
+          ? err.message
+          : "Telegram enrollment could not be started.",
+      );
+    } finally {
+      setEnrolling(false);
     }
   }
 
@@ -91,6 +114,53 @@ export function NotificationSettingsPanel({
             onRetry={() => void delivery.reload()}
           />
         ) : null}
+        <div className="space-y-2" data-testid="telegram-enrollment">
+          <Button
+            variant="secondary"
+            disabled={enrolling}
+            onClick={() => void startEnrollment()}
+          >
+            {enrolling
+              ? "Starting enrollment…"
+              : enrollment
+                ? "Get a new Telegram token"
+                : "Connect Telegram"}
+          </Button>
+          {enrollment ? (
+            <div className="space-y-2">
+              <p className="text-xs text-text-secondary">
+                Open your AlphaTrade bot in a private Telegram chat and send the
+                token below as the entire message, without a /start prefix.
+              </p>
+              <label
+                htmlFor="telegram-enrollment-token"
+                className="block text-xs text-text-secondary"
+              >
+                One-time Telegram enrollment token
+              </label>
+              <input
+                id="telegram-enrollment-token"
+                className="w-full rounded border border-border bg-surface-0 px-2 py-1 font-mono text-text-primary"
+                value={enrollment.token}
+                readOnly
+                autoComplete="off"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <p className="text-xs text-text-muted">
+                Expires:{" "}
+                <time dateTime={enrollment.expires_at}>
+                  {new Date(enrollment.expires_at).toLocaleString()}
+                </time>
+                . Enrollment is pending; this token does not confirm a connection.
+              </p>
+            </div>
+          ) : null}
+          {enrollmentError ? (
+            <p role="alert" className="text-xs text-text-secondary">
+              {enrollmentError}
+            </p>
+          ) : null}
+        </div>
         {loading || error || !prefs ? (
           <SettingsUnavailable
             label="Alert preferences"
