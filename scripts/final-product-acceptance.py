@@ -190,7 +190,8 @@ def run(reader, expected_sha, asset):
             status.get("paper_only") is True and status.get("real_trading_enabled") is False,
             "Watcher paper safety unavailable",
         )
-        if health.get("watcher_orchestration_enabled"):
+        # A dedicated worker publishes tenant-scoped status while the API stays disarmed.
+        if health.get("watcher_orchestration_enabled") or status.get("enabled"):
             component = worker(health, "watcher")
             require(
                 status.get("enabled") is True and status.get("running") is True,
