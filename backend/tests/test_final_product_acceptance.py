@@ -154,6 +154,38 @@ def result(reader):
     return acceptance.run(reader, SHA, ASSET)
 
 
+@pytest.mark.parametrize("failure", [None, "heartbeat", "scan", "lease", "running"])
+def test_dedicated_watcher_status_with_disarmed_api(failure):
+    reader = FixtureReader()
+    status = reader.payloads["/watcher/paper-runtime/status"]
+    status.update(enabled=True, running=True)
+    component = reader.payloads["/health"]["worker_runtime"]["watcher"]
+    component.update(
+        activation_state="armed",
+        fence_held=True,
+        last_scan_at=datetime.now(UTC).isoformat(),
+    )
+    stale = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    if failure == "heartbeat":
+        component["heartbeat_at"] = stale
+    elif failure == "scan":
+        component["last_scan_at"] = stale
+    elif failure == "lease":
+        component["fence_held"] = False
+    elif failure == "running":
+        status["running"] = False
+    assert reader.payloads["/health"]["watcher_orchestration_enabled"] is False
+    payload = result(reader)
+    expected = "PASS" if failure is None else "FAIL"
+    assert payload["status"] == expected
+    assert (
+        next(item for item in payload["checks"] if item["component"] == "watcher_health")["status"]
+        == expected
+    )
+    assert payload["network_delivery_activated"] is False
+    assert payload["execution_called"] is False
+
+
 def test_all_components_have_explicit_results_without_mutation():
     reader = FixtureReader()
     payload = result(reader)
