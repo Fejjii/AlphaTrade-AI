@@ -3584,6 +3584,13 @@ export interface NotificationTestResult {
   test_label: string;
 }
 
+export interface TelegramEnrollmentStartResponse {
+  challenge_id: string;
+  expires_at: string;
+  token: string;
+  bot_id: string;
+}
+
 export interface MarketWatcherStatus {
   env_enabled: boolean;
   effective_enabled: boolean;

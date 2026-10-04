@@ -157,6 +157,7 @@ import type {
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
+  TelegramEnrollmentStartResponse,
   MarketWatcherStatus,
   MarketWatcherSummary,
   WatcherMonitoringSnapshot,
@@ -942,6 +943,11 @@ export const api = {
       }),
   },
   notifications: {
+    startTelegramEnrollment: () =>
+      apiFetch<TelegramEnrollmentStartResponse>("/telegram-paper/enrollment/start", {
+        method: "POST",
+        auth: true,
+      }),
     preferences: () =>
       apiFetch<NotificationPreferences>("/notifications/preferences", { auth: true }),
     updatePreferences: (body: Partial<NotificationPreferences>) =>
