@@ -23,6 +23,7 @@ from app.db.models import (
     User,
     WorkerHeartbeat,
 )
+from app.db.runtime_status import ControlledRuntimeStatusRow
 from app.db.session import get_session
 from app.db.watcher_orchestration import WatcherHeartbeatRow, WatcherWorkerLeaseRow
 from app.main import create_app
@@ -252,6 +253,44 @@ def test_running_requires_live_lease_and_heartbeat(monitoring_db: sessionmaker[S
     assert snapshot.next_scan_basis == "paper_poll"
     assert snapshot.next_scan_at is not None
     assert snapshot.paper_only is True
+
+
+@pytest.mark.parametrize(
+    "failure", [None, "stale", "future", "owner", "lease", "heartbeat", "kill"]
+)
+def test_separate_paper_worker_observed_with_api_disarmed(monitoring_db, failure):
+    with monitoring_db() as session:
+        _seed_live_lease(session)
+        session.add(
+            ControlledRuntimeStatusRow(
+                component="watcher",
+                worker_id="other" if failure == "owner" else "worker-1",
+                heartbeat_at=NOW + timedelta(seconds=10)
+                if failure == "future"
+                else (NOW - timedelta(days=1) if failure == "stale" else NOW),
+                activation_state="running",
+            )
+        )
+        if failure == "lease":
+            session.scalar(select(WatcherWorkerLeaseRow)).expires_at = NOW
+        if failure == "heartbeat":
+            session.scalar(select(WatcherHeartbeatRow)).last_beat_at = NOW - timedelta(days=1)
+        if failure == "kill":
+            session.add(KillSwitchState(organization_id=ORG_ID, active=True))
+        session.commit()
+    snapshot = _snapshot(monitoring_db)
+    assert snapshot.config_flags.watcher_orchestration_enabled is False
+    if failure is None:
+        assert snapshot.watcher_status.value == "RUNNING"
+        assert snapshot.paper_posture.runtime_evidence is True
+    else:
+        assert snapshot.watcher_status.value != "RUNNING"
+    with monitoring_db() as session:
+        other = WatcherMonitoringService(session, Settings(**_BASE), now=NOW).get_snapshot(
+            organization_id=OTHER_ORG,
+            user_id=USER_ID,
+        )
+        assert other.watcher_status.value != "RUNNING"
 
 
 def test_orchestration_enabled_without_heartbeat_is_stale(
