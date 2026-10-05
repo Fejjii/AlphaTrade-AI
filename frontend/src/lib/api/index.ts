@@ -1,6 +1,6 @@
 import type { AttentionQueue } from "./attention-types";
 import type { DailyReview } from "./daily-review-types";
-import type { BrainOverview, BrainSetup } from "./brain-types";
+import type { BrainDraftBinding, BrainOverview, BrainSetup, SfpDraft } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
   AgentMessageResponse,
@@ -213,8 +213,12 @@ export const api = {
   strategyBrain: {
     overview: () => apiFetch<BrainOverview>("/strategy-brain/overview", { auth: true }),
     setup: (id: string) => apiFetch<BrainSetup>(`/strategy-brain/setups/${id}`, { auth: true }),
-    createNested: (body: { symbol: string; direction: "long" | "short"; trigger_timeframe: string }) =>
+    createNested: (body: BrainDraftBinding) =>
       apiFetch<{ strategy_id: string; version_id: string }>("/strategy-brain/templates/nested", {
+        method: "POST", auth: true, body: JSON.stringify(body),
+      }),
+    createSfp: (body: SfpDraft) =>
+      apiFetch<{ strategy_id: string; version_id: string }>("/strategy-brain/templates/sfp", {
         method: "POST", auth: true, body: JSON.stringify(body),
       }),
   },

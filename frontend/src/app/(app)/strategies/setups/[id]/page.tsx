@@ -6,7 +6,7 @@ import { displayedBrainSetup, useBrainSetupClock } from "@/hooks/useBrainSetupCl
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 
-export default function NestedSetupPage() {
+export default function BrainSetupPage() {
   const { id } = useParams<{ id: string }>();
   const loader = useCallback(() => api.strategyBrain.setup(id), [id]);
   const { data: stored, loading, error } = useAsyncData(loader, [id]);
@@ -17,12 +17,12 @@ export default function NestedSetupPage() {
   if (error || !data) return <p role="alert">{error || "Setup unavailable"}</p>;
   return <div className="space-y-4 p-4">
     <Link href="/strategies" className="underline">Strategies</Link>
-    <h1 className="text-xl">Nested {data.stage} · {data.state}</h1>
-    <p>{data.instrument} · {data.direction} · evidence {data.freshness}</p>
+    <h1 className="text-xl">{data.family === "sfp" ? `SFP ${data.condition}` : `Nested ${data.stage}`} · {data.state}</h1>
+    <p>{data.instrument} · {data.direction} · {data.timeframe} · evidence {data.freshness}</p>
     <p>Strategy version {data.strategy_version_id}</p>
     <p>Observed {data.observed_at} · expires {data.expires_at}</p>
     <p>Risk: {data.risk_state}. {data.reason_codes.join(", ")}</p>
-    <p>Entry concept {data.entry ?? "unknown"} · stop {data.stop ?? "unknown"} · structural targets {data.targets.join(", ") || "none supported"}</p>
+    {data.family === "sfp" ? <p>Structural research only. No SFP execution plan is authorized.</p> : <p>Entry concept {data.entry ?? "unknown"} · stop {data.stop ?? "unknown"} · structural targets {data.targets.join(", ") || "none supported"}</p>}
     <p className="break-all">Evidence reference {data.evidence_reference}</p>
     <ul>{Object.entries(data.evidence).map(([name, state]) => <li key={name}>{name}: {state}</li>)}</ul>
     {data.candidate_id && <Link href={`/decision/candidates/${data.candidate_id}`} className="block underline">Governed Candidate</Link>}
