@@ -56,8 +56,25 @@ class _ClarificationError(ValueError):
     pass
 
 
+def is_strategy_definition_comparison(message: str) -> bool:
+    """Comparing strategy rules/families does not request historical metrics."""
+    if (
+        _PERFORMANCE.search(message)
+        or _STAGE.search(message)
+        or _VERSION.search(message)
+        or re.search(r"\bwin rate\b", message, re.IGNORECASE)
+    ):
+        return False
+    return bool(
+        re.search(r"\b(?:compare|versus|vs|difference|differences)\b", message, re.IGNORECASE)
+        and re.search(r"\b(?:nested|sfp|strateg(?:y|ies))\b", message, re.IGNORECASE)
+    )
+
+
 def is_strategy_analytics_question(message: str) -> bool:
     """Historical questions take precedence over setup-state and library reads."""
+    if is_strategy_definition_comparison(message):
+        return False
     historical_target = _STAGE.search(message) or re.search(
         r"\b(?:nested|strateg(?:y|ies))\b", message, re.IGNORECASE
     )
