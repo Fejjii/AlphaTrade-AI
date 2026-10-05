@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.db.models import ConversationMessage
+from app.interactive_agent.action_registry import resolve_action, route_action
 from app.interactive_agent.contracts import AgentTurnRequest
 from app.interactive_agent.conversation import ModelConversationalResponder, compose_visible_reply
 from app.interactive_agent.paper_execution_explanation import _demo_explanation
@@ -23,6 +24,17 @@ from app.strategy_brain.service import create_template, overview
 from tests.test_interactive_agent_foundation import ORG_A, ORG_B, USER_A, USER_A2, USER_B
 from tests.test_interactive_agent_foundation import agent_db as agent_db
 from tests.test_sfp_detector import spec
+
+
+@pytest.mark.parametrize("prefix", ["", "command="])
+def test_execution_explanation_routes_both_explicit_id_forms_to_durable_read(prefix):
+    command_id = uuid4()
+    action = route_action(AgentTurnRequest(message=f"Explain paper execution {prefix}{command_id}"))
+    assert action is not None
+    tool, arguments = resolve_action(action)
+    assert tool.name == "paper_trade.explain_execution"
+    assert tool.behavior == "read"
+    assert arguments.command_id == command_id
 
 
 @pytest.mark.parametrize("length", [4000, 8000, 15000])

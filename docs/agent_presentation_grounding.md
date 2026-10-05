@@ -35,7 +35,9 @@ eligibility distinct. SFP retains its governed execution-plan restriction.
 The recorded execution reader also recognizes governed BloFin demo plans. It
 reads scoped command, receipt, actual `blofin_demo` fill facts, Journal linkage
 and stored protection reconciliation. It does not require or fabricate a manual
-Agent confirmation transcript. An authorization without fill evidence remains
+Agent confirmation transcript. `Explain paper execution <command UUID>` and
+`Explain paper execution command=<command UUID>` both select this durable read.
+An authorization without fill evidence remains
 unfilled; protection observations are labeled as recorded reconciliation facts.
 This reader performs no venue calls or order/risk mutations. Automatic exit and
 closed-outcome support remains the execution integration's separate limitation.
