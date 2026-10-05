@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.auth import TenantDep
 from app.core.dependencies import (
@@ -14,6 +14,11 @@ from app.core.dependencies import (
     UsageServiceDep,
 )
 from app.schemas.execution import PaginatedPaperOrders, PaperOrder, PaperOrderRequest
+from app.schemas.execution_account import (
+    PaperAccountRegistration,
+    PaperAccountStatus,
+    RegisterPaperAccountRequest,
+)
 from app.schemas.execution_protocol import (
     ClosePaperPlanHttpRequest,
     ClosePaperPlanRequest,
@@ -26,8 +31,9 @@ from app.schemas.execution_protocol import (
 from app.schemas.usage import UsageEventCreate
 from app.security.quota_enforcement import require_quota
 from app.security.rate_limit import tenant_rate_limit_dependency
-from app.security.rbac import TraderDep
+from app.security.rbac import OwnerDep, TraderDep
 from app.security.tenant import ensure_same_organization
+from app.services.execution_account_service import ExecutionAccountService
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -50,6 +56,32 @@ _PAPER_PLAN_RATE_LIMIT = Depends(
         user_limit=30,
     )
 )
+
+
+@router.get("/accounts/paper", response_model=PaperAccountStatus)
+def paper_account_status(tenant: TenantDep, session: SessionDep) -> PaperAccountStatus:
+    return ExecutionAccountService(session).status(tenant)
+
+
+@router.post("/accounts/paper", response_model=PaperAccountRegistration)
+def register_paper_account(
+    body: RegisterPaperAccountRequest,
+    request: Request,
+    tenant: OwnerDep,
+    session: SessionDep,
+) -> PaperAccountRegistration:
+    """Register/reuse PAPER/NET identity only; does not authorize or dispatch."""
+    try:
+        result = ExecutionAccountService(session).register(
+            tenant,
+            request_id=getattr(request.state, "request_id", str(uuid.uuid4())),
+            trace_id=getattr(request.state, "trace_id", str(uuid.uuid4())),
+        )
+        session.commit()
+        return result
+    except Exception:
+        session.rollback()
+        raise
 
 
 @router.post(

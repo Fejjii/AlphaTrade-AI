@@ -86,12 +86,27 @@ attached TPSL client-ID lineage must be verified in staging before acceptance.
 ## Staging activation procedure
 
 The supervising session/operator owns deployment and activation. This change
-sets no infrastructure or environment values. Review both PRs and the single
-combined CI gate before activation.
+sets no infrastructure or environment values. Review the deployed changes and
+the registration PR's automatic CI gate before activation.
 
 1. Record the deployed commit, healthy migration head, current kill-switch state,
-   approved selected Nested versions and scoped execution account ID. Confirm
-   no demo positions or pending orders exist. Keep access to the BloFin **demo**
+   approved selected Nested versions and scoped execution account ID. As the
+   authenticated organization owner, open **Settings → Account and system** and
+   select **Set up paper account**. Copy the displayed account UUID for
+   `GOVERNED_BLOFIN_DEMO_ACCOUNT_ID` below. This registers an internal PAPER/NET
+   identity; registration does not activate demo execution, grant permissions,
+   approve a strategy, or change credentials or risk/real-trading settings.
+   The authenticated API is `GET /execution/accounts/paper` for status and
+   `POST /execution/accounts/paper` with JSON `{}` for explicit setup. Tenant and
+   owner IDs are resolved from the access token; do not supply IDs in the body.
+   Repeated/concurrent setup returns the same UUID, including when a valid
+   account already exists. Creation and its `execution_account_registered`
+   audit event commit together. Disabled or multiple scoped accounts return
+   HTTP 409 and require operator review; do not create/reset an account or delete
+   execution history to bypass the one-ALLOW restriction. The normal paper
+   continuation can resolve this identity after registration, but its existing
+   eligibility, risk, authorization, permissions and kill-switch checks remain.
+   Confirm no demo positions or pending orders exist. Keep access to the BloFin **demo**
    account UI throughout acceptance. Verify NET/cross and existing leverage 1
    using reads. A mismatch is a blocker; the worker will not change it.
 2. Use the existing Read + Trade credential set already configured for the demo

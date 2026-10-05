@@ -5,6 +5,22 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-098 — Authenticated canonical paper execution account setup
+- Priority: P1 · Status: DONE · Dependencies: main `4898b0f` / merged PR204 · Risk: Medium.
+- Scope: Authenticated self-scoped status and owner-only empty-body PAPER/NET setup,
+  one identity under concurrent PostgreSQL requests, valid existing UUID reuse,
+  disabled/ambiguous refusal, atomic creation audit and existing Account settings button.
+- Safety: Setup is identity registration only. No credentials, strategy, risk,
+  execution permissions, activation flags or real trading changes; no reset account
+  or history deletion. Demo remains disarmed; no merge, deployment or exchange orders.
+- Validation: 18 PostgreSQL/API cases pass: concurrency, authenticated isolation/role/input,
+  disabled/ambiguous refusal, audit rollback and canonical paper identity resolution.
+  All 24 focused component/client/Account settings cases pass; scoped Ruff,
+  changed-module strict mypy, TypeScript, ESLint and diff checks pass.
+- Delivery: Independent reviewable PR; use its automatic CI as the consolidated gate.
+  Supervising review/deploy, owner registration and UUID pin precede venue acceptance.
+- Reference: `docs/governed_blofin_demo_execution.md`; AT-ADR-083.
+
 ## AT-097 — Governed BloFin quote freshness at receipt
 - Priority: P1 · Status: DONE · Dependencies: merged PR203 (`fba79a4`) · Risk: Medium.
 - Scope: Compare ticker timestamps with the injected clock after receipt instead of

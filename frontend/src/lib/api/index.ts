@@ -60,6 +60,8 @@ import type {
   CoachingSaveRequest,
   CoachingCategory,
   MeResponse,
+  PaperAccountStatus,
+  PaperAccountRegistration,
   MessageResponse,
   OrganizationInvitation,
   InvitationListResponse,
@@ -543,6 +545,14 @@ export const api = {
       }),
   },
   execution: {
+    paperAccountStatus: () =>
+      apiFetch<PaperAccountStatus>("/execution/accounts/paper", { auth: true }),
+    registerPaperAccount: () =>
+      apiFetch<PaperAccountRegistration>("/execution/accounts/paper", {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({}),
+      }),
     paperOrder: (body: {
       proposal_id: string;
       approval_id?: string;

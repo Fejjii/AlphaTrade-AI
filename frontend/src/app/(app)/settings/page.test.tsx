@@ -109,6 +109,9 @@ beforeEach(() => {
     ],
   };
   runtime.refreshStatus = vi.fn().mockResolvedValue(undefined);
+  vi.spyOn(api.execution, "paperAccountStatus").mockResolvedValue({
+    account: null, can_register: true,
+  });
   vi.spyOn(api.marketWatcher, "monitoring").mockResolvedValue(snapshot);
   vi.spyOn(api.strategies, "listVersions").mockResolvedValue({
     items: [
@@ -198,6 +201,20 @@ beforeEach(() => {
     real_trading_enabled: false,
     symbols: [],
   });
+});
+
+it("sets up only paper identity from the Account settings section and exposes its UUID", async () => {
+  const id = "93ef7157-4a5e-4ae1-a660-3ed93b04ed31";
+  vi.spyOn(api.execution, "registerPaperAccount").mockResolvedValue({
+    account: { id, name: "Paper account", execution_mode: "PAPER", account_mode: "NET", enabled: true },
+    created: true,
+  });
+  render(<SettingsPage />);
+  const section = screen.getByRole("region", { name: "Account and system" });
+  fireEvent.click(await within(section).findByRole("button", { name: "Set up paper account" }));
+  expect(await within(section).findByText(id)).toBeInTheDocument();
+  expect(api.execution.registerPaperAccount).toHaveBeenCalledExactlyOnceWith();
+  expect(api.risk.updateSettings).not.toHaveBeenCalled();
 });
 afterEach(cleanup);
 
