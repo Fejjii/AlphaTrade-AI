@@ -71,9 +71,22 @@ from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
 from app.schemas.nested_continuation import EvidenceAvailability
 
+# Native intervals explicitly contracted by this adapter. A future enum addition
+# must be verified before it can become provider evidence.
 _BINANCE_INTERVAL = {
+    Timeframe.M1: "1m",
+    Timeframe.M3: "3m",
+    Timeframe.M5: "5m",
     Timeframe.M15: "15m",
+    Timeframe.M30: "30m",
+    Timeframe.H1: "1h",
+    Timeframe.H2: "2h",
     Timeframe.H4: "4h",
+    Timeframe.H6: "6h",
+    Timeframe.H12: "12h",
+    Timeframe.D1: "1d",
+    Timeframe.D3: "3d",
+    Timeframe.W1: "1w",
 }
 
 

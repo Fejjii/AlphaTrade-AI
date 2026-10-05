@@ -5,6 +5,26 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-093 — Nested timeframe independence and SFP frontend surface
+- Priority: P1 · Status: DONE · Dependencies: accepted Nested/SFP canonical
+  backend on main `abfd71b9f34f3b7a5bec38f6a933aaf93d8b4229` · Risk: Medium (evidence identity).
+- Branch: `codex/nested-timeframes-sfp-ui`.
+- Scope: All 13 canonical Nested timeframes; native provider interval mappings;
+  explicit SFP draft creation and immutable compile/approval UI. Preserve one
+  Nested detector, existing research parameters and timeframe-separated state.
+- Safety: Real trading false; execution paper; exchange paper_internal. Closed
+  final evidence and existing freshness/continuity/completeness/risk gates remain.
+  No D Line / Break of Trend implementation, parameter optimization or deployment.
+- Validation: Focused detector/replay/assembly/Watcher/provider and frontend tests;
+  lint/types/format checks on changed files. Full suites excluded by task scope.
+- Result: 173 focused backend passed / 14 PostgreSQL-only skipped; 25 focused
+  frontend passed. TypeScript, scoped ESLint, Ruff lint/format and diff checks pass.
+- Evidence: `docs/nested_timeframes_sfp_surface.md`.
+- Limitations: Bybit has no native 3d candles; enough complete final provider history
+  is still required. No live provider availability or timeframe profitability claim.
+
+---
+
 ## AT-092 — Full governed paper closed loop acceptance 001
 - Priority: P1 · Status: DONE · Dependencies: pinned release baseline
   `8673d8f69779ea516ca97456baea7b3064daf089` · Risk: Medium (paper Journal projection).

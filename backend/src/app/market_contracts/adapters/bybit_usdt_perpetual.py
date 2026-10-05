@@ -78,7 +78,22 @@ BYBIT_ALLOWED_PATHS = frozenset(
     }
 )
 BYBIT_ALLOWED_HOSTS = frozenset({"api.bybit.com"})
-_BYBIT_INTERVAL = {Timeframe.M15: "15", Timeframe.H4: "240"}
+# Native linear kline intervals only. Bybit has no 3d interval; never substitute
+# a different timeframe or aggregate uncontracted evidence for that request.
+_BYBIT_INTERVAL = {
+    Timeframe.M1: "1",
+    Timeframe.M3: "3",
+    Timeframe.M5: "5",
+    Timeframe.M15: "15",
+    Timeframe.M30: "30",
+    Timeframe.H1: "60",
+    Timeframe.H2: "120",
+    Timeframe.H4: "240",
+    Timeframe.H6: "360",
+    Timeframe.H12: "720",
+    Timeframe.D1: "D",
+    Timeframe.W1: "W",
+}
 _RECENT_TRADE_LIMIT = 1000
 _PROVEN_TAIL_RETENTION = timedelta(minutes=15)
 # Three bounded consumers: monitor, canonical setup, and five-minute intelligence.

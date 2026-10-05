@@ -13,7 +13,8 @@ from app.db.models import Organization, User
 from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow
 from app.market_contracts.enums import Finality
 from app.market_contracts.hashing import with_content_hash
-from app.schemas.common import TradeDirection
+from app.market_contracts.identity import interval_timedelta
+from app.schemas.common import Timeframe, TradeDirection
 from app.schemas.nested_continuation import BrainSetupState, NestedContinuationSpec
 from app.services.canonical_strategy_evaluation import resolve_executable_strategy_policy
 from app.services.compiled_setup_service import CompiledSetupService
@@ -64,12 +65,13 @@ PRICES = [
 START = datetime(2026, 9, 1, tzinfo=UTC)
 
 
-def bars(prices=PRICES, *, bearish=False):
+def bars(prices=PRICES, *, bearish=False, timeframe=Timeframe.M15):
     result = []
+    step = interval_timedelta(timeframe)
     for i, number in enumerate(prices):
         value = Decimal(300 - number if bearish else number)
-        start = START + timedelta(minutes=15 * i)
-        bar = closed_bar(open_time=start, index=i, evaluated_at=start + timedelta(minutes=15))
+        start = START + step * i
+        bar = closed_bar(open_time=start, timeframe=timeframe, index=i, evaluated_at=start + step)
         result.append(
             with_content_hash(
                 bar.model_copy(
@@ -91,6 +93,7 @@ def detection(series, *, bearish=False, **parameters):
     spec = NestedContinuationSpec(
         symbol="BTCUSDT",
         direction=TradeDirection.SHORT if bearish else TradeDirection.LONG,
+        trigger_timeframe=series[0].timeframe,
         parameters=parameters,
     )
     return detect_nested(series, spec, evaluated_at=series[-1].interval_end + timedelta(seconds=5))

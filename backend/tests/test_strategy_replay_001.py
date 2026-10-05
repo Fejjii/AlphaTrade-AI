@@ -22,7 +22,7 @@ from app.db.models import (
     UserStrategyVersion,
 )
 from app.schemas.backtest import BacktestAssumptions
-from app.schemas.common import BacktestRunStatus, BacktestSplitLabel
+from app.schemas.common import BacktestRunStatus, BacktestSplitLabel, Timeframe
 from app.schemas.nested_continuation import NestedContinuationSpec
 from app.schemas.strategy_replay import ReplayComparisonRequest, ReplayWindows, StrategyReplayCreate
 from app.services.audit_service import AuditService
@@ -300,6 +300,26 @@ def test_idempotency_fences_and_dataset_mutation_verification(store):
     session.commit()
     verified = backtests.verify(run.id, organization_id=org, user_id=user)
     assert not verified.match and not verified.dataset_ok
+
+
+@pytest.mark.parametrize(
+    "timeframe", [Timeframe.M5, Timeframe.H1, Timeframe.H4, Timeframe.D1, Timeframe.W1]
+)
+def test_replay_cannot_reuse_validation_data_from_another_timeframe(store, timeframe):
+    session, org, user, request, _, service = store
+    template = create_template(
+        session,
+        organization_id=org,
+        user_id=user,
+        spec=NestedContinuationSpec(symbol="BTCUSDT", trigger_timeframe=timeframe),
+    )
+    session.commit()
+    with pytest.raises(ValidationAppError, match="instrument/timeframe must match"):
+        service.create(
+            request.model_copy(update={"strategy_version_id": template["version_id"]}),
+            organization_id=org,
+            user_id=user,
+        )
 
 
 def test_comparison_exact_windows_versions_and_no_improvement_claim(store):

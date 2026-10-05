@@ -20,20 +20,11 @@ export type ApprovalStatus =
   | "closed"
   | "needs_more_analysis";
 export type PositionStatus = "open" | "closed" | "liquidated";
-export type Timeframe =
-  | "1m"
-  | "3m"
-  | "5m"
-  | "15m"
-  | "30m"
-  | "1h"
-  | "2h"
-  | "4h"
-  | "6h"
-  | "12h"
-  | "1d"
-  | "3d"
-  | "1w";
+/** Native candle timeframes mirrored from the backend Timeframe enum. */
+export const TIMEFRAMES = [
+  "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "3d", "1w",
+] as const;
+export type Timeframe = (typeof TIMEFRAMES)[number];
 export type StrategyId =
   | "htf_trend_pullback"
   | "liquidity_sweep_reversal"
@@ -42,6 +33,8 @@ export type StrategyId =
   | "profit_protection"
   | "green_day_guard"
   | "mental_capital_guard"
+  | "nested_continuation"
+  | "sfp"
   | "manual_review";
 /** Backend DocumentSourceType values (RAG corpus). */
 export type DocumentSourceType =
