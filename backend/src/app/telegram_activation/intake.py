@@ -17,6 +17,28 @@ from app.telegram_security.hashing import hash_secret, secrets_equal
 
 _ALLOWED_CHAT = "private"
 
+ParserRejectionReason = Literal[
+    "update_too_large",
+    "invalid_update",
+    "update_type_rejected",
+    "chat_not_private",
+    "message_too_large",
+    "telegram_user_id_missing",
+    "message_id_missing",
+]
+
+
+class TelegramUpdateMetadata(BaseModel):
+    """Bounded diagnostics. No text, secrets, or actor identifiers."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["message", "callback_query", "unknown"] = "unknown"
+    chat_type: ChatType | None = None
+    has_text: bool = False
+    has_telegram_user_id: bool = False
+    has_message_id: bool = False
+
 
 class ParsedTelegramUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -31,7 +53,8 @@ class ParsedTelegramUpdate(BaseModel):
     text: str = ""
     callback_query_id: str | None = None
     callback_data: str | None = None
-    rejection: str | None = None
+    rejection: ParserRejectionReason | None = None
+    metadata: TelegramUpdateMetadata | None = None
 
 
 class TelegramUpdateSource(Protocol):
@@ -147,6 +170,11 @@ def secret_matches(*, configured: str, presented: str | None) -> bool:
 
 def parse_telegram_update(payload: object, *, body_size: int) -> ParsedTelegramUpdate:
     """Parse one Telegram update. Rejected rows are permanent and carry no authority."""
+    parsed = _parse_telegram_update(payload, body_size=body_size)
+    return parsed.model_copy(update={"metadata": _update_metadata(payload)})
+
+
+def _parse_telegram_update(payload: object, *, body_size: int) -> ParsedTelegramUpdate:
     if body_size > MAX_INBOUND_UPDATE_BYTES:
         return _rejected(update_id=0, body_size=body_size, reason="update_too_large")
     if not isinstance(payload, dict):
@@ -177,13 +205,19 @@ def _parse_message(message: object, *, update_id: int, body_size: int) -> Parsed
     if not isinstance(message, dict):
         return _rejected(update_id=update_id, body_size=body_size, reason="invalid_update")
     chat_id, chat_type, chat_reason = _chat(message.get("chat"))
-    user_id = _actor_id(message.get("from"))
+    user_id = _telegram_user_id(message.get("from"))
     message_id = _actor_id(message.get("message_id"))
     text = message.get("text", "")
     if chat_reason is not None:
         return _rejected(update_id=update_id, body_size=body_size, reason=chat_reason)
-    if chat_id is None or user_id is None or message_id is None or not isinstance(text, str):
+    if chat_id is None or not isinstance(text, str):
         return _rejected(update_id=update_id, body_size=body_size, reason="invalid_update")
+    if user_id is None:
+        return _rejected(
+            update_id=update_id, body_size=body_size, reason="telegram_user_id_missing"
+        )
+    if message_id is None:
+        return _rejected(update_id=update_id, body_size=body_size, reason="message_id_missing")
     if len(text.encode("utf-8")) > 4096:
         return _rejected(update_id=update_id, body_size=body_size, reason="message_too_large")
     return ParsedTelegramUpdate(
@@ -206,7 +240,7 @@ def _parse_callback(callback: object, *, update_id: int, body_size: int) -> Pars
     chat_id, chat_type, chat_reason = _chat(
         chat_source.get("chat") if isinstance(chat_source, dict) else None
     )
-    user_id = _actor_id(callback.get("from"))
+    user_id = _telegram_user_id(callback.get("from"))
     callback_id = callback.get("id")
     data = callback.get("data")
     if chat_reason is not None:
@@ -234,7 +268,7 @@ def _parse_callback(callback: object, *, update_id: int, body_size: int) -> Pars
     )
 
 
-def _chat(value: object) -> tuple[str | None, ChatType | None, str | None]:
+def _chat(value: object) -> tuple[str | None, ChatType | None, ParserRejectionReason | None]:
     if not isinstance(value, dict):
         return None, None, "invalid_update"
     chat_id = _actor_id(value.get("id"))
@@ -260,7 +294,44 @@ def _actor_id(value: object) -> str | None:
     return text
 
 
-def _rejected(*, update_id: int, body_size: int, reason: str) -> ParsedTelegramUpdate:
+def _telegram_user_id(value: object) -> str | None:
+    """Telegram's ``from`` is a User object, not a scalar identifier."""
+    return _actor_id(value.get("id")) if isinstance(value, dict) else None
+
+
+def _update_metadata(payload: object) -> TelegramUpdateMetadata:
+    if not isinstance(payload, dict):
+        return TelegramUpdateMetadata()
+    callback = payload.get("callback_query")
+    kind: Literal["message", "callback_query", "unknown"] = "unknown"
+    actor: object = None
+    message = payload.get("message")
+    if "message" in payload and "callback_query" not in payload:
+        kind = "message"
+        actor = message.get("from") if isinstance(message, dict) else None
+    elif "callback_query" in payload and "message" not in payload:
+        kind = "callback_query"
+        if isinstance(callback, dict):
+            actor = callback.get("from")
+            message = callback.get("message")
+    chat_source = message if isinstance(message, dict) else callback
+    if not isinstance(message, dict):
+        message = {}
+    chat = chat_source.get("chat") if isinstance(chat_source, dict) else None
+    raw_type = chat.get("type") if isinstance(chat, dict) else None
+    text = message.get("text")
+    return TelegramUpdateMetadata(
+        kind=kind,
+        chat_type=ChatType(raw_type) if raw_type in tuple(ChatType) else None,
+        has_text=isinstance(text, str) and bool(text),
+        has_telegram_user_id=_telegram_user_id(actor) is not None,
+        has_message_id=_actor_id(message.get("message_id")) is not None,
+    )
+
+
+def _rejected(
+    *, update_id: int, body_size: int, reason: ParserRejectionReason
+) -> ParsedTelegramUpdate:
     return ParsedTelegramUpdate(
         update_id=update_id,
         body_size=body_size,

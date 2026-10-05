@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
@@ -31,13 +32,22 @@ from app.runtime_safety.paper_actions import (
 from app.signal_fusion.lifecycle import in_memory_candidate_lifecycle
 from app.telegram_activation.controller import TelegramPaperActivation
 from app.telegram_activation.cursor import enrollment_cursor_owner
-from app.telegram_activation.intake import ParsedTelegramUpdate, RecordedUpdateSource
+from app.telegram_activation.intake import (
+    HttpTelegramUpdateSource,
+    ParsedTelegramUpdate,
+    RecordedUpdateSource,
+)
 from app.telegram_activation.policy import PAPER_ACTIVATION_BACKOFF
 from app.telegram_activation.runtime import TelegramPaperRuntime, build_telegram_runtime
 from app.telegram_paper_agent.contracts import PaperAlertRecipient
 from app.telegram_paper_agent.gateway import TelegramPaperAgent
 from app.telegram_security.clock import FrozenClock
-from app.telegram_security.contracts import ChatType, OutboxState
+from app.telegram_security.contracts import (
+    ActionReceiptState,
+    ChatType,
+    EnrollmentChallengeState,
+    OutboxState,
+)
 from app.telegram_security.protocol import TelegramSecurityProtocol
 from app.telegram_security.transport import FakeTelegramTransport
 from app.watcher.memory import FakeClock, InMemoryWatcherStore, SideEffectProbe
@@ -280,7 +290,32 @@ def test_tenant_a_kill_switch_does_not_block_tenant_b_enrollment() -> None:
         token_factory=TokenSeq(),
     )
     started = starter.start_enrollment(organization_id=TENANT_B, user_id=USER, bot_id=BOT)
-    source = RecordedUpdateSource((_private_message(update_id=11, text=started.token),))
+
+    def post(**_: object) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": [
+                    {
+                        "update_id": 11,
+                        "message": {
+                            "message_id": 42,
+                            "from": {"id": 123456789, "is_bot": False},
+                            "chat": {"id": 123456789, "type": "private"},
+                            "text": started.token,
+                        },
+                    }
+                ],
+            },
+        )
+
+    source = HttpTelegramUpdateSource(
+        token=TOKEN,
+        timeout_seconds=1,
+        network_permitted=True,
+        http_post=lambda _url, **kwargs: post(**kwargs),
+    )
     transport = FakeTelegramTransport()
     runtime = build_telegram_runtime(
         settings,
@@ -300,9 +335,16 @@ def test_tenant_a_kill_switch_does_not_block_tenant_b_enrollment() -> None:
     assert cycle.last_error_code != "kill_switch_active"
     assert started.token not in cycle.last_error_code
     assert transport.send_count == 0
-    binding = starter.store.get_active_binding_for_chat(bot_id=BOT, chat_id=CHAT)
+    binding = starter.store.get_active_binding_for_chat(bot_id=BOT, chat_id="123456789")
     assert binding is not None
     assert binding.organization_id == TENANT_B
+    challenge = starter.store.get_challenge_by_hash(started.challenge.token_hash)
+    assert challenge is not None
+    assert challenge.state is EnrollmentChallengeState.COMPLETED
+    receipt = starter.store.get_update_receipt(bot_id=BOT, update_id=11)
+    assert receipt is not None
+    assert receipt.state is ActionReceiptState.APPLIED
+    assert "enrollment_completed" in [event.event_type for event in starter.store.list_audits()]
     with factory() as session:
         assert read_process_kill_switch(session, settings) is True
         assert read_kill_switch_active(session, settings, TENANT_A) is True

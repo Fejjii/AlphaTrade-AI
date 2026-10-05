@@ -61,6 +61,72 @@ rejected. A bare chat id is not a binding.
 Confirm `GET /health` `worker_runtime.telegram` heartbeats. State is
 `enrollment` until projection is armed.
 
+### Verify the enrollment intake fix
+
+No new database migration is required. After deploying the PR revision to the
+existing paper worker, keep `ENABLE_REAL_TRADING=false`, `EXECUTION_MODE=paper`,
+`EXCHANGE_MODE=paper_internal`, and projection disarmed. Confirm fresh
+`GET /health` Telegram state `enrollment` and `kill_switch_active=false`.
+
+1. Record the current cursor using the SQL below. The previously consumed
+   update `967148778` cannot be recovered by normal polling; do not rewind or
+   delete the cursor.
+2. Call authenticated `POST /telegram-paper/enrollment/start`. Keep the returned
+   `challenge_id` and `expires_at` for verification; keep the token private and
+   out of terminals, logs, tickets, and screenshots.
+3. Before expiry, send the exact token as a **new private message** to the
+   configured AlphaTrade bot. Wait for the next fresh worker heartbeat.
+4. Query the challenge by its returned ID. Expect `COMPLETED`, a non-null
+   `completed_at` and `binding_id`, a `VERIFIED` private binding for the intended
+   organization/user, an `APPLIED` receipt with the new update ID, and
+   `enrollment_completed`. The cursor must advance to that new update ID.
+5. Send a wrong token as another private message. Expect no new binding and one
+   worker log event `telegram_enrollment_rejected` with
+   `reason=ENROLLMENT_NOT_FOUND` and `parser_rejection_reason=null`. Reusing the
+   completed token in a new message must report `ENROLLMENT_USED`.
+
+Run these read-only queries in the existing database console, replacing the
+bot and challenge placeholders. They deliberately omit token hashes and text:
+
+```sql
+SELECT bot_id, last_update_id, updated_at
+FROM telegram_activation_inbound_cursors
+WHERE bot_id = '<configured bot id>';
+
+SELECT challenge_id, organization_id, user_id, state, expires_at,
+       completed_at, binding_id
+FROM telegram_security_enrollment_challenges
+WHERE challenge_id = '<returned challenge UUID>';
+
+SELECT binding_id, organization_id, user_id, chat_type, state, verified_at
+FROM telegram_security_bindings
+WHERE binding_id = (
+    SELECT binding_id FROM telegram_security_enrollment_challenges
+    WHERE challenge_id = '<returned challenge UUID>'
+);
+
+SELECT update_id, state, reason_code, binding_id
+FROM telegram_security_action_receipts
+WHERE bot_id = '<configured bot id>'
+ORDER BY created_at DESC LIMIT 5;
+
+SELECT event_type, reason_code, at
+FROM telegram_security_audit_events
+WHERE event_type IN ('enrollment_started', 'enrollment_completed', 'enrollment_rejected')
+ORDER BY at DESC LIMIT 10;
+```
+
+For any rejected enrollment update, use its update ID to find
+`telegram_enrollment_rejected`. The event contains only the update ID,
+bounded kind/chat-type labels, reason, parser rejection reason, and text/user-ID/
+message-ID presence flags. Parser failures have reasons such as
+`chat_not_private`, `telegram_user_id_missing`, and `message_id_missing`.
+The first rejection reason in a polling batch also appears in the worker's
+`last_error_code` for that cycle; each rejected update has its own log event.
+Parser-rejected updates never enter the security protocol, so they do not create
+bindings, receipts, or security audit events. Protocol exceptions are also logged
+before cursor advancement, independently of transaction rollback.
+
 ## 3. Projection variables
 
 Set on the paper worker, then restart it once.

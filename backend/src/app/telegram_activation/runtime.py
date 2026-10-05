@@ -37,7 +37,11 @@ from app.runtime_safety.paper_actions import (
 from app.telegram_activation.controller import TelegramPaperActivation
 from app.telegram_activation.cursor import ActivationCursorStore, enrollment_cursor_owner
 from app.telegram_activation.errors import TelegramActivationError
-from app.telegram_activation.intake import ParsedTelegramUpdate, TelegramUpdateSource
+from app.telegram_activation.intake import (
+    ParsedTelegramUpdate,
+    TelegramUpdateMetadata,
+    TelegramUpdateSource,
+)
 from app.telegram_security.clock import Clock, SystemClock
 from app.telegram_security.contracts import ChatType, MessageIdentity, TelegramInboundUpdate
 from app.telegram_security.errors import TelegramSecurityError
@@ -212,15 +216,15 @@ class TelegramPaperRuntime:
         rejected = 0
         last_error = ""
         for update in batch:
-            if update.update_id <= 0:
-                rejected += 1
-                continue
-            organization_id = self._complete_enrollment(update)
+            organization_id, reason = self._complete_enrollment(update)
             if organization_id is None:
                 rejected += 1
-                last_error = last_error or "enrollment_not_completed"
+                last_error = last_error or reason
+                self._log_enrollment_rejection(update, reason=reason)
             else:
                 applied += 1
+            if update.update_id <= 0:
+                continue
             self._advance(
                 update,
                 organization_id=organization_id,
@@ -228,13 +232,25 @@ class TelegramPaperRuntime:
             )
         return applied, rejected, last_error
 
-    def _complete_enrollment(self, update: ParsedTelegramUpdate) -> UUID | None:
+    def _complete_enrollment(self, update: ParsedTelegramUpdate) -> tuple[UUID | None, str]:
+        if update.update_id <= 0:
+            return None, update.rejection or "invalid_update_id"
         if self._protocol is None:
-            return None
-        if update.kind != "message" or update.chat_type is not ChatType.PRIVATE:
-            return None
-        if not update.text.strip() or not update.telegram_user_id or not update.message_id:
-            return None
+            return None, "protocol_disabled"
+        if update.kind == "rejected":
+            return None, update.rejection or "parser_rejected"
+        if update.kind != "message":
+            return None, "update_type_rejected"
+        if update.chat_type is not ChatType.PRIVATE:
+            return None, "chat_not_private"
+        if not update.text.strip():
+            return None, "text_missing"
+        if not update.telegram_user_id:
+            return None, "telegram_user_id_missing"
+        if not update.message_id:
+            return None, "message_id_missing"
+        if not update.chat_id:
+            return None, "chat_id_missing"
         try:
             result = self._protocol.complete_enrollment(
                 token=update.text.strip(),
@@ -248,9 +264,29 @@ class TelegramPaperRuntime:
                 ),
                 inbound=TelegramInboundUpdate(update_type="message", body_size=update.body_size),
             )
-        except TelegramSecurityError:
-            return None
-        return result.binding.organization_id
+        except TelegramSecurityError as exc:
+            return None, exc.reason.value
+        return result.binding.organization_id, ""
+
+    def _log_enrollment_rejection(self, update: ParsedTelegramUpdate, *, reason: str) -> None:
+        metadata = update.metadata or TelegramUpdateMetadata(
+            kind=update.kind if update.kind != "rejected" else "unknown",
+            chat_type=update.chat_type if update.kind != "rejected" else None,
+            has_text=bool(update.text),
+            has_telegram_user_id=bool(update.telegram_user_id),
+            has_message_id=bool(update.message_id),
+        )
+        logger.warning(
+            "telegram_enrollment_rejected",
+            update_id=update.update_id,
+            kind=metadata.kind,
+            chat_type=metadata.chat_type.value if metadata.chat_type is not None else "unknown",
+            reason=reason,
+            parser_rejection_reason=update.rejection,
+            has_text=metadata.has_text,
+            has_telegram_user_id=metadata.has_telegram_user_id,
+            has_message_id=metadata.has_message_id,
+        )
 
     def _advance(
         self,
