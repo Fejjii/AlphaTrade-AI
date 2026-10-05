@@ -5,6 +5,18 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-097 — Governed BloFin quote freshness at receipt
+- Priority: P1 · Status: DONE · Dependencies: merged PR203 (`fba79a4`) · Risk: Medium.
+- Scope: Compare ticker timestamps with the injected clock after receipt instead of
+  the caller's preflight timestamp. Preserve strict ten-second and future-date bounds.
+- Safety: Demo stays disarmed; real trading false. Preserve final dispatch expiry,
+  idempotency, risk, protection, permission, host, kill-switch and authorization gates.
+- Validation: Reproduced the advancing-clock failure on main with simulated HTTP;
+  71 focused cases pass, including 12 new receipt-time/boundary/final-expiry cases
+  and existing governed idempotency, risk, protection and real refusal regressions.
+  Scoped Ruff lint/format, strict changed-module mypy and diff checks pass.
+- Delivery: Separate focused PR; supervising release review. No merge, deployment or orders.
+
 ## AT-094 — Agent presentation and canonical strategy grounding
 - Priority: P1 · Status: DONE · Dependencies: PR200 on current main · Risk: Medium.
 - Scope: Reserve model explanation space, collapse stored evidence, distinguish selected
