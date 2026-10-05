@@ -24,6 +24,7 @@ from app.db.models import (
     UserStrategyVersion,
     WorkerHeartbeat,
 )
+from app.db.runtime_status import ControlledRuntimeStatusRow
 from app.db.watcher_orchestration import (
     WatcherHeartbeatRow,
     WatcherObservabilityEventRow,
@@ -122,6 +123,12 @@ class WatcherMonitoringService:
 
         settings = self._settings
         config = runtime_config_from_settings(settings)
+        # The API is deliberately disarmed when a separate paper worker owns scans.
+        # Observe its tenant-bound lease instead of interpreting API flags as a stop.
+        remote_worker = self._remote_worker_observed(organization_id, now)
+        orchestration_enabled = settings.watcher_orchestration_enabled or remote_worker
+        if remote_worker:
+            config = config.model_copy(update={"enabled": True})
         watcher_status = self._market_watcher.get_status(
             organization_id=organization_id, user_id=user_id
         )
@@ -164,7 +171,7 @@ class WatcherMonitoringService:
             kill_switch_blocked=kill_blocked,
             kill_switch_reason=kill_reason,
             market_watcher_enabled=settings.market_watcher_enabled,
-            watcher_orchestration_enabled=settings.watcher_orchestration_enabled,
+            watcher_orchestration_enabled=orchestration_enabled,
             worker_enabled=settings.worker_enabled,
             worker_heartbeat_live=worker.heartbeat_live,
             orchestration_health_state=(
@@ -217,7 +224,7 @@ class WatcherMonitoringService:
             kill_switch_blocked=kill_blocked,
             kill_switch_reason_code=kill_reason,
             telegram_enabled=_telegram_enabled(settings),
-            watcher_config_enabled=_config_enabled(settings),
+            watcher_config_enabled=_config_enabled(settings) or remote_worker,
             runtime_evidence=decision.runtime_evidence,
         )
         return WatcherMonitoringSnapshot(
@@ -302,6 +309,29 @@ class WatcherMonitoringService:
             status=row.status,
             paused=row.paused,
             detail=_sanitize(row.detail),
+        )
+
+    def _remote_worker_observed(self, organization_id: uuid.UUID, now: datetime) -> bool:
+        row = self._session.get(ControlledRuntimeStatusRow, "watcher")
+        if row is None or row.activation_state != "running" or not row.worker_id:
+            return False
+        beat = _aware(row.heartbeat_at)
+        if beat is None or not 0 <= (now - beat).total_seconds() <= (
+            self._settings.watcher_heartbeat_stale_after_seconds
+        ):
+            return False
+        # A global worker row cannot establish monitoring for another tenant.
+        return (
+            self._session.scalar(
+                select(WatcherWorkerLeaseRow.id)
+                .where(
+                    WatcherWorkerLeaseRow.organization_id == organization_id,
+                    WatcherWorkerLeaseRow.owner_id == row.worker_id,
+                    WatcherWorkerLeaseRow.expires_at > now,
+                )
+                .limit(1)
+            )
+            is not None
         )
 
     def _orchestration_health(

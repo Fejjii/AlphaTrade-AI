@@ -43,6 +43,14 @@ def route_daily_review(message: str) -> ActionRequest | None:
         raise ValidationAppError("Future events are unavailable; ask what to review tomorrow.")
     # General setup/performance reads retain their existing behavior unless daily-scoped.
     daily = re.search(r"\b(?:today|yesterday|daily|tomorrow)\b|\b\d{4}-\d{2}-\d{2}\b", text)
+    # A current setup question remains a Brain read even when it asks for gaps.
+    # Retrospective, explicitly dated reviews retain their own evidence routing.
+    if (
+        not daily
+        and re.search(r"\b(?:setups?|nested|sfp)\b", text)
+        and re.search(r"\b(?:current|latest|forming|state|status)\b", text)
+    ):
+        return None
     if (
         not daily
         and focus in {"setups", "performance", "summary"}

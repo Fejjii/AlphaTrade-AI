@@ -27,6 +27,7 @@ from app.db.models import (
 from app.db.session import get_session
 from app.interactive_agent.action_registry import resolve_action, route_action
 from app.interactive_agent.actions import ActionRequest
+from app.interactive_agent.classify import classify_turn
 from app.interactive_agent.contracts import AgentCapability, AgentTurnRequest, TurnOperation
 from app.interactive_agent.service import InteractiveAgentService
 from app.paper_evaluation.contracts import DataQualityClass, PaperEvaluationStage
@@ -61,6 +62,20 @@ def turn(session, settings, message="What happened today?", action=None, **scope
         organization_id=scope.get("organization_id", ORG_A),
         user_id=scope.get("user_id", USER_A),
     )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "What is the current BTCUSDT Nested setup state on 15m? Explain the long and short "
+        "states using stored evidence, its timestamp and any missing data. Do not create "
+        "or approve any trade.",
+        "Show the latest SFP setup status and missing evidence.",
+    ],
+)
+def test_current_setup_gaps_do_not_route_to_daily_review(message):
+    assert route_action(AgentTurnRequest(message=message)) is None
+    assert classify_turn(message).capability is AgentCapability.STRATEGY_BRAIN
 
 
 @pytest.mark.parametrize(

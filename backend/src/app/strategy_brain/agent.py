@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.interactive_agent.contracts import ArtifactKind, ConnectionRef, ProvenanceSource
-from app.interactive_agent.parsing import extract_symbol
+from app.interactive_agent.parsing import extract_symbol, extract_timeframe
 from app.strategy_brain.service import details, overview
 
 
@@ -29,6 +29,30 @@ def read_brain(
             ]
         except NotFoundError:
             data["setups"] = []
+    else:
+        timeframe = extract_timeframe(message)
+        family = (
+            "sfp"
+            if re.search(r"\bsfp\b|swing failure", message, re.I)
+            else ("nested" if re.search(r"\bnested\b", message, re.I) else None)
+        )
+        data["setups"] = [
+            setup
+            for setup in data["setups"]
+            if (not timeframe or setup.get("timeframe") == timeframe)
+            and (not family or (setup.get("family") == "sfp") == (family == "sfp"))
+        ]
+        if re.search(r"\b(?:current|latest|forming|state|status)\b", message, re.I):
+            # Overview is newest first. Keep independent strategy/timeframe scopes;
+            # older episodes cannot crowd the current facts out of the reply budget.
+            seen = set()
+            latest = []
+            for setup in data["setups"]:
+                key = (setup["strategy_version_id"], setup.get("timeframe"))
+                if key not in seen:
+                    latest.append(setup)
+                    seen.add(key)
+            data["setups"] = latest
     lines = [
         "Watcher configuration: "
         + (", ".join(data["watched_symbols"]) or "no enabled symbols")
