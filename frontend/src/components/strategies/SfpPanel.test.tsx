@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BrainOverview, BrainStrategy, SfpParameters } from "@/lib/api/brain-types";
 import { NestedContinuationPanel } from "./NestedContinuationPanel";
 import { SfpPanel } from "./SfpPanel";
+import { SFP_RESEARCH_BASELINE } from "./SfpParameterFields";
 
 const mocks = vi.hoisted(() => ({ overview: vi.fn(), createNested: vi.fn(), createSfp: vi.fn(), compileVersion: vi.fn(), approveVersion: vi.fn() }));
 vi.mock("@/lib/api", () => ({ api: { strategyBrain: mocks, strategies: mocks } }));
@@ -32,12 +33,25 @@ function authorParameters() {
 }
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 describe("SFP creation and immutable approval", () => {
+  it("creates a provisional baseline draft with advanced parameters collapsed and no approval", async () => {
+    mocks.overview.mockResolvedValue(overview());
+    mocks.createSfp.mockResolvedValue({ strategy_id: "sfp-id", version_id: "sfp-version" });
+    render(<SfpPanel />);
+    const create = await screen.findByText("Create SFP research draft");
+    expect(screen.getByText("Advanced parameters").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText(/not validated trading thresholds/)).toBeInTheDocument();
+    fireEvent.click(create);
+    await act(async () => {});
+    expect(mocks.createSfp).toHaveBeenCalledWith({ symbol: "BTCUSDT", direction: "long", trigger_timeframe: "15m", parameters: SFP_RESEARCH_BASELINE, paper_only: true });
+    expect(mocks.compileVersion).not.toHaveBeenCalled();
+    expect(mocks.approveVersion).not.toHaveBeenCalled();
+  });
   it("submits explicitly authored parameters, preserves decimal precision and never auto-approves", async () => {
     mocks.overview.mockResolvedValue(overview());
     mocks.createSfp.mockResolvedValue({ strategy_id: "sfp-id", version_id: "sfp-version" });
     render(<SfpPanel />);
     await screen.findByText("Create SFP research draft");
-    expect(screen.getByLabelText("Level lookback (bars)")).toHaveValue(null);
+    expect(screen.getByLabelText("Level lookback (bars)")).toHaveValue(SFP_RESEARCH_BASELINE.level_lookback);
     fireEvent.change(screen.getByLabelText("SFP market"), { target: { value: "ETHUSDT" } });
     fireEvent.change(screen.getByLabelText("SFP direction"), { target: { value: "short" } });
     fireEvent.change(screen.getByLabelText("SFP timeframe"), { target: { value: "4h" } });
