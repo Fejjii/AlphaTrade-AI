@@ -5,6 +5,20 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-099 — Notification fixture and clean bounded Agent prose
+- Priority: P1 · Status: DONE · Dependencies: main `c70d4bd` / merged PR205 · Risk: Low.
+- Scope: Intercept only exact GET `/execution/accounts/paper` in the notification
+  Playwright fixture; preserve production authentication and session assertions.
+  Bound model/plain/JSON and visible prose at complete sentence/citation units
+  with an explicit shortening notice. Keep 2000/4000 limits and full recorded evidence.
+- Safety: Source grounding and document/approved-setting distinctions retained;
+  no strategy, credentials, execution authority or activation changes.
+- Validation: All 3 targeted Chromium notification cases and 33 focused Agent
+  reply/grounding regressions pass. Scoped Ruff, strict changed-source mypy,
+  TypeScript and fixture ESLint pass; no manual broad suite/CI rerun.
+- Delivery: One reviewable PR; supervising review/deploy and completed automatic
+  CI precede supervised demo proof. Local mocks do not establish live acceptance.
+
 ## AT-098 — Authenticated canonical paper execution account setup
 - Priority: P1 · Status: DONE · Dependencies: main `4898b0f` / merged PR204 · Risk: Medium.
 - Scope: Authenticated self-scoped status and owner-only empty-body PAPER/NET setup,

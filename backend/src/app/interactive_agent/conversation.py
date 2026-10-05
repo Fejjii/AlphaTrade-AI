@@ -33,6 +33,12 @@ MODEL_REPLY_UNAVAILABLE = "Conversational model reply is unavailable."
 _FACTS_HEADER = "Recorded facts (not a confirmation):"
 _REPLY_LIMIT = 4000
 _PROSE_LIMIT = 2000
+_SHORTENED = "\n\nReply shortened to fit the display limit."
+# Treat source markers/Markdown links as indivisible, including their punctuation.
+_CITATION = r"\[[^\]\n]*\](?:\((?:[^()\n]|\([^()\n]*\))*\))?|【[^】\n]*】"
+_PROSE_BOUNDARY = re.compile(rf"(?:{_CITATION})|[.!?][\"\u201d\u2019')]*(?=\s|$)")
+_SOURCE_MARKER = re.compile(_CITATION)
+_ABBREVIATIONS = frozenset({"e.g.", "i.e.", "etc.", "vs.", "mr.", "mrs.", "dr.", "fig."})
 
 _SYSTEM = (
     "You are AlphaTrade's paper-only conversational assistant. "
@@ -162,7 +168,7 @@ def compose_visible_reply(model_text: str, factual: str) -> str:
             "Document guidance is reference data; "
             "these passages do not establish approved settings."
         )
-    lead = prose[:_PROSE_LIMIT]
+    lead = _bounded_prose(prose)
     if warnings:
         lead += "\n\n" + " ".join(warnings)
     header = f"\n\n{_FACTS_HEADER}\n"
@@ -174,6 +180,38 @@ def compose_visible_reply(model_text: str, factual: str) -> str:
     return lead + header + facts
 
 
+def _bounded_prose(text: str) -> str:
+    """Retain complete sentences with attached citations within the prose budget."""
+    text = text.strip()
+    if len(text) <= _PROSE_LIMIT:
+        return text
+    budget = _PROSE_LIMIT - len(_SHORTENED)
+    end = 0
+    for boundary in _PROSE_BOUNDARY.finditer(text):
+        if boundary.start() >= budget:
+            break
+        if boundary.group().startswith(("[", "【")):
+            continue
+        word = text[: boundary.end()].rsplit(maxsplit=1)[-1].lower()
+        if word in _ABBREVIATIONS:
+            continue
+        candidate = boundary.end()
+        # A sentence followed by citations is one unit. If any source marker
+        # crosses the budget, omit the sentence rather than leaving it uncited.
+        while True:
+            following = candidate
+            while following < len(text) and text[following].isspace():
+                following += 1
+            source = _SOURCE_MARKER.match(text, following)
+            if source is None:
+                break
+            candidate = source.end()
+        if candidate > budget:
+            break
+        end = candidate
+    return text[:end].rstrip() + _SHORTENED if end else _SHORTENED.strip()
+
+
 def _prose(content: str) -> str:
     text = content.strip()
     if not text:
@@ -182,9 +220,9 @@ def _prose(content: str) -> str:
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:
-            return text[:2000]
+            return _bounded_prose(text)
         if isinstance(payload, dict):
             summary = payload.get("summary")
             if isinstance(summary, str) and summary.strip():
-                return summary.strip()[:2000]
-    return text[:2000]
+                return _bounded_prose(summary)
+    return _bounded_prose(text)
