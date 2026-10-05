@@ -247,6 +247,72 @@ class BinanceUsdmPerpetualSource:
             min_bars=min_final_bars,
         )
 
+    def fetch_closed_ohlcv_history(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        timeframe: Timeframe,
+        evaluated_at: datetime,
+        limit: int = 1000,
+    ) -> ClosedOhlcvSeries:
+        """Bounded historical tail, allowing shorter actual listing history.
+
+        This read does not change the live evidence minimum or freshness policy.
+        The caller verifies exchangeInfo. A fixed UTC cutoff makes the requested
+        window repeatable; no forming bar, gap, duplicate or substituted interval
+        can enter the returned series.
+        """
+        self._assert_request(identity, instrument, timeframe)
+        interval = _BINANCE_INTERVAL.get(timeframe)
+        if interval is None:
+            raise WrongMarketError(f"Timeframe {timeframe.value} is not contracted for USD-M.")
+        if evaluated_at.tzinfo is None or not 1 <= limit <= 1498:
+            raise ValueError("History requires an aware cutoff and limit between 1 and 1498.")
+        grace = timedelta(seconds=first_slice_freshness_policy().ohlcv_post_close_grace_seconds)
+        payload = self._get(
+            "/fapi/v1/klines",
+            {
+                "symbol": instrument.provider_symbol,
+                "interval": interval,
+                "limit": limit + 2,
+                "endTime": int((evaluated_at - grace).timestamp() * 1000) - 1,
+            },
+        )
+        if not isinstance(payload, list):
+            raise WrongMarketError("USD-M kline payload is not a list.")
+        bars: list[OhlcvBar] = []
+        for row in payload:
+            bar = self._parse_kline(
+                row,
+                instrument=instrument,
+                timeframe=timeframe,
+                evaluated_at=evaluated_at,
+                grace=grace,
+            )
+            if int(row[6]) + 1 != int(bar.interval_end.timestamp() * 1000):
+                raise WrongMarketError("USD-M provider close time differs from requested interval.")
+            if bar.finality.value == "final":
+                bars.append(bar)
+        if not bars:
+            raise FormingCandleError("No final candles in the requested historical window.")
+        # Validate the entire response before selecting the bounded tail.
+        complete = require_closed_series(
+            bars,
+            identity=identity,
+            timeframe=timeframe,
+            evaluated_at=evaluated_at,
+            min_bars=len(bars),
+        )
+        selected = complete.bars[-limit:]
+        return require_closed_series(
+            selected,
+            identity=identity,
+            timeframe=timeframe,
+            evaluated_at=evaluated_at,
+            min_bars=len(selected),
+        )
+
     def fetch_ordered_trades(
         self,
         *,
