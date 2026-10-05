@@ -292,7 +292,13 @@ def offline_contract_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @requires_postgres
-def test_rehearsal_projects_live_evidence_through_paper_and_telegram() -> None:
+def test_rehearsal_projects_live_evidence_through_paper_and_telegram(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Market acquisition is scripted; keep contract discovery offline as well.
+    monkeypatch.setattr(
+        "app.workers.watcher_paper._live_contract_discoverer", lambda settings: None
+    )
     install_persistence_firewall()
     factory = phase7_plan_session_factory()
     settings = _package_settings()
