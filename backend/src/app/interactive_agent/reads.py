@@ -18,7 +18,7 @@ from app.interactive_agent.contracts import (
     MarketQuoteView,
     ProvenanceSource,
 )
-from app.interactive_agent.parsing import extract_symbol, query_tokens
+from app.interactive_agent.parsing import extract_symbol, extract_timeframe, query_tokens
 from app.repositories.market_watcher import MarketWatcherObservationRepository
 from app.schemas.common import StrictModel, TradeResult
 from app.schemas.strategy_analytics import StrategyAnalyticsFilters, StrategyAnalyticsReport
@@ -70,6 +70,25 @@ def gather_reads(
 ) -> ReadBundle:
     """Read existing authorities for this turn. No snapshots or journal writes."""
     bundle = ReadBundle()
+    if capability is AgentCapability.STRATEGY_RETRIEVAL:
+        from app.interactive_agent.strategy_analytics import is_strategy_definition_comparison
+        from app.strategy_brain.agent import read_brain
+
+        if is_strategy_definition_comparison(message):
+            summaries = []
+            families = [name for name in ("nested", "sfp") if name in query_tokens(message)]
+            requested_timeframe = extract_timeframe(message) or timeframe or ""
+            for family in families:
+                summary, refs, notes = read_brain(
+                    session,
+                    organization_id=organization_id,
+                    message=f"current {family} setups {requested_timeframe}",
+                    symbol=extract_symbol(message) or symbol,
+                )
+                summaries.append(f"{family.upper()} stored evidence: {summary}")
+                bundle.connections.extend(refs)
+                bundle.limitations.extend(notes)
+            bundle.brain_summary = "\n".join(summaries) or None
     if capability is AgentCapability.STRATEGY_ANALYTICS:
         from app.interactive_agent.strategy_analytics import read_strategy_analytics
 

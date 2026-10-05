@@ -896,6 +896,58 @@ class _ConfirmingResponder:
         return "I confirm the journal was saved and the strategy is confirmed."
 
 
+def test_family_comparison_reaches_model_with_both_evidence_scopes(
+    agent_db: tuple[sessionmaker[Session], Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    factory, settings = agent_db
+    contexts = []
+    scopes = []
+
+    def read_stored(session, *, organization_id, message, symbol):
+        assert organization_id == ORG_A
+        scopes.append(message)
+        return f"{message}: no confirmed Candidate; risk not evaluated", [], []
+
+    class Responder:
+        def compose(self, **kwargs):
+            contexts.append(kwargs["factual_context"])
+            return "Neither family has confirmed execution evidence."
+
+    monkeypatch.setattr("app.strategy_brain.agent.read_brain", read_stored)
+    with factory() as session:
+        library = StrategyLibraryService(session)
+        for family in (StrategyId.NESTED_CONTINUATION, StrategyId.SFP):
+            library.create(
+                UserStrategyCreate(
+                    organization_id=ORG_A,
+                    user_id=USER_A,
+                    name=family.value,
+                    setup_type=family,
+                    card=_card(),
+                )
+            )
+        session.commit()
+        service = InteractiveAgentService(session, settings=settings, responder=Responder())
+        result = service.handle_turn(
+            AgentTurnRequest(
+                message="Compare my approved Nested and SFP strategies. "
+                "What evidence is missing before execution?"
+            ),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        assert result.capability is AgentCapability.STRATEGY_RETRIEVAL
+        assert len(contexts) == 1
+        assert len(scopes) == 2
+        assert "NESTED stored evidence" in contexts[0]
+        assert "SFP stored evidence" in contexts[0]
+        assert "not execution eligibility" in contexts[0]
+        assert "Neither family" in result.reply
+        assert not result.proposals
+        assert result.authority_mutated is False
+        assert _count(session, Order) == 0
+
+
 def test_model_text_does_not_confirm_a_journal(
     agent_db: tuple[sessionmaker[Session], Settings],
 ) -> None:

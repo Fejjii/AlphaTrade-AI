@@ -37,6 +37,9 @@ _SYSTEM = (
     "Reply in plain text to the user message. "
     "You cannot confirm, save, reject, or execute anything. "
     "Do not say a journal entry, strategy, rule, lesson, or order was saved or confirmed. "
+    "Strategy rules, approval status, setup state and evidence availability must come from "
+    "the supplied stored facts. If a detail is absent, say it is unavailable; distinguish "
+    "general strategy explanations from the user's actual approved rules. "
     "If the facts say canonical perpetual evidence is unavailable or stale, "
     "repeat unavailable or stale. Do not invent a price. "
     "Structured proposals are separate from this reply and stay unconfirmed until "
@@ -117,6 +120,14 @@ class ModelConversationalResponder:
         except Exception:
             logger.warning("interactive_agent_model_reply_unavailable")
             return MODEL_REPLY_UNAVAILABLE
+        logger.info(
+            "interactive_agent_model_call",
+            conversation_id=str(conversation_id),
+            requested_model=result.decision.selected_model,
+            resolved_model=result.resolved_model,
+            fallback_used=result.fallback_used,
+            unavailable=result.unavailable,
+        )
         if result.unavailable or result.mutation_allowed:
             return MODEL_REPLY_UNAVAILABLE
         text = _prose(result.content)

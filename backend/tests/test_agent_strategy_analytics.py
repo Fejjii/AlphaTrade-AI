@@ -59,6 +59,30 @@ client = analytics_client
 records = analytics_records
 
 PATH = "/agent/turns"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Compare my approved Nested and SFP strategies. What evidence is missing before execution?",
+        "What is the difference between my Nested and SFP strategies?",
+        "Compare the entry rules of my strategies.",
+    ],
+)
+def test_definition_comparisons_read_strategy_library(message: str) -> None:
+    result = classify_turn(message)
+    assert result.capability is AgentCapability.STRATEGY_RETRIEVAL
+    assert result.operation is TurnOperation.READ
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Compare Nested and SFP win rate", "Compare strategy expectancy", "Compare N2 versus N3"],
+)
+def test_explicit_metric_comparisons_still_use_canonical_analytics(message: str) -> None:
+    assert classify_turn(message).capability is AgentCapability.STRATEGY_ANALYTICS
+
+
 GROUP_BY = (
     StrategyAnalyticsDimension.STRATEGY,
     StrategyAnalyticsDimension.STRATEGY_VERSION,

@@ -911,6 +911,13 @@ def _reply(
         text = bundle.brain_summary or "No stored setup evidence was available."
     elif classification.capability is AgentCapability.STRATEGY_RETRIEVAL:
         text = _strategy_reply(strategies)
+        if bundle.brain_summary:
+            text += "\n" + bundle.brain_summary
+            text += (
+                "\nStrategy approval alone is not execution eligibility. A confirmed Candidate, "
+                "fresh action evidence, risk approval and an authorized trade plan are required. "
+                "Do not infer missing evidence is present or that execution is approved."
+            )
     elif classification.capability is AgentCapability.KNOWLEDGE_RETRIEVAL:
         text = _knowledge_reply(knowledge)
     elif classification.capability is AgentCapability.MARKET_AND_PORTFOLIO:
