@@ -237,6 +237,15 @@ def test_tier_a_selection() -> None:
     assert decision.retention_category is ModelRetentionCategory.AUDIT_REQUIRED
 
 
+def test_agent_conversation_uses_configured_reasoning_tier() -> None:
+    router = ModelRouter(MockLLMProvider(), tier_a_model="gpt-6.1-sol", tier_b_model="gpt-4o-mini")
+    decision = router.decide(_request(ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS))
+    assert decision.selected_tier is ModelRoutingTier.TIER_A
+    assert decision.selected_model == "gpt-6.1-sol"
+    assert decision.token_budget == 4096
+    assert decision.latency_budget_ms == 60_000
+
+
 def test_tier_b_selection() -> None:
     router = _router()
     decision = router.decide(_request(ModelRoutingPurpose.NARRATIVE_SYNTHESIS))
