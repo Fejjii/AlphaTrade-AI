@@ -885,7 +885,7 @@ def test_evidence_load_failure_is_not_setup_truth() -> None:
     ).run_worker(_request(policy, key="exploded"), worker_id="worker-1")
     assert failed.outcome is not None
     assert failed.outcome.status is EvaluationStatus.FAILED
-    assert failed.outcome.reason_code == "canonical_evidence_unavailable"
+    assert failed.outcome.reason_code == "canonical_contract_unexpected_error"
     assert failed.outcome.candidate_ids == ()
     assert failed.outcome.reason_code != SetupAssessmentState.CONFIRMED_SETUP.value
     _assert_no_side_effects(probe)

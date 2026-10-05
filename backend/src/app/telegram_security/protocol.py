@@ -8,9 +8,12 @@ invokes ``EXECUTE_PAPER_PLAN``, and is disabled until the caller passes
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
+from app.schemas.telegram_policy import TelegramNotificationEvent, TelegramNotificationPolicyV2
+from app.services.notifications.telegram_policy import PolicyHistory, evaluate_telegram_policy
 from app.telegram_security.actions import (
     ALLOWED_TELEGRAM_UPDATE_TYPES,
     AVAILABLE_TELEGRAM_ACTIONS,
@@ -85,6 +88,8 @@ class TelegramSecurityProtocol:
         outbox_lease: timedelta = timedelta(seconds=30),
         lease_owner: str = "telegram-security-protocol",
         retry_backoff: DeliveryBackoff | None = None,
+        notification_policy_loader: Callable[[UUID, UUID], TelegramNotificationPolicyV2]
+        | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -98,6 +103,7 @@ class TelegramSecurityProtocol:
         self._outbox_lease = outbox_lease
         self._lease_owner = lease_owner
         self._backoff = retry_backoff or DeliveryBackoff()
+        self._notification_policy_loader = notification_policy_loader
 
     @classmethod
     def in_memory(
@@ -847,6 +853,7 @@ class TelegramSecurityProtocol:
         text: str,
         idempotency_key: str,
         binding_id: UUID | None = None,
+        notification_event: TelegramNotificationEvent | None = None,
     ) -> OutboxRecord:
         self._require_enabled()
         now = self._clock.now()
@@ -860,6 +867,7 @@ class TelegramSecurityProtocol:
                 text=text,
                 idempotency_key=idempotency_key,
                 now=now,
+                notification_event=notification_event,
             )
 
     def deliver_pending(self, *, limit: int = 10) -> list[DeliveryAttempt]:
@@ -875,6 +883,29 @@ class TelegramSecurityProtocol:
                 retry_backoff=self._backoff,
             )
         for row in claimed:
+            if row.notification_event is not None or self._notification_policy_loader is not None:
+                with self._store.transaction():
+                    reason = self._notification_policy_reason(row, now=now, admission=False)
+                    if reason is not None:
+                        suppressed = row.model_copy(
+                            update={
+                                "state": OutboxState.SUPPRESSED,
+                                "last_error": reason,
+                                "lease_owner": None,
+                                "lease_until": None,
+                                "updated_at": now,
+                            }
+                        )
+                        self._store.save_outbox(suppressed)
+                        attempts.append(
+                            DeliveryAttempt(
+                                outbox=suppressed,
+                                accepted=False,
+                                retryable=False,
+                                error_code=reason,
+                            )
+                        )
+                        continue
             result = self._transport.send_private_message(
                 bot_id=row.bot_id,
                 chat_id=row.chat_id,
@@ -886,6 +917,7 @@ class TelegramSecurityProtocol:
                 sent = row.model_copy(
                     update={
                         "state": OutboxState.SENT,
+                        "sent_at": now,
                         "attempt": attempt_no,
                         "transport_message_id": result.transport_message_id,
                         "lease_owner": None,
@@ -1302,12 +1334,20 @@ class TelegramSecurityProtocol:
         text: str,
         idempotency_key: str,
         now: datetime,
+        notification_event: TelegramNotificationEvent | None = None,
     ) -> OutboxRecord:
         existing = self._store.get_outbox_by_idempotency(
             organization_id=organization_id, idempotency_key=idempotency_key
         )
         if existing is not None:
-            if existing.text != text or existing.chat_id != chat_id or existing.bot_id != bot_id:
+            if (
+                existing.text != text
+                or existing.chat_id != chat_id
+                or existing.bot_id != bot_id
+                or existing.user_id != user_id
+                or existing.binding_id != binding_id
+                or existing.notification_event != notification_event
+            ):
                 raise TelegramSecurityError(
                     "Outbox idempotency key is bound to a different payload.",
                     reason=TelegramSecurityReason.OUTBOX_CONFLICT,
@@ -1323,13 +1363,65 @@ class TelegramSecurityProtocol:
             idempotency_key=idempotency_key,
             kind=OutboxKind.PRIVATE_MESSAGE,
             text=text,
+            notification_event=notification_event,
             state=OutboxState.PENDING,
             attempt=0,
             created_at=now,
             updated_at=now,
         )
+        if notification_event is not None:
+            reason = self._notification_policy_reason(row, now=now, admission=True)
+            if reason is not None:
+                row = row.model_copy(update={"state": OutboxState.SUPPRESSED, "last_error": reason})
         self._store.save_outbox(row)
         return row
+
+    def _notification_policy_reason(
+        self, row: OutboxRecord, *, now: datetime, admission: bool
+    ) -> str | None:
+        event = row.notification_event
+        policy = (
+            self._notification_policy_loader(row.organization_id, row.user_id)
+            if self._notification_policy_loader is not None
+            else TelegramNotificationPolicyV2()
+        )
+        if event is None:
+            if (
+                row.idempotency_key.startswith(
+                    ("candidate-alert:", "paper-notify:", "paper-thread:")
+                )
+                and policy != TelegramNotificationPolicyV2()
+            ):
+                return "POLICY_FACTS_MISSING"
+            return None
+        window = max(policy.cooldown_seconds, policy.duplicate_suppression_seconds)
+        history = (
+            self._store.notification_history(
+                organization_id=row.organization_id,
+                user_id=row.user_id,
+                bot_id=row.bot_id,
+                chat_id=row.chat_id,
+                since=now - timedelta(seconds=window),
+            )
+            if window
+            else []
+        )
+        accepted_states = {OutboxState.SENT, OutboxState.ACKNOWLEDGED}
+        if admission:
+            accepted_states |= {OutboxState.PENDING, OutboxState.CLAIMED, OutboxState.RETRYABLE}
+        return evaluate_telegram_policy(
+            policy,
+            event,
+            now=now,
+            history=(
+                PolicyHistory(prior.notification_event, prior.sent_at or prior.created_at)
+                for prior in history
+                if prior.notification_event is not None
+                and prior.outbox_id != row.outbox_id
+                and prior.state in accepted_states
+                and prior.binding_id == row.binding_id
+            ),
+        )
 
     def _new_receipt(
         self,

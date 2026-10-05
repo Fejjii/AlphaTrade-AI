@@ -21,8 +21,8 @@ class FreshnessPolicy(CanonicalModel):
     """Immutable consumer-time freshness rules."""
 
     policy_version: str = Field(min_length=3, max_length=80)
-    trade_max_age_seconds: int = Field(ge=0, le=3600)
-    aging_age_seconds: int = Field(ge=0, le=3600)
+    trade_max_age_seconds: int = Field(ge=0, le=86400)
+    aging_age_seconds: int = Field(ge=0, le=86400)
     ohlcv_post_close_grace_seconds: int = Field(ge=0, le=3600)
     max_clock_skew_seconds: int = Field(ge=0, le=60)
 

@@ -23,6 +23,7 @@ from app.market_contracts.hashing import (
 )
 from app.market_contracts.identity import EvidenceMarketIdentity, require_perpetual
 from app.market_contracts.models import CanonicalModel
+from app.market_contracts.released_tape import ReleasedTradeTape
 
 if TYPE_CHECKING:
     from app.market_contracts.trades import TradeEvent
@@ -229,6 +230,53 @@ def build_complete_trade_window_coverage(
     )
 
 
+def build_complete_trade_window_coverage_from_hash(
+    *,
+    identity: EvidenceMarketIdentity,
+    lineage_id: UUID,
+    requested_start: datetime,
+    requested_end: datetime,
+    trade_set_hash: str,
+    first_trade_id: str,
+    last_trade_id: str,
+    first_sequence: int,
+    last_sequence: int,
+) -> TradeWindowCoverageProof:
+    """Same complete proof as the trade-list builder when the hash and terminals match."""
+
+    requested_start_utc = requested_start.astimezone(UTC)
+    requested_end_utc = requested_end.astimezone(UTC)
+    proof_name = ":".join(
+        (
+            identity.instrument.instrument_id,
+            identity.source.provider_name,
+            str(lineage_id),
+            requested_start_utc.isoformat(),
+            requested_end_utc.isoformat(),
+            trade_set_hash,
+        )
+    )
+    proof = TradeWindowCoverageProof(
+        coverage_proof_id=uuid5(_COVERAGE_NAMESPACE, proof_name),
+        identity=identity,
+        lineage_id=lineage_id,
+        requested_start=requested_start_utc,
+        requested_end=requested_end_utc,
+        actual_covered_start=requested_start_utc,
+        actual_covered_end=requested_end_utc,
+        gap_state=GapState.NONE,
+        completeness=DataCompleteness.COMPLETE,
+        first_trade_id=first_trade_id,
+        last_trade_id=last_trade_id,
+        first_sequence=first_sequence,
+        last_sequence=last_sequence,
+        trade_set_hash=trade_set_hash,
+        policy_version=TRADE_WINDOW_COVERAGE_POLICY_VERSION,
+        content_hash="0" * 64,
+    )
+    return with_content_hash(proof)
+
+
 def build_partial_assembly_coverage(
     *,
     identity: EvidenceMarketIdentity,
@@ -321,14 +369,23 @@ def require_complete_window_coverage(
     trades: list[TradeEvent],
     required_start: datetime,
     required_end: datetime,
+    released: ReleasedTradeTape | None = None,
 ) -> None:
     """Fail closed unless proof covers the complete required half-open window."""
-    verify_trade_window_coverage(
-        proof,
-        identity=identity,
-        lineage_id=lineage_id,
-        trades=trades,
-    )
+    if released is not None:
+        verify_released_trade_tape(
+            proof,
+            released,
+            identity=identity,
+            lineage_id=lineage_id,
+        )
+    else:
+        verify_trade_window_coverage(
+            proof,
+            identity=identity,
+            lineage_id=lineage_id,
+            trades=trades,
+        )
     if proof.gap_state is not GapState.NONE:
         raise GapDetectedError("Trade coverage has an unresolved gap.")
     if proof.completeness is not DataCompleteness.COMPLETE:
@@ -345,3 +402,45 @@ def require_complete_window_coverage(
         )
     if proof.requested_end < required_end_utc or actual_end < required_end_utc:
         raise IncompleteTradeWindowError("Trade snapshot ends before the required evidence window.")
+
+
+def verify_released_trade_tape(
+    proof: TradeWindowCoverageProof,
+    tape: ReleasedTradeTape,
+    *,
+    identity: EvidenceMarketIdentity,
+    lineage_id: UUID,
+) -> None:
+    """Check a released tape against the proof without reloading trade objects."""
+
+    if proof.identity != identity:
+        raise WrongMarketError("Trade coverage identity does not exactly match snapshot identity.")
+    if proof.lineage_id != lineage_id:
+        raise WrongSourceError("Trade coverage lineage does not match snapshot lineage.")
+    expected_hash = semantic_content_hash(proof, extra_exclude=CONTENT_HASH_EXCLUDE)
+    if proof.content_hash != expected_hash:
+        raise IncompleteTradeWindowError("Trade coverage proof content hash is invalid.")
+    if proof.trade_set_hash != tape.trade_set_hash:
+        raise IncompleteTradeWindowError(
+            "Trade coverage proof does not bind the released trade tape."
+        )
+    actual_terminal = (
+        proof.first_trade_id,
+        proof.last_trade_id,
+        proof.first_sequence,
+        proof.last_sequence,
+    )
+    expected_terminal = (
+        tape.first_trade_id,
+        tape.last_trade_id,
+        tape.first_sequence,
+        tape.last_sequence,
+    )
+    if actual_terminal != expected_terminal:
+        raise IncompleteTradeWindowError(
+            "Trade coverage terminal identities do not match the released tape."
+        )
+    if proof.requested_start != tape.window_start or proof.requested_end != tape.window_end:
+        raise IncompleteTradeWindowError(
+            "Released trade tape window does not match the coverage proof."
+        )

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import ExecutionMode, Settings, get_settings
 from app.core.errors import NotFoundError, ServiceUnavailableError, ValidationAppError
-from app.db.models import BloFinDemoSyncSnapshot, Position
+from app.db.models import BloFinDemoSyncSnapshot
 from app.db.models import PaperSignalOrchestrationDecision as DecisionModel
 from app.db.models import TradingViewSignal as SignalModel
 from app.repositories.paper_signal_orchestration import PaperSignalOrchestrationRepository
@@ -33,7 +33,6 @@ from app.schemas.common import (
     PaperSignalOrchestrationMode,
     PaperSignalOrchestrationStatus,
     PaperValidationCandidateStatus,
-    PositionStatus,
     RiskSeverity,
     StrategyId,
     Timeframe,
@@ -144,7 +143,9 @@ class PaperSignalOrchestrationService:
         advance: bool = False,
     ) -> PaperSignalOrchestrationEvaluateResult:
         self._assert_enabled()
-        signal = self._signals.get_for_org(signal_id, organization_id=organization_id)
+        signal = self._signals.get_for_org(
+            signal_id, organization_id=organization_id, for_update=True
+        )
         if signal is None:
             raise NotFoundError("TradingView signal not found.")
 
@@ -283,6 +284,13 @@ class PaperSignalOrchestrationService:
         row = self._decisions.get_for_org(decision_id, organization_id=organization_id)
         if row is None:
             raise NotFoundError("Orchestration decision not found.")
+        signal = self._signals.get_for_org(
+            row.tradingview_signal_id, organization_id=organization_id, for_update=True
+        )
+        if signal is None:
+            raise NotFoundError("Linked TradingView signal not found.")
+        # Use the same signal lock as orchestration, then refresh concurrent approval state.
+        self._session.refresh(row)
         if row.proposal_id is not None:
             return PaperSignalOrchestrationApproveResult(
                 decision=self._to_item(row),
@@ -294,12 +302,6 @@ class PaperSignalOrchestrationService:
                 "Only awaiting_review decisions can be approved for paper proposals.",
                 details={"status": row.status},
             )
-
-        signal = self._signals.get_for_org(
-            row.tradingview_signal_id, organization_id=organization_id
-        )
-        if signal is None:
-            raise NotFoundError("Linked TradingView signal not found.")
 
         # Re-check risk/eligibility fail-closed before creating a proposal.
         eligibility, risk, status, reason_codes, summary = self._evaluate_signal(
@@ -329,6 +331,18 @@ class PaperSignalOrchestrationService:
                 "Signal is no longer eligible for a paper proposal.",
                 details={"status": status.value, "reason_codes": reason_codes},
             )
+
+        candidate = (
+            self._candidates.get_for_org(row.candidate_id, organization_id=organization_id)
+            if row.candidate_id is not None
+            else None
+        )
+        if (
+            candidate is None
+            or signal.candidate_id != candidate.id
+            or candidate.candidate_status == PaperValidationCandidateStatus.ARCHIVED.value
+        ):
+            raise ValidationAppError("An active linked paper candidate is required for approval.")
 
         proposal = self._create_paper_proposal(
             signal, organization_id=organization_id, user_id=user_id
@@ -584,7 +598,8 @@ class PaperSignalOrchestrationService:
             ref_time = ref_time.replace(tzinfo=UTC)
         age = datetime.now(UTC) - ref_time.astimezone(UTC)
         max_age = timedelta(seconds=self._settings.paper_signal_max_age_seconds)
-        fresh = age <= max_age
+        future = age < timedelta(seconds=-2)
+        fresh = not future and age <= max_age
         eligibility.append(
             EligibilityCheck(
                 code="signal_fresh",
@@ -592,7 +607,9 @@ class PaperSignalOrchestrationService:
                 detail=f"Age {int(age.total_seconds())}s vs max {int(max_age.total_seconds())}s.",
             )
         )
-        if not fresh:
+        if future:
+            reject_codes.append("signal_future_time")
+        elif not fresh:
             expired = True
             reject_codes.append("signal_stale")
 
@@ -809,6 +826,22 @@ class PaperSignalOrchestrationService:
         return True, "No conflicting validated signal in window."
 
     def _check_market_context(self, *, organization_id: uuid.UUID) -> tuple[bool, str]:
+        readonly_expected = (
+            self._settings.blofin_readonly_sync_enabled
+            and self._settings.blofin_readonly_configured
+        )
+        demo_expected = (
+            self._settings.exchange_demo_active
+            and self._settings.blofin_demo_enabled
+            and self._settings.blofin_demo_configured
+        )
+        if not (
+            (readonly_expected or demo_expected)
+            and self._settings.blofin_demo_rest_base_url.strip()
+        ):
+            # Optional account sync cannot gate internal paper signals, including
+            # when a previous disabled/unconfigured sync left an unusable snapshot.
+            return True, "No BloFin snapshot required (account sync not configured)."
         snap = self._session.scalars(
             select(BloFinDemoSyncSnapshot)
             .where(BloFinDemoSyncSnapshot.organization_id == organization_id)
@@ -816,11 +849,14 @@ class PaperSignalOrchestrationService:
             .limit(1)
         ).first()
         if snap is None:
-            # Fail closed only when exchange demo sync is expected; otherwise allow.
-            if self._settings.blofin_demo_enabled:
-                return False, "BloFin demo sync required but no snapshot available."
-            return True, "No BloFin snapshot required (demo sync disabled)."
-        if snap.is_stale or snap.health_status in {"stale", "unavailable"}:
+            return False, "BloFin demo sync required but no snapshot available."
+        synced_at = snap.synced_at
+        if synced_at.tzinfo is None:
+            synced_at = synced_at.replace(tzinfo=UTC)
+        age = (datetime.now(UTC) - synced_at).total_seconds()
+        if age < -2 or age > self._settings.blofin_sync_stale_after_seconds:
+            return False, "Market context timestamp is outside the freshness window."
+        if snap.is_stale or snap.health_status != "ok":
             return False, snap.stale_reason or f"Market context health={snap.health_status}."
         return True, f"Market context health={snap.health_status}."
 
@@ -846,18 +882,15 @@ class PaperSignalOrchestrationService:
         if cooldown_seconds <= 0:
             return daily_ok, daily_detail, True, "Cooldown disabled."
 
-        since = datetime.now(UTC) - timedelta(seconds=cooldown_seconds)
-        loss = self._session.scalars(
-            select(Position).where(
-                Position.organization_id == organization_id,
-                Position.user_id == user_id,
-                Position.status == PositionStatus.CLOSED,
-                Position.closed_at.is_not(None),
-                Position.closed_at >= since,
-                Position.realized_pnl < 0,
-            )
-        ).first()
-        if loss is not None:
+        from app.services.risk.paper_cooldown import paper_loss_cooldown_active
+
+        if paper_loss_cooldown_active(
+            self._session,
+            organization_id=organization_id,
+            user_id=user_id,
+            seconds=cooldown_seconds,
+            now=datetime.now(UTC),
+        ):
             return (
                 daily_ok,
                 daily_detail,

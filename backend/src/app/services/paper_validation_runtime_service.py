@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -89,6 +90,7 @@ from app.services.paper_eligibility_service import PaperEligibilityService
 from app.services.paper_observability_service import PaperObservabilityService
 from app.services.paper_sample_window_service import PaperSampleWindowService
 from app.services.paper_validation_promotion import (
+    MIN_PAPER_TRADES,
     PaperPromotionDecision,
     compute_max_drawdown,
     evaluate_paper_promotion,
@@ -179,7 +181,21 @@ class PaperValidationRuntimeService:
             organization_id=organization_id,
             user_id=user_id,
         )
-        version = self._versions.latest(strategy_id)
+        version = self._versions.get_version(strategy_id, strategy.current_version)
+        governed_candidate = None
+        if start_payload.strategy_version_id is not None:
+            version = self._versions.get_by_id(start_payload.strategy_version_id)
+            if version is None or version.strategy_id != strategy_id:
+                raise NotFoundError("Exact paper validation version not found.")
+            from app.services.strategy_promotion import StrategyPromotionService
+
+            governed_candidate = StrategyPromotionService(
+                self._session, self._settings
+            ).require_candidate_replay(
+                version.id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
         bt_rows, _ = BacktestRunRepository(self._session).list_for_strategy(
             strategy_id, organization_id=organization_id, limit=1
         )
@@ -191,7 +207,11 @@ class PaperValidationRuntimeService:
             StrategyValidationStatus.VALIDATED,
         }
         can_start = (
-            eligibility.paper_eligible or strategy.paper_eligible or has_backtest or in_review
+            eligibility.paper_eligible
+            or strategy.paper_eligible
+            or has_backtest
+            or in_review
+            or governed_candidate is not None
         )
         if not can_start:
             raise ValidationAppError(
@@ -226,6 +246,25 @@ class PaperValidationRuntimeService:
             recommendation=initial_rec.value,
         )
         self._runs.add(run)
+        if governed_candidate is not None:
+            from app.schemas.common import StrategyLifecycleState
+            from app.services.strategy_versioning import StrategyVersioningService
+
+            run.blockers = []
+            run.paper_eligible = True
+            StrategyVersioningService(self._session).append_lifecycle(
+                organization_id=organization_id,
+                strategy_id=strategy_id,
+                strategy_version_id=version.id,
+                new_state=StrategyLifecycleState.PAPER_VALIDATING,
+                actor_user_id=user_id,
+                reason="isolated governed paper validation",
+                evidence_snapshot={
+                    "proposal_id": str(governed_candidate.id),
+                    "paper_validation_run_id": str(run.id),
+                    "execution_scope": "paper_validation",
+                },
+            )
         return self._to_schema(run)
 
     def scan(
@@ -553,7 +592,11 @@ class PaperValidationRuntimeService:
         if promotion.paper_validated:
             run.status = PaperValidationStatus.PASSED
             run.ended_at = now
-            version = self._versions.latest(run.strategy_id)
+            version = (
+                self._versions.get_by_id(run.strategy_version_id)
+                if run.strategy_version_id
+                else None
+            )
             if version is not None:
                 version.paper_validation_status = PaperValidationStatus.PASSED
         elif promotion.status == PaperValidationStatus.FAILED:
@@ -677,7 +720,9 @@ class PaperValidationRuntimeService:
         run.status = PaperValidationStatus.FAILED
         run.ended_at = datetime.now(UTC)
         run.notes = (run.notes or "") + " Stopped manually."
-        version = self._versions.latest(run.strategy_id)
+        version = (
+            self._versions.get_by_id(run.strategy_version_id) if run.strategy_version_id else None
+        )
         if version is not None:
             version.paper_validation_status = PaperValidationStatus.FAILED
         self._record_runtime_audit(
@@ -840,6 +885,7 @@ class PaperValidationRuntimeService:
                 organization_id=organization_id,
                 strategy_version_id=version_id,
                 user_id=user_id,
+                paper_validation_run_id=run.id,
             )
         except (StrategyEvaluationPolicyError, NotFoundError):
             return None
@@ -1290,6 +1336,27 @@ class PaperValidationRuntimeService:
         provider_failures = bool(
             run.last_scan_result and run.last_scan_result.get("provider_failure")
         )
+        minimum_paper_trades = None
+        if run.strategy_version_id is not None:
+            from app.db.models import StrategyConversationProposal
+            from app.schemas.governed_learning import GOVERNED_LEARNING
+
+            proposal = self._session.scalar(
+                select(StrategyConversationProposal).where(
+                    StrategyConversationProposal.resulting_version_id == run.strategy_version_id,
+                    StrategyConversationProposal.organization_id == organization_id,
+                    StrategyConversationProposal.user_id == user_id,
+                )
+            )
+            if proposal is not None and GOVERNED_LEARNING in proposal.context_refs:
+                parent = self._versions.get_by_id(proposal.parent_version_id)
+                requirements = (
+                    StrategyCard.model_validate(parent.card).promotion_requirements
+                    if parent
+                    else None
+                )
+                if requirements is not None:
+                    minimum_paper_trades = requirements.minimum_paper_trades
         return evaluate_paper_promotion(
             metrics=metrics,
             paper_eligible=run.paper_eligible,
@@ -1299,6 +1366,9 @@ class PaperValidationRuntimeService:
             runtime_windows_count=windows_count,
             data_stale=data_stale,
             provider_failures=provider_failures,
+            minimum_paper_trades=minimum_paper_trades
+            if minimum_paper_trades is not None
+            else MIN_PAPER_TRADES,
         )
 
     @staticmethod

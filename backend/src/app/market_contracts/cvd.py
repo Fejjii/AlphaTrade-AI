@@ -157,19 +157,83 @@ def require_cvd_stream_proof(snapshot: TradeStreamSnapshot) -> None:
         raise IncompleteWarmUpError(
             f"CVD refuses snapshot reconnect_state={cursor.reconnect_state.value}."
         )
-    if not snapshot.trades:
-        raise IncompleteWarmUpError("CVD requires a non-empty trade-stream snapshot.")
+    tape = snapshot.released_tape
+    if tape is not None:
+        if snapshot.trades:
+            raise IncompleteWarmUpError("A released trade tape cannot retain trade objects.")
+        if tape.event_count < 1:
+            raise IncompleteWarmUpError("CVD requires a non-empty trade-stream snapshot.")
+        if cursor.last_sequence != tape.last_sequence:
+            raise CursorRecoveryError(
+                "Cursor last_sequence does not match the snapshot terminal trade."
+            )
+    else:
+        if not snapshot.trades:
+            raise IncompleteWarmUpError("CVD requires a non-empty trade-stream snapshot.")
+        require_contiguous_sequences([trade.sequence for trade in snapshot.trades])
+        terminal = snapshot.trades[-1]
+        if cursor.last_sequence != terminal.sequence:
+            raise CursorRecoveryError(
+                "Cursor last_sequence does not match the snapshot terminal trade."
+            )
+        require_contiguous_connection(snapshot.trades, cursor.connection_identity)
     if not snapshot.usable:
         raise IncompleteWarmUpError(
             "CVD requires an authoritative complete trade-window coverage proof."
         )
-    require_contiguous_sequences([trade.sequence for trade in snapshot.trades])
-    terminal = snapshot.trades[-1]
-    if cursor.last_sequence != terminal.sequence:
-        raise CursorRecoveryError(
-            "Cursor last_sequence does not match the snapshot terminal trade."
-        )
-    require_contiguous_connection(snapshot.trades, cursor.connection_identity)
+
+
+def _materialize_cvd_window(
+    *,
+    identity: EvidenceMarketIdentity,
+    snapshot: TradeStreamSnapshot,
+    window_start: datetime,
+    window_end: datetime,
+    baseline: Decimal,
+    created_at: datetime,
+    signed: Decimal,
+    total: Decimal,
+    event_count: int,
+    first_trade_id: str,
+    last_trade_id: str,
+    event_hash: str,
+    event_time_max: datetime,
+    receive_time_max: datetime,
+) -> CvdWindow:
+    cursor_id = snapshot.cursor.cursor_id
+    window = CvdWindow(
+        cvd_window_id=uuid5(
+            _CVD_NAMESPACE,
+            f"{identity.instrument.instrument_id}:{window_start.isoformat()}:{window_end.isoformat()}",
+        ),
+        identity=identity,
+        window_start=window_start.astimezone(UTC),
+        window_end=window_end.astimezone(UTC),
+        baseline=baseline,
+        signed_quote_delta=signed,
+        total_quote_volume=total,
+        event_count=event_count,
+        first_trade_id=first_trade_id,
+        last_trade_id=last_trade_id,
+        event_set_hash=event_hash,
+        data_completeness=DataCompleteness.COMPLETE,
+        gap_status=GapState.NONE,
+        warm_up_complete=True,
+        source_connection_id=snapshot.cursor.connection_identity,
+        coverage_proof_id=snapshot.coverage.coverage_proof_id,
+        coverage_content_hash=snapshot.coverage.content_hash,
+        start_cursor_id=cursor_id,
+        end_cursor_id=cursor_id,
+        aggressor_convention=identity.source.aggressor_convention,
+        source_identity=identity.source.adapter_version,
+        reset_policy_version=CVD_RESET_POLICY_VERSION,
+        arithmetic_policy_version=CVD_ARITHMETIC_POLICY_VERSION,
+        event_time_max=event_time_max,
+        receive_time_max=receive_time_max,
+        content_hash="0" * 64,
+        created_at=created_at.astimezone(UTC),
+    )
+    return with_content_hash(window)
 
 
 def build_cvd_window(
@@ -186,6 +250,7 @@ def build_cvd_window(
             "CVD identity does not exactly match the authoritative trade snapshot identity."
         )
     require_cvd_stream_proof(snapshot)
+    tape = snapshot.released_tape
     require_complete_window_coverage(
         snapshot.coverage,
         identity=identity,
@@ -193,47 +258,53 @@ def build_cvd_window(
         trades=snapshot.trades,
         required_start=window_start,
         required_end=window_end,
+        released=tape,
     )
+    start = window_start.astimezone(UTC)
+    end = window_end.astimezone(UTC)
+    if tape is not None and not snapshot.trades:
+        if tape.window_start.astimezone(UTC) != start or tape.window_end.astimezone(UTC) != end:
+            raise IncompleteWarmUpError(
+                "Released trade tape does not cover the requested CVD window."
+            )
+        return _materialize_cvd_window(
+            identity=identity,
+            snapshot=snapshot,
+            window_start=window_start,
+            window_end=window_end,
+            baseline=baseline,
+            created_at=created_at,
+            signed=tape.signed_quote_delta,
+            total=tape.total_quote_volume,
+            event_count=tape.event_count,
+            first_trade_id=tape.first_trade_id,
+            last_trade_id=tape.last_trade_id,
+            event_hash=tape.event_set_hash,
+            event_time_max=tape.event_time_max,
+            receive_time_max=tape.receive_time_max,
+        )
     selected = select_trades_in_window(snapshot.trades, start=window_start, end=window_end)
     if not selected:
         raise IncompleteWarmUpError("CVD window contains no trades from the proven snapshot.")
     require_contiguous_sequences([trade.sequence for trade in selected])
     require_contiguous_connection(selected, snapshot.cursor.connection_identity)
     signed, total = accumulate_signed_quote(selected)
-    cursor_id = snapshot.cursor.cursor_id
-    window = CvdWindow(
-        cvd_window_id=uuid5(
-            _CVD_NAMESPACE,
-            f"{identity.instrument.instrument_id}:{window_start.isoformat()}:{window_end.isoformat()}",
-        ),
+    return _materialize_cvd_window(
         identity=identity,
-        window_start=window_start.astimezone(UTC),
-        window_end=window_end.astimezone(UTC),
+        snapshot=snapshot,
+        window_start=window_start,
+        window_end=window_end,
         baseline=baseline,
-        signed_quote_delta=signed,
-        total_quote_volume=total,
+        created_at=created_at,
+        signed=signed,
+        total=total,
         event_count=len(selected),
         first_trade_id=selected[0].venue_trade_id,
         last_trade_id=selected[-1].venue_trade_id,
-        event_set_hash=event_set_hash(selected),
-        data_completeness=DataCompleteness.COMPLETE,
-        gap_status=GapState.NONE,
-        warm_up_complete=True,
-        source_connection_id=snapshot.cursor.connection_identity,
-        coverage_proof_id=snapshot.coverage.coverage_proof_id,
-        coverage_content_hash=snapshot.coverage.content_hash,
-        start_cursor_id=cursor_id,
-        end_cursor_id=cursor_id,
-        aggressor_convention=identity.source.aggressor_convention,
-        source_identity=identity.source.adapter_version,
-        reset_policy_version=CVD_RESET_POLICY_VERSION,
-        arithmetic_policy_version=CVD_ARITHMETIC_POLICY_VERSION,
+        event_hash=event_set_hash(selected),
         event_time_max=selected[-1].event_timestamp,
         receive_time_max=selected[-1].receive_timestamp,
-        content_hash="0" * 64,
-        created_at=created_at.astimezone(UTC),
     )
-    return with_content_hash(window)
 
 
 def first_slice_cvd_window(
@@ -274,3 +345,47 @@ def first_slice_cvd_window(
         require_fresh=require_live_freshness,
     )
     return window
+
+
+def signed_quote_delta_until(
+    snapshot: TradeStreamSnapshot,
+    *,
+    window_start: datetime,
+    bar_end: datetime,
+    baseline: Decimal,
+) -> Decimal:
+    """Signed quote through ``bar_end``. Released tapes sum closed bars."""
+
+    tape = snapshot.released_tape
+    if tape is not None and not snapshot.trades:
+        from app.market_contracts.released_tape import bars_signed_quote
+
+        return baseline + bars_signed_quote(tape, window_start=window_start, bar_end=bar_end)
+    return cvd_at_close(
+        list(snapshot.trades),
+        window_start=window_start,
+        bar_end=bar_end,
+        baseline=baseline,
+    )
+
+
+def snapshot_terminal_event_time(snapshot: TradeStreamSnapshot) -> datetime:
+    """Latest trade time. A released tape stores it without the trade objects."""
+
+    tape = snapshot.released_tape
+    if tape is not None and not snapshot.trades:
+        return tape.event_time_max
+    if not snapshot.trades:
+        raise IncompleteWarmUpError("Trade snapshot has no terminal trade.")
+    return max(trade.event_timestamp for trade in snapshot.trades)
+
+
+def snapshot_terminal_price(snapshot: TradeStreamSnapshot) -> Decimal:
+    """Price of the last trade in venue order."""
+
+    tape = snapshot.released_tape
+    if tape is not None and not snapshot.trades:
+        return tape.terminal_price
+    if not snapshot.trades:
+        raise IncompleteWarmUpError("Trade snapshot has no terminal trade.")
+    return snapshot.trades[-1].price

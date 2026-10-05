@@ -80,6 +80,7 @@ class StrategyLibraryService:
             version=1,
             card=card_dump,
             validation_status=card.validation_status,
+            pattern_spec=payload.pattern_spec,
             change_source=StrategyChangeSource.CREATE,
             actor_user_id=payload.user_id,
             change_reason="create",
@@ -87,7 +88,7 @@ class StrategyLibraryService:
                 card=card_dump,
                 structured_rules=None,
                 lesson_source_metadata=None,
-                pattern_spec=None,
+                pattern_spec=payload.pattern_spec,
             ),
         )
         self._versions.add(version)

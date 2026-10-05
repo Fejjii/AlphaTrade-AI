@@ -1595,6 +1595,40 @@ export interface AgentMessageResponse {
   history_injected?: number;
 }
 
+export interface AgentStructuredProposal {
+  proposal_id: string;
+  conversation_id: string;
+  kind: string;
+  artifact_kind: string;
+  status: "proposed" | "confirmed_unapplied" | "applied" | "rejected" | "refused" | string;
+  summary: string;
+  content_hash: string;
+  applied: boolean;
+  authority_mutated: boolean;
+  resulting_record_id?: string | null;
+}
+
+export interface AgentTurnResult {
+  conversation_id: string;
+  reply: string;
+  capability: string;
+  operation: string;
+  proposals: AgentStructuredProposal[];
+  limitations: string[];
+  market_quote?: {
+    symbol: string;
+    last_price: string;
+    source: string;
+    is_live: boolean;
+    is_stale: boolean;
+    fallback_used: boolean;
+    provider_name: string;
+  } | null;
+  authority_mutated: false;
+  execution_attempted: false;
+  real_trading_enabled: false;
+}
+
 export type ConversationStatus = "active" | "archived";
 export type ConversationMessageRole = "user" | "assistant" | "system";
 export type StrategyProposalStatus = "draft" | "confirmed" | "rejected" | "superseded";
@@ -2425,7 +2459,7 @@ export interface BacktestDatasetSummary {
 }
 
 export interface BacktestResult {
-  metrics: BacktestMetrics;
+  metrics: BacktestMetrics | null;
   trades?: BacktestTradeRecord[];
   recommendation: BacktestRecommendation | string;
   meets_success_criteria?: boolean;
@@ -2441,6 +2475,36 @@ export interface BacktestResult {
   cancelled?: boolean;
   processed_bars?: number | null;
   total_bars?: number | null;
+  replay?: StrategyReplayReport | null;
+}
+
+export interface StrategyReplayReport {
+  mode?: "trade_simulation" | "sfp_research";
+  strategy_version_id: string;
+  parameter_hash: string;
+  improvement_claim: false;
+  missing_evidence: string[];
+  stale_evidence?: string[];
+  samples: {
+    split_label: string;
+    status: string;
+    candle_count: number;
+    setup_count?: number;
+    candidate_count: number;
+    lifecycle_counts?: Record<string, number>;
+  }[];
+  research_buckets?: {
+    split_label: string;
+    symbol: string;
+    timeframe: string;
+    direction: string;
+    level_type: string;
+    strategy_version_id: string;
+    quality_bucket: string;
+    regime: string;
+    setup_count: number;
+    confirmed_count: number;
+  }[];
 }
 
 export interface BacktestTradeRecord {
@@ -3453,7 +3517,48 @@ export interface ChannelProviderStatus {
   status_label: string;
 }
 
+export type TelegramPolicySeverity = "INFO" | "WATCH" | "ACTION" | "CRITICAL";
+export type TelegramPolicyEventType =
+  | "SETUP"
+  | "RISK"
+  | "PAPER_TRADE_OPENED"
+  | "PAPER_TRADE_CLOSED"
+  | "STOP"
+  | "PARTIAL_PROFIT"
+  | "DAILY_REVIEW"
+  | "OTHER"
+  | "SFP_SWEEP_DETECTED"
+  | "SFP_RECLAIM_FORMING"
+  | "SFP_CONFIRMED"
+  | "SFP_INVALIDATED"
+  | "SFP_EXPIRED"
+  | "SFP_BLOCKED_BY_RISK";
+
+/** Backend Policy V2: nested PATCH is a full replacement, null lists allow all. */
+export interface TelegramNotificationPolicyV2 {
+  schema_version: 2;
+  strategy_subscriptions: string[] | null;
+  symbol_subscriptions: string[] | null;
+  setup_stages: string[] | null;
+  event_types: TelegramPolicyEventType[] | null;
+  severities: TelegramPolicySeverity[] | null;
+  minimum_severity: TelegramPolicySeverity;
+  minimum_quality: number | string | null;
+  forming_alerts: boolean;
+  confirmed_alerts: boolean;
+  risk_alerts: boolean;
+  paper_trade_opened: boolean;
+  paper_trade_closed: boolean;
+  stop_event: boolean;
+  partial_profit_event: boolean;
+  daily_review_event: boolean;
+  cooldown_seconds: number;
+  duplicate_suppression_seconds: number;
+  quiet_hours: { start: string; end: string; timezone: string } | null;
+}
+
 export interface NotificationPreferences {
+  telegram_policy?: TelegramNotificationPolicyV2 | null;
   in_app_enabled: boolean;
   webhook_enabled: boolean;
   telegram_enabled: boolean;
@@ -3477,6 +3582,13 @@ export interface NotificationTestResult {
   errors: Record<string, string>;
   paper_only: boolean;
   test_label: string;
+}
+
+export interface TelegramEnrollmentStartResponse {
+  challenge_id: string;
+  expires_at: string;
+  token: string;
+  bot_id: string;
 }
 
 export interface MarketWatcherStatus {
@@ -4420,4 +4532,43 @@ export interface PaginatedJournalImportBatches {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface WatcherWatchlistSlot {
+  position: number;
+  symbol: string;
+  enabled: boolean;
+}
+
+export interface WatcherWatchlistConfiguration {
+  revision: number;
+  updated_at: string;
+  max_enabled: number;
+  slots: WatcherWatchlistSlot[];
+  paper_only: boolean;
+}
+
+export interface WatcherSymbolRuntimeStatus {
+  configuration_revision: number;
+  observed_at: string | null;
+  position: number;
+  symbol: string;
+  enabled: boolean;
+  market_source: string;
+  freshness: string;
+  last_successful_scan: string | null;
+  last_failed_scan: string | null;
+  setup_state: string;
+  strategy_matches: string[];
+  alert_state: string;
+  error_state: string | null;
+}
+
+export interface WatcherWatchlistStatus {
+  configuration_revision: number;
+  observed_at: string;
+  stale_after_seconds: number;
+  paper_only: boolean;
+  real_trading_enabled: boolean;
+  symbols: WatcherSymbolRuntimeStatus[];
 }

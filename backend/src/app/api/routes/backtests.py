@@ -13,6 +13,7 @@ from app.core.dependencies import (
     BacktestJournalServiceDep,
     BacktestServiceDep,
     SessionDep,
+    SettingsDep,
 )
 from app.schemas.backtest import (
     BacktestJournalRequest,
@@ -22,8 +23,14 @@ from app.schemas.backtest import (
     PaginatedBacktestTrades,
 )
 from app.schemas.common import BacktestRunStatus
+from app.schemas.strategy_replay import (
+    ReplayComparison,
+    ReplayComparisonRequest,
+    StrategyReplayCreate,
+)
 from app.security.rbac import TraderDep
 from app.services.backtest_service import BacktestService
+from app.services.strategy_replay_service import StrategyReplayService
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -40,6 +47,44 @@ def _execute_backtest_background(
         service = BacktestService(session, settings)
         service.execute_run(run_id, organization_id=organization_id)
         session.commit()
+
+
+@router.post("/replays", response_model=BacktestRun, status_code=201)
+async def create_strategy_replay(
+    body: StrategyReplayCreate,
+    tenant: TraderDep,
+    service: BacktestServiceDep,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    settings: SettingsDep,
+) -> BacktestRun:
+    result = StrategyReplayService(session, service).create(
+        body,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+    )
+    session.commit()
+    enqueue_backtest_if_needed(
+        result=result,
+        session=session,
+        settings=settings,
+        background_tasks=background_tasks,
+    )
+    return result
+
+
+@router.post("/replays/compare", response_model=ReplayComparison)
+async def compare_strategy_replays(
+    body: ReplayComparisonRequest,
+    tenant: TraderDep,
+    service: BacktestServiceDep,
+    session: SessionDep,
+) -> ReplayComparison:
+    result = StrategyReplayService(session, service).compare(
+        body, organization_id=tenant.organization_id, user_id=tenant.user_id
+    )
+    session.commit()
+    return result
 
 
 @router.get("/{backtest_id}", response_model=BacktestRun, summary="Get backtest run with metrics")

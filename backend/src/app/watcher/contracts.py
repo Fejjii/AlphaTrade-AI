@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
 
+from app.market_contracts.evidence_diagnostics import EvidenceComponentDiagnostic
 from app.schemas.common import StrictModel
 
 WATCHER_SCAN_REQUEST_SCHEMA: Literal["WatcherScanRequestV1"] = "WatcherScanRequestV1"
@@ -189,6 +190,7 @@ class EvaluationOutcome(FrozenModel):
     evidence_validity_token: str | None = None
     error: str | None = None
     candidate_ids: tuple[UUID, ...] = ()
+    evidence_diagnostics: tuple[EvidenceComponentDiagnostic, ...] = Field(default=(), max_length=40)
 
 
 class ScanLineage(FrozenModel):

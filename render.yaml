@@ -143,6 +143,9 @@ services:
         value: false
       - key: WATCHER_PAPER_STAGING_ACTIVATION
         value: false
+      # Optional controlled acceptance tenant. Leave unset for normal round-robin.
+      - key: WATCHER_PAPER_ORGANIZATION_ID
+        sync: false
       - key: MARKET_WATCHER_ENABLED
         value: false
       - key: MARKET_WATCHER_BRIDGE_ENABLED

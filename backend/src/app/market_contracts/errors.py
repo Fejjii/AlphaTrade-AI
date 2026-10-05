@@ -87,6 +87,14 @@ class IncompleteTradeWindowError(GapDetectedError):
     """Live aggTrade retrieval could not prove complete coverage of the requested window."""
 
 
+class UnsupportedTradeContractError(MarketContractError):
+    """The provider cannot verify this instrument as a supported trade product."""
+
+
+class EmptyTradeWindowError(IncompleteTradeWindowError):
+    """A drained supported trade window contains no prints."""
+
+
 class UnapprovedEvidenceHostError(WrongMarketError):
     """Evidence host is not an approved public perpetual HTTPS identity."""
 
@@ -101,3 +109,11 @@ class EvidenceSourceSwitchRequiredError(MarketContractError):
     def __init__(self, message: str, *, instrument: object) -> None:
         super().__init__(message)
         self.instrument = instrument
+
+
+class ContractUnavailableError(RuntimeError):
+    """Verified eligibility refusal; preserve its reason at the evidence boundary."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)

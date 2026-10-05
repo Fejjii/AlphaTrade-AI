@@ -138,7 +138,7 @@ def build_trade_event(
     aggressor_convention: str = AGGRESSOR_CONVENTION,
     trade_event_id: UUID | None = None,
 ) -> TradeEvent:
-    if buyer_is_maker is None:
+    if not isinstance(buyer_is_maker, bool):
         raise UnknownAggressorError("Aggressor flag is required for signed quote flow.")
     if instrument.market_type is not MarketType.PERPETUAL:
         raise WrongMarketError("TradeEvent requires a perpetual instrument.")

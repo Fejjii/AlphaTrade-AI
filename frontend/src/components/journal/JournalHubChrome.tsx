@@ -27,6 +27,8 @@ type JournalHubChromeProps = {
   testId?: string;
   children: ReactNode;
   activeHref?: string;
+  navItems?: readonly { href: string; label: string }[];
+  navLabel?: string;
 };
 
 export function JournalHubChrome({
@@ -38,6 +40,8 @@ export function JournalHubChrome({
   testId = "journal-hub-page",
   children,
   activeHref = "/journal",
+  navItems = JOURNAL_NAV,
+  navLabel = "Journal hub sections",
 }: JournalHubChromeProps) {
   void providerMode;
 
@@ -57,8 +61,8 @@ export function JournalHubChrome({
         </p>
       ) : null}
 
-      <nav aria-label="Journal hub sections" className="flex flex-wrap gap-3 text-sm">
-        {JOURNAL_NAV.map((item) => {
+      <nav aria-label={navLabel} className="flex flex-wrap gap-3 text-sm">
+        {navItems.map((item) => {
           const active = item.href === activeHref;
           return (
             <Link

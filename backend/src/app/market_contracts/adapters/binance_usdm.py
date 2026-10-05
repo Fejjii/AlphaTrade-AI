@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -12,19 +12,30 @@ import httpx
 
 from app.market_contracts.adapters.aggtrade_cache import (
     ClosedAggTradeCache,
+    TtlValueCache,
     closed_agg_trade_window_key,
 )
-from app.market_contracts.adapters.aggtrades import fetch_complete_agg_trade_rows
+from app.market_contracts.adapters.aggtrades import (
+    fetch_complete_agg_trade_rows,
+    iter_contiguous_agg_trade_rows,
+)
 from app.market_contracts.adapters.http import ReadOnlyHttpGetClient
 from app.market_contracts.adapters.request_budget import SlidingWeightBudget, record_cache_hit
 from app.market_contracts.catalog import PerpetualInstrumentCatalog, default_perpetual_catalog
 from app.market_contracts.coverage import build_complete_trade_window_coverage
+from app.market_contracts.cursor import TradeStreamSnapshot
+from app.market_contracts.derivatives import (
+    DerivativeMetric,
+    DerivativeObservation,
+    derivative_observation,
+)
 from app.market_contracts.enums import MarketType, ProductFamily, SourceFamily, VenueId
 from app.market_contracts.errors import (
     FallbackForbiddenError,
     FormingCandleError,
     RegionalProviderFailureError,
     SpotFallbackRejectedError,
+    UnsupportedTradeContractError,
     UpstreamBanError,
     WrongInstrumentError,
     WrongMarketError,
@@ -37,6 +48,7 @@ from app.market_contracts.identity import (
     ADAPTER_VERSION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
+    binance_usdm_perpetual,
     require_instrument,
     require_perpetual,
 )
@@ -46,6 +58,9 @@ from app.market_contracts.ohlcv import (
     build_ohlcv_bar,
     require_closed_series,
 )
+from app.market_contracts.order_flow import require_order_flow_request
+from app.market_contracts.provider_contracts import contract_from_binance_exchange_info
+from app.market_contracts.trade_reduction import build_released_trade_snapshot
 from app.market_contracts.trades import (
     OrderedTradeBatch,
     TradeEvent,
@@ -54,6 +69,7 @@ from app.market_contracts.trades import (
 )
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
+from app.schemas.nested_continuation import EvidenceAvailability
 
 _BINANCE_INTERVAL = {
     Timeframe.M15: "15m",
@@ -80,7 +96,9 @@ class BinanceUsdmPerpetualSource:
         max_backoff_seconds: float = 30.0,
         trade_cache_entries: int = 8,
         cache_ttl_seconds: float = 120.0,
+        max_cached_rows: int = 4096,
         trade_cache: ClosedAggTradeCache | None = None,
+        reduced_cache: TtlValueCache | None = None,
         budget: SlidingWeightBudget | None = None,
         progress_interval_seconds: float = 5.0,
     ) -> None:
@@ -101,12 +119,68 @@ class BinanceUsdmPerpetualSource:
             self._trade_cache = ClosedAggTradeCache(
                 max_entries=max(trade_cache_entries, 1),
                 ttl_seconds=cache_ttl_seconds,
+                max_rows=max_cached_rows,
             )
         else:
             self._trade_cache = trade_cache
+        if reduced_cache is None:
+            self._reduced_cache = TtlValueCache(
+                max_entries=max(trade_cache_entries, 1),
+                ttl_seconds=cache_ttl_seconds,
+            )
+        else:
+            self._reduced_cache = reduced_cache
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
         self._regional_failure = False
+
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation:
+        self._assert_request(identity, instrument, None)
+        try:
+            self.verify_exchange_info(instrument)
+        except (WrongInstrumentError, WrongMarketError):
+            return derivative_observation(
+                identity=identity,
+                metric=metric,
+                observed_at=observed_at,
+                availability=EvidenceAvailability.UNSUPPORTED,
+                reason="provider_contract_not_verified",
+            )
+        params: dict[str, str | int] = {"symbol": instrument.provider_symbol}
+        if metric is DerivativeMetric.OPEN_INTEREST:
+            payload = self._get("/fapi/v1/openInterest", params)
+            row = payload if isinstance(payload, dict) else None
+            value_key, time_key = "openInterest", "time"
+            malformed = row is None or row.get("symbol") != instrument.provider_symbol
+        else:
+            params.update({"limit": 1, "endTime": int(observed_at.timestamp() * 1000)})
+            payload = self._get("/fapi/v1/fundingRate", params)
+            row = payload[0] if isinstance(payload, list) and len(payload) == 1 else None
+            malformed = (
+                not isinstance(payload, list)
+                or len(payload) > 1
+                or (bool(payload) and not isinstance(row, dict))
+            )
+            if isinstance(row, dict) and row.get("symbol") != instrument.provider_symbol:
+                malformed = True
+            value_key, time_key = "fundingRate", "fundingTime"
+        return derivative_observation(
+            identity=identity,
+            metric=metric,
+            observed_at=observed_at,
+            row=row if isinstance(row, dict) else None,
+            value_key=value_key,
+            time_key=time_key,
+            availability=EvidenceAvailability.INCOMPLETE if malformed else None,
+            reason="malformed_provider_payload" if malformed else None,
+        )
 
     def fetch_closed_ohlcv(
         self,
@@ -204,6 +278,79 @@ class BinanceUsdmPerpetualSource:
         )
         return with_content_hash(batch)
 
+    def reduce_ordered_trades(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        """Stream aggTrades into a coverage-bound snapshot and drop the tape."""
+
+        self._assert_request(identity, instrument, identity.timeframe)
+        if end <= start:
+            raise WrongMarketError("Trade window end must be after start.")
+        key = closed_agg_trade_window_key(instrument.provider_symbol, start, end)
+        key_lock = self._trade_cache.lock_for(key)
+        try:
+            with key_lock:
+                reduced_key = (key[0] + ":" + str(identity.timeframe), *key[1:])
+                cached = self._reduced_cache.get(reduced_key)
+                if isinstance(cached, TradeStreamSnapshot):
+                    record_cache_hit()
+                    return cached.model_copy(update={"trades": []})
+                snapshot = build_released_trade_snapshot(
+                    self._iter_reduced_trades(
+                        instrument=instrument,
+                        start=start,
+                        end=end,
+                        source_connection_id=source_connection_id,
+                        receive_at=receive_at,
+                    ),
+                    identity=identity,
+                    lineage_id=source_connection_id,
+                    window_start=start,
+                    window_end=end,
+                    observed_at=receive_at,
+                )
+                self._reduced_cache.put(reduced_key, snapshot)
+                return snapshot
+        finally:
+            self._trade_cache.release_idle(key)
+
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        require_order_flow_request(
+            identity=identity,
+            start=start,
+            end=end,
+            observed_at=receive_at,
+        )
+        self._assert_request(identity, instrument, identity.timeframe)
+        try:
+            self.verify_exchange_info(instrument)
+        except (WrongMarketError, WrongInstrumentError) as exc:
+            raise UnsupportedTradeContractError("Trade contract not verified.") from exc
+        return self.reduce_ordered_trades(
+            identity=identity,
+            instrument=instrument,
+            start=start,
+            end=end,
+            source_connection_id=source_connection_id,
+            receive_at=receive_at,
+        )
+
     def status(self) -> ProviderStatus:
         try:
             self._get("/fapi/v1/ping", None)
@@ -258,24 +405,40 @@ class BinanceUsdmPerpetualSource:
                 error_message=self._last_error,
             )
 
+    def release_symbol_history(self, symbol: str) -> None:
+        """Release cached trade windows for one symbol after its evaluation."""
+
+        self._trade_cache.drop_symbol(symbol)
+        self._reduced_cache.drop_symbol(symbol)
+
+    def allow_verified_contract(self, symbol: str) -> None:
+        """Add one catalog identity after that exact USD-M contract is verified."""
+
+        instrument = binance_usdm_perpetual(symbol)
+        self._catalog = self._catalog.extend(instrument)
+
     def verify_exchange_info(self, instrument: InstrumentIdentity) -> None:
         payload = self._get("/fapi/v1/exchangeInfo", {"symbol": instrument.provider_symbol})
         if not isinstance(payload, dict):
-            raise WrongMarketError("exchangeInfo payload is not an object.")
-        symbols = payload.get("symbols")
-        if not isinstance(symbols, list) or not symbols:
-            raise WrongInstrumentError(f"USD-M exchangeInfo missing {instrument.provider_symbol}.")
-        info = symbols[0]
-        if str(info.get("symbol", "")).upper() != instrument.provider_symbol:
-            raise WrongInstrumentError(
-                "exchangeInfo symbol does not match the requested instrument."
-            )
-        contract_type = str(info.get("contractType", "")).upper()
-        if contract_type != "PERPETUAL":
-            raise WrongMarketError(f"USD-M contractType {contract_type} is not PERPETUAL.")
-        quote = str(info.get("quoteAsset", "")).upper()
-        if quote != instrument.quote_asset:
+            raise WrongSourceError("exchangeInfo payload is not an object.")
+        rows = payload.get("symbols")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise WrongSourceError("exchangeInfo symbols are malformed.")
+        required_fields = {"symbol", "contractType", "quoteAsset", "baseAsset", "status"}
+        for row in rows:
+            if (
+                row.get("symbol") == instrument.provider_symbol
+                and not required_fields <= row.keys()
+            ):
+                raise WrongSourceError("exchangeInfo contract fields are incomplete.")
+        contract = contract_from_binance_exchange_info(
+            payload,
+            requested_symbol=instrument.provider_symbol,
+        )
+        if contract.quote_asset != instrument.quote_asset:
             raise WrongMarketError("USD-M quote asset does not match the contracted instrument.")
+        if contract.base_asset != instrument.base_asset:
+            raise WrongInstrumentError("USD-M base asset does not match the contracted instrument.")
 
     def _assert_request(
         self,
@@ -355,7 +518,7 @@ class BinanceUsdmPerpetualSource:
     ) -> TradeEvent:
         if not isinstance(row, dict):
             raise WrongMarketError("USD-M aggTrade row is malformed.")
-        if "m" not in row:
+        if not isinstance(row.get("m"), bool):
             raise WrongMarketError("USD-M aggTrade is missing buyer-is-maker flag.")
         venue_trade_id = str(row["a"])
         event_ms = int(row["T"])
@@ -365,7 +528,7 @@ class BinanceUsdmPerpetualSource:
             sequence=int(row["a"]),
             price=Decimal(str(row["p"])),
             quantity=Decimal(str(row["q"])),
-            buyer_is_maker=bool(row["m"]),
+            buyer_is_maker=row["m"],
             event_timestamp=datetime.fromtimestamp(event_ms / 1000, tz=UTC),
             receive_timestamp=receive_at.astimezone(UTC),
             source_connection_id=source_connection_id,
@@ -382,6 +545,29 @@ class BinanceUsdmPerpetualSource:
 
     def close(self) -> None:
         self._http.close()
+
+    def _iter_reduced_trades(
+        self,
+        *,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> Iterator[TradeEvent]:
+        rows = iter_contiguous_agg_trade_rows(
+            get_json=self._get,
+            symbol=instrument.provider_symbol,
+            start=start,
+            end=end,
+        )
+        for row in rows:
+            yield self._parse_agg_trade(
+                row,
+                instrument=instrument,
+                source_connection_id=source_connection_id,
+                receive_at=receive_at,
+            )
 
     def _cached_agg_trades(
         self,

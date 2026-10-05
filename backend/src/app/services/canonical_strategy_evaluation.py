@@ -16,10 +16,11 @@ from sqlalchemy.orm import Session
 
 from app.analysis.wilder_atr_v1 import FINALITY_POLICY_VERSION
 from app.core.errors import NotFoundError
-from app.db.models import CompiledSetupDefinition, UserStrategyVersion
+from app.db.models import CompiledSetupDefinition, PaperValidationRun, UserStrategyVersion
 from app.evidence_pipeline.canonical import MANDATORY_ROLES
 from app.market_contracts.freshness import FIRST_SLICE_FRESHNESS_POLICY_VERSION
 from app.schemas.common import SetupCompileStatus, StrategyLifecycleState
+from app.schemas.nested_continuation import NESTED_KIND, NestedContinuationSpec
 from app.schemas.strategy_library import StrategyCard
 from app.schemas.strategy_pattern_spec import FirstSliceAuthoredPatternSpec
 from app.schemas.structured_rules import StructuredRules
@@ -27,7 +28,7 @@ from app.services.setup_ast_compiler import compile_from_authored
 from app.services.strategy_versioning import CrossTenantStrategyError, StrategyVersioningService
 from app.signal_fusion.adapters import AssessmentCommand
 from app.signal_fusion.assessment import SetupAssessment
-from app.signal_fusion.enums import SetupIdentityKind
+from app.signal_fusion.enums import EvidenceRole, SetupIdentityKind
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.policy import (
@@ -41,7 +42,8 @@ from app.signal_fusion.strategy_evaluation_policy import (
     build_executable_strategy_policy,
     evaluate_canonical_strategy,
 )
-from app.signal_fusion.types import ExecutableSetupRef, RuleWeight
+from app.signal_fusion.types import ExecutableSetupRef, RoleTimeframeBinding, RuleWeight
+from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
 
 
 def resolve_executable_strategy_policy(
@@ -50,6 +52,7 @@ def resolve_executable_strategy_policy(
     organization_id: UUID,
     strategy_version_id: UUID,
     user_id: UUID | None = None,
+    paper_validation_run_id: UUID | None = None,
 ) -> ExecutableStrategyPolicy:
     """Load one approved compiled version as executable evaluation policy."""
 
@@ -74,7 +77,28 @@ def resolve_executable_strategy_policy(
             "Draft strategy versions cannot be evaluated as trading authority.",
             reason_code="draft_not_executable",
         )
-    if state not in {StrategyLifecycleState.APPROVED, StrategyLifecycleState.ACTIVE}:
+    validation_scope = False
+    if state is StrategyLifecycleState.PAPER_VALIDATING and paper_validation_run_id is not None:
+        run = session.get(PaperValidationRun, paper_validation_run_id)
+        if (
+            run is not None
+            and run.organization_id == organization_id
+            and run.user_id == user_id
+            and run.strategy_version_id == version.id
+            and lifecycle.evidence_snapshot.get("paper_validation_run_id") == str(run.id)
+        ):
+            from app.services.strategy_promotion import StrategyPromotionService
+
+            StrategyPromotionService(session).require_candidate_replay(
+                version.id,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+            validation_scope = True
+    if not validation_scope and state not in {
+        StrategyLifecycleState.APPROVED,
+        StrategyLifecycleState.ACTIVE,
+    }:
         raise StrategyEvaluationPolicyError(
             "Only approved or active strategy versions may become evaluation policy.",
             reason_code="strategy_not_approved",
@@ -110,7 +134,7 @@ def resolve_executable_strategy_policy(
             if version.structured_rules
             else None
         ),
-        pattern_spec=spec,
+        pattern_spec=spec.model_dump(mode="json"),
         strategy_version_id=version.id,
         organization_id=organization_id,
     )
@@ -129,6 +153,7 @@ def resolve_executable_strategy_policy(
         organization_id=organization_id,
         strategy_version_id=version.id,
         compiled=compiled,
+        spec=spec,
     )
     return build_executable_strategy_policy(
         organization_id=organization_id,
@@ -142,6 +167,7 @@ def resolve_executable_strategy_policy(
         grammar_version=compiled.grammar_version,
         fusion_policy=fusion_policy,
         authored_spec=spec,
+        execution_scope="paper_validation" if validation_scope else "paper",
     )
 
 
@@ -174,13 +200,19 @@ def evaluate_canonical_strategy_for_version(
     )
 
 
-def _parse_authored_spec(version: UserStrategyVersion) -> FirstSliceAuthoredPatternSpec:
+def _parse_authored_spec(
+    version: UserStrategyVersion,
+) -> FirstSliceAuthoredPatternSpec | NestedContinuationSpec | SfpSpec:
     if version.pattern_spec is None:
         raise StrategyEvaluationPolicyError(
             "Executable evaluation requires a stored pattern_spec on the version.",
             reason_code="unsupported_strategy_rule",
         )
     try:
+        if version.pattern_spec.get("kind") == NESTED_KIND:
+            return NestedContinuationSpec.model_validate(version.pattern_spec)
+        if version.pattern_spec.get("kind") == SFP_KIND:
+            return SfpSpec.model_validate(version.pattern_spec)
         return FirstSliceAuthoredPatternSpec.model_validate(version.pattern_spec)
     except ValidationError as exc:
         raise StrategyEvaluationPolicyError(
@@ -194,18 +226,28 @@ def _fusion_policy_for_compiled(
     organization_id: UUID,
     strategy_version_id: UUID,
     compiled: CompiledSetupDefinition,
+    spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec | SfpSpec,
 ) -> FusionPolicy:
     setup = ExecutableSetupRef(
         setup_definition_id=compiled.id,
         kind=SetupIdentityKind.COMPILED_SETUP_DEFINITION,
         content_hash=compiled.content_hash,
     )
+    nested = isinstance(spec, (NestedContinuationSpec, SfpSpec))
     return build_fusion_policy(
-        policy_version=DEFAULT_FUSION_POLICY_VERSION,
+        role_timeframes=(
+            RoleTimeframeBinding(role=EvidenceRole.TRIGGER_OHLCV, timeframe=spec.trigger_timeframe),
+            RoleTimeframeBinding(role=EvidenceRole.STRUCTURE, timeframe=spec.trigger_timeframe),
+        )
+        if nested
+        else None,
+        policy_version=spec.kind if nested else DEFAULT_FUSION_POLICY_VERSION,
         organization_id=organization_id,
         strategy_version_id=strategy_version_id,
         executable_setup=setup,
-        required_roles=MANDATORY_ROLES,
+        required_roles=(EvidenceRole.TRIGGER_OHLCV, EvidenceRole.STRUCTURE)
+        if nested
+        else MANDATORY_ROLES,
         thresholds=FusionThresholds(
             confirmation_score=Decimal("1.0"),
             weights=(RuleWeight(rule_id="mandatory_evidence", weight=Decimal("1.0")),),

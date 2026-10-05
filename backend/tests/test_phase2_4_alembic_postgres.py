@@ -36,7 +36,11 @@ PAPER_EVALUATION_OBSERVATIONS = "e3f4a5b6c7d8"
 TELEGRAM_PAPER_AGENT = "d9e0f1a2b3c4"
 TELEGRAM_PAPER_ACTIVATION = "e0f1a2b3c4d5"
 CONTROLLED_RUNTIME_STATUS = "f1a2b3c4d5e6"
-CURRENT_HEAD = CONTROLLED_RUNTIME_STATUS
+WORKER_PROCESS_MEMORY = "a8c3e1b94d20"
+WATCHER_TENANT_WATCHLIST = "b6f2d9a10e73"
+STRATEGY_BRAIN = "a1brain001"
+TELEGRAM_POLICY_V2 = "a2tgpolicy002"
+CURRENT_HEAD = "a3release002"
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -190,8 +194,16 @@ def test_alembic_single_head() -> None:
     assert script.get_heads() == [CURRENT_HEAD]
     head = script.get_revision(CURRENT_HEAD)
     assert head is not None
-    assert head.down_revision == TELEGRAM_PAPER_ACTIVATION
-    revisions = {rev.revision for rev in script.walk_revisions()}
+    assert set(head.down_revision) == {TELEGRAM_POLICY_V2, "a2sfp002"}
+    assert script.get_revision(TELEGRAM_POLICY_V2).down_revision == STRATEGY_BRAIN
+    assert script.get_revision("a2sfp002").down_revision == STRATEGY_BRAIN
+    assert script.get_revision(STRATEGY_BRAIN).down_revision == WATCHER_TENANT_WATCHLIST
+    assert script.get_revision(WATCHER_TENANT_WATCHLIST).down_revision == WORKER_PROCESS_MEMORY
+    assert script.get_revision(WORKER_PROCESS_MEMORY).down_revision == CONTROLLED_RUNTIME_STATUS
+    revisions = {rev.revision for rev in script.walk_revisions(base="base", head=CURRENT_HEAD)}
+    assert STRATEGY_BRAIN in revisions
+    assert TELEGRAM_POLICY_V2 in revisions
+    assert "a2sfp002" in revisions
     assert LEARNING_ATTRIBUTION_PERSISTENCE in revisions
     assert TELEGRAM_PAPER_ACTIVATION in revisions
 

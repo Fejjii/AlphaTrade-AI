@@ -657,6 +657,10 @@ class JournalLifecycleProjector:
         target = _STATUS_RANK.get(desired, 0)
         if target >= current:
             row.status = desired
+            if desired is JournalTradeStatus.CLOSED and row.candidate_id is not None:
+                from app.strategy_brain.records import record_journal_close
+
+                record_journal_close(self._session, row)
 
     def _apply_reconcile_status(
         self, row: JournalTrade, payload: dict[str, object], *, stale: bool
@@ -667,6 +671,10 @@ class JournalLifecycleProjector:
         if desired is None:
             return
         row.status = desired
+        if desired is JournalTradeStatus.CLOSED and row.candidate_id is not None:
+            from app.strategy_brain.records import record_journal_close
+
+            record_journal_close(self._session, row)
 
     def _apply_venue_fields(
         self,

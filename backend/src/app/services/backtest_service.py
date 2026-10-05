@@ -108,6 +108,7 @@ class BacktestService:
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        execute_inline: bool = True,
     ) -> BacktestRun:
         if payload.idempotency_key:
             existing = self._runs.get_by_idempotency_key(
@@ -227,7 +228,7 @@ class BacktestService:
             )
         )
 
-        if dataset.candle_count <= self._settings.backtest_sync_max_bars:
+        if execute_inline and dataset.candle_count <= self._settings.backtest_sync_max_bars:
             return self.execute_run(run.id, organization_id=organization_id)
 
         return self._to_schema(run)
@@ -359,6 +360,26 @@ class BacktestService:
             )
             for trade in rows
         ]
+        if row.result and row.result.get("replay"):
+            extras = {t["sequence"]: t for t in row.result.get("trades", [])}
+            items = [
+                BacktestTradeRecord.model_validate(
+                    {
+                        **item.model_dump(),
+                        **{
+                            field: extras.get(item.sequence, {}).get(field)
+                            for field in (
+                                "planned_targets",
+                                "r_result",
+                                "holding_bars",
+                                "holding_seconds",
+                                "setup_id",
+                            )
+                        },
+                    }
+                )
+                for item in items
+            ]
         return PaginatedBacktestTrades(items=items, total=total, limit=limit, offset=offset)
 
     # ------------------------------------------------------------------ #
@@ -396,17 +417,13 @@ class BacktestService:
         run = claimed
 
         try:
-            card, setup_type, structured, start_date, end_date = self._resolve_frozen(run)
-            result = self._engine.run(
-                run=run,
-                card=card,
-                setup_type=setup_type,
-                structured_rules=structured,
-                start_date=start_date,
-                end_date=end_date,
-                should_cancel=lambda: self._should_cancel(run_id),
-                persist=True,
-            )
+            from app.schemas.strategy_replay import REPLAY_ENGINE
+            from app.services.strategy_replay_service import StrategyReplayService
+
+            if run.engine_version == REPLAY_ENGINE:
+                result = StrategyReplayService(self._session, self).replay(run, persist=True)
+            else:
+                result = self._execute_legacy_engine(run)
             now = datetime.now(UTC)
             run.finished_at = now
             if result.cancelled or self._should_cancel(run_id):
@@ -420,11 +437,12 @@ class BacktestService:
             else:
                 run.status = BacktestRunStatus.COMPLETED
                 run.result = result.model_dump(mode="json")
-                self._apply_promotion(run, result)
+                if run.engine_version != REPLAY_ENGINE:
+                    self._apply_promotion(run, result)
                 self._audit_lifecycle(
                     run,
                     AuditEventType.BACKTEST_RUN_COMPLETED,
-                    {"trade_count": result.metrics.trade_count},
+                    {"trade_count": len(result.trades)},
                 )
         except Exception as exc:
             run.status = BacktestRunStatus.FAILED
@@ -437,6 +455,19 @@ class BacktestService:
             )
 
         return self._to_schema(run)
+
+    def _execute_legacy_engine(self, run: BacktestRunModel) -> BacktestResult:
+        card, setup_type, structured, start_date, end_date = self._resolve_frozen(run)
+        return self._engine.run(
+            run=run,
+            card=card,
+            setup_type=setup_type,
+            structured_rules=structured,
+            start_date=start_date,
+            end_date=end_date,
+            should_cancel=lambda: self._should_cancel(run.id),
+            persist=True,
+        )
 
     def cancel(
         self,
@@ -498,6 +529,50 @@ class BacktestService:
             )
         if not run.config_snapshot or run.dataset_id is None:
             raise ValidationAppError("Backtest run lacks a frozen config/dataset snapshot.")
+
+        from app.schemas.strategy_replay import REPLAY_ENGINE
+        from app.services.strategy_replay_service import StrategyReplayService
+
+        if run.engine_version == REPLAY_ENGINE:
+            try:
+                recomputed = StrategyReplayService(self._session, self).replay(run, persist=False)
+            except ValidationAppError as exc:
+                self._audit_verify(run, user_id=user_id, match=False, dataset_ok=False)
+                return BacktestVerifyResult(
+                    run_id=run.id,
+                    result_hash_stored=run.result_hash,
+                    match=False,
+                    dataset_ok=False,
+                    detail=str(exc),
+                )
+            try:
+                stored_result = BacktestResult.model_validate(run.result)
+            except ValueError:
+                self._audit_verify(run, user_id=user_id, match=False, dataset_ok=True)
+                return BacktestVerifyResult(
+                    run_id=run.id,
+                    result_hash_stored=run.result_hash,
+                    result_hash_recomputed=recomputed.result_hash,
+                    match=False,
+                    dataset_ok=True,
+                    detail="stored_replay_result_invalid",
+                )
+            stored_content_hash = canonical_json_hash(
+                stored_result.model_dump(mode="json", exclude={"result_hash"})
+            )
+            match = (
+                recomputed.result_hash == run.result_hash == stored_result.result_hash
+                and stored_content_hash == run.result_hash
+            )
+            self._audit_verify(run, user_id=user_id, match=match, dataset_ok=True)
+            return BacktestVerifyResult(
+                run_id=run.id,
+                result_hash_stored=run.result_hash,
+                result_hash_recomputed=recomputed.result_hash,
+                match=match,
+                dataset_ok=True,
+                detail=None if match else "result_hash_mismatch",
+            )
 
         dataset = self._session.get(BacktestDatasetModel, run.dataset_id)
         if dataset is None:
@@ -600,7 +675,7 @@ class BacktestService:
         return card, setup_type, structured, assumptions.start_date, assumptions.end_date
 
     def _apply_promotion(self, run: BacktestRunModel, result: BacktestResult) -> None:
-        if run.strategy_version_id is None or result.cancelled:
+        if run.strategy_version_id is None or result.cancelled or result.metrics is None:
             return
         version = self._versions.get_by_id(run.strategy_version_id)
         if version is None:
@@ -646,6 +721,7 @@ class BacktestService:
                     HistoricalCandleModel.open_time <= end_dt,
                 )
                 .order_by(HistoricalCandleModel.open_time.asc())
+                .execution_options(populate_existing=True)
             ).all()
         )
 
@@ -712,6 +788,9 @@ class BacktestService:
             engine_version=row.engine_version,
             result_hash=row.result_hash,
             idempotency_key=row.idempotency_key,
+            replay_config=row.config_snapshot
+            if (row.config_snapshot or {}).get("replay_request")
+            else None,
             started_at=row.started_at,
             finished_at=row.finished_at,
             cancel_requested_at=row.cancel_requested_at,

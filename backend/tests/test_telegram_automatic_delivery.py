@@ -182,6 +182,26 @@ def _post_preview(client: TestClient, headers: dict[str, str], **body: object):
     return client.post("/alerts/delivery/preview", headers=headers, json=payload)
 
 
+def test_preview_filters_with_the_same_versioned_policy(telegram_configured_client):
+    test_client, factory = telegram_configured_client
+    headers, org_id, user_id = _register_owner(test_client, email="policy-preview@example.com")
+    alert_id = _create_alert(factory, org_id=org_id, user_id=user_id)
+    update = test_client.patch(
+        "/notifications/preferences",
+        headers=headers,
+        json={"telegram_policy": {"schema_version": 2, "event_types": []}},
+    )
+    assert update.status_code == 200
+    result = _post_preview(test_client, headers)
+    assert result.status_code == 200
+    item = next(item for item in result.json()["items"] if item["alert_id"] == str(alert_id))
+    assert item["status"] == "skipped"
+    assert item["reason"] == "POLICY_EVENT_TYPES"
+    with factory() as session:
+        row = session.get(PaperValidationAlert, alert_id)
+        assert row.delivery_attempts == 0
+
+
 def test_preview_requires_owner(client: tuple[TestClient, sessionmaker[Session]]) -> None:
     test_client, factory = client
     headers, org_id, user_id = _register_owner(test_client, email="reader-preview@example.com")

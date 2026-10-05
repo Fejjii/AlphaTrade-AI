@@ -6,8 +6,10 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import TradingPolicyError
 from app.repositories.manual_levels import ManualChartLevelRepository
 from app.repositories.strategy_library import UserStrategyRepository, UserStrategyVersionRepository
+from app.schemas.agent_paper import AgentPaperTradeIntent, PaperPreTradeAnalysis
 from app.schemas.common import PreTradeRecommendation, Timeframe, TradeDirection
 from app.schemas.manual_levels import ManualChartLevel
 from app.schemas.position_sizing import PositionSizingRequest
@@ -19,6 +21,27 @@ from app.services.position_sizing_service import PositionSizingService
 
 class PreTradeAnalysisService:
     """Deterministic pre-trade analysis — LLM may explain later, not decide."""
+
+    @staticmethod
+    def analyze_paper_trade(
+        intent: AgentPaperTradeIntent, *, current_price: Decimal
+    ) -> PaperPreTradeAnalysis:
+        """Analyze explicit validated levels against a canonical current quote.
+
+        No placeholder price, inferred stop, confidence-scaled size or advisory
+        recommendation can authorize execution. Risk and sizing run separately.
+        """
+        if current_price <= 0 or current_price != intent.entry:
+            raise TradingPolicyError("Paper pretrade entry must match the canonical quote.")
+        distance = abs(intent.entry - intent.stop)
+        return PaperPreTradeAnalysis(
+            entry=intent.entry,
+            stop=intent.stop,
+            targets=intent.targets,
+            risk_reward_ratios=tuple(
+                abs(target - intent.entry) / distance for target in intent.targets
+            ),
+        )
 
     def __init__(
         self,

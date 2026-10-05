@@ -22,6 +22,7 @@ from uuid import UUID
 
 from app.market_contracts.models import CanonicalModel
 from app.schemas.common import StrategyLifecycleState
+from app.schemas.nested_continuation import NestedContinuationSpec, NestedParameters
 from app.schemas.setup_ast import COMPILER_VERSION, GRAMMAR_VERSION
 from app.schemas.strategy_pattern_spec import FirstSliceAuthoredPatternSpec
 from app.signal_fusion.adapters import AssessmentCommand
@@ -36,6 +37,7 @@ from app.signal_fusion.first_slice_adapter import (
 from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.policy import FusionPolicy
 from app.signal_fusion.types import Sha256Hex, hashed_model
+from app.strategy_brain.sfp.contracts import SfpParameters, SfpSpec
 
 EXECUTABLE_STRATEGY_POLICY_SCHEMA = "ExecutableStrategyPolicy/v1"
 EXECUTABLE_LIFECYCLE_STATES = frozenset(
@@ -52,14 +54,19 @@ class ExecutableStrategyPolicy(CanonicalModel):
     strategy_version_id: UUID
     strategy_version_content_hash: Sha256Hex
     lifecycle_state: StrategyLifecycleState
+    execution_scope: Literal["paper", "paper_validation"] = "paper"
     compiled_setup_definition_id: UUID
     compiled_content_hash: Sha256Hex
     compiler_version: str
     grammar_version: str
     fusion_policy: FusionPolicy
-    adapter_id: Literal["first_slice_compatibility/v1"] = FIRST_SLICE_ADAPTER_ID
-    authored_spec: FirstSliceAuthoredPatternSpec
-    evaluation_params: FirstSliceEvaluationParams
+    adapter_id: Literal[
+        "first_slice_compatibility/v1",
+        "operational_nested_continuation/v1",
+        "swing_failure_pattern/v1",
+    ] = FIRST_SLICE_ADAPTER_ID
+    authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec | SfpSpec
+    evaluation_params: FirstSliceEvaluationParams | NestedParameters | SfpParameters
     content_hash: Sha256Hex
 
 
@@ -75,11 +82,12 @@ def build_executable_strategy_policy(
     compiler_version: str,
     grammar_version: str,
     fusion_policy: FusionPolicy,
-    authored_spec: FirstSliceAuthoredPatternSpec,
+    authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec | SfpSpec,
+    execution_scope: Literal["paper", "paper_validation"] = "paper",
 ) -> ExecutableStrategyPolicy:
     """Bind an approved compiled version onto the first-slice adapter."""
 
-    _assert_executable_lifecycle(lifecycle_state)
+    _assert_executable_lifecycle(lifecycle_state, execution_scope)
     _assert_fusion_lineage(
         fusion_policy,
         organization_id=organization_id,
@@ -87,19 +95,27 @@ def build_executable_strategy_policy(
         compiled_setup_definition_id=compiled_setup_definition_id,
         compiled_content_hash=compiled_content_hash,
     )
-    spec = FirstSliceAuthoredPatternSpec.model_validate(authored_spec.model_dump())
-    params = bind_first_slice_compatibility_adapter(spec)
+    spec = authored_spec
+    params = (
+        spec.parameters
+        if isinstance(spec, (NestedContinuationSpec, SfpSpec))
+        else bind_first_slice_compatibility_adapter(spec)
+    )
     draft = ExecutableStrategyPolicy(
         organization_id=organization_id,
         strategy_id=strategy_id,
         strategy_version_id=strategy_version_id,
         strategy_version_content_hash=strategy_version_content_hash,
         lifecycle_state=lifecycle_state,
+        execution_scope=execution_scope,
         compiled_setup_definition_id=compiled_setup_definition_id,
         compiled_content_hash=compiled_content_hash,
         compiler_version=compiler_version,
         grammar_version=grammar_version,
         fusion_policy=fusion_policy,
+        adapter_id=spec.kind
+        if isinstance(spec, (NestedContinuationSpec, SfpSpec))
+        else FIRST_SLICE_ADAPTER_ID,
         authored_spec=spec,
         evaluation_params=params,
         content_hash="0" * 64,
@@ -112,7 +128,7 @@ def executable_policy_from_fusion_policy(
     *,
     strategy_id: UUID,
     strategy_version_content_hash: str,
-    authored_spec: FirstSliceAuthoredPatternSpec,
+    authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec | SfpSpec,
     lifecycle_state: StrategyLifecycleState = StrategyLifecycleState.APPROVED,
     compiler_version: str = COMPILER_VERSION,
     grammar_version: str = GRAMMAR_VERSION,
@@ -149,8 +165,42 @@ def evaluate_canonical_strategy(
     """
 
     del account_context
-    _assert_executable_lifecycle(executable_policy.lifecycle_state)
+    _assert_executable_lifecycle(
+        executable_policy.lifecycle_state, executable_policy.execution_scope
+    )
     _assert_command_matches_policy(executable_policy, command)
+    if isinstance(executable_policy.authored_spec, NestedContinuationSpec):
+        if executable_policy.evaluation_params != executable_policy.authored_spec.parameters:
+            raise StrategyEvaluationPolicyError(
+                "Nested parameters do not match immutable policy.",
+                reason_code="unsupported_strategy_rule",
+            )
+        return evaluate_setup(
+            policy=executable_policy.fusion_policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            previous_assessment=previous_assessment,
+            nested_spec=executable_policy.authored_spec,
+        )
+    if isinstance(executable_policy.authored_spec, SfpSpec):
+        if (
+            executable_policy.evaluation_params != executable_policy.authored_spec.parameters
+            or executable_policy.adapter_id != executable_policy.authored_spec.kind
+            or hashed_model(executable_policy).content_hash != executable_policy.content_hash
+        ):
+            raise StrategyEvaluationPolicyError(
+                "SFP parameters do not match immutable policy.",
+                reason_code="unsupported_strategy_rule",
+            )
+        return evaluate_setup(
+            policy=executable_policy.fusion_policy,
+            command=command,
+            evidence=evidence,
+            evaluated_at=evaluated_at,
+            previous_assessment=previous_assessment,
+            sfp_spec=executable_policy.authored_spec,
+        )
     bound = bind_first_slice_compatibility_adapter(executable_policy.authored_spec)
     if bound != executable_policy.evaluation_params:
         raise StrategyEvaluationPolicyError(
@@ -165,10 +215,15 @@ def evaluate_canonical_strategy(
         previous_assessment=previous_assessment,
         account_context=None,
         evaluation_params=bound,
+        market_symbol=executable_policy.authored_spec.symbol,
     )
 
 
-def _assert_executable_lifecycle(state: StrategyLifecycleState) -> None:
+def _assert_executable_lifecycle(
+    state: StrategyLifecycleState, execution_scope: str = "paper"
+) -> None:
+    if execution_scope == "paper_validation" and state is StrategyLifecycleState.PAPER_VALIDATING:
+        return
     if state in EXECUTABLE_LIFECYCLE_STATES:
         return
     if state is StrategyLifecycleState.DRAFT:

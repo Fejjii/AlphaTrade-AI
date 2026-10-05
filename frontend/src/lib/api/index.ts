@@ -1,6 +1,11 @@
+import type { AttentionQueue } from "./attention-types";
+import type { DailyReview } from "./daily-review-types";
+import type { BrainOverview, BrainSetup } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
   AgentMessageResponse,
+  AgentStructuredProposal,
+  AgentTurnResult,
   ApprovalRequest,
   AuditRecord,
   AuthResponse,
@@ -152,6 +157,7 @@ import type {
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
+  TelegramEnrollmentStartResponse,
   MarketWatcherStatus,
   MarketWatcherSummary,
   WatcherMonitoringSnapshot,
@@ -174,6 +180,9 @@ import type {
   OHLCVResponse,
   TickerResponse,
   WatchlistItem,
+  WatcherWatchlistConfiguration,
+  WatcherWatchlistSlot,
+  WatcherWatchlistStatus,
   ExchangeDiagnosticsSummary,
   AlertDeliveryPreviewResponse,
   AlertRoutingSummary,
@@ -201,6 +210,14 @@ export const CREATE_TRADINGVIEW_PAPER_CANDIDATE = "CREATE_TRADINGVIEW_PAPER_CAND
 export const APPROVE_PAPER_SIGNAL_PROPOSAL = "APPROVE_PAPER_SIGNAL_PROPOSAL";
 
 export const api = {
+  strategyBrain: {
+    overview: () => apiFetch<BrainOverview>("/strategy-brain/overview", { auth: true }),
+    setup: (id: string) => apiFetch<BrainSetup>(`/strategy-brain/setups/${id}`, { auth: true }),
+    createNested: (body: { symbol: string; direction: "long" | "short"; trigger_timeframe: string }) =>
+      apiFetch<{ strategy_id: string; version_id: string }>("/strategy-brain/templates/nested", {
+        method: "POST", auth: true, body: JSON.stringify(body),
+      }),
+  },
   auth: {
     register: (body: { email: string; password: string; organization_name: string }) =>
       apiFetch<AuthResponse>("/auth/register", {
@@ -355,6 +372,36 @@ export const api = {
         body: JSON.stringify(body),
       }),
   },
+  agent: {
+    turn: (body: {
+      message: string;
+      conversation_id?: string;
+      strategy_id?: string;
+      symbol?: string;
+      timeframe?: string;
+    }, options?: { signal?: AbortSignal }) =>
+      apiFetch<AgentTurnResult>("/agent/turns", {
+        method: "POST",
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      }),
+    confirmProposal: (
+      proposalId: string,
+      body: { conversation_id: string; expected_content_hash: string; statement: string },
+    ) =>
+      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/confirm`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    rejectProposal: (
+      proposalId: string,
+      body: { conversation_id: string; expected_content_hash: string; statement: string },
+    ) =>
+      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/reject`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  },
   conversations: {
     list: (params?: { strategy_id?: string; limit?: number; offset?: number }) =>
       apiFetch<PaginatedConversations>("/conversations", { query: params, auth: true }),
@@ -365,10 +412,11 @@ export const api = {
         auth: true,
       }),
     get: (id: string) => apiFetch<ConversationSummary>(`/conversations/${id}`, { auth: true }),
-    listMessages: (id: string, params?: { limit?: number; offset?: number }) =>
+    listMessages: (id: string, params?: { limit?: number; offset?: number }, options?: { signal?: AbortSignal }) =>
       apiFetch<PaginatedConversationMessages>(`/conversations/${id}/messages`, {
         query: params,
         auth: true,
+        signal: options?.signal,
       }),
     listProposals: (
       id: string,
@@ -719,6 +767,9 @@ export const api = {
       }),
   },
   dashboard: {
+    attention: () => apiFetch<AttentionQueue>("/dashboard/attention", { auth: true }),
+    dailyReview: (params?: { date?: string; timezone?: string }) =>
+      apiFetch<DailyReview>("/dashboard/daily-review", { query: params, auth: true }),
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
   },
   knowledge: {
@@ -892,6 +943,11 @@ export const api = {
       }),
   },
   notifications: {
+    startTelegramEnrollment: () =>
+      apiFetch<TelegramEnrollmentStartResponse>("/telegram-paper/enrollment/start", {
+        method: "POST",
+        auth: true,
+      }),
     preferences: () =>
       apiFetch<NotificationPreferences>("/notifications/preferences", { auth: true }),
     updatePreferences: (body: Partial<NotificationPreferences>) =>
@@ -907,6 +963,17 @@ export const api = {
       }),
     sendTest: () =>
       apiFetch<NotificationTestResult>("/notifications/test", { method: "POST", auth: true }),
+  },
+  watcherWatchlist: {
+    configuration: () =>
+      apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", { auth: true }),
+    replace: (slots: Array<Pick<WatcherWatchlistSlot, "symbol" | "enabled">>, revision: number) =>
+      apiFetch<WatcherWatchlistConfiguration>("/watcher/watchlist", {
+        method: "PUT",
+        auth: true,
+        body: JSON.stringify({ slots, revision }),
+      }),
+    status: () => apiFetch<WatcherWatchlistStatus>("/watcher/watchlist/status", { auth: true }),
   },
   marketWatcher: {
     status: () => apiFetch<MarketWatcherStatus>("/market-watcher/status", { auth: true }),

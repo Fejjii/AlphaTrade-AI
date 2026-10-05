@@ -2,37 +2,41 @@
 
 import { useCallback, useState } from "react";
 
-import { ErrorState, LoadingState } from "@/components/states";
-import { Badge } from "@/components/ui/badge";
+import { TelegramPolicyForm } from "@/components/settings/TelegramPolicyForm";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  SettingsReadout,
+  SettingsUnavailable,
+} from "@/components/settings/SettingsReadout";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
-import type { NotificationPreferences } from "@/lib/api/types";
+import type {
+  NotificationPreferences,
+  TelegramEnrollmentStartResponse,
+  WatcherMonitoringSnapshot,
+} from "@/lib/api/types";
+import { formatReasonCode } from "@/lib/watcher-monitoring";
 
-function providerLabel(status: string): string {
-  switch (status) {
-    case "configured":
-      return "Configured";
-    case "not_configured":
-      return "Not configured";
-    case "disabled":
-      return "Disabled";
-    case "user_disabled":
-      return "Off in preferences";
-    default:
-      return status;
-  }
-}
-
-export function NotificationSettingsPanel() {
+export function NotificationSettingsPanel({
+  snapshot = null,
+}: {
+  snapshot?: WatcherMonitoringSnapshot | null;
+}) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrollment, setEnrollment] =
+    useState<TelegramEnrollmentStartResponse | null>(null);
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const loader = useCallback(() => api.notifications.preferences(), []);
   const statusLoader = useCallback(() => api.alerts.deliveryStatus(), []);
   const { data: prefs, loading, error, reload } = useAsyncData(loader, []);
-  const { data: deliveryStatus } = useAsyncData(statusLoader, []);
+  const delivery = useAsyncData(statusLoader, []);
+  const telegram = delivery.data?.channel_statuses?.find(
+    (channel) => channel.channel === "telegram",
+  );
 
   async function save(patch: Partial<NotificationPreferences>) {
     setBusy(true);
@@ -41,117 +45,244 @@ export function NotificationSettingsPanel() {
       await api.notifications.updatePreferences(patch);
       await reload();
       setMessage("Preferences saved.");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } catch {
+      setMessage("Preferences could not be saved. Please try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function sendTest() {
-    setBusy(true);
-    setMessage(null);
+  async function startEnrollment() {
+    setEnrolling(true);
+    setEnrollment(null);
+    setEnrollmentError(null);
     try {
-      const result = await api.notifications.sendTest();
-      setMessage(result.message);
+      setEnrollment(await api.notifications.startTelegramEnrollment());
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Test failed.");
+      setEnrollmentError(
+        err instanceof Error
+          ? err.message
+          : "Telegram enrollment could not be started.",
+      );
     } finally {
-      setBusy(false);
+      setEnrolling(false);
     }
   }
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
-  if (!prefs) return null;
-
-  const channelStatuses = deliveryStatus?.channel_statuses ?? [];
 
   return (
     <Card data-testid="notification-settings-panel">
       <CardHeader>
-        <CardTitle>Notifications</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm text-zinc-300">
-        <p className="text-zinc-400" data-testid="notifications-never-trade-copy">
-          Alerts notify you about paper validation events. Alerts never execute trades.
+        <p
+          className="text-sm text-text-muted"
+          data-testid="notifications-never-trade-copy"
+        >
+          Paper alerts keep you informed and never execute trades.
         </p>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span>In-app alerts</span>
-          <Badge variant="success" data-testid="in-app-enabled-badge">
-            {prefs.in_app_enabled ? "Enabled" : "Disabled"}
-          </Badge>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span>Webhook delivery</span>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={prefs.webhook_enabled}
-              disabled={busy}
-              onChange={(e) => void save({ webhook_enabled: e.target.checked })}
-              data-testid="webhook-toggle"
-            />
-            <span>{prefs.webhook_enabled ? "On" : "Off"}</span>
-          </label>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="settings-telegram-state"
+        >
           <span>Telegram delivery</span>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={prefs.telegram_enabled}
-              disabled={busy}
-              onChange={(e) => void save({ telegram_enabled: e.target.checked })}
-              data-testid="telegram-toggle"
-            />
-            <span>{prefs.telegram_enabled ? "On" : "Off"}</span>
-          </label>
+          <StatusBadge
+            label={
+              delivery.loading
+                ? "Loading…"
+                : delivery.error || !delivery.data
+                  ? "Unavailable"
+                  : telegram
+                    ? formatReasonCode(telegram.status_label)
+                    : delivery.data.telegram_enabled === false
+                      ? "Disabled"
+                      : "State unavailable"
+            }
+            tone={telegram?.available ? "healthy" : "muted"}
+          />
         </div>
-
-        <div className="space-y-1" data-testid="provider-status-list">
-          {channelStatuses.map((ch) => (
-            <p key={ch.channel} className="text-xs text-zinc-500" data-testid={`provider-${ch.channel}`}>
-              {ch.channel}: {providerLabel(ch.status_label)}
-            </p>
-          ))}
-          {channelStatuses.length === 0 ? (
-            <p className="text-xs text-zinc-500" data-testid="provider-disabled-status">
-              External providers disabled by default.
+        <p className="text-xs text-text-muted">
+          {telegram
+            ? `Telegram configuration: ${telegram.configured ? "configured" : "not configured"}. `
+            : ""}
+          Connection is not verified by this API. Network activation remains
+          separate and is unavailable here.
+        </p>
+        {delivery.error ? (
+          <SettingsUnavailable
+            label="Telegram state"
+            loading={false}
+            onRetry={() => void delivery.reload()}
+          />
+        ) : null}
+        <div className="space-y-2" data-testid="telegram-enrollment">
+          <Button
+            variant="secondary"
+            disabled={enrolling}
+            onClick={() => void startEnrollment()}
+          >
+            {enrolling
+              ? "Starting enrollment…"
+              : enrollment
+                ? "Get a new Telegram token"
+                : "Connect Telegram"}
+          </Button>
+          {enrollment ? (
+            <div className="space-y-2">
+              <p className="text-xs text-text-secondary">
+                Open your AlphaTrade bot in a private Telegram chat and send the
+                token below as the entire message, without a /start prefix.
+              </p>
+              <label
+                htmlFor="telegram-enrollment-token"
+                className="block text-xs text-text-secondary"
+              >
+                One-time Telegram enrollment token
+              </label>
+              <input
+                id="telegram-enrollment-token"
+                className="w-full rounded border border-border bg-surface-0 px-2 py-1 font-mono text-text-primary"
+                value={enrollment.token}
+                readOnly
+                autoComplete="off"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <p className="text-xs text-text-muted">
+                Expires:{" "}
+                <time dateTime={enrollment.expires_at}>
+                  {new Date(enrollment.expires_at).toLocaleString()}
+                </time>
+                . Enrollment is pending; this token does not confirm a connection.
+              </p>
+            </div>
+          ) : null}
+          {enrollmentError ? (
+            <p role="alert" className="text-xs text-text-secondary">
+              {enrollmentError}
             </p>
           ) : null}
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-zinc-400">Minimum severity</label>
-          <select
-            className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
-            value={prefs.min_severity}
-            disabled={busy}
-            onChange={(e) => void save({ min_severity: e.target.value })}
-            data-testid="min-severity-select"
-          >
-            <option value="info">Info</option>
-            <option value="warning">Warning</option>
-            <option value="critical">Critical</option>
-          </select>
-        </div>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={busy}
-          onClick={() => void sendTest()}
-          data-testid="send-test-notification"
+        {loading || error || !prefs ? (
+          <SettingsUnavailable
+            label="Alert preferences"
+            loading={loading}
+            onRetry={() => void reload()}
+          />
+        ) : (
+          <>
+            <p className="text-xs text-text-muted">
+              Existing channel routing preferences apply alongside Telegram
+              Policy V2.
+            </p>
+            <SettingsReadout
+              rows={[
+                ["In-app alerts", prefs.in_app_enabled ? "On" : "Off"],
+                ["Telegram preference", prefs.telegram_enabled ? "On" : "Off"],
+                ["Webhook preference", prefs.webhook_enabled ? "On" : "Off"],
+                [
+                  "Alert types",
+                  prefs.enabled_alert_types === undefined
+                    ? "Unavailable"
+                    : prefs.enabled_alert_types === null
+                      ? "All alert types"
+                      : prefs.enabled_alert_types.length
+                        ? prefs.enabled_alert_types
+                            .map(formatReasonCode)
+                            .join(", ")
+                        : "None selected",
+                ],
+                [
+                  "Quiet hours",
+                  prefs.quiet_hours_enabled === undefined
+                    ? "Unavailable"
+                    : prefs.quiet_hours_enabled
+                      ? `${prefs.quiet_hours_start ?? "Time unavailable"} – ${prefs.quiet_hours_end ?? "Time unavailable"} (${prefs.timezone ?? "Timezone unavailable"})`
+                      : "Off",
+                ],
+                [
+                  "Delivery frequency",
+                  prefs.digest_mode
+                    ? formatReasonCode(prefs.digest_mode)
+                    : "Unavailable",
+                ],
+              ]}
+            />
+            <label className="flex flex-wrap items-center gap-2 text-text-secondary">
+              Minimum alert severity
+              <select
+                className="rounded border border-border bg-surface-0 px-2 py-1 text-text-primary"
+                value={prefs.min_severity}
+                disabled={busy}
+                onChange={(event) =>
+                  void save({ min_severity: event.target.value })
+                }
+                data-testid="min-severity-select"
+              >
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+              </select>
+            </label>
+            {prefs.telegram_policy?.schema_version === 2 ? (
+              <TelegramPolicyForm
+                key={JSON.stringify([
+                  prefs.telegram_policy,
+                  prefs.telegram_enabled,
+                ])}
+                policy={prefs.telegram_policy}
+                enabled={prefs.telegram_enabled}
+                onSaved={async () => {
+                  await reload();
+                  setMessage("Telegram policy saved.");
+                }}
+              />
+            ) : (
+              <p className="text-xs text-text-muted">
+                Telegram Policy V2 settings: Unavailable — not returned by the
+                current API.
+              </p>
+            )}
+            {prefs.using_defaults ? (
+              <p className="text-xs text-text-muted">
+                Using default alert preferences.
+              </p>
+            ) : null}
+          </>
+        )}
+        <div
+          className="space-y-2 border-t border-border-subtle pt-3"
+          data-testid="settings-notification-context"
         >
-          Send test notification
-        </Button>
-
+          <p className="font-medium text-text-primary">Watcher alert context</p>
+          <SettingsReadout
+            rows={[
+              [
+                "Reported markets",
+                snapshot
+                  ? snapshot.symbols_monitored.join(", ") ||
+                    "No markets reported"
+                  : "Unavailable",
+              ],
+              [
+                "Reported strategies",
+                snapshot
+                  ? [
+                      ...new Set(
+                        snapshot.approved_strategies.map(
+                          (strategy) => strategy.name,
+                        ),
+                      ),
+                    ].join(", ") || "No approved strategies reported"
+                  : "Unavailable",
+              ],
+            ]}
+          />
+          <p className="text-xs text-text-muted">
+            This is the reported monitoring context, not a notification filter.
+            Configure supported subscriptions in Telegram Policy V2 above.
+          </p>
+        </div>
         {message ? (
-          <p className="text-xs text-zinc-400" data-testid="notification-action-message">
+          <p role="status" className="text-xs text-text-secondary">
             {message}
           </p>
         ) : null}

@@ -127,6 +127,11 @@ class PlanPresentationMetadata(CanonicalModel):
     display_title: str | None = Field(default=None, min_length=1, max_length=200)
     channel: AuthorizationChannel | None = None
     notes: str | None = Field(default=None, max_length=1000)
+    strategy_id: UUID | None = None
+    strategy_version_id: UUID | None = None
+    setup_id: UUID | None = None
+    evidence_reference: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    decision_reference: UUID | None = None
 
 
 class SemanticAmount(CanonicalModel):

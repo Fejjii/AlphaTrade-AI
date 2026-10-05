@@ -16,14 +16,14 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.errors import NotFoundError, TradingPolicyError, ValidationAppError
 from app.core.paper_safety import assert_paper_execution_allowed
 from app.db.canonical_trade_plans import PLAN_AUTHORITY_CANONICAL
-from app.db.models import ExecutionCommand, JournalLifecycleEvent
+from app.db.models import ExecutionCommand, ExecutionFillFact, JournalLifecycleEvent
 from app.repositories.journal_trades import JournalTradeRepository
 from app.runtime.canonical import ProductionCanonicalRuntime
 from app.schemas.approval import ApprovalAuthorization
@@ -130,11 +130,42 @@ class CanonicalPaperExecutionService:
             if fill.weighted_price is not None:
                 payload["entry_price"] = str(fill.weighted_price)
             payload["size"] = str(fill.filled_quantity)
+            entry_time = self._session.scalar(
+                select(func.min(ExecutionFillFact.occurred_at)).where(
+                    ExecutionFillFact.organization_id == organization_id,
+                    ExecutionFillFact.command_id == command_id,
+                )
+            )
+            if entry_time is None:
+                raise ValidationAppError("Canonical journal fill requires an immutable fill fact.")
+            payload["entry_time"] = entry_time.isoformat()
             # Phase 1 paper claims do not create legacy Order rows. Command
             # identity is execution_lifecycle_id; linked_order_id stays unset.
             payload["lineage"] = _lineage_payload(envelope, command_id, self._runtime).model_dump(
                 mode="json", exclude_none=True
             )
+            if fill.replayed:
+                # A verified immutable fill may be replayed after PostgreSQL has
+                # applied its numeric scale, or after later partial fills have
+                # changed cumulative totals. Its original journal event remains
+                # the authority for that source identity. When no event exists,
+                # reconstruct it normally to preserve crash recovery.
+                recorded = self._session.scalar(
+                    select(JournalLifecycleEvent).where(
+                        JournalLifecycleEvent.organization_id == organization_id,
+                        JournalLifecycleEvent.user_id == user_id,
+                        JournalLifecycleEvent.account_id == account_id,
+                        JournalLifecycleEvent.execution_lifecycle_id == command_id,
+                        JournalLifecycleEvent.event_type == JournalLifecycleEventType.FILL,
+                        JournalLifecycleEvent.source_system == CANONICAL_EXECUTION_SOURCE_SYSTEM,
+                        JournalLifecycleEvent.source_aggregate == "execution-command",
+                        JournalLifecycleEvent.source_event_id == str(fill.fill_id),
+                        JournalLifecycleEvent.source_event_version == 1,
+                        JournalLifecycleEvent.supersession == 0,
+                    )
+                )
+                if recorded is not None:
+                    payload = dict(recorded.payload)
             event = JournalLifecycleEventInput(
                 event_type=JournalLifecycleEventType.FILL,
                 execution_lifecycle_id=command_id,

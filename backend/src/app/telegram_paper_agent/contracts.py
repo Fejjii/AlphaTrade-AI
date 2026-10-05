@@ -9,6 +9,8 @@ from uuid import UUID
 from pydantic import AwareDatetime, Field
 
 from app.candidate_alerts.contracts import CandidateAlertActionResult, CandidateAlertProjection
+from app.candidate_alerts.nested import NestedAlertSummary
+from app.candidate_alerts.sfp import SfpAlertSummary
 from app.market_contracts.models import CanonicalModel
 from app.signal_fusion.types import Sha256Hex
 from app.telegram_security.actions import ActionEffectKind, TelegramRemoteAction
@@ -77,6 +79,10 @@ class WatcherScanNotice(CanonicalModel):
     candidate_ids: tuple[UUID, ...] = ()
     request_hash: str | None = Field(default=None, min_length=64, max_length=64)
     lineage_id: UUID | None = None
+    nested: NestedAlertSummary | None = None
+    nested_strategy: bool = False
+    sfp_strategy: bool = False
+    sfp_alerts: tuple[SfpAlertSummary, ...] = ()
 
 
 class PaperNotificationIntent(CanonicalModel):

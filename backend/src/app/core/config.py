@@ -10,6 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -119,6 +120,11 @@ class Settings(BaseSettings):
     blofin_api_key: str = Field(default="", repr=False)
     blofin_api_secret: str = Field(default="", repr=False)
     blofin_api_passphrase: str = Field(default="", repr=False)
+    # Dedicated read-only demo sync credentials never open the execution gate.
+    blofin_readonly_sync_enabled: bool = False
+    blofin_readonly_api_key: str = Field(default="", repr=False)
+    blofin_readonly_api_secret: str = Field(default="", repr=False)
+    blofin_readonly_api_passphrase: str = Field(default="", repr=False)
     blofin_demo_rest_base_url: str = ""
     blofin_demo_ws_url: str = ""
     blofin_request_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
@@ -203,7 +209,14 @@ class Settings(BaseSettings):
     watcher_paper_symbols: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["BTCUSDT"]
     )
+    # Legacy local/test file helper. Production watchlists and runtime status
+    # use organization-owned database rows, shared by API and dedicated worker.
+    watcher_watchlist_path: str = ""
     watcher_paper_poll_interval_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
+    # Optional tenant pin for controlled staging acceptance. Empty preserves
+    # the normal round-robin tenant scheduler.
+    watcher_paper_organization_id: str = ""
+    paper_worker_memory_diagnostics_enabled: bool = False
     watcher_paper_max_scopes_per_cycle: int = Field(default=20, ge=1, le=200)
     watcher_paper_worker_id: str = Field(default="watcher-paper-1", min_length=1, max_length=80)
 
@@ -217,7 +230,7 @@ class Settings(BaseSettings):
 
     # --- TradingView signal intake (AT-037 — disabled by default; paper-only) ---
     tradingview_webhook_enabled: bool = False
-    tradingview_webhook_secret: str = ""
+    tradingview_webhook_secret: str = Field(default="", repr=False)
     tradingview_webhook_max_skew_seconds: int = Field(default=300, ge=30, le=3600)
     tradingview_webhook_rate_limit: int = Field(default=60, ge=1, le=600)
     tradingview_webhook_rate_window_seconds: int = Field(default=3600, ge=60, le=86400)
@@ -301,6 +314,8 @@ class Settings(BaseSettings):
     # Closed aggTrade windows are reused only until this TTL. A later payload
     # with a different fingerprint replaces the entry (exchange correction).
     binance_evidence_cache_ttl_seconds: float = Field(default=120.0, gt=0.0, le=3600.0)
+    # Raw aggTrade rows above this count are not cached. Reduced snapshots are.
+    binance_evidence_cache_max_rows: int = Field(default=4096, ge=1, le=100_000)
     # AT-069 continuous read-only monitor. Tick-on-read only; no Watcher start.
     perpetual_monitor_poll_seconds: float = Field(default=2.0, ge=0.25, le=60.0)
     perpetual_monitor_backoff_initial_seconds: float = Field(default=0.25, ge=0.05, le=10.0)
@@ -497,6 +512,20 @@ class Settings(BaseSettings):
             return [str(item).strip().upper() for item in value if str(item).strip()]
         return value
 
+    @field_validator("watcher_paper_organization_id", mode="before")
+    @classmethod
+    def _validate_watcher_paper_organization_id(cls, value: object) -> str:
+        if value is None:
+            return ""
+        token = str(value).strip()
+        if not token:
+            return ""
+        try:
+            UUID(token)
+        except ValueError as exc:
+            raise ValueError("watcher_paper_organization_id must be a UUID") from exc
+        return token.lower()
+
     @field_validator("redis_url", mode="before")
     @classmethod
     def _normalize_redis_url(cls, value: object) -> object:
@@ -621,6 +650,15 @@ class Settings(BaseSettings):
         remains fail-closed even if a future caller bypasses Settings validators.
         """
         return False
+
+    @property
+    def blofin_readonly_configured(self) -> bool:
+        """Presence of dedicated sync credentials; never execution authority."""
+        return bool(
+            self.blofin_readonly_api_key.strip()
+            and self.blofin_readonly_api_secret.strip()
+            and self.blofin_readonly_api_passphrase.strip()
+        )
 
     @property
     def blofin_demo_configured(self) -> bool:

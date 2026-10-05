@@ -9,9 +9,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any, Self
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.common import (
     BacktestRecommendation,
@@ -98,6 +99,11 @@ class BacktestTradeRecord(StrictModel):
     split_label: BacktestSplitLabel = BacktestSplitLabel.IN_SAMPLE
     split_index: int = 0
     sequence: int | None = None
+    planned_targets: list[Decimal] = Field(default_factory=list)
+    r_result: Decimal | None = None
+    holding_bars: int | None = None
+    holding_seconds: int | None = None
+    setup_id: UUID | None = None
 
 
 class EquityCurvePoint(StrictModel):
@@ -158,7 +164,7 @@ class BacktestDatasetSummary(StrictModel):
 class BacktestResult(StrictModel):
     """Deterministic backtest output — historical simulation only."""
 
-    metrics: BacktestMetrics
+    metrics: BacktestMetrics | None
     trades: list[BacktestTradeRecord] = Field(default_factory=list)
     recommendation: BacktestRecommendation
     meets_success_criteria: bool = False
@@ -177,6 +183,16 @@ class BacktestResult(StrictModel):
     cancelled: bool = False
     processed_bars: int | None = None
     total_bars: int | None = None
+    replay: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def research_has_no_trade_metrics(self) -> Self:
+        sfp = (self.replay or {}).get("mode") == "sfp_research"
+        if sfp and (self.metrics is not None or self.trades):
+            raise ValueError("SFP research cannot carry trades or trade-return metrics.")
+        if self.metrics is None and not sfp:
+            raise ValueError("Trade metrics may be absent only for SFP research.")
+        return self
 
 
 # Backward-compatible alias for older tests/docs
@@ -198,6 +214,7 @@ class BacktestRun(ORMModel):
     engine_version: str | None = None
     result_hash: str | None = None
     idempotency_key: str | None = None
+    replay_config: dict[str, Any] | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     cancel_requested_at: datetime | None = None

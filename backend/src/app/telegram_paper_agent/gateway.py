@@ -183,12 +183,31 @@ class TelegramPaperAgent:
         """Project a meaningful Watcher event. Empty scans are not alerts."""
         self._require_enabled()
         self._require_recipient_org(recipient, notice.organization_id)
+        from app.strategy_brain.sfp.contracts import SFP_KIND
+
+        if notice.sfp_strategy or (
+            candidate is not None and candidate.fusion_policy_version == SFP_KIND
+        ):
+            if notice.user_id != recipient.user_id:
+                raise ValueError("SFP scan user does not match recipient.")
+            for summary in notice.sfp_alerts:
+                self._candidates.project_sfp_event(
+                    summary=summary, recipient=_as_candidate_recipient(recipient)
+                )
+            return None
         confirmed = (
             notice.published
             and candidate is not None
             and assessment is not None
             and window is not None
         )
+        from app.schemas.nested_continuation import NESTED_KIND
+
+        nested_strategy = notice.nested_strategy or (
+            candidate is not None and candidate.fusion_policy_version == NESTED_KIND
+        )
+        if nested_strategy and (notice.nested is None or not confirmed):
+            return None
         if confirmed:
             assert candidate is not None
             assert assessment is not None
@@ -212,7 +231,7 @@ class TelegramPaperAgent:
         window: CanonicalEvidenceWindowV1,
         recipient: PaperAlertRecipient,
         watcher_notice: WatcherScanNotice | None = None,
-    ) -> PaperNotificationProjection:
+    ) -> PaperNotificationProjection | None:
         self._require_enabled()
         self._require_recipient_org(recipient, candidate.organization_id)
         require_active_binding(self._protocol.store, _as_candidate_recipient(recipient))
@@ -221,7 +240,35 @@ class TelegramPaperAgent:
             assessment=assessment,
             window=window,
             recipient=_as_candidate_recipient(recipient),
+            nested=None if watcher_notice is None else watcher_notice.nested,
         )
+        if alert is None:
+            return None
+        if alert.intent.content.nested is not None:
+            # One informational outbox event; no action confirmations or second footer.
+            intent = self._notification(
+                recipient=recipient,
+                kind=PaperNotificationKind.WATCHER_CONFIRMED_SETUP,
+                resource_type=PAPER_RESOURCE_CANDIDATE,
+                resource_id=alert.intent.content.nested.setup_id,
+                content_hash=alert.intent.identity_hash,
+                text=alert.outbox.text,
+                candidate_id=alert.intent.candidate_id,
+            )
+            persisted = self._store.get_or_insert_notification(intent)
+            thread = self._thread_for(
+                recipient=recipient,
+                resource_type=PAPER_RESOURCE_CANDIDATE,
+                resource_id=alert.intent.candidate_id,
+                notification_id=persisted.intent_id,
+            )
+            return PaperNotificationProjection(
+                intent=persisted,
+                outbox=alert.outbox,
+                thread=thread,
+                candidate_alert=alert,
+                converged=alert.converged,
+            )
         kind = (
             PaperNotificationKind.WATCHER_CONFIRMED_SETUP
             if watcher_notice is not None and watcher_notice.published
@@ -264,6 +311,13 @@ class TelegramPaperAgent:
             text=footer,
             idempotency_key=_thread_key(persisted.identity_hash),
             binding_id=recipient.binding_id,
+            notification_event=(
+                alert.outbox.notification_event.model_copy(
+                    update={"duplicate_key": f"{alert.intent.identity_hash}:footer"}
+                )
+                if alert.outbox.notification_event is not None
+                else None
+            ),
         )
         return PaperNotificationProjection(
             intent=persisted,
@@ -296,7 +350,9 @@ class TelegramPaperAgent:
             content_hash=digest,
             text=text,
         )
-        return self._project_simple(intent=intent, recipient=recipient, text=text)
+        return self._project_simple(
+            intent=intent, recipient=recipient, text=text, notification_symbol=view.symbol
+        )
 
     def handle_inbound_message(
         self,
@@ -520,6 +576,7 @@ class TelegramPaperAgent:
             text=text,
             resource_type=PAPER_RESOURCE_WATCHER,
             resource_id=resource_id,
+            notification_symbol=notice.symbol,
         )
 
     def _project_simple(
@@ -530,6 +587,7 @@ class TelegramPaperAgent:
         text: str,
         resource_type: str | None = None,
         resource_id: UUID | None = None,
+        notification_symbol: str | None = None,
     ) -> PaperNotificationProjection:
         prior = self._store.get_notification_by_hash(intent.identity_hash)
         persisted = self._store.get_or_insert_notification(intent)
@@ -545,6 +603,7 @@ class TelegramPaperAgent:
             text=text,
             idempotency_key=_notify_key(persisted.identity_hash),
             binding_id=recipient.binding_id,
+            notification_event=_paper_notification_event(persisted, symbol=notification_symbol),
         )
         thread = self._thread_for(
             recipient=recipient,
@@ -980,6 +1039,25 @@ def _require_binding_id(binding_id: UUID | None) -> UUID:
 
 def _notify_key(identity_hash: str) -> str:
     return f"{PAPER_NOTIFY_OUTBOX_PREFIX}{identity_hash}"[:128]
+
+
+def _paper_notification_event(intent: PaperNotificationIntent, *, symbol: str | None):
+    from app.schemas.telegram_policy import (
+        NotificationEventType,
+        NotificationSeverity,
+        TelegramNotificationEvent,
+    )
+
+    blocked = intent.kind == PaperNotificationKind.WATCHER_SCAN_BLOCKED
+    return TelegramNotificationEvent(
+        event_type=NotificationEventType.RISK
+        if blocked
+        else NotificationEventType.PAPER_TRADE_CLOSED,
+        severity=NotificationSeverity.WATCH if blocked else NotificationSeverity.INFO,
+        symbol=symbol,
+        duplicate_key=intent.identity_hash,
+        occurred_at=intent.created_at,
+    )
 
 
 def _thread_key(identity_hash: str) -> str:

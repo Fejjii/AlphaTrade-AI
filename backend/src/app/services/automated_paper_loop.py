@@ -37,19 +37,18 @@ from app.schemas.common import (
 from app.schemas.execution_protocol import ExecutePaperPlanRequest, ExecutionCommandOutcome
 from app.schemas.trade_plan import (
     AuthorizationChannel,
-    ContractType,
-    EntryOrderType,
-    EntrySide,
-    MarginMode,
-    MarketType,
-    QuantityUnit,
-    TimeInForce,
     TradePlanRevisionCreate,
 )
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.canonical_trade_plan import CanonicalTradePlanService
 from app.services.execution_service import ExecutionService
+from app.services.internal_paper_plan_terms import (
+    INTERNAL_PAPER_LOT_SIZE,
+    INTERNAL_PAPER_MIN_NOTIONAL,
+    INTERNAL_PAPER_TICK_SIZE,
+    build_internal_paper_terms,
+)
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.engine import RiskEngine
 from app.services.risk.settings_service import RiskSettingsService
@@ -75,9 +74,9 @@ from app.workers.watcher_paper_targets import PaperScanTarget
 _NAMESPACE = UUID("c44ea7de-0008-4000-8000-a070e1100001")
 _POLICY_VERSION = "paper-internal-entry/v1"
 _QUOTE_FRESH_SECONDS = 10
-_LOT = Decimal("0.001")
-_TICK = Decimal("0.10")
-_MIN_NOTIONAL = Decimal("5")
+_LOT = INTERNAL_PAPER_LOT_SIZE
+_TICK = INTERNAL_PAPER_TICK_SIZE
+_MIN_NOTIONAL = INTERNAL_PAPER_MIN_NOTIONAL
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +192,12 @@ class AutomatedPaperLoop:
         evidence = _evidence_refusal(assembled, now=self._clock.now())
         if evidence is not None:
             return _proof(candidate, "skipped", evidence)
-        if candidate.direction is not TradeDirection.SHORT:
+        from app.schemas.nested_continuation import NestedContinuationSpec
+        from app.strategy_brain.sfp.contracts import SfpSpec
+
+        if candidate.direction is not TradeDirection.SHORT and not isinstance(
+            policy.authored_spec, (NestedContinuationSpec, SfpSpec)
+        ):
             return _proof(candidate, "skipped", "direction_not_paper_executable")
         return None
 
@@ -267,9 +271,10 @@ class AutomatedPaperLoop:
             assembled=assembled,
             policy=policy,
             account_id=account.id,
-            equity=_equity(session, target),
+            equity=_equity(session, target, now=self._clock.now()),
             now=self._clock.now(),
             eligibility_valid_until=eligibility.eligibility.valid_until,
+            eligibility_id=eligibility.eligibility.eligibility_id,
         )
         if isinstance(terms, str):
             return AutomatedPaperLoopProof(
@@ -590,8 +595,8 @@ def _paper_account(session: Session, target: PaperScanTarget) -> ExecutionAccoun
     )
 
 
-def _equity(session: Session, target: PaperScanTarget) -> Decimal:
-    accounting = DailyRiskAccounting(session, _risk_settings(session))
+def _equity(session: Session, target: PaperScanTarget, *, now: datetime) -> Decimal:
+    accounting = DailyRiskAccounting(session, _risk_settings(session), clock=lambda: now)
     snapshot = accounting.sync_from_portfolio(
         organization_id=target.organization_id,
         user_id=target.user_id,
@@ -618,7 +623,7 @@ def _eligibility_command(
     quote = assembled.current_price
     if quote is None:
         raise ValueError("Paper loop eligibility requires a current price.")
-    accounting = DailyRiskAccounting(session, _risk_settings(session))
+    accounting = DailyRiskAccounting(session, _risk_settings(session), clock=lambda: now)
     snapshot = accounting.sync_from_portfolio(
         organization_id=target.organization_id,
         user_id=target.user_id,
@@ -702,28 +707,58 @@ def _plan_terms(
     equity: Decimal,
     now: datetime,
     eligibility_valid_until: datetime,
+    eligibility_id: UUID,
 ) -> TradePlanRevisionCreate | str:
+    from app.strategy_brain.sfp.contracts import SfpSpec
+
+    if isinstance(policy.authored_spec, SfpSpec):
+        return "sfp_execution_plan_not_authorized"
     quote = assembled.current_price
     if quote is None:
         return "evidence_unavailable"
     entry = quote.price
-    stop = first_slice_short_invalidation_price(
-        trigger=assembled.trigger_bar,
-        bars_15m=assembled.bundle.bars_15m,
-        tick_size=assembled.bundle.tick_size,
-        params=policy.evaluation_params,
-    )
+    from app.schemas.nested_continuation import NestedContinuationSpec
+    from app.strategy_brain.detector import detect_nested
+    from app.strategy_brain.records import scoped_setup_id
+
+    nested = isinstance(policy.authored_spec, NestedContinuationSpec)
+    nested_target = None
+    if nested:
+        events = detect_nested(
+            assembled.bundle.bars_15m, policy.authored_spec, evaluated_at=assembled.evaluated_at
+        )
+        if not events or events[-1].state.value != "CONFIRMED":
+            return "setup_not_confirmed"
+        stop = events[-1].stop
+        nested_target = events[-1].targets[0] if events[-1].targets else None
+    else:
+        stop = first_slice_short_invalidation_price(
+            trigger=assembled.trigger_bar,
+            bars_15m=assembled.bundle.bars_15m,
+            tick_size=assembled.bundle.tick_size,
+            params=policy.evaluation_params,
+        )
     if stop is None:
         return "invalidation_unavailable"
-    stop = _ceil_to_tick(stop, assembled.bundle.tick_size)
-    if stop <= entry:
+    is_long = candidate.direction is TradeDirection.LONG
+    stop = (
+        _floor_to_lot(stop, assembled.bundle.tick_size)
+        if is_long
+        else _ceil_to_tick(stop, assembled.bundle.tick_size)
+    )
+    if (is_long and stop >= entry) or (not is_long and stop <= entry):
         return "invalidated_by_price"
-    distance = stop - entry
+    distance = abs(stop - entry)
     quantity = _quantity(equity=equity, entry=entry, distance=distance)
     if quantity is None:
         return "size_below_minimum"
-    target = entry - distance
-    if target <= 0:
+    target = nested_target if nested else entry - distance
+    if (
+        target is None
+        or target <= 0
+        or (is_long and target <= entry)
+        or (not is_long and target >= entry)
+    ):
         return "invalidation_unavailable"
     observed = quote.source_time
     if observed > now:
@@ -733,125 +768,35 @@ def _plan_terms(
     valid_until = min(candidate.valid_until, eligibility_valid_until)
     if valid_until <= now:
         return "candidate_expired"
-    evidence_ids = (
-        uuid5(_NAMESPACE, f"{candidate.evidence_window_hash}:trigger"),
-        uuid5(_NAMESPACE, f"{candidate.evidence_window_hash}:quote"),
-    )
-    symbol = quote.provider_symbol
-    return TradePlanRevisionCreate.model_validate(
-        {
-            "account_id": account_id,
-            "exchange_account_id": None,
-            "strategy_version_id": candidate.strategy_version_id,
-            "setup_definition_id": candidate.setup_definition_id,
-            "candidate_id": candidate.candidate_id,
-            "permission_attestation_id": uuid5(_NAMESPACE, f"permission:{candidate.candidate_id}"),
-            "permission_attestation_version": "paper-internal-permissions/v1",
-            "evidence_ids": evidence_ids,
-            "evidence_venue": candidate.evidence_venue.value,
-            "evidence_market": candidate.evidence_market.name,
-            "evidence_instrument": candidate.evidence_instrument,
-            "evidence_observed_at": observed,
-            "evidence_freshness_seconds": freshness,
-            "evidence_is_live": True,
-            "evidence_fallback_used": False,
-            "evidence_sequence_complete": True,
-            "evidence_final": True,
-            "execution_venue": "PAPER_INTERNAL",
-            "execution_market": MarketType.PERPETUAL.value,
-            "execution_instrument": symbol,
-            "timeframe": candidate.timeframe.value,
-            "instrument_mapping_version": f"paper-internal-{symbol.lower()}-v1",
-            "side": EntrySide.SELL.value,
-            "quantity": {"value": str(quantity), "unit": QuantityUnit.BASE.value},
-            "quantity_unit": QuantityUnit.BASE.value,
-            "order_type": EntryOrderType.MARKET.value,
-            "time_in_force": TimeInForce.IOC.value,
-            "limit_price": None,
-            "market_marker": True,
-            "entry_zone": {"lower": str(entry), "upper": str(entry), "price_unit": "USDT"},
-            "entry_zone_derivation": {
-                "formula_id": "fresh-perpetual-trade",
-                "formula_version": "1",
-            },
-            "slippage_policy": {
-                "policy_id": "paper-internal-exact",
-                "policy_version": "1",
-                "maximum_bps": "0",
-            },
-            "reduce_only": False,
-            "margin_mode": MarginMode.CROSS.value,
-            "position_mode": "NET",
-            "instrument_rules": {
-                "contract_multiplier": "1",
-                "contract_type": ContractType.LINEAR.value,
-                "base_currency": "BTC",
-                "quote_currency": "USDT",
-                "settlement_currency": "USDT",
-                "tick_size": str(assembled.bundle.tick_size),
-                "lot_size": str(_LOT),
-                "minimum_quantity": str(_LOT),
-                "minimum_notional": str(_MIN_NOTIONAL),
-                "rules_version": "paper-internal-linear-v1",
-            },
-            "basis_policy": {
-                "policy_id": "paper-internal-same-venue",
-                "policy_version": "1",
-                "evidence_price": {"value": str(entry), "unit": "USDT"},
-                "execution_price": {"value": str(entry), "unit": "USDT"},
-                "formula": "(execution_price-evidence_price)/evidence_price",
-                "timestamp": observed,
-                "tolerance_bps": "0",
-                "freshness_seconds": freshness,
-            },
-            "risk_and_exits": {
-                "risk_budget": {"value": str(quantity * distance), "unit": "USDT"},
-                "maximum_loss": {"value": str(quantity * distance), "unit": "USDT"},
-                "fee_allowance": {"value": "0", "unit": "USDT"},
-                "funding_allowance": {"value": "0", "unit": "USDT"},
-                "slippage_allowance": {"value": "0", "unit": "USDT"},
-                "stop": {"value": str(stop), "unit": "USDT"},
-                "targets": [
-                    {
-                        "order": 1,
-                        "price": {"value": str(target), "unit": "USDT"},
-                        "quantity_fraction": "1",
-                        "derivation": {"formula_id": "paper-internal-1r", "formula_version": "1"},
-                    }
-                ],
-                "runner": {
-                    "enabled": False,
-                    "activation_target_order": None,
-                    "remaining_quantity_fraction": "0",
-                    "rule_id": "paper-internal-no-runner",
-                    "rule_version": "1",
-                    "expression": "disabled",
-                },
-                "leverage": "1",
-                "margin_assumption_id": "paper-internal-cash",
-                "margin_assumption_version": "1",
-            },
-            "valid_from": now,
-            "valid_until": valid_until,
-            "calculation_inputs": [
-                {
-                    "name": "rounded_base_quantity",
-                    "input_value": str(quantity),
-                    "result_value": str(quantity),
-                    "unit": QuantityUnit.BASE.value,
-                    "formula_id": "floor-to-lot",
-                    "formula_version": "1",
-                    "precision": 3,
-                    "rounding_mode": "ROUND_FLOOR",
-                    "conservative_remainder": "0",
-                }
-            ],
-            "execution_policy_version": _POLICY_VERSION,
-            "presentation_metadata": {
-                "channel": AuthorizationChannel.API.value,
-                "display_title": "Internal paper confirmed setup",
-            },
-        }
+    return build_internal_paper_terms(
+        candidate=candidate,
+        account_id=account_id,
+        entry=entry,
+        stop=stop,
+        target=target,
+        quantity=quantity,
+        observed=observed,
+        now=now,
+        valid_until=valid_until,
+        freshness=freshness,
+        symbol=quote.provider_symbol,
+        tick_size=assembled.bundle.tick_size,
+        target_formula="nested-measured-impulse" if nested else "paper-internal-1r",
+        presentation={
+            "channel": AuthorizationChannel.API.value,
+            "display_title": "Internal paper confirmed setup",
+            "strategy_id": str(policy.strategy_id),
+            "strategy_version_id": str(candidate.strategy_version_id),
+            "setup_id": str(
+                scoped_setup_id(
+                    policy.organization_id, policy.strategy_version_id, events[-1].setup_id
+                )
+            )
+            if nested
+            else str(candidate.setup_definition_id),
+            "evidence_reference": candidate.evidence_window_hash,
+            "decision_reference": str(eligibility_id),
+        },
     )
 
 

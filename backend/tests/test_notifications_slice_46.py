@@ -155,6 +155,42 @@ def test_notification_preferences_default_in_app_only(slice46_client: TestClient
     assert body["using_defaults"] is True
 
 
+def test_versioned_telegram_preferences_persist_without_activation(slice46_db):
+    from app.schemas.telegram_policy import TelegramNotificationPolicyV2
+
+    with slice46_db() as session:
+        service = NotificationPreferencesService(session, AuditService(session))
+        policy = TelegramNotificationPolicyV2(setup_stages=("N2", "N3"), cooldown_seconds=120)
+        service.update(
+            NotificationPreferencesUpdate(telegram_policy=policy),
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+        )
+        session.commit()
+    with slice46_db() as session:
+        service = NotificationPreferencesService(session, AuditService(session))
+        prefs = service.get(organization_id=ORG_ID, user_id=USER_ID)
+        assert prefs.telegram_policy == policy
+        assert prefs.telegram_enabled is False
+        assert prefs.telegram_chat_id is None
+        for org, user in ((ORG_ID, READER_ID), (uuid.uuid4(), USER_ID)):
+            assert (
+                service.get(organization_id=org, user_id=user).telegram_policy
+                == TelegramNotificationPolicyV2()
+            )
+        service.update(
+            NotificationPreferencesUpdate(in_app_enabled=False),
+            organization_id=ORG_ID,
+            user_id=USER_ID,
+        )
+        assert service.get(organization_id=ORG_ID, user_id=USER_ID).telegram_policy == policy
+        service.reset_defaults(organization_id=ORG_ID, user_id=USER_ID)
+        assert (
+            service.get(organization_id=ORG_ID, user_id=USER_ID).telegram_policy
+            == TelegramNotificationPolicyV2()
+        )
+
+
 def test_patch_notification_preferences(slice46_client: TestClient) -> None:
     resp = slice46_client.patch(
         "/notifications/preferences",

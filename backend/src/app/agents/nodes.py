@@ -185,6 +185,86 @@ def _bound_strategy_id(agent: AgentState) -> str | None:
     return _message_uuid(agent.message)
 
 
+def paper_action(state: dict, runtime: AgentRuntime) -> dict:
+    """Validated conversation orchestration through canonical paper authorities only."""
+    from pydantic import ValidationError
+
+    from app.agents.paper_intent import parse_paper_confirmation, parse_paper_intent
+    from app.core.errors import AppError
+
+    agent = parse_state(state)
+    try:
+        if (
+            runtime.paper_execution_service is None
+            or runtime.session is None
+            or agent.organization_id is None
+            or agent.user_id is None
+            or agent.conversation_id is None
+        ):
+            raise ValueError("Canonical paper runtime and authenticated conversation are required.")
+        scope = {
+            "organization_id": agent.organization_id,
+            "user_id": agent.user_id,
+            "conversation_id": agent.conversation_id,
+        }
+        with runtime.session.begin_nested():
+            if agent.intent is Intent.PREPARE_PAPER_TRADE:
+                result = runtime.paper_execution_service.prepare(
+                    parse_paper_intent(agent.message), **scope
+                )
+            else:
+                result = runtime.paper_execution_service.confirm(
+                    parse_paper_confirmation(agent.message), **scope
+                )
+        if result.stage == "proposed":
+            plan = result.plan
+            answer = (
+                f"Paper execution proposal: {plan.side.value} {plan.execution_instrument}, "
+                f"entry {plan.basis_policy.execution_price.value}, "
+                f"stop {plan.risk_and_exits.stop.value}, "
+                f"targets {', '.join(str(t.price.value) for t in plan.risk_and_exits.targets)}, "
+                f"size {plan.quantity.value} {plan.quantity.unit}, "
+                f"maximum loss {plan.risk_and_exits.maximum_loss.value} USDT. "
+                f"Internal paper policy: fees, funding and slippage are zero. "
+                f"Valid until {plan.valid_until.isoformat()}.\n"
+                f"Confirm this exact proposal with:\n{result.confirmation_message}"
+            )
+        else:
+            answer = (
+                f"Paper action {result.stage}: Candidate {result.candidate_id}, "
+                f"plan {result.plan.plan_id}, revision {result.plan.revision_id}, "
+                f"paper action {result.paper_action_id}, receipt {result.receipt_id}, "
+                f"journal {result.journal_trade_id}."
+            )
+            if result.reason_code:
+                answer += f" Reason: {result.reason_code}."
+        return patch_state(
+            state,
+            {
+                "paper_execution": dump_partial(result),
+                "final_answer": answer,
+                "proposal_id": result.plan.plan_id,
+                "approval_id": result.approval_id,
+                "approval_required": result.stage == "proposed",
+                "risk_result": dump_partial(result.risk_result),
+                "risk_level": result.risk_result.severity,
+                "safety_verdict": SafetyVerdict.BLOCK
+                if result.stage == "blocked"
+                else agent.safety_verdict,
+            },
+        )
+    except (AppError, ValidationError, ValueError) as exc:
+        updates = {
+            "final_answer": f"Paper execution refused: {exc}",
+            "safety_verdict": SafetyVerdict.BLOCK,
+            "approval_required": False,
+        }
+        if isinstance(exc, AppError) and exc.details and "risk_result" in exc.details:
+            updates["risk_result"] = exc.details["risk_result"]
+            updates["risk_level"] = exc.details["risk_result"]["severity"]
+        return patch_state(state, updates)
+
+
 def strategy_workflow_tools(state: dict, runtime: AgentRuntime) -> dict:
     """Route Slice 33 tools for strategy library, pre-trade, sizing, and comparison."""
     agent = parse_state(state)
@@ -1930,7 +2010,12 @@ def narrative_enhancement(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
     if FORCE_INVALID_OUTPUT in agent.message.lower():
         return patch_state(state, {})
-    if agent.intent in {Intent.STRATEGY_PROPOSAL_CONFIRM, Intent.STRATEGY_PROPOSAL_REJECT}:
+    if agent.intent in {
+        Intent.STRATEGY_PROPOSAL_CONFIRM,
+        Intent.STRATEGY_PROPOSAL_REJECT,
+        Intent.PREPARE_PAPER_TRADE,
+        Intent.CONFIRM_PAPER_EXECUTION,
+    }:
         return patch_state(state, {})
     if agent.analysis_detail is None or runtime.narrative_service is None:
         return patch_state(state, {})
@@ -2012,7 +2097,12 @@ def output_validation(state: dict, runtime: AgentRuntime) -> dict:
     agent = parse_state(state)
     if agent.safety_verdict is SafetyVerdict.BLOCK and agent.final_answer:
         return patch_state(state, {})
-    if agent.intent in {Intent.STRATEGY_PROPOSAL_CONFIRM, Intent.STRATEGY_PROPOSAL_REJECT}:
+    if agent.intent in {
+        Intent.STRATEGY_PROPOSAL_CONFIRM,
+        Intent.STRATEGY_PROPOSAL_REJECT,
+        Intent.PREPARE_PAPER_TRADE,
+        Intent.CONFIRM_PAPER_EXECUTION,
+    }:
         return patch_state(state, {})
 
     result = runtime.guardrails.validate_output(GuardrailInput.from_agent_state(agent))

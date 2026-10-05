@@ -11,6 +11,8 @@ from typing import NoReturn
 from uuid import UUID
 
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
+from app.market_contracts.cursor import TradeStreamSnapshot
+from app.market_contracts.derivatives import DerivativeMetric, DerivativeObservation
 from app.market_contracts.errors import (
     EvidenceSourceSwitchRequiredError,
     RateLimitedError,
@@ -20,6 +22,7 @@ from app.market_contracts.errors import (
 )
 from app.market_contracts.identity import EvidenceMarketIdentity, InstrumentIdentity
 from app.market_contracts.ohlcv import ClosedOhlcvSeries
+from app.market_contracts.trade_reduction import build_released_trade_snapshot
 from app.market_contracts.trades import OrderedTradeBatch
 from app.providers.base import ProviderHealth, ProviderKind, ProviderStatus
 from app.schemas.common import Timeframe
@@ -82,6 +85,25 @@ class FailoverPerpetualSource:
             return self._secondary_instrument
         return self._primary_instrument
 
+    def fetch_derivative_observation(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        metric: DerivativeMetric,
+        observed_at: datetime,
+    ) -> DerivativeObservation:
+        self._require_active_identity(identity, instrument)
+        try:
+            return self.active_source.fetch_derivative_observation(
+                identity=identity,
+                instrument=instrument,
+                metric=metric,
+                observed_at=observed_at,
+            )
+        except _SWITCH_ERRORS as exc:
+            self._switch(exc)
+
     def fetch_closed_ohlcv(
         self,
         *,
@@ -116,6 +138,78 @@ class FailoverPerpetualSource:
         self._require_active_identity(identity, instrument)
         try:
             return self.active_source.fetch_ordered_trades(
+                identity=identity,
+                instrument=instrument,
+                start=start,
+                end=end,
+                source_connection_id=source_connection_id,
+                receive_at=receive_at,
+            )
+        except _SWITCH_ERRORS as exc:
+            self._switch(exc)
+
+    def reduce_ordered_trades(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        """Reduce on the active source. A source without reduce is released after fetch."""
+
+        self._require_active_identity(identity, instrument)
+        try:
+            reduce = getattr(self.active_source, "reduce_ordered_trades", None)
+            if callable(reduce):
+                reduced = reduce(
+                    identity=identity,
+                    instrument=instrument,
+                    start=start,
+                    end=end,
+                    source_connection_id=source_connection_id,
+                    receive_at=receive_at,
+                )
+                if not isinstance(reduced, TradeStreamSnapshot):
+                    raise WrongSourceError("Trade reduction did not return a snapshot.")
+                return reduced
+            batch = self.active_source.fetch_ordered_trades(
+                identity=identity,
+                instrument=instrument,
+                start=start,
+                end=end,
+                source_connection_id=source_connection_id,
+                receive_at=receive_at,
+            )
+            return build_released_trade_snapshot(
+                batch.trades,
+                identity=identity,
+                lineage_id=source_connection_id,
+                window_start=start,
+                window_end=end,
+                observed_at=receive_at,
+            )
+        except _SWITCH_ERRORS as exc:
+            self._switch(exc)
+
+    def fetch_order_flow_snapshot(
+        self,
+        *,
+        identity: EvidenceMarketIdentity,
+        instrument: InstrumentIdentity,
+        start: datetime,
+        end: datetime,
+        source_connection_id: UUID,
+        receive_at: datetime,
+    ) -> TradeStreamSnapshot:
+        self._require_active_identity(identity, instrument)
+        try:
+            fetch = getattr(self.active_source, "fetch_order_flow_snapshot", None)
+            if not callable(fetch):
+                raise WrongSourceError("Active provider has no verified order-flow contract.")
+            return fetch(
                 identity=identity,
                 instrument=instrument,
                 start=start,

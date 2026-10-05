@@ -76,6 +76,7 @@ from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.risk_service import RiskService
 from app.services.setup_evidence_service import SetupEvidenceService
+from app.services.strategy_analytics_service import StrategyAnalyticsService
 from app.services.strategy_library_service import StrategyLibraryService
 from app.services.strategy_quality import StrategyQualityService
 from app.services.strategy_service import StrategyService
@@ -306,6 +307,13 @@ def get_journal_statistics_service(
     return JournalStatisticsService(session, max_rows=settings.journal_stats_max_rows)
 
 
+def get_strategy_analytics_service(
+    session: SessionDep,
+    settings: SettingsDep,
+) -> StrategyAnalyticsService:
+    return StrategyAnalyticsService(session, max_rows=settings.journal_stats_max_rows)
+
+
 def get_journal_excursion_replay_service(
     session: SessionDep,
     audit_service: AuditServiceDep,
@@ -360,6 +368,9 @@ JournalServiceDep = Annotated[JournalService, Depends(get_journal_service)]
 JournalTradeServiceDep = Annotated[JournalTradeService, Depends(get_journal_trade_service)]
 JournalStatisticsServiceDep = Annotated[
     JournalStatisticsService, Depends(get_journal_statistics_service)
+]
+StrategyAnalyticsServiceDep = Annotated[
+    StrategyAnalyticsService, Depends(get_strategy_analytics_service)
 ]
 JournalExcursionReplayServiceDep = Annotated[
     JournalExcursionReplayService, Depends(get_journal_excursion_replay_service)

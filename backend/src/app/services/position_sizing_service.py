@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 
 from app.schemas.common import PreTradeRecommendation
-from app.schemas.position_sizing import PositionSizingRequest, PositionSizingResult
+from app.schemas.position_sizing import (
+    PaperPositionSizingRequest,
+    PaperPositionSizingResult,
+    PositionSizingRequest,
+    PositionSizingResult,
+)
 
 
 class PositionSizingService:
@@ -61,6 +66,32 @@ class PositionSizingService:
             worst_case_scenario=worst_case,
             final_recommendation=recommendation,
             planned_loss_amount=max_loss,
+        )
+
+    def calculate_paper(self, request: PaperPositionSizingRequest) -> PaperPositionSizingResult:
+        """Size linear internal paper BASE quantity from approved cash risk, rounding down."""
+        costs = request.fee_allowance + request.funding_allowance + request.slippage_allowance
+        distance = abs(request.entry - request.stop)
+        if distance <= 0 or costs >= request.approved_risk_amount:
+            raise ValueError(
+                "Approved monetary risk must cover costs and a positive stop distance."
+            )
+        raw = min(
+            (request.approved_risk_amount - costs) / distance,
+            max(Decimal("0"), request.maximum_notional - costs) / request.entry,
+        )
+        quantity = (raw / request.lot_size).to_integral_value(rounding=ROUND_FLOOR)
+        quantity *= request.lot_size
+        if (
+            quantity < request.minimum_quantity
+            or quantity * request.entry < request.minimum_notional
+        ):
+            raise ValueError("Deterministic paper size is below instrument minimums.")
+        return PaperPositionSizingResult(
+            raw_quantity=raw,
+            quantity=quantity,
+            maximum_loss=quantity * distance + costs,
+            conservative_remainder=raw - quantity,
         )
 
     @staticmethod

@@ -22,6 +22,7 @@ from app.services.strategy_versioning import StrategyVersioningService
 from app.signal_fusion.errors import StrategyEvaluationPolicyError
 from app.signal_fusion.strategy_evaluation_policy import ExecutableStrategyPolicy
 from app.watcher.hashing import derive_scan_scope
+from app.workers.watcher_watchlist import ordered_watch_symbols
 
 FIRST_SLICE_SYMBOL = "BTCUSDT"
 FIRST_SLICE_TIMEFRAME = Timeframe.M15.value
@@ -155,6 +156,51 @@ def list_paper_scan_targets(
     return tuple(targets)
 
 
+def list_watchlist_scan_targets(
+    session: Session,
+    *,
+    symbols: Sequence[str],
+    organization_id: UUID | None = None,
+    limit: int,
+) -> tuple[PaperScanTarget, ...]:
+    """Scan targets for the configured slots.
+
+    BTC is not inserted. A compiled strategy is attached only when its authored
+    symbol is the slot being scanned, so a BTC strategy is not applied to
+    another market.
+    """
+
+    enabled_symbols = ordered_watch_symbols(symbols)
+    stmt = select(UserStrategy).where(UserStrategy.enabled.is_(True))
+    if organization_id is not None:
+        stmt = stmt.where(UserStrategy.organization_id == organization_id)
+    stmt = stmt.order_by(UserStrategy.organization_id, UserStrategy.created_at, UserStrategy.id)
+    versioning = StrategyVersioningService(session)
+    strategies: list[tuple[UserStrategy, ExecutableStrategyPolicy]] = []
+    for strategy in session.scalars(stmt):
+        version = versioning.selected_version(strategy)
+        if version is None:
+            continue
+        try:
+            executable = resolve_executable_strategy_policy(
+                session,
+                organization_id=strategy.organization_id,
+                strategy_version_id=version.id,
+            )
+        except (StrategyEvaluationPolicyError, NotFoundError):
+            continue
+        strategies.append((strategy, executable))
+    targets: list[PaperScanTarget] = []
+    for symbol in enabled_symbols:
+        for strategy, executable in strategies:
+            if executable.authored_spec.symbol.strip().upper() != symbol:
+                continue
+            targets.append(_target_from_executable(strategy, executable, symbol=symbol))
+            if len(targets) >= limit:
+                return tuple(targets)
+    return tuple(targets)
+
+
 def _target_from_executable(
     strategy: UserStrategy,
     executable: ExecutableStrategyPolicy,
@@ -170,5 +216,5 @@ def _target_from_executable(
         compiled_content_hash=executable.compiled_content_hash,
         fusion_policy_version=str(executable.fusion_policy.policy_version),
         symbol=symbol.strip().upper(),
-        timeframe=FIRST_SLICE_TIMEFRAME,
+        timeframe=executable.authored_spec.trigger_timeframe,
     )

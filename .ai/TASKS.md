@@ -5,6 +5,45 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-092 — Full governed paper closed loop acceptance 001
+- Priority: P1 · Status: DONE · Dependencies: pinned release baseline
+  `8673d8f69779ea516ca97456baea7b3064daf089` · Risk: Medium (paper Journal projection).
+- Branch: `codex/full_paper_closed_loop_acceptance_001`.
+- Goal: One deterministic supported strategy through canonical evidence, Watcher,
+  assessment/Candidate, eligibility/Risk, immutable plan, explicit confirmation,
+  internal paper fill, Journal, attribution/Analytics, Daily Review, Attention
+  and a canonical read-only Agent explanation; notification outbox without delivery.
+- Safety: Real trading false; execution paper; exchange paper_internal; Telegram
+  network disabled. No diagnostic branch dependency, deployment or transfer paths.
+- Validation: Twelve new PostgreSQL acceptance cases; all requested lifecycle,
+  authority, review, Agent, notification, isolation/idempotency and safety suites;
+  full backend/frontend, evaluation and deployment self-checks.
+- Result: All 3,788 backend cases verified passing with zero skips after harness
+  retries; 12 acceptance + four rehearsal cases pass. Frontend 1,316 cases,
+  evaluations 16/5/7, lint/types, fixture-font build and nine safety checks pass.
+- Evidence: `docs/full_paper_closed_loop_acceptance_001.md` and captured proof /
+  verification JSON reports. Draft PR targets the exact pinned release branch.
+
+---
+
+## AT-091 — Proactive attention queue 001
+- Priority: P1 · Status: DONE · Dependencies: exact base
+  `5f4f0a467ce8f68f9c7a82d3b32307d559a9f092` · Risk: Low (read-only projection).
+- Branch: `codex/proactive_attention_queue_001`.
+- Goal: Deterministic tenant/user attention from recorded Watcher/setup, risk,
+  paper positions, review lessons, validation/replay, evidence, delivery and
+  pending strategy proposal records, with semantic deduplication and expiry.
+- Safety: No trade execution, strategy approval, risk bypass, Telegram send,
+  worker activation, migration or deployment. Agent integration deferred.
+- Validation: Attention reducer/reader/API cases, Dashboard card/API tests,
+  existing Daily Review/Brain regressions, lint and type checks.
+- Result: 94 focused backend passed / eight PostgreSQL-only skipped; all 1,306
+  frontend cases passed. Full backend completed with one read-only uv-cache
+  self-check failure that passed when rerun using `/tmp` cache; details in handoff.
+- Draft PR: https://github.com/Fejjii/AlphaTrade-AI/pull/182.
+- Handoff: `docs/proactive_attention_queue_001.md`, branch root `HANDOFF.md` and
+  `CHANGELOG_SESSION.md`; draft PR targets the exact release baseline branch.
+
 ---
 
 ## AT-000 — Bootstrap + install Master Workflow v2.0
@@ -1956,4 +1995,51 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
 - ADR: AT-ADR-069
 - Note: Do not deploy, arm Watcher, or activate Telegram.
 
+### AT-088 — Interactive agent foundation
+- Priority: P1 · Status: DONE · Dependencies: conversation, journal, strategy,
+  and knowledge stores · Risk: Medium (chat must not gain a live-trading path)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`; no
+  deploy; no Render change; no Watcher or Telegram activation
+- Goal: Backend orchestration for an Agent surface that proposes structured
+  actions and reads existing authorities.
+- Branch: `cursor/interactive-agent-foundation-4807`
+- Alembic: unchanged. No new revision.
+- ADR: AT-ADR-074
+- Remaining: screenshot and voice implementations, and default Qdrant retrieval.
+  The simplified UI is integrated on the release-candidate branch. Voice and
+  screenshot stay unimplemented.
+- Note: Do not deploy or enable real trading.
 
+### AT-089 — Reviewed paper release candidate
+- Priority: P0 · Status: IN_PROGRESS · Dependencies: AT-088 and the enrollment
+  and worker-memory branches · Risk: Medium (integration must not widen
+  trading authority)
+- Safety classification: Paper execution; `ENABLE_REAL_TRADING=false`; no
+  deploy; no Render change; no additional symbols; no Telegram arm
+- Goal: Integrate PR 146, PR 149, PR 145, and PR 147. Exclude PR 148.
+- Branch: `cursor/release-candidate-146-149-145-147-5354`
+- Alembic: head `a8c3e1b94d20` must be applied before the paper worker starts.
+  Staging is not migrated by this task.
+- ADR: AT-ADR-072, AT-ADR-073, AT-ADR-074, AT-ADR-075
+- Note: Do not merge to main, deploy, or enable real trading.
+
+### AT-090 — Configurable five-symbol paper Watcher
+- Priority: P1 · Status: DONE · Dependencies: PR 150 head
+  `33287b6a872beed9846828853930e867d1c892c2` · Risk: Medium (market identity)
+- Safety classification: Paper only. Real trading stays disabled. No Render
+  deploy, no Telegram arm, no Alembic migration.
+- Goal: One Watcher process with five configurable slots. BTC is no longer the
+  only valid market identity. Unsupported symbols fail closed.
+- Branch: `cursor/watchlist_v1`
+- ADR: AT-ADR-076
+- Validation: `tests/test_watcher_five_symbol_watchlist.py` (15 passed),
+  `tests/test_watcher_paper_runtime.py`, `tests/test_bybit_usdt_perpetual_evidence.py`,
+  `tests/test_phase6_fusion_evaluator.py::test_wrong_instrument_fail_closed`,
+  `tests/test_phase6_fusion_evaluator.py::test_stale_evidence_fail_closed`,
+  frontend `WatcherWatchlistSection.test.tsx` and settings page tests (8 passed).
+  mypy on the touched modules reported no issues. `tsc --noEmit` passed.
+- Blocker: Bybit `instruments-info` returned HTTP 403, so Bybit listings for
+  the non-BTC symbols are not proven. Binance USD-M rows for all five symbols
+  were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
+  returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
+- Note: Do not merge automatically. Do not deploy.

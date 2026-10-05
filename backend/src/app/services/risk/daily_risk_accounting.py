@@ -7,6 +7,7 @@ Reads portfolio/order facts from the database, writes them through to
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -15,8 +16,14 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import DailyRiskState, Order, Position
-from app.schemas.common import ExecutionMode, OrderStatus, PositionStatus
+from app.db.models import DailyRiskState, JournalTrade, Order, Position
+from app.schemas.common import (
+    ExecutionMode,
+    JournalTradeSource,
+    JournalTradeStatus,
+    OrderStatus,
+    PositionStatus,
+)
 from app.services.risk.settings_service import RiskSettingsService, normalize_timezone
 
 
@@ -39,9 +46,16 @@ class AuthoritativeDailySnapshot:
 class DailyRiskAccounting:
     """Compute and persist daily risk state from paper portfolio facts."""
 
-    def __init__(self, session: Session, risk_settings: RiskSettingsService) -> None:
+    def __init__(
+        self,
+        session: Session,
+        risk_settings: RiskSettingsService,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._session = session
         self._settings = risk_settings
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
 
     @property
     def risk_settings(self) -> RiskSettingsService:
@@ -58,10 +72,11 @@ class DailyRiskAccounting:
             user_id=user_id,
         )
         tz_name, _ = normalize_timezone(user_settings.timezone)
+        now = self._clock().astimezone(UTC)
         try:
-            today = datetime.now(UTC).astimezone(ZoneInfo(tz_name)).date()
+            today = now.astimezone(ZoneInfo(tz_name)).date()
         except Exception:
-            today = date.today()
+            today = now.date()
             tz_name = "UTC"
         return today, tz_name
 
@@ -102,6 +117,16 @@ class DailyRiskAccounting:
             user_id=user_id,
         )
 
+        canonical_realized, canonical_count, canonical_exposure = self._canonical_portfolio_totals(
+            organization_id=organization_id,
+            user_id=user_id,
+            start_utc=start_utc,
+            end_utc=end_utc,
+        )
+        realized += canonical_realized
+        trade_count += canonical_count
+        open_exposure += canonical_exposure
+
         row = self._settings.ensure_daily_risk_state(
             organization_id=organization_id,
             user_id=user_id,
@@ -141,6 +166,47 @@ class DailyRiskAccounting:
             account_equity=account_equity,
             row=row,
         )
+
+    def _canonical_portfolio_totals(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> tuple[Decimal, int, Decimal]:
+        """Canonical fills and net outcomes, excluding legacy position mirrors."""
+        scope = (
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.user_id == user_id,
+            JournalTrade.source == JournalTradeSource.PAPER_EXECUTION,
+            JournalTrade.execution_lifecycle_id.is_not(None),
+            JournalTrade.linked_position_id.is_(None),
+        )
+        realized = self._session.scalar(
+            select(func.sum(JournalTrade.net_pnl)).where(
+                *scope,
+                JournalTrade.status == JournalTradeStatus.CLOSED,
+                JournalTrade.exit_time >= start_utc,
+                JournalTrade.exit_time < end_utc,
+            )
+        )
+        count = self._session.scalar(
+            select(func.count(JournalTrade.id)).where(
+                *scope,
+                JournalTrade.entry_time >= start_utc,
+                JournalTrade.entry_time < end_utc,
+                JournalTrade.status.in_((JournalTradeStatus.OPEN, JournalTradeStatus.CLOSED)),
+            )
+        )
+        exposure = self._session.scalar(
+            select(
+                func.sum(
+                    JournalTrade.size * JournalTrade.entry_price,
+                )
+            ).where(*scope, JournalTrade.status == JournalTradeStatus.OPEN)
+        )
+        return Decimal(str(realized or 0)), int(count or 0), Decimal(str(exposure or 0))
 
     def record_after_paper_fill(
         self,

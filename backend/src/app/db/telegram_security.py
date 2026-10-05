@@ -252,6 +252,14 @@ class TelegramOutboxRow(Base):
             "lease_until",
             "created_at",
         ),
+        Index(
+            "ix_tgsec_outbox_policy_history",
+            "organization_id",
+            "user_id",
+            "bot_id",
+            "chat_id",
+            "created_at",
+        ),
         CheckConstraint("attempt >= 0", name="tgsec_outbox_attempt_min"),
     )
 
@@ -264,11 +272,13 @@ class TelegramOutboxRow(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     text: Mapped[str] = mapped_column(String(4096), nullable=False)
+    notification_event: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     transport_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

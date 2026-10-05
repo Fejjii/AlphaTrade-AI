@@ -44,7 +44,12 @@ vi.mock("@/contexts/AppContext", () => ({
       execution_blocked: false,
     },
     killSwitchError: null,
-    health: { status: "ok", version: "0.1", execution_mode: "paper", real_trading_enabled: false },
+    health: {
+      status: "ok",
+      version: "0.1",
+      execution_mode: "paper",
+      real_trading_enabled: false,
+    },
     providers: appState.providers,
   }),
   useSafetyPosture: () => posture,
@@ -173,35 +178,48 @@ describe("TopBar page identity and account control", () => {
   it("shows Dashboard title", () => {
     navigationState.pathname = "/";
     renderTopBar();
-    expect(within(screen.getByTestId("topbar-page-identity")).getByText("Dashboard")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("topbar-page-identity")).getByText("Dashboard"),
+    ).toBeInTheDocument();
   });
 
-  it("shows Signals title", () => {
+  it("shows Knowledge as its own destination without a Strategies breadcrumb", () => {
+    navigationState.pathname = "/knowledge";
+    renderTopBar();
+    expect(screen.getByTestId("topbar-page-identity")).toHaveTextContent("Knowledge");
+    expect(screen.queryByTestId("topbar-page-subtitle")).not.toBeInTheDocument();
+  });
+
+  it("shows Settings with the signals inbox subtitle on the retained route", () => {
     navigationState.pathname = "/tradingview-signals";
     renderTopBar();
-    expect(within(screen.getByTestId("topbar-page-identity")).getByText("Signals")).toBeInTheDocument();
+    const identity = screen.getByTestId("topbar-page-identity");
+    expect(identity).toHaveTextContent("Settings");
+    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Signals inbox");
   });
 
   it("shows nested Alerts Review breadcrumb subtitle", () => {
     navigationState.pathname = "/alerts/review";
     renderTopBar();
     const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Signals");
-    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Signals / Setup Review");
+    expect(identity).toHaveTextContent("Settings");
+    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Settings / Setup Review");
   });
 
   it("falls back safely for validation candidate detail", () => {
     navigationState.pathname = "/paper-validation/candidates/cand-123";
     renderTopBar();
     const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Validate");
+    expect(identity).toHaveTextContent("Settings");
     expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Candidates");
   });
 
   it("falls back for unknown routes with neutral identity", () => {
     navigationState.pathname = "/not-a-known-route";
     renderTopBar();
-    expect(within(screen.getByTestId("topbar-page-identity")).getByText("AlphaTrade")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("topbar-page-identity")).getByText("AlphaTrade"),
+    ).toBeInTheDocument();
   });
 
   it("restores focus to the account trigger after Escape", async () => {

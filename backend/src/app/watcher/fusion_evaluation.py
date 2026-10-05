@@ -22,6 +22,9 @@ from threading import RLock
 from typing import Protocol, cast
 from uuid import UUID
 
+from pydantic import Field
+
+from app.market_contracts.evidence_diagnostics import EvidenceComponentDiagnostic
 from app.signal_fusion.adapters import AssessmentCommand, evidence_window_from_assessment_command
 from app.signal_fusion.assessment import SetupAssessment
 from app.signal_fusion.candidate import Candidate
@@ -104,6 +107,7 @@ class WatcherCanonicalScanEvidence(FrozenModel):
     evaluated_at: datetime
     previous_assessment: SetupAssessment | None = None
     policy_authority: ExecutablePolicyAuthority = ExecutablePolicyAuthority.IN_MEMORY_TEST_HELPER
+    evidence_diagnostics: tuple[EvidenceComponentDiagnostic, ...] = Field(default=(), max_length=40)
 
 
 class WatcherScanEvidencePort(Protocol):
@@ -344,14 +348,15 @@ class WatcherFusionEvaluationService:
                 reason_code=exc.reason_code,
                 failed_units=1,
                 error=str(exc),
+                evidence_diagnostics=exc.diagnostics,
             )
-        except Exception as exc:
+        except Exception:
             return _outcome(
                 command,
                 status=EvaluationStatus.FAILED,
-                reason_code="canonical_evidence_unavailable",
+                reason_code="canonical_contract_unexpected_error",
                 failed_units=1,
-                error=str(exc),
+                error="Canonical evidence boundary failed with an unexpected error.",
             )
         if snapshot is None:
             return _outcome(
@@ -458,6 +463,7 @@ class WatcherFusionEvaluationService:
             evidence_validity_token=prepared.assessment.evidence_window_hash,
             candidate_ids=candidate_ids,
             unit_reason=prepared.assessment.state.value,
+            evidence_diagnostics=prepared.snapshot.evidence_diagnostics,
         )
 
     def _maybe_create_candidate(
@@ -491,16 +497,33 @@ class WatcherFusionEvaluationService:
                 "In-memory or injected executable policies cannot mint Candidates."
             )
         with _persistence_fence_context(self._persistence_fence, command):
+            episode = getattr(self._evidence, "candidate_episode", lambda: None)()
+            if episode is not None:
+                if episode.state in {"INVALIDATED", "EXPIRED", "COMPLETED"}:
+                    return ()
+                if (
+                    episode.candidate_id is not None
+                    and episode.assessment_id != assessment.assessment_id
+                ):
+                    # A corrected/sliding window cannot remint an already accepted episode.
+                    return ()
             created = self._lifecycle.create_from_confirmed_setup(
                 CandidateCreationCommand(
                     assessment=assessment,
                     evidence_window=window,
                     executable_setup=bound_command.executable_setup,
                     evidence_identity=bound_command.evidence_identity,
-                    idempotency_key=f"watcher:{assessment.evidence_window_hash}",
+                    idempotency_key=(
+                        f"watcher:{episode.payload.get('family', 'nested')}:{episode.id}"
+                    )
+                    if episode is not None
+                    else f"watcher:{assessment.evidence_window_hash}",
                     correlation_id=assessment.correlation_id,
                 )
             )
+            if episode is not None:
+                episode.candidate_id = created.candidate_id
+                episode.assessment_id = assessment.assessment_id
         self._published_candidate_ids.append(created.candidate_id)
         if window is not None:
             self._discussion_snapshot = WatcherDiscussionSnapshot(
@@ -587,6 +610,7 @@ def _outcome(
     evidence_validity_token: str | None = None,
     candidate_ids: tuple[UUID, ...] = (),
     unit_reason: str | None = None,
+    evidence_diagnostics: tuple[EvidenceComponentDiagnostic, ...] = (),
 ) -> EvaluationOutcome:
     subjects = command.request.watchlist_item_ids or (command.command_id,)
     unit_status = UnitAttemptStatus.SUCCEEDED
@@ -617,6 +641,7 @@ def _outcome(
         evidence_validity_token=evidence_validity_token,
         error=error,
         candidate_ids=candidate_ids,
+        evidence_diagnostics=evidence_diagnostics,
     )
 
 

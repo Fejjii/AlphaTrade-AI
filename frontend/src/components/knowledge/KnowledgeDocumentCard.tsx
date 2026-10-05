@@ -60,12 +60,6 @@ export function KnowledgeDocumentCard({
             </Badge>
           </div>
         </div>
-        <p className="min-w-0 text-xs text-text-muted" data-testid="knowledge-document-id">
-          ID:{" "}
-          <span className="inline-block max-w-full truncate align-bottom font-mono" title={document.id}>
-            {document.id}
-          </span>
-        </p>
         {deepLinkNotices.map((notice) => (
           <p
             key={notice.kind}
@@ -78,36 +72,40 @@ export function KnowledgeDocumentCard({
         ))}
       </CardHeader>
       <CardContent className="min-w-0 space-y-3 text-sm text-text-secondary">
-        <div data-testid="knowledge-source-context" className="min-w-0 space-y-1">
-          <p className="break-words">
-            <span className="text-text-muted">Source type: </span>
-            {formatSourceType(document.source_type)}
-          </p>
+        <div
+          data-testid="knowledge-source-context"
+          className="min-w-0 space-y-1"
+        >
           <p className="min-w-0" data-testid="knowledge-source-uri">
             <span className="text-text-muted">Source URI: </span>
             <span
               className="inline-block max-w-full truncate align-bottom font-mono text-caption"
               title={document.source_uri?.trim() || undefined}
             >
-              {document.source_uri?.trim() ? document.source_uri : "unavailable"}
+              {document.source_uri?.trim()
+                ? document.source_uri
+                : "unavailable"}
             </span>
           </p>
-          <p>
-            <span className="text-text-muted">Version: </span>
-            {document.version}
-          </p>
-          <p>
-            <span className="text-text-muted">Created: </span>
-            {createdLabel ?? "freshness unavailable"}
-          </p>
-          <p>
-            <span className="text-text-muted">Updated: </span>
-            {updatedLabel ?? "freshness unavailable"}
-          </p>
+          <details className="min-w-0 text-xs text-text-muted">
+            <summary className="inline-flex min-h-11 cursor-pointer items-center">
+              Provenance details
+            </summary>
+            <div className="space-y-1 break-all">
+              <p data-testid="knowledge-document-id">Document: {document.id}</p>
+              <p>Source URI: {document.source_uri?.trim() || "unavailable"}</p>
+              <p>Version: {document.version}</p>
+              <p>Created: {createdLabel ?? "unavailable"}</p>
+              <p>Updated: {updatedLabel ?? "unavailable"}</p>
+              {document.source_hash ? (
+                <p>Source hash: {document.source_hash}</p>
+              ) : null}
+            </div>
+          </details>
         </div>
 
         <ul className="min-w-0 space-y-1" data-testid="knowledge-relationships">
-          {relationships.length === 0 ? (
+          {relationships.length === 0 && expanded ? (
             <li
               className="text-text-muted"
               data-testid="knowledge-relationship-none"
@@ -122,17 +120,20 @@ export function KnowledgeDocumentCard({
                 data-testid={`knowledge-relationship-${link.kind}`}
               >
                 {link.href && link.id ? (
-                  <Link href={link.href} className="break-all underline text-text-primary">
+                  <Link
+                    href={link.href}
+                    className="inline-flex min-h-11 items-center break-all underline text-text-primary"
+                  >
                     {link.label}: open
                   </Link>
-                ) : (
+                ) : expanded ? (
                   <span
                     data-testid={`knowledge-relationship-unavailable-${link.kind}`}
                     className="text-text-muted"
                   >
                     {link.label}: {link.unavailableReason ?? "unavailable"}
                   </span>
-                )}
+                ) : null}
               </li>
             ))
           )}

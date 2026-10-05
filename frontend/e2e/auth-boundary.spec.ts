@@ -17,6 +17,10 @@ test.describe("AT-017 edge auth boundary", () => {
     await page.goto("/proposals?id=abc");
     await expect(page).toHaveURL(/\/login\?next=%2Fproposals%3Fid%3Dabc/);
 
+    await page.goto("/settings#notifications");
+    await expect(page).toHaveURL(/\/login\?next=%2Fsettings/);
+    await expect(page.getByTestId("telegram-policy-v2")).toHaveCount(0);
+
     await page.goto("/");
     await expect(page).toHaveURL(/\/login$/);
   });
