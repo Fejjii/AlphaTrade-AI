@@ -82,6 +82,7 @@ def model_requires_responses_api(model: str) -> bool:
         return False
     prefixes = (
         "gpt-5",
+        "gpt-6",
         "o1",
         "o3",
         "o4",

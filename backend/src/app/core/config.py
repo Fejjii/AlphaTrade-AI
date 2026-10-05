@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     # platform on pure internal simulation with no external exchange calls.
     exchange_mode: ExchangeMode = ExchangeMode.PAPER_INTERNAL
     blofin_demo_enabled: bool = False
+    # Explicit staging API capability. The Watcher remains internal paper until
+    # its canonical venue dispatch and fill reconciliation are implemented.
+    blofin_live_evidence_demo_enabled: bool = False
     # Stored secrets. ``repr=False`` so Settings logs and exceptions do not
     # print them. Loading for an authenticated client goes through
     # ``app.core.execution_credentials``, not these fields.

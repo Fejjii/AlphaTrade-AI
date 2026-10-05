@@ -92,6 +92,7 @@ class HealthResponse(BaseModel):
     telegram_inbound_mode: str = "off"
     telegram_network_permitted: bool = False
     blofin_readonly_sync_enabled: bool = False
+    blofin_live_evidence_demo_enabled: bool = False
     blofin_readonly_sync_credentials_configured: bool = False
     blofin_readonly_sync_origin_configured: bool = False
     perpetual_evidence_source: Literal["replay", "binance_usdm", "bybit_usdt_perpetual"]

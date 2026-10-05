@@ -4,8 +4,9 @@ Replay stays the process default so deterministic tests do not need the
 network. Staging's intended evidence source is the public USD-M adapter.
 Selecting that source refuses Binance credentials, spot hosts, the legacy
 scanner, legacy Telegram delivery, and live trading. Stored BloFin secrets
-may remain, but paper isolation keeps them sealed: they are not loaded and
-cannot build an authenticated client. The staging paper Watcher arm may
+may remain, but paper isolation keeps them sealed by default. An explicit
+staging API demo capability can separately construct a demo-only BloFin client;
+those credentials never enter the public market adapter. The paper Watcher arm may
 select this source. Rollback is ``PERPETUAL_EVIDENCE_SOURCE=replay``.
 """
 
@@ -19,6 +20,7 @@ from urllib.parse import urlsplit
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
 from app.core.execution_credentials import (
     blofin_execution_authorized,
+    live_evidence_demo_access_requested,
     paper_credential_isolation_active,
 )
 from app.market_contracts.catalog import default_perpetual_catalog
@@ -202,21 +204,26 @@ def _secondary_pairing_errors(settings: Settings) -> list[str]:
 
 def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list[str]:
     errors = _origin_errors_for(settings)
+    demo_access = live_evidence_demo_access_requested(settings) and blofin_execution_authorized(
+        settings
+    )
+    if settings.blofin_live_evidence_demo_enabled and not demo_access:
+        errors.append("live evidence demo access requires the complete staging API demo gate.")
     if settings.enable_real_trading or settings.real_trading_enabled:
         errors.append("live USD-M evidence cannot be combined with real trading.")
     if settings.execution_mode is not ExecutionMode.PAPER:
         errors.append("live USD-M evidence requires execution_mode=paper.")
-    if settings.exchange_mode is not ExchangeMode.PAPER_INTERNAL:
+    if settings.exchange_mode is not ExchangeMode.PAPER_INTERNAL and not demo_access:
         errors.append("live USD-M evidence requires exchange_mode=paper_internal.")
-    if settings.blofin_demo_enabled:
+    if settings.blofin_demo_enabled and not demo_access:
         errors.append("blofin_demo_enabled must be false for live USD-M evidence.")
-    # Capability, not presence. Stored BloFin secrets are allowed only while
-    # paper isolation holds and the execution gate stays closed.
-    if not paper_credential_isolation_active(settings):
+    # Capability, not presence. The explicit staging API demo gate is separate
+    # from the public market adapter and cannot activate a Watcher worker.
+    if not paper_credential_isolation_active(settings) and not demo_access:
         errors.append(
             "paper credential isolation must hold so a BloFin execution client cannot initialize."
         )
-    if blofin_execution_authorized(settings):
+    if blofin_execution_authorized(settings) and not demo_access:
         errors.append("authenticated BloFin execution must stay closed for live USD-M evidence.")
     present = [name for name in FORBIDDEN_MARKET_CREDENTIAL_ENV if _env_is_set(environ, name)]
     if present:

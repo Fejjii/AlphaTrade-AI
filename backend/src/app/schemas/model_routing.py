@@ -211,6 +211,7 @@ TIER_A_PURPOSES: frozenset[ModelRoutingPurpose] = frozenset(
         ModelRoutingPurpose.STRATEGY_REVIEW,
         ModelRoutingPurpose.LESSON_SYNTHESIS,
         ModelRoutingPurpose.EVIDENCE_EXPLANATION,
+        ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS,
     }
 )
 
@@ -218,6 +219,5 @@ TIER_B_PURPOSES: frozenset[ModelRoutingPurpose] = frozenset(
     {
         ModelRoutingPurpose.INTENT_CLASSIFICATION,
         ModelRoutingPurpose.NARRATIVE_SYNTHESIS,
-        ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS,
     }
 )

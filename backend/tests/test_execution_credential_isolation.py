@@ -108,6 +108,64 @@ def test_staging_settings_boot_with_stored_blofin_credentials() -> None:
     _assert_secrets_absent(repr(settings))
 
 
+def _staging_demo_settings(**overrides: object) -> Settings:
+    values = {
+        **_STAGING,
+        "exchange_mode": "paper_exchange_demo",
+        "blofin_demo_enabled": True,
+        "blofin_live_evidence_demo_enabled": True,
+        "blofin_demo_rest_base_url": _DEMO_REST,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_explicit_staging_demo_gate_keeps_binance_public() -> None:
+    settings = _staging_demo_settings()
+    assert activation_state(settings) == "active"
+    assert blofin_execution_authorized(settings)
+    assert settings.real_trading_enabled is False
+    requests: list[httpx.Request] = []
+
+    def public(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.host == "fapi.binance.com"
+        assert request.method == "GET"
+        _assert_secrets_absent(str(request.headers))
+        assert "authorization" not in request.headers
+        assert "x-mbx-apikey" not in request.headers
+        return httpx.Response(200, json={})
+
+    source = resolve_perpetual_evidence_source(settings, transport=httpx.MockTransport(public))
+    assert isinstance(source, BinanceUsdmPerpetualSource)
+    source._get("/fapi/v1/ping", None)
+    assert len(requests) == 1
+    assert load_blofin_execution_credentials(settings).api_key == _KEY
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"blofin_live_evidence_demo_enabled": False},
+        {"environment": "local"},
+        {"environment": "production"},
+        {"worker_enabled": True},
+        {"enable_paper_scheduler": True},
+        {"paper_signal_orchestration_enabled": True},
+        {"watcher_orchestration_enabled": True},
+        {"blofin_api_passphrase": ""},
+        {"blofin_demo_rest_base_url": "https://openapi.blofin.com"},
+        {"enable_real_trading": True},
+        {"execution_mode": "trade"},
+    ],
+)
+def test_staging_demo_capability_refuses_incomplete_or_worker_gate(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        _staging_demo_settings(**overrides)
+
+
 def test_stored_credentials_do_not_reach_market_or_paper_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

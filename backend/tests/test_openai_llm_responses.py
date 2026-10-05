@@ -61,6 +61,10 @@ def _http_response(
 
 
 class TestModelRouting:
+    @pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"])
+    def test_gpt6_requires_responses(self, model: str) -> None:
+        assert model_requires_responses_api(model)
+
     def test_gpt56_sol_requires_responses(self) -> None:
         assert model_requires_responses_api("gpt-5.6-sol") is True
         assert model_requires_responses_api("gpt-5.6") is True
@@ -72,33 +76,34 @@ class TestModelRouting:
 
 
 class TestResponsesGeneration:
-    def test_successful_responses_api_generation(self) -> None:
+    @pytest.mark.parametrize("model", ["gpt-5.6-sol", "gpt-6.1-sol"])
+    def test_successful_responses_api_generation(self, model: str) -> None:
         provider = OpenAILLMProvider(
             api_key="sk-test",
             base_url="https://api.openai.com/v1",
-            model="gpt-5.6-sol",
+            model=model,
             fail_closed=True,
         )
         response = _http_response(
             payload={
-                "model": "gpt-5.6-sol",
+                "model": model,
                 "output_text": "OK",
                 "usage": {"input_tokens": 3, "output_tokens": 1},
             }
         )
         client = _mock_client_with_response(response)
         with patch("httpx.Client", return_value=client):
-            result = provider.complete(_request())
+            result = provider.complete(_request(model=model))
         assert result.content == "OK"
         assert result.fallback_used is False
-        assert result.model == "gpt-5.6-sol"
+        assert result.model == model
         assert result.input_tokens == 3
         assert result.output_tokens == 1
         url = client.post.call_args.args[0]
         body = client.post.call_args.kwargs["json"]
         assert url.endswith("/responses")
         assert "messages" not in body
-        assert body["model"] == "gpt-5.6-sol"
+        assert body["model"] == model
         assert body["max_output_tokens"] == 32
         assert body["store"] is False
         assert body["instructions"] == "Be brief."

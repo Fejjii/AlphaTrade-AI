@@ -9,14 +9,15 @@ The only loader that returns secret values is
 demo execution gate is satisfied. Paper isolation
 (``execution_mode=paper``, real trading off, ``exchange_mode=paper_internal``,
 ``blofin_demo_enabled=false``) keeps that gate closed. Live USD-M evidence
-also keeps it closed. Real trading cannot open it.
+also keeps it closed unless the explicit staging API demo capability is on.
+That capability never activates the paper Watcher. Real trading cannot open it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.core.config import ExchangeMode, ExecutionMode, Settings
+from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
 from app.core.exchange_safety import is_allowlisted_demo_host
 
 _LIVE_USD_M_SOURCES = frozenset(
@@ -73,17 +74,30 @@ def _live_usd_m_evidence(settings: Settings) -> bool:
     return settings.perpetual_evidence_source.strip().lower() in _LIVE_USD_M_SOURCES
 
 
+def live_evidence_demo_access_requested(settings: Settings) -> bool:
+    """Explicit staging API opt-in; does not authorize Watcher venue dispatch."""
+    return (
+        settings.blofin_live_evidence_demo_enabled
+        and settings.environment is Environment.STAGING
+        and not settings.watcher_orchestration_enabled
+        and not settings.watcher_paper_staging_activation
+        and not settings.worker_enabled
+        and not settings.enable_paper_scheduler
+        and not settings.paper_signal_orchestration_enabled
+    )
+
+
 def blofin_execution_authorized(settings: Settings) -> bool:
     """Return whether an authenticated BloFin client may be constructed.
 
     Credential presence alone is never enough. The complete gate requires
     paper execution, real trading disabled, ``paper_exchange_demo``,
     ``blofin_demo_enabled``, stored credentials, and an allowlisted demo
-    host. Paper isolation and Binance USD-M evidence both refuse the gate.
+    host. Live evidence additionally requires the explicit staging API capability.
     """
     if paper_credential_isolation_active(settings):
         return False
-    if _live_usd_m_evidence(settings):
+    if _live_usd_m_evidence(settings) and not live_evidence_demo_access_requested(settings):
         return False
     if settings.execution_mode is not ExecutionMode.PAPER:
         return False
