@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
+from app.db.learning_attribution import LearningAttributionRecordRow
 from app.db.models import (
     ConversationMessage,
     ExecutionCommand,
@@ -251,6 +252,17 @@ def _demo_explanation(
     else:
         conclusion = "BloFin demo entry has no recorded exchange fill evidence."
         next_action = "Keep the entry on hold and reconcile its durable client order ID."
+    learning = session.scalar(
+        select(LearningAttributionRecordRow).where(
+            LearningAttributionRecordRow.organization_id == command.organization_id,
+            LearningAttributionRecordRow.user_id == command.user_id,
+            LearningAttributionRecordRow.account_id == command.account_id,
+            LearningAttributionRecordRow.candidate_id == candidate_id,
+            LearningAttributionRecordRow.execution_lifecycle_id == command.id,
+            LearningAttributionRecordRow.trade_plan_revision_id == plan.revision_id,
+            LearningAttributionRecordRow.learning_venue_mode == "paper_exchange_demo",
+        )
+    )
     prose = f"{conclusion} Protection: {protection}. {next_action}"
     lines = [
         f"Recorded BloFin demo command {command.id}; claim outcome {receipt.outcome.value}; "
@@ -271,6 +283,10 @@ def _demo_explanation(
         f"net PnL {journal.net_pnl if journal.net_pnl is not None else 'unavailable'}."
         if journal
         else "Journal unavailable; no fill or outcome is inferred.",
+        f"Learning attribution {learning.id}: venue {learning.learning_venue_mode}; "
+        f"filled={learning.filled}; closed={learning.closed}; Journal {learning.journal_trade_id}."
+        if learning
+        else "Learning attribution unavailable; no learning outcome is inferred.",
         "Authorization is not a fill. Planned prices are not current prices. "
         "This read does not recalculate risk or PnL, submit an order or contact the venue. "
         "The first 100 fill/event facts are shown; no closed outcome or profitability is inferred.",
@@ -288,6 +304,8 @@ def _demo_explanation(
         references.append((journal.id, "Journal result", ArtifactKind.JOURNAL_ENTRY))
     if effect:
         references.append((effect.id, "Latest demo reconciliation", ArtifactKind.OBSERVATION))
+    if learning:
+        references.append((learning.id, "Recorded learning attribution", ArtifactKind.OBSERVATION))
     facts = "\n".join(lines)[:16000]
     return ExecutionExplanation(
         reply=compose_visible_reply(prose, facts),

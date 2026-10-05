@@ -285,21 +285,33 @@ def test_demo_explanation_separates_authorization_fill_and_recorded_protection(f
     class Store:
         def __init__(self):
             self.results = iter(([fill] if filled else [], [event] if filled else []))
+            self.records = iter(
+                [
+                    SimpleNamespace(
+                        id=uuid4(),
+                        reconciliation_disposition="DEMO_PROTECTED"
+                        if protection
+                        else "DEMO_PROTECTION_MISSING",
+                    )
+                    if filled
+                    else None,
+                    SimpleNamespace(
+                        id=uuid4(),
+                        learning_venue_mode="paper_exchange_demo",
+                        filled=True,
+                        closed=False,
+                        journal_trade_id=journal.id,
+                    )
+                    if filled
+                    else None,
+                ]
+            )
 
         def scalars(self, statement):
             return next(self.results)
 
         def scalar(self, statement):
-            return (
-                SimpleNamespace(
-                    id=uuid4(),
-                    reconciliation_disposition="DEMO_PROTECTED"
-                    if protection
-                    else "DEMO_PROTECTION_MISSING",
-                )
-                if filled
-                else None
-            )
+            return next(self.records)
 
     result = _demo_explanation(
         Store(),
@@ -318,6 +330,7 @@ def test_demo_explanation_separates_authorization_fill_and_recorded_protection(f
     if filled:
         assert "actual exchange fill evidence" in result.reply
         assert "venue-order:venue-trade" in result.recorded_evidence
+        assert "closed=False" in result.recorded_evidence
         assert str(fill_id) in {ref.record_id for ref in result.connections}
         assert (
             "verified at reconciliation" in result.reply
