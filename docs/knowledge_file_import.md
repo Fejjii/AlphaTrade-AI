@@ -149,6 +149,24 @@ The shared models file retains 94 existing missing-generic type errors outside
 the added typed metadata field. No full backend suite was
 run in this workstream; combined CI and staging acceptance remain separate.
 
+After stacking on the Agent and demo changes, six additional Agent-owned cases
+exercise actual preview/save for all four formats and then capture substantive
+read-only Agent model context. They verify filename, raw-file SHA-256, document
+and chunk references, both requested topics and foreign-user/organization
+isolation. These captured inputs do not establish live model answer quality.
+The combined focused check passes 50 cases, covering stored-playbook passages,
+canonical demo entry, RAG and the PostgreSQL migration; counts overlap the
+independent suites. The stacked frontend check passes 35 Agent/Knowledge/client
+cases, plus lint and TypeScript.
+
+```sh
+# With safe local settings and explicit disposable PostgreSQL selectors:
+PYTHONPATH=src .venv/bin/python -m pytest \
+  tests/test_agent_imported_document_retrieval.py \
+  tests/test_agent_knowledge_passages.py tests/test_governed_blofin_demo.py \
+  tests/test_knowledge_file_migration.py tests/test_rag.py
+```
+
 The synthetic API test previews `note.txt` containing a unique synthetic risk
 statement, verifies zero documents/chunks before confirmation, saves it through
 the real Knowledge route and canonical ingestion, checks durable filename and

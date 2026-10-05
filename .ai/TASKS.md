@@ -58,9 +58,11 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   shared models file retains its existing 94 unrelated missing-generic errors.
 - Result: Existing Document/Chunk ingestion and scoped search store extracted text,
   file provenance and recorded indexing observations. Preview performs no storage.
+  Six Agent-owned import integration cases pass for substantive passages and
+  filename/hash/document/chunk references, including foreign-principal isolation.
 - Limitations: No OCR, raw binary storage or full DOCX layout. Index acknowledgement
-  is a recorded observation, not a live health claim. Staging acceptance and the
-  separate read-only Agent context integration remain pending the combined gate.
+  is a recorded observation, not a live health claim. Staging acceptance and live
+  Agent answer quality remain pending review and the combined CI gate.
 - Reference: `docs/knowledge_file_import.md`.
 
 ---
