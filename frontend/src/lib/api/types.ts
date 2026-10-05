@@ -1604,6 +1604,7 @@ export interface AgentStructuredProposal {
 export interface AgentTurnResult {
   conversation_id: string;
   reply: string;
+  recorded_evidence?: string | null;
   capability: string;
   operation: string;
   proposals: AgentStructuredProposal[];

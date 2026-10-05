@@ -353,7 +353,10 @@ class InteractiveAgentService:
             connections = execution_explanation.connections
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
             limitations.extend(_BASE_LIMITATIONS)
-        reply = factual
+        reply = factual[:4000]
+        recorded_evidence = (
+            execution_explanation.recorded_evidence if execution_explanation else None
+        )
         if classification.capability is AgentCapability.STRATEGY_ANALYTICS:
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
             limitations.append(
@@ -376,6 +379,7 @@ class InteractiveAgentService:
             if model_text == MODEL_REPLY_UNAVAILABLE:
                 limitations.append(MODEL_REPLY_UNAVAILABLE)
             reply = compose_visible_reply(model_text, factual)
+            recorded_evidence = factual
         assistant = self._conversations.append_message(
             conversation=conversation,
             role=ConversationMessageRole.ASSISTANT,
@@ -386,6 +390,7 @@ class InteractiveAgentService:
                     "schema_version": SCHEMA_VERSION,
                     "capability": classification.capability.value,
                     "operation": classification.operation.value,
+                    "recorded_evidence": recorded_evidence,
                     "proposals": [item.model_dump(mode="json") for item in proposals],
                     **(
                         {"daily_review": daily_review.model_dump(mode="json")}
@@ -395,7 +400,9 @@ class InteractiveAgentService:
                     **(
                         {
                             "paper_execution_explanation": {
-                                "source_message_id": str(execution_explanation.source_message_id),
+                                "source_message_id": str(execution_explanation.source_message_id)
+                                if execution_explanation.source_message_id is not None
+                                else None,
                                 "sources": [item.model_dump(mode="json") for item in connections],
                             }
                         }
@@ -418,6 +425,7 @@ class InteractiveAgentService:
             operation=classification.operation,
             artifact_kinds=classification.artifact_kinds,
             reply=reply,
+            recorded_evidence=recorded_evidence,
             proposals=proposals,
             authority_mutated=any(proposal.authority_mutated for proposal in proposals),
             knowledge=knowledge,
@@ -935,7 +943,7 @@ def _reply(
     if knowledge and classification.capability is not AgentCapability.KNOWLEDGE_RETRIEVAL:
         titles = ", ".join(hit.title for hit in knowledge[:3])
         text = f"{text} Related knowledge: {titles}."
-    return text[:4000]
+    return text[:16000]
 
 
 def _strategy_reply(strategies: list[StrategyHit]) -> str:

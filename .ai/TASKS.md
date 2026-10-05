@@ -5,6 +5,31 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-094 — Agent presentation and canonical strategy grounding
+- Priority: P1 · Status: DONE · Dependencies: PR200 on current main · Risk: Medium.
+- Scope: Reserve model explanation space, collapse stored evidence, distinguish selected
+  version lifecycle approval from research validation, and include both Nested/SFP rules.
+- Safety: Read-only grounding; generated prose cannot approve, confirm or execute.
+  Real trading remains disabled. No deployment or infrastructure changes.
+- Validation: Focused transcript, lifecycle, both-family, tenant and UI regressions;
+  backend Ruff/format/types and frontend lint/types; consolidated CI after implementation.
+- Reference: `docs/agent_presentation_grounding.md`.
+- Result: Focused stored/synthetic grounding, UI and canonical read regressions pass.
+  Real staging acceptance is pending PR review; no deployment occurred.
+
+## AT-095 — Governed BloFin demo execution integration
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: canonical execution protocol · Risk: High.
+- Scope: Separate reviewable execution branch; explicit demo activation, deterministic
+  risk and authorization, durable dispatch, actual fill/protection reconciliation,
+  Journal and learning linkage. Keep legacy paths tombstoned and SFP restricted.
+- Safety: Existing demo Read + Trade key only; no network exchange orders from Codex;
+  real trading disabled. No merge, deployment or infrastructure changes.
+- Validation: Simulated success/rejection/timeout/idempotency/restart/protection tests
+  over the canonical worker workflow and disposable local PostgreSQL.
+- Reference: `docs/governed_blofin_demo_execution.md` on the execution branch.
+
+---
+
 ## AT-093 — Nested timeframe independence and SFP frontend surface
 - Priority: P1 · Status: DONE · Dependencies: accepted Nested/SFP canonical
   backend on main `abfd71b9f34f3b7a5bec38f6a933aaf93d8b4229` · Risk: Medium (evidence identity).

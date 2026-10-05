@@ -903,7 +903,7 @@ def test_family_comparison_reaches_model_with_both_evidence_scopes(
     contexts = []
     scopes = []
 
-    def read_stored(session, *, organization_id, message, symbol):
+    def read_stored(session, *, organization_id, message, symbol, user_id):
         assert organization_id == ORG_A
         scopes.append(message)
         return f"{message}: no confirmed Candidate; risk not evaluated", [], []

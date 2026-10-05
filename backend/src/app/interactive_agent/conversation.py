@@ -7,6 +7,7 @@ and cannot change a proposal, journal row, or strategy version.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Protocol
 
@@ -31,15 +32,20 @@ logger = structlog.get_logger(__name__)
 MODEL_REPLY_UNAVAILABLE = "Conversational model reply is unavailable."
 _FACTS_HEADER = "Recorded facts (not a confirmation):"
 _REPLY_LIMIT = 4000
+_PROSE_LIMIT = 2000
 
 _SYSTEM = (
     "You are AlphaTrade's paper-only conversational assistant. "
     "Reply in plain text to the user message. "
+    "Be concise: give the conclusion, material blockers, and one next action. "
     "You cannot confirm, save, reject, or execute anything. "
     "Do not say a journal entry, strategy, rule, lesson, or order was saved or confirmed. "
     "Strategy rules, approval status, setup state and evidence availability must come from "
     "the supplied stored facts. If a detail is absent, say it is unavailable; distinguish "
     "general strategy explanations from the user's actual approved rules. "
+    "Research validation, selected-version lifecycle approval, setup confirmation and "
+    "execution eligibility are separate states. Approval comes only from the selected "
+    "version's latest canonical lifecycle event, never a research-validation label. "
     "If the facts say canonical perpetual evidence is unavailable or stale, "
     "repeat unavailable or stale. Do not invent a price. "
     "Structured proposals are separate from this reply and stay unconfirmed until "
@@ -112,8 +118,8 @@ class ModelConversationalResponder:
                             f"User message:\n{message.strip()}\n\n"
                             "Stored facts. Repeat unavailable or stale exactly. "
                             "Do not invent prices. Do not claim a record was confirmed.\n"
-                            f"{factual_context}"
-                        )[:6000],
+                            f"{factual_context[:16000]}"
+                        ),
                     ),
                 ],
             )
@@ -137,14 +143,27 @@ class ModelConversationalResponder:
 
 
 def compose_visible_reply(model_text: str, factual: str) -> str:
-    """Keep model prose and recorded facts in one transcript message."""
+    """Reserve prose space; the full evidence is stored separately in the transcript payload."""
     prose = model_text.strip() or MODEL_REPLY_UNAVAILABLE
-    footer = f"\n\n{_FACTS_HEADER}\n{factual.strip()}"
-    budget = _REPLY_LIMIT - len(footer)
-    if budget < 80:
-        footer = footer[: _REPLY_LIMIT - 80]
-        budget = _REPLY_LIMIT - len(footer)
-    return f"{prose[:budget]}{footer}"[:_REPLY_LIMIT]
+    warnings = []
+    if re.search(r"(?:is|freshness|quality|=)\s*stale\b", factual, re.I):
+        warnings.append("Stored evidence is stale; it cannot establish a current price.")
+    if re.search(
+        r"(?:is|freshness|quality|=)\s*(?:unavailable|missing|incomplete)\b", factual, re.I
+    ):
+        warnings.append("Stored evidence is unavailable or incomplete; do not infer missing facts.")
+    if "Current market conditions are unknown." in factual:
+        warnings.append("Current market conditions are unknown.")
+    lead = prose[:_PROSE_LIMIT]
+    if warnings:
+        lead += "\n\n" + " ".join(warnings)
+    header = f"\n\n{_FACTS_HEADER}\n"
+    budget = _REPLY_LIMIT - len(lead) - len(header)
+    facts = factual.strip()
+    if len(facts) > budget:
+        note = "\nEvidence excerpt; full stored evidence is available in details."
+        facts = facts[: budget - len(note)] + note
+    return lead + header + facts
 
 
 def _prose(content: str) -> str:

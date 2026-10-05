@@ -1,13 +1,14 @@
 """Bounded tenant reads and explicit library template creation. No provider calls."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.models import JournalTrade, StrategyLifecycleEvent, UserStrategy
+from app.db.models import JournalTrade, UserStrategy
 from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow
 from app.repositories.watcher_watchlist import WatcherWatchlistRepository
 from app.schemas.common import StrategyId, StrategyLifecycleState
@@ -30,7 +31,7 @@ def create_template(
     organization_id: UUID,
     user_id: UUID,
     spec: NestedContinuationSpec | SfpSpec,
-) -> dict:
+) -> dict[str, Any]:
     signature = canonical_sha256(spec.model_dump(mode="json"))[:12]
     sfp = isinstance(spec, SfpSpec)
     family_name = "SFP" if sfp else "Nested"
@@ -113,7 +114,9 @@ def create_template(
         )
     )
     row = session.get(UserStrategy, strategy.id)
+    assert row is not None
     version = StrategyVersioningService(session).selected_version(row)
+    assert version is not None
     return {
         "strategy_id": strategy.id,
         "version_id": version.id,
@@ -124,7 +127,7 @@ def create_template(
     }
 
 
-def setup_view(session: Session, row: BrainSetupRow, *, now: datetime) -> dict:
+def setup_view(session: Session, row: BrainSetupRow, *, now: datetime) -> dict[str, Any]:
     payload = dict(row.payload)
     observed = aware(row.observed_at)
     timeframe = payload.get("timeframe", "15m")
@@ -188,8 +191,9 @@ def overview(
     *,
     organization_id: UUID,
     symbol: str | None = None,
+    user_id: UUID | None = None,
     now: datetime | None = None,
-) -> dict:
+) -> dict[str, Any]:
     now = now or datetime.now(UTC)
     config = WatcherWatchlistRepository(session).load(organization_id)
     stmt = select(BrainSetupRow).where(BrainSetupRow.organization_id == organization_id)
@@ -199,12 +203,10 @@ def overview(
         stmt.order_by(BrainSetupRow.observed_at.desc(), BrainSetupRow.id).limit(20)
     ).all()
     versions = []
-    for strategy in session.scalars(
-        select(UserStrategy)
-        .where(UserStrategy.organization_id == organization_id)
-        .order_by(UserStrategy.id)
-        .limit(50)
-    ):
+    strategy_query = select(UserStrategy).where(UserStrategy.organization_id == organization_id)
+    if user_id is not None:
+        strategy_query = strategy_query.where(UserStrategy.user_id == user_id)
+    for strategy in session.scalars(strategy_query.order_by(UserStrategy.id).limit(50)):
         version = StrategyVersioningService(session).selected_version(strategy)
         if (
             version is None
@@ -215,15 +217,10 @@ def overview(
         lifecycle = StrategyVersioningService(session).latest_lifecycle_event_for_version(
             version.id
         )
-        approval = session.scalar(
-            select(StrategyLifecycleEvent)
-            .where(
-                StrategyLifecycleEvent.organization_id == organization_id,
-                StrategyLifecycleEvent.strategy_version_id == version.id,
-                StrategyLifecycleEvent.new_state == StrategyLifecycleState.APPROVED,
-            )
-            .order_by(StrategyLifecycleEvent.occurred_at.desc(), StrategyLifecycleEvent.id)
-            .limit(1)
+        approval = (
+            lifecycle
+            if lifecycle and lifecycle.new_state == StrategyLifecycleState.APPROVED
+            else None
         )
         versions.append(
             {
@@ -232,14 +229,23 @@ def overview(
                 "version": version.version,
                 "name": strategy.name,
                 "spec": version.pattern_spec,
+                "rules": {
+                    key: version.card.get(key, [])
+                    for key in ("entry_conditions", "invalidation", "stop_loss", "take_profit_plan")
+                },
+                "structured_rules": version.structured_rules,
+                "research_validation": version.validation_status.value,
                 "status": lifecycle.new_state.value if lifecycle else "draft",
+                "lifecycle_event_id": str(lifecycle.id) if lifecycle else None,
                 "enabled": strategy.enabled,
                 "approved_by": str(approval.actor_user_id)
                 if approval and approval.actor_user_id
                 else None,
                 "created_at": aware(version.created_at).isoformat(),
                 "created_from": version.change_source.value,
-                "execution_permission": "paper_gates_required",
+                "execution_permission": "sfp_plan_path_unavailable"
+                if version.pattern_spec.get("kind") == SFP_KIND
+                else "paper_gates_required",
                 "historical_expectancy": "insufficient_history",
             }
         )
@@ -258,7 +264,7 @@ def overview(
     }
 
 
-def details(session: Session, *, organization_id: UUID, setup_id: UUID) -> dict:
+def details(session: Session, *, organization_id: UUID, setup_id: UUID) -> dict[str, Any]:
     row = session.scalar(
         select(BrainSetupRow).where(
             BrainSetupRow.id == setup_id, BrainSetupRow.organization_id == organization_id

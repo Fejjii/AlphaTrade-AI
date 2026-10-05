@@ -43,6 +43,40 @@ function messageLabel(role: ConversationMessageRecord["role"]): string {
   return "System";
 }
 
+function MessageContent({ message }: { message: ConversationMessageRecord }) {
+  const marker = "\n\nRecorded facts (not a confirmation):\n";
+  const boundary = message.role === "assistant" ? message.content.indexOf(marker) : -1;
+  const metadata = message.payload?.interactive_agent;
+  const stored =
+    metadata && typeof metadata === "object" && "recorded_evidence" in metadata
+      ? metadata.recorded_evidence
+      : null;
+  const evidence =
+    boundary >= 0
+      ? typeof stored === "string"
+        ? stored
+        : message.content.slice(boundary + marker.length)
+      : null;
+  return (
+    <>
+      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+        {boundary >= 0 ? message.content.slice(0, boundary) : message.content}
+      </p>
+      {evidence !== null ? (
+        <details className="mt-3 border-t border-border-subtle pt-2">
+          <summary className="cursor-pointer rounded-control text-xs text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+            Stored evidence
+          </summary>
+          <p className="mt-2 whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]">
+            Recorded facts (not a confirmation):{"\n"}
+            {evidence}
+          </p>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
 function CapabilityList({ items }: { items: readonly AgentCapability[] }) {
   return (
     <ul className="space-y-2">
@@ -266,6 +300,9 @@ export function AgentWorkspace() {
             user_id: "",
             role: "assistant",
             content: result.reply,
+            payload: {
+              interactive_agent: { recorded_evidence: result.recorded_evidence },
+            },
             created_at: new Date().toISOString(),
           },
         ]);
@@ -620,9 +657,7 @@ export function AgentWorkspace() {
                         {messageLabel(message.role)} ·{" "}
                         {formatDateTime(message.created_at)}
                       </p>
-                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                        {message.content}
-                      </p>
+                      <MessageContent message={message} />
                     </div>
                   ))
                 )}

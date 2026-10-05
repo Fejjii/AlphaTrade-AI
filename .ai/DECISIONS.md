@@ -2,6 +2,24 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-079 — Conversational evidence and selected lifecycle remain explicit
+
+- Date: 2026-10-05
+- Decision: Reserve conversational prose space and persist bounded stored evidence
+  independently in the assistant payload; expose it through native collapsed details.
+  Preserve old transcript delimiters and keep deterministic evidence warnings visible.
+- Authority: Read the latest canonical lifecycle event for the selected version.
+  Research validation, setup confirmation and execution eligibility remain distinct.
+  Include both Nested and SFP stored definitions and scopes in comparison context.
+- Demo reads: Explain durable actual venue fill/Journal/reconciliation facts without
+  inventing a manual conversation capture. A command authorization is not a fill;
+  recorded protection observations are not current market claims.
+- Safety: These changes read and explain; proposals and execution retain their
+  existing deterministic authority and explicit controls. Real trading remains disabled.
+- Reference: `docs/agent_presentation_grounding.md`.
+
+---
+
 ## AT-ADR-078 — Advisory attention is a read-only record projection
 
 - Date: 2026-10-02
