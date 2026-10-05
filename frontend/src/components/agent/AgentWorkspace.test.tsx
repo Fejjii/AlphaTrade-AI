@@ -203,7 +203,7 @@ describe("Agent workspace", () => {
     });
     render(<AgentWorkspace />);
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Compare my strategies" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     const details = (await screen.findByText("Stored evidence")).closest("details")!;
     expect(details).toHaveTextContent("Full governed evidence beyond the reply budget.");
     expect(details).not.toHaveAttribute("open");
