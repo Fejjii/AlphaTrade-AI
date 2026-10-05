@@ -197,7 +197,9 @@ def test_recipient_and_summary_tenant_isolation(nested_world):
 
 
 def test_paper_scan_bridge_emits_one_informational_event_and_no_actions(nested_world):
-    from app.paper_interaction.bridge import project_scan_report
+    from app.candidate_alerts.sfp import SfpAlertSummary
+    from app.paper_interaction.bridge import ConfirmedScanEvidence, project_scan_report
+    from app.schemas.telegram_policy import NotificationEventType
     from app.telegram_paper_agent.contracts import PaperAlertRecipient
     from app.telegram_paper_agent.gateway import TelegramPaperAgent
     from app.workers.watcher_paper import WatcherPaperScanReport
@@ -225,14 +227,32 @@ def test_paper_scan_bridge_emits_one_informational_event_and_no_actions(nested_w
         nested_strategy=True,
         discussion=SimpleNamespace(candidate=w.candidate, assessment=w.assessment, window=w.window),
     )
+    # Committing the paper loop advances storage beyond the scan's old snapshot.
+    current = w.gateway.lifecycle.transition(
+        organization_id=w.candidate.organization_id,
+        candidate_id=w.candidate.candidate_id,
+        new_state=CandidateState.PLAN_CREATED,
+        reason_codes=(CandidateReasonCode.PLAN_CREATED,),
+        idempotency_key="bridge-paper-plan",
+        correlation_id=uuid4(),
+    )
     first = project_scan_report(agent, report, recipient=recipient)
     second = project_scan_report(agent, report, recipient=recipient)
     assert first.candidate_alert is not None
+    assert first.candidate_alert.intent.candidate_content_hash == current.content_hash
+    assert first.candidate_alert.intent.content.candidate_state is CandidateState.PLAN_CREATED
     assert first.confirmations == ()
     assert first.outbox.outbox_id == first.candidate_alert.outbox.outbox_id
     assert second.converged
     assert second.outbox.outbox_id == first.outbox.outbox_id
     assert w.transport.sent == []
+    with pytest.raises(CandidateAlertTenantError, match="content hash"):
+        project_scan_report(
+            agent,
+            report,
+            recipient=recipient,
+            evidence=ConfirmedScanEvidence(w.candidate, w.assessment, w.window),
+        )
     assert (
         project_scan_report(
             agent,
@@ -249,6 +269,45 @@ def test_paper_scan_bridge_emits_one_informational_event_and_no_actions(nested_w
         is None
     )
     assert w.candidate.fusion_policy_version == NESTED_KIND
+
+    sfp = SfpAlertSummary(
+        organization_id=recipient.organization_id,
+        strategy_version_id=uuid4(),
+        setup_id=uuid4(),
+        event_type=NotificationEventType.SFP_CONFIRMED,
+        occurred_at=w.clock.now(),
+        evidence_at=w.clock.now(),
+        symbol="BTCUSDT",
+        venue=w.window.evidence_venue.value,
+        timeframe=w.window.timeframe.value,
+        direction=w.candidate.direction.value,
+        level_type="swing_high",
+        structural_level="100",
+        sweep_extreme="101",
+        reclaim_state="confirmed_sfp",
+        quality_coverage=(),
+        missing_evidence=("quality:MISSING",),
+        risk_state="not_evaluated",
+    )
+    sfp_report = replace(
+        report,
+        published=False,
+        candidate_ids=(),
+        discussion=None,
+        nested_alert=None,
+        nested_strategy=False,
+        sfp_strategy=True,
+        sfp_alerts=(sfp,),
+    )
+    assert project_scan_report(agent, sfp_report, recipient=recipient) is None
+    assert project_scan_report(agent, sfp_report, recipient=recipient) is None
+    rows = w.protocol.store.list_outbox(organization_id=recipient.organization_id)
+    assert len(rows) == 2
+    assert {r.notification_event.event_type for r in rows} == {
+        NotificationEventType.SETUP,
+        NotificationEventType.SFP_CONFIRMED,
+    }
+    assert w.transport.sent == []
 
 
 def test_new_episode_is_distinct_and_informational_actions_are_unavailable(nested_world):

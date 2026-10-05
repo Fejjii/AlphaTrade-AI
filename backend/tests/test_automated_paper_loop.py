@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -421,7 +421,7 @@ def test_risk_block_creates_no_plan_or_fill() -> None:
             DailyRiskState(
                 organization_id=ORG,
                 user_id=USER,
-                day=datetime.now(UTC).date(),
+                day=EVALUATED_AT.date(),
                 realized_pnl=Decimal("0"),
                 unrealized_pnl=Decimal("0"),
                 locked=True,

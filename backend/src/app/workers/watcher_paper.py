@@ -28,6 +28,7 @@ import structlog
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.candidate_alerts.nested import NestedAlertSummary
+from app.candidate_alerts.sfp import SfpAlertSummary
 from app.core.config import Environment, ExecutionMode, Settings
 from app.market_contracts.enums import VenueId
 from app.market_contracts.provider_contracts import (
@@ -43,6 +44,7 @@ from app.runtime_safety.paper_actions import (
 )
 from app.schemas.nested_continuation import NESTED_KIND
 from app.signal_fusion.lifecycle import CandidateLifecycleService
+from app.signal_fusion.policy import DEFAULT_FUSION_POLICY_VERSION
 from app.watcher.contracts import (
     EvaluationMode,
     ScanRequest,
@@ -131,6 +133,8 @@ class WatcherPaperScanReport:
     journal_status: str | None = None
     nested_alert: NestedAlertSummary | None = None
     nested_strategy: bool = False
+    sfp_strategy: bool = False
+    sfp_alerts: tuple[SfpAlertSummary, ...] = ()
     market_read_completed: bool = False
 
     @property
@@ -465,25 +469,42 @@ class WatcherPaperRuntime:
         from app.repositories.watcher_watchlist import WatcherWatchlistRepository
 
         assert self._session_factory is not None
-        # One organization per cycle, round-robin by durable key. No unbounded
-        # tenant runtime cache or global symbol status shared across tenants.
+        # One organization per cycle, round-robin by durable key. Controlled
+        # staging acceptance may pin one tenant explicitly; an empty setting
+        # preserves the normal scheduler and production behavior.
+        scoped_org: UUID | None = None
+        if self._settings is not None and self._settings.watcher_paper_organization_id:
+            scoped_org = UUID(self._settings.watcher_paper_organization_id)
         with self._session_factory() as session:
             query = select(Organization.id).order_by(Organization.id).limit(1)
-            org = (
-                session.scalar(query.where(Organization.id > self._organization_cursor))
-                if self._organization_cursor
-                else session.scalar(query)
-            )
+            if scoped_org is not None:
+                org = session.scalar(select(Organization.id).where(Organization.id == scoped_org))
+            else:
+                org = (
+                    session.scalar(query.where(Organization.id > self._organization_cursor))
+                    if self._organization_cursor
+                    else session.scalar(query)
+                )
+                if org is None:
+                    org = session.scalar(query)
             if org is None:
-                org = session.scalar(query)
-            if org is None:
-                report = WatcherPaperCycleReport("idle", self._enabled, (), 0, False)
+                reason = "organization_scope_unavailable" if scoped_org is not None else "idle"
+                report = WatcherPaperCycleReport(
+                    reason,
+                    False if scoped_org is not None else self._enabled,
+                    (),
+                    0,
+                    False,
+                )
+                self._organization_id = None
                 self._watchlist = None
                 self._symbol_status.restore(())
                 self._remember_cycle(report)
                 return report
             repo = WatcherWatchlistRepository(session)
-            self._organization_id = self._organization_cursor = org
+            self._organization_id = org
+            if scoped_org is None:
+                self._organization_cursor = org
             self._watchlist = repo.load(org)
             self._symbol_status.restore(repo.previous(org))
         report = self._run_cycle()
@@ -594,6 +615,25 @@ class WatcherPaperRuntime:
         from app.observability.process_memory import read_process_memory
 
         memory = read_process_memory()
+        if self._settings is not None and self._settings.paper_worker_memory_diagnostics_enabled:
+            counts: dict[str, int] = getattr(self._history_source, "memory_counts", lambda: {})()
+            logger.info(
+                "watcher_paper_memory_structures",
+                cycle=self._status.cycles_completed,
+                history_held=int(self._history.held_symbol is not None),
+                history_completed=len(self._history.completed),
+                fencing_tokens=len(self._held_fencing_tokens),
+                last_scan_reports=len(self._status.last_scans),
+                last_candidates=sum(len(s.candidate_ids) for s in self._status.last_scans),
+                last_evidence_components=sum(
+                    len(s.discussion.window.selected_public_observations) if s.discussion else 0
+                    for s in self._status.last_scans
+                ),
+                session_identity_map=len(session.identity_map) if session else 0,
+                session_new=len(session.new) if session else 0,
+                session_dirty=len(session.dirty) if session else 0,
+                **counts,
+            )
         logger.info(
             "watcher_paper_cycle",
             worker_id=self._worker_id,
@@ -686,6 +726,7 @@ class WatcherPaperRuntime:
             report = self._scan_target(session, target)
             if session is not None:
                 session.commit()
+            self._notify_scan(report)
             return report
         except Exception:
             if session is not None:
@@ -774,6 +815,12 @@ class WatcherPaperRuntime:
             idempotency_key=self._idempotency_key(target),
         )
         evidence = self._build_evidence(session, target.symbol)
+        if target.fusion_policy_version == DEFAULT_FUSION_POLICY_VERSION:
+            # Successful evaluations replay until the next 15m bar. The live
+            # monitor still needs ticks inside its bounded backfill horizon.
+            poll_monitor = getattr(self._evidence_factory, "poll_monitor", None)
+            if callable(poll_monitor):
+                poll_monitor(target.symbol)
         evaluator = build_fusion_evaluation_service(
             evidence=evidence,
             lifecycle=self._lifecycle,
@@ -830,7 +877,22 @@ class WatcherPaperRuntime:
             nested_alert=nested_alert,
             nested_strategy=target.fusion_policy_version == NESTED_KIND,
         )
-        self._notify_scan(report)
+        from app.strategy_brain.sfp.contracts import SFP_KIND
+        from app.strategy_brain.sfp_runtime.notifications import sfp_notification_summaries
+
+        if target.fusion_policy_version == SFP_KIND:
+            report = replace(
+                report,
+                sfp_strategy=True,
+                sfp_alerts=()
+                if session is None
+                else sfp_notification_summaries(
+                    session,
+                    organization_id=target.organization_id,
+                    strategy_version_id=target.strategy_version_id,
+                    now=self._clock.now(),
+                ),
+            )
         observe_scan(report.reason_code)
         logger.info(
             "watcher_paper_scan",

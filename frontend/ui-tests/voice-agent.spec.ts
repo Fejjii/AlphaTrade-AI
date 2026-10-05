@@ -89,6 +89,14 @@ async function installApi(
   page: Page,
   options: { failedTurn?: boolean; killSwitch?: boolean } = {},
 ) {
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (["http://127.0.0.1:3000", "http://localhost:8000"].includes(url.origin)) {
+      return route.continue();
+    }
+    await route.abort();
+    throw new Error(`Voice acceptance forbids remote requests: ${url.origin}${url.pathname}`);
+  });
   const posts: { path: string; body: unknown }[] = [];
   const messages = [
     {
@@ -414,6 +422,56 @@ test("permission failure leaves text usable", async ({ page }) => {
     body: { message: "Review risk in text" },
   });
 });
+
+for (const cancel of ["conversation", "page-hide"] as const) {
+  test(`${cancel} cancels recording and playback and ignores late transcripts`, async ({ page }) => {
+    await installSpeech(page);
+    const posts = await installApi(page);
+    await page.goto("/agent");
+    await page.getByRole("button", { name: "Voice review", exact: true }).click();
+    await expect(page.getByTestId("agent-message")).toHaveCount(2);
+    const draft = page.getByRole("textbox", { name: "Message", exact: true });
+    await draft.fill("Preserve my typed draft");
+    await page.getByRole("button", { name: "Start recording" }).click();
+    await page.evaluate(() => { window.__voiceTest.start(); window.__voiceTest.result("Never send this late result", false); });
+    const aborts = await page.evaluate(() => window.__voiceTest.aborts);
+    if (cancel === "conversation") {
+      await page.getByRole("button", { name: "Another conversation", exact: true }).click();
+    } else {
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    }
+    await expect(page.getByTestId("agent-voice-status")).toHaveText("Microphone off");
+    expect(await page.evaluate(() => window.__voiceTest.aborts)).toBeGreaterThan(aborts);
+    await page.evaluate(() => { window.__voiceTest.result("Late transcript", true); window.__voiceTest.end(); });
+    if (cancel === "conversation") {
+      await expect(page.getByTestId("agent-voice-transcript")).toHaveCount(0);
+    } else {
+      await expect(page.getByTestId("agent-voice-transcript")).toContainText("Never send this late result");
+      await expect(page.getByTestId("agent-voice-transcript")).not.toContainText("Late transcript");
+      await expect(page.getByRole("button", { name: "Send transcript" })).toBeDisabled();
+    }
+    expect(posts).toEqual([]);
+    if (cancel === "page-hide") {
+      await expect(draft).toHaveValue("Preserve my typed draft");
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: false });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await page.getByRole("button", { name: "Read Agent reply" }).click();
+      await expect(page.getByTestId("agent-speech-status")).toHaveText("Speaking");
+      const cancels = await page.evaluate(() => window.__voiceTest.speechCancels);
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await expect(page.getByTestId("agent-speech-status")).toHaveText("Speech off");
+      expect(await page.evaluate(() => window.__voiceTest.speechCancels)).toBeGreaterThan(cancels);
+    }
+  });
+}
 
 test("unsupported input and output keep the text composer usable", async ({
   page,

@@ -81,7 +81,7 @@ async def compare_strategy_replays(
     session: SessionDep,
 ) -> ReplayComparison:
     result = StrategyReplayService(session, service).compare(
-        body, organization_id=tenant.organization_id
+        body, organization_id=tenant.organization_id, user_id=tenant.user_id
     )
     session.commit()
     return result

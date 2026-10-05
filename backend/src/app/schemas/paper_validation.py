@@ -53,6 +53,7 @@ class PaperValidationMetrics(StrictModel):
 
 
 class PaperValidationRunStart(StrictModel):
+    strategy_version_id: UUID | None = None
     runtime_mode: PaperValidationRuntimeMode = PaperValidationRuntimeMode.SCAN_ONLY
     config: PaperValidationConfig | None = None
 

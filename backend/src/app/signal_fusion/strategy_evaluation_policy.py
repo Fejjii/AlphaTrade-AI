@@ -54,6 +54,7 @@ class ExecutableStrategyPolicy(CanonicalModel):
     strategy_version_id: UUID
     strategy_version_content_hash: Sha256Hex
     lifecycle_state: StrategyLifecycleState
+    execution_scope: Literal["paper", "paper_validation"] = "paper"
     compiled_setup_definition_id: UUID
     compiled_content_hash: Sha256Hex
     compiler_version: str
@@ -82,10 +83,11 @@ def build_executable_strategy_policy(
     grammar_version: str,
     fusion_policy: FusionPolicy,
     authored_spec: FirstSliceAuthoredPatternSpec | NestedContinuationSpec | SfpSpec,
+    execution_scope: Literal["paper", "paper_validation"] = "paper",
 ) -> ExecutableStrategyPolicy:
     """Bind an approved compiled version onto the first-slice adapter."""
 
-    _assert_executable_lifecycle(lifecycle_state)
+    _assert_executable_lifecycle(lifecycle_state, execution_scope)
     _assert_fusion_lineage(
         fusion_policy,
         organization_id=organization_id,
@@ -105,6 +107,7 @@ def build_executable_strategy_policy(
         strategy_version_id=strategy_version_id,
         strategy_version_content_hash=strategy_version_content_hash,
         lifecycle_state=lifecycle_state,
+        execution_scope=execution_scope,
         compiled_setup_definition_id=compiled_setup_definition_id,
         compiled_content_hash=compiled_content_hash,
         compiler_version=compiler_version,
@@ -162,7 +165,9 @@ def evaluate_canonical_strategy(
     """
 
     del account_context
-    _assert_executable_lifecycle(executable_policy.lifecycle_state)
+    _assert_executable_lifecycle(
+        executable_policy.lifecycle_state, executable_policy.execution_scope
+    )
     _assert_command_matches_policy(executable_policy, command)
     if isinstance(executable_policy.authored_spec, NestedContinuationSpec):
         if executable_policy.evaluation_params != executable_policy.authored_spec.parameters:
@@ -214,7 +219,11 @@ def evaluate_canonical_strategy(
     )
 
 
-def _assert_executable_lifecycle(state: StrategyLifecycleState) -> None:
+def _assert_executable_lifecycle(
+    state: StrategyLifecycleState, execution_scope: str = "paper"
+) -> None:
+    if execution_scope == "paper_validation" and state is StrategyLifecycleState.PAPER_VALIDATING:
+        return
     if state in EXECUTABLE_LIFECYCLE_STATES:
         return
     if state is StrategyLifecycleState.DRAFT:

@@ -15,6 +15,7 @@ from app.schemas.telegram_policy import (
 SEVERITY_RANK = {severity: rank for rank, severity in enumerate(NotificationSeverity)}
 EVENT_TOGGLES = {
     NotificationEventType.RISK: "risk_alerts",
+    NotificationEventType.SFP_BLOCKED_BY_RISK: "risk_alerts",
     NotificationEventType.PAPER_TRADE_OPENED: "paper_trade_opened",
     NotificationEventType.PAPER_TRADE_CLOSED: "paper_trade_closed",
     NotificationEventType.STOP: "stop_event",

@@ -1,3 +1,4 @@
+import type { AttentionQueue } from "./attention-types";
 import type { DailyReview } from "./daily-review-types";
 import type { BrainOverview, BrainSetup } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
@@ -156,6 +157,7 @@ import type {
   AlertDeliveryStatusResponse,
   NotificationPreferences,
   NotificationTestResult,
+  TelegramEnrollmentStartResponse,
   MarketWatcherStatus,
   MarketWatcherSummary,
   WatcherMonitoringSnapshot,
@@ -765,6 +767,7 @@ export const api = {
       }),
   },
   dashboard: {
+    attention: () => apiFetch<AttentionQueue>("/dashboard/attention", { auth: true }),
     dailyReview: (params?: { date?: string; timezone?: string }) =>
       apiFetch<DailyReview>("/dashboard/daily-review", { query: params, auth: true }),
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
@@ -940,6 +943,11 @@ export const api = {
       }),
   },
   notifications: {
+    startTelegramEnrollment: () =>
+      apiFetch<TelegramEnrollmentStartResponse>("/telegram-paper/enrollment/start", {
+        method: "POST",
+        auth: true,
+      }),
     preferences: () =>
       apiFetch<NotificationPreferences>("/notifications/preferences", { auth: true }),
     updatePreferences: (body: Partial<NotificationPreferences>) =>

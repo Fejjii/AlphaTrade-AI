@@ -31,8 +31,16 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testIgnore: ["**/capture-screenshots.spec.ts", "**/webkit-iphone-audit.spec.ts"],
-      use: { ...devices["Desktop Chrome"] },
+      testIgnore: [
+        "**/capture-screenshots.spec.ts",
+        "**/webkit-iphone-audit.spec.ts",
+      ],
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+          : undefined,
+      },
     },
     {
       name: "webkit",
@@ -45,12 +53,18 @@ export default defineConfig({
     },
     {
       name: "iphone-15-pro",
-      testMatch: "**/webkit-iphone-audit.spec.ts",
+      testMatch: [
+        "**/webkit-iphone-audit.spec.ts",
+        "**/notification-settings-v2.spec.ts",
+      ],
       use: { ...devices["iPhone 15 Pro"] },
     },
     {
       name: "iphone-15-pro-landscape",
-      testMatch: "**/webkit-iphone-audit.spec.ts",
+      testMatch: [
+        "**/webkit-iphone-audit.spec.ts",
+        "**/notification-settings-v2.spec.ts",
+      ],
       use: { ...devices["iPhone 15 Pro landscape"] },
     },
     {

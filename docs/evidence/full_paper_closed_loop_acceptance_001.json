@@ -1,0 +1,2206 @@
+{
+  "agent_explanation": "Recorded internal paper execution 92454473-5a72-411b-ba20-25f88eb7cbff; outcome ALLOW.\n\nCandidate a0af16c8-d738-59a1-bd0f-8fc367f5bd8b: strategy version 9d3b4c97-7fc1-4c8a-a033-e27663dedf58, compiled setup 35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a, assessment cc373b71-9fd5-546d-9011-dad78af3ba93, evidence window 1296998c88f610e0dea9190c5836e34a67c5d71171ca054019a666f4aebf3c4d.\n\nActionEligibility ab39dde9-0274-5e6d-be66-083220ade650; approval authorization 99e9f2a5-08f5-4bea-99a6-8f474c961d15 bound to this revision and hash.\n\nRecorded Risk decision allow: All risk checks passed.\n\nTradePlan revision 663f2063-d7ff-52e2-9670-4e7115dd01ef; hash 24e790293e7b302020272ebeed11cfa35ba65509097fd36f7aba9353f53a70b0; SELL BTCUSDT; entry 100080; stop 100240; quantity 0.004; maximum loss 0.640.\n\nPaper fill 08aa3311-7978-4c49-95e9-c826a39b12c1: 0.00400000 at 100080.00000000; venue paper_internal.\n\nJournal 2724adea-ee8b-4e99-a180-fcc63031dc51: closed; recorded net PnL 0.64000000.\n\nRisk describes the captured execution decision. This read does not recalculate risk or PnL, confirm a proposal, execute an order or contact a provider. Fill references are limited to the first ten recorded fills.",
+  "agent_explanation_message_id": "6034cef5-c659-4bf6-add0-a0cc2a78e8f7",
+  "agent_explanation_sources": [
+    {
+      "artifact_kind": "trade_decision",
+      "provenance": "system_generated",
+      "record_id": "a0af16c8-d738-59a1-bd0f-8fc367f5bd8b",
+      "relation": "recorded paper execution lineage",
+      "title": "Candidate"
+    },
+    {
+      "artifact_kind": "trade_decision",
+      "provenance": "system_generated",
+      "record_id": "ab39dde9-0274-5e6d-be66-083220ade650",
+      "relation": "recorded paper execution lineage",
+      "title": "ActionEligibility"
+    },
+    {
+      "artifact_kind": "trade_decision",
+      "provenance": "system_generated",
+      "record_id": "663f2063-d7ff-52e2-9670-4e7115dd01ef",
+      "relation": "recorded paper execution lineage",
+      "title": "TradePlan revision"
+    },
+    {
+      "artifact_kind": "trade_decision",
+      "provenance": "system_generated",
+      "record_id": "92454473-5a72-411b-ba20-25f88eb7cbff",
+      "relation": "recorded paper execution lineage",
+      "title": "Paper execution command"
+    },
+    {
+      "artifact_kind": "trade_decision",
+      "provenance": "system_generated",
+      "record_id": "bf87b18b-07b4-4c1f-9166-4fa9c2ca29d5",
+      "relation": "recorded paper execution lineage",
+      "title": "Execution receipt"
+    },
+    {
+      "artifact_kind": "trade_decision",
+      "provenance": "system_generated",
+      "record_id": "08aa3311-7978-4c49-95e9-c826a39b12c1",
+      "relation": "recorded paper execution lineage",
+      "title": "Internal paper fill"
+    },
+    {
+      "artifact_kind": "journal_entry",
+      "provenance": "system_generated",
+      "record_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+      "relation": "recorded paper execution lineage",
+      "title": "Journal result"
+    },
+    {
+      "artifact_kind": "observation",
+      "provenance": "system_generated",
+      "record_id": "fadf1a6d-54d9-47b6-bb9b-ea3539502a24",
+      "relation": "recorded paper execution lineage",
+      "title": "Captured Risk and confirmation result"
+    }
+  ],
+  "analytics_attribution": {
+    "attribution_id": "1fb3021f-1c4c-5919-ba8f-211495529908",
+    "candidate_id": "a0af16c8-d738-59a1-bd0f-8fc367f5bd8b",
+    "events": [
+      {
+        "event_content_hash": "8608009bd201cb8d9c4c9e105350b5bb0cc1428c16f35a3981581f5ecaa66b56",
+        "event_type": "approved_plan",
+        "facts_hash": "e9eaf010cc9b46a0be3dc3738d459a1c0f2b0f174fceddc0e915b8e6dcffd285",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "narrative_explanation": null,
+        "projection": {
+          "created_journal_trade": true,
+          "event_type": "approved_plan",
+          "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+          "replayed": false,
+          "skipped_reason": null
+        },
+        "source_aggregate": "execution-command",
+        "source_event_id": "92454473-5a72-411b-ba20-25f88eb7cbff",
+        "source_event_version": 1,
+        "source_system": "canonical_paper_execution",
+        "supersession": 0
+      },
+      {
+        "event_content_hash": "1dd1f509a19f4e8f0034882ef6f8d67ab8ef5064d00c03295ffd281fe656c9c6",
+        "event_type": "fill",
+        "facts_hash": "233ab0cdb07294881b55aa675411c7db58e6300aa526f5e5a04e38d07d53bf2a",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "narrative_explanation": null,
+        "projection": {
+          "created_journal_trade": false,
+          "event_type": "fill",
+          "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+          "replayed": false,
+          "skipped_reason": null
+        },
+        "source_aggregate": "execution-command",
+        "source_event_id": "08aa3311-7978-4c49-95e9-c826a39b12c1",
+        "source_event_version": 1,
+        "source_system": "canonical_paper_execution",
+        "supersession": 0
+      },
+      {
+        "event_content_hash": "0b70644cbe4c6b273fbea2706a759b51d250b11c5baabe5cf741e861c12dacdb",
+        "event_type": "close",
+        "facts_hash": "bc634b9899d82ba2e2ea406873ac732770a7b0d1cbfce9427e5b8ede4dd26139",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "narrative_explanation": null,
+        "projection": {
+          "created_journal_trade": false,
+          "event_type": "close",
+          "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+          "replayed": false,
+          "skipped_reason": null
+        },
+        "source_aggregate": "execution-command",
+        "source_event_id": "acceptance-close",
+        "source_event_version": 1,
+        "source_system": "canonical_paper_execution",
+        "supersession": 0
+      }
+    ],
+    "execution_lifecycle_id": "92454473-5a72-411b-ba20-25f88eb7cbff",
+    "facts": {
+      "account_id": "00000000-0000-0000-0000-00000000a091",
+      "assessment_id": "cc373b71-9fd5-546d-9011-dad78af3ba93",
+      "attribution_id": "1fb3021f-1c4c-5919-ba8f-211495529908",
+      "candidate_content_hash": "efcbb20570850132ac7d630f88c32a60bea1bf2aa69de50a7a3e008b6bc95d40",
+      "candidate_id": "a0af16c8-d738-59a1-bd0f-8fc367f5bd8b",
+      "content_hash": "bc634b9899d82ba2e2ea406873ac732770a7b0d1cbfce9427e5b8ede4dd26139",
+      "evidence_window_hash": "1296998c88f610e0dea9190c5836e34a67c5d71171ca054019a666f4aebf3c4d",
+      "execution_lifecycle_id": "92454473-5a72-411b-ba20-25f88eb7cbff",
+      "execution_quality": {
+        "actual_entry_price": "100080.00000000",
+        "actual_exit_price": "99920",
+        "axis": "matched_plan",
+        "capture_pct": null,
+        "entry_deviation_bps": "0.00",
+        "journal_status": "closed",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "planned_entry_price": "100080.00000000",
+        "planned_stop_price": "100240.00000000",
+        "recorded_slippage": "0"
+      },
+      "human_vs_system": {
+        "actual_entry_price": "100080.00000000",
+        "actual_exit_price": "99920",
+        "candidate_id": "a0af16c8-d738-59a1-bd0f-8fc367f5bd8b",
+        "decision_actor": "paper_system_execution",
+        "entry_deviation_bps": "0.00",
+        "executed_trade_outcome": true,
+        "execution_quality_axis": "matched_plan",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "net_pnl": "0.64000000",
+        "planned_entry_price": "100080.00000000",
+        "planned_stop_price": "100240.00000000",
+        "result": "win",
+        "risk_adherence_axis": "adhered",
+        "setup_definition_id": "35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a",
+        "setup_quality_axis": "confirmed",
+        "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+        "trader_behavior_axis": "executed"
+      },
+      "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+      "learning_venue_mode": "paper_internal",
+      "organization_id": "00000000-0000-0000-0000-00000000a069",
+      "outcome": {
+        "eligible": true,
+        "gross_pnl": "0.64000000",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "net_pnl": "0.64000000",
+        "result": "win",
+        "status": "closed"
+      },
+      "projection_replayed": false,
+      "projection_skipped_reason": null,
+      "risk_adherence": {
+        "actual_exit_price": "99920",
+        "actual_size": "0.00400000",
+        "axis": "adhered",
+        "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "planned_risk_amount": "0.64000000",
+        "planned_size": null,
+        "planned_stop_price": "100240.00000000",
+        "size_deviation_bps": null
+      },
+      "schema_version": "LearningAttribution/v2",
+      "setup_quality": {
+        "assessment_content_hash": "431275d3605b546955ac245539972949d72b5120869d6f8166b992e937b19666",
+        "assessment_id": "cc373b71-9fd5-546d-9011-dad78af3ba93",
+        "assessment_state": "confirmed_setup",
+        "axis": "confirmed",
+        "confirmed": true,
+        "evidence_window_hash": "1296998c88f610e0dea9190c5836e34a67c5d71171ca054019a666f4aebf3c4d",
+        "reason_codes": []
+      },
+      "strategy_pattern": {
+        "breakeven": false,
+        "candidate_confirmed": true,
+        "closed": true,
+        "executed_outcome": true,
+        "filled": true,
+        "fusion_policy_version": "first-slice-fusion/v1",
+        "learning_venue_mode": "paper_internal",
+        "loss": false,
+        "plan_approved": true,
+        "rejected": false,
+        "setup_definition_id": "35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a",
+        "skipped": false,
+        "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+        "uniqueness_tuple_hash": "d86ff2de1b8b5cfed9181c5e48def7aa1965ff4b4736036954c501628c9452a8",
+        "win": true
+      },
+      "trade_plan_revision_id": "663f2063-d7ff-52e2-9670-4e7115dd01ef",
+      "trader_behavior": {
+        "actor": "paper_system_execution",
+        "axis": "executed",
+        "candidate_state": "plan_created",
+        "event_type": "close",
+        "executed_trade_outcome": true
+      },
+      "uniqueness_tuple_hash": "d86ff2de1b8b5cfed9181c5e48def7aa1965ff4b4736036954c501628c9452a8",
+      "user_id": "00000000-0000-0000-0000-00000000c069"
+    },
+    "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+    "narrative_explanation": null,
+    "organization_id": "00000000-0000-0000-0000-00000000a069"
+  },
+  "assessment": {
+    "assessed_at": "2026-01-15T16:15:05Z",
+    "assessment_id": "cc373b71-9fd5-546d-9011-dad78af3ba93",
+    "assessment_window": {
+      "end": "2026-01-15T16:15:00Z",
+      "start": "2026-01-15T16:00:00Z"
+    },
+    "content_hash": "431275d3605b546955ac245539972949d72b5120869d6f8166b992e937b19666",
+    "correlation_id": "fa39e2b8-2d30-549d-9301-b0a88cebfeb3",
+    "evidence_window_hash": "1296998c88f610e0dea9190c5836e34a67c5d71171ca054019a666f4aebf3c4d",
+    "executable_setup": {
+      "content_hash": "5d3684a8cd019f4f366d9684b8b123403ac182614f2e9781fa14cd3d2053e388",
+      "kind": "compiled_setup_definition",
+      "setup_definition_id": "35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a"
+    },
+    "explanation": "Bearish Liquidity Sweep with CVD Divergence and Aggressive Sell Imbalance at 4h Resistance: CONFIRMED_SETUP; all mandatory first-slice predicates passed.",
+    "fusion_policy_version": "first-slice-fusion/v1",
+    "observation_ids": [
+      "0cef04d2-7534-54ce-b0fd-2b2e4d7f729f",
+      "44f1b65e-f9e3-5f14-be4b-183556fb9626",
+      "85b86116-6210-5e47-8cf1-1057fde9b813",
+      "ae993d1d-d28f-512e-ae7e-c544f6f2d6d5",
+      "fc43fcd3-8f1f-51ad-a979-8c9929406f56"
+    ],
+    "organization_id": "00000000-0000-0000-0000-00000000a069",
+    "presentation_evidence": [],
+    "previous_assessment_id": null,
+    "previous_state": null,
+    "reason_codes": [
+      "all_mandatory_evidence_confirmed"
+    ],
+    "rule_results": [
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "policy_compatible",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "trigger_ohlcv",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "market_identity",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "perpetual_identity",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "trigger_ohlcv",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "final_evidence",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "trade_event",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "freshness",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "cvd_window",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "no_unresolved_gap",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "complete_warmup",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "wilder_atr_15m",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "wilder_atr_4h",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "swing",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "confirmed_swing_high",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "structure",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "manual_4h_resistance",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "structure",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "htf_resistance_context",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "trigger",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "ltf_liquidity_sweep",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "volume",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "volume_spike",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "cvd_window",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "bearish_cvd_divergence",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": "signed_flow",
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "aggressive_sell_imbalance",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "not_invalidated",
+        "weight": "0.05555555555555555555555555556"
+      },
+      {
+        "evidence_role": null,
+        "passed": true,
+        "reason_code": null,
+        "rule_id": "not_expired",
+        "weight": "0.05555555555555555555555555556"
+      }
+    ],
+    "schema_version": "SetupAssessment/v1",
+    "state": "confirmed_setup",
+    "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+    "threshold": "1.0",
+    "valid_until": "2026-01-15T16:45:00Z"
+  },
+  "assessment_content_hash": "431275d3605b546955ac245539972949d72b5120869d6f8166b992e937b19666",
+  "assessment_id": "cc373b71-9fd5-546d-9011-dad78af3ba93",
+  "attention_item": {
+    "acknowledgement_state": "unsupported",
+    "category": "paper_position",
+    "expires_at": null,
+    "item_id": "5e1db4df-da31-5156-a4e8-7d1b85c29367",
+    "reason": "Canonical paper journal records this position as open.",
+    "recommended_next_action": "Review the paper position and its recorded risk plan.",
+    "severity": "low",
+    "sources": [
+      {
+        "content_hash": null,
+        "occurred_at": "2026-01-15T16:15:05.000125Z",
+        "record_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+        "record_type": "journal_trades",
+        "upstream_event_id": null,
+        "upstream_system": null,
+        "version": null
+      }
+    ],
+    "strategy_id": null,
+    "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+    "symbol": "BTCUSDT",
+    "title": "Open paper position"
+  },
+  "attention_item_id": "5e1db4df-da31-5156-a4e8-7d1b85c29367",
+  "base_sha": "8673d8f69779ea516ca97456baea7b3064daf089",
+  "candidate_content_hash": "2cd801aa9983a5acdf22d257f149ae17b80f19496f7e91cabbe7a4343770334b",
+  "candidate_id": "a0af16c8-d738-59a1-bd0f-8fc367f5bd8b",
+  "compiled_setup_content_hash": "5d3684a8cd019f4f366d9684b8b123403ac182614f2e9781fa14cd3d2053e388",
+  "compiled_setup_definition": {
+    "compiler_version": "setup-ast/v1",
+    "context_timeframe": "4h",
+    "direction": "short",
+    "expiration_final_bars": 2,
+    "features": [
+      {
+        "feature_type": "WILDER_ATR",
+        "feature_version": "wilder-atr/v1",
+        "period": 14,
+        "role": "trigger",
+        "timeframe": "15m"
+      },
+      {
+        "feature_type": "WILDER_ATR",
+        "feature_version": "wilder-atr/v1",
+        "period": 14,
+        "role": "context",
+        "timeframe": "4h"
+      }
+    ],
+    "grammar_version": "setup-ast-grammar/v1",
+    "invalidation": [
+      {
+        "alignment": null,
+        "args": [
+          {
+            "alignment": null,
+            "args": [],
+            "kind": "field",
+            "op": null,
+            "path": "ohlcv.high",
+            "strict": null,
+            "unit": "price",
+            "value": null,
+            "value_type": "decimal",
+            "window_bars": null
+          },
+          {
+            "alignment": null,
+            "args": [
+              {
+                "alignment": null,
+                "args": [],
+                "kind": "field",
+                "op": null,
+                "path": "trigger.ohlcv.high",
+                "strict": null,
+                "unit": "price",
+                "value": null,
+                "value_type": "decimal",
+                "window_bars": null
+              },
+              {
+                "alignment": null,
+                "args": [
+                  {
+                    "alignment": null,
+                    "args": [
+                      {
+                        "alignment": null,
+                        "args": [],
+                        "kind": "literal",
+                        "op": null,
+                        "path": null,
+                        "strict": null,
+                        "unit": "ratio",
+                        "value": "0.10",
+                        "value_type": "decimal",
+                        "window_bars": null
+                      },
+                      {
+                        "alignment": null,
+                        "args": [],
+                        "kind": "field",
+                        "op": null,
+                        "path": "feature.wilder_atr_v1.value",
+                        "strict": null,
+                        "unit": "price",
+                        "value": null,
+                        "value_type": "decimal",
+                        "window_bars": null
+                      }
+                    ],
+                    "kind": "arithmetic",
+                    "op": "multiply",
+                    "path": null,
+                    "strict": null,
+                    "unit": null,
+                    "value": null,
+                    "value_type": null,
+                    "window_bars": null
+                  },
+                  {
+                    "alignment": null,
+                    "args": [
+                      {
+                        "alignment": null,
+                        "args": [],
+                        "kind": "literal",
+                        "op": null,
+                        "path": null,
+                        "strict": null,
+                        "unit": "ratio",
+                        "value": "2",
+                        "value_type": "decimal",
+                        "window_bars": null
+                      },
+                      {
+                        "alignment": null,
+                        "args": [],
+                        "kind": "field",
+                        "op": null,
+                        "path": "evidence.tick_size",
+                        "strict": null,
+                        "unit": "price",
+                        "value": null,
+                        "value_type": "decimal",
+                        "window_bars": null
+                      }
+                    ],
+                    "kind": "arithmetic",
+                    "op": "multiply",
+                    "path": null,
+                    "strict": null,
+                    "unit": null,
+                    "value": null,
+                    "value_type": null,
+                    "window_bars": null
+                  }
+                ],
+                "kind": "arithmetic",
+                "op": "max",
+                "path": null,
+                "strict": null,
+                "unit": null,
+                "value": null,
+                "value_type": null,
+                "window_bars": null
+              }
+            ],
+            "kind": "arithmetic",
+            "op": "add",
+            "path": null,
+            "strict": null,
+            "unit": null,
+            "value": null,
+            "value_type": null,
+            "window_bars": null
+          }
+        ],
+        "kind": "compare",
+        "op": "gt",
+        "path": null,
+        "strict": null,
+        "unit": null,
+        "value": null,
+        "value_type": null,
+        "window_bars": null
+      }
+    ],
+    "preconditions": {
+      "alignment": null,
+      "args": [
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "field",
+              "op": null,
+              "path": "predicate.finality",
+              "strict": null,
+              "unit": "boolean",
+              "value": null,
+              "value_type": "boolean",
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "literal",
+              "op": null,
+              "path": null,
+              "strict": null,
+              "unit": "boolean",
+              "value": "true",
+              "value_type": "boolean",
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "eq",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "field",
+              "op": null,
+              "path": "predicate.freshness",
+              "strict": null,
+              "unit": "boolean",
+              "value": null,
+              "value_type": "boolean",
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "literal",
+              "op": null,
+              "path": null,
+              "strict": null,
+              "unit": "boolean",
+              "value": "true",
+              "value_type": "boolean",
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "eq",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "field",
+              "op": null,
+              "path": "predicate.gap",
+              "strict": null,
+              "unit": "boolean",
+              "value": null,
+              "value_type": "boolean",
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "literal",
+              "op": null,
+              "path": null,
+              "strict": null,
+              "unit": "boolean",
+              "value": "false",
+              "value_type": "boolean",
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "eq",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "feature.wilder_atr_v1.value",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "is_missing",
+                  "op": null,
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "unary",
+              "op": "not",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "feature.wilder_atr_v1.context.value",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "is_missing",
+                  "op": null,
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "unary",
+              "op": "not",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "boolean",
+          "op": "and",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        }
+      ],
+      "kind": "boolean",
+      "op": "and",
+      "path": null,
+      "strict": null,
+      "unit": null,
+      "value": null,
+      "value_type": null,
+      "window_bars": null
+    },
+    "sequence": [
+      {
+        "finality_requirement": "final_only",
+        "invalidate_on": null,
+        "max_offset": 0,
+        "min_offset": 0,
+        "overlap_policy": "disallow",
+        "predicate": {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "swing.S",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    },
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "manual_level.R",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "arithmetic",
+                  "op": "subtract",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [
+                        {
+                          "alignment": null,
+                          "args": [],
+                          "kind": "field",
+                          "op": null,
+                          "path": "swing.S",
+                          "strict": null,
+                          "unit": "price",
+                          "value": null,
+                          "value_type": "decimal",
+                          "window_bars": null
+                        },
+                        {
+                          "alignment": null,
+                          "args": [],
+                          "kind": "field",
+                          "op": null,
+                          "path": "manual_level.R",
+                          "strict": null,
+                          "unit": "price",
+                          "value": null,
+                          "value_type": "decimal",
+                          "window_bars": null
+                        }
+                      ],
+                      "kind": "arithmetic",
+                      "op": "subtract",
+                      "path": null,
+                      "strict": null,
+                      "unit": null,
+                      "value": null,
+                      "value_type": null,
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "unary",
+                  "op": "negate",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "max",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "literal",
+                  "op": null,
+                  "path": null,
+                  "strict": null,
+                  "unit": "ratio",
+                  "value": "0.50",
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "feature.wilder_atr_v1.context.value",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "multiply",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "lte",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        "reset_on": null,
+        "step_id": "htf_resistance_context"
+      },
+      {
+        "finality_requirement": "final_only",
+        "invalidate_on": null,
+        "max_offset": 2,
+        "min_offset": 0,
+        "overlap_policy": "disallow",
+        "predicate": {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "ohlcv.high",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "swing.S",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    },
+                    {
+                      "alignment": null,
+                      "args": [
+                        {
+                          "alignment": null,
+                          "args": [],
+                          "kind": "literal",
+                          "op": null,
+                          "path": null,
+                          "strict": null,
+                          "unit": "ratio",
+                          "value": "0.25",
+                          "value_type": "decimal",
+                          "window_bars": null
+                        },
+                        {
+                          "alignment": null,
+                          "args": [],
+                          "kind": "field",
+                          "op": null,
+                          "path": "feature.wilder_atr_v1.value",
+                          "strict": null,
+                          "unit": "price",
+                          "value": null,
+                          "value_type": "decimal",
+                          "window_bars": null
+                        }
+                      ],
+                      "kind": "arithmetic",
+                      "op": "multiply",
+                      "path": null,
+                      "strict": null,
+                      "unit": null,
+                      "value": null,
+                      "value_type": null,
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "arithmetic",
+                  "op": "add",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "compare",
+              "op": "gte",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "ohlcv.close",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    },
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "swing.S",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "compare",
+                  "op": "lt",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "ohlcv.close",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    },
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "ohlcv.open",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "compare",
+                  "op": "lt",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "boolean",
+              "op": "and",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "boolean",
+          "op": "and",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        "reset_on": null,
+        "step_id": "ltf_liquidity_sweep"
+      }
+    ],
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "trigger": {
+      "alignment": null,
+      "args": [
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "swing.S",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    },
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "manual_level.R",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "arithmetic",
+                  "op": "subtract",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [
+                        {
+                          "alignment": null,
+                          "args": [],
+                          "kind": "field",
+                          "op": null,
+                          "path": "swing.S",
+                          "strict": null,
+                          "unit": "price",
+                          "value": null,
+                          "value_type": "decimal",
+                          "window_bars": null
+                        },
+                        {
+                          "alignment": null,
+                          "args": [],
+                          "kind": "field",
+                          "op": null,
+                          "path": "manual_level.R",
+                          "strict": null,
+                          "unit": "price",
+                          "value": null,
+                          "value_type": "decimal",
+                          "window_bars": null
+                        }
+                      ],
+                      "kind": "arithmetic",
+                      "op": "subtract",
+                      "path": null,
+                      "strict": null,
+                      "unit": null,
+                      "value": null,
+                      "value_type": null,
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "unary",
+                  "op": "negate",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "max",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "literal",
+                  "op": null,
+                  "path": null,
+                  "strict": null,
+                  "unit": "ratio",
+                  "value": "0.50",
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "feature.wilder_atr_v1.context.value",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "multiply",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "lte",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "field",
+              "op": null,
+              "path": "ohlcv.high",
+              "strict": null,
+              "unit": "price",
+              "value": null,
+              "value_type": "decimal",
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "swing.S",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "literal",
+                      "op": null,
+                      "path": null,
+                      "strict": null,
+                      "unit": "ratio",
+                      "value": "0.25",
+                      "value_type": "decimal",
+                      "window_bars": null
+                    },
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "feature.wilder_atr_v1.value",
+                      "strict": null,
+                      "unit": "price",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "arithmetic",
+                  "op": "multiply",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": null
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "add",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "gte",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "ohlcv.close",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "swing.S",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "compare",
+              "op": "lt",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "ohlcv.close",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "ohlcv.open",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "compare",
+              "op": "lt",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "boolean",
+          "op": "and",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "ohlcv.volume",
+                  "strict": null,
+                  "unit": "volume",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [
+                    {
+                      "alignment": null,
+                      "args": [],
+                      "kind": "field",
+                      "op": null,
+                      "path": "ohlcv.volume",
+                      "strict": null,
+                      "unit": "volume",
+                      "value": null,
+                      "value_type": "decimal",
+                      "window_bars": null
+                    }
+                  ],
+                  "kind": "window_aggregate",
+                  "op": "mean",
+                  "path": null,
+                  "strict": null,
+                  "unit": null,
+                  "value": null,
+                  "value_type": null,
+                  "window_bars": 20
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "divide",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "literal",
+              "op": null,
+              "path": null,
+              "strict": null,
+              "unit": "ratio",
+              "value": "1.50",
+              "value_type": "decimal",
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "gte",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "ohlcv.high",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "swing.S",
+                  "strict": null,
+                  "unit": "price",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "compare",
+              "op": "gt",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "cvd.at_bar_close",
+                  "strict": null,
+                  "unit": "price_volume",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "cvd.at_swing_close",
+                  "strict": null,
+                  "unit": "price_volume",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "compare",
+              "op": "lt",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            }
+          ],
+          "kind": "boolean",
+          "op": "and",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        },
+        {
+          "alignment": null,
+          "args": [
+            {
+              "alignment": null,
+              "args": [
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "flow.signed_quote_delta_T",
+                  "strict": null,
+                  "unit": "price_volume",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                },
+                {
+                  "alignment": null,
+                  "args": [],
+                  "kind": "field",
+                  "op": null,
+                  "path": "flow.total_quote_volume_T",
+                  "strict": null,
+                  "unit": "price_volume",
+                  "value": null,
+                  "value_type": "decimal",
+                  "window_bars": null
+                }
+              ],
+              "kind": "arithmetic",
+              "op": "divide",
+              "path": null,
+              "strict": null,
+              "unit": null,
+              "value": null,
+              "value_type": null,
+              "window_bars": null
+            },
+            {
+              "alignment": null,
+              "args": [],
+              "kind": "literal",
+              "op": null,
+              "path": null,
+              "strict": null,
+              "unit": "ratio",
+              "value": "-0.10",
+              "value_type": "decimal",
+              "window_bars": null
+            }
+          ],
+          "kind": "compare",
+          "op": "lte",
+          "path": null,
+          "strict": null,
+          "unit": null,
+          "value": null,
+          "value_type": null,
+          "window_bars": null
+        }
+      ],
+      "kind": "boolean",
+      "op": "and",
+      "path": null,
+      "strict": null,
+      "unit": null,
+      "value": null,
+      "value_type": null,
+      "window_bars": null
+    },
+    "trigger_timeframe": "15m"
+  },
+  "compiled_setup_definition_id": "35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a",
+  "compiler_version": "setup-ast/v1",
+  "confirmation": {
+    "approval_id": "4f9bb06f-1617-4ee3-87c6-fec76e4a7b44",
+    "authorization_hash": "275532109f33d6f9250dfe70324b42c6ad094fd143e17fa14d28eb6b07137abc",
+    "authorization_id": "99e9f2a5-08f5-4bea-99a6-8f474c961d15",
+    "conversation_id": "64260b8b-4169-4435-aca7-d138be7b67aa",
+    "message": "Confirm paper execution revision=663f2063-d7ff-52e2-9670-4e7115dd01ef hash=24e790293e7b302020272ebeed11cfa35ba65509097fd36f7aba9353f53a70b0",
+    "request_id": "e01992e7-1989-4035-9423-a08a19b81c39",
+    "user_message_id": "e3ee95ad-a714-4a26-9d8f-798da90def6d"
+  },
+  "daily_review": {
+    "content_hash": "895b11e0c3273e54ac060ff9d731c5bdee112c475dec5948288ca48ff75cfec7",
+    "counts": {
+      "blocked_candidates": 0,
+      "data_quality_limitations": 0,
+      "journal_entries": 1,
+      "lessons": 0,
+      "missed_setups": 0,
+      "mistakes": 0,
+      "paper_closed": 1,
+      "paper_opened": 1,
+      "risk_events": 0,
+      "setups": 0,
+      "strategy_observations": 0,
+      "watcher_activity": 0
+    },
+    "daily_pnl": [
+      {
+        "breakeven": 0,
+        "closed_count": 1,
+        "cohort": "paper_execution:00000000-0000-0000-0000-00000000a091",
+        "complete": true,
+        "expectancy": null,
+        "losses": 0,
+        "measured_count": 1,
+        "minimum_sample": 5,
+        "missing_pnl_count": 0,
+        "recorded_net_pnl": "0.64000000",
+        "sources": [
+          {
+            "content_hash": null,
+            "occurred_at": "2026-01-15T16:16:05Z",
+            "record_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+            "record_type": "journal_trades",
+            "upstream_event_id": null,
+            "upstream_system": null,
+            "version": null
+          }
+        ],
+        "win_rate": null,
+        "wins": 1
+      }
+    ],
+    "facts": [
+      {
+        "candidate_id": null,
+        "classification": "fact",
+        "code": "recorded_paper_close",
+        "sources": [
+          {
+            "content_hash": null,
+            "occurred_at": "2026-01-15T16:16:05Z",
+            "record_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+            "record_type": "journal_trades",
+            "upstream_event_id": null,
+            "upstream_system": null,
+            "version": null
+          }
+        ],
+        "strategy_version_id": null,
+        "text": null,
+        "topic": "paper_closed"
+      },
+      {
+        "candidate_id": null,
+        "classification": "fact",
+        "code": "recorded_paper_entry",
+        "sources": [
+          {
+            "content_hash": null,
+            "occurred_at": "2026-01-15T16:15:05Z",
+            "record_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+            "record_type": "journal_trades",
+            "upstream_event_id": null,
+            "upstream_system": null,
+            "version": null
+          }
+        ],
+        "strategy_version_id": null,
+        "text": null,
+        "topic": "paper_opened"
+      },
+      {
+        "candidate_id": null,
+        "classification": "fact",
+        "code": "canonical_journal_snapshot",
+        "sources": [
+          {
+            "content_hash": null,
+            "occurred_at": "2026-01-15T16:15:05.000152Z",
+            "record_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+            "record_type": "journal_trades",
+            "upstream_event_id": null,
+            "upstream_system": null,
+            "version": null
+          }
+        ],
+        "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+        "text": null,
+        "topic": "journal_entries"
+      }
+    ],
+    "generated_at": "2026-01-15T16:16:05Z",
+    "limitations": [
+      "Absence of records does not establish absence of activity or market conditions.",
+      "Counts describe review items, not unique candidates or trades across stages.",
+      "Forming setups are recorded watch/partial_match states; confirmation is not predicted.",
+      "Journal reflections are stored observations, not independently verified facts; mutable journal snapshots have no complete edit history.",
+      "Paper PnL uses canonical JournalTrade paper_execution/paper_validation closes, separated by source and account. Currency is not recorded here; no conversion or cross-account total is supplied.",
+      "PnL is recorded realized net PnL only; no mark-to-market or counterfactual profit.",
+      "Watcher/setup activity covers organization-level paper-evaluation observations; recording coverage is not guaranteed.",
+      "Win rate and expectancy require five measured closes and no missing PnL; they describe this day's sample, not proven profitability."
+    ],
+    "live_executable": false,
+    "organization_id": "00000000-0000-0000-0000-00000000a069",
+    "research_suggestions": [],
+    "review_id": "73141bab-2361-5aee-928e-3f8b5468ea4a",
+    "schema_version": "DailyReview/v1",
+    "system_inference": [],
+    "telegram_delivery": false,
+    "user_id": "00000000-0000-0000-0000-00000000c069",
+    "user_observations": [],
+    "window": {
+      "day": "2026-01-15",
+      "end": "2026-01-16T00:00:00Z",
+      "start": "2026-01-15T00:00:00Z",
+      "timezone": "UTC"
+    }
+  },
+  "daily_review_hash": "895b11e0c3273e54ac060ff9d731c5bdee112c475dec5948288ca48ff75cfec7",
+  "daily_review_id": "73141bab-2361-5aee-928e-3f8b5468ea4a",
+  "eligibility_content_hash": "d511c5695c5a9551cdccd6c0de5e55eedfea708e23352fcbe45d7ddbacd44824",
+  "eligibility_id": "ab39dde9-0274-5e6d-be66-083220ade650",
+  "eligibility_risk_snapshot_id": "9df67571-d793-5518-a4af-d2f78ee01ce6",
+  "entry": "100080.00000000",
+  "evidence_window": {
+    "compiled_setup_content_hash": "5d3684a8cd019f4f366d9684b8b123403ac182614f2e9781fa14cd3d2053e388",
+    "compiled_setup_definition_id": "35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a",
+    "content_hash": "1296998c88f610e0dea9190c5836e34a67c5d71171ca054019a666f4aebf3c4d",
+    "correction_selection_policy": "selected-final-revision/v1",
+    "direction": "short",
+    "evidence_instrument": "binance:usdm_futures:perpetual:BTCUSDT",
+    "evidence_market": "perpetual",
+    "evidence_venue": "binance",
+    "finality_policy_version": "final-bar/v1",
+    "freshness_policy_version": "first-slice-btc-usdt-usdm-freshness/v1",
+    "fusion_policy_version": "first-slice-fusion/v1",
+    "hash_algorithm_version": "canonical-json-sha256/v1",
+    "interval": {
+      "end": "2026-01-15T16:15:00Z",
+      "start": "2026-01-15T16:00:00Z"
+    },
+    "mandatory_evidence_roles": [
+      "context_ohlcv",
+      "cvd_window",
+      "signed_flow",
+      "trade_event",
+      "trigger_ohlcv"
+    ],
+    "manual_level_revision": {
+      "content_hash": "8deeba2bf07d6835baaac950ecfd2db6b09f64dba56d8b12cc8e74eda8acdbc5",
+      "level_id": "c2166f4b-0997-4ac6-99b2-3f8a75a07653",
+      "revision_number": 1
+    },
+    "organization_id": "00000000-0000-0000-0000-00000000a069",
+    "schema_version": "CanonicalEvidenceWindowV1",
+    "selected_public_observations": [
+      {
+        "content_hash": "4a0e3c8ba967c12c9a9f0b7935635b5fb04db2b74b3c3d581b718aea12340b2b",
+        "finality": "final",
+        "instrument_id": "binance:usdm_futures:perpetual:BTCUSDT",
+        "market_type": "perpetual",
+        "observation_id": "ae993d1d-d28f-512e-ae7e-c544f6f2d6d5",
+        "role": "context_ohlcv",
+        "timeframe": "4h",
+        "venue": "binance"
+      },
+      {
+        "content_hash": "c3559483dd303af7910fc5b31d50eb7785aef055318d339831f8e1b5d6bfe59a",
+        "finality": "final",
+        "instrument_id": "binance:usdm_futures:perpetual:BTCUSDT",
+        "market_type": "perpetual",
+        "observation_id": "85b86116-6210-5e47-8cf1-1057fde9b813",
+        "role": "cvd_window",
+        "timeframe": "15m",
+        "venue": "binance"
+      },
+      {
+        "content_hash": "6336f84a9e4a789df41efe3941b627d65db461facac1b2c489ca4920dc7d075d",
+        "finality": "final",
+        "instrument_id": "binance:usdm_futures:perpetual:BTCUSDT",
+        "market_type": "perpetual",
+        "observation_id": "fc43fcd3-8f1f-51ad-a979-8c9929406f56",
+        "role": "signed_flow",
+        "timeframe": "15m",
+        "venue": "binance"
+      },
+      {
+        "content_hash": "423f312b7e9b02616519db032769423c15e6589b3ba1c18a824041d894c68c2a",
+        "finality": "final",
+        "instrument_id": "binance:usdm_futures:perpetual:BTCUSDT",
+        "market_type": "perpetual",
+        "observation_id": "0cef04d2-7534-54ce-b0fd-2b2e4d7f729f",
+        "role": "trade_event",
+        "timeframe": "15m",
+        "venue": "binance"
+      },
+      {
+        "content_hash": "37e5b1c390fd414ee40116ba8e7722f285578bba4e609707a74c45895ce84067",
+        "finality": "final",
+        "instrument_id": "binance:usdm_futures:perpetual:BTCUSDT",
+        "market_type": "perpetual",
+        "observation_id": "44f1b65e-f9e3-5f14-be4b-183556fb9626",
+        "role": "trigger_ohlcv",
+        "timeframe": "15m",
+        "venue": "binance"
+      }
+    ],
+    "source_set": [
+      {
+        "market_type": "perpetual",
+        "source_family": "binance_usdm_futures_public",
+        "venue": "binance"
+      }
+    ],
+    "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+    "tenant_assertions": [],
+    "timeframe": "15m",
+    "trigger": {
+      "natural_event_id": "kline:binance:usdm_futures:perpetual:BTCUSDT:15m:2026-01-15T16:00:00Z",
+      "revision": 1
+    }
+  },
+  "evidence_window_hash": "1296998c88f610e0dea9190c5836e34a67c5d71171ca054019a666f4aebf3c4d",
+  "execution_command_id": "92454473-5a72-411b-ba20-25f88eb7cbff",
+  "execution_receipt_id": "bf87b18b-07b4-4c1f-9166-4fa9c2ca29d5",
+  "execution_result_message_id": "fadf1a6d-54d9-47b6-bb9b-ea3539502a24",
+  "exit": "99920.00000000",
+  "fixture_clock": "2026-01-15T16:15:05+00:00",
+  "journal_lifecycle_event_ids": [
+    "29bf0705-a654-4b52-992b-7e76671b9b33",
+    "8fa9c5cb-f649-42d5-ae0a-aee6f49ad4c2",
+    "f8fb6409-2b2a-4dfd-a8d8-e514308ccd4e"
+  ],
+  "journal_trade_id": "2724adea-ee8b-4e99-a180-fcc63031dc51",
+  "market_io": "httpx.MockTransport",
+  "net_pnl": "0.64000000",
+  "notification": {
+    "candidate_outbox_id": "d8c53a86-5493-4759-a244-9b0cdf4458a8",
+    "intent_id": "8812a0cf-c650-5f7b-a4a1-dc1fe1e534ff",
+    "network_requests": 0,
+    "outbox_ids": [
+      "2d351e7e-02dc-493f-9e7f-3f64e956b9d3",
+      "d8c53a86-5493-4759-a244-9b0cdf4458a8"
+    ],
+    "outbox_states": [
+      "PENDING",
+      "PENDING"
+    ],
+    "transport_attempts": 0
+  },
+  "paper_fill_hash": "6e74ce02c4fc54bcbcb2f4f3825044d39c6f09dc84a629477041667a7b951056",
+  "paper_fill_id": "08aa3311-7978-4c49-95e9-c826a39b12c1",
+  "proof_hash": "5548dc85f93202e584f1e0b65a969d346995e7fd3d8528f37642574e02a4a173",
+  "quantity": "0.00400000",
+  "risk_result": {
+    "action": "allow",
+    "approval_required": false,
+    "explanation": "All risk checks passed.",
+    "severity": "info",
+    "suggested_modification": null,
+    "triggered_rules": []
+  },
+  "risk_result_hash": "c871f2078c27e4f525a280fa4369d2c1974ab1f0be72235438ae2592ad78ae6f",
+  "safety": {
+    "enable_real_trading": false,
+    "exchange_mode": "paper_internal",
+    "execution_mode": "paper",
+    "telegram_network_permitted": false
+  },
+  "scenario": "bearish-liquidity-sweep-cvd-at-4h-resistance",
+  "strategy_analytics": {
+    "net_pnl": "0.64000000",
+    "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+    "trade_count": 1
+  },
+  "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+  "trade_plan": {
+    "account_id": "00000000-0000-0000-0000-00000000a091",
+    "basis_policy": {
+      "evidence_price": {
+        "unit": "USDT",
+        "value": "100080"
+      },
+      "execution_price": {
+        "unit": "USDT",
+        "value": "100080"
+      },
+      "formula": "(execution_price-evidence_price)/evidence_price",
+      "freshness_seconds": 10,
+      "policy_id": "paper-internal-same-venue",
+      "policy_version": "1",
+      "timestamp": "2026-01-15T16:15:04Z",
+      "tolerance_bps": "0"
+    },
+    "calculation_inputs": [
+      {
+        "conservative_remainder": "0.000996003197442046362909672262",
+        "formula_id": "floor-to-lot",
+        "formula_version": "1",
+        "input_value": "0.004996003197442046362909672262",
+        "name": "rounded_base_quantity",
+        "precision": 3,
+        "result_value": "0.004",
+        "rounding_mode": "ROUND_FLOOR",
+        "unit": "BASE"
+      }
+    ],
+    "candidate_id": "a0af16c8-d738-59a1-bd0f-8fc367f5bd8b",
+    "content_hash": "24e790293e7b302020272ebeed11cfa35ba65509097fd36f7aba9353f53a70b0",
+    "correlation_id": "1fd71b65-2638-47de-89d5-7ba2dae2a692",
+    "created_at": "2026-01-15T16:15:05Z",
+    "entry_zone": {
+      "lower": "100080",
+      "price_unit": "USDT",
+      "upper": "100080"
+    },
+    "entry_zone_derivation": {
+      "formula_id": "fresh-perpetual-trade",
+      "formula_version": "1"
+    },
+    "evidence_fallback_used": false,
+    "evidence_final": true,
+    "evidence_freshness_seconds": 10,
+    "evidence_ids": [
+      "a338c983-b85b-53f2-9395-87fe29d4a734",
+      "3bdd14fe-1ae7-541d-9d64-d3ee13842ad9"
+    ],
+    "evidence_instrument": "binance:usdm_futures:perpetual:BTCUSDT",
+    "evidence_is_live": true,
+    "evidence_market": "PERPETUAL",
+    "evidence_observed_at": "2026-01-15T16:15:04Z",
+    "evidence_sequence_complete": true,
+    "evidence_venue": "binance",
+    "exchange_account_id": null,
+    "execution_instrument": "BTCUSDT",
+    "execution_market": "PERPETUAL",
+    "execution_policy_version": "paper-internal-entry/v1",
+    "execution_venue": "PAPER_INTERNAL",
+    "expected_account_mode": "NET",
+    "instrument_mapping_version": "paper-internal-btcusdt-v1",
+    "instrument_rules": {
+      "base_currency": "BTC",
+      "contract_multiplier": "1",
+      "contract_type": "LINEAR",
+      "lot_size": "0.001",
+      "minimum_notional": "5",
+      "minimum_quantity": "0.001",
+      "quote_currency": "USDT",
+      "rules_version": "paper-internal-linear-v1",
+      "settlement_currency": "USDT",
+      "tick_size": "0.10"
+    },
+    "limit_price": null,
+    "margin_mode": "CROSS",
+    "market_marker": true,
+    "operation": "SUBMIT_ENTRY",
+    "order_type": "MARKET",
+    "organization_id": "00000000-0000-0000-0000-00000000a069",
+    "permission_attestation_id": "66d3b158-8184-5e68-8a49-9a75f6857fd1",
+    "permission_attestation_version": "paper-internal-permissions/v1",
+    "plan_id": "31bfa1f0-071b-5f75-9d33-387d2cc1b74d",
+    "position_mode": "NET",
+    "presentation_metadata": {
+      "channel": "API",
+      "decision_reference": null,
+      "display_title": "Agent paper execution proposal",
+      "evidence_reference": null,
+      "notes": null,
+      "setup_id": null,
+      "strategy_id": null,
+      "strategy_version_id": null
+    },
+    "quantity": {
+      "unit": "BASE",
+      "value": "0.004"
+    },
+    "quantity_unit": "BASE",
+    "reduce_only": false,
+    "revision_id": "663f2063-d7ff-52e2-9670-4e7115dd01ef",
+    "risk_and_exits": {
+      "fee_allowance": {
+        "unit": "USDT",
+        "value": "0"
+      },
+      "funding_allowance": {
+        "unit": "USDT",
+        "value": "0"
+      },
+      "leverage": "1",
+      "margin_assumption_id": "paper-internal-cash",
+      "margin_assumption_version": "1",
+      "maximum_loss": {
+        "unit": "USDT",
+        "value": "0.640"
+      },
+      "risk_budget": {
+        "unit": "USDT",
+        "value": "0.640"
+      },
+      "runner": {
+        "activation_target_order": null,
+        "enabled": false,
+        "expression": "disabled",
+        "remaining_quantity_fraction": "0",
+        "rule_id": "paper-internal-no-runner",
+        "rule_version": "1"
+      },
+      "slippage_allowance": {
+        "unit": "USDT",
+        "value": "0"
+      },
+      "stop": {
+        "unit": "USDT",
+        "value": "100240"
+      },
+      "targets": [
+        {
+          "derivation": {
+            "formula_id": "explicit-user-target",
+            "formula_version": "1"
+          },
+          "order": 1,
+          "price": {
+            "unit": "USDT",
+            "value": "99920"
+          },
+          "quantity_fraction": "0.50000000"
+        },
+        {
+          "derivation": {
+            "formula_id": "explicit-user-target",
+            "formula_version": "1"
+          },
+          "order": 2,
+          "price": {
+            "unit": "USDT",
+            "value": "99760"
+          },
+          "quantity_fraction": "0.50000000"
+        }
+      ]
+    },
+    "schema_version": "CanonicalTradePlanContentV1",
+    "setup_definition_id": "35bc91bb-f4a2-4dc8-814c-25cdb0cfbc0a",
+    "side": "SELL",
+    "slippage_policy": {
+      "maximum_bps": "0",
+      "policy_id": "paper-internal-exact",
+      "policy_version": "1"
+    },
+    "strategy_version_id": "9d3b4c97-7fc1-4c8a-a033-e27663dedf58",
+    "time_in_force": "IOC",
+    "timeframe": "15m",
+    "user_id": "00000000-0000-0000-0000-00000000c069",
+    "valid_from": "2026-01-15T16:15:05Z",
+    "valid_until": "2026-01-15T16:15:14Z"
+  },
+  "trade_plan_hash": "24e790293e7b302020272ebeed11cfa35ba65509097fd36f7aba9353f53a70b0",
+  "trade_plan_revision_id": "663f2063-d7ff-52e2-9670-4e7115dd01ef",
+  "watcher_lineage_id": "0436cbd9-0dfb-43b7-8a64-10fda2a8812b",
+  "watcher_request_hash": "8dbd9239f94f2e3ab0c9021ad4eb805d9f2b40839408c1f3349a561c26c50707"
+}

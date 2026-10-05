@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AttentionCard } from "./AttentionCard";
 import { DailyReviewCard } from "./DailyReviewCard";
 
 import {
@@ -267,6 +268,7 @@ export function TraderDashboardView({
         </CardContent>
       </Card>
 
+      <AttentionCard />
       <DailyReviewCard />
 
       <div className="grid gap-4 lg:grid-cols-3">

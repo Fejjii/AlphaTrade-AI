@@ -97,6 +97,12 @@ async function installFixtures(
   );
   await page.route("http://localhost:8000/**", async (route) => {
     const url = new URL(route.request().url());
+    // The consolidated Journal now reads the attention projection separately.
+    // Its availability does not change the seeded Journal/portfolio records.
+    if (["/dashboard/attention", "/dashboard/daily-review"].includes(url.pathname)) {
+      await route.fulfill({ status: 503, json: { detail: "Attention unavailable in polish fixture" } });
+      return;
+    }
     const fixtureEntries = mode === "empty" ? [] : entries;
     const fixtureTrades = mode === "empty" ? [] : trades;
     const safety = {
