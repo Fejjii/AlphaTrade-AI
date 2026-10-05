@@ -159,6 +159,12 @@ canonical demo entry, RAG and the PostgreSQL migration; counts overlap the
 independent suites. The stacked frontend check passes 35 Agent/Knowledge/client
 cases, plus lint and TypeScript.
 
+Existing activation and migration regressions now expect the additive Knowledge
+head while preserving the prior two-branch merge ancestry assertions. After CI
+identified the old head pin, 105 focused deployment/config/activation cases and
+14 PostgreSQL migration/empty-tenant cases passed with no skips. No activation
+safety rule or refusal was changed.
+
 ```sh
 # With safe local settings and explicit disposable PostgreSQL selectors:
 PYTHONPATH=src .venv/bin/python -m pytest \

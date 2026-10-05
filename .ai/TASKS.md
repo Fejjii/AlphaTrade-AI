@@ -60,6 +60,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   file provenance and recorded indexing observations. Preview performs no storage.
   Six Agent-owned import integration cases pass for substantive passages and
   filename/hash/document/chunk references, including foreign-principal isolation.
+  Combined focused backend/frontend checks pass (50/35 cases). Migration-head
+  pin integration passes 105 safety and 14 PostgreSQL migration cases; no skips.
 - Limitations: No OCR, raw binary storage or full DOCX layout. Index acknowledgement
   is a recorded observation, not a live health claim. Staging acceptance and live
   Agent answer quality remain pending review and the combined CI gate.
