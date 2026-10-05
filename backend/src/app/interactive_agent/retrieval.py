@@ -56,6 +56,13 @@ def provenance_for_source(source_type: str) -> ProvenanceSource:
     return ProvenanceSource.SYSTEM_GENERATED
 
 
+def provenance_for_document(document: Document) -> ProvenanceSource:
+    """User-owned ingestion is reference content supplied by that principal."""
+    if document.user_id is not None:
+        return ProvenanceSource.USER_SUPPLIED
+    return provenance_for_source(document.source_type.value)
+
+
 def _snippet(content: str) -> str:
     compact = " ".join(content.split())
     return compact[:240]
@@ -86,7 +93,7 @@ def _hit_from_row(
         source_type=source_name,
         snippet=snippet,
         match_count=match_count,
-        provenance=provenance_for_source(source_name),
+        provenance=provenance_for_document(document),
         retrieval_mode=retrieval_mode,
     )
 

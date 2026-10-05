@@ -9,12 +9,16 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Priority: P1 · Status: DONE · Dependencies: PR200 on current main · Risk: Medium.
 - Scope: Reserve model explanation space, collapse stored evidence, distinguish selected
   version lifecycle approval from research validation, and include both Nested/SFP rules.
+  Resolve named stored documents and pass substantive topic-balanced passages with
+  neighboring context and citations; keep document guidance separate from approved settings.
 - Safety: Read-only grounding; generated prose cannot approve, confirm or execute.
   Real trading remains disabled. No deployment or infrastructure changes.
 - Validation: Focused transcript, lifecycle, both-family, tenant and UI regressions;
   backend Ruff/format/types and frontend lint/types; consolidated CI after implementation.
 - Reference: `docs/agent_presentation_grounding.md`.
 - Result: Focused stored/synthetic grounding, UI and canonical read regressions pass.
+  PR201 is open. Stored-playbook context regressions and Agent/foundation/Daily Review
+  checks pass (71 focused cases); live model quality on the existing playbook is unverified.
   Real staging acceptance is pending PR review; no deployment occurred.
 
 ## AT-095 — Governed BloFin demo execution integration

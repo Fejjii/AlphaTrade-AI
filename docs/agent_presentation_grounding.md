@@ -42,6 +42,31 @@ unfilled; protection observations are labeled as recorded reconciliation facts.
 This reader performs no venue calls or order/risk mutations. Automatic exit and
 closed-outcome support remains the execution integration's separate limitation.
 
+## Stored Master Playbook passages
+
+Display snippets remain at most 240 characters. Model evidence now uses a
+separate read of relevant stored passages, rather than three 80-character
+snippets. An explicitly named document is resolved inside the authenticated
+organization and library-owner/shared-document boundary, including the
+`Master Playbook v1` alias for `AlphaTrade Master Playbook v1`. Explicit versions
+remain part of the match. SQL narrows candidate titles before bounded selection,
+so unrelated recent documents and the generic lexical 200-chunk scan do not
+hide a known playbook.
+
+The source reader balances requested discipline and unresolved-decision
+passages, prioritizes neighboring qualifications, and supplies durable document
+and chunk IDs, titles, source labels and chunk numbers for citations. Stored
+filename and raw-file hash are included when file-import metadata exists.
+It reads at most 200 candidate titles and 400 scoped chunks, samples at most
+8,000 characters per legacy chunk, bounds each model passage to 3,000 characters,
+and caps total source context at 12,000 characters. Excerpts and omitted context
+are labeled; omission does not mean the information is absent from the document.
+
+Document text stays reference data. It cannot route an action, approve a strategy
+or change risk settings. The model receives an explicit reference-data boundary,
+and a visible deterministic notice says that passages do not establish approved
+application settings. The existing staging playbook needs no reimport.
+
 ## Focused verification
 
 From `backend`, using local mock/disarmed process settings:
@@ -50,6 +75,10 @@ From `backend`, using local mock/disarmed process settings:
 uv run pytest tests/test_agent_presentation_grounding.py \
   tests/test_interactive_agent_foundation.py tests/test_brain_current_scope.py \
   tests/test_strategy_brain_nested.py tests/test_sfp_strategy_brain_runtime.py
+
+uv run python -m pytest -p tests.test_interactive_agent_foundation \
+  tests/test_agent_knowledge_passages.py tests/test_agent_presentation_grounding.py \
+  tests/test_interactive_agent_foundation.py tests/test_agent_daily_review.py
 ```
 
 From `frontend`:
@@ -82,6 +111,14 @@ venue orders, fills, strategy performance or live staging acceptance.
    draft proposal and verify that its explicit controls remain separate.
 6. Verify the same read from another organization and another library owner;
    selected strategy definitions must respect those scopes.
+7. Use the playbook already stored in staging (40 chunks, approximately 14,058
+   characters). Ask: `Using my Master Playbook v1, summarize my discipline rules
+   and unresolved decisions. Cite the source and distinguish proposed guidance
+   from approved settings.` Match each citation to the stored title and chunk.
+   Check both requested topics and surrounding approval qualifications. Confirm
+   the model does not claim a document proposal is an approved application setting.
+   Repeat from another principal to verify isolation. These local passage tests
+   prove model input coverage, not live model answer quality; record that separately.
 
 Rollback: redeploy the prior backend/frontend revisions through the operator
 process. The new response field is optional and old transcript text remains

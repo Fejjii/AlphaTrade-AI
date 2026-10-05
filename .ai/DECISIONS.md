@@ -2,6 +2,24 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-081 — Display snippets do not bound substantive document evidence
+
+- Date: 2026-10-05
+- Decision: Keep short display snippets, but independently resolve named tenant/user
+  documents and read relevant full passages plus neighboring context for model synthesis.
+  Balance requested topics before filling a 12,000-character source budget; label
+  truncated legacy passages and omitted context. Preserve durable source citations.
+- Authority: Document passages, including proposed discipline and unresolved decisions,
+  are reference data. They do not establish approved settings or route execution actions.
+  Keep this boundary in the model prompt and in a visible deterministic notice.
+- Safety: Organization and user/shared boundaries apply to both document metadata and
+  chunk content. No new database, provider call, strategy approval or risk mutation.
+- Acceptance: Use the already stored staging Master Playbook; do not reimport it.
+  Local coverage tests prove supplied passages and isolation, not live model quality.
+- Reference: `docs/agent_presentation_grounding.md`.
+
+---
+
 ## AT-ADR-079 — Conversational evidence and selected lifecycle remain explicit
 
 - Date: 2026-10-05

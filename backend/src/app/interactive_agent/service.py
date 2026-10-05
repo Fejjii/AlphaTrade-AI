@@ -58,6 +58,7 @@ from app.interactive_agent.conversation import (
     compose_visible_reply,
 )
 from app.interactive_agent.daily_review import read_daily_review, render_daily_review
+from app.interactive_agent.knowledge_context import build_knowledge_context
 from app.interactive_agent.orchestration import propose_action
 from app.interactive_agent.paper_execution_explanation import read_paper_execution
 from app.interactive_agent.proposals import (
@@ -277,6 +278,7 @@ class InteractiveAgentService:
             )
             limitations.extend(daily_review.limitations)
         knowledge: list[KnowledgeHit] = []
+        knowledge_context = ""
         strategies: list[StrategyHit] = []
         bundle = ReadBundle()
         if (
@@ -297,6 +299,16 @@ class InteractiveAgentService:
                     query=request.message,
                     vector_retriever=self._vector_retriever,
                 )
+                source_context = build_knowledge_context(
+                    self._session,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    query=request.message,
+                    hits=knowledge,
+                )
+                knowledge = source_context.hits
+                knowledge_context = source_context.text
+                knowledge_notes.extend(source_context.limitations)
                 strategies, strategy_notes = retrieve_strategies(
                     self._session,
                     organization_id=organization_id,
@@ -341,6 +353,7 @@ class InteractiveAgentService:
             strategies=strategies,
             bundle=bundle,
             prior_user_messages=prior,
+            knowledge_context=knowledge_context,
         )
         if daily_review is not None and review_inputs is not None:
             factual = render_daily_review(daily_review, review_inputs)
@@ -357,6 +370,11 @@ class InteractiveAgentService:
         recorded_evidence = (
             execution_explanation.recorded_evidence if execution_explanation else None
         )
+        if knowledge_context:
+            reply = compose_visible_reply(
+                "Stored source passages are available for review.", factual
+            )
+            recorded_evidence = factual
         if classification.capability is AgentCapability.STRATEGY_ANALYTICS:
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
             limitations.append(
@@ -864,6 +882,7 @@ def _reply(
     strategies: list[StrategyHit],
     bundle: ReadBundle,
     prior_user_messages: list[str],
+    knowledge_context: str = "",
 ) -> str:
     proposal = proposals[0] if proposals else None
     if classification.operation is TurnOperation.REFUSE:
@@ -927,7 +946,7 @@ def _reply(
                 "Do not infer missing evidence is present or that execution is approved."
             )
     elif classification.capability is AgentCapability.KNOWLEDGE_RETRIEVAL:
-        text = _knowledge_reply(knowledge)
+        text = _knowledge_reply(knowledge, knowledge_context)
     elif classification.capability is AgentCapability.MARKET_AND_PORTFOLIO:
         text = _market_reply(bundle)
     elif classification.capability is AgentCapability.STATISTICS_AND_PERFORMANCE:
@@ -943,6 +962,9 @@ def _reply(
     if knowledge and classification.capability is not AgentCapability.KNOWLEDGE_RETRIEVAL:
         titles = ", ".join(hit.title for hit in knowledge[:3])
         text = f"{text} Related knowledge: {titles}."
+        if knowledge_context:
+            remaining = 16000 - len(text) - 1
+            text += "\n" + knowledge_context[:remaining]
     return text[:16000]
 
 
@@ -953,10 +975,12 @@ def _strategy_reply(strategies: list[StrategyHit]) -> str:
     return f"Strategies in this tenant: {rendered}."[:4000]
 
 
-def _knowledge_reply(knowledge: list[KnowledgeHit]) -> str:
+def _knowledge_reply(knowledge: list[KnowledgeHit], source_context: str = "") -> str:
+    if source_context:
+        return source_context
     if not knowledge:
         return "No knowledge chunks matched in this tenant."
-    rendered = "; ".join(f"{hit.title}: {hit.snippet[:80]}" for hit in knowledge[:3])
+    rendered = "; ".join(f"{hit.title}: {hit.snippet}" for hit in knowledge)
     return f"Knowledge matches: {rendered}."[:4000]
 
 
