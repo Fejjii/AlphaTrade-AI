@@ -2732,3 +2732,33 @@ The organization-owned database decision above supersedes AT-ADR-076's historica
 Bybit execution ranks now identify observations of one exact symbol/source independently of a caller's retrieval lineage. The persistent monitor and historical canonical assembly keep separate proof tails (at most two recent lineages). A failed historical request cannot reset the monitor's sequence. The execution ledger retains only the current provider page plus those bounded proofs, including signatures to reject changed duplicate executions. Bulk cleanup trims each proof to one provider page, preserving overlap identity and anchors. During reads, each proof has a ten-page and 15-minute bound. Discarded prefixes, including any partially retained millisecond bucket, are unavailable rather than fabricated complete coverage. Gaps, wrong instruments/sources and freshness checks remain authoritative. This bound is not a staging RSS claim.
 
 Contract eligibility refusals cross the strategy evidence boundary as typed errors retaining unsupported versus unreachable reasons, matching the existing read-only probe path. No new acquisition, Candidate, execution or activation authority is added.
+
+## AT-ADR-GOVERNED-DEMO-20261005 — canonical BloFin demo entry slice
+
+- **Date:** 2026-10-05
+- **Status:** Implemented; real staging acceptance pending review and consolidated CI.
+- **Decision:** A separately armed staging worker may continue a genuinely confirmed,
+  approved canonical Candidate through the existing eligibility, risk, immutable plan,
+  exact authorization, durable claim/reservation and fenced dispatch authorities to one
+  BloFin demo market entry with attached stop/target. Organization, user and execution
+  account UUIDs are pinned. Real trading remains disabled and legacy entry paths remain
+  tombstoned. SFP keeps `sfp_execution_plan_not_authorized`.
+- **Evidence:** Venue-timed quotes and linear contract rules determine size and precision.
+  Permission reads must establish read/trade only, existing NET/cross/leverage 1 and a flat
+  account. The final safety epoch, lease fence and TTL are freshly read after network
+  preflight. A committed ambiguity marker consumes send authority before exactly one
+  POST; timeout, crash or absent lookup never permits automatic resend.
+- **Projection:** Only identity-validated actual fill history creates immutable execution
+  facts, Journal entries and demo learning attribution. Contract facts become base Journal
+  quantities; actual fees persist. Missing, unreadable or mismatched linked protection
+  preserves actual fills and activates the kill switch. Armed read reconciliation continues
+  under that switch and when scanning is refused. Agent explains the latest recorded
+  observations without venue reads, execution authority or a fabricated confirmation.
+- **Limits:** One ALLOW claim per account's preserved history. No automatic exit-fill close,
+  funding/PnL attribution or account reuse; synthetic demo fills and closes are refused.
+  Kill-switch activation does not protect or close exposure. The operator must verify
+  protection or manually close the demo position under the documented acceptance procedure.
+- **Acceptance:** Simulated disposable-PostgreSQL tests are implementation evidence only.
+  Real child TPSL/client-ID linkage and a natural venue fill must be proven in staging.
+  No merge, deploy, infrastructure mutation or network exchange order occurs in this task.
+- **Runbook:** `docs/governed_blofin_demo_execution.md` (activation, evidence and rollback).

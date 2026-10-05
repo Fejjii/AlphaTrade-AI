@@ -15,13 +15,14 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.config import Environment, Settings
-from app.core.errors import TradingPolicyError
+from app.core.errors import NotFoundError, TradingPolicyError
 from app.core.execution_credentials import (
     blofin_execution_authorized,
     governed_demo_worker_access_requested,
 )
 from app.db.learning_attribution import LearningAttributionRecordRow
 from app.db.models import (
+    ConversationMessage,
     ExecutionAccount,
     ExecutionCommand,
     ExecutionFillFact,
@@ -31,6 +32,9 @@ from app.db.models import (
     RiskReservation,
     VenueSubmitEffect,
 )
+from app.interactive_agent.contracts import AgentTurnRequest
+from app.interactive_agent.paper_execution_explanation import read_paper_execution
+from app.interactive_agent.service import InteractiveAgentService
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.governed_blofin import GovernedBloFinDemoProvider
 from app.schemas.execution_protocol import ClosePaperPlanRequest, VenueSubmitEffectState
@@ -363,6 +367,7 @@ def test_worker_venue_fills_journal_restart_and_protection(
             )
             assert trade.size == Decimal(venue.order["size"]) * multiplier
             assert trade.fees == Decimal("0.02")
+            assert trade.net_pnl is None
             projection = session.scalar(select(ExecutionProjection))
             assert projection is not None and projection.fees == trade.fees
             assert scan.paper_fill_id is not None or behavior == "restart"
@@ -370,6 +375,7 @@ def test_worker_venue_fills_journal_restart_and_protection(
             assert learning is not None
             assert learning.learning_venue_mode == "paper_exchange_demo"
             assert learning.journal_trade_id == trade.id
+            assert not learning.closed
             if behavior == "partial_cancel":
                 reservation = session.scalar(select(RiskReservation))
                 assert reservation is not None
@@ -416,6 +422,59 @@ def test_worker_venue_fills_journal_restart_and_protection(
             effect = session.scalar(select(VenueSubmitEffect))
             assert effect is not None and effect.state is VenueSubmitEffectState.SEND_ATTEMPTED
             assert effect.reconciliation_disposition == "REJECTED"
+        venue_counts = (venue.post_count, venue.reads, venue.ticker_reads)
+        assert session.scalar(select(func.count()).select_from(ConversationMessage)) == 0
+        explained = read_paper_execution(
+            session, settings=settings, organization_id=ORG, user_id=USER, command_id=command.id
+        )
+        assert explained.source_message_id is None
+        assert "Recorded BloFin demo command" in explained.recorded_evidence
+        if fill_count:
+            assert "Actual demo fill" in explained.recorded_evidence
+            assert f"recorded fees {trade.fees}" in explained.recorded_evidence
+            assert "net PnL unavailable" in explained.recorded_evidence
+            assert "venue paper_exchange_demo" in explained.recorded_evidence
+            assert "closed=False" in explained.recorded_evidence
+            protection = (
+                "unavailable"
+                if behavior in {"protection_outage", "protection_malformed"}
+                else (
+                    "missing"
+                    if behavior in {"protection_failure", "protection_wrongid"}
+                    else "verified"
+                )
+            )
+            assert (
+                f"Protection evidence: {protection} at reconciliation"
+                in explained.recorded_evidence
+            )
+        else:
+            assert "no recorded exchange fill evidence" in explained.reply
+            assert "Journal unavailable" in explained.recorded_evidence
+        for organization, user in ((uuid4(), USER), (ORG, uuid4())):
+            with pytest.raises(NotFoundError):
+                read_paper_execution(
+                    session,
+                    settings=settings,
+                    organization_id=organization,
+                    user_id=user,
+                    command_id=command.id,
+                )
+        result = InteractiveAgentService(session, settings=settings).handle_turn(
+            AgentTurnRequest(message=f"Explain paper execution {command.id}"),
+            organization_id=ORG,
+            user_id=USER,
+        )
+        assert result.recorded_evidence == explained.recorded_evidence
+        assert not result.authority_mutated and not result.execution_attempted
+        assert not result.proposals
+        assistant = session.get(ConversationMessage, result.assistant_message_id)
+        assert assistant is not None and "paper_execution" not in assistant.payload
+        capture = assistant.payload["interactive_agent"]["paper_execution_explanation"]
+        assert capture["source_message_id"] is None
+        assert (venue.post_count, venue.reads, venue.ticker_reads) == venue_counts
+        assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == fill_count
+        assert session.scalar(select(func.count()).select_from(JournalTrade)) == trade_count
 
 
 def test_staging_settings_require_complete_scoped_demo_arm() -> None:

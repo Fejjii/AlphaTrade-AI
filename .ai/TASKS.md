@@ -22,15 +22,25 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Real staging acceptance is pending PR review; no deployment occurred.
 
 ## AT-095 — Governed BloFin demo execution integration
-- Priority: P1 · Status: IN_PROGRESS · Dependencies: canonical execution protocol · Risk: High.
+- Priority: P1 · Status: DONE (implemented entry slice) · Dependencies: canonical execution
+  protocol and AT-094 Agent grounding · Risk: High.
 - Scope: Separate reviewable execution branch; explicit demo activation, deterministic
   risk and authorization, durable dispatch, actual fill/protection reconciliation,
   Journal and learning linkage. Keep legacy paths tombstoned and SFP restricted.
 - Safety: Existing demo Read + Trade key only; no network exchange orders from Codex;
   real trading disabled. No merge, deployment or infrastructure changes.
 - Validation: Simulated success/rejection/timeout/idempotency/restart/protection tests
-  over the canonical worker workflow and disposable local PostgreSQL.
-- Reference: `docs/governed_blofin_demo_execution.md` on the execution branch.
+  over the canonical worker workflow and disposable local PostgreSQL, including late
+  fence/kill changes, malformed protection, partial cancellation and actual-fill Agent reads.
+- Restrictions: One ALLOW claim in the account's preserved history; automatic entries
+  only. Exit-fill close, funding/PnL attribution and automatic account reuse are excluded.
+  Synthetic demo fill/close remains forbidden; SFP remains non-executable.
+- Acceptance: Real staging activation and natural entry/fill/protection acceptance are
+  pending review and the consolidated CI gate. No network orders were submitted here.
+- Result: 20 simulated demo integration cases pass on the stacked Agent branch; 21
+  internal-loop/supervisor regressions pass. Changed-source strict mypy (13 modules),
+  Ruff lint/format and diff checks pass. Earlier focused protocol/activation checks pass.
+- Reference: `docs/governed_blofin_demo_execution.md`; AT-ADR-GOVERNED-DEMO-20261005.
 
 ---
 

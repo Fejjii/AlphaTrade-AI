@@ -6,6 +6,12 @@ permanently disabled. No network orders were submitted during implementation;
 all execution acceptance here uses simulated venue responses and a disposable
 local PostgreSQL database.
 
+`tests/test_governed_blofin_demo.py` passes all 20 focused cases on the combined
+Agent/execution branch, including actual durable Agent reads and turns. The
+existing internal-loop and supervisor regressions pass all 21 cases. Ruff checks,
+strict mypy on the 13 changed production modules and diff checks pass. These
+results do not establish real staging acceptance.
+
 ## Canonical authority and evidence
 
 The flow remains Watcher → Candidate → ActionEligibility → deterministic sizing
@@ -39,7 +45,8 @@ Journal event payloads and the receipt projection. Missing/mismatched protection
 or an unavailable protection query preserves those real fill facts and activates
 the persistent organization kill switch. This stops new risk; it does not close
 or protect an already open position. Read reconciliation continues while that
-kill switch is active.
+kill switch is active and precedes the market scanning activation check, while
+the scoped demo capability remains armed.
 
 Protection is accepted only when pending TPSL evidence has the same durable
 client ID, a TPSL ID, the correct instrument, opposite exit side, NET/cross mode,
