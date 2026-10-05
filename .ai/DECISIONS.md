@@ -38,6 +38,30 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
 ---
 
+## AT-ADR-082 — File preview confirms bounded canonical Knowledge ingestion
+
+- Date: 2026-10-05
+- Status: Accepted for AT-096; staging acceptance pending.
+- Decision: Extract TXT/Markdown, DOCX body/table text and selectable-text PDF in
+  resource-limited child processes. Preview performs no SQL/vector writes. A
+  ten-minute signed receipt binds the authenticated organization/user, filename,
+  file bytes, extracted text, title, category and parser version to explicit save.
+  Save re-extracts and calls the existing Document/Chunk ingestion service.
+- Provenance: Nullable `documents.ingestion_metadata` JSON records filename,
+  SHA-256 of raw bytes and extracted text, sizes, parser version and confirmation
+  time, plus SQL chunk count and observed vector upsert/backend/fallback status.
+  Raw binaries are not stored; legacy metadata remains null/unverified.
+- Ownership: Duplicate hashes and lookup include organization and exact user;
+  same-owner legacy pasted imports remain compatible. Same-category identical
+  files converge for that principal even when renamed; other owners/categories
+  remain independent. SQL ownership is rechecked when projecting vector hits.
+- Safety: No document database replacement, OCR, strategy/risk/execution mutation,
+  Agent edits, deployment or exchange orders. Import does not claim live hosted
+  indexing readiness. The already stored Master Playbook is not reimported.
+- Reference: `docs/knowledge_file_import.md`; migration `a4knowledge001`.
+
+---
+
 ## AT-ADR-078 — Advisory attention is a read-only record projection
 
 - Date: 2026-10-02

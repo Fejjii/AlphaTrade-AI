@@ -34,6 +34,7 @@ def compute_source_hash(
     text: str,
     source_type: str,
     organization_id: UUID | None,
+    user_id: UUID | None = None,
 ) -> str:
     """Stable hash for duplicate document detection."""
     payload = "|".join(
@@ -44,6 +45,8 @@ def compute_source_hash(
             normalize_text(text),
         ]
     )
+    if user_id is not None:
+        payload = f"{user_id}|{payload}"
     return hashlib.sha256(payload.encode()).hexdigest()
 
 

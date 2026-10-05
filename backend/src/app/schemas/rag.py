@@ -8,11 +8,53 @@ scoped retrieval, and responses always carry citations (master prompt §14).
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
 
 from app.schemas.common import DocumentSourceType, ORMModel, StrictModel
+
+
+class FileProvenance(StrictModel):
+    filename: str = Field(min_length=1, max_length=255)
+    media_type: str
+    raw_content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    byte_size: int = Field(ge=1)
+    extracted_text_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    extracted_characters: int = Field(ge=1)
+    parser_version: str
+    confirmed_at: datetime
+
+
+class IndexingObservation(StrictModel):
+    sql_chunk_count: int = Field(ge=0)
+    vector_backend: str
+    vector_index_status: Literal["upsert_acknowledged"] = "upsert_acknowledged"
+    fallback_used: bool
+    observed_at: datetime
+
+
+class DocumentIngestionMetadata(StrictModel):
+    file: FileProvenance | None = None
+    indexing: IndexingObservation | None = None
+
+
+class FileImportPreview(StrictModel):
+    filename: str
+    title: str
+    source_type: DocumentSourceType
+    media_type: str
+    byte_size: int
+    raw_content_hash: str
+    extracted_text_hash: str
+    extracted_text: str
+    extracted_characters: int
+    warnings: list[str] = Field(default_factory=list)
+    preview_receipt: str
+    expires_at: datetime
+    saved: Literal[False] = False
+    vector_index_status: Literal["not_started"] = "not_started"
 
 
 class ChunkMetadata(StrictModel):
@@ -26,6 +68,7 @@ class ChunkMetadata(StrictModel):
     symbol_tag: str | None = None
     timeframe_tag: str | None = None
     risk_tag: str | None = None
+    source_filename: str | None = None
 
 
 class RagDocument(ORMModel):
@@ -38,6 +81,7 @@ class RagDocument(ORMModel):
     title: str
     source_uri: str | None = None
     source_hash: str | None = None
+    ingestion_metadata: DocumentIngestionMetadata | None = None
     version: int = Field(default=1, ge=1)
     created_at: datetime
     updated_at: datetime
@@ -74,6 +118,7 @@ class Citation(ORMModel):
     chunk_ordinal: int | None = Field(default=None, ge=0)
     score: float | None = Field(default=None, ge=0, le=1)
     snippet: str | None = None
+    source_filename: str | None = None
 
 
 class RagQuery(StrictModel):
@@ -130,6 +175,8 @@ class IngestDocumentResponse(ORMModel):
         description="Authoritative vector backend used for upsert (e.g. qdrant, in-memory-vector).",
     )
     fallback_used: bool = False
+    sql_chunks_stored: bool = True
+    vector_index_status: Literal["upsert_acknowledged", "unknown"] = "unknown"
 
 
 class RetrievedChunk(ORMModel):
@@ -144,6 +191,7 @@ class RetrievedChunk(ORMModel):
     source_type: DocumentSourceType
     content: str
     score: float = Field(ge=0, le=1)
+    source_filename: str | None = None
 
 
 class RagSearchResponse(StrictModel):

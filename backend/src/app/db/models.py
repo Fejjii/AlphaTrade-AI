@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, datetime
 from datetime import date as date_type
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -3046,6 +3047,7 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     tags: Mapped[list] = mapped_column(JSON, default=list)
+    ingestion_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):

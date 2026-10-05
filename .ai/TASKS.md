@@ -44,6 +44,27 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 
 ---
 
+## AT-096 — Knowledge file preview and explicit import
+- Priority: P1 · Status: DONE · Dependencies: canonical Document/Chunk ingestion · Risk: Medium.
+- Branch: `codex/knowledge-file-import`.
+- Scope: TXT, Markdown, DOCX body/table text and selectable-text PDF preview before
+  explicit save; bounded parsing; durable filename/raw hash/provenance and truthful
+  SQL/vector observations; principal-scoped duplicates. Preserve pasted ingestion.
+- Safety: No Agent, strategy, risk or execution mutation. Existing Master Playbook
+  is already stored and will not be reimported. No deployment or infrastructure changes.
+- Validation: 81 focused backend cases pass, including isolated PostgreSQL migration
+  upgrade/downgrade; 18 focused frontend cases pass. Changed-file Ruff lint/format,
+  strict mypy for nine changed modules, TypeScript and ESLint checks pass. The
+  shared models file retains its existing 94 unrelated missing-generic errors.
+- Result: Existing Document/Chunk ingestion and scoped search store extracted text,
+  file provenance and recorded indexing observations. Preview performs no storage.
+- Limitations: No OCR, raw binary storage or full DOCX layout. Index acknowledgement
+  is a recorded observation, not a live health claim. Staging acceptance and the
+  separate read-only Agent context integration remain pending the combined gate.
+- Reference: `docs/knowledge_file_import.md`.
+
+---
+
 ## AT-093 — Nested timeframe independence and SFP frontend surface
 - Priority: P1 · Status: DONE · Dependencies: accepted Nested/SFP canonical
   backend on main `abfd71b9f34f3b7a5bec38f6a933aaf93d8b4229` · Risk: Medium (evidence identity).

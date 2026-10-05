@@ -101,7 +101,9 @@ export async function apiFetch<T>(
 
   const requestHeaders: Record<string, string> = {
     Accept: "application/json",
-    ...(rest.body ? { "Content-Type": "application/json" } : {}),
+    ...(rest.body && !(typeof FormData !== "undefined" && rest.body instanceof FormData)
+      ? { "Content-Type": "application/json" }
+      : {}),
     ...(headers as Record<string, string> | undefined),
   };
 
