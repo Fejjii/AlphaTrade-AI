@@ -115,6 +115,8 @@ class GovernedBloFinDemoProvider:
         ticker = _rows(
             self._client.request("GET", "/api/v1/market/tickers", params={"instId": instrument})
         )
+        # Preflight IO can outlast the caller's timestamp. Check freshness at receipt.
+        now = self._clock()
         quote = next((r for r in ticker if r.get("instId") == instrument), None)
         if quote is None:
             raise ValueError("Demo quote unavailable.")
