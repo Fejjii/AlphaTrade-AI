@@ -16,11 +16,20 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import structlog
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, TradingPolicyError
+from app.core.execution_credentials import (
+    blofin_execution_authorized,
+    governed_demo_worker_access_requested,
+)
 from app.db.models import AccountSafetyEpoch, ExecutionCommand, ExecutionFillFact, VenueSubmitEffect
+from app.guardrails.redaction import redact_text
+from app.providers.exchange.errors import ExchangeRequestError
+from app.providers.exchange.governed_blofin import GovernedBloFinDemoProvider
 from app.providers.execution.fake_venue import FakeVenueSubmitProvider
 from app.repositories.execution_protocol import (
     ExecutionCommandRepository,
@@ -39,6 +48,7 @@ from app.schemas.execution_protocol import (
     VenueSendDisposition,
     VenueSubmitEffectState,
 )
+from app.schemas.trade_plan import TradePlanRevision
 from app.services.execution_dispatch_boundary import (
     commit_barrier3,
     load_committed_dispatch_authorization,
@@ -55,6 +65,7 @@ from app.services.execution_transitions import append_transition, apply_projecti
 from app.services.safety_epoch import SafetyEpochService
 
 _LEASE_SECONDS = 30
+logger = structlog.get_logger(__name__)
 
 
 def _now() -> datetime:
@@ -229,6 +240,190 @@ class VenueSubmitDispatcher:
         if result.status == "accepted":
             return self._mark_acknowledged(command_id=command_id, now=_aware(self._clock()))
         return self._mark_rejected(command_id=command_id, now=_aware(self._clock()))
+
+    def attempt_governed_demo_send(
+        self,
+        *,
+        command_id: uuid.UUID,
+        owner: str,
+        fencing_token: int,
+        provider: GovernedBloFinDemoProvider,
+        settings: Settings,
+        plan: TradePlanRevision,
+    ) -> VenueSubmitEffect:
+        """Consume committed dispatch authority once, before one demo POST.
+
+        The durable ambiguous marker commits before IO. A crash at any point
+        therefore requires read-only client-id reconciliation, never resend.
+        """
+        if not isinstance(provider, GovernedBloFinDemoProvider) or not (
+            blofin_execution_authorized(settings)
+            and governed_demo_worker_access_requested(settings)
+        ):
+            raise TradingPolicyError("Governed demo dispatch is disarmed.")
+        if (
+            plan.execution_venue != "BLOFIN_DEMO"
+            or plan.execution_policy_version != "governed-blofin-demo/v1"
+        ):
+            raise TradingPolicyError("Canonical governed demo plan required.")
+        require_idle_session_for_provider_io(self._session)
+        snapshot = require_committed_dispatch_authorization(
+            load_committed_dispatch_authorization(self._session, command_id),
+            owner=owner,
+            fencing_token=fencing_token,
+        )
+        ensure_db_transaction(self._session)
+        command = self._require_command(command_id)
+        epoch = self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        effect = self._require_effect_locked(command_id)
+        if effect.state is not VenueSubmitEffectState.DISPATCH_AUTHORIZED:
+            raise ConflictError("Demo send already consumed; reconciliation required.")
+        if (
+            (str(command.organization_id), str(command.user_id), str(command.account_id))
+            != (
+                settings.governed_blofin_demo_organization_id,
+                settings.governed_blofin_demo_user_id,
+                settings.governed_blofin_demo_account_id,
+            )
+            or command.revision_id != plan.revision_id
+            or command.plan_content_hash != plan.content_hash
+        ):
+            raise TradingPolicyError("Demo dispatch principal/plan binding mismatch.")
+        if self._safety_blocks_dispatch(
+            command=command, epoch=epoch, claimed_epoch=int(effect.safety_epoch)
+        ):
+            self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
+            self._session.commit()
+            return effect
+        if _aware(plan.valid_until) <= _aware(self._clock()):
+            self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
+            self._session.commit()
+            return effect
+        self._mark_ambiguous(command_id=command_id, now=_aware(self._clock()))
+        self._session.commit()
+        require_idle_session_for_provider_io(self._session)
+        try:
+            provider.submit(
+                plan=plan,
+                client_order_id=snapshot.client_order_id,
+                before_post=lambda: self._verify_demo_send_gate(
+                    command_id=command_id, owner=owner, fencing_token=fencing_token, plan=plan
+                ),
+            )
+        except ExchangeRequestError as exc:
+            if exc.details is not None and exc.details.http_status in {400, 401, 403, 422}:
+                ensure_db_transaction(self._session)
+                return self._mark_rejected(
+                    command_id=command_id, now=_aware(self._clock()), source="blofin_demo"
+                )
+            return self._require_effect(command_id)
+        except Exception as exc:
+            logger.warning(
+                "governed_demo_send_incomplete",
+                command_id=str(command_id),
+                exception_type=type(exc).__name__,
+                reason=redact_text(str(exc))[:180],
+            )
+            # Includes response loss, HTTP failures, and failed protection.
+            # Only client-id lookup can prove what the venue accepted.
+            return self._require_effect(command_id)
+        ensure_db_transaction(self._session)
+        return self._mark_acknowledged(
+            command_id=command_id, now=_aware(self._clock()), source="blofin_demo"
+        )
+
+    def _verify_demo_send_gate(
+        self, *, command_id: uuid.UUID, owner: str, fencing_token: int, plan: TradePlanRevision
+    ) -> None:
+        """Final kill/fence/TTL check after read preflight and directly before POST."""
+        ensure_db_transaction(self._session)
+        # Preflight leaves time for a different worker/operator to advance the
+        # fence or safety epoch. Locked reads must refresh the identity map too.
+        self._session.expire_all()
+        command = self._require_command(command_id)
+        epoch = self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        effect = self._require_effect_locked(command_id)
+        if (
+            effect.state is not VenueSubmitEffectState.SEND_AMBIGUOUS
+            or effect.lease_owner != owner
+            or effect.dispatch_fencing_token != fencing_token
+            or self._safety_blocks_dispatch(
+                command=command, epoch=epoch, claimed_epoch=int(effect.safety_epoch)
+            )
+            or _aware(plan.valid_until) <= _aware(self._clock())
+        ):
+            self._session.rollback()
+            raise TradingPolicyError("Demo final dispatch fence, safety, or plan TTL refused.")
+        self._session.commit()
+        require_idle_session_for_provider_io(self._session)
+
+    def record_demo_order(
+        self, *, command_id: uuid.UUID, rejected: bool = False
+    ) -> VenueSubmitEffect:
+        """Record an identity-verified read response; no order IO or fill invention."""
+        effect = self._require_effect(command_id)
+        if rejected:
+            return self._mark_rejected(
+                command_id=command_id, now=_aware(self._clock()), source="blofin_demo"
+            )
+        if effect.state is VenueSubmitEffectState.SEND_ATTEMPTED and not effect.uncertainty:
+            return effect
+        return self._mark_acknowledged(
+            command_id=command_id, now=_aware(self._clock()), source="blofin_demo"
+        )
+
+    def record_demo_terminal(self, *, command_id: uuid.UUID) -> VenueSubmitEffect:
+        """Release only the verified unfilled remainder after venue cancellation."""
+        command = self._require_command(command_id)
+        self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        effect = self._require_effect_locked(command_id)
+        receipt = self._receipts.get_by_command(command_id)
+        projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
+        if receipt is None or projection is None:
+            raise NotFoundError("Demo cancellation receipt missing.")
+        if projection.state in {
+            ExecutionReceiptState.CANCELLED,
+            ExecutionReceiptState.PARTIALLY_FILLED_CANCELLED,
+        }:
+            return effect
+        now = _aware(self._clock())
+        state = (
+            ExecutionReceiptState.PARTIALLY_FILLED_CANCELLED
+            if projection.filled_quantity
+            else ExecutionReceiptState.CANCELLED
+        )
+        transition = append_transition(
+            self._session,
+            receipt=receipt,
+            prior_state=projection.state,
+            new_state=state,
+            source_fact="blofin_demo_cancelled",
+            source_identity=effect.client_order_id,
+            occurred_at=now,
+            observed_at=now,
+            recorded_at=now,
+            actor="blofin_demo",
+        )
+        apply_projection_transition(
+            self._session,
+            projection=projection,
+            transition=transition,
+            remaining_quantity=Decimal("0"),
+            reconciliation_status=ExecutionReconciliationStatus.RESOLVED,
+            updated_at=now,
+        )
+        self._release_unused_reservation(
+            command_id=command_id,
+            reason=RiskReservationReleaseReason.UNUSED_REMAINDER_AFTER_CANCELLATION,
+            now=now,
+        )
+        return effect
 
     def recover_after_crash(self, *, command_id: uuid.UUID, owner: str) -> VenueSubmitEffect:
         ensure_db_transaction(self._session)
@@ -484,7 +679,9 @@ class VenueSubmitDispatcher:
         self._session.flush()
         return effect
 
-    def _mark_acknowledged(self, *, command_id: uuid.UUID, now: datetime) -> VenueSubmitEffect:
+    def _mark_acknowledged(
+        self, *, command_id: uuid.UUID, now: datetime, source: str = "fake_venue"
+    ) -> VenueSubmitEffect:
         effect = self._require_effect(command_id)
         receipt = self._receipts.get_by_command(command_id)
         projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
@@ -495,17 +692,18 @@ class VenueSubmitDispatcher:
             receipt=receipt,
             prior_state=projection.state,
             new_state=ExecutionReceiptState.ACKNOWLEDGED,
-            source_fact="fake_venue_accepted",
+            source_fact=f"{source}_accepted",
             source_identity=effect.client_order_id,
             occurred_at=now,
             observed_at=now,
             recorded_at=now,
-            actor="fake_venue",
+            actor=source,
         )
         apply_projection_transition(
             self._session,
             projection=projection,
             transition=transition,
+            reconciliation_status=ExecutionReconciliationStatus.RESOLVED,
             updated_at=now,
         )
         effect.state = VenueSubmitEffectState.SEND_ATTEMPTED
@@ -515,7 +713,9 @@ class VenueSubmitDispatcher:
         self._session.flush()
         return effect
 
-    def _mark_rejected(self, *, command_id: uuid.UUID, now: datetime) -> VenueSubmitEffect:
+    def _mark_rejected(
+        self, *, command_id: uuid.UUID, now: datetime, source: str = "fake_venue"
+    ) -> VenueSubmitEffect:
         effect = self._require_effect(command_id)
         receipt = self._receipts.get_by_command(command_id)
         projection = self._projections.get_by_receipt(receipt.id) if receipt is not None else None
@@ -526,12 +726,12 @@ class VenueSubmitDispatcher:
             receipt=receipt,
             prior_state=projection.state,
             new_state=ExecutionReceiptState.REJECTED,
-            source_fact="fake_venue_rejected",
+            source_fact=f"{source}_rejected",
             source_identity=effect.client_order_id,
             occurred_at=now,
             observed_at=now,
             recorded_at=now,
-            actor="fake_venue",
+            actor=source,
         )
         apply_projection_transition(
             self._session,

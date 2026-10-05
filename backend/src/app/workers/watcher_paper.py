@@ -4,11 +4,11 @@ Approved compiled strategy → read-only market evidence → WatcherOrchestrator
 scan → evaluate_canonical_strategy → Candidate only on CONFIRMED_SETUP.
 
 A confirmed Candidate may continue through the existing paper authorities to
-one internal paper fill and an open Journal trade. This worker does not call
-an exchange, does not arm Telegram, and does not place a live order. Local
-paper monitoring stays opt-in. Staging scans only after the paper-activation
-preflight clears, and production stays dark. Candidate persistence still
-requires persisted approved compiled authority.
+an internal paper fill or the separately armed governed BloFin demo entry.
+Real trading stays disabled. Local paper monitoring stays opt-in. Staging scans
+only after the paper-activation preflight clears; existing demo effects retain
+read reconciliation during scanning refusal. Production stays dark. Candidate
+persistence still requires persisted approved compiled authority.
 """
 
 from __future__ import annotations
@@ -524,7 +524,7 @@ class WatcherPaperRuntime:
                 self._fence_organizations.pop(scope, None)
         return report
 
-    def _tenant_runtime_summary(self, report: WatcherPaperCycleReport) -> dict:
+    def _tenant_runtime_summary(self, report: WatcherPaperCycleReport) -> dict[str, object]:
         """Only this tenant's bounded cycle, never process-global counters/scopes."""
         scans = [s for s in report.scans if s.organization_id == self._organization_id]
         return {
@@ -558,6 +558,7 @@ class WatcherPaperRuntime:
     def _run_cycle(self) -> WatcherPaperCycleReport:
         self._probes_completed = 0
         self._project_watchlist_status()
+        self._reconcile_governed_demo_effects()
         refused = self._activation_refusal()
         if refused is not None:
             return refused
@@ -645,6 +646,29 @@ class WatcherPaperRuntime:
             rss_peak_bytes=memory.peak_rss_bytes,
         )
         return report
+
+    def _reconcile_governed_demo_effects(self) -> None:
+        # Existing exposure still needs actual fill/protection observations when
+        # new scanning is refused or the organization kill switch is active.
+        if not (
+            self._enabled
+            and self._session_factory is not None
+            and self._settings is not None
+            and self._settings.governed_blofin_demo_enabled
+            and self._canonical_runtime is not None
+        ):
+            return
+        from app.runtime.canonical import ProductionCanonicalRuntime
+        from app.services.governed_blofin_demo import GovernedBloFinDemoLoop
+
+        if not isinstance(self._canonical_runtime, ProductionCanonicalRuntime):
+            return
+        with self._session_factory() as session:
+            recovered = GovernedBloFinDemoLoop(
+                self._canonical_runtime, self._settings, self._clock
+            ).reconcile_pending(session)
+        for reason in recovered:
+            logger.info("governed_demo_reconciliation", reason_code=reason, paper_only=True)
 
     def _activation_refusal(self) -> WatcherPaperCycleReport | None:
         gate = self._activation_gate
@@ -992,7 +1016,7 @@ class WatcherPaperRuntime:
         report: WatcherPaperScanReport,
         evidence: WatcherScanEvidencePort,
     ) -> WatcherPaperScanReport:
-        """Fill an internal paper trade after CONFIRMED_SETUP. Other outcomes write nothing."""
+        """Continue a confirmed setup through the selected governed paper venue."""
 
         discussion = report.discussion
         runtime = self._canonical_runtime
@@ -1009,10 +1033,17 @@ class WatcherPaperRuntime:
         assembled, policy = loaded
         from app.services.automated_paper_loop import AutomatedPaperLoop
 
-        proof = AutomatedPaperLoop(
+        loop_type = AutomatedPaperLoop
+        loop_clock: Clock = self._eval_clock
+        if self._settings.exchange_mode.value == "paper_exchange_demo":
+            from app.services.governed_blofin_demo import GovernedBloFinDemoLoop
+
+            loop_type = GovernedBloFinDemoLoop
+            loop_clock = self._clock
+        proof = loop_type(
             runtime,  # type: ignore[arg-type]
             self._settings,
-            self._eval_clock,
+            loop_clock,
         ).continue_confirmed_setup(
             session,
             target=target,
@@ -1106,12 +1137,13 @@ class WatcherPaperRuntime:
         self, scanned: set[str], *, session: Session | None, only_symbol: str | None = None
     ) -> None:
         from app.market_contracts.errors import (
+            ContractUnavailableError,
             StaleEvidenceError,
             WrongInstrumentError,
             WrongMarketError,
             WrongSourceError,
         )
-        from app.workers.watcher_market import ContractUnavailableError, MarketProbeResult
+        from app.workers.watcher_market import MarketProbeResult
 
         config = self._watchlist
         if not self._watchlist_mode or config is None or not self._enabled:

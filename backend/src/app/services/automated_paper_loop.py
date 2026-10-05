@@ -146,7 +146,7 @@ class AutomatedPaperLoop:
         )
         if stopped is not None:
             return stopped
-        account = _paper_account(session, target)
+        account = self._account(session, target)
         if account is None:
             return _proof(candidate, "skipped", "execution_account_missing")
         with self._runtime.bind_session(session):
@@ -172,7 +172,7 @@ class AutomatedPaperLoop:
         policy: ExecutableStrategyPolicy,
         kill_switch_active: bool,
     ) -> AutomatedPaperLoopProof | None:
-        refusal = paper_loop_posture_refusal(self._settings)
+        refusal = self._posture_refusal()
         if refusal is not None:
             return _proof(candidate, "blocked", refusal)
         if kill_switch_active:
@@ -220,7 +220,7 @@ class AutomatedPaperLoop:
             candidate_id=candidate.candidate_id,
         )
         if existing is not None:
-            if existing.plan.execution_policy_version != _POLICY_VERSION:
+            if existing.plan.execution_policy_version != self._policy_version():
                 return _proof(candidate, "blocked", "existing_plan_not_paper_loop")
             return self._execute_existing(
                 session,
@@ -230,7 +230,7 @@ class AutomatedPaperLoop:
                 account_id=account.id,
             )
         eligibility = self._eligibility_service().evaluate(
-            _eligibility_command(
+            self._eligibility_command(
                 session,
                 settings=self._settings,
                 target=target,
@@ -266,7 +266,7 @@ class AutomatedPaperLoop:
                 eligibility_id=eligibility.eligibility.eligibility_id,
                 eligibility_state=state.value,
             )
-        terms = _plan_terms(
+        terms = self._plan_terms(
             candidate=candidate,
             assembled=assembled,
             policy=policy,
@@ -452,6 +452,63 @@ class AutomatedPaperLoop:
             journal_status=trade.status.value
             if isinstance(trade.status, JournalTradeStatus)
             else str(trade.status),
+        )
+
+    def _posture_refusal(self) -> str | None:
+        return paper_loop_posture_refusal(self._settings)
+
+    def _policy_version(self) -> str:
+        return _POLICY_VERSION
+
+    def _account(self, session: Session, target: PaperScanTarget) -> ExecutionAccount | None:
+        return _paper_account(session, target)
+
+    def _eligibility_command(
+        self,
+        session: Session,
+        *,
+        settings: Settings,
+        target: PaperScanTarget,
+        candidate: Candidate,
+        assessment: SetupAssessment,
+        window: CanonicalEvidenceWindowV1,
+        assembled: AssembledCanonicalEvidence,
+        account: ExecutionAccount,
+        now: datetime,
+    ) -> ActionEligibilityCommand:
+        return _eligibility_command(
+            session,
+            settings=settings,
+            target=target,
+            candidate=candidate,
+            assessment=assessment,
+            window=window,
+            assembled=assembled,
+            account=account,
+            now=now,
+        )
+
+    def _plan_terms(
+        self,
+        *,
+        candidate: Candidate,
+        assembled: AssembledCanonicalEvidence,
+        policy: ExecutableStrategyPolicy,
+        account_id: UUID,
+        equity: Decimal,
+        now: datetime,
+        eligibility_valid_until: datetime,
+        eligibility_id: UUID,
+    ) -> TradePlanRevisionCreate | str:
+        return _plan_terms(
+            candidate=candidate,
+            assembled=assembled,
+            policy=policy,
+            account_id=account_id,
+            equity=equity,
+            now=now,
+            eligibility_valid_until=eligibility_valid_until,
+            eligibility_id=eligibility_id,
         )
 
     def _eligibility_service(self) -> ActionEligibilityService:
@@ -723,7 +780,7 @@ def _plan_terms(
 
     nested = isinstance(policy.authored_spec, NestedContinuationSpec)
     nested_target = None
-    if nested:
+    if isinstance(policy.authored_spec, NestedContinuationSpec):
         events = detect_nested(
             assembled.bundle.bars_15m, policy.authored_spec, evaluated_at=assembled.evaluated_at
         )
@@ -732,6 +789,10 @@ def _plan_terms(
         stop = events[-1].stop
         nested_target = events[-1].targets[0] if events[-1].targets else None
     else:
+        from app.signal_fusion.first_slice_adapter import FirstSliceEvaluationParams
+
+        if not isinstance(policy.evaluation_params, FirstSliceEvaluationParams):
+            return "execution_policy_unsupported"
         stop = first_slice_short_invalidation_price(
             trigger=assembled.trigger_bar,
             bars_15m=assembled.bundle.bars_15m,

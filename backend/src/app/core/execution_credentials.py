@@ -16,6 +16,7 @@ That capability never activates the paper Watcher. Real trading cannot open it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
 from app.core.exchange_safety import is_allowlisted_demo_host
@@ -87,6 +88,27 @@ def live_evidence_demo_access_requested(settings: Settings) -> bool:
     )
 
 
+def governed_demo_worker_access_requested(settings: Settings) -> bool:
+    """Explicit staging worker arm, independently pinned from the API capability."""
+    if not (
+        settings.governed_blofin_demo_enabled
+        and settings.environment is Environment.STAGING
+        and settings.watcher_orchestration_enabled
+        and settings.watcher_paper_staging_activation
+    ):
+        return False
+    try:
+        for value in (
+            settings.governed_blofin_demo_organization_id,
+            settings.governed_blofin_demo_user_id,
+            settings.governed_blofin_demo_account_id,
+        ):
+            UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
 def blofin_execution_authorized(settings: Settings) -> bool:
     """Return whether an authenticated BloFin client may be constructed.
 
@@ -97,7 +119,10 @@ def blofin_execution_authorized(settings: Settings) -> bool:
     """
     if paper_credential_isolation_active(settings):
         return False
-    if _live_usd_m_evidence(settings) and not live_evidence_demo_access_requested(settings):
+    if _live_usd_m_evidence(settings) and not (
+        live_evidence_demo_access_requested(settings)
+        or governed_demo_worker_access_requested(settings)
+    ):
         return False
     if settings.execution_mode is not ExecutionMode.PAPER:
         return False

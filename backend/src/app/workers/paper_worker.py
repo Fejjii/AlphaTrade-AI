@@ -1,4 +1,4 @@
-"""Supervised paper worker. Hosts Watcher and Telegram. Does not trade.
+"""Supervised paper worker. Hosts Watcher and Telegram; real trading stays disabled.
 
 One process supervises the two runtimes. Each has its own thread, health
 record, and failure counter. A cycle runs outside the other component's lock.
@@ -44,6 +44,11 @@ _AUTHORITY_FIELDS = (
     "real_trading_enabled",
     "execution_mode",
     "exchange_mode",
+    "blofin_demo_enabled",
+    "governed_blofin_demo_enabled",
+    "governed_blofin_demo_organization_id",
+    "governed_blofin_demo_user_id",
+    "governed_blofin_demo_account_id",
     "watcher_orchestration_enabled",
     "watcher_paper_staging_activation",
     "market_watcher_enabled",
