@@ -275,6 +275,13 @@ class SymbolMarketFactory:
             monitor=MarketMonitorWatcherPort(monitor),
         )
 
+    def poll_monitor(self, symbol: str) -> None:
+        """Keep the live stream current even when the bar's evaluation is replayed."""
+
+        if not self._replay:
+            _, _, monitor, _ = self.composition(symbol)
+            monitor.snapshot(symbol)
+
     def probe(self, symbol: str) -> MarketProbeResult:
         if self._replay:
             raise ContractUnavailableError("live_probe_unavailable_in_replay")

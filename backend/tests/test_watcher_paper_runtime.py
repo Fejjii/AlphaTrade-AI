@@ -334,6 +334,152 @@ def _runtime(
     return runtime, resolved_clock, probe, resolved_store
 
 
+def test_live_monitor_continues_polling_between_15m_evaluations(
+    session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import timedelta
+
+    from app.market_monitor.monitor import PerpetualMarketMonitor
+    from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
+    from app.workers.watcher_market import SymbolMarketFactory
+    from tests.support.live_market_monitor import ScriptedPerpetualSource
+    from tests.test_live_market_monitor import T0, _trade
+
+    with session_factory() as session:
+        _seed_approved_compiled(session)
+    clock = FakeClock(T0)
+    world = make_world(include_resistance=False)
+    tape = [_trade(i + 1, when=T0 + timedelta(seconds=i - 10)) for i in range(911)]
+
+    class AvailableSource(ScriptedPerpetualSource):
+        def fetch_ordered_trades(self, **kwargs):
+            self.enqueue(tape)
+            return super().fetch_ordered_trades(**kwargs)
+
+    source = AvailableSource()
+    monitor = PerpetualMarketMonitor(source, replay=False, clock=clock.now)
+
+    class GatedPort(_WorldEvidencePort):
+        def load(self, command):
+            refusal = watcher_evidence_error_for_monitor(monitor.latest())
+            if refusal is not None:
+                raise refusal
+            return super().load(command)
+
+    class Factory(SymbolMarketFactory):
+        def __call__(self, session, store, symbol):
+            return GatedPort(session, store, world)
+
+    factory = Factory(_settings(perpetual_evidence_source="binance_usdm"))
+    monkeypatch.setattr(factory, "composition", lambda _symbol: (source, None, monitor, []))
+    runtime, _, side_effects, _ = _runtime(
+        session_factory, clock=clock, world=world, evidence_factory=factory
+    )
+    first = runtime.run_cycle()
+    assert first.scans[0].reason_code == "watch"
+    epoch = monitor._runtimes["BTCUSDT"]._assembler.connection_identity
+    for minute in range(1, 16):
+        clock.advance(60)
+        report = runtime.run_cycle()
+        assert report.scans[0].status == "succeeded", report.scans[0].reason_code
+        assert report.scans[0].candidate_ids == ()
+        if minute < 15:
+            assert report.scans[0].replayed is True
+        else:
+            assert report.scans[0].reason_code == "watch"
+    assert source.fetch_count >= 16
+    cursor = monitor._runtimes["BTCUSDT"]._assembler
+    assert cursor.connection_identity == epoch
+    assert len(cursor.accepted_trades()) == 1
+    assert side_effects.unused
+
+
+@pytest.mark.parametrize("failure", ["gap", "outage"])
+def test_between_evaluation_monitor_polling_preserves_fail_closed_errors(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from datetime import timedelta
+
+    from app.market_monitor.monitor import PerpetualMarketMonitor
+    from app.market_monitor.watcher_gate import watcher_evidence_error_for_monitor
+    from app.workers.watcher_market import SymbolMarketFactory
+    from tests.support.live_market_monitor import ScriptedPerpetualSource
+    from tests.test_live_market_monitor import T0, _trade
+
+    clock = FakeClock(T0)
+    source = ScriptedPerpetualSource()
+    source.enqueue([_trade(10, when=T0 - timedelta(seconds=1))])
+    monitor = PerpetualMarketMonitor(source, replay=False, clock=clock.now)
+    factory = SymbolMarketFactory(_settings(perpetual_evidence_source="binance_usdm"))
+    monkeypatch.setattr(factory, "composition", lambda _symbol: (source, None, monitor, []))
+    factory.poll_monitor("BTCUSDT")
+    clock.advance(2)
+    source.enqueue(
+        [_trade(12, when=T0 + timedelta(seconds=1))]
+        if failure == "gap"
+        else RegionalProviderFailureError("provider unavailable")
+    )
+    factory.poll_monitor("BTCUSDT")
+    snapshot = monitor.snapshot("BTCUSDT")
+    refusal = watcher_evidence_error_for_monitor(snapshot)
+    assert refusal is not None
+    assert refusal.reason_code == (
+        "canonical_evidence_unavailable" if failure == "gap" else "provider_outage"
+    )
+    assert snapshot.current_price is None
+    assert source.fetch_count == 2
+
+
+def test_replay_factory_does_not_poll_a_live_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.workers.watcher_market import SymbolMarketFactory
+
+    factory = SymbolMarketFactory(_settings())
+
+    def unexpected_composition(_symbol):
+        raise AssertionError("Replay upkeep must not acquire live evidence")
+
+    monkeypatch.setattr(factory, "composition", unexpected_composition)
+    factory.poll_monitor("BTCUSDT")
+
+
+@pytest.mark.parametrize("scope", ["kill_switch", "nested", "sfp"])
+def test_monitor_upkeep_respects_existing_safety_and_strategy_gates(
+    session_factory: sessionmaker[Session], scope: str
+) -> None:
+    from dataclasses import replace
+
+    from app.schemas.nested_continuation import NESTED_KIND
+    from app.strategy_brain.sfp.contracts import SFP_KIND
+
+    with session_factory() as session:
+        _seed_approved_compiled(session)
+        targets = list_paper_scan_targets(
+            session, symbols=["BTCUSDT"], organization_id=ORG, limit=1
+        )
+    if scope != "kill_switch":
+        targets = tuple(
+            replace(t, fusion_policy_version=NESTED_KIND if scope == "nested" else SFP_KIND)
+            for t in targets
+        )
+    world = make_world(include_resistance=False)
+    factory = _world_factory(world)
+    polled = []
+    factory.poll_monitor = lambda symbol: polled.append(symbol)
+    runtime, _, side_effects, _ = _runtime(
+        session_factory,
+        world=world,
+        evidence_factory=factory,
+        target_loader=lambda _session: targets,
+        kill_switch_probe=lambda _org: scope == "kill_switch",
+    )
+    report = runtime.run_cycle()
+    assert report.scans[0].candidate_ids == ()
+    if scope == "kill_switch":
+        assert report.scans[0].reason_code == "kill_switch_active"
+    assert polled == []
+    assert side_effects.unused
+
+
 def test_defaults_keep_paper_runtime_disabled() -> None:
     settings = _settings()
     assert settings.watcher_orchestration_enabled is False
