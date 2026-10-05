@@ -6,6 +6,7 @@ import { EmailVerificationNotice } from "@/components/account/EmailVerificationN
 import { WatcherWatchlistSection } from "@/components/WatcherWatchlistSection";
 import { NotificationSettingsPanel } from "@/components/NotificationSettingsPanel";
 import { RiskSettingsSummary } from "@/components/settings/RiskSettingsSummary";
+import { PaperAccountSetup } from "@/components/settings/PaperAccountSetup";
 import {
   SettingsReadout,
   SettingsUnavailable,
@@ -200,6 +201,7 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+        <PaperAccountSetup key={`${organization?.id}:${user?.id}`} />
         <Card data-testid="settings-runtime-posture">
           <CardHeader>
             <p className="text-sm text-text-muted">Current system status</p>

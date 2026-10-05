@@ -291,6 +291,7 @@ class AuditEventType(StrEnum):
     APPROVAL_REQUIRED = "approval_required"
     APPROVAL_DECISION = "approval_decision"
     PAPER_ORDER_CREATED = "paper_order_created"
+    EXECUTION_ACCOUNT_REGISTERED = "execution_account_registered"
     PAPER_ORDER_REJECTED = "paper_order_rejected"
     EXCHANGE_DEMO_ORDER_CREATED = "exchange_demo_order_created"
     EXCHANGE_DEMO_ORDER_FAILED = "exchange_demo_order_failed"

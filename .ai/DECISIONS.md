@@ -2,6 +2,26 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-083 — Paper account setup preserves canonical execution identity
+
+- Date: 2026-10-05
+- Decision: Owner-only authenticated setup derives tenant/user from the principal;
+  a strict empty body cannot supply account identity, modes or activation fields.
+  PostgreSQL setup locks the existing unique tenant membership through the route's
+  commit, then checks the owner's accounts. READ COMMITTED requests converge on
+  one UUID without imposing a new constraint on historical account data.
+- Reuse: Return a single enabled PAPER/NET account unchanged. Refuse disabled,
+  invalid or multiple accounts; never create a replacement to reset governed
+  execution history. All registration callers must use this service/lock.
+- Audit: Commit creation with a strict `execution_account_registered` audit event.
+  Repeated setup is a read/reuse and produces no extra creation audit.
+- Authority: Registration establishes identity only. It does not grant execution
+  permissions, approve strategies, authorize a plan, alter risk/credentials, or
+  arm demo or real trading. UUID pinning and venue acceptance remain supervised.
+- Reference: `docs/governed_blofin_demo_execution.md`; AT-098.
+
+---
+
 ## AT-ADR-081 — Display snippets do not bound substantive document evidence
 
 - Date: 2026-10-05

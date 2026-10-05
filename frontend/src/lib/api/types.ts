@@ -2260,6 +2260,24 @@ export interface MeResponse {
   organization: Organization;
 }
 
+export interface PaperExecutionAccount {
+  id: string;
+  name: string;
+  execution_mode: "PAPER";
+  account_mode: "NET";
+  enabled: boolean;
+}
+
+export interface PaperAccountStatus {
+  account: PaperExecutionAccount | null;
+  can_register: boolean;
+}
+
+export interface PaperAccountRegistration {
+  account: PaperExecutionAccount;
+  created: boolean;
+}
+
 export interface MarketDataMeta {
   symbol: string;
   exchange: string;

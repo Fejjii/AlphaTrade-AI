@@ -12,6 +12,22 @@ describe("api client deployment config", () => {
     expect(appConfig.apiBaseUrl).toBe("https://api.staging.example.com");
   });
 
+  it("registers paper identity with authentication and an empty body", async () => {
+    sessionStorage.setItem("alphatrade_access_token", "synthetic-owner-token");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" });
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("@/lib/api");
+    await api.execution.registerPaperAccount();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("/execution/accounts/paper"),
+      expect.objectContaining({
+        method: "POST", body: "{}",
+        headers: expect.objectContaining({ Authorization: "Bearer synthetic-owner-token" }),
+      }),
+    );
+    sessionStorage.clear();
+  });
+
   it("lets the browser set multipart boundaries and keeps authentication", async () => {
     sessionStorage.setItem("alphatrade_access_token", "synthetic-access");
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" });
