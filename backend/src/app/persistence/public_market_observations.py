@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ from app.market_contracts.identity import EvidenceMarketIdentity
 from app.market_contracts.observation import PublicMarketObservation
 from app.market_contracts.ohlcv import OhlcvBar
 from app.services.canonical_serialization import canonical_sha256
+
+logger = structlog.get_logger(__name__)
 
 
 def remember_observation(
@@ -54,8 +57,22 @@ def remember_observation(
                 raise
     assert row is not None
     stored = PublicMarketObservation.model_validate(row.payload)
-    if bar is not None and row.ohlcv != bar.model_dump(mode="json"):
-        raise DuplicateDataError("Canonical receipt must preserve its original OHLCV payload.")
+    if bar is not None:
+        stored_bar = OhlcvBar.model_validate(row.ohlcv)
+        # Decimal JSON encodings may differ (102 vs 102.00) without changing
+        # any canonical value or hash. Compare every typed field and preserve
+        # the original serialized payload; actual changes still fail closed.
+        if stored_bar != bar:
+            logger.warning(
+                "canonical_ohlcv_receipt_conflict",
+                observation_id=str(stored.observation_id),
+                conflicting_fields=sorted(
+                    name
+                    for name in OhlcvBar.model_fields
+                    if getattr(stored_bar, name) != getattr(bar, name)
+                ),
+            )
+            raise DuplicateDataError("Canonical receipt must preserve its original OHLCV payload.")
     # A revision is a distinct canonical observation, never an in-place correction.
     fields = (
         "identity",
@@ -69,7 +86,15 @@ def remember_observation(
         "revision",
         "payload_content_hash",
     )
-    if any(getattr(stored, name) != getattr(observation, name) for name in fields):
+    conflicting_fields = [
+        name for name in fields if getattr(stored, name) != getattr(observation, name)
+    ]
+    if conflicting_fields:
+        logger.warning(
+            "canonical_observation_receipt_conflict",
+            observation_id=str(stored.observation_id),
+            conflicting_fields=conflicting_fields,
+        )
         raise DuplicateDataError("Conflicting content for an immutable canonical observation.")
     # Never backdate a late historical download or advance known-at on a restart.
     return stored

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import NoReturn
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -25,7 +26,10 @@ from app.market_contracts.errors import (
     RegionalProviderFailureError,
     StaleEvidenceError,
 )
-from app.market_contracts.evidence_diagnostics import diagnostic_from_exception
+from app.market_contracts.evidence_diagnostics import (
+    diagnostic_from_exception,
+    reason_for_exception,
+)
 from app.market_contracts.request_progress import notify_market_request_progress
 from app.market_monitor.monitor import PerpetualMarketMonitor
 from app.market_monitor.types import MarketMode, SymbolMonitorSnapshot
@@ -43,6 +47,7 @@ from app.watcher.ports import WatcherStore
 
 ExecutableResolver = Callable[[EvaluationCommand], ExecutableStrategyPolicy | None]
 MonitorPort = PerpetualMarketMonitor | MarketMonitorWatcherPort
+logger = structlog.get_logger(__name__)
 
 
 def resolve_watcher_scan_policy(
@@ -288,6 +293,12 @@ class AssemblingWatcherScanEvidence:
 
     @staticmethod
     def _raise_undiagnosed(exc: Exception) -> NoReturn:
+        # The wrapper retains its public reason codes. Log only the finite
+        # diagnostic category, never exception text, provider payloads or URLs.
+        logger.warning(
+            "canonical_evidence_contract_rejected",
+            failure_reason=reason_for_exception(exc).value,
+        )
         if isinstance(exc, ContractUnavailableError):
             raise WatcherEvidenceUnavailableError(
                 "Selected perpetual contract is unavailable.", reason_code=exc.reason

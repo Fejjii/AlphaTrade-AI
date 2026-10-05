@@ -21,6 +21,26 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Supervising review/deploy, owner registration and UUID pin precede venue acceptance.
 - Reference: `docs/governed_blofin_demo_execution.md`; AT-ADR-083.
 
+## AT-100 — SFP persisted evidence reuse and rejection diagnostics
+- Priority: P1 · Status: DONE (implemented; live attribution pending) · Dependencies:
+  main `c70d4bd` · Risk: Medium.
+- Scope: Reproduce wrapped contract rejection across persisted receipts, rolling
+  windows, repeated SFP scopes and restart. Accept canonical-equivalent decimal
+  encodings using complete typed candle equality; log bounded refusal diagnostics.
+- Safety: Original immutable rows/clocks, closed candles, hashes and revision
+  validation remain authoritative. True value conflicts still fail closed.
+  No execution activation, strategy/credential changes, merge, deployment or orders.
+- Validation: 121 focused cases pass: SQLite/PostgreSQL reuse, conflict, revision,
+  sanitized logs, existing SFP detector/runtime and Watcher refusal regressions.
+  Scoped Ruff and receipt DAO strict mypy pass. Assembly/watcher have the same
+  38 pre-existing strict mypy errors as untouched main, with no added messages.
+- Attribution: The decimal-encoding false conflict is reproduced locally with
+  the reported wrapper code. Exact October 5 live cause remains unconfirmed;
+  Render requires workspace confirmation before reading logs or stored rows.
+- Delivery: Separate PR. Preserve PR206 and its supervisor-restarted CI.
+  Normal PR CI is the consolidated gate; fresh live SFP evaluations are supervised.
+- Reference: `docs/sfp_evidence_reuse.md`.
+
 ## AT-097 — Governed BloFin quote freshness at receipt
 - Priority: P1 · Status: DONE · Dependencies: merged PR203 (`fba79a4`) · Risk: Medium.
 - Scope: Compare ticker timestamps with the injected clock after receipt instead of

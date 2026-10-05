@@ -9,6 +9,7 @@ from contextlib import suppress
 from datetime import timedelta
 from uuid import uuid5
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.candidate_alerts.nested import NestedAlertSummary, required_evidence_fresh
@@ -21,7 +22,7 @@ from app.evidence_pipeline.types import (
 )
 from app.market_contracts.catalog import instrument_for_source
 from app.market_contracts.enums import DataCompleteness, FreshnessState
-from app.market_contracts.errors import MarketContractError, StaleEvidenceError
+from app.market_contracts.errors import DuplicateDataError, MarketContractError, StaleEvidenceError
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import interval_timedelta
@@ -33,6 +34,8 @@ from app.signal_fusion.first_slice_types import FirstSliceEvidenceBundle
 from app.signal_fusion.types import HalfOpenInterval, TriggerIdentity
 from app.strategy_brain.detector import NAMESPACE, detect_nested
 from app.strategy_brain.records import attach_paper_result, record_detections, scoped_setup_id
+
+logger = structlog.get_logger(__name__)
 
 
 def assemble_nested(
@@ -117,8 +120,12 @@ def assemble_ohlcv_family(
             for b, o in zip(bars, observations, strict=True):
                 previous = pairs.get(b.source_event_id)
                 if previous is not None and previous[0].revision > b.revision:
-                    from app.market_contracts.errors import DuplicateDataError
-
+                    logger.warning(
+                        "canonical_ohlcv_revision_regressed",
+                        observation_id=str(previous[1].observation_id),
+                        retained_revision=previous[0].revision,
+                        incoming_revision=b.revision,
+                    )
                     raise DuplicateDataError(
                         "Provider returned an older canonical candle revision."
                     )
