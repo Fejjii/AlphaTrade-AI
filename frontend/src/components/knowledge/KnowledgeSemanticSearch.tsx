@@ -200,6 +200,7 @@ export function KnowledgeSemanticSearch({
                   <p className="text-text-muted">
                     Source: {chunk.source_type.replace(/_/g, " ")} · passage{" "}
                     {chunk.chunk_ordinal}
+                    {chunk.source_filename ? ` · file ${chunk.source_filename}` : ""}
                     {chunk.section_title ? ` · ${chunk.section_title}` : ""}
                     {chunk.page_number != null
                       ? ` · page ${chunk.page_number}`

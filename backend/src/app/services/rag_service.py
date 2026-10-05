@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.core.errors import ServiceUnavailableError
+from app.core.errors import ServiceUnavailableError, ValidationAppError
 from app.core.provider_policy import provider_fail_closed, requires_authoritative_qdrant
 from app.db.models import Chunk as ChunkModel
 from app.db.models import Document as DocumentModel
+from app.db.session import run_in_savepoint_when_active
 from app.providers.embeddings import EmbeddingsProvider, MockEmbeddingsProvider
 from app.providers.factory import resolve_providers
 from app.providers.qdrant import (
@@ -38,6 +41,9 @@ from app.schemas.rag import (
     ChunkMetadata,
     Citation,
     DocumentCreateRequest,
+    DocumentIngestionMetadata,
+    FileProvenance,
+    IndexingObservation,
     IngestDocumentRequest,
     IngestDocumentResponse,
     RagChunk,
@@ -83,7 +89,7 @@ class RagService:
 
     def create_document(self, data: DocumentCreateRequest) -> RagDocument:
         """Register document metadata without body ingestion."""
-        if self._documents is None:
+        if self._documents is None or self._session is None:
             raise RuntimeError("Database session required to create documents.")
         now = datetime.now(UTC)
         entity = DocumentModel(
@@ -103,34 +109,57 @@ class RagService:
         self._session.commit()
         return _document_to_schema(entity)
 
-    def ingest(self, data: IngestDocumentRequest, *, commit: bool = True) -> IngestDocumentResponse:
+    def ingest(
+        self,
+        data: IngestDocumentRequest,
+        *,
+        commit: bool = True,
+        file_provenance: FileProvenance | None = None,
+    ) -> IngestDocumentResponse:
         """Normalize, chunk, embed, and persist a text document.
 
         Composing authorities can retain their row locks by owning the commit.
         Vector upserts remain the existing external, non-transactional operation.
         """
-        if self._documents is None or self._chunks is None:
+        if self._documents is None or self._chunks is None or self._session is None:
             raise RuntimeError("Database session required for ingestion.")
 
+        text_chunks = chunk_text(data.text)
+        if not text_chunks:
+            raise ValidationAppError("A document must contain readable text.")
         source_hash = compute_source_hash(
             title=data.title,
             text=data.text,
             source_type=data.source_type.value,
             organization_id=data.organization_id,
+            user_id=data.user_id,
         )
+        if file_provenance is not None:
+            # Identical raw files in the same principal/category converge even
+            # when renamed. Different owners and categories remain independent.
+            source_hash = hashlib.sha256(
+                f"file-v1|{data.organization_id}|{data.user_id}|{data.source_type.value}|"
+                f"{file_provenance.raw_content_hash}".encode()
+            ).hexdigest()
         existing = self._documents.get_by_source_hash(
             organization_id=data.organization_id,
+            user_id=data.user_id,
             source_hash=source_hash,
         )
-        if existing is not None:
-            chunk_count = len(self._chunks.list_by_document(existing.id))
-            return IngestDocumentResponse(
-                document_id=existing.id,
-                source_hash=source_hash,
-                chunk_count=chunk_count,
-                duplicate=True,
-                version=existing.version,
+        if existing is None and file_provenance is None and data.user_id is not None:
+            # Old hashes omitted user ID. Only the exact owner can reuse them.
+            existing = self._documents.get_by_source_hash(
+                organization_id=data.organization_id,
+                user_id=data.user_id,
+                source_hash=compute_source_hash(
+                    title=data.title,
+                    text=data.text,
+                    source_type=data.source_type.value,
+                    organization_id=data.organization_id,
+                ),
             )
+        if existing is not None:
+            return self._duplicate_result(existing)
 
         now = datetime.now(UTC)
         document_id = uuid.uuid4()
@@ -147,9 +176,20 @@ class RagService:
             created_at=now,
             updated_at=now,
         )
-        self._documents.add(document)
-
-        text_chunks = chunk_text(data.text)
+        documents = self._documents
+        try:
+            run_in_savepoint_when_active(self._session, lambda: documents.add(document))
+        except IntegrityError:
+            if not self._session.is_active:
+                self._session.rollback()
+            existing = self._documents.get_by_source_hash(
+                organization_id=data.organization_id,
+                user_id=data.user_id,
+                source_hash=source_hash,
+            )
+            if existing is None:
+                raise
+            return self._duplicate_result(existing)
         try:
             embed_result = self._embeddings.embed_with_metadata(text_chunks)
         except ServiceUnavailableError:
@@ -180,6 +220,7 @@ class RagService:
                 symbol_tag=data.symbol_tag,
                 timeframe_tag=data.timeframe_tag,
                 risk_tag=data.risk_tag,
+                source_filename=file_provenance.filename if file_provenance else None,
             )
             chunk = ChunkModel(
                 id=chunk_id,
@@ -222,6 +263,17 @@ class RagService:
                 "Knowledge ingestion failed: vector store unavailable.",
                 details={"reason": "vector_upsert_failed"},
             ) from exc
+        vector_status = self._vector_store.status()
+        fallback_used = embed_result.fallback_used or vector_status.using_fallback
+        document.ingestion_metadata = DocumentIngestionMetadata(
+            file=file_provenance,
+            indexing=IndexingObservation(
+                sql_chunk_count=len(text_chunks),
+                vector_backend=self._vector_store.name,
+                fallback_used=fallback_used,
+                observed_at=datetime.now(UTC),
+            ),
+        ).model_dump(mode="json")
         if commit:
             self._session.commit()
         else:
@@ -239,12 +291,29 @@ class RagService:
             duplicate=False,
             version=data.version,
             vector_backend=self._vector_store.name,
-            fallback_used=embed_result.fallback_used,
+            fallback_used=fallback_used,
+            vector_index_status="upsert_acknowledged",
+        )
+
+    def _duplicate_result(self, existing: DocumentModel) -> IngestDocumentResponse:
+        if self._chunks is None:
+            raise RuntimeError("Database session required for duplicate inspection.")
+        metadata = DocumentIngestionMetadata.model_validate(existing.ingestion_metadata or {})
+        observation = metadata.indexing
+        return IngestDocumentResponse(
+            document_id=existing.id,
+            source_hash=existing.source_hash or "",
+            chunk_count=len(self._chunks.list_by_document(existing.id)),
+            duplicate=True,
+            version=existing.version,
+            vector_backend=observation.vector_backend if observation else None,
+            fallback_used=observation.fallback_used if observation else False,
+            vector_index_status="upsert_acknowledged" if observation else "unknown",
         )
 
     def upsert_linked_document(self, data: IngestDocumentRequest) -> IngestDocumentResponse:
         """Ingest or replace chunks for a stable ``source_uri`` (e.g. journal entries)."""
-        if self._documents is None or self._chunks is None:
+        if self._documents is None or self._chunks is None or self._session is None:
             raise RuntimeError("Database session required for ingestion.")
         if not data.source_uri:
             return self.ingest(data)
@@ -254,6 +323,7 @@ class RagService:
             text=data.text,
             source_type=data.source_type.value,
             organization_id=data.organization_id,
+            user_id=data.user_id,
         )
         existing = self._documents.get_by_source_uri(
             organization_id=data.organization_id,
@@ -289,7 +359,7 @@ class RagService:
         source_hash: str,
     ) -> IngestDocumentResponse:
         """Chunk, embed, and persist text into an existing document row."""
-        if self._documents is None or self._chunks is None:
+        if self._documents is None or self._chunks is None or self._session is None:
             raise RuntimeError("Database session required for ingestion.")
 
         now = datetime.now(UTC)
@@ -429,8 +499,8 @@ class RagService:
         chunk_ids = [UUID(hit.point_id) for hit in hits]
         chunk_map: dict[UUID, ChunkModel] = {}
         if self._chunks is not None and chunk_ids:
-            for chunk in self._chunks.get_many(chunk_ids):
-                chunk_map[chunk.id] = chunk
+            for loaded_chunk in self._chunks.get_many(chunk_ids):
+                chunk_map[loaded_chunk.id] = loaded_chunk
 
         retrieved: list[RetrievedChunk] = []
         citations: list[Citation] = []
@@ -438,6 +508,10 @@ class RagService:
             chunk_id = UUID(hit.point_id)
             chunk = chunk_map.get(chunk_id)
             if chunk is None:
+                continue
+            if (
+                query.organization_id is not None and chunk.organization_id != query.organization_id
+            ) or (query.user_id is not None and chunk.user_id != query.user_id):
                 continue
             metadata = _chunk_metadata_from_row(chunk)
             retrieved.append(
@@ -451,6 +525,7 @@ class RagService:
                     source_type=metadata.source_type,
                     content=chunk.content,
                     score=hit.score,
+                    source_filename=metadata.source_filename,
                 )
             )
             citations.append(_citation_from_chunk(chunk, metadata, score=hit.score))
@@ -670,6 +745,7 @@ def _document_to_schema(entity: DocumentModel) -> RagDocument:
         title=entity.title,
         source_uri=entity.uri,
         source_hash=entity.source_hash,
+        ingestion_metadata=entity.ingestion_metadata,
         version=entity.version,
         created_at=entity.created_at,
         updated_at=entity.updated_at,
@@ -718,4 +794,5 @@ def _citation_from_chunk(
         chunk_ordinal=chunk.ordinal,
         score=score,
         snippet=snippet,
+        source_filename=metadata.source_filename,
     )

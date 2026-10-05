@@ -367,7 +367,7 @@ def test_place_order_venue_5xx_http_rejection() -> None:
     assert details is not None
     assert details.http_status == 503
     assert details.endpoint_name == "POST /api/v1/trade/order"
-    assert calls["n"] == 2
+    assert calls["n"] == 1
 
 
 def test_rejection_diagnostics_do_not_leak_secrets() -> None:

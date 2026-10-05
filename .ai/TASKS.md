@@ -5,6 +5,70 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-094 — Agent presentation and canonical strategy grounding
+- Priority: P1 · Status: DONE · Dependencies: PR200 on current main · Risk: Medium.
+- Scope: Reserve model explanation space, collapse stored evidence, distinguish selected
+  version lifecycle approval from research validation, and include both Nested/SFP rules.
+  Resolve named stored documents and pass substantive topic-balanced passages with
+  neighboring context and citations; keep document guidance separate from approved settings.
+- Safety: Read-only grounding; generated prose cannot approve, confirm or execute.
+  Real trading remains disabled. No deployment or infrastructure changes.
+- Validation: Focused transcript, lifecycle, both-family, tenant and UI regressions;
+  backend Ruff/format/types and frontend lint/types; consolidated CI after implementation.
+- Reference: `docs/agent_presentation_grounding.md`.
+- Result: Focused stored/synthetic grounding, UI and canonical read regressions pass.
+  PR201 is open. Stored-playbook context regressions and Agent/foundation/Daily Review
+  checks pass (71 focused cases); live model quality on the existing playbook is unverified.
+  Real staging acceptance is pending PR review; no deployment occurred.
+
+## AT-095 — Governed BloFin demo execution integration
+- Priority: P1 · Status: DONE (implemented entry slice) · Dependencies: canonical execution
+  protocol and AT-094 Agent grounding · Risk: High.
+- Scope: Separate reviewable execution branch; explicit demo activation, deterministic
+  risk and authorization, durable dispatch, actual fill/protection reconciliation,
+  Journal and learning linkage. Keep legacy paths tombstoned and SFP restricted.
+- Safety: Existing demo Read + Trade key only; no network exchange orders from Codex;
+  real trading disabled. No merge, deployment or infrastructure changes.
+- Validation: Simulated success/rejection/timeout/idempotency/restart/protection tests
+  over the canonical worker workflow and disposable local PostgreSQL, including late
+  fence/kill changes, malformed protection, partial cancellation and actual-fill Agent reads.
+- Restrictions: One ALLOW claim in the account's preserved history; automatic entries
+  only. Exit-fill close, funding/PnL attribution and automatic account reuse are excluded.
+  Synthetic demo fill/close remains forbidden; SFP remains non-executable.
+- Acceptance: Real staging activation and natural entry/fill/protection acceptance are
+  pending review and the consolidated CI gate. No network orders were submitted here.
+- Result: 20 simulated demo integration cases pass on the stacked Agent branch; 21
+  internal-loop/supervisor regressions pass. Changed-source strict mypy (13 modules),
+  Ruff lint/format and diff checks pass. Earlier focused protocol/activation checks pass.
+- Reference: `docs/governed_blofin_demo_execution.md`; AT-ADR-GOVERNED-DEMO-20261005.
+
+---
+
+## AT-096 — Knowledge file preview and explicit import
+- Priority: P1 · Status: DONE · Dependencies: canonical Document/Chunk ingestion · Risk: Medium.
+- Branch: `codex/knowledge-file-import`.
+- Scope: TXT, Markdown, DOCX body/table text and selectable-text PDF preview before
+  explicit save; bounded parsing; durable filename/raw hash/provenance and truthful
+  SQL/vector observations; principal-scoped duplicates. Preserve pasted ingestion.
+- Safety: No Agent, strategy, risk or execution mutation. Existing Master Playbook
+  is already stored and will not be reimported. No deployment or infrastructure changes.
+- Validation: 81 focused backend cases pass, including isolated PostgreSQL migration
+  upgrade/downgrade; 18 focused frontend cases pass. Changed-file Ruff lint/format,
+  strict mypy for nine changed modules, TypeScript and ESLint checks pass. The
+  shared models file retains its existing 94 unrelated missing-generic errors.
+- Result: Existing Document/Chunk ingestion and scoped search store extracted text,
+  file provenance and recorded indexing observations. Preview performs no storage.
+  Six Agent-owned import integration cases pass for substantive passages and
+  filename/hash/document/chunk references, including foreign-principal isolation.
+  Combined focused backend/frontend checks pass (50/35 cases). Migration-head
+  pin integration passes 105 safety and 14 PostgreSQL migration cases; no skips.
+- Limitations: No OCR, raw binary storage or full DOCX layout. Index acknowledgement
+  is a recorded observation, not a live health claim. Staging acceptance and live
+  Agent answer quality remain pending review and the combined CI gate.
+- Reference: `docs/knowledge_file_import.md`.
+
+---
+
 ## AT-093 — Nested timeframe independence and SFP frontend surface
 - Priority: P1 · Status: DONE · Dependencies: accepted Nested/SFP canonical
   backend on main `abfd71b9f34f3b7a5bec38f6a933aaf93d8b4229` · Risk: Medium (evidence identity).

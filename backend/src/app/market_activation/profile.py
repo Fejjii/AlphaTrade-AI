@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from app.core.config import Environment, ExchangeMode, ExecutionMode, Settings
 from app.core.execution_credentials import (
     blofin_execution_authorized,
+    governed_demo_worker_access_requested,
     live_evidence_demo_access_requested,
     paper_credential_isolation_active,
 )
@@ -155,7 +156,13 @@ def controlled_watcher_arm(settings: Settings) -> bool:
         and settings.execution_mode is ExecutionMode.PAPER
         and not settings.enable_real_trading
         and not settings.real_trading_enabled
-        and settings.exchange_mode is ExchangeMode.PAPER_INTERNAL
+        and (
+            settings.exchange_mode is ExchangeMode.PAPER_INTERNAL
+            or (
+                governed_demo_worker_access_requested(settings)
+                and blofin_execution_authorized(settings)
+            )
+        )
         and not settings.market_watcher_enabled
         and not settings.market_watcher_bridge_enabled
         and not settings.market_watcher_bridge_auto_tick
@@ -204,11 +211,15 @@ def _secondary_pairing_errors(settings: Settings) -> list[str]:
 
 def _live_profile_errors(settings: Settings, environ: Mapping[str, str]) -> list[str]:
     errors = _origin_errors_for(settings)
-    demo_access = live_evidence_demo_access_requested(settings) and blofin_execution_authorized(
-        settings
-    )
+    demo_access = (
+        live_evidence_demo_access_requested(settings)
+        or governed_demo_worker_access_requested(settings)
+    ) and blofin_execution_authorized(settings)
     if settings.blofin_live_evidence_demo_enabled and not demo_access:
-        errors.append("live evidence demo access requires the complete staging API demo gate.")
+        errors.append(
+            "live evidence demo access requires the complete staging API "
+            "or governed worker demo gate."
+        )
     if settings.enable_real_trading or settings.real_trading_enabled:
         errors.append("live USD-M evidence cannot be combined with real trading.")
     if settings.execution_mode is not ExecutionMode.PAPER:

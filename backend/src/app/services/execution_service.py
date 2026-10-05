@@ -346,6 +346,21 @@ class ExecutionService:
         occurred_at: datetime,
         venue_source: str = "phase1-fake-venue",
     ) -> UniqueFillResult:
+        command = self._session.get(ExecutionCommand, command_id)
+        if command is not None:
+            revision = self._revisions.get_scoped(
+                command.revision_id,
+                organization_id=command.organization_id,
+                user_id=command.user_id,
+            )
+            if (
+                revision is not None
+                and revision.execution_policy_version == "governed-blofin-demo/v1"
+            ):
+                raise TradingPolicyError(
+                    "Demo fills require governed venue reconciliation.",
+                    details={"reason": "demo_synthetic_fill_forbidden"},
+                )
         fill = self._dispatcher().apply_unique_fill(
             command_id=command_id,
             fill_quantity=fill_quantity,

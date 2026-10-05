@@ -84,6 +84,7 @@ def gather_reads(
                     organization_id=organization_id,
                     message=f"current {family} setups {requested_timeframe}",
                     symbol=extract_symbol(message) or symbol,
+                    user_id=user_id,
                 )
                 summaries.append(f"{family.upper()} stored evidence: {summary}")
                 bundle.connections.extend(refs)
@@ -111,7 +112,11 @@ def gather_reads(
         from app.strategy_brain.agent import read_brain
 
         summary, refs, limitations = read_brain(
-            session, organization_id=organization_id, message=message, symbol=symbol
+            session,
+            organization_id=organization_id,
+            message=message,
+            symbol=symbol,
+            user_id=user_id,
         )
         bundle.brain_summary = summary
         bundle.connections.extend(refs)

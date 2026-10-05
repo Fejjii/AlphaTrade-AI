@@ -5,11 +5,11 @@ Safety-critical guarantees:
 * Every request asserts the configured base URL is an allowlisted BloFin demo
   host (defense in depth on top of settings validation).
 * Credentials are HMAC-signed and never logged; all error text is redacted.
-* Transient failures (network, 5xx, rate limit) are retried with bounded,
-  jittered backoff. Auth and other 4xx errors are not retried.
+* Transient GET failures are retried with bounded, jittered backoff. POST
+  requests never retry; a lost response requires durable reconciliation.
 
 This module performs no order placement; it is the transport used by the
-read-only account/market-data providers and (later) the demo execution provider.
+read-only account/market-data providers and the governed demo execution provider.
 """
 
 from __future__ import annotations
@@ -180,10 +180,13 @@ class BloFinClient:
         body_str = json.dumps(body, separators=(",", ":")) if body is not None else ""
         sign_path = _signed_request_path(path, params)
         request_path = sign_path if params else path
+        # A POST may have reached the venue despite a timeout/5xx. Only GET
+        # retries are safe; durable command reconciliation owns order recovery.
+        retry_limit = self._max_retries if method.upper() == "GET" else 0
         attempt = 0
         last_exc: Exception | None = None
 
-        while attempt <= self._max_retries:
+        while attempt <= retry_limit:
             self._throttle()
             try:
                 headers = (
@@ -204,14 +207,14 @@ class BloFinClient:
                 last_exc = exc
                 self._last_error = self._redact(str(exc))
                 attempt += 1
-                if attempt > self._max_retries:
+                if attempt > retry_limit:
                     break
                 self._backoff(attempt)
             except httpx.HTTPError as exc:
                 last_exc = ExchangeUnavailableError(self._redact(str(exc)))
                 self._last_error = self._redact(str(exc))
                 attempt += 1
-                if attempt > self._max_retries:
+                if attempt > retry_limit:
                     break
                 self._backoff(attempt)
 

@@ -1216,6 +1216,7 @@ export interface Citation {
   chunk_ordinal?: number | null;
   score?: number | null;
   snippet?: string | null;
+  source_filename?: string | null;
 }
 
 export interface RetrievedChunk {
@@ -1228,6 +1229,7 @@ export interface RetrievedChunk {
   source_type: DocumentSourceType | string;
   content: string;
   score: number;
+  source_filename?: string | null;
 }
 
 export interface RagSearchResponse {
@@ -1248,6 +1250,25 @@ export interface RagDocument {
   title: string;
   source_uri?: string | null;
   source_hash?: string | null;
+  ingestion_metadata?: {
+    file?: {
+      filename: string;
+      media_type: string;
+      raw_content_hash: string;
+      byte_size: number;
+      extracted_text_hash: string;
+      extracted_characters: number;
+      parser_version: string;
+      confirmed_at: string;
+    } | null;
+    indexing?: {
+      sql_chunk_count: number;
+      vector_backend: string;
+      vector_index_status: "upsert_acknowledged";
+      fallback_used: boolean;
+      observed_at: string;
+    } | null;
+  } | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -1269,6 +1290,7 @@ export interface ChunkMetadata {
   symbol_tag?: string | null;
   timeframe_tag?: string | null;
   risk_tag?: string | null;
+  source_filename?: string | null;
 }
 
 export interface RagChunk {
@@ -1303,6 +1325,25 @@ export interface IngestDocumentResponse {
   version: number;
   vector_backend?: string | null;
   fallback_used?: boolean;
+  sql_chunks_stored?: boolean;
+  vector_index_status?: "upsert_acknowledged" | "unknown";
+}
+
+export interface FileImportPreview {
+  filename: string;
+  title: string;
+  source_type: string;
+  media_type: string;
+  byte_size: number;
+  raw_content_hash: string;
+  extracted_text_hash: string;
+  extracted_text: string;
+  extracted_characters: number;
+  warnings: string[];
+  preview_receipt: string;
+  expires_at: string;
+  saved: false;
+  vector_index_status: "not_started";
 }
 
 export interface UsageSummary {
@@ -1604,6 +1645,7 @@ export interface AgentStructuredProposal {
 export interface AgentTurnResult {
   conversation_id: string;
   reply: string;
+  recorded_evidence?: string | null;
   capability: string;
   operation: string;
   proposals: AgentStructuredProposal[];

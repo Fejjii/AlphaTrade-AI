@@ -334,7 +334,7 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
         return request.action
     text = request.message.strip()
     explanation = re.fullmatch(
-        r"Explain paper execution command=([a-f0-9-]{36})", text, re.IGNORECASE
+        r"Explain paper execution (?:command=)?([a-f0-9-]{36})", text, re.IGNORECASE
     )
     if explanation:
         return ActionRequest(

@@ -11,6 +11,7 @@ import type {
   AuthResponse,
   HealthResponse,
   IngestDocumentResponse,
+  FileImportPreview,
   PaginatedRagChunks,
   PaginatedRagDocuments,
   DisciplineScoreResult,
@@ -777,6 +778,22 @@ export const api = {
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
   },
   knowledge: {
+    previewFile: (file: File, title: string, sourceType: string) => {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("title", title);
+      body.append("source_type", sourceType);
+      return apiFetch<FileImportPreview>("/knowledge/files/preview", { method: "POST", body });
+    },
+    importFile: (file: File, title: string, sourceType: string, receipt: string) => {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("title", title);
+      body.append("source_type", sourceType);
+      body.append("preview_receipt", receipt);
+      body.append("confirm", "true");
+      return apiFetch<IngestDocumentResponse>("/knowledge/files/import", { method: "POST", body });
+    },
     listDocuments: (params?: {
       source_type?: string;
       limit?: number;

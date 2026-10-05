@@ -141,6 +141,74 @@ describe("Agent workspace", () => {
     return provider;
   }
 
+  it("collapses evidence in existing assistant transcripts and preserves user text", async () => {
+    const marker = "\n\nRecorded facts (not a confirmation):\n";
+    apiMocks.listMessages.mockResolvedValue({
+      items: [
+        {
+          id: "u", role: "user", created_at: "2026-01-01",
+          content: `My quotation${marker}Keep this inline.`,
+        },
+        {
+          id: "a", role: "assistant", created_at: "2026-01-01",
+          content: `Conclusion: wait.\n\nStored evidence is stale; it cannot establish a current price.${marker}version=raw-id; hash=abc123`,
+        },
+      ],
+    });
+    render(<AgentWorkspace />);
+    fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
+    const summary = await screen.findByText("Stored evidence");
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(summary.tagName).toBe("SUMMARY");
+    expect(details).toHaveTextContent("version=raw-id; hash=abc123");
+    const messages = screen.getAllByTestId("agent-message");
+    expect(messages[0].querySelector("details")).toBeNull();
+    expect(messages[0]).toHaveTextContent("Keep this inline.");
+    expect(screen.getByText(/Conclusion: wait/).closest("details")).toBeNull();
+    expect(screen.getByText(/Stored evidence is stale/)).toBeVisible();
+    fireEvent.click(summary);
+    await waitFor(() => expect(details).toHaveAttribute("open"));
+  });
+
+  it("renders full stored evidence when a new transcript contains only an excerpt", async () => {
+    apiMocks.listMessages.mockResolvedValue({
+      items: [
+        {
+          id: "a", role: "assistant", created_at: "2026-01-01",
+          content: "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nEvidence excerpt.",
+          payload: {
+            interactive_agent: {
+              recorded_evidence: "Nested approved. SFP approved. Full reference raw-id.",
+            },
+          },
+        },
+      ],
+    });
+    render(<AgentWorkspace />);
+    fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
+    const details = (await screen.findByText("Stored evidence")).closest("details")!;
+    expect(details).toHaveTextContent("Nested approved. SFP approved. Full reference raw-id.");
+    expect(details).not.toHaveTextContent("Evidence excerpt.");
+    expect(details).not.toHaveAttribute("open");
+  });
+
+  it("keeps full evidence available when the post-turn history request fails", async () => {
+    apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
+    apiMocks.agentTurn.mockResolvedValue({
+      conversation_id: "c1", reply: "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nExcerpt.",
+      recorded_evidence: "Full governed evidence beyond the reply budget.",
+      capability: "general_conversation", operation: "read", proposals: [], limitations: [],
+      authority_mutated: false, execution_attempted: false, real_trading_enabled: false,
+    });
+    render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Compare my strategies" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const details = (await screen.findByText("Stored evidence")).closest("details")!;
+    expect(details).toHaveTextContent("Full governed evidence beyond the reply budget.");
+    expect(details).not.toHaveAttribute("open");
+  });
+
   it.each(["journal", "strategy", "knowledge", "Watcher", "trading", "risk"])(
     "routes a voice request about %s through the governed Agent turn",
     async (topic) => {

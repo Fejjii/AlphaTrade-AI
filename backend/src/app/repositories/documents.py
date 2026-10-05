@@ -31,6 +31,7 @@ class DocumentRepository(SQLAlchemyRepository[Document]):
         self,
         *,
         organization_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
         source_hash: str,
     ) -> Document | None:
         stmt = select(Document).where(Document.source_hash == source_hash)
@@ -38,6 +39,9 @@ class DocumentRepository(SQLAlchemyRepository[Document]):
             stmt = stmt.where(Document.organization_id.is_(None))
         else:
             stmt = stmt.where(Document.organization_id == organization_id)
+        stmt = stmt.where(
+            Document.user_id.is_(None) if user_id is None else Document.user_id == user_id
+        )
         return self._session.scalar(stmt)
 
     def list_documents(

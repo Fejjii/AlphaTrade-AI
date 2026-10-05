@@ -12,6 +12,22 @@ describe("api client deployment config", () => {
     expect(appConfig.apiBaseUrl).toBe("https://api.staging.example.com");
   });
 
+  it("lets the browser set multipart boundaries and keeps authentication", async () => {
+    sessionStorage.setItem("alphatrade_access_token", "synthetic-access");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" });
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("@/lib/api");
+    const file = new File(["Synthetic note"], "note.txt", { type: "text/plain" });
+    await api.knowledge.previewFile(file, "Note", "general_note");
+    const [, request] = fetchMock.mock.calls[0];
+    expect(request.body).toBeInstanceOf(FormData);
+    expect(request.body.get("file")).toBeInstanceOf(File);
+    expect(request.body.get("source_type")).toBe("general_note");
+    expect(request.headers["Content-Type"]).toBeUndefined();
+    expect(request.headers.Authorization).toBe("Bearer synthetic-access");
+    sessionStorage.clear();
+  });
+
   it("cookie mode enables credentials include on fetch", async () => {
     vi.stubEnv("NEXT_PUBLIC_AUTH_COOKIE_MODE", "true");
     const { usesCookieRefresh } = await import("@/lib/auth/session");

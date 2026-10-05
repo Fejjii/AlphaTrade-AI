@@ -36,6 +36,7 @@ def test_current_nested_read_excludes_other_families_timeframes_and_old_episodes
         lambda *a, **k: {
             "watched_symbols": ["BTCUSDT"],
             "watchlist_revision": 0,
+            "strategies": [],
             "setups": [current, old, other_interval, other_family],
             "limitations": [],
         },

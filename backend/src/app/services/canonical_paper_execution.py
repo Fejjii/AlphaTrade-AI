@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -107,7 +108,15 @@ class CanonicalPaperExecutionService:
         with self._runtime.bind_session(self._session):
             result = self._claim.claim(request)
             if result.outcome is ExecutionCommandOutcome.ALLOW:
-                self._project_approved_plan(request, result)
+                plan = self._runtime.plans.get_scoped(
+                    request.revision_id,
+                    organization_id=request.organization_id,
+                    user_id=request.user_id,
+                ).plan
+                # Demo authorization is not exchange evidence. Journal begins
+                # only when immutable venue fills have been reconciled.
+                if plan.execution_policy_version != "governed-blofin-demo/v1":
+                    self._project_approved_plan(request, result)
             return result
 
     def project_fill(
@@ -119,6 +128,9 @@ class CanonicalPaperExecutionService:
         command_id: UUID,
         fill: UniqueFillResult,
         revision_id: UUID,
+        venue_fill_fee: Decimal | None = None,
+        cumulative_fees: Decimal | None = None,
+        demo_protection: str | None = None,
     ) -> None:
         with self._runtime.bind_session(self._session):
             envelope = self._runtime.plans.get_scoped(
@@ -129,7 +141,12 @@ class CanonicalPaperExecutionService:
             payload = _instrument_payload(envelope.plan)
             if fill.weighted_price is not None:
                 payload["entry_price"] = str(fill.weighted_price)
-            payload["size"] = str(fill.filled_quantity)
+            payload["size"] = str(
+                fill.filled_quantity * envelope.plan.instrument_rules.contract_multiplier
+                if envelope.plan.execution_venue == "BLOFIN_DEMO"
+                and envelope.plan.quantity.unit == "CONTRACTS"
+                else fill.filled_quantity
+            )
             entry_time = self._session.scalar(
                 select(func.min(ExecutionFillFact.occurred_at)).where(
                     ExecutionFillFact.organization_id == organization_id,
@@ -139,6 +156,11 @@ class CanonicalPaperExecutionService:
             if entry_time is None:
                 raise ValidationAppError("Canonical journal fill requires an immutable fill fact.")
             payload["entry_time"] = entry_time.isoformat()
+            if demo_protection is not None:
+                payload["demo_protection"] = demo_protection
+            if venue_fill_fee is not None and cumulative_fees is not None:
+                payload["venue_fill_fee"] = str(venue_fill_fee)
+                payload["fees"] = str(cumulative_fees)
             # Phase 1 paper claims do not create legacy Order rows. Command
             # identity is execution_lifecycle_id; linked_order_id stays unset.
             payload["lineage"] = _lineage_payload(envelope, command_id, self._runtime).model_dump(
@@ -165,6 +187,13 @@ class CanonicalPaperExecutionService:
                     )
                 )
                 if recorded is not None:
+                    if (
+                        venue_fill_fee is not None
+                        and Decimal(str(recorded.payload.get("venue_fill_fee"))) != venue_fill_fee
+                    ):
+                        raise ValidationAppError(
+                            "Venue fill fee conflicts with its immutable Journal event."
+                        )
                     payload = dict(recorded.payload)
             event = JournalLifecycleEventInput(
                 event_type=JournalLifecycleEventType.FILL,
@@ -210,6 +239,12 @@ class CanonicalPaperExecutionService:
             )
         with self._runtime.bind_session(self._session):
             envelope = self._load_close_envelope(request)
+            if envelope.plan.execution_policy_version == "governed-blofin-demo/v1":
+                raise TradingPolicyError(
+                    "Demo close requires actual exchange exit evidence; "
+                    "synthetic closes are disabled.",
+                    details={"reason": "demo_synthetic_close_forbidden"},
+                )
             trade = JournalTradeRepository(self._session).find_by_execution_lifecycle(
                 organization_id=request.organization_id,
                 execution_lifecycle_id=request.command_id,
@@ -493,7 +528,11 @@ def _instrument_payload(plan: TradePlanRevision) -> dict[str, object]:
         "planned_entry_price": str(plan.entry_zone.lower),
         "planned_stop_price": str(plan.risk_and_exits.stop.value),
         "planned_risk_amount": str(plan.risk_and_exits.risk_budget.value),
-        "size": str(plan.quantity.value),
+        "size": str(
+            plan.quantity.value * plan.instrument_rules.contract_multiplier
+            if plan.execution_venue == "BLOFIN_DEMO" and plan.quantity.unit == "CONTRACTS"
+            else plan.quantity.value
+        ),
         "leverage": str(plan.risk_and_exits.leverage),
         "linked_proposal_id": str(plan.plan_id),
         "strategy_version_id": str(plan.strategy_version_id),

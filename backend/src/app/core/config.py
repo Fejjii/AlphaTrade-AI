@@ -205,6 +205,12 @@ class Settings(BaseSettings):
     # Staging paper-monitoring arm. Default false. Does not start the worker,
     # does not change Telegram, and is rejected in production. Leave unset.
     watcher_paper_staging_activation: bool = False
+    # Governed demo dispatch is a separate staging worker capability. One key
+    # is pinned to one tenant/user/account; defaults never construct a client.
+    governed_blofin_demo_enabled: bool = False
+    governed_blofin_demo_organization_id: str = ""
+    governed_blofin_demo_user_id: str = ""
+    governed_blofin_demo_account_id: str = ""
     # Paper live evidence raises this floor so one timeout plus backoff fits
     # between lease heartbeats. See paper_lease_ttl_seconds.
     watcher_lease_ttl_seconds: int = Field(default=30, ge=1, le=3600)

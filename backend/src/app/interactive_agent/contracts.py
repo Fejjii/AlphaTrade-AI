@@ -187,6 +187,8 @@ class StrategyHit(StrictModel):
     setup_type: str = Field(min_length=1, max_length=64)
     version: int | None = Field(default=None, ge=1)
     validation_status: str | None = None
+    lifecycle_status: str | None = None
+    selected_version_id: UUID | None = None
     paper_eligible: bool
     summary: str = Field(min_length=1, max_length=300)
     provenance: ProvenanceSource = ProvenanceSource.USER_SUPPLIED
@@ -250,6 +252,7 @@ class AgentTurnResult(StrictModel):
     operation: TurnOperation
     artifact_kinds: list[ArtifactKind]
     reply: str = Field(min_length=1, max_length=4000)
+    recorded_evidence: str | None = Field(default=None, max_length=16000)
     proposals: list[StructuredActionProposal] = Field(default_factory=list)
     knowledge: list[KnowledgeHit] = Field(default_factory=list)
     strategies: list[StrategyHit] = Field(default_factory=list)

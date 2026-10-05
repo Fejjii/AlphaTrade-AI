@@ -20,6 +20,7 @@ from app.interactive_agent.parsing import query_tokens
 from app.schemas.common import DocumentSourceType
 from app.schemas.strategy_library import UserStrategy
 from app.services.strategy_library_service import StrategyLibraryService
+from app.services.strategy_versioning import StrategyVersioningService
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +56,13 @@ def provenance_for_source(source_type: str) -> ProvenanceSource:
     return ProvenanceSource.SYSTEM_GENERATED
 
 
+def provenance_for_document(document: Document) -> ProvenanceSource:
+    """User-owned ingestion is reference content supplied by that principal."""
+    if document.user_id is not None:
+        return ProvenanceSource.USER_SUPPLIED
+    return provenance_for_source(document.source_type.value)
+
+
 def _snippet(content: str) -> str:
     compact = " ".join(content.split())
     return compact[:240]
@@ -85,7 +93,7 @@ def _hit_from_row(
         source_type=source_name,
         snippet=snippet,
         match_count=match_count,
-        provenance=provenance_for_source(source_name),
+        provenance=provenance_for_document(document),
         retrieval_mode=retrieval_mode,
     )
 
@@ -227,9 +235,13 @@ def _verified_vector_hits(
     return verified[:limit], notes
 
 
-def _strategy_summary(name: str, setup_type: str, status: str | None, entry: str | None) -> str:
-    label = status or "unspecified"
-    text = f"{name} ({setup_type}, {label})"
+def _strategy_summary(
+    name: str, setup_type: str, status: str | None, lifecycle: str | None, entry: str | None
+) -> str:
+    text = (
+        f"{name} ({setup_type}; lifecycle={lifecycle or 'unavailable'}; "
+        f"research_validation={status or 'unspecified'})"
+    )
     if entry:
         text = f"{text}: {entry}"
     return text[:300]
@@ -248,7 +260,7 @@ def retrieve_strategies(
     """Read the caller's strategy library. This does not create or update rows."""
     limitations: list[str] = []
     library = StrategyLibraryService(session)
-    hits: list[StrategyHit] = []
+    matched_rows: list[UserStrategy] = []
     seen: set[uuid.UUID] = set()
     if strategy_id is not None:
         try:
@@ -256,7 +268,7 @@ def retrieve_strategies(
         except NotFoundError:
             limitations.append("The requested strategy is not in this tenant.")
         else:
-            hits.append(_to_strategy_hit(bound))
+            matched_rows.append(bound)
             seen.add(bound.id)
     rows, total = library.list_strategies(
         organization_id=organization_id,
@@ -280,24 +292,42 @@ def retrieve_strategies(
         matched = list_all or bool(query_tokens(blob) & tokens)
         if not matched:
             continue
-        hits.append(_to_strategy_hit(row))
+        matched_rows.append(row)
         seen.add(row.id)
-        if len(hits) >= limit:
-            break
-    return hits[:limit], limitations
+    # Interleave families so recently updated Nested variants cannot hide all SFP rules.
+    groups: dict[str, list[UserStrategy]] = {}
+    for row in matched_rows:
+        groups.setdefault(row.setup_type.value, []).append(row)
+    balanced: list[UserStrategy] = []
+    while any(groups.values()) and len(balanced) < limit:
+        for group in groups.values():
+            if group and len(balanced) < limit:
+                balanced.append(group.pop(0))
+    return [_to_strategy_hit(session, row) for row in balanced], limitations
 
 
-def _to_strategy_hit(item: UserStrategy) -> StrategyHit:
+def _to_strategy_hit(session: Session, item: UserStrategy) -> StrategyHit:
     entry = None
     if item.latest_card is not None and item.latest_card.entry_conditions:
         entry = item.latest_card.entry_conditions[0][:160]
     status = item.validation_status.value if item.validation_status is not None else None
+    versioning = StrategyVersioningService(session)
+    row = versioning.require_strategy(
+        item.id, organization_id=item.organization_id, user_id=item.user_id
+    )
+    version = versioning.selected_version(row)
+    event = versioning.latest_lifecycle_event_for_version(version.id) if version else None
+    lifecycle = (
+        event.new_state.value if event and event.organization_id == item.organization_id else None
+    )
     return StrategyHit(
         strategy_id=item.id,
         name=item.name,
         setup_type=item.setup_type.value,
         version=item.current_version,
         validation_status=status,
+        lifecycle_status=lifecycle,
+        selected_version_id=version.id if version else None,
         paper_eligible=item.paper_eligible,
-        summary=_strategy_summary(item.name, item.setup_type.value, status, entry),
+        summary=_strategy_summary(item.name, item.setup_type.value, status, lifecycle, entry),
     )

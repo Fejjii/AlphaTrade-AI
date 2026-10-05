@@ -34,7 +34,7 @@ def test_accepted_branch_upgrade_merge_downgrade_reupgrade(source_head: str) -> 
                 )
         command.upgrade(config, "head")
         with engine.connect() as conn:
-            assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "a3release002"
+            assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "a4knowledge001"
             assert "public_market_observations" in inspect(conn).get_table_names()
             assert "telegram_policy" in {
                 column["name"]
@@ -47,7 +47,7 @@ def test_accepted_branch_upgrade_merge_downgrade_reupgrade(source_head: str) -> 
                     ),
                     {"id": receipt_id},
                 ) == {"receipt": "original"}
-        # Removing only the no-op merge preserves both accepted schemas and receipt data.
+        # Downgrading the additive metadata and merge preserves accepted schemas and receipts.
         command.downgrade(config, source_head)
         with engine.connect() as conn:
             assert set(conn.scalars(text("SELECT version_num FROM alembic_version"))) == {
@@ -68,6 +68,6 @@ def test_accepted_branch_upgrade_merge_downgrade_reupgrade(source_head: str) -> 
             }
         command.upgrade(config, "head")
         with engine.connect() as conn:
-            assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "a3release002"
+            assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "a4knowledge001"
     finally:
         engine.dispose()

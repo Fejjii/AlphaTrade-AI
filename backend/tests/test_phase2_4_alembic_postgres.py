@@ -40,7 +40,8 @@ WORKER_PROCESS_MEMORY = "a8c3e1b94d20"
 WATCHER_TENANT_WATCHLIST = "b6f2d9a10e73"
 STRATEGY_BRAIN = "a1brain001"
 TELEGRAM_POLICY_V2 = "a2tgpolicy002"
-CURRENT_HEAD = "a3release002"
+RELEASE_WAVE002 = "a3release002"
+CURRENT_HEAD = "a4knowledge001"
 
 _NEW_TABLES = (
     "watcher_worker_leases",
@@ -194,7 +195,10 @@ def test_alembic_single_head() -> None:
     assert script.get_heads() == [CURRENT_HEAD]
     head = script.get_revision(CURRENT_HEAD)
     assert head is not None
-    assert set(head.down_revision) == {TELEGRAM_POLICY_V2, "a2sfp002"}
+    assert head.down_revision == RELEASE_WAVE002
+    merge = script.get_revision(RELEASE_WAVE002)
+    assert merge is not None
+    assert set(merge.down_revision) == {TELEGRAM_POLICY_V2, "a2sfp002"}
     assert script.get_revision(TELEGRAM_POLICY_V2).down_revision == STRATEGY_BRAIN
     assert script.get_revision("a2sfp002").down_revision == STRATEGY_BRAIN
     assert script.get_revision(STRATEGY_BRAIN).down_revision == WATCHER_TENANT_WATCHLIST

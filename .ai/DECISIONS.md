@@ -2,6 +2,66 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-081 — Display snippets do not bound substantive document evidence
+
+- Date: 2026-10-05
+- Decision: Keep short display snippets, but independently resolve named tenant/user
+  documents and read relevant full passages plus neighboring context for model synthesis.
+  Balance requested topics before filling a 12,000-character source budget; label
+  truncated legacy passages and omitted context. Preserve durable source citations.
+- Authority: Document passages, including proposed discipline and unresolved decisions,
+  are reference data. They do not establish approved settings or route execution actions.
+  Keep this boundary in the model prompt and in a visible deterministic notice.
+- Safety: Organization and user/shared boundaries apply to both document metadata and
+  chunk content. No new database, provider call, strategy approval or risk mutation.
+- Acceptance: Use the already stored staging Master Playbook; do not reimport it.
+  Local coverage tests prove supplied passages and isolation, not live model quality.
+- Reference: `docs/agent_presentation_grounding.md`.
+
+---
+
+## AT-ADR-079 — Conversational evidence and selected lifecycle remain explicit
+
+- Date: 2026-10-05
+- Decision: Reserve conversational prose space and persist bounded stored evidence
+  independently in the assistant payload; expose it through native collapsed details.
+  Preserve old transcript delimiters and keep deterministic evidence warnings visible.
+- Authority: Read the latest canonical lifecycle event for the selected version.
+  Research validation, setup confirmation and execution eligibility remain distinct.
+  Include both Nested and SFP stored definitions and scopes in comparison context.
+- Demo reads: Explain durable actual venue fill/Journal/reconciliation facts without
+  inventing a manual conversation capture. A command authorization is not a fill;
+  recorded protection observations are not current market claims.
+- Safety: These changes read and explain; proposals and execution retain their
+  existing deterministic authority and explicit controls. Real trading remains disabled.
+- Reference: `docs/agent_presentation_grounding.md`.
+
+---
+
+## AT-ADR-082 — File preview confirms bounded canonical Knowledge ingestion
+
+- Date: 2026-10-05
+- Status: Accepted for AT-096; staging acceptance pending.
+- Decision: Extract TXT/Markdown, DOCX body/table text and selectable-text PDF in
+  resource-limited child processes. Preview performs no SQL/vector writes. A
+  ten-minute signed receipt binds the authenticated organization/user, filename,
+  file bytes, extracted text, title, category and parser version to explicit save.
+  Save re-extracts and calls the existing Document/Chunk ingestion service.
+- Provenance: Nullable `documents.ingestion_metadata` JSON records filename,
+  SHA-256 of raw bytes and extracted text, sizes, parser version and confirmation
+  time, plus SQL chunk count and observed vector upsert/backend/fallback status.
+  Raw binaries are not stored; legacy metadata remains null/unverified.
+- Ownership: Duplicate hashes and lookup include organization and exact user;
+  same-owner legacy pasted imports remain compatible. Same-category identical
+  files converge for that principal even when renamed; other owners/categories
+  remain independent. SQL ownership is rechecked when projecting vector hits.
+- Safety: No document database replacement, OCR, strategy/risk/execution mutation,
+  Agent edits, deployment or exchange orders. Import does not claim live hosted
+  indexing readiness. The already stored Master Playbook is not reimported.
+- Reference: `docs/knowledge_file_import.md`; migration `a4knowledge001`.
+
+---
+
 ## AT-ADR-078 — Advisory attention is a read-only record projection
 
 - Date: 2026-10-02
@@ -2696,3 +2756,33 @@ The organization-owned database decision above supersedes AT-ADR-076's historica
 Bybit execution ranks now identify observations of one exact symbol/source independently of a caller's retrieval lineage. The persistent monitor and historical canonical assembly keep separate proof tails (at most two recent lineages). A failed historical request cannot reset the monitor's sequence. The execution ledger retains only the current provider page plus those bounded proofs, including signatures to reject changed duplicate executions. Bulk cleanup trims each proof to one provider page, preserving overlap identity and anchors. During reads, each proof has a ten-page and 15-minute bound. Discarded prefixes, including any partially retained millisecond bucket, are unavailable rather than fabricated complete coverage. Gaps, wrong instruments/sources and freshness checks remain authoritative. This bound is not a staging RSS claim.
 
 Contract eligibility refusals cross the strategy evidence boundary as typed errors retaining unsupported versus unreachable reasons, matching the existing read-only probe path. No new acquisition, Candidate, execution or activation authority is added.
+
+## AT-ADR-GOVERNED-DEMO-20261005 — canonical BloFin demo entry slice
+
+- **Date:** 2026-10-05
+- **Status:** Implemented; real staging acceptance pending review and consolidated CI.
+- **Decision:** A separately armed staging worker may continue a genuinely confirmed,
+  approved canonical Candidate through the existing eligibility, risk, immutable plan,
+  exact authorization, durable claim/reservation and fenced dispatch authorities to one
+  BloFin demo market entry with attached stop/target. Organization, user and execution
+  account UUIDs are pinned. Real trading remains disabled and legacy entry paths remain
+  tombstoned. SFP keeps `sfp_execution_plan_not_authorized`.
+- **Evidence:** Venue-timed quotes and linear contract rules determine size and precision.
+  Permission reads must establish read/trade only, existing NET/cross/leverage 1 and a flat
+  account. The final safety epoch, lease fence and TTL are freshly read after network
+  preflight. A committed ambiguity marker consumes send authority before exactly one
+  POST; timeout, crash or absent lookup never permits automatic resend.
+- **Projection:** Only identity-validated actual fill history creates immutable execution
+  facts, Journal entries and demo learning attribution. Contract facts become base Journal
+  quantities; actual fees persist. Missing, unreadable or mismatched linked protection
+  preserves actual fills and activates the kill switch. Armed read reconciliation continues
+  under that switch and when scanning is refused. Agent explains the latest recorded
+  observations without venue reads, execution authority or a fabricated confirmation.
+- **Limits:** One ALLOW claim per account's preserved history. No automatic exit-fill close,
+  funding/PnL attribution or account reuse; synthetic demo fills and closes are refused.
+  Kill-switch activation does not protect or close exposure. The operator must verify
+  protection or manually close the demo position under the documented acceptance procedure.
+- **Acceptance:** Simulated disposable-PostgreSQL tests are implementation evidence only.
+  Real child TPSL/client-ID linkage and a natural venue fill must be proven in staging.
+  No merge, deploy, infrastructure mutation or network exchange order occurs in this task.
+- **Runbook:** `docs/governed_blofin_demo_execution.md` (activation, evidence and rollback).
