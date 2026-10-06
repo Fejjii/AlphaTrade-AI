@@ -59,6 +59,17 @@ def _rows(data: Any) -> list[dict[str, Any]]:
     return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
 
 
+def _account_rows(data: Any) -> list[dict[str, Any]]:
+    """A malformed or possibly truncated account read cannot prove absence."""
+    if (
+        not isinstance(data, list)
+        or len(data) >= 100
+        or any(not isinstance(row, dict) for row in data)
+    ):
+        raise ValueError("Demo account state incomplete or unreadable.")
+    return data
+
+
 def _positive(value: Any) -> Decimal:
     parsed = Decimal(str(value))
     if not parsed.is_finite() or parsed <= 0:
@@ -103,11 +114,7 @@ class GovernedBloFinDemoProvider:
         leverage = self._account.get_leverage_info(inst_id=instrument, margin_mode="cross")
         if leverage.leverage != Decimal("1"):
             raise ValueError("Demo account must already use leverage 1; no leverage mutation.")
-        # Initial integration deliberately permits one flat account at entry.
-        # Outstanding governed orders are also checked by the application layer.
-        positions = _rows(self._client.request("GET", "/api/v1/account/positions", signed=True))
-        if any(Decimal(str(row["positions"])) != 0 for row in positions):
-            raise ValueError("Demo position already open; new entry refused.")
+        self.verify_flat_account()
         balances = self._account.get_balances()
         balance = next((b for b in balances if b.asset == "USDT"), None)
         if balance is None or balance.available <= 0 or balance.total <= 0:
@@ -135,6 +142,24 @@ class GovernedBloFinDemoProvider:
             available=balance.available,
             maximum=_positive(row.get("maxMarketSize")),
         )
+
+    def verify_flat_account(self) -> None:
+        """Account-wide proof, including orders on other watchlist markets."""
+        positions = _account_rows(
+            self._client.request("GET", "/api/v1/account/positions", signed=True)
+        )
+        for position in positions:
+            quantity = Decimal(str(position.get("positions")))
+            if not quantity.is_finite() or quantity != 0:
+                raise ValueError("Demo position already open or unreadable; new entry refused.")
+        for endpoint in ("orders-pending", "orders-tpsl-pending"):
+            pending = _account_rows(
+                self._client.request(
+                    "GET", f"/api/v1/trade/{endpoint}", params={"limit": "100"}, signed=True
+                )
+            )
+            if pending:
+                raise ValueError("Demo pending orders or protection; new entry refused.")
 
     def verify_permissions(self) -> None:
         permissions = self._account.get_account_permissions()

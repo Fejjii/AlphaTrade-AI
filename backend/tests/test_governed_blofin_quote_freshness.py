@@ -76,7 +76,7 @@ def test_quote_generated_during_preflight_is_fresh_when_received() -> None:
     provider, venue, clock = _provider()
     started = clock.now()
     snapshot = provider.snapshot(symbol="BTCUSDT", now=started)
-    assert clock.current - started == timedelta(milliseconds=3500)
+    assert clock.current - started == timedelta(milliseconds=4500)
     assert snapshot.observed_at > started
     assert clock.current - snapshot.observed_at == timedelta(milliseconds=250)
     assert snapshot.price == venue.price
@@ -98,7 +98,7 @@ def test_genuinely_stale_and_future_quotes_are_refused(quote_age_ms: int) -> Non
     assert venue.post_count == 0
 
 
-@pytest.mark.parametrize("valid_for_ms,after_receipt_step_ms", [(3500, 0), (3499, 0), (4000, 500)])
+@pytest.mark.parametrize("valid_for_ms,after_receipt_step_ms", [(4500, 0), (4499, 0), (5000, 500)])
 def test_fresh_quote_does_not_bypass_final_dispatch_expiry(
     valid_for_ms: int, after_receipt_step_ms: int
 ) -> None:
