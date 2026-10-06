@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -69,6 +68,7 @@ from app.schemas.execution_protocol import (
 from app.schemas.trade_plan import PlanOperation, TradePlanRevision
 from app.services.approval_service import ApprovalService
 from app.services.canonical_execution_payload import CanonicalExecutionPayloadSerializerV1
+from app.services.demo_account_history import has_demo_entry_history
 from app.services.execution_client_order_id import derive_entry_client_order_id
 from app.services.execution_exposure import QuoteExposureError, linear_quote_exposure
 from app.services.execution_integrity import (
@@ -231,24 +231,18 @@ class PaperPlanClaimService:
             organization_id=request.organization_id, account_id=request.account_id
         )
         self._run_hook(self._hooks.after_epoch_lock)
+        # The epoch serializes competing demo claims across all instruments.
         if (
             blocked_reason is None
             and plan.execution_venue == "BLOFIN_DEMO"
             and self._settings.governed_blofin_demo_enabled
-        ):
-            # Account epoch serializes competing Candidate claims. A flat read
-            # preflight alone cannot prevent two workers racing to open risk.
-            occupied = self._session.scalar(
-                select(ExecutionCommand.id)
-                .where(
-                    ExecutionCommand.organization_id == request.organization_id,
-                    ExecutionCommand.account_id == request.account_id,
-                    ExecutionCommand.outcome == ExecutionCommandOutcome.ALLOW,
-                )
-                .limit(1)
+            and has_demo_entry_history(
+                self._session,
+                organization_id=request.organization_id,
+                account_id=request.account_id,
             )
-            if occupied is not None:
-                blocked_reason = "demo_account_already_claimed"
+        ):
+            blocked_reason = "demo_account_already_claimed"
         intent = conservative_reservation(plan)
         accounting = self._epochs.lock_risk_accounting(
             organization_id=request.organization_id,

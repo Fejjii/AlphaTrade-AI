@@ -114,7 +114,7 @@ class Venue:
                     "ts": str(int(_TS) - 11000) if self.behavior == "stale" else _TS,
                 }
             ]
-        elif path.endswith("positions"):
+        elif path.endswith("positions") or path.endswith("orders-pending"):
             data = []
         elif path.endswith("balance"):
             data = [{"currency": "USDT", "balance": "10000", "available": "10000"}]
@@ -164,7 +164,8 @@ class Venue:
                 ]
             )
         elif path.endswith("orders-tpsl-pending"):
-            assert self.order is not None
+            if self.order is None:
+                return httpx.Response(200, json={"code": "0", "data": []})
             if self.behavior == "protection_outage":
                 return httpx.Response(503)
             data = (

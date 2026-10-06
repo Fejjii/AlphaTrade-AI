@@ -5,6 +5,25 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-105 — Five-market Nested demo readiness and repeatable lifecycle
+- Priority: P1 · Status: IN_PROGRESS · Dependencies: main `ff90d0c`; independent
+  Agent grounding PR211 delivered first · Risk: High.
+- First-entry slice: Venue-specific immutable ALLOW history; internal-paper risk
+  remains charged. Atomic account-epoch competing demo claims, existing-plan venue/
+  policy refusal, account-wide flat/pending-order bounded proof before planning/send.
+- Validation: 72 distinct focused passes: 34 readiness (four disposable PostgreSQL
+  cases), 20 existing simulated demo pipeline, 12 advancing quote/expiry and six
+  authority/idempotency/risk cases. Scoped Ruff/format and four source mypy checks.
+- Remaining: Idempotent five-market strategy-addition preview, actual exit/fee/outcome
+  reconciliation and audited repeat entry with preserved history/reservations,
+  Journal/learning/Agent linkage and existing Telegram policy. No full suite.
+- Configuration/acceptance: Live instruments/credentials/access unverified; explicit
+  authored/compiled/approved ten Nested 15m scopes, enabled verified slots, scoped
+  demo arm and supervised natural protected demo fill. SFP execution stays refused.
+- Release: Review independent PRs, one exact-SHA `full_backend=true` release gate,
+  deployment and supervised preflight/approval/activation. No merge/deploy/orders or
+  live approval in this task. `docs/five_market_demo_readiness.md`; AT-ADR-088.
+
 ## AT-104 — Agent recorded paper trade grounding
 - Priority: P1 · Status: DONE (implementation; supervising live acceptance pending) ·
   Dependencies: main `ff90d0c` · Risk: Medium (historical financial record scope).

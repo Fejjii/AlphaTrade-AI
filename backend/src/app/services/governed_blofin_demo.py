@@ -48,6 +48,7 @@ from app.services.automated_paper_loop import (
     _proof,
 )
 from app.services.canonical_paper_execution import CanonicalPaperExecutionService
+from app.services.demo_account_history import has_demo_entry_history
 from app.services.execution_service import ExecutionService
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
@@ -144,6 +145,11 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
             candidate_id=candidate.candidate_id,
         )
         if existing is not None:
+            if (
+                existing.plan.execution_venue != "BLOFIN_DEMO"
+                or existing.plan.execution_policy_version != DEMO_POLICY
+            ):
+                return _proof(candidate, "blocked", "demo_existing_plan_venue_mismatch")
             return super()._bound(
                 session,
                 target=target,
@@ -156,17 +162,10 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
             )
         # One demo account/key cannot acquire concurrent unrelated positions.
         # Reservations persist for accepted and uncertain entries, fail closed.
-        outstanding = session.scalar(
-            select(ExecutionCommand.id)
-            .where(
-                ExecutionCommand.account_id == account.id,
-                ExecutionCommand.organization_id == target.organization_id,
-                ExecutionCommand.outcome == ExecutionCommandOutcome.ALLOW,
-            )
-            .limit(1)
-        )
-        if outstanding is not None:
-            return _proof(candidate, "blocked", "demo_account_requires_operator_reset")
+        if has_demo_entry_history(
+            session, account_id=account.id, organization_id=target.organization_id
+        ):
+            return _proof(candidate, "blocked", "demo_prior_entry_requires_reconciliation")
         session.commit()  # Persist Candidate; no DB transaction held over venue reads.
         try:
             self._snapshot = self._get_provider().snapshot(
@@ -385,6 +384,13 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
         envelope = plans.get_scoped(
             revision_id, organization_id=target.organization_id, user_id=target.user_id
         )
+        if (
+            envelope.plan.execution_venue != "BLOFIN_DEMO"
+            or envelope.plan.execution_policy_version != DEMO_POLICY
+        ):
+            return _proof(
+                candidate, "blocked", "demo_existing_plan_venue_mismatch", revision_id=revision_id
+            )
         approval = ApprovalService(
             session, AuditService(session), clock=self._clock.now, plans=plans
         )

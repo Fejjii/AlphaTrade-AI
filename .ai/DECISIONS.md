@@ -2,6 +2,25 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-088 — Demo first-entry readiness precedes repeat lifecycle authority
+
+- Date: 2026-10-06
+- Decision: First-entry readiness is an independent PR after Agent grounding PR211.
+  Immutable plan venue determines whether historical ALLOW consumes the demo slot;
+  internal-paper exposure, reservations and daily risk accounting remain authoritative.
+  Every historical demo ALLOW continues to block until a separate reviewed lifecycle
+  implements actual exit proof and audited accounting release. History is never reset.
+- Safety: One concurrent demo position across all five markets. Before planning and
+  send, prove account-wide flat positions and no normal/TPSL pending orders with
+  strict bounded reads. The existing safety epoch serializes competing claims.
+  Reject existing plans with a different venue/policy before creating authorization.
+  Preserve uncertain POST holds, exact plan hashes, risk, fences, TTL and SFP refusal.
+- Limits: Simulated instrument contracts are not current venue availability. No
+  strategy creation/approval, deployment, activation or exchange orders here.
+  Final acceptance remains one consolidated exact-SHA full release CI followed by
+  supervised live instrument preflight and a natural actual protected demo fill.
+- Reference: `docs/five_market_demo_readiness.md`.
+
 ## AT-ADR-087 — Recorded trade explanations read historical execution authorities
 
 - Date: 2026-10-06
