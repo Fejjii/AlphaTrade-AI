@@ -18,6 +18,25 @@ Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 - Reference: `docs/nested_subscription_preview.md`; first-entry readiness PR212 and
   repeat lifecycle remain separate.
 
+## AT-ADR-087 — Recorded trade explanations read historical execution authorities
+
+- Date: 2026-10-06
+- Decision: Natural recorded-trade intent selects canonical Journal within authenticated
+  tenant/owner/account scope and reads its exact immutable plan and historical lineage.
+  Strategy/Knowledge lookup cannot replace execution evidence. Optional Agent Risk
+  capture enriches the read but is not required to discover an existing canonical trade.
+- Truthfulness: Exact authorization, eligibility, risk reservation and actual fills are
+  separate facts. Missing narrative/receipt/lineage remains missing; contradictory
+  lineage refuses. Planned demo venue is not exchange fill proof. Empty Journal targets
+  may be explained from the linked plan without projection repair or history mutation.
+- Authority: Read-only. Historical facts and document proposals do not grant approval,
+  execution, strategy or risk changes. Existing explicit capture-gated reader is retained.
+- Acceptance: Focused local proofs establish selection/context, not live model quality;
+  supervising deployment and repeat of the original question remain required.
+- Reference: `docs/agent_recorded_trade_grounding.md`; AT-104.
+
+---
+
 ## AT-ADR-086 — Live REST finalization policy has a new immutable evidence identity
 
 - Date: 2026-10-06

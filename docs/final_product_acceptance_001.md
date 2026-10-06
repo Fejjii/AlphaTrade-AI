@@ -1,5 +1,8 @@
 # Final staging acceptance
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Base: `8147caf9c9042c5bbc944e5911ea79d0bfbb1e7b`, branch
 `codex/final_product_acceptance_001`, target `codex/release_consolidation_wave_003`.
 PR189 was rebased from `c81175a6039b9861427accd6f468ab5e6ff931fb` without

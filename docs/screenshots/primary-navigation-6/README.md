@@ -1,5 +1,8 @@
 # Six-destination navigation screenshots
 
+> **Earlier fixture snapshot:** navigation order matches the current six workspaces, but the Agent capture still shows voice unavailable; browser speech controls were implemented later. No live runtime or current capability completeness is established. See [screenshot review](../../screenshots_checklist.md).
+
+
 Captured with frontend-only fixtures at desktop 1440 × 1000 and iPhone-sized
 390 × 844 viewports. The session and paper posture are fixtures; workspace reads
 return explicit unavailable responses. Every capture is watermarked. These are

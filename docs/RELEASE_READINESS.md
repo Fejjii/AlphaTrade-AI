@@ -1,5 +1,8 @@
 # AlphaTrade AI — Synthetic staging RELEASE_READINESS
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 **Task:** AT-061 (source PR #103 claimed AT-059; remapped on the release-candidate branch)  
 **Base:** `main@c39dca6` (Phase 8 final integration, PR #100)  
 **Branch:** `cursor/final_staging_readiness` (source); integrated on `cursor/final_release_integration-c461`  

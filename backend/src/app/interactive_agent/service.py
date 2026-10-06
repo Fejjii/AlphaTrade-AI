@@ -240,6 +240,16 @@ class InteractiveAgentService:
                 user_id=user_id,
                 command_id=action[1].command_id,
             )
+        recorded_trade = None
+        recorded_read = action is not None and action[0].name == "paper_trade.read_recorded"
+        if recorded_read:
+            from app.interactive_agent.actions import RecordedTradeInput
+            from app.interactive_agent.recorded_trade import read_recorded_trade
+
+            assert action is not None and isinstance(action[1], RecordedTradeInput)
+            recorded_trade = read_recorded_trade(
+                self._session, action[1], organization_id=organization_id, user_id=user_id
+            )
         daily_review = None
         review_inputs = None
         learning_status: list[GovernedLearningStatus] = []
@@ -285,6 +295,7 @@ class InteractiveAgentService:
             classification.operation is not TurnOperation.REFUSE
             and not learning_read
             and not explanation_read
+            and not recorded_read
             and (classification.capability not in _SKIP_RETRIEVAL)
             and (action is None or action[0].name != "paper_trade.prepare_execution")
         ):
@@ -366,10 +377,16 @@ class InteractiveAgentService:
             connections = execution_explanation.connections
             limitations = [note for note in limitations if note not in _MODEL_LIMITATIONS]
             limitations.extend(_BASE_LIMITATIONS)
+        if recorded_trade is not None:
+            factual = recorded_trade.recorded_evidence
+            connections = recorded_trade.connections
         reply = factual[:4000]
         recorded_evidence = (
             execution_explanation.recorded_evidence if execution_explanation else None
         )
+        if recorded_trade is not None:
+            reply = compose_visible_reply(recorded_trade.reply, factual)
+            recorded_evidence = factual
         if knowledge_context:
             reply = compose_visible_reply(
                 "Stored source passages are available for review.", factual
@@ -384,6 +401,7 @@ class InteractiveAgentService:
             self._responder is not None
             and not learning_read
             and not explanation_read
+            and (recorded_trade is None or bool(recorded_trade.connections))
             and daily_review is None
             and not (action is not None and action[0].name == "paper_trade.prepare_execution")
         ):
@@ -396,6 +414,8 @@ class InteractiveAgentService:
             )
             if model_text == MODEL_REPLY_UNAVAILABLE:
                 limitations.append(MODEL_REPLY_UNAVAILABLE)
+            if recorded_trade is not None and model_text == MODEL_REPLY_UNAVAILABLE:
+                model_text = recorded_trade.reply
             reply = compose_visible_reply(model_text, factual)
             recorded_evidence = factual
         assistant = self._conversations.append_message(

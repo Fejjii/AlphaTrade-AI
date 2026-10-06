@@ -1,5 +1,8 @@
 # AlphaTrade AI — Project Context
 
+> **Earlier architecture/project snapshot preserved below.** Statements about slice completion, per-order approvals, disabled Telegram and live URLs apply to the earlier phase/defaults, not observed current runtime. The current entry points are [product overview](../README.md), [architecture](../docs/architecture.md), [Agent](../docs/agent_workflow.md), [security](../docs/security.md) and [dated status](../docs/current_status.md). Current source permanently refuses real trading; explicit approved-strategy worker arming and separately governed demo capability do not weaken that boundary.
+
+
 > Authoritative ChatGPT ↔ Cursor workflow: `.ai/MASTER_WORKFLOW.md` (v2.0).
 > Handoff statuses: `IN_PROGRESS`, `REVIEW_REQUIRED`, `BLOCKED`, `FAILED`, `READY`
 > (never `DRAFT`). See `.ai/MASTER.md` for the governance index.

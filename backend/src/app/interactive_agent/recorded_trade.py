@@ -1,0 +1,600 @@
+"""Bounded owner/account-scoped historical trade reads, never execution authority."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from uuid import UUID
+
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.core.errors import ValidationAppError
+from app.db.canonical_candidates import CanonicalCandidateRow
+from app.db.models import (
+    ApprovalAuthorization,
+    ConversationMessage,
+    ExecutionAccount,
+    ExecutionCommand,
+    ExecutionFillFact,
+    ExecutionReceipt,
+    JournalTrade,
+    RiskReservation,
+    UserStrategy,
+    UserStrategyVersion,
+)
+from app.interactive_agent.actions import ActionRequest, RecordedTradeInput
+from app.interactive_agent.contracts import ArtifactKind, ConnectionRef, ProvenanceSource
+from app.interactive_agent.parsing import extract_direction, extract_symbol
+from app.persistence.eligibility_postgres import PostgresActionEligibilityStore
+from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
+from app.schemas.agent_paper import AgentPaperResult
+from app.schemas.canonical_trade_plan import CanonicalTradePlanRevision
+from app.schemas.common import ConversationMessageRole, JournalTradeSource
+from app.schemas.trade_plan import AuthorizationState, TradePlanRevisionSemantic
+from app.services.canonical_execution_journal import journal_planned_targets
+from app.services.canonical_serialization import canonical_sha256
+from app.signal_fusion.types import hashed_model
+
+_READ = re.compile(
+    r"\b(?:latest|last|most recent|recorded|existing|executed|explain|describe)\b", re.I
+)
+_MUTATE = re.compile(r"\b(?:prepare|execute|submit|activate|approve|place|create|log|save)\b", re.I)
+_UUID = r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}"
+_FILL_LIMIT = 10
+
+
+def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest | None:
+    if not re.search(r"\btrades?\b", message, re.I) or not _READ.search(message):
+        return None
+    if _MUTATE.search(message):
+        return None
+    account = re.search(rf"\baccount\s*[=:]?\s*({_UUID})\b", message, re.I)
+    trade = re.search(rf"\btrade\s*[=:]?\s*({_UUID})\b", message, re.I)
+    return ActionRequest(
+        name="paper_trade.read_recorded",
+        arguments={
+            "symbol": extract_symbol(message) or symbol,
+            "direction": extract_direction(message),
+            "account_id": account.group(1) if account else None,
+            "journal_trade_id": trade.group(1) if trade else None,
+            "latest": bool(re.search(r"\b(?:latest|last|most recent)\b", message, re.I)),
+            "paper_only": bool(re.search(r"\bpaper\b", message, re.I)),
+        },
+    )
+
+
+@dataclass
+class RecordedTradeRead:
+    reply: str
+    recorded_evidence: str
+    connections: list[ConnectionRef] = field(default_factory=list)
+
+
+@dataclass
+class _Evidence:
+    lines: list[str] = field(default_factory=list)
+    refs: list[ConnectionRef] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
+    allowed: list[str] = field(default_factory=list)
+
+    def add(self, identity: UUID, title: str, detail: str, *, journal: bool = False) -> None:
+        self.refs.append(
+            ConnectionRef(
+                artifact_kind=ArtifactKind.JOURNAL_ENTRY
+                if journal
+                else ArtifactKind.TRADE_DECISION,
+                record_id=str(identity),
+                title=title,
+                relation="recorded trade lineage",
+                provenance=ProvenanceSource.TRADE_OUTCOME
+                if journal
+                else ProvenanceSource.SYSTEM_GENERATED,
+            )
+        )
+        self.lines.append(f"[{title}] {identity}: {detail}")
+
+
+def read_recorded_trade(
+    session: Session,
+    inputs: RecordedTradeInput,
+    *,
+    organization_id: UUID,
+    user_id: UUID,
+) -> RecordedTradeRead:
+    with session.no_autoflush:
+        selected = _select_trade(session, inputs, organization_id=organization_id, user_id=user_id)
+        if isinstance(selected, str):
+            return RecordedTradeRead(selected, selected)
+        return _read_lineage(session, selected)
+
+
+def _select_trade(
+    session: Session,
+    inputs: RecordedTradeInput,
+    *,
+    organization_id: UUID,
+    user_id: UUID,
+) -> JournalTrade | str:
+    owned_account = (
+        select(ExecutionAccount.id)
+        .where(
+            ExecutionAccount.id == JournalTrade.account_id,
+            ExecutionAccount.organization_id == organization_id,
+            ExecutionAccount.user_id == user_id,
+        )
+        .exists()
+    )
+    filters = [
+        JournalTrade.organization_id == organization_id,
+        JournalTrade.user_id == user_id,
+        or_(JournalTrade.account_id.is_(None), owned_account),
+    ]
+    if inputs.account_id is not None:
+        filters.append(JournalTrade.account_id == inputs.account_id)
+    if inputs.journal_trade_id is not None:
+        filters.append(JournalTrade.id == inputs.journal_trade_id)
+    if inputs.symbol:
+        filters.append(
+            func.replace(func.replace(func.upper(JournalTrade.symbol), "-", ""), "/", "")
+            == inputs.symbol.upper().replace("-", "").replace("/", "")
+        )
+    if inputs.direction is not None:
+        filters.append(JournalTrade.direction == inputs.direction)
+    if inputs.paper_only:
+        filters.append(JournalTrade.source == JournalTradeSource.PAPER_EXECUTION)
+    accounts = list(
+        session.scalars(select(JournalTrade.account_id).where(*filters).distinct().limit(2))
+    )
+    if len(accounts) > 1:
+        return "Matching trades exist in multiple accounts. Which account UUID should I use?"
+    time = func.coalesce(JournalTrade.entry_time, JournalTrade.created_at)
+    trades = list(
+        session.scalars(
+            select(JournalTrade)
+            .where(*filters)
+            .order_by(time.desc(), JournalTrade.id.desc())
+            .limit(2)
+        )
+    )
+    if not trades:
+        return "No recorded Journal trade matches your selection in your authenticated scope."
+    if len(trades) > 1 and (
+        not inputs.latest
+        or (trades[0].entry_time or trades[0].created_at)
+        == (trades[1].entry_time or trades[1].created_at)
+    ):
+        return "Multiple matching trades remain. Which Journal trade UUID should I explain?"
+    return trades[0]
+
+
+def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
+    evidence = _Evidence()
+    evidence.add(
+        trade.id,
+        "Journal",
+        f"{trade.symbol} {trade.direction.value}; status {trade.status.value}; "
+        f"account {trade.account_id}; projected entry {trade.entry_price}; "
+        f"planned entry {trade.planned_entry_price}; planned stop {trade.planned_stop_price}; "
+        f"planned target count {len(trade.planned_targets)}.",
+        journal=True,
+    )
+    envelope = _plan(session, trade)
+    if envelope is None:
+        evidence.missing.append(
+            "linked immutable canonical plan and its authorization/eligibility/risk/fill lineage"
+        )
+        summary = (
+            f"{trade.symbol} {trade.direction.value} — Journal {trade.status.value}. "
+            "Projected entry: "
+            f"{trade.entry_price if trade.entry_price is not None else 'unavailable'}. "
+            "Execution venue and authorization are unavailable; "
+            "Journal values alone do not prove a fill."
+        )
+        return _finish(summary, evidence)
+    plan, lineage = envelope.plan, envelope.lineage
+    _require(
+        plan.account_id == trade.account_id
+        and plan.revision_id == trade.trade_plan_revision_id
+        and plan.strategy_version_id == trade.strategy_version_id
+        and lineage.candidate_id == trade.candidate_id,
+        "Journal/plan",
+    )
+    targets = (
+        "; ".join(
+            f"{target.price.value} ({target.quantity_fraction} allocation)"
+            for target in plan.risk_and_exits.targets[:10]
+        )
+        or "unavailable"
+    )
+    if len(plan.risk_and_exits.targets) > 10:
+        evidence.missing.append("additional planned targets beyond the first ten")
+    evidence.add(
+        plan.revision_id,
+        "TradePlan",
+        f"hash {plan.content_hash}; strategy version {plan.strategy_version_id}; "
+        f"planned entry zone {plan.entry_zone.lower} to {plan.entry_zone.upper}; "
+        f"execution reference price {plan.basis_policy.execution_price.value}; "
+        f"planned stop {plan.risk_and_exits.stop.value}; targets in plan order: {targets}; "
+        f"maximum loss {plan.risk_and_exits.maximum_loss.value}; "
+        f"planned venue {plan.execution_venue}.",
+    )
+    strategy = session.scalar(
+        select(UserStrategyVersion)
+        .join(UserStrategy)
+        .where(
+            UserStrategyVersion.id == plan.strategy_version_id,
+            UserStrategy.organization_id == trade.organization_id,
+            UserStrategy.user_id == trade.user_id,
+        )
+    )
+    strategy_name = "unavailable"
+    if strategy:
+        strategy_name = str(strategy.card.get("strategy_name") or "unnamed strategy")
+        evidence.add(
+            strategy.id,
+            "Strategy version",
+            f"{strategy_name}; version {strategy.version}; immutable recorded version, "
+            "not the current selected version or a new approval.",
+        )
+    else:
+        evidence.missing.append("stored strategy version")
+    candidate = session.scalar(
+        select(CanonicalCandidateRow).where(
+            CanonicalCandidateRow.organization_id == trade.organization_id,
+            CanonicalCandidateRow.candidate_id == lineage.candidate_id,
+        )
+    )
+    if candidate:
+        _require(
+            candidate.strategy_version_id == plan.strategy_version_id
+            and candidate.setup_definition_id == plan.setup_definition_id
+            and candidate.evidence_window_hash == lineage.evidence_window_hash
+            and candidate.assessment_id == lineage.assessment_id,
+            "Candidate/plan",
+        )
+        evidence.add(
+            candidate.candidate_id,
+            "Candidate",
+            f"bound assessment {lineage.assessment_id}; "
+            f"plan-bound revision {lineage.candidate_revision}; "
+            f"evidence window {lineage.evidence_window_hash}. "
+            "Current Candidate state is not historical execution authorization.",
+        )
+    else:
+        evidence.missing.append("linked Candidate")
+    _eligibility(session, trade, envelope, evidence)
+    command = session.scalar(
+        select(ExecutionCommand).where(
+            ExecutionCommand.id == trade.execution_lifecycle_id,
+            ExecutionCommand.organization_id == trade.organization_id,
+            ExecutionCommand.user_id == trade.user_id,
+            ExecutionCommand.account_id == trade.account_id,
+        )
+    )
+    fills: list[ExecutionFillFact] = []
+    if command:
+        _require(
+            command.revision_id == plan.revision_id
+            and command.plan_id == plan.plan_id
+            and command.plan_content_hash == plan.content_hash,
+            "command/plan",
+        )
+        fills = _execution(session, trade, envelope, command, evidence)
+    else:
+        evidence.missing.extend(
+            [
+                "linked execution command",
+                "authorization and execution receipts",
+                "immutable fill evidence",
+            ]
+        )
+    if not trade.planned_targets and plan.risk_and_exits.targets:
+        evidence.lines.append(
+            "Journal targets are empty; linked TradePlan contains targets. "
+            "This is a projection discrepancy. "
+            "Targets below come from the immutable plan; this read does not repair the Journal."
+        )
+    elif trade.planned_targets != journal_planned_targets(plan):
+        evidence.lines.append(
+            "Journal targets differ from the immutable plan; "
+            "use the plan values as planned targets, not filled exits."
+        )
+    fill_text = (
+        "; ".join(f"{fill.quantity} {fill.unit} at {fill.price}" for fill in fills) or "unavailable"
+    )
+    venue = _venue(plan.execution_venue, fills, evidence)
+    summary = (
+        f"{trade.symbol} {trade.direction.value} — {trade.status.value}. "
+        f"Strategy: {strategy_name}. "
+        f"Planned entry: {plan.entry_zone.lower} to {plan.entry_zone.upper}; "
+        f"recorded fill: {fill_text}. "
+        f"Planned stop: {plan.risk_and_exits.stop.value}; target(s): {targets} (TradePlan). "
+        f"Execution venue: {venue}."
+    )
+    if not trade.planned_targets and plan.risk_and_exits.targets:
+        summary += (
+            " Journal targets are empty; the target source is the linked plan, "
+            "a projection discrepancy."
+        )
+    return _finish(summary, evidence)
+
+
+def _plan(session: Session, trade: JournalTrade) -> CanonicalTradePlanRevision | None:
+    if trade.trade_plan_revision_id is None:
+        return None
+    store = PostgresCanonicalTradePlanStore(
+        sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    )
+    with store.bind_session(session):
+        envelope = store.get_by_revision(
+            organization_id=trade.organization_id,
+            user_id=trade.user_id,
+            revision_id=trade.trade_plan_revision_id,
+        )
+    if envelope:
+        semantic = TradePlanRevisionSemantic.model_validate(
+            envelope.plan.model_dump(
+                mode="python", include=set(TradePlanRevisionSemantic.model_fields)
+            )
+        )
+        _require(canonical_sha256(semantic) == envelope.plan.content_hash, "plan content hash")
+    return envelope
+
+
+def _eligibility(
+    session: Session, trade: JournalTrade, envelope: CanonicalTradePlanRevision, evidence: _Evidence
+) -> None:
+    store = PostgresActionEligibilityStore(
+        sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    )
+    with store.bind_session(session):
+        evaluation = store.get(envelope.lineage.eligibility_uniqueness_hash)
+    if evaluation is None:
+        evidence.missing.append("linked historical ActionEligibility")
+        return
+    eligibility = evaluation.eligibility
+    _require(
+        eligibility.organization_id == trade.organization_id
+        and eligibility.user_id == trade.user_id
+        and eligibility.account_id == trade.account_id
+        and eligibility.candidate_id == trade.candidate_id
+        and eligibility.eligibility_id == envelope.lineage.eligibility_id
+        and evaluation.content_hash == envelope.lineage.eligibility_content_hash
+        and hashed_model(evaluation).content_hash == evaluation.content_hash,
+        "eligibility/plan",
+    )
+    evidence.add(
+        eligibility.eligibility_id,
+        "ActionEligibility",
+        f"historical state {eligibility.state.value}; "
+        f"paper_actionable={evaluation.paper_actionable}; "
+        f"live_executable={evaluation.live_executable}; "
+        f"checked {eligibility.checked_at}; risk snapshot identity {eligibility.risk_snapshot_id}.",
+    )
+    evidence.allowed.append(
+        f"Historical eligibility was {eligibility.state.value} [ActionEligibility]."
+    )
+
+
+def _execution(
+    session: Session,
+    trade: JournalTrade,
+    envelope: CanonicalTradePlanRevision,
+    command: ExecutionCommand,
+    evidence: _Evidence,
+) -> list[ExecutionFillFact]:
+    plan = envelope.plan
+    evidence.add(
+        command.id,
+        "Execution command",
+        f"outcome {command.outcome.value}; authorization {command.authorization_id}; "
+        f"bound revision {command.revision_id} and hash {command.plan_content_hash}.",
+    )
+    authorization = session.scalar(
+        select(ApprovalAuthorization).where(
+            ApprovalAuthorization.id == command.authorization_id,
+            ApprovalAuthorization.organization_id == trade.organization_id,
+            ApprovalAuthorization.user_id == trade.user_id,
+            ApprovalAuthorization.account_id == trade.account_id,
+        )
+    )
+    if authorization:
+        _require(
+            authorization.revision_id == plan.revision_id
+            and authorization.plan_content_hash == plan.content_hash
+            and authorization.execution_venue == plan.execution_venue
+            and authorization.execution_instrument == plan.execution_instrument,
+            "authorization/plan",
+        )
+        if authorization.state == AuthorizationState.CONSUMED:
+            _require(
+                authorization.consumed_by_execution_command_id == command.id,
+                "authorization/command",
+            )
+        evidence.add(
+            authorization.id,
+            "Authorization",
+            f"state {authorization.state.value}; channel {authorization.channel.value}; "
+            f"actor {authorization.actor_type}; consumed {authorization.consumed_at}; "
+            f"expires {authorization.expires_at}. "
+            "Historical authorization is not current permission or proof of a fill.",
+        )
+        evidence.allowed.append(
+            f"An exact plan authorization was recorded through {authorization.channel.value} "
+            f"(state {authorization.state.value}) [Authorization]."
+        )
+    else:
+        evidence.missing.append("linked exact plan authorization")
+    receipt = session.scalar(
+        select(ExecutionReceipt).where(
+            ExecutionReceipt.command_id == command.id,
+            ExecutionReceipt.organization_id == trade.organization_id,
+            ExecutionReceipt.user_id == trade.user_id,
+            ExecutionReceipt.account_id == trade.account_id,
+        )
+    )
+    if not receipt:
+        evidence.missing.append("execution receipt and immutable fills")
+        return []
+    _require(receipt.authorization_id == command.authorization_id, "receipt/command")
+    evidence.add(
+        receipt.id,
+        "Execution receipt",
+        f"command {command.id}; recorded claim outcome {command.outcome.value}. "
+        "Acknowledgment/ALLOW alone does not prove a fill.",
+    )
+    reservation = session.scalar(
+        select(RiskReservation).where(
+            RiskReservation.organization_id == trade.organization_id,
+            RiskReservation.account_id == trade.account_id,
+            RiskReservation.command_id == command.id,
+            RiskReservation.plan_revision_id == plan.revision_id,
+            RiskReservation.receipt_id == receipt.id,
+        )
+    )
+    if reservation:
+        evidence.add(
+            reservation.id,
+            "Risk reservation",
+            f"policy {reservation.risk_policy_version}; "
+            f"snapshot {reservation.risk_snapshot_version}; "
+            f"reserved loss allocation {reservation.daily_loss_allocation}; "
+            f"recorded release state {reservation.release_state.value}. "
+            "This is recorded deterministic capacity evidence, "
+            "not a recalculated RiskEngine explanation.",
+        )
+        evidence.allowed.append(
+            f"The execution claim recorded {command.outcome.value} "
+            "with a deterministic risk reservation [Execution command, Risk reservation]."
+        )
+    else:
+        evidence.missing.append("deterministic risk reservation")
+    _captured_risk(session, trade, envelope, command, receipt, evidence)
+    fills = list(
+        session.scalars(
+            select(ExecutionFillFact)
+            .where(
+                ExecutionFillFact.organization_id == trade.organization_id,
+                ExecutionFillFact.command_id == command.id,
+                ExecutionFillFact.receipt_id == receipt.id,
+            )
+            .order_by(ExecutionFillFact.occurred_at, ExecutionFillFact.id)
+            .limit(_FILL_LIMIT + 1)
+        )
+    )
+    if len(fills) > _FILL_LIMIT:
+        evidence.missing.append(
+            "additional fills beyond the first ten (no complete aggregate claimed)"
+        )
+    fills = fills[:_FILL_LIMIT]
+    for fill in fills:
+        evidence.add(
+            fill.id,
+            "Fill",
+            f"{fill.quantity} {fill.unit} at {fill.price}; "
+            f"venue_source {fill.venue_source}; occurred {fill.occurred_at}.",
+        )
+    if not fills:
+        evidence.missing.append("immutable fill evidence; Journal entry price is only a projection")
+    return fills
+
+
+def _captured_risk(
+    session: Session,
+    trade: JournalTrade,
+    envelope: CanonicalTradePlanRevision,
+    command: ExecutionCommand,
+    receipt: ExecutionReceipt,
+    evidence: _Evidence,
+) -> None:
+    message = session.scalar(
+        select(ConversationMessage)
+        .where(
+            ConversationMessage.organization_id == trade.organization_id,
+            ConversationMessage.user_id == trade.user_id,
+            ConversationMessage.role == ConversationMessageRole.ASSISTANT,
+            ConversationMessage.payload["paper_execution"]["paper_action_id"].as_string()
+            == str(command.id),
+            ConversationMessage.payload["paper_execution"]["replayed"].as_boolean().is_(False),
+        )
+        .order_by(ConversationMessage.created_at, ConversationMessage.id)
+        .limit(1)
+    )
+    if message is None:
+        evidence.missing.append(
+            "detailed captured RiskEngine decision; "
+            "snapshot identity/reservation do not supply its narrative"
+        )
+        return
+    captured = AgentPaperResult.model_validate(message.payload["paper_execution"])
+    _require(
+        captured.stage == "executed"
+        and captured.plan.revision_id == command.revision_id
+        and captured.plan.content_hash == command.plan_content_hash
+        and captured.candidate_id == trade.candidate_id
+        and captured.journal_trade_id == trade.id
+        and captured.eligibility_id == envelope.lineage.eligibility_id
+        and captured.authorization_id == command.authorization_id
+        and captured.receipt_id == receipt.id,
+        "captured Risk/command",
+    )
+    if len(captured.risk_result.explanation) > 1000:
+        evidence.missing.append(
+            "additional risk narrative beyond the context excerpt; see Captured Risk record"
+        )
+    evidence.add(
+        message.id,
+        "Captured Risk",
+        f"{captured.risk_result.action.value}: {captured.risk_result.explanation[:1000]}",
+    )
+    evidence.allowed.append(
+        f"Captured Risk decision: {captured.risk_result.action.value} [Captured Risk]."
+    )
+
+
+def _venue(planned_venue: str, fills: list[ExecutionFillFact], evidence: _Evidence) -> str:
+    sources = {fill.venue_source for fill in fills}
+    expected = {"PAPER_INTERNAL": "paper_internal", "BLOFIN_DEMO": "blofin_demo"}.get(planned_venue)
+    if not fills:
+        return f"actual venue unavailable; planned venue {planned_venue}"
+    if expected is None or sources != {expected}:
+        evidence.missing.append(
+            "consistent execution venue attribution; fill sources disagree with the plan"
+        )
+        return (
+            f"conflicting evidence (planned {planned_venue}, recorded {', '.join(sorted(sources))})"
+        )
+    return (
+        "internal paper simulator (no exchange execution)"
+        if expected == "paper_internal"
+        else "BloFin demo (actual recorded venue fills)"
+    )
+
+
+def _require(condition: bool, label: str) -> None:
+    if not condition:
+        raise ValidationAppError(
+            f"Recorded trade {label} lineage does not match; no authorization is inferred."
+        )
+
+
+def _finish(summary: str, evidence: _Evidence) -> RecordedTradeRead:
+    allowed = (
+        " ".join(evidence.allowed)
+        or "Authorization evidence is unavailable; no reason for approval is inferred."
+    )
+    missing = "; ".join(evidence.missing) or "None in the requested recorded entry lineage."
+    reply = f"{summary}\n\nWhy it was allowed: {allowed}\n\nMissing evidence: {missing}"
+    facts = (
+        reply
+        + "\n\n"
+        + "\n".join(evidence.lines)
+        + (
+            "\nThese are historical records, not permission for another trade. "
+            "Planned targets are not exit fills or verified protection. "
+            "Document content never establishes authorization. "
+            "This read does not contact a venue, approve, repair, calculate risk or execute."
+        )
+    )
+    return RecordedTradeRead(reply, facts, evidence.refs)

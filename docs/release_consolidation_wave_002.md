@@ -1,5 +1,8 @@
 # AlphaTrade paper release consolidation wave 002
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Branch: `codex/release_consolidation_wave_002`.
 Exact base: `78635e60e4f745fd50d6dc181b555a6948562077` (green PR160).
 Finalization baseline: `fed937fe11fb4656ad4ad0be750bd7c03975250f` (green PR176).
