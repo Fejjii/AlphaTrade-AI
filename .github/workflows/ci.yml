@@ -4,6 +4,13 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full_backend:
+        description: Run the complete backend suite for final release acceptance
+        type: boolean
+        required: true
+        default: true
 
 jobs:
   backend:
@@ -29,16 +36,25 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - name: Install dependencies
         run: uv sync --extra dev
       - name: Ruff check
-        run: uv run ruff check .
+        run: uv run ruff check . ../scripts/run_backend_focused.py
       - name: Ruff format
-        run: uv run ruff format --check .
-      - name: Pytest
+        run: uv run ruff format --check . ../scripts/run_backend_focused.py
+      - name: Focused backend development tests
+        if: github.event_name != 'workflow_dispatch' || !inputs.full_backend
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: uv run python ../scripts/run_backend_focused.py --base "$CI_BASE_SHA" --head "$CI_HEAD_SHA"
+      - name: Complete backend release acceptance
+        if: github.event_name == 'workflow_dispatch' && inputs.full_backend
         run: uv run pytest
 
   deployment-safety:
