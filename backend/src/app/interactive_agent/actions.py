@@ -90,6 +90,15 @@ class LearningStatusInput(StrictModel):
     limit: int = Field(default=5, ge=1, le=10)
 
 
+class RecordedTradeInput(StrictModel):
+    symbol: Symbol | None = None
+    direction: TradeDirection | None = None
+    account_id: UUID | None = None
+    journal_trade_id: UUID | None = None
+    latest: bool = False
+    paper_only: bool = False
+
+
 class PaperExecutionExplanationInput(StrictModel):
     command_id: UUID
 

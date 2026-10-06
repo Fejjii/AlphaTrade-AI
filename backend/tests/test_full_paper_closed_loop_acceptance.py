@@ -637,3 +637,74 @@ def test_agent_explanation_refuses_missing_or_mismatched_capture(world, capture)
         assert count(session, JournalTrade) == count(session, ApprovalAuthorization) == 1
     finally:
         session.close()
+
+
+@pytest.mark.parametrize("capture_present", [True, False])
+def test_natural_trade_question_resolves_canonical_internal_paper_lineage(world, capture_present):
+    _, _, session, service, proposal = propose(world)
+    try:
+        executed = confirm(service, proposal).paper_execution
+        assert executed.stage == "executed"
+        if not capture_present:
+            message = session.scalars(
+                select(ConversationMessage).where(
+                    ConversationMessage.payload["paper_execution"]["paper_action_id"].as_string()
+                    == str(executed.paper_action_id),
+                    ConversationMessage.role == ConversationMessageRole.ASSISTANT,
+                )
+            ).one()
+            message.payload = {}
+            session.commit()
+        contexts = []
+
+        class Responder:
+            def compose(self, **kwargs):
+                contexts.append(kwargs["factual_context"])
+                return "This was an internal paper trade under recorded plan authorization."
+
+        before = {
+            model: count(session, model)
+            for model in (
+                ExecutionCommand,
+                ExecutionFillFact,
+                JournalTrade,
+                ApprovalAuthorization,
+                JournalLifecycleEvent,
+            )
+        }
+        result = InteractiveAgentService(
+            session, settings=world.settings, responder=Responder()
+        ).handle_turn(
+            AgentTurnRequest(
+                message=(
+                    "Explain my latest BTCUSDT short paper trade: "
+                    "strategy, entry, stop, target, authorization and execution venue."
+                )
+            ),
+            organization_id=ORG,
+            user_id=USER,
+        )
+        assert contexts
+        facts = contexts[0]
+        assert "internal paper simulator (no exchange execution)" in facts
+        assert "Why it was allowed:" in facts and "Missing evidence:" in facts
+        for record in (
+            executed.journal_trade_id,
+            executed.plan.revision_id,
+            executed.authorization_id,
+            executed.receipt_id,
+            executed.eligibility_id,
+        ):
+            assert str(record) in {ref.record_id for ref in result.connections}
+        assert (
+            "[Captured Risk]" in facts
+            if capture_present
+            else "detailed captured RiskEngine decision" in facts
+        )
+        assert result.recorded_evidence == facts
+        assert (
+            not result.proposals and not result.execution_attempted and not result.authority_mutated
+        )
+        assert {model: count(session, model) for model in before} == before
+    finally:
+        session.close()
