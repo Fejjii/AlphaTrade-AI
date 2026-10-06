@@ -1,5 +1,8 @@
 # Final integrated paper system (AT-076)
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 PR #126 Watcher remediation is the scan base. PR #125 paper evaluation and
 Telegram discussion are applied on that base. This slice does not merge those
 source PRs, does not deploy, and does not enable Watcher, Telegram, or live

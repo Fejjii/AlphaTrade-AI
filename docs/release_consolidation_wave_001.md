@@ -1,5 +1,8 @@
 # AlphaTrade release consolidation wave 001
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Prepared on 2026-10-01 (Europe/Berlin) on `codex/release_consolidation_wave_001`.
 The branch starts exactly at PR150 head
 `830f8c29c085baa21e51c278a0643903b1eab018`.

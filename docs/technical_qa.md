@@ -1,117 +1,63 @@
-# AlphaTrade AI — Technical Interview Q&A
+# Technical interview questions and answers
 
-Likely questions and concise, accurate answers. Align answers with the codebase—do not claim live trading or production Stripe unless explicitly enabled.
+Answers reflect main `ff90d0c`, inspected October 6, 2026. The [status record](current_status.md) distinguishes deployed reports, unknowns and pending acceptance. Use these to explain the work you can substantiate.
 
----
+## What does the user gain?
 
-## 1. Why FastAPI?
+A linked record of strategy rules, evidence, risk, paper execution and review. The Agent helps interpret context and propose supported changes. Better discipline, commercial adoption and returns need evaluation; the repository does not establish those outcomes.
 
-FastAPI gives async-capable HTTP, automatic OpenAPI docs, and first-class Pydantic v2 integration—which matches our schema-heavy API (proposals, risk results, structured agent responses). Python also fits the ML/agent ecosystem (LangGraph, evaluation scripts) in one repo with pytest and Ruff. For a modular monolith with many domain routes, FastAPI keeps handlers thin while services hold business logic.
+## Does the model decide or execute trades?
 
----
+Application services own setup/Candidate lifecycle, risk, permissions, freshness and execution authority. The model produces conversation from supplied facts. Typed actions create structured proposals, and separate confirmation calls existing services. A worker can continue an approved strategy under explicit operator arming. The Agent and Telegram do not gain general order authority from text.
 
-## 2. Why LangGraph?
+## Why FastAPI, PostgreSQL and a separate worker?
 
-Trading workflows are **multi-step and conditional** (guardrails may short-circuit, risk may block, approval may be required). LangGraph expresses that as an explicit state machine with testable nodes, rather than one monolithic prompt. It separates orchestration from implementation: nodes call services; persistence and audit sit outside individual prompts. Compared to ad-hoc chains, graphs are easier to extend (e.g. narrative node after structured response) and to document for interviews.
+Python fits schema validation, deterministic strategy/risk services and model integrations. PostgreSQL provides durable relational records and transaction boundaries. A separate worker handles background Watcher/Telegram supervision; each component retains its own health/failure state. The modular backend is practical at this scope, but API size, synchronous work and resource limits still need workload-specific review.
 
----
+## Where does LangGraph fit?
 
-## 3. Why a deterministic risk engine?
+The earlier `/chat/message` workspace uses an explicit graph of guardrails, retrieval, tools and structured/narrative response stages. The current `/agent/turns` path has its own typed read/proposal/conversation service. LangGraph's presence in the manifest is not evidence that every current Agent turn runs through that older graph.
 
-Risk decisions must be **repeatable, auditable, and unit-testable**. Fifteen pure rule functions take a `RiskCheckRequest` and limits; they return `ALLOW`, `WARN`, or `BLOCK` with stable rule IDs. An LLM cannot reliably enforce leverage caps, stop-loss requirements, or kill switches across sessions. Deterministic risk also lets us assert in CI that `BLOCK` prevents paper execution even if the UI mis-clicks approve.
+## Which model is active?
 
----
+UNKNOWN without current runtime evidence. Settings default the base provider to `gpt-4o-mini`, routed Tier A to `gpt-4o` and Tier B to `gpt-4o-mini`; current general Agent synthesis is Tier A. Requested/selected/resolved model are separate facts. Environment overrides and provider results can differ from defaults. [Model routing](agent_workflow.md).
 
-## 4. Why RAG?
+## Is the Agent always using vector RAG?
 
-Traders need **organizational context**—playbooks, risk policy wording, past journal lessons—not generic LLM knowledge. RAG grounds the agent in tenant-scoped documents with citations. We deliberately exclude RAG content that acts as a trading signal; source types are controlled and retrieval is filtered by metadata. Journal auto-ingest closes the loop from review → future retrieval.
+No. Its default retrieval is bounded lexical SQL search over documents/chunks: at most 200 scanned chunks, five hits by default. An injected vector retriever can provide hits that must pass scoped SQL reload. The Knowledge service separately indexes/searches vectors. A Qdrant setting does not establish the mode of a particular turn. [Retrieval](rag_system.md).
 
----
+## What happens when a provider fails?
 
-## 5. Why Qdrant?
+Local mock/permissive paths and hosted policy differ. Staging/production require configured OpenAI, authoritative Qdrant and Redis security backends; they prohibit silent mock/in-memory substitutions. Canonical market evidence has its own fail-closed source/freshness rules and may use configured whole-source Bybit failover without mixing venue evidence. A conversational reply can become explicitly unavailable while factual records remain. [Security](security.md).
 
-We need **semantic search** over chunked knowledge with metadata filters (org, symbol, source type). Qdrant offers a simple self-hosted or cloud deployment, cosine similarity, and collection management without running a full search cluster. When Qdrant is unreachable, the app falls back to an in-memory vector store so dev and CI keep working—important for portfolio demos and tests.
+## How is memory different from learning?
 
----
+Conversations, strategy context, knowledge and Journal/attribution are stored application memory. Governed learning creates an explicit hypothesis/candidate, compares version-bound evidence, requires paper validation and human promotion. It is not model fine-tuning or silent strategy activation. The product has behavior-review foundations but no proven continuous behavior-change engine.
 
-## 6. Why Redis?
+## How are approval and risk enforced?
 
-Redis handles **low-latency, ephemeral** concerns: API rate limiting and JWT access-token denylist on logout. It’s not the system of record—that’s Postgres. With `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK`, local dev survives without Redis; staging/production expect Redis for consistent limits across instances. Connection pooling and timeouts apply per Redis best practices.
+Research validation, canonical strategy approval, setup confirmation and execution eligibility are distinct states. User paper commands bind authorization to an immutable plan revision/hash; armed worker continuation has scoped operator authority. Deterministic risk `BLOCK`, kill switch, permissions and freshness checks still apply. A generic approval badge or model sentence cannot replace those gates.
 
----
+## How do you handle duplicate workers and provider corrections?
 
-## 7. Why Postgres?
+Worker leases/fences reject obsolete owners; operation identities and durable claims/receipts support restart/idempotency. Immutable observation reuse rejects a same-policy conflict. PR209's real acquisition policy v2 appends new policy identities while preserving v1 receipts and clocks. Its guard/confirmation does not promise Binance never revises a candle; fresh live SFP acceptance remains pending. [Recovery boundary](sfp_candle_finalization_recovery.md).
 
-Workflow entities—users, organizations, proposals, approvals, paper orders, positions, journal, audit events, usage events, billing scaffold tables—need **ACID transactions and relational integrity**. SQLAlchemy 2.0 + Alembic migrations give versioned schema evolution. Postgres is widely available on Render, Railway, Neon, etc., matching our deployment guide.
+## How are tenants, uploads and prompt injection handled?
 
----
+The backend resolves persisted membership and scopes resources; reader/trader/owner dependencies vary by route. File previews use bounded parsing and signed principal/content-bound receipts before explicit save. Documents remain reference data. Typed actions, scope checks, provenance, guardrails and separate authority reduce exposure, but no penetration test, certification or comprehensive prompt-injection proof is claimed. [Security details](security.md).
 
-## 8. Why human-in-the-loop?
+## Can it send real exchange orders?
 
-Autonomous crypto trading from LLM output is unsafe and often non-compliant for portfolio scope. Humans must **explicitly approve** simulated actions; the product educates and structures decisions rather than hiding them. Approval states (reject, modify, needs more analysis) are first-class and block execution APIs.
+Real-money trading is permanently refused by the inspected source in every environment. Internal paper simulation is the default. A separately gated BloFin demo integration exists with ambiguous-dispatch and protection/fill reconciliation; its real demo acceptance remains pending. Neither internal paper success nor Telegram receipt proves BloFin execution.
 
----
+## How far does voice go?
 
-## 9. Why no real trading?
+Browser dictation, transcript review/send and optional reply playback are implemented through the existing Agent flow. Backend voice I/O and screenshot analysis remain unimplemented contracts. Earlier speech fixtures do not establish real microphone/service/Safari/iOS behavior; richer continuous conversational voice is future scope.
 
-Scope, safety, and **interview/portfolio clarity**: demonstrating AI architecture without exchange API keys, withdrawal risk, or regulatory exposure. `ENABLE_REAL_TRADING=false` and `EXECUTION_MODE=paper` are defaults with startup validation in non-local environments. Market data is read-only public REST where enabled. An exchange adapter may exist as scaffolding but live order placement is not the MVP story.
+## What has actually been verified?
 
----
+This documentation task inspected source/manifests/configuration and authentic screenshots, then checked documentation facts/links/diagrams. Prior exact-base documents record their own tests. The supervisor reports PR208/PR209 deployment and a real Nested/internal-paper/Journal/Telegram event; those were not independently reverified here. Fresh SFP recovery, existing Journal target repair, BloFin demo acceptance and complete MVP acceptance remain open. [Evidence](current_status.md).
 
-## 10. How do guardrails work?
+## What would you improve next?
 
-Early in the graph, guardrails check user input for injection patterns, moderation concerns, and trading policy (e.g. disallowed advice). After optional LLM narrative, validators ensure output does not claim guaranteed profits, live execution, or altered risk/approval facts. Failures emit audit events and fall back to deterministic narrative. Offline `evaluate_guardrails.py` regression-tests language policy cases.
-
----
-
-## 11. How do approval gates work?
-
-The agent’s approval decision node sets whether an approval record is required (e.g. execute intent, low confidence, risk warnings). `ApprovalService` tracks status. `ExecutionService.place_paper_order` requires `approved` status, passing risk (not `BLOCK`), real-trading disabled, and optional idempotency key. Workflow endpoints expose linked proposal + approval + eligibility for the UI.
-
----
-
-## 12. How do audit logs work?
-
-`AuditService` persists typed events (auth, guardrails, proposals, approvals, paper orders, quota blocks, refresh reuse, etc.) with organization scope and metadata redaction. Clients use `GET /audit/events` with filters. Events correlate with `request_id` from middleware and usage events for incident timelines.
-
----
-
-## 13. How do provider fallbacks work?
-
-`ProviderRegistry` selects implementations from env: mock LLM/embeddings by default; OpenAI when keyed; Qdrant when URL reachable; Binance public for market data in `fallback|live` provider mode; in-memory substitutes when dependencies are down. Usage events record `fallback_used`. `GET /providers/status` exposes health for demos and deploy smoke tests—never hide mock as live.
-
----
-
-## 14. How do testing and evaluation work?
-
-**Unit/integration:** pytest in `backend/tests`—risk rules, workflow, guardrails, journal RAG, auth.  
-**Frontend:** Vitest + Playwright API workflow in CI.  
-**Offline eval:** `evaluation/evaluate_rag.py`, `evaluate_agent.py`, `evaluate_guardrails.py` with JSON datasets asserting retrieval types, narrative policy, and safe language.  
-**E2E:** Docker validate scripts + optional browser tour locally.
-
-Evaluation is regression-oriented, not a live LangSmith production loop yet.
-
----
-
-## 15. What production gaps remain?
-
-| Gap | Notes |
-|-----|--------|
-| Live Stripe | Scaffold only; `BILLING_ENABLED=false` default |
-| Live exchange execution | Disabled; compliance review required before enablement |
-| LangSmith / OTel | Placeholder; no distributed trace UI |
-| Streaming LLM | HTTP request/response only |
-| Invite → signup | API exists; full onboarding flow incomplete |
-| Embedding migration | Re-index when switching mock → OpenAI dimensions |
-| Cost billing | Only `provider_reported` cost is billing-grade |
-| HA / multi-region | Single-region managed hosting documented |
-
----
-
-## Quick cross-links
-
-- [interview_package.md](interview_package.md)
-- [architecture.md](architecture.md)
-- [agent_workflow.md](agent_workflow.md)
-- [security.md](security.md)
-- [evaluation.md](evaluation.md)
+Finish bounded operational acceptance and pending repairs, improve retrieval/observability/device evidence where limited, and extend strategy/voice/orchestration only behind existing validation/authority boundaries. Evaluate behavior/usability and statistically meaningful paper outcomes separately from engineering checks. Real-money enablement is not a routine roadmap toggle. [Roadmap](limitations_roadmap.md).

@@ -1,5 +1,8 @@
 # Trader interface polish screenshots
 
+> **Historical fixture snapshot:** these captures show the older five-workspace shell, with Strategies before Journal and no Knowledge destination. Current source has six destinations. Balances, trades and results are synthetic. See [screenshot review](../../screenshots_checklist.md).
+
+
 These are **synthetic frontend test fixtures, not live account or market data**. Each image carries a fixture watermark. Chromium captured desktop (1440 × 1000) and iPhone portrait dimensions (390 × 844). Landscape (844 × 390) also passed layout checks. These are viewport checks, not a physical iPhone or Safari validation.
 
 The local environment blocked Google Fonts; the captures use the application's existing fallback fonts.

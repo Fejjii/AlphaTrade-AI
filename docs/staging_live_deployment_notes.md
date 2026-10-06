@@ -1,5 +1,8 @@
 # Staging Live Deployment Notes
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Working notes for **Slice 32** — staging validation after Slice 31 analytics.
 
 **Slice 34:** After deploying strategy workflow wiring, run migrations through **`l2m3n4o5p6q7`**:

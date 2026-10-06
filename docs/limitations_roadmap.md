@@ -1,185 +1,45 @@
-# Limitations and Roadmap
+# Limitations and roadmap
 
-## Current limitations (post Slice 40)
+Baseline: main `ff90d0c`, October 6, 2026. “Implemented” means source exists; “accepted” needs evidence for the relevant runtime and release. [Current status](current_status.md) records supplied supervising evidence and unknowns.
 
-### Lesson learning loop
+## Current boundaries
 
-- Lesson candidates require **explicit accept** before RAG/memory promotion
-- Three accept paths: lesson only, attach rule, new strategy version (Slice 38) — no silent mutation
-- Pending observations block paper promotion when critical; **accepted** lessons only affect eligibility
-- Post-exit runner analysis depends on stored historical candles
-- Missed profit estimates are **capped** to reduce hindsight bias
-- Structured rule editor improves testability scoring but complex NL still needs human review
+| Area | Implemented foundation | Limit or outstanding acceptance |
+| --- | --- | --- |
+| Paper lifecycle | Approved strategy/evidence → Candidate → risk/plan authority → paper fill → Journal/attribution. | Supervisor reports a real Nested/internal-paper event; complete MVP acceptance and all strategy/symbol paths are not established. |
+| Nested strategy | Supported compiled structural family and canonical paper continuation. | Supported timeframes/source constraints apply; a generic NL strategy is not automatically executable. |
+| SFP | Structural detection/research lifecycle, reusable immutable receipts and frontend surface. | Existing structural research support does not provide an authorized SFP execution plan or trade-return promotion evidence. Fresh live recovery after PR209 remains pending. |
+| Journal | Canonical lineage and preservation of approved plan targets in PR208. | Repair/acceptance for existing affected Journal targets remains pending. Deployment does not rewrite old rows automatically. |
+| Binance REST finalization | PR209 guards/compares eligible REST candles and versions the application policy without rewriting v1 history. | This is not a provider finality guarantee; bounded fresh SFP acceptance remains pending. |
+| BloFin demo | Separately governed demo dispatch, protection/fill reconciliation and scoped authority. | Actual demo-venue execution acceptance pending. Internal paper fills are not venue fills. |
+| Agent | Model conversation, scoped reads, structured proposals and explicit confirmation. | Models can err; bounded context/retrieval and provenance do not establish perfect answers. |
+| Retrieval | Knowledge indexing/search; default Agent bounded lexical SQL retrieval. | No default vector lookup on every Agent turn; ranking/citation is not truth. SQL/vector commit consistency has external-store limits. |
+| Learning/behavior | Journal review, deterministic analytics/attribution and governed version promotion. | No silent online training, automatic strategy self-modification or proven behavior/performance improvement. Samples and strategy-specific support constrain conclusions. |
+| Voice | Browser dictation/transcript review and optional playback. | Server voice contracts unimplemented; real mic/service/Safari/iOS acceptance UNKNOWN here. Continuous richer voice is future work. |
+| Screenshots | Authentic watermarked fixtures and older local captures. | Several show historical UI. No image proves current hosted completeness, live balance or trading results. |
+| Operations/security | Hosted fail-closed provider policy, roles, scoped records, audit and release procedures. | Deployment/health/restore/device/security assurance require actual evidence. No certification/pentest/comprehensive readiness claim. |
+| Billing | Provider/usage/quota scaffold; charging disabled by default. | Live subscription/payment acceptance is not established by this documentation task. |
 
-### Trading and execution
+Real-money execution is permanently refused by the inspected source. It cannot be enabled as an ordinary feature flag or Agent command. Demo and paper performance do not guarantee real-world results.
 
-- **Real exchange execution is disabled** and not wired. `trade_live` refuses startup everywhere.
-- Default **`EXCHANGE_MODE=paper_internal`**: pure in-database paper simulation, no exchange calls.
-- Optional **`EXCHANGE_MODE=paper_exchange_demo`** (staging only): best-effort mirroring of internal paper
-  fills to a BloFin **demo** account over `https://demo-trading-openapi.blofin.com`. Not real money;
-  production BloFin hosts are blocked; withdraw/transfer API keys are refused.
-- Market data is **read-only** — no order placement against Binance or any live venue.
-- Background worker (Slice 59) is **disabled by default**, read-only (setup detection only), never places orders.
-- Telegram alerts (Slice 46) are **outbound only** — no inbound commands or order triggers.
-- Owner-only **`GET /exchange/status`** exposes credential booleans and provider health only (no secrets).
+## Priority: finish current evidence
 
-### MVP workflow (Slice 20–39)
+1. Complete bounded fresh SFP recovery acceptance on the intended deployed policy/SHA while preserving historical receipts.
+2. Complete and verify the separately supervised existing Journal target repair without inventing/backdating outcomes.
+3. If explicitly authorized, complete governed BloFin demo protection/fill/restart acceptance; keep actual demo exposure supervision separate from internal paper checks.
+4. Finish the relevant exact-SHA complete release gates and documented product acceptance. A focused CI pass, page loading report or one paper event is insufficient.
+5. Record observed model/provider/hosting versions and device/voice acceptance instead of promoting defaults or fixture results to runtime facts.
 
-- End-to-end proposal → approval → paper order → position is implemented and tested.
-- Journal → RAG sync is on by default; disable via `JOURNAL_RAG_SYNC_ENABLED=false`.
-- Trading analytics (Slice 31) are **paper-only** and deterministic; discipline score is not LLM-generated.
-- Strategy library & pre-trade (Slice 33–39): Strategy Lab includes backtest v1, structured rules, lesson → version flow, and **paper validation runtime**.
-- Agent routes strategy-workflow, backtest, and paper validation intents to registered tools (Slice 34–39).
-- **Backtest v1** replays stored OHLCV with fees/slippage — historical simulation only; not a profit guarantee. Complex NL rules may require structured translation (`needs_structured_rules`).
-- **Paper validation runtime (Slice 39–40):** deterministic scan/tick bot + optional scheduler foundation. Scheduler **disabled by default** (`ENABLE_PAPER_SCHEDULER=false`). Manual scheduler tick via API/UI. Runtime history, observability events, and in-app alerts (no delivery).
-- **Paper eligibility (Slice 38):** conservative gates via `/paper-eligibility`; `paper_validated` does **not** enable live trading.
-- Human-vs-system: per-trade `/human-vs-system/{id}` (Slice 36) still has estimate/placeholder
-  limitations; AT-036 adds aggregate journal comparison decision-quality over recorded fields only.
-- **TradingView intake (AT-037):** signed webhook + inbox only; optional paper-candidate creation;
-  never creates live orders. Disabled by default (`TRADINGVIEW_WEBHOOK_ENABLED=false`).
-- **BloFin demo sync (AT-037):** read-only account/position snapshots; no order place/cancel/modify;
-  demo exchange posture only; stale/unavailable states degrade conservatively.
-- Analytics do not replace the risk engine; small sample sizes can skew setup statistics.
-- Playwright E2E: **API workflow in CI**; full browser tour optional locally (skipped in CI).
-- LLM narrative polish is **optional** (Slice 21); deterministic analysis + risk engine remain authoritative.
-- Docker Compose enables httpOnly refresh cookies + access token denylist (Slice 22).
+These are documentation priorities, not authorization to deploy, repair databases, arm services or place orders.
 
-### Trader workflow UX (Slice 43–44)
+## Product direction beyond the foundation
 
-- Trader-first dashboard, workflow stepper, status badges, human-readable paper validation + alert summaries
-- **`GET /dashboard/summary`** (Slice 44–45): deterministic paper-only aggregation — daily discipline snapshot,
-  discipline score, risk settings source, open paper trades from proposal flow + paper validation, PnL source breakdown
-- **`GET/PATCH /risk/settings`** (Slice 45): user-facing paper discipline limits with audit logging; agent updates require confirmation
-- Strategy readiness counts, alerts/lessons, market watcher + bridge status, next recommended action
-- Daily paper PnL from closed paper-validation trades + proposal-flow positions; **no broker data**
-- Risk limits from daily state → user settings → system defaults (`risk_settings_source`); limitations when defaults apply
-- Frontend uses summary as primary source; resilient legacy fallback if endpoint unavailable (Slice 43)
-- Real trading remains disabled; all execution remains paper only
+| Direction | What exists already | Still planned or incomplete |
+| --- | --- | --- |
+| Personal trading assistant | Stored conversations, selected strategy context, Journal and knowledge reads. | Richer continuous context/voice interaction and evaluated long-term assistance. |
+| Behavior learning | Review/attribution, coaching and governed proposals. | Validated continuous behavior support and demonstrated improvement; no online model-training claim. |
+| Wider orchestration | Typed tools, Strategy Brain, Watcher, supervised worker and explicit authority handoffs. | Broader cross-workspace agent behavior with proved end-to-end acceptance; no unbounded model controller. |
+| Additional strategies | Nested and SFP plus legacy research/backtest tools. | More canonically compiled/evaluated strategy families and their separate evidence/execution support. |
+| Evaluation/observability | Offline regressions, deterministic analytics, audit/logs and optional RED metrics. | Wider model-quality, reliability, restore and statistical validation; distributed tracing is not established by a configured key. |
 
-### Trader workflow UX (Slice 43 — superseded details)
-
-- Frontend-only polish before Slice 44 composed existing endpoints client-side
-
-### Market watcher bridge (Slice 42 — validated in 42B)
-
-- Bridge disabled by default; manual tick only (no always-on auto loop unless `MARKET_WATCHER_BRIDGE_AUTO_TICK=true`)
-- Bridge triggers paper validation **scan** only — no exchange or broker execution
-- Webhook HMAC signing optional; Telegram provider added (Slice 46); email/push remain stubs
-- `./scripts/market-watcher-smoke.sh` covers watcher + bridge API smoke in Docker
-- Auto tick scheduler not wired in-process (env flag reserved for future conservative loop)
-
-### Alert delivery & notifications (Slice 46)
-
-- Telegram and webhook polished; user preferences gate external delivery
-- Per-tenant webhook URLs not in DB — env-global staging pattern
-- Daily digest mode defers immediate external send
-- Email/push remain stubs
-- `./scripts/notifications-smoke.sh` for preferences and delivery status API
-- Staging defaults: `ALERT_DELIVERY_ENABLED=false`, webhook/Telegram off, `EMAIL_PROVIDER=mock` (Slice 47 validated on Render)
-
-### Staging deployment (Slice 47–50)
-
-- Backend live at Render with paper-only invariants verified
-- Frontend Vercel project uses Root Directory `frontend`; production alias is `alpha-trade-ai-eight.vercel.app`
-- `alpha-trade-ai.vercel.app` is blocked (another Vercel account) — do not use for demo
-- `./scripts/staging-live-smoke.sh` for extended live API QA (CORS, /login, dashboard, notifications, watcher)
-- `./scripts/seed_demo.py` / `POST /demo/seed` for synthetic paper-only demo tenant (`demo@alphatrade.ai`)
-- Browser demo works after CORS fix; rich dashboard requires demo seed
-- See [staging_deployment.md](staging_deployment.md) for URLs, gaps, and demo checklist
-
-### Alert delivery & market watcher (Slice 41 — remaining gaps)
-
-- No background delivery loop — manual/batch deliver endpoints
-- Market watcher has no scheduled loop — manual scan only
-- Scan history is in-memory per process (observations and bridge decisions persisted)
-- Does not change `ENABLE_REAL_TRADING` or execution mode
-
-### Paper validation scheduler & alerts (Slice 40 — remaining gaps)
-
-- Alert deduplication with cooldown windows (Slice 40C)
-- No always-on in-process scheduler loop — manual tick + optional env flag
-
-### Paper validation runtime (Slice 39 — remaining gaps)
-
-- `scan_only` default creates signals without trades; `auto_paper` opens simulated positions locally
-- Partial TP closes full position at first TP in v1 (multi-TP schema deferred)
-- Mock/deterministic candles in tests; production uses stored historical data
-- Not connected to proposal approval flow or exchange fills
-- Does not change `ENABLE_REAL_TRADING` or execution mode
-
-### Providers
-
-- OpenAI integration uses HTTP directly (no streaming, no tool-calling from LLM yet).
-- LLM narrative uses mock provider without `OPENAI_API_KEY`; real LLM only when configured.
-- Usage metering records both `agent_chat` (light) and `agent_narrative` features.
-- Binance public API may rate-limit or block; mock fallback is automatic.
-- Embedding dimensions are resolved automatically (384 mock / 1536 for `text-embedding-3-small`). Switching providers requires recreating `alphatrade_knowledge` and reingesting (see [rag_system.md](rag_system.md)).
-- LangSmith tracing provider remains a mock placeholder.
-
-### Frontend
-
-- Mobile-first bottom nav with Dashboard, Workspace, Market, Proposals, Journal + More menu.
-- Account UI: email verification notice, forgot/reset password, invitations page (OWNER).
-- Settings shows email verification status; provider toggles remain env-driven.
-
-### Auth and ops
-
-- Email verification and password reset implemented (Slice 25); mock email in local dev.
-- Organization invitations: create/list/accept/revoke API; no new-user invite signup yet.
-- Staging/production default to `must_verify_email`; local allows unverified login.
-
-- **Bearer mode** (local dev): both tokens in `sessionStorage`.
-- **Cookie mode** (Docker / staging): refresh in httpOnly cookie; access token still in `sessionStorage` (short TTL).
-- **Staging deployment** (Slice 23): Vercel + Render path documented; startup validation enforces HTTPS cookies and paper-only trading.
-- Cost estimates in usage dashboard are **labeled by cost_source** — only `provider_reported` is billing-grade (see [usage_and_billing.md](usage_and_billing.md)).
-
-## Fully mock mode
-
-```bash
-PROVIDER_MODE=mock
-OPENAI_API_KEY=
-# QDRANT_URL may be set but is ignored in mock mode
-```
-
-All providers report mock/fallback status at `GET /providers/status`.
-
-## Real LLM + embeddings mode
-
-```bash
-PROVIDER_MODE=fallback
-OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-EMBEDDINGS_MODEL=text-embedding-3-small
-```
-
-Real trading remains disabled regardless of provider mode.
-
-## Live market data mode (read-only)
-
-```bash
-PROVIDER_MODE=fallback
-MARKET_DATA_ENABLED=true
-MARKET_DATA_PROVIDER=binance
-# No API key required for Binance public endpoints
-```
-
-Responses label `is_live`, `fallback_used`, and `is_stale`. Mock data is never presented as live.
-
-### Billing (Slice 26)
-
-- Billing **disabled by default** (`BILLING_ENABLED=false`); mock provider in local dev.
-- Stripe Checkout/Portal APIs not fully wired — placeholder URLs when keys present.
-- Usage export is aggregation only — not invoice generation.
-- Static/tokenizer cost estimates are **not** billing-grade.
-
-## Recommended next slices
-
-1. **Paper validation scheduler** — optional background scan/tick loop (currently manual / disabled by default)
-2. **Per-trade human-vs-system deepen** — richer plan-adherence / runner estimates on
-   `/human-vs-system/{id}` (aggregate comparison delivered as AT-036)
-3. **Slice 27B — Production Stripe wiring** (live Checkout, Portal, Billing Meters, entitlements)
-4. **Slice 28 — Real exchange integration** (requires explicit enablement, withdrawal-free keys, compliance review)
-5. **Slice 29 — LangSmith traces + LLM judge eval at scale** (optional quality loop)
-
-Slice 27A (post-push validation, README/demo polish) is complete in the repo docs and setup scripts.
+Design PDFs and redesign blueprints express intent. Exact-base handoffs express development evidence. Current code/configuration defines implemented behavior; deployed acceptance requires its own dated evidence. [Architecture](architecture.md) · [Interview material](interview_package.md) · [Testing](evaluation.md).

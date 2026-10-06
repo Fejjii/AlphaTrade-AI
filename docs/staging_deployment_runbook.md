@@ -1,5 +1,8 @@
 # Staging Deployment Runbook
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Step-by-step guide to deploy **AlphaTrade AI** to a public staging URL with **paper-only**
 execution, **fallback/mock providers**, and **no live Stripe or exchange orders**.
 

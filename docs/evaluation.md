@@ -1,123 +1,67 @@
-# Evaluation
+# Testing and evaluation
 
-AlphaTrade includes lightweight evaluation hooks for RAG and agent response quality.
+AlphaTrade uses unit/integration regressions, frontend browser checks, offline evaluation scripts and separately supervised runtime acceptance. Each answers a different question. This guide reflects main `ff90d0c`, October 6, 2026; no application suite or broad CI dispatch was run for the documentation change.
 
-## RAG evaluation
+## Choose the evidence you need
 
-Script: `evaluation/evaluate_rag.py`
+| Layer | Repository tooling | What it establishes |
+| --- | --- | --- |
+| Deterministic backend behavior | pytest, Ruff, scoped strict type checks where used. | The selected cases/paths on the tested source and isolated resources. |
+| Frontend behavior | Vitest, TypeScript, ESLint; Playwright fixture/integrated suites. | Component/browser assertions in their stated context; fixtures do not verify live providers. |
+| Offline AI/RAG language regression | `evaluation/evaluate_agent.py`, `evaluate_rag.py`, `evaluate_guardrails.py` with stored datasets/mocks. | Defined regression assertions, not broad model quality, hallucination resistance or profitable trading. |
+| Strategy replay/backtest/paper evaluation | Existing version/input-bound engines and recorded cohorts. | Results under those data/assumptions; replay is not live paper evidence or statistical proof. |
+| Runtime/release acceptance | Exact-SHA deployment, provider/worker evidence, genuine linked events and relevant full release gates. | Only the scoped environment/workflow actually observed. |
 
-Dataset: `evaluation/datasets/rag_cases.json`
+## Current CI contract
 
-Run locally:
+[CI workflow](../.github/workflows/ci.yml) has backend, deployment-safety, frontend, evaluation, Docker-build and E2E-smoke jobs. Ordinary pull requests/pushes use [focused backend development selection](../scripts/run_backend_focused.py). The complete backend suite is a separate `workflow_dispatch` with `full_backend=true`.
 
-```bash
-cd backend
-uv run python ../evaluation/evaluate_rag.py
+A green PR does not imply the entire backend suite ran. Complete release acceptance must record the intended SHA, jobs, result and environment-dependent skips. Do not start broad/manual CI for a documentation-only change or combine historical pass counts from different commits.
+
+## Local development commands
+
+Use a disposable local context and explicit test database selectors. Some integration tests require opt-in PostgreSQL URLs and own isolated schemas; never point them at an inherited shared database. [Local setup](local_setup.md) gives the environment boundary.
+
+From `backend/`, replace the example focused file with cases relevant to the implementation:
+
+```sh
+uv sync --frozen --extra dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest tests/test_config.py
 ```
 
-Cases assert expected source types (playbook, `trade_journal`, risk policy) and retrieval relevance.
+From `frontend/`:
 
-## Agent narrative evaluation (Slice 21)
+```sh
+npm ci
+npm run typecheck
+npm run test
+npm run build
+```
 
-Script: `evaluation/evaluate_agent.py`
+The manifest also declares `npm run lint` (`next lint`); use the repository's current CI lint command for the selected source rather than assuming a script name proves it ran successfully. Browser commands such as `npm run test:e2e` can start test servers; inspect their config and resource selectors before running them.
 
-Datasets:
+For the offline evaluation harness, from `backend/`:
 
-- `evaluation/datasets/agent_cases.json` — end-to-end `/chat/message` quality (mock LLM)
-- `evaluation/datasets/guardrail_cases.json` — narrative language policy unit cases
-
-Run:
-
-```bash
-cd backend
+```sh
 uv run python ../evaluation/evaluate_agent.py
-```
-
-Cases verify:
-
-- No guaranteed profit or all-in language in replies
-- Risk context, approval status, invalidation (for proposals), mock data disclosure
-- No real execution claims
-- Invalid or unsafe LLM output falls back to deterministic narrative
-
-## Guardrail evaluation (Slice 22)
-
-Script: `evaluation/evaluate_guardrails.py`
-
-Dataset: `evaluation/datasets/guardrail_cases.json`
-
-Run:
-
-```bash
-cd backend
+uv run python ../evaluation/evaluate_rag.py
 uv run python ../evaluation/evaluate_guardrails.py
 ```
 
-Cases cover guarantee/all-in language, execution claims, and false market-data quality claims.
+These commands are a reference, not test results from this documentation task. Dataset completeness and actual model/provider evaluation need separate evidence.
 
-## Evaluation summary (copy-paste)
+## Product acceptance and statistical limits
 
-```bash
-cd backend
-uv run python ../evaluation/evaluate_guardrails.py && \
-uv run python ../evaluation/evaluate_rag.py && \
-uv run python ../evaluation/evaluate_agent.py
-```
+For a canonical paper loop, verify source/strategy identity, fresh admissible evidence, genuine confirmed assessment, Candidate, risk/plan authorization, actual paper fill and Journal/learning linkage. For Telegram, verify transport receipt; for BloFin demo, separately verify venue fill/protection and restart/ambiguous-dispatch behavior.
 
-All three must report 100% pass for release confidence.
+One event, a screenshot, mock provider test or internal paper fill does not prove returns, reliability across all strategies or complete MVP acceptance. Governed promotion binds version/data comparisons and paper evidence plus human approval. Small samples remain limited even when the software executes correctly.
 
-## Journal RAG (Slice 20)
+The October 6 supervisor reports PR208/PR209 deployment and one real Nested/internal-paper/Journal/Telegram event. Fresh SFP recovery, existing Journal target repair and real BloFin demo acceptance are pending. [Status](current_status.md) · [limitations](limitations_roadmap.md) · [two-week evaluation protocol](evaluation/two_week_paper_evaluation_protocol.md).
 
-Journal auto-ingest creates searchable `trade_journal` chunks. Verify manually:
+## Documentation and screenshot verification
 
-1. Create journal entry with unique lesson text
-2. Search knowledge base for that text
-3. Confirm citation source type `trade_journal`
+A documentation-only change needs source-backed claims, declared-version/default checks, local links/paths, diagram syntax and docs-only scope. Record which checks actually ran and any unavailable renderer. Screenshot review needs authentic source/capture context and private-data screening; fixture/hardware/runtime evidence stay separate. [Capture guide](screenshots_checklist.md).
 
-Backend test: `tests/test_mvp_workflow.py::test_journal_auto_ingest_creates_searchable_content`
-
-## Risk engine evaluation
-
-Covered by `tests/test_risk_engine.py` — rule-level allow/block matrix.
-
-## Workflow evaluation
-
-Covered by:
-
-- `tests/test_workflows.py` — CRUD and paper execution guards
-- `tests/test_mvp_workflow.py` — full proposal → approval → paper flow
-
-## Metrics to track (production)
-
-| Metric | Source |
-|--------|--------|
-| Approval latency | Audit timestamps |
-| Paper fill rate | Orders API |
-| RAG hit rate | Usage events `rag_search` |
-| Narrative fallback rate | Audit `narrative_validation_fallback` |
-| Provider fallback rate | Usage `fallback_used` |
-| Quota warning / block rate | Audit `quota_warning`, `quota_block` |
-| Non-billing cost share | Usage `cost_source != provider_reported` |
-| Risk block rate | Proposal `risk_result.action` |
-
-## Usage and quota evaluation (Slice 24)
-
-Backend tests in `tests/test_usage_quota.py` cover provider metadata capture, quota
-soft/hard enforcement, audit events, RBAC on quota updates, and tenant isolation.
-
-Run:
-
-```bash
-cd backend
-uv run pytest tests/test_usage_quota.py -q
-```
-
-See [usage_and_billing.md](usage_and_billing.md) for cost source semantics.
-
-## Out of scope for MVP eval
-
-- Live PnL backtesting
-- LLM judge scoring at scale
-- A/B model comparison infrastructure
-
-See [limitations_roadmap.md](limitations_roadmap.md) for roadmap.
+Historical acceptance JSON, test counts and exact-base handoffs remain preserved as dated evidence. Their existence does not establish a new exact-SHA release run.

@@ -411,6 +411,21 @@ def test_worker_venue_fills_journal_restart_and_protection(
                             idempotency_key="synthetic-forbidden",
                         )
                     )
+        if behavior == "success":
+            from app.interactive_agent.actions import RecordedTradeInput
+            from app.interactive_agent.recorded_trade import read_recorded_trade
+
+            natural = read_recorded_trade(
+                session,
+                RecordedTradeInput(symbol="BTCUSDT", direction="short", latest=True),
+                organization_id=ORG,
+                user_id=USER,
+            )
+            assert "BloFin demo (actual recorded venue fills)" in natural.reply
+            assert "internal paper simulator" not in natural.reply
+            assert str(trade.id) in {ref.record_id for ref in natural.connections}
+            assert "detailed captured RiskEngine decision" in natural.reply
+            assert venue.post_count == 1
         if behavior in {
             "protection_failure",
             "protection_outage",

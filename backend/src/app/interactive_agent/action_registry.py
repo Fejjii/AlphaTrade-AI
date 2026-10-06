@@ -30,6 +30,7 @@ from app.interactive_agent.actions import (
     PaperExecutionExplanationInput,
     PaperExecutionInput,
     PaperTradeInput,
+    RecordedTradeInput,
     StrategyInput,
     StrategyValidationInput,
     WatcherChangeInput,
@@ -108,6 +109,16 @@ def _tool(
 
 
 _TOOLS = [
+    Tool(
+        "paper_trade.read_recorded",
+        RecordedTradeInput,
+        "canonical_recorded_trade_reads",
+        StructuredActionKind.NONE,
+        ArtifactKind.JOURNAL_ENTRY,
+        AgentCapability.TRADE_DISCUSSION,
+        ("Historical owner/account-scoped evidence only; never approval or execution.",),
+        behavior="read",
+    ),
     Tool(
         "paper_trade.explain_execution",
         PaperExecutionExplanationInput,
@@ -351,6 +362,11 @@ def route_action(request: AgentTurnRequest) -> ActionRequest | None:
             name="paper_trade.prepare_execution",
             arguments={"trade": trade.model_dump(mode="json")},
         )
+    from app.interactive_agent.recorded_trade import route_recorded_trade
+
+    recorded = route_recorded_trade(text, symbol=request.symbol)
+    if recorded is not None:
+        return recorded
     lower = text.lower()
     if re.search(
         r"\b(?:strategy changes.*proposed|change.*proposed|been replayed|"

@@ -1,5 +1,8 @@
 # External integration staging acceptance
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Base: `codex/release_consolidation_wave_003` at
 `87885e591714f44843eddb46c9549417a50b9a9e` (includes PR186/PR187/PR188/PR189/PR191).
 Branch: `codex/external_integrations_acceptance_001`.
