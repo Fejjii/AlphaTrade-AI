@@ -191,7 +191,7 @@ def test_only_genuine_multi_account_or_trade_ambiguity_asks_a_question(historica
     with factory() as session:
         trade = session.scalars(select(JournalTrade)).one()
         second = _new_trade(session, trade)
-        assert "Which Journal trade UUID" in _read(session, trade).reply
+        assert "Please select a trade" in _read(session, trade).reply
         assert _read(session, trade, latest=True).connections[0].record_id == str(second.id)
         account = ExecutionAccount(
             id=uuid4(),
@@ -203,14 +203,14 @@ def test_only_genuine_multi_account_or_trade_ambiguity_asks_a_question(historica
         session.flush()
         second.account_id = account.id
         session.flush()
-        assert "Which account UUID" in _read(session, trade, latest=True).reply
+        assert "Please select an account" in _read(session, trade, latest=True).reply
         assert _read(session, trade, account_id=trade.account_id, latest=True).connections[
             0
         ].record_id == str(trade.id)
         second.account_id = trade.account_id
         second.entry_time = trade.entry_time
         session.flush()
-        assert "Which Journal trade UUID" in _read(session, trade, latest=True).reply
+        assert "Please select a trade" in _read(session, trade, latest=True).reply
 
 
 @pytest.mark.parametrize("missing", ["plan", "command"])
@@ -263,15 +263,18 @@ def test_plan_entry_is_not_fill_and_targets_keep_plan_order_without_repair(histo
         trade = session.scalars(select(JournalTrade)).one()
         result = _read(session, trade, latest=True)
         assert (
-            f"Planned entry: {envelope.plan.entry_zone.lower} to {envelope.plan.entry_zone.upper}"
-            in result.reply
+            f"planned entry zone {envelope.plan.entry_zone.lower} "
+            f"to {envelope.plan.entry_zone.upper}" in result.recorded_evidence
         )
         from app.db.models import ExecutionFillFact
 
         fill = session.scalars(select(ExecutionFillFact)).one()
-        assert f"recorded fill: {fill.quantity} {fill.unit} at {fill.price}" in result.reply
+        assert f"{fill.quantity} {fill.unit} at {fill.price}" in result.recorded_evidence
         for target in envelope.plan.risk_and_exits.targets:
-            assert f"{target.price.value} ({target.quantity_fraction} allocation)" in result.reply
+            assert (
+                f"{target.price.value} ({target.quantity_fraction} allocation)"
+                in result.recorded_evidence
+            )
         assert "Journal targets are empty" in result.reply
         assert "detailed captured RiskEngine decision" in result.reply
         assert trade.planned_targets == []
@@ -398,7 +401,10 @@ def test_read_api_authentication_and_scope_come_from_owner_not_action_arguments(
     app.dependency_overrides[get_session] = db_session
     try:
         with TestClient(app) as client:
-            body = {"message": "Explain my latest BTCUSDT short paper trade."}
+            body = {
+                "message": "Explain my latest BTC short paper trade: strategy, entry, stop, "
+                "target, authorization and execution venue."
+            }
             assert client.post("/agent/turns", json=body).status_code == 401
             headers = {"Authorization": f"Bearer {token}"}
             response = client.post("/agent/turns", json=body, headers=headers)
@@ -406,6 +412,18 @@ def test_read_api_authentication_and_scope_come_from_owner_not_action_arguments(
             result = response.json()
             assert result["proposals"] == [] and not result["execution_attempted"]
             assert "Journal targets are empty" in result["reply"]
+            followup = client.post(
+                "/agent/turns",
+                json={
+                    "message": "Explain that trade",
+                    "conversation_id": result["conversation_id"],
+                },
+                headers=headers,
+            )
+            assert followup.status_code == 200, followup.text
+            assert followup.json()["connections"] == result["connections"]
+            assert "Which trade" not in followup.json()["reply"]
+            assert followup.json()["full_reply"]
             # Identity spoofing cannot be accepted through the closed typed read contract.
             injected = {
                 **body,
@@ -458,5 +476,5 @@ def test_ambiguous_selection_remains_a_targeted_question_without_model_inference
             organization_id=trade.organization_id,
             user_id=trade.user_id,
         )
-        assert "Which Journal trade UUID" in result.reply
+        assert "Please select a trade" in result.reply
         assert not result.connections and not result.proposals

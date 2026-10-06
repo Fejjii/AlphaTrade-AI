@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -55,7 +56,13 @@ from app.interactive_agent.contracts import (
 from app.interactive_agent.conversation import (
     MODEL_REPLY_UNAVAILABLE,
     ConversationalResponder,
+    _prose,
     compose_visible_reply,
+)
+from app.interactive_agent.conversation_context import (
+    context_from_sources,
+    conversational_history,
+    resolve_trade_followup,
 )
 from app.interactive_agent.daily_review import read_daily_review, render_daily_review
 from app.interactive_agent.knowledge_context import build_knowledge_context
@@ -80,6 +87,7 @@ from app.interactive_agent.safety import (
     refuse_real_trading_enablement,
 )
 from app.schemas.common import ConversationMessageRole, DocumentSourceType, StrictModel
+from app.schemas.conversation import ConversationCreate
 from app.schemas.governed_learning import GovernedLearningStatus
 from app.services.agent_paper_execution import AgentPaperExecutionService
 from app.services.conversation_service import ConversationService
@@ -171,9 +179,42 @@ class InteractiveAgentService:
         """Persist a turn and prepare proposals through bounded canonical authorities."""
         safety = paper_safety_contract(self._settings)
         classification = classify_turn(request.message)
+        conversation = (
+            self._conversations.get_or_create(
+                organization_id=organization_id,
+                user_id=user_id,
+                conversation_id=request.conversation_id,
+                strategy_id=request.strategy_id,
+            )
+            if request.conversation_id is not None
+            else self._conversations.create(
+                ConversationCreate(
+                    title=request.message.strip()[:120], strategy_id=request.strategy_id
+                ),
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+        )
+        # Serialize selection changes in the same conversation. This never locks
+        # an execution account or gives prose/selection execution authority.
+        self._session.scalar(
+            select(Conversation.id)
+            .where(
+                Conversation.id == conversation.id,
+                Conversation.organization_id == organization_id,
+                Conversation.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        history = conversational_history(self._conversations, conversation)
+        missing_trade_context = None
         action: tuple[Tool, StrictModel] | None = None
         if classification.operation is not TurnOperation.REFUSE:
             routed = route_action(request)
+            continuity = resolve_trade_followup(
+                self._session, conversation=conversation, request=request, routed=routed
+            )
+            routed, missing_trade_context = continuity.action, continuity.missing_context
             if routed is not None:
                 action = resolve_action(routed)
                 tool, _inputs = action
@@ -199,13 +240,6 @@ class InteractiveAgentService:
             classification = classification.model_copy(
                 update={"capability": AgentCapability.STRATEGY_ANALYTICS}
             )
-        conversation = self._conversations.get_or_create(
-            organization_id=organization_id,
-            user_id=user_id,
-            conversation_id=request.conversation_id,
-            strategy_id=request.strategy_id,
-            title=request.message.strip()[:120],
-        )
         prior = [
             turn.content[:200]
             for turn in self._conversations.history_turns(conversation)
@@ -244,11 +278,15 @@ class InteractiveAgentService:
         recorded_read = action is not None and action[0].name == "paper_trade.read_recorded"
         if recorded_read:
             from app.interactive_agent.actions import RecordedTradeInput
-            from app.interactive_agent.recorded_trade import read_recorded_trade
+            from app.interactive_agent.recorded_trade import RecordedTradeRead, read_recorded_trade
 
             assert action is not None and isinstance(action[1], RecordedTradeInput)
-            recorded_trade = read_recorded_trade(
-                self._session, action[1], organization_id=organization_id, user_id=user_id
+            recorded_trade = (
+                RecordedTradeRead(missing_trade_context, missing_trade_context)
+                if missing_trade_context is not None
+                else read_recorded_trade(
+                    self._session, action[1], organization_id=organization_id, user_id=user_id
+                )
             )
         daily_review = None
         review_inputs = None
@@ -385,8 +423,16 @@ class InteractiveAgentService:
             execution_explanation.recorded_evidence if execution_explanation else None
         )
         if recorded_trade is not None:
-            reply = compose_visible_reply(recorded_trade.reply, factual)
+            reply = compose_visible_reply(
+                recorded_trade.reply, factual, required_warnings=recorded_trade.warnings
+            )
             recorded_evidence = factual
+        full_reply = recorded_trade.reply if recorded_trade is not None else None
+        if execution_explanation is not None:
+            full_reply = _prose(execution_explanation.reply)
+            reply = compose_visible_reply(
+                full_reply, execution_explanation.recorded_evidence or execution_explanation.reply
+            )
         if knowledge_context:
             reply = compose_visible_reply(
                 "Stored source passages are available for review.", factual
@@ -411,12 +457,19 @@ class InteractiveAgentService:
                 conversation_id=conversation.id,
                 message=request.message,
                 factual_context=factual,
+                history=history,
             )
             if model_text == MODEL_REPLY_UNAVAILABLE:
                 limitations.append(MODEL_REPLY_UNAVAILABLE)
             if recorded_trade is not None and model_text == MODEL_REPLY_UNAVAILABLE:
                 model_text = recorded_trade.reply
-            reply = compose_visible_reply(model_text, factual)
+            model_text = _prose(model_text)
+            full_reply = model_text
+            reply = compose_visible_reply(
+                model_text,
+                factual,
+                required_warnings=recorded_trade.warnings if recorded_trade is not None else (),
+            )
             recorded_evidence = factual
         assistant = self._conversations.append_message(
             conversation=conversation,
@@ -429,6 +482,17 @@ class InteractiveAgentService:
                     "capability": classification.capability.value,
                     "operation": classification.operation.value,
                     "recorded_evidence": recorded_evidence,
+                    "full_reply": full_reply,
+                    "sources": [item.model_dump(mode="json") for item in connections],
+                    **(
+                        {
+                            "trade_context": context_from_sources(
+                                self._session, conversation, connections
+                            ).model_dump(mode="json")
+                        }
+                        if recorded_read or explanation_read
+                        else {}
+                    ),
                     "proposals": [item.model_dump(mode="json") for item in proposals],
                     **(
                         {"daily_review": daily_review.model_dump(mode="json")}
@@ -464,6 +528,7 @@ class InteractiveAgentService:
             artifact_kinds=classification.artifact_kinds,
             reply=reply,
             recorded_evidence=recorded_evidence,
+            full_reply=full_reply,
             proposals=proposals,
             authority_mutated=any(proposal.authority_mutated for proposal in proposals),
             knowledge=knowledge,
@@ -977,7 +1042,7 @@ def _reply(
         last_prior = prior_user_messages[-1] if prior_user_messages else "none"
         text = (
             f"Continuing the conversation. Prior user turns stored: {len(prior_user_messages)}. "
-            f"Last prior: {last_prior}."
+            f"Prior user context (not authoritative evidence): {last_prior}."
         )
     if knowledge and classification.capability is not AgentCapability.KNOWLEDGE_RETRIEVAL:
         titles = ", ".join(hit.title for hit in knowledge[:3])

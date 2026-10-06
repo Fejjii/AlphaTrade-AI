@@ -1646,6 +1646,8 @@ export interface AgentTurnResult {
   conversation_id: string;
   reply: string;
   recorded_evidence?: string | null;
+  full_reply?: string | null;
+  connections?: { record_id: string; title: string }[];
   capability: string;
   operation: string;
   proposals: AgentStructuredProposal[];

@@ -2,6 +2,24 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-091 — Conversation selections are scoped references, never authority
+
+- Date: 2026-10-06
+- Decision: Store one server-selected Journal/account reference in the existing
+  assistant transcript payload. Followups revalidate conversation, tenant, owner
+  and account and re-read current immutable lineage. Explicit selectors override;
+  failed/ambiguous selection invalidates earlier context. New chats remain separate.
+- Context: Bounded user/assistant history is conversational input only, distinct
+  from fresh stored facts. No parsing assistant prose into identity or authorization.
+- Presentation: Preserve bounded complete explanation, evidence and source references
+  in Stored evidence; clean sentence/citation endings, display-only readable numbers,
+  and mandatory material missing-evidence warnings. No economic record mutation.
+- Import: Agent reuses Knowledge preview and explicit save. Importing documents
+  grants no strategy, execution, risk or Journal authority; screenshot controls hide.
+- Limits: No reference backfill from old prose; bare currencies need stored plan
+  metadata. Live model/browser/import quality requires supervised acceptance.
+- Reference: `docs/agent_conversation_continuity.md`; AT-107.
+
 ## AT-ADR-090 — Only immutable audited actual-exit proof releases a demo lifecycle
 
 - Date: 2026-10-06

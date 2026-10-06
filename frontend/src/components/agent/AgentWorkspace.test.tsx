@@ -25,6 +25,9 @@ const apiMocks = vi.hoisted(() => ({
   listPositions: vi.fn(),
   listStrategies: vi.fn(),
   marketStatus: vi.fn(),
+  previewFile: vi.fn(),
+  importFile: vi.fn(),
+  ingest: vi.fn(),
   killSwitchActive: false,
 }));
 
@@ -43,6 +46,7 @@ vi.mock("@/lib/api", () => ({
     positions: { list: apiMocks.listPositions },
     strategies: { list: apiMocks.listStrategies },
     canonical: { getMarketStatus: apiMocks.marketStatus },
+    knowledge: { previewFile: apiMocks.previewFile, importFile: apiMocks.importFile, ingest: apiMocks.ingest },
   },
 }));
 
@@ -198,6 +202,8 @@ describe("Agent workspace", () => {
     apiMocks.agentTurn.mockResolvedValue({
       conversation_id: "c1", reply: "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nExcerpt.",
       recorded_evidence: "Full governed evidence beyond the reply budget.",
+      full_reply: "Full additional explanation after the clean display ending.",
+      connections: [{ title: "TradePlan", record_id: "plan-ref" }],
       capability: "general_conversation", operation: "read", proposals: [], limitations: [],
       authority_mutated: false, execution_attempted: false, real_trading_enabled: false,
     });
@@ -206,6 +212,8 @@ describe("Agent workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     const details = (await screen.findByText("Stored evidence")).closest("details")!;
     expect(details).toHaveTextContent("Full governed evidence beyond the reply budget.");
+    expect(details).toHaveTextContent("Full additional explanation after the clean display ending.");
+    expect(details).toHaveTextContent("TradePlan: plan-ref");
     expect(details).not.toHaveAttribute("open");
   });
 
@@ -339,7 +347,60 @@ describe("Agent workspace", () => {
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
 
-  it("separates user and agent messages and keeps attachment controls unwired", async () => {
+  it("opens Knowledge document import from Agent and saves only after preview confirmation", async () => {
+    const preview = {
+      filename: "rules.txt", title: "rules", source_type: "trading_playbook", media_type: "text/plain",
+      byte_size: 20, raw_content_hash: "a".repeat(64), extracted_text_hash: "b".repeat(64),
+      extracted_text: "Risk remains governed.", extracted_characters: 20,
+      warnings: [], preview_receipt: "preview-receipt", expires_at: "2026-10-08T20:00:00Z",
+      saved: false, vector_index_status: "not_started",
+    };
+    apiMocks.previewFile.mockResolvedValue(preview);
+    apiMocks.importFile.mockResolvedValue({ document_id: "stored-doc", source_hash: "source-hash", chunk_count: 1,
+      duplicate: false, version: 1, vector_backend: "qdrant", fallback_used: false,
+      vector_index_status: "upsert_acknowledged", sql_chunks_stored: true });
+    render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Import document" }));
+    expect(screen.getByRole("region", { name: "Document import to Knowledge" })).toHaveTextContent(
+      "Importing does not approve strategies or create Journal entries.",
+    );
+    expect(screen.getByRole("link", { name: "Open Knowledge library" })).toHaveAttribute("href", "/knowledge");
+    const file = new File([preview.extracted_text], "rules.txt", { type: "text/plain" });
+    fireEvent.change(screen.getByLabelText("Document file"), { target: { files: [file] } });
+    expect(screen.getByRole("button", { name: "Save previewed file" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Preview file" }));
+    expect(await screen.findByLabelText("Extracted text preview")).toHaveValue(preview.extracted_text);
+    expect(apiMocks.importFile).not.toHaveBeenCalled();
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save previewed file" }));
+    expect(await screen.findByTestId("knowledge-ingest-success")).toHaveTextContent("Search index acknowledged by qdrant");
+    expect(apiMocks.importFile).toHaveBeenCalledWith(file, "rules", "trading_playbook", "preview-receipt");
+    expect(apiMocks.ingest).not.toHaveBeenCalled();
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+  });
+
+  it("keeps the complete explanation and technical source references inside Stored evidence", async () => {
+    apiMocks.listMessages.mockResolvedValue({ items: [{ id: "a", role: "assistant", created_at: "2026-01-01",
+      content: "BTC short: entry 84,714.1. Missing risk narrative.",
+      payload: { interactive_agent: {
+        full_reply: "Complete additional explanation with 9c8c5c4f-3a8c-5301-bb63-b6b6a9bdc1b2.",
+        recorded_evidence: "Canonical amounts and hash: abc123",
+        sources: [{ title: "TradePlan", record_id: "plan-ref" }],
+      } },
+    }] });
+    render(<AgentWorkspace />);
+    fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
+    const details = (await screen.findByText("Stored evidence")).closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(details).toHaveTextContent("Complete additional explanation");
+    expect(details).toHaveTextContent("TradePlan: plan-ref");
+    expect(details).toHaveTextContent("Canonical amounts and hash");
+    expect(screen.getByText(/BTC short: entry/).closest("details")).toBeNull();
+    expect(screen.getByText(/BTC short: entry/)).toBeVisible();
+  });
+
+  it("separates user and agent messages and offers document import and hides unsupported screenshot controls", async () => {
     render(<AgentWorkspace />);
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
     const messages = await screen.findAllByTestId("agent-message");
@@ -347,17 +408,18 @@ describe("Agent workspace", () => {
     expect(messages[0]).toHaveTextContent("You");
     expect(messages[1]).toHaveAttribute("data-role", "assistant");
     expect(messages[1]).toHaveTextContent("Agent");
-    expect(screen.getByTestId("agent-attach-image")).toBeDisabled();
+    expect(screen.queryByTestId("agent-attach-image")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import document" })).toBeEnabled();
     expect(screen.getByTestId("agent-voice")).toBeDisabled();
     expect(document.querySelector("input[type='file']")).toBeNull();
     expect(screen.getByTestId("agent-capability-boundary")).toHaveTextContent(
       "Image and screenshot attachment",
     );
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Screenshot analysis is not available. No image is uploaded or interpreted.",
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "Voice input is unavailable in this browser. Use a supported browser over HTTPS or type your message.",

@@ -316,6 +316,7 @@ def test_demo_explanation_separates_authorization_fill_and_recorded_protection(f
                     )
                     if filled
                     else None,
+                    None,  # No recorded demo exit lifecycle resolution in this entry fixture.
                 ]
             )
 

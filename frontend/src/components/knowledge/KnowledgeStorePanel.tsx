@@ -10,6 +10,7 @@ import type { FileImportPreview, IngestDocumentResponse } from "@/lib/api/types"
 
 type KnowledgeStorePanelProps = {
   onStored?: () => void;
+  initialMode?: "paste" | "file";
   initialSourceType?: "risk_policy" | "trading_playbook" | "general_note";
 };
 
@@ -28,11 +29,12 @@ function storageMessage(result: IngestDocumentResponse): string {
 export function KnowledgeStorePanel({
   onStored,
   initialSourceType = "trading_playbook",
+  initialMode = "paste",
 }: KnowledgeStorePanelProps) {
   const [title, setTitle] = useState("");
   const [sourceType, setSourceType] = useState<string>(initialSourceType);
   const [text, setText] = useState("");
-  const [mode, setMode] = useState<"paste" | "file">("paste");
+  const [mode, setMode] = useState<"paste" | "file">(initialMode);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<FileImportPreview | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);

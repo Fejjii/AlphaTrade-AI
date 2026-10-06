@@ -5,6 +5,22 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-107 — Agent trade continuity and document import entry
+- Priority: P1 · Status: DONE (implementation; review/live acceptance pending) ·
+  Dependencies: main `9306410` including PR210–214 · Risk: Medium (scoped financial reads).
+- Root cause: New messages lost selected trade identity; synthesis saw only short
+  user excerpts; model prose capped at 2,000 characters; import was outside Agent.
+- Scope: Scoped persisted Journal/account selection, explicit overrides and invalidation,
+  current record reads, bounded user/assistant context and readable trader presentation.
+  Full explanation/evidence/references stay expandable; missing facts stay visible.
+- UI: Existing Knowledge file preview/explicit save from Agent; paste ingestion retained;
+  unsupported screenshot controls hidden. No new storage or authority.
+- Validation: Focused PostgreSQL/API/Agent and UI regressions plus scoped lint/type checks.
+  Exact final evidence in PR/handoff. No full CI or deployed/live-model acceptance claimed.
+- Acceptance: Review/deploy and repeat latest BTC short question followed by “Explain
+  that trade”; verify isolation/selection changes and Knowledge preview/save. Existing
+  running full CI left untouched. `docs/agent_conversation_continuity.md`, AT-ADR-091.
+
 ## AT-105 — Five-market Nested demo readiness and repeatable lifecycle
 - Priority: P1 · Status: DONE (implementation; supervised acceptance pending) · Dependencies: main `ff90d0c`; independent
   Agent grounding PR211 delivered first · Risk: High.
