@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { installSharedE2ESession, paperModeActive } from "./helpers/shared-e2e-auth";
 
 const SHOTS = process.env.SIMPLIFIED_UI_SHOTS ?? "/opt/cursor/artifacts/screenshots";
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
 
 const DESTINATIONS = [
   { route: "/", heading: "Dashboard", file: "dashboard" },
@@ -41,7 +42,7 @@ test.describe("Simplified trader UI", () => {
         value: class {},
       });
     });
-    await installSharedE2ESession(page, request);
+    const accessToken = await installSharedE2ESession(page, request);
 
     for (const viewport of [
       { width: 1280, height: 900, label: "desktop" },
@@ -111,12 +112,73 @@ test.describe("Simplified trader UI", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/agent");
     await expect(page.getByTestId("agent-workspace")).toBeVisible();
-    await expect(page.getByTestId("agent-attach-image")).toBeDisabled();
+    await expect(page.getByTestId("agent-attach-image")).toHaveCount(0);
     await expect(page.getByTestId("agent-voice")).toBeVisible();
     await expect(page.getByTestId("agent-voice")).toBeEnabled();
-    await expect(page.getByText("Screenshot analysis is not available.")).toBeVisible();
+    await expect(page.getByText("Screenshot analysis is not available.")).toHaveCount(0);
     await expect(page.getByText("Voice is not available.")).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Import document", exact: true }).click();
+    const importer = page.getByRole("region", { name: "Document import to Knowledge" });
+    await expect(importer).toBeVisible();
+    await expect(importer.getByRole("link", { name: "Open Knowledge library" })).toHaveAttribute(
+      "href", "/knowledge",
+    );
+    await expect(importer).toContainText("Importing does not approve strategies or create Journal entries.");
+
+    const title = `Agent import smoke ${Date.now()}`;
+    const documentText = "Reference guidance: wait for a confirmed setup. This is proposed guidance.";
+    await importer.getByLabel("Title", { exact: true }).fill(title);
+    await importer.getByLabel("Category", { exact: true }).selectOption("trading_playbook");
+    await importer.getByLabel("Document file", { exact: true }).setInputFiles({
+      name: "agent-reference.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(documentText),
+    });
+    const save = importer.getByRole("button", { name: "Save previewed file" });
+    await expect(save).toBeDisabled();
+    const importRequests: string[] = [];
+    page.on("request", (outgoing) => {
+      if (outgoing.method() === "POST" && new URL(outgoing.url()).pathname === "/knowledge/files/import") {
+        importRequests.push(outgoing.url());
+      }
+    });
+    const previewResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/knowledge/files/preview" && response.request().method() === "POST",
+    );
+    await importer.getByRole("button", { name: "Preview file", exact: true }).click();
+    expect((await previewResponse).ok()).toBe(true);
+    await expect(importer.getByLabel("Extracted text preview")).toHaveValue(documentText);
+    await expect(importer.getByTestId("knowledge-file-preview")).toContainText(
+      "Nothing has been saved or indexed",
+    );
+    await expect(save).toBeEnabled();
+    expect(importRequests).toHaveLength(0);
+    const listDocuments = async () => {
+      const response = await request.get(`${API_URL}/knowledge/documents?limit=100`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      expect(response.ok()).toBe(true);
+      return (await response.json()) as { items: { id: string; title: string }[] };
+    };
+    expect((await listDocuments()).items.some((document) => document.title === title)).toBe(false);
+
+    const importResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/knowledge/files/import" && response.request().method() === "POST",
+    );
+    await save.click();
+    const storedResponse = await importResponse;
+    expect(storedResponse.ok()).toBe(true);
+    const stored = (await storedResponse.json()) as { document_id: string; sql_chunks_stored: boolean };
+    expect(stored.sql_chunks_stored).toBe(true);
+    await expect(importer.getByTestId("knowledge-ingest-success")).toContainText("Stored document");
+    expect(importRequests).toHaveLength(1);
+    expect((await listDocuments()).items).toContainEqual(expect.objectContaining({
+      id: stored.document_id, title,
+    }));
+    await expect(importer.getByTestId("knowledge-file-preview")).toHaveCount(0);
+    await expect(save).toBeDisabled();
 
     for (const route of RETAINED) {
       await page.goto(route);

@@ -364,7 +364,9 @@ def expected_migration_head() -> str | None:
     if not ini.is_file():
         return None
     try:
-        heads = ScriptDirectory.from_config(Config(str(ini))).get_heads()
+        config = Config(str(ini))
+        config.set_main_option("script_location", str(ini.parent / "src/app/db/migrations"))
+        heads = ScriptDirectory.from_config(config).get_heads()
     except Exception:
         return None
     if len(heads) != 1:

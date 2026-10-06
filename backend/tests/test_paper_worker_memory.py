@@ -36,7 +36,7 @@ from app.market_contracts.cvd import (
 from app.market_contracts.errors import IncompleteTradeWindowError
 from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.flow import bar_signed_quote_flow as signed_flow
-from app.market_contracts.identity import ADAPTER_VERSION, binance_usdm_btcusdt
+from app.market_contracts.identity import BINANCE_REST_ADAPTER_VERSION, binance_usdm_btcusdt
 from app.market_contracts.ohlcv import require_closed_series
 from app.market_contracts.replay_fixtures import (
     FIXTURE_CONNECTION_ID,
@@ -311,7 +311,7 @@ def _events(count: int, *, start: datetime, connection: UUID) -> list[TradeEvent
             event_timestamp=start + timedelta(milliseconds=index),
             receive_timestamp=EVALUATED_AT,
             source_connection_id=connection,
-            adapter_version=ADAPTER_VERSION,
+            adapter_version=BINANCE_REST_ADAPTER_VERSION,
         )
         for index in range(1, count + 1)
     ]
@@ -326,7 +326,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.market_contracts.first_slice import first_slice_identity
-from app.market_contracts.identity import ADAPTER_VERSION, binance_usdm_btcusdt
+from app.market_contracts.identity import BINANCE_REST_ADAPTER_VERSION, binance_usdm_btcusdt
 from app.market_contracts.trade_reduction import build_released_trade_snapshot
 from app.market_contracts.trades import build_trade_event
 from app.observability.process_memory import read_process_memory, release_allocator_memory
@@ -344,7 +344,7 @@ def one(index, start, instrument):
         event_timestamp=start + timedelta(milliseconds=index),
         receive_timestamp=EVALUATED_AT,
         source_connection_id=CONNECTION,
-        adapter_version=ADAPTER_VERSION,
+        adapter_version=BINANCE_REST_ADAPTER_VERSION,
     )
 
 release_allocator_memory()
@@ -500,7 +500,7 @@ def _measure_repeated_reduction() -> None:
                     event_timestamp=start + timedelta(milliseconds=index),
                     receive_timestamp=EVALUATED_AT,
                     source_connection_id=CONNECTION,
-                    adapter_version=ADAPTER_VERSION,
+                    adapter_version=BINANCE_REST_ADAPTER_VERSION,
                 )
 
         snapshot = build_released_trade_snapshot(

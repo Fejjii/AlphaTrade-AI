@@ -2,6 +2,22 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-092 — Migration readiness uses the deployed package path
+
+- Date: 2026-10-06
+- Decision: Resolve Watcher migration scripts relative to its located backend
+  package/alembic.ini, independent of the process working directory. Require one
+  expected head and one matching stored revision; unreadable or split history
+  remains a refusal. Preserve the literal migration chain in focused regressions.
+- Diagnostics: A startup refusal remains idle until a reviewed worker restart;
+  later DB recovery or a process heartbeat does not prove scanning. Reproduce this
+  behavior and provide fresh same-container preflight, posture, lease, scheduling
+  and successful evaluation checks. Do not automatically retry activation.
+- Limits: The declared Docker working directory normally resolves the old path;
+  the observed staging cause requires live evidence. No SFP tolerance, receipt,
+  strategy, execution, risk or deployment-authority change.
+- Reference: `docs/pr215_release_blockers.md`; AT-107 / PR215.
+
 ## AT-ADR-091 — Conversation selections are scoped references, never authority
 
 - Date: 2026-10-06

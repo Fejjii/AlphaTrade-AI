@@ -20,6 +20,14 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Acceptance: Review/deploy and repeat latest BTC short question followed by “Explain
   that trade”; verify isolation/selection changes and Knowledge preview/save. Existing
   running full CI left untouched. `docs/agent_conversation_continuity.md`, AT-ADR-091.
+- Release-blocker follow-up: Grouped/reproduced CI37480490124's 47 failures;
+  refreshed literal migration lineage, settled Binance read assertions and synthetic
+  adapter identities while preserving strict validation and memory bounds. Browser
+  smoke proves authenticated preview-only then explicit Knowledge save.
+- Watcher diagnosis: CWD-independent migration script resolution; startup refusal
+  can heartbeat indefinitely without scans or rechecking recovery. Existing authority
+  and restart policy retained; live cause awaits same-container posture/log/preflight
+  checks. `docs/pr215_release_blockers.md`, AT-ADR-092. Focused checks only.
 
 ## AT-105 — Five-market Nested demo readiness and repeatable lifecycle
 - Priority: P1 · Status: DONE (implementation; supervised acceptance pending) · Dependencies: main `ff90d0c`; independent
