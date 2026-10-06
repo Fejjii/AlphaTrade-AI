@@ -2212,6 +2212,46 @@ def _prevent_execution_transition_mutation(
     raise ValueError("ExecutionTransition rows are immutable.")
 
 
+class GovernedDemoLifecycleResolution(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable actual demo exit, projection and audited account reuse proof."""
+
+    __tablename__ = "governed_demo_lifecycle_resolutions"
+    __table_args__ = (
+        UniqueConstraint("command_id", name="uq_demo_lifecycle_command"),
+        CheckConstraint("length(content_hash) = 64", name="ck_demo_lifecycle_hash"),
+        CheckConstraint("released_notional >= 0", name="ck_demo_lifecycle_release"),
+        Index("ix_demo_lifecycle_org_account", "organization_id", "account_id"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_accounts.id"), nullable=False
+    )
+    command_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_commands.id"), nullable=False
+    )
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("trade_plan_revisions.id"), nullable=False
+    )
+    journal_close_event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("journal_lifecycle_events.id"), nullable=False
+    )
+    audit_event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("audit_logs.id"), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    risk_accounting_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+@event.listens_for(GovernedDemoLifecycleResolution, "before_update")
+@event.listens_for(GovernedDemoLifecycleResolution, "before_delete")
+def _prevent_demo_lifecycle_mutation(_mapper: object, _connection: object, _target: object) -> None:
+    raise ValueError("Governed demo lifecycle resolutions are immutable.")
+
+
 class ExecutionProjection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Rebuildable optimistic-version projection of a receipt."""
 

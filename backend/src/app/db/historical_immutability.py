@@ -33,12 +33,14 @@ PHASE4_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
 )
 
 PHASE8_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = ("learning_attribution_events",)
+DEMO_IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = ("governed_demo_lifecycle_resolutions",)
 
 IMMUTABLE_HISTORY_TABLES: tuple[str, ...] = (
     PHASE1_IMMUTABLE_HISTORY_TABLES
     + PHASE3_IMMUTABLE_HISTORY_TABLES
     + PHASE4_IMMUTABLE_HISTORY_TABLES
     + PHASE8_IMMUTABLE_HISTORY_TABLES
+    + DEMO_IMMUTABLE_HISTORY_TABLES
 )
 
 _FUNCTION_NAME = "alphatrade_forbid_historical_mutation"
@@ -94,6 +96,10 @@ def historical_immutability_phase4_install_statements() -> tuple[str, ...]:
 def historical_immutability_phase8_install_statements() -> tuple[str, ...]:
     """Phase 8 learning attribution event history. Function create is included."""
     return _install_statements_for(PHASE8_IMMUTABLE_HISTORY_TABLES)
+
+
+def historical_immutability_demo_install_statements() -> tuple[str, ...]:
+    return _install_statements_for(DEMO_IMMUTABLE_HISTORY_TABLES)
 
 
 def historical_immutability_uninstall_statements() -> tuple[str, ...]:

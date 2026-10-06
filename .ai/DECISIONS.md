@@ -2,6 +2,25 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-090 — Only immutable audited actual-exit proof releases a demo lifecycle
+
+- Date: 2026-10-06
+- Decision: Reuse the same demo account after exact native closing-fill, parent
+  order/protection and account-wide flat/no-pending evidence. Persist one immutable
+  scoped resolution with canonical Journal CLOSE and strict audit; release only
+  owned exposure/reservation under the account epoch. Mutable Journal status and
+  acknowledgments confer no release authority. Unresolved ALLOW continues blocking.
+- Safety: Preserve daily loss/trade accounting, historical clocks/hashes, fresh
+  Candidate/plan authorization, fencing, uncertain entry holds, one concurrent
+  position and one execution venue. Partial cancellation retains filled exposure's
+  loss/trade budget. Concurrent/restarted/late reconciliations cannot double-release.
+- Outcome: Actual fees and native fillPnl are recorded; undocumented gross/net,
+  funding and win/loss semantics remain missing. No assumed economic profit credit.
+- Limits: Bounded exclusive NET/cross account history; actual staging TPSL linkage
+  unverified. Unfilled, ambiguous, unsupported or incomplete history stays held.
+  PostgreSQL/ORM protection preserves resolution history; nonempty downgrade refused.
+- Reference: `docs/governed_demo_lifecycle.md`; independent PR211/212/213 remain intact.
+
 ## AT-ADR-088 — Demo first-entry readiness precedes repeat lifecycle authority
 
 - Date: 2026-10-06

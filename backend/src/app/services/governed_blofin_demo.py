@@ -23,7 +23,9 @@ from app.db.models import (
     ExecutionAccount,
     ExecutionCommand,
     ExecutionProjection,
+    GovernedDemoLifecycleResolution,
     JournalTrade,
+    TradePlanRevision,
     VenueSubmitEffect,
 )
 from app.evidence_pipeline.types import AssembledCanonicalEvidence
@@ -48,7 +50,9 @@ from app.services.automated_paper_loop import (
     _proof,
 )
 from app.services.canonical_paper_execution import CanonicalPaperExecutionService
+from app.services.canonical_serialization import canonical_sha256
 from app.services.demo_account_history import has_demo_entry_history
+from app.services.demo_lifecycle_resolution import resolve_verified_demo_exit
 from app.services.execution_service import ExecutionService
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
@@ -76,6 +80,23 @@ def demo_posture_refusal(settings: Settings) -> str | None:
     if not blofin_execution_authorized(settings):
         return "governed_demo_credential_gate_closed"
     return None
+
+
+def _resolved_lifecycle(session: Session, command: ExecutionCommand) -> str | None:
+    resolved = session.scalar(
+        select(GovernedDemoLifecycleResolution).where(
+            GovernedDemoLifecycleResolution.command_id == command.id,
+            GovernedDemoLifecycleResolution.organization_id == command.organization_id,
+            GovernedDemoLifecycleResolution.account_id == command.account_id,
+            GovernedDemoLifecycleResolution.user_id == command.user_id,
+            GovernedDemoLifecycleResolution.revision_id == command.revision_id,
+        )
+    )
+    if resolved is None:
+        return None
+    if canonical_sha256(resolved.evidence_payload) != resolved.content_hash:
+        return "demo_lifecycle_integrity_operator_hold"
+    return "demo_closed_reconciled"
 
 
 class GovernedBloFinDemoLoop(AutomatedPaperLoop):
@@ -391,6 +412,22 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
             return _proof(
                 candidate, "blocked", "demo_existing_plan_venue_mismatch", revision_id=revision_id
             )
+        if (
+            session.scalar(
+                select(GovernedDemoLifecycleResolution.id).where(
+                    GovernedDemoLifecycleResolution.command_id.in_(
+                        select(ExecutionCommand.id).where(
+                            ExecutionCommand.organization_id == target.organization_id,
+                            ExecutionCommand.user_id == target.user_id,
+                            ExecutionCommand.account_id == account_id,
+                            ExecutionCommand.revision_id == revision_id,
+                        )
+                    )
+                )
+            )
+            is not None
+        ):
+            return _proof(candidate, "closed", "demo_closed_reconciled", revision_id=revision_id)
         approval = ApprovalService(
             session, AuditService(session), clock=self._clock.now, plans=plans
         )
@@ -504,6 +541,9 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
             )
             if envelope.plan.execution_policy_version != DEMO_POLICY:
                 return "demo_plan_required"
+            completed = _resolved_lifecycle(session, command)
+            if completed is not None:
+                return completed
             effect = session.scalar(
                 select(VenueSubmitEffect).where(VenueSubmitEffect.command_id == command_id)
             )
@@ -525,6 +565,13 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                 return "demo_reconciliation_unavailable"
             if evidence is None:
                 return "demo_ambiguous_operator_hold"
+            self._safety(session).lock_epoch(
+                organization_id=command.organization_id, account_id=command.account_id
+            )
+            completed = _resolved_lifecycle(session, command)
+            if completed is not None:
+                session.commit()
+                return completed
             if evidence.status in {"rejected"} and not evidence.fills:
                 self._dispatcher(session).record_demo_order(command_id=command_id, rejected=True)
                 session.commit()
@@ -560,6 +607,7 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                     cumulative_fees=cumulative_fees,
                     demo_protection=evidence.protection_status,
                 )
+            exit_unavailable = False
             if evidence.fills:
                 projection = session.scalar(
                     select(ExecutionProjection).where(
@@ -569,6 +617,50 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                 if projection is not None and projection.fees != cumulative_fees:
                     projection.fees = cumulative_fees
                     projection.version = int(projection.version) + 1
+                if evidence.status in {"canceled", "cancelled", "expired"}:
+                    self._dispatcher(session).record_demo_terminal(command_id=command_id)
+                # Persist actual entry facts before separate bounded venue reads.
+                # No DB transaction/epoch lock spans the exit provider IO.
+                session.commit()
+                try:
+                    exit_evidence = self._get_provider().reconcile_exit(
+                        plan=envelope.plan, entry=evidence
+                    )
+                except Exception:
+                    exit_evidence = None
+                    exit_unavailable = True
+                if exit_evidence is not None:
+                    try:
+                        with session.begin_nested():
+                            resolve_verified_demo_exit(
+                                session,
+                                runtime=self._runtime,
+                                settings=self._settings,
+                                epochs=self._safety(session),
+                                command=command,
+                                envelope=envelope,
+                                evidence=exit_evidence,
+                            )
+                        session.commit()
+                        return "demo_closed_reconciled"
+                    except Exception:
+                        KillSwitchService(session, AuditService(session), self._settings).activate(
+                            organization_id=command.organization_id,
+                            actor_user_id=command.user_id,
+                            payload=KillSwitchMutationRequest(
+                                confirm=True,
+                                reason="BloFin demo exit projection requires operator review",
+                            ),
+                        )
+                        session.commit()  # Preserve previously committed entry facts.
+                        return "demo_exit_projection_operator_hold"
+            self._safety(session).lock_epoch(
+                organization_id=command.organization_id, account_id=command.account_id
+            )
+            completed = _resolved_lifecycle(session, command)
+            if completed is not None:
+                session.commit()
+                return completed
             if evidence.fills and not evidence.protected:
                 KillSwitchService(session, AuditService(session), self._settings).activate(
                     organization_id=command.organization_id,
@@ -587,6 +679,9 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                 effect.reconciliation_disposition = (
                     "DEMO_PROTECTED" if evidence.fills else "DEMO_UNFILLED"
                 )
+                if exit_unavailable:
+                    reason = "demo_filled_protected_exit_unavailable"
+                    effect.reconciliation_disposition = "DEMO_PROTECTED_EXIT_UNAVAILABLE"
             if evidence.status in {"canceled", "cancelled", "expired"}:
                 self._dispatcher(session).record_demo_terminal(command_id=command_id)
                 reason = (
@@ -601,6 +696,11 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
         ids = list(
             session.scalars(
                 select(ExecutionCommand.id)
+                .join(TradePlanRevision, TradePlanRevision.id == ExecutionCommand.revision_id)
+                .outerjoin(
+                    GovernedDemoLifecycleResolution,
+                    GovernedDemoLifecycleResolution.command_id == ExecutionCommand.id,
+                )
                 .where(
                     ExecutionCommand.organization_id
                     == UUID(self._settings.governed_blofin_demo_organization_id),
@@ -608,6 +708,8 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                     ExecutionCommand.account_id
                     == UUID(self._settings.governed_blofin_demo_account_id),
                     ExecutionCommand.outcome == ExecutionCommandOutcome.ALLOW,
+                    TradePlanRevision.execution_venue == "BLOFIN_DEMO",
+                    GovernedDemoLifecycleResolution.id.is_(None),
                 )
                 .order_by(ExecutionCommand.created_at)
                 .limit(20)
