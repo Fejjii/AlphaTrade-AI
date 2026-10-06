@@ -70,7 +70,8 @@ def assemble_ohlcv_family(
     sfp = isinstance(spec, SfpSpec)
     source, catalog = assembler._source, assembler._catalog
     replay = assembler._replay
-    now = assembler._default_clock()
+    clock = assembler._default_clock
+    now = clock()
     instrument = instrument_for_source(source, catalog, spec.symbol)
     identity = first_slice_identity(
         timeframe=spec.trigger_timeframe, replay=replay, is_live=not replay, instrument=instrument
@@ -90,6 +91,8 @@ def assemble_ohlcv_family(
         evaluated_at=now,
     )
     bars = tuple(series.bars)
+    # Receipt time belongs after acquisition/confirmation, never before network IO.
+    now = clock()
     if not bars:
         raise MarketContractError("Required OHLCV is missing.")
     if not sfp and not timedelta(0) <= now - bars[-1].interval_end < interval_timedelta(

@@ -10,6 +10,7 @@ from app.market_contracts.enums import SourceFamily, VenueId
 from app.market_contracts.identity import (
     ADAPTER_VERSION,
     AGGRESSOR_CONVENTION,
+    BINANCE_REST_ADAPTER_VERSION,
     BYBIT_ADAPTER_VERSION,
     BYBIT_AGGRESSOR_CONVENTION,
     EvidenceMarketIdentity,
@@ -82,7 +83,7 @@ def binance_usdm_source(*, replay: bool) -> SourceIdentity:
     return SourceIdentity(
         family=SourceFamily.BINANCE_USDM_FUTURES_PUBLIC,
         provider_name="binance-usdm-perpetual",
-        adapter_version=ADAPTER_VERSION,
+        adapter_version=BINANCE_REST_ADAPTER_VERSION,
         aggressor_convention=AGGRESSOR_CONVENTION,
     )
 

@@ -5,6 +5,27 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-103 — SFP REST candle finalization and immutable-policy recovery
+- Priority: P1 · Status: DONE (implementation; supervised staging acceptance pending) ·
+  Dependencies: main `60fed16` / merged PR208 ·
+  Risk: Medium.
+- Scope: Reproduce exact supplied receipt UUID and genuine volume/count/hash conflict.
+  Live REST v2 admits closed candles only after five seconds and two matching pinned
+  reads, validates close/count metadata, and records new receipts after acquisition.
+- History: Preserve v1 receipt keys, values, clocks, hashes and all references. The
+  actual application adapter policy has a distinct identity; provider revision stays
+  1. No same-policy conflict bypass, deletion, relabeling or automatic correction.
+- Verification: 248 distinct focused cases pass: 216 core cases, 66 affected/related
+  cases with overlap, then 26 final source cases repeated. Covers source metadata,
+  SQLite/PostgreSQL immutable recovery, both SFP scopes, restart/known-at, replay,
+  Nested and governed-demo/Watcher safety. Scoped Ruff/format and three contract
+  modules' strict mypy pass; assembly has the same 36 existing errors as main.
+  New-policy warm-up is causal; live upstream attribution remains unconfirmed.
+- Release: Supervising review/deployment, public payload comparison and successful
+  both-scope evaluations within two scheduled 15m boundaries. No full backend run,
+  merge, deploy, strategy/authority changes, activation or exchange orders here.
+- Reference: `docs/sfp_candle_finalization_recovery.md`; AT-ADR-086.
+
 ## AT-102 — Approved plan targets in Journal and scoped projection repair
 - Priority: P1 · Status: DONE (implemented; supervised repair pending) ·
   Dependencies: main `510dc2c` · Risk: Medium.
