@@ -153,13 +153,13 @@ def plan_terms(
             "targets": [
                 {
                     "order": 1,
-                    "price": {"value": "99000", "unit": "USDT"},
+                    "price": {"value": "98000", "unit": "USDT"},
                     "quantity_fraction": "0.50",
                     "derivation": {"formula_id": "nearest-structure", "formula_version": "1"},
                 },
                 {
                     "order": 2,
-                    "price": {"value": "98000", "unit": "USDT"},
+                    "price": {"value": "97000", "unit": "USDT"},
                     "quantity_fraction": "0.25",
                     "derivation": {"formula_id": "next-structure", "formula_version": "1"},
                 },

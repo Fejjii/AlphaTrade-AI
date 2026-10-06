@@ -45,6 +45,7 @@ from app.services.canonical_trade_plan_errors import (
     ConflictingTradePlanIdempotencyError,
     LegacyPaperValidationCannotMintPlanError,
 )
+from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk
 from app.signal_fusion.action_eligibility import (
     ActionEligibilityEvaluation,
     ActionEligibilityService,
@@ -277,6 +278,10 @@ class CanonicalTradePlanService:
             raise CanonicalTradePlanNotEligibleError(
                 "ActionEligibility must be currently paper-actionable to create a plan."
             )
+        try:
+            planned_reward_risk(command.terms)
+        except PlannedRewardRiskError as exc:
+            raise CanonicalTradePlanNotEligibleError(f"{exc.reason}: {exc}") from exc
 
     def _validate_identity_lineage(
         self,

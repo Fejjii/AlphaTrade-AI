@@ -28,6 +28,7 @@ from app.interactive_agent.actions import ActionRequest, RecordedTradeInput
 from app.interactive_agent.contracts import ArtifactKind, ConnectionRef, ProvenanceSource
 from app.interactive_agent.parsing import extract_direction, extract_symbol
 from app.interactive_agent.presentation import readable_number, readable_percentage, readable_price
+from app.interactive_agent.recorded_setup_evidence import read_setup_evidence
 from app.persistence.eligibility_postgres import PostgresActionEligibilityStore
 from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
 from app.schemas.agent_paper import AgentPaperResult
@@ -36,6 +37,7 @@ from app.schemas.common import ConversationMessageRole, JournalTradeSource
 from app.schemas.trade_plan import AuthorizationState, TradePlanRevisionSemantic
 from app.services.canonical_execution_journal import journal_planned_targets
 from app.services.canonical_serialization import canonical_sha256
+from app.services.planned_reward_risk import PlannedRewardRiskError, measure_planned_reward_risk
 from app.signal_fusion.types import hashed_model
 
 _READ = re.compile(
@@ -330,7 +332,14 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
         )
     else:
         evidence.missing.append("linked Candidate")
-    _eligibility(session, trade, envelope, evidence)
+    assessment_hash = _eligibility(session, trade, envelope, evidence)
+    read_setup_evidence(
+        session,
+        envelope,
+        add=evidence.add,
+        missing=evidence.missing,
+        assessment_content_hash=assessment_hash,
+    )
     command = session.scalar(
         select(ExecutionCommand).where(
             ExecutionCommand.id == trade.execution_lifecycle_id,
@@ -395,6 +404,18 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
         f"target(s): {display_targets} (immutable plan). "
         f"Execution venue: {venue}."
     )
+    try:
+        measured = measure_planned_reward_risk(plan)
+        evidence.lines.append(
+            f"Historical planned gross allocation-weighted reward/risk: {measured.ratio}; "
+            "worst entry-zone boundary; unpriced runner reward zero; costs excluded. "
+            "This current policy comparison does not change historical authorization."
+        )
+        summary += f" Planned gross reward/risk: {readable_number(measured.ratio, places=2)}R."
+        if not measured.meets_minimum:
+            summary += " This historical plan falls below the current 1R minimum for a new entry."
+    except PlannedRewardRiskError:
+        evidence.missing.append("planned reward/risk cannot be measured from these stored terms")
     if not trade.planned_targets and plan.risk_and_exits.targets:
         summary += (
             " Journal targets are empty; the target source is the linked plan, "
@@ -427,7 +448,7 @@ def _plan(session: Session, trade: JournalTrade) -> CanonicalTradePlanRevision |
 
 def _eligibility(
     session: Session, trade: JournalTrade, envelope: CanonicalTradePlanRevision, evidence: _Evidence
-) -> None:
+) -> str | None:
     store = PostgresActionEligibilityStore(
         sessionmaker(bind=session.get_bind(), expire_on_commit=False)
     )
@@ -435,7 +456,7 @@ def _eligibility(
         evaluation = store.get(envelope.lineage.eligibility_uniqueness_hash)
     if evaluation is None:
         evidence.missing.append("linked historical ActionEligibility")
-        return
+        return None
     eligibility = evaluation.eligibility
     _require(
         eligibility.organization_id == trade.organization_id
@@ -458,6 +479,7 @@ def _eligibility(
     evidence.allowed.append(
         f"Historical eligibility was {eligibility.state.value.lower().replace('_', ' ')}."
     )
+    return evaluation.setup_assessment_content_hash
 
 
 def _execution(
@@ -662,6 +684,7 @@ def _require(condition: bool, label: str) -> None:
 
 
 def _finish(summary: str, evidence: _Evidence) -> RecordedTradeRead:
+    evidence.missing = list(dict.fromkeys(item.strip().rstrip(".") for item in evidence.missing))
     allowed = (
         " ".join(evidence.allowed)
         or "Authorization evidence is unavailable; no reason for approval is inferred."

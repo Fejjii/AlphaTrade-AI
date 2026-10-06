@@ -184,7 +184,7 @@ def compose_visible_reply(
         warnings.append("Stored evidence is stale; it cannot establish a current price.")
     if re.search(
         r"(?:is|freshness|quality|=)\s*(?:unavailable|missing|incomplete)\b", factual, re.I
-    ):
+    ) and not any(warning.startswith("Missing evidence:") for warning in required_warnings):
         warnings.append("Stored evidence is unavailable or incomplete; do not infer missing facts.")
     if "Current market conditions are unknown." in factual:
         warnings.append("Current market conditions are unknown.")
