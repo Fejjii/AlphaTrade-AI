@@ -1,5 +1,8 @@
 # Staging Execution Checklist (Manual)
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 One-page click order for **Slice 30**. Fill URLs in [staging_live_deployment_notes.md](staging_live_deployment_notes.md) as you go.
 
 | Step | Where | Action | Done |

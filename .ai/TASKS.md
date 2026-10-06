@@ -36,6 +36,23 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   live approval in this task. `docs/five_market_demo_readiness.md`,
   `docs/governed_demo_lifecycle.md`; AT-ADR-088/090.
 
+## AT-104 — Agent recorded paper trade grounding
+- Priority: P1 · Status: DONE (implementation; supervising live acceptance pending) ·
+  Dependencies: main `ff90d0c` · Risk: Medium (historical financial record scope).
+- Root cause: Natural trade questions read legacy journal notes/title references,
+  not canonical Journal/plan/fill records; explicit internal read requires UUID/capture.
+- Scope: Read-only scoped latest selection and exact immutable lineage, planned versus
+  filled prices, venue evidence, truthful target discrepancy and missing risk narrative.
+  No playbook authorization, record repair, authority change or new database.
+- Validation: 99 distinct focused cases pass (27 recorded/internal paper, 71 existing
+  routing/presentation/refusal, 1 actual simulated demo pipeline); scoped Ruff/format
+  and strict mypy five modules pass. No full backend suite or live model quality claim.
+- Release: Review, supervising consolidated release gate, deploy and repeat original
+  live Agent question. No full backend run, merge, deploy, activation or exchange order.
+- Follow-up: Five-market Nested/demo readiness and repeat lifecycle start on a new
+  branch only after this PR opens; leave documentation/submission work untouched.
+- Reference: `docs/agent_recorded_trade_grounding.md`; AT-ADR-087.
+
 ## AT-103 — SFP REST candle finalization and immutable-policy recovery
 - Priority: P1 · Status: DONE (implementation; supervised staging acceptance pending) ·
   Dependencies: main `60fed16` / merged PR208 ·

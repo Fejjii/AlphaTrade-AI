@@ -1,5 +1,8 @@
 # Paper-First MVP — Completion Note
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 **Status:** Complete — **98% readiness** (demo-ready, portfolio-ready)  
 **Baseline commit:** `57e35a5`  
 **CI:** Green  
