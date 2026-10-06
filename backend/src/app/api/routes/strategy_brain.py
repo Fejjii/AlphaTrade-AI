@@ -1,6 +1,7 @@
 """Strategy Brain: explicit library proposals and bounded stored setup reads."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Depends
@@ -14,6 +15,7 @@ from app.schemas.nested_continuation import NESTED_KIND, NestedContinuationSpec
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import ReaderDep, TraderDep
 from app.services.strategy_versioning import StrategyVersioningService
+from app.strategy_brain.nested_preview import preview_nested_subscriptions
 from app.strategy_brain.records import _insert_once
 from app.strategy_brain.service import create_template, details, overview
 from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
@@ -46,6 +48,22 @@ async def propose_nested(
     )
     session.commit()
     return result
+
+
+class NestedSubscriptionPreviewRequest(StrictModel):
+    baseline_version_id: UUID
+
+
+@router.post("/templates/nested/preview")
+async def preview_nested(
+    body: NestedSubscriptionPreviewRequest, tenant: ReaderDep, session: SessionDep
+) -> dict[str, Any]:
+    return preview_nested_subscriptions(
+        session,
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        baseline_version_id=body.baseline_version_id,
+    )
 
 
 @router.post("/templates/sfp", status_code=201)
