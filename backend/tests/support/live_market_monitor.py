@@ -17,6 +17,8 @@ from app.market_contracts.errors import (
 )
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import (
+    ADAPTER_VERSION,
+    BINANCE_REST_ADAPTER_VERSION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
     require_instrument,
@@ -64,6 +66,18 @@ class ScriptedPerpetualSource:
     ) -> ClosedOhlcvSeries:
         self._assert_identity(identity, instrument)
         bars = self._bars_15m if timeframe is Timeframe.M15 else self._bars_4h
+        # Shared synthetic generators retain replay v1. A scripted live source
+        # emits the current REST bundle version; unknown versions stay untouched
+        # so real version-mismatch refusals remain testable.
+        if not self._replay and identity.source.adapter_version == BINANCE_REST_ADAPTER_VERSION:
+            bars = [
+                with_content_hash(
+                    bar.model_copy(update={"adapter_version": BINANCE_REST_ADAPTER_VERSION})
+                )
+                if bar.adapter_version == ADAPTER_VERSION
+                else bar
+                for bar in bars
+            ]
         if timeframe not in {Timeframe.M15, Timeframe.H4}:
             raise WrongMarketError(f"Unsupported timeframe {timeframe.value}.")
         if len(bars) < min_final_bars:
@@ -102,8 +116,12 @@ class ScriptedPerpetualSource:
             raw = []
         retagged: list[TradeEvent] = []
         for trade in raw:
+            adapter_version = trade.adapter_version
+            if not self._replay and adapter_version == ADAPTER_VERSION:
+                adapter_version = BINANCE_REST_ADAPTER_VERSION
             updated = trade.model_copy(
                 update={
+                    "adapter_version": adapter_version,
                     "source_connection_id": source_connection_id,
                     "receive_timestamp": receive_at,
                 }

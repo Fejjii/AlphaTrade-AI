@@ -45,10 +45,11 @@ from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.freshness import first_slice_freshness_policy
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import (
-    ADAPTER_VERSION,
+    BINANCE_REST_ADAPTER_VERSION,
     EvidenceMarketIdentity,
     InstrumentIdentity,
     binance_usdm_perpetual,
+    interval_timedelta,
     require_instrument,
     require_perpetual,
 )
@@ -88,6 +89,11 @@ _BINANCE_INTERVAL = {
     Timeframe.D3: "3d",
     Timeframe.W1: "1w",
 }
+
+# REST closeTime is a scheduled boundary, not a finalization acknowledgement.
+# v2 excludes the observed subsecond settlement race and confirms eligible rows
+# twice. This is a conservative admission rule, not a provider revision/guarantee.
+BINANCE_REST_SETTLEMENT_GRACE = timedelta(seconds=5)
 
 
 class BinanceUsdmPerpetualSource:
@@ -211,33 +217,30 @@ class BinanceUsdmPerpetualSource:
                 f"Timeframe {timeframe.value} is not contracted for USD-M evidence."
             )
         limit = min(max(min_final_bars + 2, min_final_bars), 1500)
-        payload = self._get(
-            "/fapi/v1/klines",
-            {
-                "symbol": instrument.provider_symbol,
-                "interval": interval,
-                "limit": limit,
-            },
+        params: dict[str, str | int] = {
+            "symbol": instrument.provider_symbol,
+            "interval": interval,
+            "limit": limit,
+            "endTime": int(evaluated_at.timestamp() * 1000),
+        }
+        payload = self._get("/fapi/v1/klines", params)
+        final_bars = self._settled_bars(
+            payload, instrument=instrument, timeframe=timeframe, evaluated_at=evaluated_at
         )
-        if not isinstance(payload, list):
-            raise WrongMarketError("USD-M kline payload is not a list.")
-        grace = timedelta(seconds=first_slice_freshness_policy().ohlcv_post_close_grace_seconds)
-        bars: list[OhlcvBar] = []
-        for row in payload:
-            bars.append(
-                self._parse_kline(
-                    row,
-                    instrument=instrument,
-                    timeframe=timeframe,
-                    evaluated_at=evaluated_at,
-                    grace=grace,
-                )
-            )
-        final_bars = [bar for bar in bars if bar.finality.value == "final"]
         if len(final_bars) < min_final_bars:
             raise FormingCandleError(
                 f"Need {min_final_bars} final {timeframe.value} candles; "
-                f"received {len(final_bars)} final and {len(bars) - len(final_bars)} non-final."
+                f"received {len(final_bars)} confirmed closed candidates."
+            )
+        confirmed = self._settled_bars(
+            self._get("/fapi/v1/klines", params),
+            instrument=instrument,
+            timeframe=timeframe,
+            evaluated_at=evaluated_at,
+        )
+        if final_bars != confirmed:
+            raise FormingCandleError(
+                "Closed Binance REST candles changed between confirmation reads."
             )
         return require_closed_series(
             final_bars,
@@ -246,6 +249,38 @@ class BinanceUsdmPerpetualSource:
             evaluated_at=evaluated_at,
             min_bars=min_final_bars,
         )
+
+    def _settled_bars(
+        self,
+        payload: object,
+        *,
+        instrument: InstrumentIdentity,
+        timeframe: Timeframe,
+        evaluated_at: datetime,
+    ) -> list[OhlcvBar]:
+        if not isinstance(payload, list):
+            raise WrongMarketError("USD-M kline payload is not a list.")
+        grace = max(
+            BINANCE_REST_SETTLEMENT_GRACE,
+            timedelta(seconds=first_slice_freshness_policy().ohlcv_post_close_grace_seconds),
+        )
+        bars = [
+            self._parse_kline(
+                row,
+                instrument=instrument,
+                timeframe=timeframe,
+                evaluated_at=evaluated_at,
+                grace=grace,
+            )
+            for row in payload
+        ]
+        if any(timedelta(0) <= evaluated_at - bar.interval_end < grace for bar in bars):
+            # Do not return an older trigger as though the just-closed bar were ready.
+            # The existing worker poll retries acquisition after the settlement guard.
+            raise FormingCandleError(
+                "Binance REST candle is inside the post-close settlement guard."
+            )
+        return [bar for bar in bars if bar.finality.value == "final"]
 
     def fetch_ordered_trades(
         self,
@@ -499,12 +534,19 @@ class BinanceUsdmPerpetualSource:
         evaluated_at: datetime,
         grace: timedelta,
     ) -> OhlcvBar:
-        if not isinstance(row, list) or len(row) < 8:
+        if not isinstance(row, list) or len(row) < 9:
             raise WrongMarketError("USD-M kline row is malformed.")
         open_ms = int(row[0])
         interval_start = datetime.fromtimestamp(open_ms / 1000, tz=UTC)
+        expected_close_ms = (
+            int((interval_start + interval_timedelta(timeframe)).timestamp() * 1000) - 1
+        )
+        if not isinstance(row[6], int) or isinstance(row[6], bool) or row[6] != expected_close_ms:
+            raise WrongMarketError("USD-M kline close time does not match its interval.")
         quote_volume = Decimal(str(row[7]))
-        trade_count = int(row[8]) if len(row) > 8 else None
+        if not isinstance(row[8], int) or isinstance(row[8], bool):
+            raise WrongMarketError("USD-M kline trade count must be an integer.")
+        trade_count = row[8]
         return build_ohlcv_bar(
             instrument=instrument,
             timeframe=timeframe,
@@ -518,7 +560,7 @@ class BinanceUsdmPerpetualSource:
             evaluated_at=evaluated_at,
             grace=grace,
             trade_count=trade_count,
-            adapter_version=ADAPTER_VERSION,
+            adapter_version=BINANCE_REST_ADAPTER_VERSION,
         )
 
     def _parse_agg_trade(
@@ -545,7 +587,7 @@ class BinanceUsdmPerpetualSource:
             event_timestamp=datetime.fromtimestamp(event_ms / 1000, tz=UTC),
             receive_timestamp=receive_at.astimezone(UTC),
             source_connection_id=source_connection_id,
-            adapter_version=ADAPTER_VERSION,
+            adapter_version=BINANCE_REST_ADAPTER_VERSION,
         )
 
     @property

@@ -2,6 +2,27 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-086 — Live REST finalization policy has a new immutable evidence identity
+
+- Date: 2026-10-06
+- Decision: Live Binance REST v2 validates native close/count metadata, excludes
+  a five-second post-close settlement interval and requires two matching closed
+  payload reads pinned to the same evaluation window. Replay v1 and Bybit remain
+  unchanged; same-policy immutable conflicts still refuse.
+- Evidence: Supplied final/revision1 receipt at close+614 ms has changed volume/count
+  values. Zero-grace local-clock admission and repeated-read instability reproduce.
+  Exact upstream late-aggregation versus correction attribution remains unconfirmed.
+- History: An actual adapter policy change receives a new source/provenance version
+  and identity hash. Reobserve into that namespace with current receipt clocks;
+  preserve original full-key rows and all historical references. Never fabricate
+  provider revisions, silently merge policies, overwrite receipts or backdate warm-up.
+- Limits: Five seconds and stable REST reads are conservative admission conditions,
+  not a provider finality guarantee. The boundary requires supervising release review,
+  captured public comparison and fresh both-scope scheduled acceptance.
+- Reference: `docs/sfp_candle_finalization_recovery.md`; AT-103.
+
+---
+
 ## AT-ADR-085 — Journal target repair preserves immutable execution history
 
 - Date: 2026-10-06
