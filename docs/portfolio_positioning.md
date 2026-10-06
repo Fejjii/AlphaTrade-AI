@@ -1,112 +1,38 @@
-# AlphaTrade AI — Portfolio Positioning
+# Product positioning
 
-Short reference for reviewers, recruiters, and technical interviews. Describes the system as built (paper MVP through Slice 55).
+AlphaTrade AI is a paper trading workspace for discretionary crypto traders who want to connect market analysis, explicit rules, risk decisions and review in one record.
 
----
+## Problem, approach and value
 
-## Problem
+Charts show market movement; chat explains possibilities; journals record outcomes. When those tools are disconnected, a trader can lose the original hypothesis, approved rules and reasons for a decision.
 
-Crypto traders often split workflow across charts, notes, and unconstrained LLM chats. LLM outputs are persuasive but unreliable for sizing, stops, and execution. There is no enforced path from idea → risk check → human approval → auditable outcome.
+AlphaTrade links an approved strategy and its evidence to a setup, deterministic risk decision, authorized paper execution and Journal outcome. The Agent explains stored context and drafts supported changes for review. This makes decisions easier to inspect and lessons easier to trace. Improved discipline, investment performance and commercial value remain hypotheses to evaluate, not measured outcomes established by the repository.
 
----
+The product is organized into Dashboard, Agent, Journal, Strategies, Knowledge and Settings. [The README](../README.md) and [guided demo](demo_script.md) give the three-minute version.
 
-## Solution
+## Engineering contribution
 
-AlphaTrade AI is a **human-in-the-loop trading copilot** that combines:
+The defensible portfolio story is implementing a full-stack AI application with explicit authority boundaries:
 
-- Structured strategy cards and deterministic setup detection
-- A 15-rule risk engine where `BLOCK` is final authority
-- Explicit approve / reject / modify workflow before paper simulation
-- LangGraph agent with guardrails, RAG context, and schema-validated responses
-- Full audit trail, tenant isolation, and usage quotas
+- A Next.js interface for recorded decisions, context and separate confirmation.
+- A FastAPI modular backend and supervised worker sharing PostgreSQL records.
+- Deterministic strategy/risk/eligibility and immutable evidence/plan identities.
+- Model-assisted conversation with scoped retrieval, provenance and declared limitations.
+- Governed strategy learning that requires validation and human promotion.
+- Authenticated tenant/role boundaries, provider policy, audit and operational evidence.
 
-Real exchange execution is **disabled and not wired** in this release.
+Avoid implying that one person independently authored every dependency or every project decision. Describe the work you can explain and substantiate. [Technical walkthrough](interview_package.md) · [Q&A](technical_qa.md).
 
----
+## Current product and future vision
 
-## Architecture
+Implemented source includes current Agent conversations/proposals, Nested detection and paper paths, SFP structural research, Journal/analytics/learning records, Knowledge import/retrieval and browser speech controls. Exact support differs by strategy and route. Hosted execution/provider state needs operational observation.
 
-Modular monolith: **FastAPI** API, **LangGraph** agent, **PostgreSQL** persistence, **Redis** rate limits, **Qdrant** (optional) vectors, **Next.js 15** PWA.
+The October 6 supervisor reports a real Nested/internal-paper/Journal/Telegram event and PR208/PR209 deployment. Fresh SFP recovery, existing Journal target repair and real BloFin demo acceptance remain pending. These reports were not reverified in the documentation task. Real trading is permanently refused by the inspected source; no profitability or complete MVP acceptance is claimed.
 
-```mermaid
-flowchart LR
-  UI[Next.js PWA] -->|JWT| API[FastAPI]
-  API --> Agent[LangGraph]
-  Agent --> Guard[Guardrails]
-  Agent --> Risk[Risk Engine]
-  Agent --> Tools[Services / Providers]
-  Tools --> PG[(PostgreSQL)]
-  Tools --> Redis[(Redis)]
-  Tools --> Qdrant[(Qdrant)]
-```
+The longer-term vision includes richer continuous voice interaction, deeper behavioral support, broader workflow orchestration and additional strategies. Existing browser speech, attribution and governed-learning foundations should be described as implemented foundations, not proof of that whole vision. [Status](current_status.md) · [Limitations and roadmap](limitations_roadmap.md).
 
-Live staging: Vercel frontend + Render API + Render Postgres + Upstash Redis.
+## A concise portfolio description
 
-Details: [architecture.md](architecture.md)
+> Built a paper trading workspace that links market evidence, approved strategy rules, deterministic risk, paper execution and Journal review. Added a conversational Agent with scoped knowledge and explicit action confirmation, backed by versioned records, tenant/role checks and a supervised worker. Current operational and strategy acceptance limits are documented separately.
 
----
-
-## AI engineering patterns
-
-| Pattern | Implementation |
-|---------|----------------|
-| **LLM explains; code decides** | Deterministic analysis and risk run before optional narrative |
-| **Guardrails** | Input/output policy; injection and unsafe trading language blocked |
-| **Structured outputs** | Pydantic schemas; narrative cannot alter risk or approval state |
-| **RAG for policy, not signals** | Playbooks, policies, journal lessons — never order instructions |
-| **Tool-gated mutations** | Settings changes require explicit user confirmation in chat |
-| **Evaluation harness** | Offline agent, RAG, and guardrail regression scripts |
-
-Details: [agent_workflow.md](agent_workflow.md) · [rag_system.md](rag_system.md)
-
----
-
-## Safety and guardrails
-
-- `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false` — enforced at startup on staging/production
-- No broker or exchange order APIs in MVP
-- External notifications (Telegram, webhook) **disabled by default**
-- Demo seed endpoint owner-only; blocked in production
-- RBAC: VIEWER cannot approve or place paper orders
-- Provider status and health endpoints do not expose connection secrets (Redis URL sanitized)
-
-Details: [security.md](security.md)
-
----
-
-## Trading discipline focus
-
-The product optimizes for **process over prediction**:
-
-- Daily discipline snapshot (trades today, paper PnL, loss/green-day states)
-- Configurable risk settings per tenant
-- Paper validation runtime with conservative eligibility gates
-- Lesson review workflow — pending vs accepted before RAG promotion
-- Deterministic discipline score (not LLM-generated)
-
-Details: [risk_management.md](risk_management.md) · [paper_validation.md](paper_validation.md)
-
----
-
-## What I would improve next
-
-| Priority | Focus |
-|----------|--------|
-| 1 | **Qdrant Cloud on staging** — restore persistent vector store; remove in-memory RAG fallback |
-| 2 | **Production Stripe** — Checkout, Portal, entitlements (scaffold exists) |
-| 3 | **LangSmith / OTel** — trace agent runs and provider latency in production |
-| 4 | **Scaled LLM evaluation** — expand harness with LLM-judge and regression suites |
-| 5 | **Exchange adapter (post-MVP)** — optional integration, still approval-gated and compliance-reviewed |
-
-Current staging limitations: [staging_deployment.md](staging_deployment.md) · [limitations_roadmap.md](limitations_roadmap.md)
-
----
-
-## Live demo
-
-| | |
-|---|---|
-| App | https://alpha-trade-ai-eight.vercel.app |
-| Demo user | `demo@alphatrade.ai` |
-| Walkthrough | [demo_script.md](demo_script.md) |
-| Screenshots | [screenshots_checklist.md](screenshots_checklist.md) |
+Use [the timed pitch](interview_pitch.md) for interviews. Technical stack/version detail belongs in [architecture](architecture.md), not a claim about deployed package versions or trading performance.

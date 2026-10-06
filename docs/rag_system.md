@@ -1,136 +1,58 @@
-# RAG System
+# Knowledge retrieval, memory and learning
 
-AlphaTrade RAG provides **rules, playbooks, journal lessons, and policy context** —
-never direct trading signals or order instructions.
+Retrieval brings recorded playbooks, policies and lessons into a conversation with source references. It does not turn a document into market truth or an execution instruction. This guide reflects main `ff90d0c`, inspected October 6, 2026; [current status](current_status.md) records runtime unknowns.
 
-## Components
+## Two implemented retrieval paths
 
-| Layer | Implementation |
-|-------|----------------|
-| Ingestion | `RagService.ingest()` — chunk, embed, persist to DB + vector store |
-| Embeddings | `mock-embeddings` (deterministic) or `openai-embeddings` when configured |
-| Vector store | in-memory (default/tests) or Qdrant when `PROVIDER_MODE=fallback` |
-| Retrieval | `RagService.search()` with metadata filters and citations |
+| Path | How it works | Important limit |
+| --- | --- | --- |
+| Knowledge service / legacy graph RAG | [RagService](../backend/src/app/services/rag_service.py) chunks and embeds content, stores SQL document/chunk rows and indexes/searches vector points with scoped metadata. | Provider/indexing observation and citation are not proof that the content is correct. |
+| Current `/agent/turns` | [Interactive retrieval](../backend/src/app/interactive_agent/retrieval.py) searches existing SQL documents/chunks lexically, scanning at most 200 chunks and returning five hits by default. | Qdrant is not queried unless a vector retriever is injected. A configured Qdrant service does not imply vector retrieval on every Agent turn. |
 
-## Embedding dimensions
+Optional vector hits are reloaded from organization/user-scoped SQL chunks/documents before presentation. Organization-shared and user-owned content have different visibility. The [knowledge context builder](../backend/src/app/interactive_agent/knowledge_context.py) carries titles, source labels, chunk references and limitations into bounded model context. Stored guidance remains reference data; current strategy approval/risk settings need canonical application evidence.
 
-| Mode | Default dimensions |
-|------|--------------------|
-| No `OPENAI_API_KEY` (mock) | **384** |
-| `text-embedding-3-small` with key | **1536** |
-| Explicit `EMBEDDINGS_DIMENSIONS` | that value (OpenAI `-3-*` models receive it via API) |
+## Storage and provider options
 
-Mock fallback used by the OpenAI provider is always constructed with the **same**
-dimension as the live provider so runtime fallback never mixes sizes.
-
-Qdrant is configured with that same size. If collection `alphatrade_knowledge`
-already exists with a different size, upserts/searches **do not write incompatible
-vectors into Qdrant**; they fall back to in-memory and provider status reports a
-dimension mismatch.
-
-## Enabling real embeddings
-
-```bash
-OPENAI_API_KEY=...          # set in Render secrets; never commit
-PROVIDER_MODE=fallback
-OPENAI_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-EMBEDDINGS_MODEL=text-embedding-3-small
-# optional explicit size:
-# EMBEDDINGS_DIMENSIONS=1536
+```mermaid
+flowchart LR
+  Input["Pasted text or explicitly saved file preview"] --> Service["Scoped knowledge ingestion"]
+  Service --> SQL["PostgreSQL documents and chunks"]
+  Service --> Embed["Configured embeddings provider"]
+  Embed --> Vector["Qdrant index or local mock store"]
+  SQL --> Agent["Default Agent lexical retrieval"]
+  Vector --> Search["Knowledge vector search"]
+  Agent --> Context["Cited context; no trading authority"]
+  Search --> Context
 ```
 
-## Enabling Qdrant
+| Option | Inspected default/policy |
+| --- | --- |
+| Local mock embeddings | Deterministic hash vectors; auto dimensions 384. Suitable for development, not evidence of semantic model quality. |
+| Configured OpenAI embeddings | `text-embedding-3-small` by default; auto native dimensions 1536. `EMBEDDINGS_DIMENSIONS` can explicitly set supported dimensions. |
+| Vector collection | `alphatrade_knowledge`; dimensions must match the selected embedding contract. |
+| Local vector store | Process-memory option; content/index persistence and replica consistency differ from Qdrant. |
+| Hosted policy | Staging/production require authoritative Qdrant and configured OpenAI; silent mock/in-memory substitutes are prohibited. |
 
-```bash
-QDRANT_URL=https://your-cluster.qdrant.io:6333
-QDRANT_API_KEY=...          # required for Qdrant Cloud; wired into Settings
-PROVIDER_MODE=fallback
-```
+Sources: [dimension resolution](../backend/src/app/providers/embedding_dimensions.py), [provider factory](../backend/src/app/providers/factory.py), [provider policy](../backend/src/app/core/provider_policy.py), [Qdrant adapter](../backend/src/app/providers/qdrant.py). Model/collection choices in configuration are not fresh deployed observations. A mismatch or outage must be reported as unavailable under hosted policy, not hidden as healthy retrieval.
 
-Docker Compose starts local Qdrant on port 6333 (usually no API key). When Qdrant
-is unreachable, the backend falls back to the shared in-memory store automatically.
+Ingestion records SQL chunk count, vector backend, upsert acknowledgment, fallback flag and observation time. That is the last recorded indexing result, not a continuous health guarantee. Vector failure rolls back SQL ingestion; a subsequent SQL commit failure can leave orphan vector points because the two stores are not a distributed transaction. Retrieval will not expose those points without matching scoped SQL records. Changing embedding dimensions requires an explicitly reviewed reindex/restore plan; do not delete a shared collection as demo preparation.
 
-Collection `alphatrade_knowledge` is created on first upsert with cosine distance
-and the configured embedding dimensions.
+## File import and source provenance
 
-## Staging: switch mock → OpenAI (operator procedure)
+[Knowledge file preview/import](knowledge_file_import.md) supports UTF-8 (optional BOM) or BOM-marked UTF-16 text, Markdown, DOCX body/table text and selectable-text PDF. Preview saves/indexes nothing. Explicit save validates the exact preview receipt and parses within resource bounds. The stored result contains extracted text, chunks and file provenance; raw binaries and preview receipts are not persisted. Scanned images have no OCR support.
 
-Paper-only. No orders, proposals, workers, scanners, or Telegram.
+Source type, filename, document/chunk IDs and provenance help a reader locate evidence. A search similarity score is a retrieval ranking, not a truth/confidence score or trading signal.
 
-1. Keep safety flags unchanged:
-   - `EXECUTION_MODE=paper`
-   - `ENABLE_REAL_TRADING=false`
-   - `EXCHANGE_MODE=paper_internal`
-   - `PROVIDER_MODE=fallback`
-2. Set on Render (names only): `OPENAI_API_KEY`, and if needed `QDRANT_API_KEY`,
-   optional `OPENAI_BASE_URL`, `LLM_MODEL`, `EMBEDDINGS_MODEL`, `EMBEDDINGS_DIMENSIONS`.
-3. Redeploy API (worker stays disabled).
-4. Recreate **only** the knowledge collection (deletes existing vectors in that collection):
+## Journal and learning memory
 
-   ```bash
-   ENV_FILE=.env.staging ./scripts/recreate-rag-collection.sh --dry-run
-   ENV_FILE=.env.staging ./scripts/recreate-rag-collection.sh --i-understand-this-deletes-vectors
-   ```
+[JournalRagSyncService](../backend/src/app/services/journal_rag_sync_service.py) can sync legacy Journal entries as `trade_journal`, using stable references and sanitization. `JOURNAL_RAG_SYNC_ENABLED` defaults true. This does not mean every canonical Journal trade, analytics summary or learning event is automatically embedded; each integration has its own authority and wiring.
 
-5. Reingest playbook / knowledge fixtures:
+Canonical Journal and learning attribution preserve trade/strategy/version lineage and separate planned quality, execution, risk adherence, behavior and outcome. [Learning persistence](phase8_learning_persistence.md) and [governed promotion](governed_learning_promotion_001_handoff.md) describe those boundaries on their stated implementation bases. Facts, user observations, inference and suggestions remain distinguishable. Narrative is not a fact hash.
 
-   ```bash
-   ACCESS_TOKEN=... BASE_URL=https://<staging-api> ./scripts/reingest-knowledge-base.sh --api
-   ```
+The current Agent can read recorded learning status and draft supported changes. Promotion requires exact baseline/candidate validation, recorded paper evidence and explicit human approval; conversation confirmation cannot bypass those gates. This is stored context and governed adaptation, not online model training, autonomous self-improvement or proven behavior change.
 
-6. Validate:
+## Verify a retrieval claim
 
-   ```bash
-   ./scripts/provider-validation-smoke.sh local
-   BASE_URL=https://<staging-api> ./scripts/provider-validation-smoke.sh --remote
-   ACCESS_TOKEN=... BASE_URL=https://<staging-api> ./scripts/provider-validation-smoke.sh --remote --ingest
-   ```
+For a separately authorized test/demo, use disposable content with a distinctive phrase. Establish its SQL record and ownership, recorded index observation and retrieved citation, then test wrong-tenant/user exclusion. Check the route's actual retrieval mode and provider status. Do not infer retrieval success from “Qdrant configured,” from a document count, or from a generic model reply.
 
-Expected login badges after a healthy OpenAI key: `openai-llm`, `openai-embeddings`,
-`qdrant`, still `Provider mode: fallback`, paper trading disabled.
-
-## Metadata filters
-
-Search supports organization, user, source type, and strategy/symbol/timeframe/risk tags.
-Payloads are stored with chunk metadata for tenant-scoped retrieval.
-
-## Agent integration
-
-The `rag_retriever` tool is the only RAG entry point for the agent graph. Citations
-appear in chat responses and the structured `analysis.evidence` field when context
-was retrieved.
-
-## Journal auto-ingest (Slice 20)
-
-Trade journal entries can automatically sync into the knowledge base for future retrieval.
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `JOURNAL_RAG_SYNC_ENABLED` | `true` | When true, create/update triggers RAG upsert |
-
-**Service boundary:** `JournalRagSyncService` (`backend/src/app/services/journal_rag_sync_service.py`)
-
-- Source type: `trade_journal`
-- Stable URI: `journal://{entry_id}` for idempotent updates
-- Metadata tags: symbol, timeframe, strategy/setup type, result, emotion/mistake tags in body text
-- Secrets stripped via `sanitize_journal_text()` before ingestion
-- Lessons and **improvement rules** are indexed for retrieval; mistake tags are included in chunk text
-- Agent retrieval boosts `trade_journal` / mistakes sources when the user asks about mistakes, emotions, or improvements
-- **Analytics API summaries are not ingested** unless explicitly designed later ([trading_analytics.md](trading_analytics.md))
-
-Agent retrieval includes `TRADE_JOURNAL` in `RagService.retrieve_for_agent()`.
-
-Disable sync:
-
-```bash
-JOURNAL_RAG_SYNC_ENABLED=false
-```
-
-## Evaluation notes
-
-- Mock embeddings are deterministic — use them for unit tests and RAG regression.
-- Integration tests with real OpenAI/Qdrant should be isolated and env-guarded.
-- Usage events record embedding provider, token estimates, and fallback status.
-- Run regression: `uv run python ../evaluation/evaluate_rag.py` from `backend/`.
-- Local provider smoke (no live calls): `./scripts/provider-validation-smoke.sh`
+The [evaluation guide](evaluation.md) distinguishes mock regressions, integration checks and runtime acceptance. No document import, collection recreation or live provider call was performed for this documentation change.

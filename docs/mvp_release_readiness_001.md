@@ -1,5 +1,8 @@
 # MVP release readiness 001
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Prepared from `580dc183d69fa0ec8bc023a167d67a38e6b62f74`, stacked on Strategy Brain PR153. This is a release preparation pack, not evidence of deployment or a completed staging loop. No platform configuration, secrets, shared database, Watcher activation or Telegram enrollment is changed. Accept PR153 before applying this pack.
 
 ## Staging requirements

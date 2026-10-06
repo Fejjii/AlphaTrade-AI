@@ -1,5 +1,8 @@
 # Voice Agent V1 screenshots
 
+> **Historical speech-fixture snapshot:** voice controls are implemented in current source, but these images use the older five-workspace shell and synthetic speech callbacks. They do not verify real microphone/service/Safari/iOS behavior. See [screenshot review](../../screenshots_checklist.md).
+
+
 These captures use **frontend and speech test fixtures**, not live market data or
 a real microphone. Chromium checks desktop 1440×1000, phone portrait 390×844,
 and phone landscape 844×390. Fallback fonts are shown; Google Fonts were blocked.

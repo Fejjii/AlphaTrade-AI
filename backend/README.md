@@ -1,60 +1,17 @@
-# AlphaTrade AI — Backend
+# AlphaTrade API and paper worker
 
-FastAPI service for the human-in-the-loop trading copilot.
+The FastAPI backend owns scoped services and canonical paper authority. The same backend package supplies the separate supervised paper worker; the default API container and worker commands have different startup/migration behavior. Real-money execution is permanently refused by the inspected source.
 
-> Safety: this scaffold runs in **paper mode** only. Real exchange trading is
-> disabled by default and not wired in this slice.
+Use [local setup](../docs/local_setup.md) for disposable database/provider configuration, frozen dependency installation, migrations and the development server. Use [deployment](../docs/deployment.md) for hosted API/worker boundaries and [testing/evaluation](../docs/evaluation.md) for checks.
 
-## Requirements
+From `backend/`, after configuring the isolated local environment/database:
 
-- Python 3.12 (managed via [uv](https://docs.astral.sh/uv/))
-
-## Setup
-
-```bash
-# from backend/
-uv sync --extra dev          # create venv + install deps from uv.lock
-cp ../.env.example ../.env    # configure environment (safe defaults)
-```
-
-## Run
-
-```bash
-chmod +x scripts/run_dev_server.sh
+```sh
+uv sync --frozen --extra dev
+uv run alembic upgrade head
 ./scripts/run_dev_server.sh
 ```
 
-Or manually (sets `PYTHONPATH` for the `src/` layout):
+The dev script sets `PYTHONPATH=src`; it does not migrate automatically. Default API container startup applies migrations; an explicit worker command executes directly. Do not use a shared/staging database for local setup or tests.
 
-```bash
-PYTHONPATH=src uv run uvicorn app.main:app --reload --port 8000
-```
-
-Then open:
-
-- Health:          http://localhost:8000/health
-- Readiness:       http://localhost:8000/health/ready
-- Provider status: http://localhost:8000/providers/status
-- API docs:        http://localhost:8000/docs
-
-## Test & lint
-
-```bash
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-```
-
-## Docker (production image)
-
-The backend image is built from the repo root Compose file:
-
-```bash
-# from repo root
-docker compose up --build
-```
-
-Migrations run on container startup. For local hot-reload development, use
-`uv run uvicorn app.main:app --reload` instead of Docker.
-
-See `docs/deployment.md` and `../scripts/docker-migrate.sh`.
+[Architecture and versions](../docs/architecture.md) · [Agent](../docs/agent_workflow.md) · [Security](../docs/security.md) · [Current status](../docs/current_status.md).
