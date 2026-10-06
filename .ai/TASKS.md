@@ -30,10 +30,15 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Safety: Original immutable rows/clocks, closed candles, hashes and revision
   validation remain authoritative. True value conflicts still fail closed.
   No execution activation, strategy/credential changes, merge, deployment or orders.
-- Validation: 121 focused cases pass: SQLite/PostgreSQL reuse, conflict, revision,
+- Validation: Original receipt-fix commit `4395924`: 121 focused cases pass,
+  covering SQLite/PostgreSQL reuse, conflict, revision,
   sanitized logs, existing SFP detector/runtime and Watcher refusal regressions.
   Scoped Ruff and receipt DAO strict mypy pass. Assembly/watcher have the same
   38 pre-existing strict mypy errors as untouched main, with no added messages.
+- Logging follow-up: CI37380642481's empty diagnostic capture reproduces after
+  cached logger initialization and configuration replacement. Test-only scoped
+  capture covers cold/cached states; 16 affected tests pass, including PostgreSQL.
+  Exact diagnostic and secret-exclusion assertions remain; production caching unchanged.
 - Attribution: The decimal-encoding false conflict is reproduced locally with
   the reported wrapper code. Exact October 5 live cause remains unconfirmed;
   Render requires workspace confirmation before reading logs or stored rows.

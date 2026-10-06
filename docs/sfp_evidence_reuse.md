@@ -57,10 +57,28 @@ pytest tests/test_live_evidence_pipeline.py -k watcher_port -o addopts='' -q
 ```
 
 Scoped Ruff lint/format applies to the changed source and regression file.
-The two commands pass 117 and 4 cases respectively (121 total, no skips),
-including all seven new SQLite/PostgreSQL/diagnostic cases.
+At the original receipt-fix commit `4395924`, the two commands passed 117 and
+4 cases respectively (121 total, no skips). These are historical focused results,
+not complete backend acceptance.
 Strict mypy passes for the receipt DAO. The assembly/watcher modules have 38
 pre-existing strict mypy errors; comparison with untouched main finds identical
 messages after ignoring shifted line numbers. Do not claim those modules pass.
-Use the PR's automatic CI as the consolidated integration gate; do not restart
-PR206 or manually rerun the complete backend suite.
+Do not restart PR206 or manually rerun the complete backend suite during development.
+
+## Diagnostic capture after logging initialization
+
+PR207 run `37380642481` had 4,213 passing cases, six skips and one failure:
+the wrapper diagnostic assertion captured an empty list. A module logger cached
+before a later `configure_logging()` call retains the original processor list;
+`capture_logs()` switches only the current list. Two logging initializations
+reproduce the empty capture without running the complete suite.
+
+The test fixture binds fresh module loggers inside scoped capture and restores
+the prior configuration afterward. It covers cold and cached-then-reconfigured
+initialization. Production logger caching/configuration is unchanged. Exact event,
+allowlisted category, refusal/cause and secret-exclusion assertions remain required.
+The same isolation applies to true-conflict and revision diagnostics.
+
+The follow-up passes 16 focused tests: all twelve receipt/diagnostic variants on
+SQLite/PostgreSQL, plus preceding secret-redaction and Watcher initialization,
+immutable-receipt refusal and rolling-history regressions. No full run was launched.

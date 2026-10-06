@@ -1,19 +1,25 @@
 """Persisted rolling SFP scans distinguish decimal encoding from true conflicts."""
 
+from collections.abc import Iterator
 from copy import deepcopy
 from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+import structlog
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from structlog.testing import capture_logs
+from structlog.typing import EventDict
 
 from app.db.public_market_observations import PublicMarketObservationRow
+from app.evidence_pipeline import watcher_port
 from app.evidence_pipeline.assembler import FirstSliceEvidenceAssembler
 from app.evidence_pipeline.watcher_port import AssemblingWatcherScanEvidence
 from app.market_contracts.errors import DuplicateDataError, MarketContractError
 from app.market_contracts.hashing import with_content_hash
+from app.persistence import public_market_observations
+from app.strategy_brain import assembly
 from app.watcher.errors import WatcherEvidenceUnavailableError
 from tests.support.live_market_monitor import ScriptedPerpetualSource
 from tests.test_live_evidence_pipeline import _evaluation_command
@@ -23,6 +29,31 @@ from tests.test_sfp_strategy_brain_runtime import postgres_store as postgres_sto
 from tests.test_sfp_strategy_brain_runtime import store as store
 
 DECIMAL_FIELDS = ("open", "high", "low", "close", "base_volume", "quote_volume")
+
+
+@pytest.fixture(params=("cold", "cached_then_reconfigured"))
+def diagnostic_logs(request, monkeypatch) -> Iterator[list[EventDict]]:
+    """Capture real diagnostics independently of prior application logging setup."""
+    configuration = structlog.get_config()
+    modules = (watcher_port, public_market_observations, assembly)
+    try:
+        with monkeypatch.context() as patch:
+            if request.param == "cached_then_reconfigured":
+                structlog.configure(cache_logger_on_first_use=True)
+                for module in modules:
+                    patch.setattr(module, "logger", structlog.get_logger(module.__name__))
+                    module.logger.bind()
+                # App initialization replaces the processor list. Existing cached
+                # loggers still refer to the old list, outside capture_logs().
+                structlog.configure(processors=list(configuration["processors"]))
+            with capture_logs() as logs:
+                # Bind fresh test loggers to the active capture processor list.
+                # Production caching and logging configuration remain unchanged.
+                for module in modules:
+                    patch.setattr(module, "logger", structlog.get_logger(module.__name__))
+                yield logs
+    finally:
+        structlog.configure(**configuration)
 
 
 @pytest.fixture(params=("sqlite", "postgres"))
@@ -99,7 +130,9 @@ def test_rolling_encoding_reuse_preserves_original_receipts_for_both_scopes_and_
     engine.dispose()
 
 
-def test_true_payload_change_keeps_original_evidence_and_strict_refusal(receipt_store):
+def test_true_payload_change_keeps_original_evidence_and_strict_refusal(
+    receipt_store, diagnostic_logs
+):
     session, org, user, _ = receipt_store
     policy = approve(session, org, user)
     bars, _ = padded_evidence()
@@ -111,17 +144,21 @@ def test_true_payload_change_keeps_original_evidence_and_strict_refusal(receipt_
         *bars[:-1],
         with_content_hash(bars[-1].model_copy(update={"high": bars[-1].high + Decimal("0.01")})),
     )
-    with capture_logs() as logs, pytest.raises(WatcherEvidenceUnavailableError) as failure:
+    with pytest.raises(WatcherEvidenceUnavailableError) as failure:
         load(session, policy, changed, now=now + timedelta(seconds=1))
     assert isinstance(failure.value.__cause__, DuplicateDataError)
     assert failure.value.reason_code == "canonical_contract_invalid_contract"
     assert receipts(session) == original
-    conflict = next(item for item in logs if item["event"] == "canonical_ohlcv_receipt_conflict")
+    conflict = next(
+        item for item in diagnostic_logs if item["event"] == "canonical_ohlcv_receipt_conflict"
+    )
     assert conflict["conflicting_fields"] == ["content_hash", "high"]
     assert "high" not in conflict and "ohlcv" not in conflict and "payload" not in conflict
 
 
-def test_explicit_revision_appends_and_provider_revision_regression_is_refused(receipt_store):
+def test_explicit_revision_appends_and_provider_revision_regression_is_refused(
+    receipt_store, diagnostic_logs
+):
     session, org, user, _ = receipt_store
     policy = approve(session, org, user)
     bars, _ = padded_evidence()
@@ -146,23 +183,25 @@ def test_explicit_revision_appends_and_provider_revision_regression_is_refused(r
     assert len(current) == len(original) + 1
     assert all(current[key] == payload for key, payload in original.items())
     assert result.assessment_command.trigger.revision == 2
-    with capture_logs() as logs, pytest.raises(WatcherEvidenceUnavailableError) as failure:
+    with pytest.raises(WatcherEvidenceUnavailableError) as failure:
         load(session, policy, bars, now=now + timedelta(seconds=2))
     assert isinstance(failure.value.__cause__, DuplicateDataError)
     assert "older canonical candle revision" in str(failure.value.__cause__)
-    assert any(item["event"] == "canonical_ohlcv_revision_regressed" for item in logs)
+    assert any(item["event"] == "canonical_ohlcv_revision_regressed" for item in diagnostic_logs)
     assert receipts(session) == current
 
 
-def test_wrapper_logs_only_allowlisted_failure_category():
+def test_wrapper_logs_only_allowlisted_failure_category(diagnostic_logs):
     secret = "https://provider.example/?api_key=DO_NOT_LOG payload=PRIVATE_DATA"
-    with capture_logs() as logs, pytest.raises(WatcherEvidenceUnavailableError):
+    with pytest.raises(WatcherEvidenceUnavailableError) as failure:
         AssemblingWatcherScanEvidence._raise_undiagnosed(MarketContractError(secret))
-    assert logs == [
+    assert failure.value.reason_code == "canonical_contract_invalid_contract"
+    assert isinstance(failure.value.__cause__, MarketContractError)
+    assert diagnostic_logs == [
         {
             "event": "canonical_evidence_contract_rejected",
             "failure_reason": "invalid_contract",
             "log_level": "warning",
         }
     ]
-    assert secret not in repr(logs)
+    assert secret not in repr(diagnostic_logs)
