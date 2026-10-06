@@ -25,6 +25,16 @@ from app.strategy_brain.records import aware
 from app.strategy_brain.sfp.contracts import SFP_KIND, SfpSpec
 
 
+def template_name(spec: NestedContinuationSpec | SfpSpec) -> str:
+    """Shared identity for a preview and explicit idempotent template creation."""
+    signature = canonical_sha256(spec.model_dump(mode="json"))[:12]
+    family_name = "SFP" if isinstance(spec, SfpSpec) else "Nested"
+    return (
+        f"{family_name} {spec.symbol} {spec.direction.value} "
+        f"{spec.trigger_timeframe.value} {signature}"
+    )
+
+
 def create_template(
     session: Session,
     *,
@@ -32,13 +42,8 @@ def create_template(
     user_id: UUID,
     spec: NestedContinuationSpec | SfpSpec,
 ) -> dict[str, Any]:
-    signature = canonical_sha256(spec.model_dump(mode="json"))[:12]
+    name = template_name(spec)
     sfp = isinstance(spec, SfpSpec)
-    family_name = "SFP" if sfp else "Nested"
-    name = (
-        f"{family_name} {spec.symbol} {spec.direction.value} "
-        f"{spec.trigger_timeframe.value} {signature}"
-    )
     existing = session.scalar(
         select(UserStrategy).where(
             UserStrategy.organization_id == organization_id,

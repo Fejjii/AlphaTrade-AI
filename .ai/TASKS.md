@@ -5,6 +5,24 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-106 — Explicit provisional Nested five-market subscription preview
+- Priority: P1 · Status: DONE (implementation; supervised approval pending) ·
+  Dependencies: main `ff90d0c`; expansion AT-105 / PR212 reviewed independently · Risk: Medium.
+- Scope: Authenticated owner/tenant read-only preview of ten Nested long/short 15m
+  scopes from an explicit stored provisional baseline. Stable source/spec hashes,
+  exact existing-version reuse/approval observations and visible selected-version conflicts.
+- Authority: No creation, approval, watchlist/config change, provider IO or execution
+  authority. Explicit draft creation reuses the existing template endpoint; each new
+  version needs separate compile/review. Source approval never transfers to copies.
+- Validation: Nine distinct focused passes, including eight PostgreSQL preview/API/
+  isolation/version cases and the existing library approval regression. Ten approved
+  independent exact-symbol targets and scope cap are proven locally. Scoped Ruff/format
+  and two service strict mypy checks; existing route typing debt remains unchanged.
+- Release: Integrate independently of first-entry readiness, consolidated exact-SHA
+  full CI, supervising live instrument checks, explicit version approval and activation.
+  No full suite, merge/deploy, live strategy approval or exchange orders in this task.
+- Reference: `docs/nested_subscription_preview.md`; AT-ADR-089.
+
 ## AT-103 — SFP REST candle finalization and immutable-policy recovery
 - Priority: P1 · Status: DONE (implementation; supervised staging acceptance pending) ·
   Dependencies: main `60fed16` / merged PR208 ·

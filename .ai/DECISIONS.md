@@ -2,6 +2,22 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-089 — Baseline preview cannot transfer strategy approval
+
+- Date: 2026-10-06
+- Decision: An authenticated owner selects an immutable provisional Nested 15m
+  baseline to preview ten exact market/direction specs. Shared deterministic template
+  naming makes preview agree with existing explicit idempotent draft creation.
+  Source/version and proposed-spec hashes bind the preview; no provider or authority
+  mutation occurs. Existing selected versions are reused only when their specs match;
+  changed selected versions produce visible conflicts.
+- Safety: Each new independent version must compile and receive its own explicit
+  approval. Existing source approval never transfers; no watchlist enablement,
+  strategy permission, risk setting, demo arm or execution capability changes here.
+  Live availability remains unverified until supervising provider preflight.
+- Reference: `docs/nested_subscription_preview.md`; first-entry readiness PR212 and
+  repeat lifecycle remain separate.
+
 ## AT-ADR-086 — Live REST finalization policy has a new immutable evidence identity
 
 - Date: 2026-10-06
