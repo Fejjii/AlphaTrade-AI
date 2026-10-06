@@ -1,271 +1,64 @@
-# Security Guide
+# Security and trading boundaries
 
-This document describes authentication, tenant isolation, RBAC, rate limiting, and safe defaults in AlphaTrade AI.
+This guide describes mechanisms in main `ff90d0c`, inspected October 6, 2026. It is not a penetration test, certification or claim of comprehensive protection. [Runtime evidence and unknowns](current_status.md) are separate from implementation.
 
-## Auth flow
+## Authentication and browser sessions
 
-1. **Register** — `POST /auth/register` creates an organization, user, owner membership, and token pair.
-2. **Login** — `POST /auth/login` verifies bcrypt password hash and returns tokens.
-3. **Access** — Protected routes require `Authorization: Bearer <access_token>`.
-4. **Refresh** — `POST /auth/refresh` rotates the refresh token and returns a new access token.
-5. **Logout** — `POST /auth/logout` revokes the refresh token, clears the httpOnly cookie (when enabled), and denylists the current access token.
-6. **Current user** — `GET /auth/me` returns the authenticated user and organization.
+The API validates bearer access JWTs and resolves the current persisted user/membership into `TenantContext`. Passwords are bcrypt-hashed; refresh tokens are stored hashed, rotate on refresh and support reuse detection/revocation. Account services implement verification, password reset and owner-managed invitations.
 
-### Bearer vs httpOnly cookie mode
+| Context | Refresh storage | Access storage |
+| --- | --- | --- |
+| Default local bearer flow | Returned in the auth flow for client storage. | Short-lived JWT in browser session storage; sent as `Authorization: Bearer`. |
+| Configured cookie flow | httpOnly `alphatrade_refresh` cookie; current default omits refresh from the response body. | Access JWT remains client-readable/session-stored; cookie mode does not eliminate XSS risk. |
 
-| Mode | When to use | Refresh token | Access token |
-|------|-------------|---------------|--------------|
-| **Bearer (default)** | Local dev, API scripts, Playwright API tests | JSON body + `sessionStorage` | `sessionStorage` + `Authorization` header |
-| **Cookie (production-ready)** | Docker Compose, staging, portfolio demos | httpOnly cookie (`alphatrade_refresh`) | JSON body + `sessionStorage` (short-lived) |
+Default access/refresh lifetimes are 15 minutes/seven days. Hosted cookie settings require Secure cookies and correct SameSite/CORS origins. Logout revokes refresh and uses the access-token denylist; current hosted policy requires shared Redis and fail-closed revocation/rate-limit behavior.
 
-Enable cookie mode:
+[Frontend middleware](../frontend/src/middleware.ts) uses a session marker for navigation, not authorization. A forged marker does not grant API access. [Security headers](../frontend/src/lib/security-headers.ts) include CSP and framing restrictions; the API origin and browser speech permissions must match the intended deployment. See [auth implementation](../backend/src/app/services/auth_service.py), [auth dependency](../backend/src/app/core/auth.py), [settings](../backend/src/app/core/config.py) and [account lifecycle](account_management.md).
 
-```bash
-# Backend
-AUTH_REFRESH_COOKIE_ENABLED=true
-AUTH_OMIT_REFRESH_FROM_BODY=true
-AUTH_COOKIE_SECURE=false   # true behind HTTPS in production
-AUTH_COOKIE_SAMESITE=lax
+## Tenant isolation and roles
 
-# Frontend
-NEXT_PUBLIC_AUTH_COOKIE_MODE=true
-```
+Organization/user identity comes from authenticated context, not a client's proposed account IDs. Services and repositories scope domain records; ownership is checked again when exposing knowledge chunks and Agent evidence. This is an application enforcement model, not a claim of database row-level security or a completed audit of every route.
 
-Cookie settings:
+| Role | Intended API boundary |
+| --- | --- |
+| OWNER | Organization administration plus trader operations. |
+| TRADER | Authorized domain mutations supported by the endpoint. |
+| VIEWER | Reader endpoints; not trader mutation authority. |
 
-- **httpOnly** — refresh token not readable by JavaScript (XSS mitigation)
-- **Secure** — `true` in staging/production (auto when `ENVIRONMENT != local`)
-- **SameSite** — `lax` by default (local-safe; use `strict` if same-site only)
-- **Path** — `/auth` (login, refresh, logout routes only)
+[RBAC dependencies](../backend/src/app/security/rbac.py) enforce endpoint-specific role requirements. The current Agent turn routes use trader-level membership, so not every read-like Agent request is available to VIEWER. User-owned knowledge and conversations also retain user scope within an organization.
 
-The frontend sends `credentials: include` in cookie mode so refresh works without JS-readable refresh tokens.
+## Secrets, providers and network boundaries
 
-On `401`, the client attempts one refresh (cookie or body, single-flight across concurrent requests); if refresh fails, it clears the session and redirects to `/login?next=<original path>`.
+Secrets are server environment/Settings values. Use environment templates for **names and defaults**, never credentials. Frontend `NEXT_PUBLIC_*` values are public build configuration and must not contain keys, passwords, tokens or connection strings. Logs/audit use redaction and status surfaces expose booleans/health rather than secrets; redaction is not permission to copy raw sensitive records into evidence or screenshots.
 
-**Never log cookies or tokens.** Redaction patterns strip bearer tokens, refresh tokens, and authorization headers from logs and audit metadata.
+Current staging/production provider policy requires configured OpenAI, authoritative Qdrant and Redis security backends. Local mocks and process-memory fallbacks are development options, not hosted-success behavior. Canonical market evidence uses read-only public perpetual connectors; exchange credentials must not enter those connectors. Demo exchange credentials are separately scoped and do not permit production venue hosts, withdrawal or transfer operations.
 
-### Frontend auth boundary (AT-017)
+Sources: [provider policy](../backend/src/app/core/provider_policy.py), [deployment safety](../backend/src/app/core/deployment_safety.py), [exchange safety](../backend/src/app/core/exchange_safety.py), [market activation](../backend/src/app/market_activation/profile.py).
 
-- **Edge middleware** (`frontend/src/middleware.ts`) redirects unauthenticated visitors from
-  protected app routes to `/login?next=<path>` before any shell HTML is served. Public routes:
-  `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`.
-- The middleware keys off a **non-sensitive session marker cookie** (`alphatrade_session=1`,
-  frontend origin, `SameSite=Lax`, no token material) set/cleared alongside the sessionStorage
-  tokens. It is defense in depth only: a forged marker yields an empty shell whose API calls
-  all return 401 — the backend remains the sole authorization authority.
-- The app layout **fails closed**: protected content is never rendered while unauthenticated,
-  eliminating the protected-content flash.
-- `next` redirect targets are sanitized (`sanitizeNextPath`) — internal paths only, no open
-  redirects.
-- **Security headers** (CSP with `connect-src 'self' <API origin>`, `frame-ancestors 'none'`,
-  `X-Content-Type-Options`, `X-Frame-Options DENY`, `Referrer-Policy`, `Permissions-Policy`,
-  COOP, HSTS in production) are emitted for all routes via `next.config.ts`
-  (`frontend/src/lib/security-headers.ts`).
-- **Paper banners follow `/health` truth**: the UI claims "Paper mode active" only after the
-  backend reports `execution_mode=paper` and `real_trading_enabled=false`; otherwise it shows
-  an "unverified" or alert state. No hardcoded paper claims from build-time env vars.
+## Uploads and untrusted knowledge
 
-## Token behavior
+Knowledge import supports TXT, Markdown, DOCX and selectable-text PDF. A preview saves nothing; explicit save checks a signed ten-minute receipt bound to the authenticated principal, exact bytes/text, filename, category and parser version. The request/file/parser have time and resource bounds: a 5 MiB file limit, 100,000-character text limit and isolated parsing. Raw source binaries are not persisted by Knowledge import. There is no OCR, arbitrary URL fetch or automatic interpretation of chart images in this path.
 
-| Token | Lifetime (default) | Storage |
-|-------|-------------------|---------|
-| Access (JWT) | 15 minutes | Client sessionStorage + Bearer header |
-| Refresh (opaque) | 7 days | httpOnly cookie **or** sessionStorage + hashed in Postgres |
+Journal attachments are a distinct, scoped binary-storage feature with MIME/size/quota checks; attaching a file does not analyze it or create trading authority. See [file import contract](knowledge_file_import.md), [bounded upload route](../backend/src/app/api/knowledge_file_route.py) and [Journal routes](../backend/src/app/api/routes/journal.py).
 
-Access tokens are HS256 JWTs containing `sub`, `org_id`, `email`, and `jti` (for denylist).
+A stored document may contain errors or hostile instructions. Agent context labels it as reference data and retains source provenance; it cannot authorize strategy/risk/execution changes. Scoped retrieval, typed actions and separate confirmation constrain authority independently of conversational text. The compatibility LangGraph path also has input/output guardrails; do not infer that every route runs the same guardrail pipeline. These measures do not prove prompt injection is solved. [Guardrails](../backend/src/app/guardrails/) and [Agent authority](agent_workflow.md) provide the relevant implementation boundaries.
 
-### JWT secret requirements
+Browser dictation may use the browser vendor's speech service. Its transcript is reviewed before sending through the ordinary Agent flow. Server audio/image analysis contracts remain unimplemented; [voice limits](voice_agent_v1_handoff.md) are explicit.
 
-| Environment | Minimum secret length |
-|-------------|----------------------|
-| `local` | No minimum (dev convenience) |
-| `staging` / `production` | 32 bytes (`JWT_SECRET`) |
+## Evidence, approvals and deterministic risk
 
-Startup validation rejects short secrets outside `local`. Use a long random value in Docker, staging, and production.
+Canonical evidence binds instrument/source/policy identity, content hashes and receipt clocks. Reuse checks reject conflicting same-policy observations. PR209's acquisition policy v2 appends alongside immutable v1 history; it does not rewrite receipts or fabricate provider revisions. Quote freshness, trade coverage, candle finality and setup lifetime are separate gates.
 
-## Refresh rotation
+Only the Candidate lifecycle authority can publish an eligible confirmed Candidate. A research label, model explanation or Telegram alert cannot do so. Deterministic eligibility/sizing/risk runs before canonical execution; risk `BLOCK`, kill switch, stale evidence or missing permissions cannot be overridden by model prose or a UI click.
 
-Each refresh request:
+Supported user execution binds approval to an immutable plan revision/hash. An explicitly armed worker may continue an approved strategy without asking for a new conversational confirmation at every setup. That operator authority is scoped; it is not general permission for the Agent or Telegram to trade. Idempotent claims, worker fences and durable execution receipts support restart/duplicate handling.
 
-1. Validates the presented refresh token (JSON body **or** httpOnly cookie).
-2. Revokes the old refresh token (`revoked_at`, `replaced_by_id`).
-3. Issues a new refresh token and access token.
+[Architecture flow](architecture.md) · [Agent paper command](agent_paper_execution_v4.md) · [governed demo dispatch](governed_blofin_demo_execution.md) · [SFP immutable history](sfp_candle_finalization_recovery.md).
 
-### Refresh reuse detection
+## Audit and real-money restrictions
 
-If a revoked refresh token that was already rotated (`replaced_by_id` set) is presented again:
+Typed audit events, request IDs, strategy lifecycle events, evidence receipts, plan authorizations and fill/Journal lineage support review. Not every log is a durable authority record, and usage estimates are not billing-grade evidence. See [monitoring](observability.md).
 
-- All active refresh tokens for that user are revoked.
-- An audit event `auth_refresh_reuse` is recorded (high severity).
-- The request is rejected with `401`.
+The inspected permanent-paper policy refuses live/trade mode and `ENABLE_REAL_TRADING=true` in every environment. Real execution cannot be enabled by an ordinary configuration change or Agent request. Internal simulation and an explicitly governed BloFin **demo** option are separate. The demo kill switch stops new risk; it does not automatically close or repair existing external demo exposure.
 
-## Logout and revocation
-
-Logout:
-
-1. Revokes the refresh token (from body or cookie).
-2. Clears the httpOnly refresh cookie.
-3. Denylists the current access token `jti` in Redis (or in-memory fallback) until natural expiry.
-
-Short access token TTL (15 minutes) limits exposure if denylist is unavailable.
-
-Configure denylist:
-
-```bash
-ACCESS_TOKEN_DENYLIST_ENABLED=true
-ACCESS_TOKEN_DENYLIST_USE_REDIS=true
-```
-
-## RBAC roles
-
-Membership roles (organization scope):
-
-| Role | Access |
-|------|--------|
-| **OWNER** | Full organization access including all mutations |
-| **TRADER** | Chat, watchlist, proposals, approvals, paper execution, positions, journal, knowledge, usage |
-| **VIEWER** | Read dashboards, proposals, positions, journal, knowledge, usage, audit; **no** approval mutations or paper execution |
-
-Mutations return `403 forbidden` with `required_roles` details when the membership role is insufficient. Cross-organization access remains blocked separately via tenant scoping.
-
-## Protected routes
-
-Require bearer auth:
-
-- `POST /chat/message` (TRADER+)
-- `/market/watchlist*` (mutations: TRADER+)
-- `/proposals*` (mutations: TRADER+)
-- `/approvals*` (mutations: TRADER+; reads: all roles)
-- `/execution*` (paper orders: TRADER+)
-- `/positions*` (mutations: TRADER+)
-- `/journal*` (mutations: TRADER+)
-- `/knowledge*` (mutations: TRADER+)
-- `/usage*`, `/audit*`
-- `/billing/customer`, `/billing/checkout`, `/billing/portal`, `/billing/usage/export` (OWNER)
-- `/billing/plans`, `/billing/status` (Reader+)
-
-Public routes:
-
-- `/health`, `/health/ready`
-- `/providers/status`
-- `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
-
-## Tenant isolation
-
-- Tenant context is resolved from the access token, not from query/body IDs.
-- Create/update routes override `organization_id` and `user_id` from the authenticated tenant.
-- Cross-organization access returns `403 forbidden` or `404 not found` (scoped lookups).
-
-## Password policy
-
-- Minimum length: 12 characters
-- Maximum length: 128 characters
-- bcrypt rejects passwords above 72 bytes
-
-## LLM narrative layer (Slice 21)
-
-- **Deterministic analysis remains the source of truth** for risk level, approval status, proposals, and execution eligibility.
-- The LLM may only rewrite or clarify explanation text from **sanitized structured context** — no secrets, tokens, or hidden system prompts are sent.
-- Narrative output must match `TradingNarrativeDetail` (extra fields forbidden) and pass `NarrativeValidationGuardrail` plus existing output validation.
-- Unsafe or invalid LLM output **falls back** to deterministic narrative; fallback is audited (`narrative_validation_fallback`).
-- Mock LLM is used when `OPENAI_API_KEY` is blank; real LLM is optional.
-- Real exchange execution remains disabled regardless of narrative provider.
-
-Disable narrative LLM: `NARRATIVE_LLM_ENABLED=false`.
-
-## Redaction
-
-Logs, audit metadata, and guardrail redaction patterns remove:
-
-- Passwords and password hashes
-- Bearer tokens and authorization headers
-- Refresh/access tokens and cookies
-- API keys and exchange secrets
-
-## Rate limiting
-
-Redis-backed fixed-window limiting when `REDIS_URL` is reachable and `RATE_LIMIT_USE_REDIS=true`. Falls back to in-memory limiting when Redis is unavailable and `RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK=true`.
-
-Protected endpoints (IP-scoped; authenticated routes also user-scoped):
-
-| Scope | Endpoint |
-|-------|----------|
-| `auth:register` | `POST /auth/register` |
-| `auth:login` | `POST /auth/login` |
-| `auth:refresh` | `POST /auth/refresh` |
-| `chat:message` | `POST /chat/message` |
-| `knowledge:ingest` | `POST /knowledge/ingest` |
-| `execution:paper` | `POST /execution/paper` |
-| `execution:paper-plan` | `POST /execution/paper-plan` |
-
-Violations emit structured logs and audit events (`rate_limit_exceeded`). Auth scopes use high severity.
-
-## Smoke / integration verification
-
-```bash
-# Backend auth + security tests
-cd backend && uv run pytest tests/test_auth.py tests/test_auth_security.py -q
-
-# Full stack curl smoke (requires running backend)
-chmod +x scripts/e2e-smoke.sh scripts/docker-validate.sh
-./scripts/e2e-smoke.sh
-
-# Docker stack
-docker compose up --build
-./scripts/docker-validate.sh
-```
-
-Playwright API E2E runs in CI (`npm run test:e2e`). Full browser E2E is optional locally (skipped in CI).
-
-Staging deploy helpers:
-
-```bash
-./scripts/check-env.sh          # validate ENVIRONMENT settings
-./scripts/run-migrations.sh     # Alembic upgrade head
-./scripts/staging-smoke.sh      # health, auth, chat, safety
-./scripts/verify-safety.sh      # paper-only invariants
-```
-
-See [docs/security_checklist.md](security_checklist.md) for pre-deploy checklist.
-
-## Account security (Slice 25)
-
-- Email verification tokens and password reset tokens are **SHA-256 hashed** at rest; never logged.
-- Password reset returns **generic** responses (no email enumeration).
-- Reset revokes **all refresh sessions**; optional access-token denylist on confirm.
-- Rate limits on verification resend and password-reset request (5/hour per IP by default).
-- Organization invitations: OWNER-only create/revoke; hashed invite tokens; audit events.
-- Email provider abstraction (`mock` default); see [account_management.md](account_management.md).
-
-## Current limitations
-
-- Single primary organization per user (first membership)
-- Invite acceptance for **new** users (signup via link) not implemented
-- SMTP/Resend/SendGrid delivery placeholders only (mock captures locally)
-- Access token still in sessionStorage (short TTL; refresh in httpOnly cookie when enabled)
-- Usage metering with org quotas (Slice 24)
-- Billing scaffold (Slice 26): mock by default; Stripe secrets/webhook signatures never logged; webhook payloads redacted; usage export excludes journal/prompts/secrets
-- Real exchange / broker execution **not implemented** — paper mode only
-
-## Local development
-
-```bash
-# Backend (bearer mode — default)
-cd backend
-uv sync --extra dev
-cp ../.env.example ../.env
-chmod +x scripts/run_dev_server.sh
-./scripts/run_dev_server.sh
-
-# Frontend
-cd frontend
-npm ci
-cp .env.example .env.local
-npm run dev
-
-# Docker stack (cookie mode enabled)
-docker compose up --build
-./scripts/docker-validate.sh
-```
-
-Set `JWT_SECRET` to a long random value before any shared/staging deployment.
+No deployment, activation, shared migration, exchange order or security scan was performed for this documentation task. Outstanding operational acceptance, hardware and statistical limits are in [current status](current_status.md) and [limitations](limitations_roadmap.md).

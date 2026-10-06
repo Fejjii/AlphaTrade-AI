@@ -1,5 +1,8 @@
 # Knowledge workspace frontend fixtures
 
+> **Recorded frontend fixture snapshot:** retain the original capture context below; use the [current screenshot review](../../screenshots_checklist.md) and [Knowledge/retrieval guide](../../rag_system.md) for present limits. This set does not establish hosted provider or file-import acceptance.
+
+
 These captures use synthetic API responses and are labeled **FRONTEND TEST FIXTURE · NOT LIVE DATA**. They show the Knowledge category navigation, search, document provenance, exact linked lesson context, and stored market observations after canonical note creation.
 
 | Viewport | Capture |

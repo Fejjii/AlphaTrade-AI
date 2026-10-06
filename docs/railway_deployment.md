@@ -1,5 +1,8 @@
 # Railway Deployment Notes
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Alternative to Render for the **backend + Postgres + Redis** layer. Frontend remains on **Vercel**.
 
 > Same safety rules: `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `BILLING_ENABLED=false`.

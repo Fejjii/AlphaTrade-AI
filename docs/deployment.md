@@ -1,349 +1,79 @@
-# Deployment Guide
+# Deployment and operational boundaries
 
-This document describes how to deploy AlphaTrade AI to a **managed cloud staging
-environment** suitable for portfolio demos and early product validation — without
-Kubernetes unless you outgrow this path.
+This is the current entry point for hosting, release verification and rollback. It describes committed options in main `ff90d0c`, inspected October 6, 2026. It does not deploy or arm anything. [Current status](current_status.md) records supervisor-reported deployment separately from independently verified facts.
 
-> **Safety:** Real exchange execution remains **disabled**. All execution is
-> **paper only**. Staging and production startup validation refuses unsafe
-> trading configuration.
+## Hosting design and current uncertainty
 
-## Recommended hosting options
-
-| Component | Options | Notes |
-|-----------|---------|-------|
-| **Frontend** | [Vercel](https://vercel.com) (preferred), Netlify, Cloudflare Pages | Next.js 15 standalone build; env vars at build time |
-| **Backend API** | [Render](https://render.com) (preferred), Railway, Fly.io, Azure Container Apps | Docker image from `backend/Dockerfile` |
-| **Postgres** | Render Postgres, Railway Postgres, Supabase, Neon, Azure Database | Required for workflows, auth, audit |
-| **Redis** | Render Redis, Upstash, Railway Redis, Azure Cache | Required in staging/production for rate limits + denylist |
-| **Qdrant** | [Qdrant Cloud](https://cloud.qdrant.io), self-hosted container on Fly/Railway | Vector search for RAG; in-memory fallback if unreachable |
-
-### Preferred option (portfolio MVP)
-
-**Vercel (frontend) + Render (backend + managed Postgres + Redis) + Qdrant Cloud**
-
-Why this path:
-
-- No Kubernetes operational overhead
-- HTTPS by default on Vercel and Render
-- Docker-based backend deploy reuses existing `backend/Dockerfile`
-- Secrets via platform env / secret stores
-- Alembic migrations as a Render **release command** or pre-deploy job
-- Fits a solo developer or small team validating the product
-
-Alternatives (equally valid):
-
-- **Railway** — all-in-one monorepo deploy with plugins for Postgres/Redis
-- **Fly.io** — good if you want Qdrant co-located as a Fly app
-- **Azure Container Apps** — enterprise-friendly with managed Postgres/Redis
-
-## Architecture (staging)
-
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Staging (managed cloud)                          │
-├──────────────────────────────┬──────────────────────────────────────────┤
-│  Vercel (HTTPS)              │  Render / Railway / Fly (HTTPS)          │
-│  Next.js frontend            │  FastAPI backend (Docker)                │
-│  NEXT_PUBLIC_API_URL ────────┼──► CORS_ORIGINS = Vercel URL             │
-│  credentials: include        │  httpOnly refresh cookie (Secure)        │
-│  (cookie mode)               │  Bearer access token (short TTL)         │
-├──────────────────────────────┼──────────────────────────────────────────┤
-│                              │  Managed Postgres ◄── Alembic migrations  │
-│                              │  Managed Redis    ◄── rate limits, denylist│
-│                              │  Qdrant Cloud     ◄── RAG vectors         │
-└──────────────────────────────┴──────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  User["Browser"] --> Frontend["Vercel: frontend directory"]
+  User --> API["Render: backend web container"]
+  API --> DB["Managed PostgreSQL"]
+  API --> Redis["Hosted TLS Redis"]
+  API --> Vector["Hosted HTTPS Qdrant"]
+  Worker["Render: one paper worker container"] --> DB
+  Market["Public Binance / Bybit perpetual data"] --> API
+  Market --> Worker
+  API --> OpenAI["Configured model / embeddings provider"]
+  Worker -. "separate activation" .-> Telegram["Telegram"]
+  Worker -. "separate governed demo capability" .-> Demo["BloFin demo only"]
 ```
 
-Cross-domain auth (Vercel frontend + separate API host):
-
-- `AUTH_REFRESH_COOKIE_ENABLED=true`
-- `AUTH_COOKIE_SECURE=true`
-- `AUTH_COOKIE_SAMESITE=none` (required for cross-site cookies)
-- `CORS_ORIGINS=https://your-app.vercel.app` (exact origin, credentials enabled)
-- `NEXT_PUBLIC_AUTH_COOKIE_MODE=true` on Vercel
-
-Same-domain (API behind reverse proxy on same site):
-
-- `AUTH_COOKIE_SAMESITE=strict` or `lax` may suffice
-- Still require `AUTH_COOKIE_SECURE=true` in staging/production
-
-## Environment templates
-
-| Template | Purpose |
-|----------|---------|
-| [`.env.example`](../.env.example) | Local development (bearer auth) |
-| [`.env.docker.example`](../.env.docker.example) | Docker Compose overrides |
-| [`.env.staging.example`](../.env.staging.example) | Staging / managed backend |
-| [`frontend/.env.example`](../frontend/.env.example) | Local frontend |
-| [`frontend/.env.staging.example`](../frontend/.env.staging.example) | Vercel / staging frontend |
+[render.yaml](../render.yaml) declares a Render web service and a single `alphatrade-paper-worker-staging` service in Frankfurt. The worker command is `python -m app.workers.paper_worker`, using the same backend image. The frontend hosting procedure uses Vercel with root directory `frontend`. PostgreSQL, Redis and Qdrant connection settings are supplied separately; this Blueprint does not provision their complete inventory.
 
-### Required staging / production variables
+This is a hosting design, not evidence that every box is active. Exact current URLs, active database/Redis/Qdrant hosts, deployed versions and release health were not rechecked here. Earlier Render/Vercel URLs in [staging history](staging_deployment.md) are historical locators and need current verification before use. [Railway notes](railway_deployment.md) describe an alternative, not a verified active deployment. No new Railway/Neon/Vercel resource was created.
 
-| Variable | Staging / production |
-|----------|---------------------|
-| `ENVIRONMENT` | `staging` or `production` |
-| `EXECUTION_MODE` | `paper` |
-| `ENABLE_REAL_TRADING` | `false` |
-| `PROVIDER_MODE` | `fallback` or `live` (trading still disabled) |
-| `DATABASE_URL` | Managed Postgres URL (not localhost) |
-| `REDIS_URL` | Managed Redis URL (not localhost) |
-| `QDRANT_URL` | Hosted Qdrant URL (not localhost) |
-| `JWT_SECRET` | 32+ byte random secret |
-| `AUTH_REFRESH_COOKIE_ENABLED` | `true` |
-| `AUTH_COOKIE_SECURE` | `true` |
-| `AUTH_COOKIE_SAMESITE` | `none` (cross-domain) or `strict`/`lax` (same-site) |
-| `CORS_ORIGINS` | Deployed frontend URL(s) |
-| `RATE_LIMIT_USE_REDIS` | `true` |
-| `OPENAI_API_KEY` | Optional — enables real LLM/embeddings with fallback |
+## Defaults versus controlled activation
 
-Startup validation in `app.core.deployment_safety` **fails fast** if these
-invariants are violated.
+| Axis | Local Settings/Compose | Committed Render option | What deployment alone proves |
+| --- | --- | --- | --- |
+| Execution | Paper / internal; real trading false. | Paper / internal; real trading false. | No real-trading authority; it does not prove a working fill. |
+| AI providers | Mock local option. | `PROVIDER_MODE=fallback`, configured OpenAI/Qdrant required by hosted policy. | The label `fallback` does not permit hosted silent mock substitution. |
+| Canonical evidence | Settings replay default. | Binance USD-M with optional Bybit whole-source failover. | Configured source is not healthy/fresh acquired evidence. |
+| Watcher/Telegram | Off. | Off/disarmed in committed worker template. | A supervisor may separately arm controlled staging; source defaults do not report current runtime flags. |
+| BloFin demo | Off; internal paper default. | Separate explicit governed capability. | Internal paper/Telegram acceptance does not establish demo order acceptance. |
+| Billing/metrics | Off by default. | Off by default. | Keys or optional flags are not evidence of live charging/scraping. |
 
-Validate before deploy:
-
-```bash
-ENV_FILE=.env.staging.example ./scripts/check-env.sh   # after filling real values
-```
-
-## Secrets management
+The October 6 supervising session reports PR208/PR209 on API and worker and a real Nested/internal-paper/Telegram event. Fresh SFP recovery, existing Journal target repair and BloFin demo acceptance remain pending. Do not describe the whole MVP as accepted.
 
-**Never commit** `.env`, production secrets, or API keys.
+## Prepare a reviewable release
 
-| Secret | Where to store |
-|--------|----------------|
-| `JWT_SECRET` | Platform secret store (Render/Railway/Vercel env) |
-| `DATABASE_URL` | Managed DB connection string (platform-provided) |
-| `REDIS_URL` | Managed Redis URL |
-| `OPENAI_API_KEY` | Platform secret (optional) |
-| `QDRANT_API_KEY` | Qdrant Cloud dashboard (if using API key auth) |
+1. Pin API, worker and frontend to the intended reviewed commit. Inspect changes, dependency locks, database revision and safety requirements. Record the exact SHA; a main branch name is insufficient.
+2. Use an isolated staging tenant and separately managed secrets. Verify hosted provider policy, strong JWT secret, TLS services, Redis denylist/rate limiting and exact CORS/cookie origins. Never copy a historical env table as observed truth.
+3. Rehearse the current Alembic chain on disposable PostgreSQL. Read the migrations in the selected source; old release documents' head values are not the current head. Do not stamp over a mismatch or delete evidence to make migration/acceptance succeed.
+4. Complete the checks appropriate to the release. Ordinary PR CI runs focused backend development checks; the full suite is an explicit `workflow_dispatch` with `full_backend=true`. Run complete acceptance on the intended SHA when required by the release plan. A docs-only PR does not need a backend suite.
+5. Review rollback and any existing demo exposure before activation. Deployment, shared migrations and worker/external-channel arming are separate operational actions.
 
-Local development: copy `.env.example` → `.env` (gitignored).
+[Backend Dockerfile](../backend/Dockerfile) uses a frozen backend lock. The [entrypoint](../backend/docker/entrypoint.sh) applies migrations when starting the default API; supplied commands are executed directly, so the worker command does not also start Uvicorn or migrate. Render additionally declares `preDeployCommand: alembic upgrade head`. Check and coordinate those migration owners during an actual release rather than assuming the worker upgrades schema.
 
-Staging: copy `.env.staging.example`, fill values in the **platform UI**, run
-`./scripts/check-env.sh` with `ENV_FILE` pointing at a local copy (never push
-that file).
+## Verify an authorized deployment
 
-## Backend deployment (Render example)
+Record evidence date, exact service SHA/version, migration head and posture. Distinguish:
 
-1. **Create Web Service** from repo, root directory `backend`, Dockerfile path `backend/Dockerfile`.
-2. **Release command** (migrations before traffic):
+- `/health`: process liveness/build/safety metadata.
+- `/health/ready` and `/providers/status`: dependency readiness and provider observations; liveness alone is insufficient.
+- Authenticated `/watcher/paper-runtime/status` and `/watcher/watchlist/status`: runtime/slot evidence, not just configured flags.
+- A genuine setup's canonical assessment/Candidate, risk/plan authorization, fill facts and Journal lineage.
+- Telegram transport receipt when notifications are in scope; a queued row or preview is not delivery.
+- Venue/protection/fill reconciliation when governed BloFin demo is in scope; acknowledgment alone is not a fill.
 
-   ```bash
-   alembic upgrade head
-   ```
-
-   Or use `./scripts/run-migrations.sh` locally / in CI; Render supports
-   `preDeployCommand: alembic upgrade head`.
+Use [monitoring](observability.md), [MVP readiness pack](mvp_release_readiness_001.md) and the specialist procedures below. Preserve bounded public evidence and redact sensitive identities/content. This documentation task ran no runtime probes.
 
-3. **Environment variables** — paste from `.env.staging.example` (filled).
-4. **Health check path:** `/health` (liveness), optional readiness `/health/ready`.
-5. **Port:** 8000 (uvicorn listens on `API_PORT`).
+## Specialist procedures and historical evidence
 
-The Docker entrypoint runs migrations on startup by default; for zero-downtime
-deploys prefer a **release command** so migrations complete before the new
-revision serves traffic.
+| Topic | Existing guide | How to use it |
+| --- | --- | --- |
+| Public perpetual evidence | [Live market activation](live_market_staging_activation.md) · [source contracts](market_source_contracts.md) | Check against the selected release; public reads do not arm execution. |
+| Controlled Watcher/Telegram | [Controlled paper activation](controlled_paper_activation.md) · [Watcher](watcher_paper_activation.md) · [Telegram](telegram_paper_activation.md) | Explicitly gated operational procedures; not demo setup or current runtime facts. |
+| SFP immutable recovery | [REST candle finalization/recovery](sfp_candle_finalization_recovery.md) | Preserve old receipts, verify new policy/clock and bounded fresh evaluation; acceptance remains pending. |
+| Journal targets | [Plan target projection](journal_plan_target_repair.md) | New projection behavior and existing-row repair are different; old-row acceptance pending. |
+| Demo exchange | [Governed BloFin demo](governed_blofin_demo_execution.md) | Separate read/trade permission, protection, ambiguous-dispatch and exposure rules. |
+| Backups/rollback | [Backup inventory](backup_inventory.md) · [restore runbook](backup_restore_runbook.md) · [deployment rollback](deploy_rollback_runbook.md) | Earlier drill results apply to their date/base; do not assert current RPO/RTO without evidence. |
 
-```bash
-# Manual migration (local or CI against staging DB)
-DATABASE_URL='postgresql+psycopg://...' ./scripts/run-migrations.sh
-```
+Historical staging worksheets, command packs and release acceptance records remain preserved. Verify their commit-specific values before executing commands. Never perform a database repair, migration, seed, channel activation or order as a side effect of a documentation/demo review.
 
-## Frontend deployment (Vercel)
+## Rollback constraints
 
-1. Import the repo; set **Root Directory** to `frontend`.
-2. Framework preset: **Next.js** (auto-detected).
-3. Set environment variables (Production + Preview):
+Pin a reviewed prior application version and verify schema compatibility before rolling back. Retain immutable evidence, source identities, plans and Journal facts. Disable new risk through the relevant authority; do not infer that disabling a worker closes existing demo positions. Ambiguous demo dispatch is reconciled by durable client identity, never blindly resent. Existing demo exposure may require separately authorized supervision at the demo venue.
 
-   | Variable | Example |
-   |----------|---------|
-   | `NEXT_PUBLIC_API_URL` | `https://alphatrade-api.onrender.com` |
-   | `NEXT_PUBLIC_AUTH_COOKIE_MODE` | `true` |
-   | `NEXT_PUBLIC_EXECUTION_MODE` | `paper` |
-   | `NEXT_PUBLIC_PROVIDER_MODE` | `fallback` |
-
-4. Deploy. Verify login → dashboard → logout with browser devtools (refresh
-   cookie on API domain, no refresh token in `sessionStorage`).
-
-5. Update backend `CORS_ORIGINS` to match the Vercel URL exactly (including
-   `https://`).
-
-**Note:** `NEXT_PUBLIC_*` vars are baked at **build time**. Redeploy frontend
-after changing the API URL.
-
-## Docker Compose (local production simulation)
-
-See the original local stack documentation below. Compose remains the fastest
-way to validate cookie auth, migrations, and safety scripts before cloud deploy.
-
-```bash
-docker compose up --build
-./scripts/docker-validate.sh
-./scripts/staging-smoke.sh
-```
-
-## Health checks
-
-| Endpoint | Use | Returns |
-|----------|-----|---------|
-| `GET /health` | Liveness + **trading safety posture** | `execution_mode`, `real_trading_enabled`, version |
-| `GET /health/ready` | Readiness | Provider registry availability |
-| `GET /providers/status` | Dashboard + smoke | Mock/fallback provider visibility (incl. `billing`) |
-| `GET /billing/status` | Billing UI | Plan + mock/live billing mode (authenticated) |
-
-Platform probes should use `/health` for liveness. Use `/health/ready` for
-readiness when you want to drain traffic during provider degradation.
-
-Post-deploy smoke (**mandatory gate — AT-005**):
-
-```bash
-BASE_URL=https://your-api.example.com \
-FRONTEND_URL=https://your-app.example.com \
-COOKIE_MODE=true \
-./scripts/post-deploy-smoke-gate.sh
-
-# Or individually:
-BASE_URL=https://your-api.example.com ./scripts/staging-smoke.sh
-BASE_URL=https://your-api.example.com ./scripts/verify-safety.sh
-```
-
-Rollback triggers and steps: [deploy_rollback_runbook.md](deploy_rollback_runbook.md).
-
-## Database migration process
-
-1. Develop migration locally: `cd backend && uv run alembic revision --autogenerate -m "..."`.
-2. Test against local Postgres (Compose or local instance).
-3. Run in staging release command: `alembic upgrade head`.
-4. Verify with `./scripts/staging-smoke.sh`.
-5. Promote same image + migration to production.
-
-Rollback:
-
-- **Application:** redeploy previous Docker image / Render revision.
-- **Database:** Alembic downgrade one revision only if the migration is
-  reversible; otherwise restore from backup. Document breaking migrations in PR
-  descriptions.
-
-## Rollback plan
-
-| Layer | Action |
-|-------|--------|
-| Backend | Revert to previous deploy revision in Render/Railway/Fly |
-| Frontend | Redeploy previous Vercel deployment (Instant Rollback) |
-| Database | `alembic downgrade -1` if safe; else restore snapshot — see [backup_restore_runbook.md](backup_restore_runbook.md) |
-| Secrets | Rotate `JWT_SECRET` only with planned session invalidation |
-
-Keep previous revision available for 24–48 hours after staging deploy.
-
-Full backup inventory, RPO/RTO targets, and restore-drill evidence: [backup_restore_runbook.md](backup_restore_runbook.md),
-[backup_inventory.md](backup_inventory.md), [backup_restore_drill_evidence.md](backup_restore_drill_evidence.md).
-Deploy rollback procedure and automated post-deploy smoke gate: [deploy_rollback_runbook.md](deploy_rollback_runbook.md) (AT-005).
-
-## Monitoring plan
-
-Current observability (no over-build):
-
-| Signal | Mechanism |
-|--------|-----------|
-| Structured logs | `LOG_JSON=true` — structlog JSON to stdout |
-| Request IDs | `X-Request-ID` middleware on every request |
-| Trace IDs | `X-Trace-ID` header propagated when present |
-| Health | Platform probe on `/health` |
-| Audit events | `GET /audit/events` (authenticated) |
-| Usage summary | `GET /usage/summary` (authenticated) |
-| Provider status | `GET /providers/status` (public dashboard data) |
-
-Future (documented, not wired):
-
-- **LangSmith** — set `LANGSMITH_API_KEY` when tracing provider is implemented
-- **OpenTelemetry** — export traces/metrics to your APM of choice
-- **Uptime** — external ping on `/health` + PagerDuty on `real_trading_enabled=true`
-
-Log ingestion: pipe Render/Railway stdout to Datadog, Axiom, or CloudWatch.
-Ensure log pipeline respects redaction (tokens/passwords stripped via structlog
-processor).
-
-## Environment configuration hardening
-
-Staging/production startup checks (`deployment_safety.py`):
-
-- Rejects `enable_real_trading=true` and `execution_mode=trade`
-- Rejects localhost `DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`
-- Requires HTTPS cookies and refresh cookie mode
-- Requires strong `JWT_SECRET` (32+ bytes, no known placeholders)
-- Requires `rate_limit_use_redis=true`
-- Requires `debug=false` in **production** only
-- Logs deployment posture at startup **without secrets**
-
-Run `./scripts/verify-safety.sh` after every deploy.
-
-## Known limitations
-
-- **No real exchange or broker execution** — paper mode only by design.
-- Single backend instance — no horizontal autoscaling yet.
-- Access token remains in `sessionStorage` (short TTL; refresh in httpOnly cookie).
-- No email verification or password reset.
-- Usage costs are estimates, not billing-grade.
-- Qdrant dimension mismatch when switching embedding providers — re-index required.
-- Full browser E2E optional in CI (API smoke is stable).
-- LangSmith / OpenTelemetry integration is scaffolded only.
-
-## Troubleshooting
-
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| Startup crash in staging | Failed deployment safety check | Run `./scripts/check-env.sh` with your env file |
-| Login works locally, fails on Vercel | CORS or cookie SameSite | Set `CORS_ORIGINS`, `AUTH_COOKIE_SAMESITE=none`, `SECURE=true` |
-| Refresh 401 cross-domain | Cookie mode off on frontend | `NEXT_PUBLIC_AUTH_COOKIE_MODE=true` + redeploy |
-| `/health/ready` degraded | Qdrant/OpenAI unreachable | Expected in fallback mode; check `/providers/status` |
-| Migrations fail on deploy | Wrong `DATABASE_URL` | Verify SSL params for managed Postgres |
-
-## Related commands
-
-```bash
-# Validate env file (after filling secrets locally)
-ENV_FILE=.env.staging ./scripts/check-env.sh
-
-# Apply migrations
-./scripts/run-migrations.sh
-
-# Post-deploy smoke gate (AT-005 — mandatory)
-BASE_URL=https://api.example.com ./scripts/post-deploy-smoke-gate.sh
-
-# Individual smokes
-BASE_URL=https://api.example.com ./scripts/staging-smoke.sh
-BASE_URL=https://api.example.com ./scripts/verify-safety.sh
-
-# Local Docker stack
-docker compose up --build
-./scripts/docker-validate.sh
-```
-
-See also: [staging_deployment_runbook.md](staging_deployment_runbook.md),
-[staging_deployment_checklist.md](staging_deployment_checklist.md),
-[security_checklist.md](security_checklist.md), [security.md](security.md),
-[observability.md](observability.md).
-
-## Docker Compose reference (local)
-
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                     docker compose (local)                            │
-├─────────────┬─────────────┬─────────────┬─────────────┬──────────────┤
-│   backend   │  frontend   │  postgres   │    redis    │    qdrant    │
-│  FastAPI    │  Next.js    │  primary DB │ rate limit  │ vector store │
-│  :8000      │  :3000      │  :5432      │  :6379      │  :6333       │
-└─────────────┴─────────────┴─────────────┴─────────────┴──────────────┘
-```
-
-Compose defaults: paper mode, cookie auth, mock providers. See
-[`docker-compose.yml`](../docker-compose.yml) and [`.env.docker.example`](../.env.docker.example).
-
-## Fresh clone troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `ModuleNotFoundError: No module named 'app'` | Use `./backend/scripts/run_dev_server.sh` or `PYTHONPATH=src` |
-| `error parsing value for field "cors_origins"` | Pull latest; `CORS_ORIGINS` is comma-separated in `.env.example` |
-| Backend health OK but auth fails | Start Postgres or use `docker compose up` for the full stack |
-| Frontend cannot reach API | Set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `frontend/.env.local` |
+[Setup](local_setup.md) · [Security](security.md) · [Evaluation](evaluation.md) · [Limitations](limitations_roadmap.md)

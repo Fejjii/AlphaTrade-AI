@@ -1,40 +1,14 @@
-# AlphaTrade AI — Frontend
+# AlphaTrade frontend
 
-Next.js PWA scaffold for the human-in-the-loop paper trading copilot.
+The Next.js client presents Dashboard, Agent, Journal, Strategies, Knowledge and Settings. Backend services remain the authority for identity, evidence, risk and execution. Browser speech controls share the ordinary Agent confirmation flow; fixture captures do not prove physical microphone/device acceptance.
 
-## Setup
+Use [local setup](../docs/local_setup.md) for matching local backend/API/auth settings. From `frontend/` in a configured local checkout:
 
-```bash
-cd frontend
-npm install
-cp .env.example .env.local
-```
-
-Ensure the backend is running at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
-
-## Development
-
-```bash
+```sh
+npm ci
 npm run dev
 ```
 
-Open http://localhost:3000
+Open [localhost:3000](http://localhost:3000). `NEXT_PUBLIC_*` settings are public inputs, not a secret store. Docker Compose includes the frontend as well as the backend/data services.
 
-## Quality checks
-
-```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
-```
-
-## Safety UX
-
-The UI always surfaces paper mode, disabled real trading, and mock provider mode.
-Trading actions use paper-safe labels such as “Close paper position” and “Approve proposal”.
-
-## Docker note
-
-The frontend is not yet added to `docker-compose.yml`. Run it locally with `npm run dev`
-while the backend stack runs via Docker Compose.
+[Architecture and manifest versions](../docs/architecture.md) · [Testing/evaluation](../docs/evaluation.md) · [Authentic screenshot reproduction](../docs/screenshots_checklist.md) · [Agent and voice limits](../docs/agent_workflow.md) · [Current status](../docs/current_status.md).

@@ -1,154 +1,77 @@
-# Agent workflow
+# Agent workflow, models and authority
 
-LangGraph orchestrates the AI trading workspace. Business logic lives in services; the graph routes state through deterministic nodes.
+The primary Agent workspace is `/agent`. It reads recorded application facts, retrieves relevant knowledge, produces conversational explanations and drafts supported actions. **Sending a message persists a conversation turn; it does not confirm the proposed domain action.**
 
-## Flow
+Baseline: main `ff90d0c`, October 6, 2026. Runtime model selection and operational success are UNKNOWN without a fresh observation; see [current status](current_status.md).
+
+## One turn and a separate decision
 
 ```mermaid
 flowchart TD
-  A[User message] --> B[Auth + quota]
-  B --> C[Guardrails]
-  C --> D[RAG retrieval]
-  D --> D2{Analytics intent?}
-  D2 -->|Yes| D3[analytics_summary_tool]
-  D2 -->|No| E[Market data tools]
-  D3 --> J
-  E --> F[Strategy evaluation]
-  F --> G[Risk engine]
-  G --> H{Approval required?}
-  H -->|Yes| I[Create approval record]
-  H -->|No / blocked| J[Structured response]
-  I --> J
-  J --> K[Persist proposal + audit]
+  User["User message or reviewed voice transcript"] --> Scope["Authentication, role and conversation scope"]
+  Scope --> Route["Deterministic intent / typed action registry"]
+  Route --> Reads["Scoped strategy, Journal, portfolio, market and review reads"]
+  Route --> Knowledge["Bounded document retrieval with source labels"]
+  Reads --> Facts["Recorded factual context and limitations"]
+  Knowledge --> Facts
+  Facts --> Model["ModelRouter: conversational synthesis"]
+  Facts --> Draft["Structured proposal when supported"]
+  Model --> Reply["Explanation; no confirmation authority"]
+  Draft --> Decision{"Explicit Confirm or Reject request"}
+  Decision -->|confirm| Validate["Revalidate scope, expected state and action-specific gates"]
+  Validate --> Service["Existing domain service; risk / execution checks when applicable"]
+  Decision -->|reject| Rejected["Persist rejection"]
 ```
 
-## Key nodes (`backend/src/app/agents/nodes.py`)
+The model explains supplied facts. Application code controls the proposal lifecycle. Confirming a knowledge or Journal draft is not permission to trade, and strategy conversation confirmation is not canonical strategy approval. A paper execution command has its own immutable plan, hash, risk, freshness and idempotency boundaries.
 
-| Stage | Purpose |
-|-------|---------|
-| Guardrails | Injection, moderation, trading policy |
-| RAG | Rules, playbook, **journal lessons** — never direct signals |
-| Analytics | `analytics_summary_tool` for review questions (setups, mistakes, discipline) |
-| Risk settings | `risk_settings_tool` for settings, discipline score, open paper trades, daily PnL — updates require confirmation |
-| Strategy / pre-trade (Slice 33–39) | `strategy_workflow_tools` node routes workspace intents to registered tools |
-| Market data | Read-only ticker/OHLCV via provider abstraction |
-| Strategies | Seven deterministic MVP setups |
-| Risk gate | 15 rules; `BLOCK` stops paper execution |
-| Approval decision | Low confidence, execute intent, risk flags |
-| Response builder | Deterministic structured output (source of truth) |
-| Narrative enhancement | Optional LLM polish — schema-validated; falls back on failure |
+## Models: declared defaults, not observed deployment
 
-## Persistence (Slice 13–20)
-
-When a trade-related intent produces a proposal:
-
-1. `ProposalService.create_from_agent` persists the plan
-2. `ApprovalService.create_for_proposal` when approval required
-3. Audit + usage events emitted
-4. Frontend loads `/proposals/{id}/workflow` and `/approvals/{id}/workflow`
-
-## Paper execution path
-
-1. User approves in UI or API
-2. `ExecutionService.place_paper_order` validates:
-   - Real trading disabled
-   - Approval status `approved`
-   - Risk not `BLOCK`
-   - Idempotency key
-3. Paper order + position created
-4. Audit event `paper_order_created`
-
-**Rejected**, **needs_more_analysis**, and **modified** approvals cannot execute.
-
-## Journal → RAG loop
-
-When `JOURNAL_RAG_SYNC_ENABLED=true` (default):
-
-1. Journal create/update triggers `JournalRagSyncService`
-2. Entry text ingested as `trade_journal` with symbol/timeframe/tags metadata
-3. Agent `retrieve_for_agent` includes `TRADE_JOURNAL` source type
-
-See [rag_system.md](rag_system.md). Analytics summaries are not auto-ingested; see [trading_analytics.md](trading_analytics.md).
-
-## Strategy workflow routing (Slice 34)
-
-Deterministic intent detection (`strategy_intent.py`) routes workspace questions before generic `PLAN_TRADE`:
-
-| User question pattern | Intent | Tool |
-|-----------------------|--------|------|
-| Build strategy card | `strategy_card` | `strategy_library_tool` |
-| Analyze with my strategy | `pre_trade` | `pretrade_analysis_tool` |
-| Position size | `position_size` | `position_sizing_tool` |
-| Invalidation / stop | `invalidation_query` | `pretrade_analysis_tool` |
-| Loss acceptable? | `loss_acceptance` | `position_sizing_tool` + acceptance guidance |
-| Manual levels | `manual_levels` | `manual_levels_tool` |
-| Human vs system | `human_vs_system` | `human_vs_system_tool` |
-| Validated strategies | `strategy_status` | `strategy_library_tool` |
-| Backtest next / run backtest | `backtest_run` | `backtest_tool` |
-| Backtest results / what did backtest show | `backtest_results` | `backtest_tool` |
-| Paper eligible? / why not validated | `backtest_eligibility` | `backtest_tool` |
-| Backtest queue (legacy) | `backtest_queue` | `strategy_library_tool` |
-| Pending / accepted lessons | `lesson_pending_query` / `lesson_accepted_query` | `lesson_review_tool` |
-| Accept / reject lesson | `lesson_accept` / `lesson_reject` | `lesson_review_tool` |
-| Make strategy testable / runner rule | `strategy_testability` / `add_runner_rule` | `strategy_testability_tool` |
-| Start paper validation | `paper_validation_start` | `paper_validation_tool` |
-| Scan strategy / paper signals | `paper_validation_scan` | `paper_validation_tool` |
-| Paper trades, metrics, validated status | `paper_validation_query` | `paper_validation_tool` |
-| Improve or retire recommendation | `paper_validation_recommend` | `paper_validation_tool` |
-| Paper scheduler status/tick | `paper_scheduler_query` | `paper_validation_tool` |
-| Paper alerts | `paper_alerts_query` | `paper_validation_tool` |
-| Alert delivery status / deliver pending | `alert_delivery_query` | `paper_validation_tool` |
-| Notification preferences / test send | `notification_preferences_query` | `notification_preferences_tool` |
-| Market watcher status / scan | `market_watcher_query` | `paper_validation_tool` |
-
-Pending lesson observations are labeled — agent cannot invent accepted rules. See [lesson_workflow.md](lesson_workflow.md).
-
-Backtest intents call `backtest_tool`; paper validation intents call `paper_validation_tool` — both run deterministic engines. Scheduler, alert delivery, market watcher, and **market watcher bridge** questions also use `paper_validation_tool` (never LLM-invented status). State-changing actions (deliver pending, market watcher scan, **bridge tick**, scheduler tick) require explicit owner confirmation. The LLM explains results but cannot fabricate win rate, drawdown, signals, scheduler state, delivery status, bridge decisions, or promotion status. **No path places exchange orders.**
-
-## Analytics questions (Slice 31)
-
-Review-style messages route to `trading_analytics_retrieval`, which calls `analytics_summary_tool` (DB session required). The deterministic reply includes discipline score, repeated mistakes, and setup activity — not LLM-scored discipline.
-
-## Risk settings questions (Slice 45)
-
-Risk and discipline intents can call `risk_settings_tool`:
-
-| Question | Action |
+| Setting or route | Inspected default/behavior |
 | --- | --- |
-| What are my risk settings? | `get` |
-| Set max trades per day to 3 | `update` with `confirm=true` |
-| What is my discipline score today? | `discipline_score` |
-| Why is my daily lock active? | `loss_lock_reason` |
-| How many paper trades are open? | `open_trades` |
-| What is my paper PnL today? | `paper_pnl` |
+| `LLM_MODEL` | `gpt-4o-mini`, used by the base provider. |
+| `LLM_TIER_A_MODEL` | `gpt-4o`, used for higher-tier purposes permitted by policy. |
+| `LLM_TIER_B_MODEL` | `gpt-4o-mini`, used for eligible lower-tier purposes. |
+| `MODEL_ROUTER_POLICY_VERSION` | `model-router/v1`. Callers request typed purposes, not arbitrary authority or model elevation. |
+| Current conversational turn | `ModelConversationalResponder` requests `GENERAL_AGENT_SYNTHESIS`, a Tier A purpose (default `gpt-4o`), from the existing ModelRouter. |
+| Embeddings | `EMBEDDINGS_MODEL=text-embedding-3-small`; dimensions resolve separately from the conversational model. |
+| Deterministic authority (Tier C) | Not dispatched to an LLM: risk, permissions, freshness, kill switch and execution authority remain code. |
 
-State-changing `update` requires explicit user confirmation — same mutation policy as lesson accept and scheduler tick.
+Sources: [Settings](../backend/src/app/core/config.py), [model routing contracts](../backend/src/app/schemas/model_routing.py), [router](../backend/src/app/services/model_router.py), [conversational responder](../backend/src/app/interactive_agent/conversation.py). `LLM_MODEL` alone does not establish the model actually selected by a routed turn. Environment overrides and provider responses must be observed to report a resolved deployed model.
 
-## API endpoints
+Local `PROVIDER_MODE=mock` forces mock LLM/embeddings even with a key present. Current staging/production policy requires configured OpenAI and authoritative Qdrant and prohibits silent mock substitutions. A failed conversational call can report “Conversational model reply is unavailable” while preserving factual context; that is not a successful model reply. [Retrieval/provider details](rag_system.md).
 
-- `POST /chat/message` — run agent
-- `GET /proposals/{id}/workflow` — proposal + linked approval + eligibility
-- `GET /approvals/{id}/workflow` — approval + linked proposal + eligibility
-- `POST /execution/paper` — paper order (trader role)
+## Tools and supported boundaries
 
-## Narrative layer (Slice 21)
+[The action registry](../backend/src/app/interactive_agent/action_registry.py) is the implemented catalog; [the capability endpoint](../backend/src/app/api/routes/interactive_agent.py) exposes `GET /agent/capabilities`.
 
-After `final_response` builds `TradingAnalysisDetail`, `narrative_enhancement`:
+| Area | Current behavior | Authority boundary |
+| --- | --- | --- |
+| Context, market, portfolio, strategy | Scoped reads of stored rules/state and canonical market facts. | Missing/stale facts stay unavailable; no invented current price. |
+| Journal and knowledge | Draft entries/notes or ingestion proposals; supported confirmation calls existing services. | A proposal or document does not become a verified fact or an approved trading rule. |
+| Strategy drafting/refinement | Creates discussion proposals and links selected evidence. | Validation, compilation and canonical approval/promotion remain separate. |
+| Watchlist changes | Supported structured proposals with explicit confirmation and tenant/role checks. | A watchlist change does not arm a worker. |
+| Paper execution preparation/explanation | Dedicated prepare/confirm command path and durable execution reads. | Exact approved canonical plan plus risk/freshness/permissions; no LLM or Telegram order authority. |
+| Strategy analytics, learning status, Daily Review | Read-through deterministic services with source/sample limitations. | No promotion/rollback mutation tool in the learning-status read. |
 
-1. Builds sanitized JSON context (analysis, approval, market data quality, citations)
-2. Loads external prompt (`backend/prompts/*.txt`)
-3. Calls LLM via provider abstraction (mock without API key)
-4. Validates narrative against deterministic facts and trading language policy
-5. On failure → deterministic fallback narrative + audit warning
-6. Formats combined reply for `output_validation`
+Relevant contracts: [action application](agent_action_application_v3.md), [paper command](agent_paper_execution_v4.md), [analytics](agent_strategy_analytics_001.md), [Daily Review](agent_daily_review_001.md). These specialist documents record their original implementation evidence; they are not proof of today's deployed acceptance.
 
-The UI shows **Deterministic analysis** and **Narrative explanation** separately so users see that the LLM did not make the trade decision.
+## Retrieval, context and memory
 
-Portfolio demo path: [demo_script.md](demo_script.md) · [screenshots_checklist.md](screenshots_checklist.md)
+The current default Agent searches tenant/user-scoped PostgreSQL documents and chunks lexically: at most 200 scanned chunks, five hits by default. A vector retriever is optional and must be injected; Qdrant is not queried automatically by every Agent turn. Vector hits are reloaded from scoped SQL records before presentation. Playbook passages retain titles, source labels and chunk references.
 
-## Safety invariants
+Conversation rows preserve selected context and messages. Journal, strategy versions, Daily Review and learning attribution provide durable context. This is **stored application memory**, not model fine-tuning or continuous behavioral learning. The conversational responder receives bounded factual context; it is not evidence that unlimited past conversations are included in every model request.
 
-- Agent never calls exchange execution directly
-- LLM output validated; never bypasses risk or approval
-- LLM narrative cannot change risk level, approval status, or execution state
-- Real trading requires explicit config not enabled in MVP
+Stored document passages are reference data, never instructions or execution authority. Explicit user observations, system inference, research suggestions and canonical facts have different provenance. [Retrieval guide](rag_system.md) · [presentation grounding](agent_presentation_grounding.md).
+
+## Voice and screenshot limits
+
+Browser Web Speech dictation/transcript review and optional reply playback are implemented in [frontend voice code](../frontend/src/lib/voice/). Reviewed voice text uses the same `/agent/turns` and Confirm/Reject flow. Browser speech may send audio to the browser vendor's service; no server model credential is put in the browser.
+
+The backend voice I/O and screenshot-analysis routes remain unimplemented contracts; they do not accept audio/image bytes for analysis. Rich continuous conversational voice, chart-image understanding and broader orchestration are future scope where unimplemented. Historical [voice fixture checks](voice_agent_v1_handoff.md) do not verify actual microphone hardware, current speech-service behavior, Safari or physical iOS.
+
+## Compatibility LangGraph workspace
+
+`POST /chat/message`, [LangGraph nodes](../backend/src/app/agents/nodes.py) and the legacy workflow screens remain in source. That graph orchestrates guardrails, retrieval, tools, deterministic structured analysis and optional narrative. Earlier slice documents describe proposal/approval flows from that workspace; do not treat them as canonical execution permission or substitute them for the current `/agent/turns` contract.
+
+The Agent cannot enable real trading. See [permanent paper safety](../backend/src/app/interactive_agent/safety.py), [security](security.md), [architecture](architecture.md) and [limitations](limitations_roadmap.md).

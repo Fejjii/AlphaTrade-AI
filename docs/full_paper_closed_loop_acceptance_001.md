@@ -1,5 +1,8 @@
 # Full governed paper closed-loop acceptance 001
 
+> **Historical / release-specific record.** Original decisions, procedures and results below are preserved for their stated date/base. They are not current runtime observations or complete MVP acceptance. Read the [current status and pending acceptance](current_status.md), [architecture](architecture.md) and [deployment entry point](deployment.md) first; recheck commit-specific environment, migration and activation values before using older procedures.
+
+
 Base: `codex/release_consolidation_wave_003` at
 `8673d8f69779ea516ca97456baea7b3064daf089`.
 Branch: `codex/full_paper_closed_loop_acceptance_001`.
