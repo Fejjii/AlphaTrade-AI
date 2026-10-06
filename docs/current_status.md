@@ -30,6 +30,24 @@
 | Voice | [Browser speech provider](../frontend/src/lib/voice/browser-voice-provider.ts). | Earlier fixture evidence only; actual microphone, speech service and Safari/iOS acceptance UNKNOWN here. Server voice contracts remain unimplemented. |
 | Real trading | [Permanent paper safety](../backend/src/app/core/paper_safety.py). | `ENABLE_REAL_TRADING=true` / trade mode are refused; not a normal enablement option. |
 
+## October 6 presentation release follow-up
+
+Main `e75e8bf411918094bd50eaf3d633d459efd40b40` includes PR211–215. The supervisor
+reports PR215 deployed; this source inspection does not establish live acceptance.
+Agent trade continuity, readable presentation and Knowledge preview/explicit save
+are implemented. Five-market Nested preview and native demo lifecycle foundations
+are also implemented; live instrument/strategy activation and actual protected demo
+fill/exit acceptance remain unverified. Earlier specialist runbooks describe their
+original PR boundaries and must be read with the later lifecycle follow-up.
+
+The [minimum planned-R release](minimum_planned_reward_risk_release.md) adds a
+prospective gross allocation-weighted1R floor and linked setup/assessment evidence
+reads on a separate review branch. It is not yet deployed or fully accepted.
+The known0.65R historical trade and its target projection need the existing scoped
+supervising repair/verification. College destination inspection is access-blocked;
+no submission synchronization has occurred. Existing historical evidence below
+retains its original date and limitations.
+
 ## October 6 supervising evidence
 
 These are supplied reports, **not runtime verification performed by the documentation agent**. They contain no private account IDs, trade IDs, credentials or audit payloads.

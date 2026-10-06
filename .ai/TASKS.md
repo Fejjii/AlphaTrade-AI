@@ -5,6 +5,20 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-108 — Presentation MVP 1R policy and linked evidence release
+- Priority: P0 · Status: DONE (implementation; review/live acceptance pending) · Dependencies:
+  main `e75e8bf` including merged PR215 · Risk: High (new entry refusal).
+- Scope: Exact allocation-weighted gross1R minimum at deterministic plan,
+  authorization, atomic claim and final demo dispatch; history/targets unchanged.
+  Owner-scoped setup/assessment reads and unique material evidence warnings.
+- Known short: 397.30 reward /609.40 risk≈0.65R; previous policy lacked the floor.
+  Existing audited single-trade Journal repair is documented, not run live.
+- Validation: Focused unit/PostgreSQL/Agent/canonical/venue/repair regressions and
+  scoped lint/types only. Final exact-SHA full backend CI remains supervisor gate.
+- Submission: Destination read denied403/404; no blind sync or reviewer-file writes.
+- Limits: No merge/deploy/activation/strategy approval/orders. Expansion isolated.
+- Reference: `docs/minimum_planned_reward_risk_release.md`; AT-ADR-093.
+
 ## AT-107 — Agent trade continuity and document import entry
 - Priority: P1 · Status: DONE (implementation; review/live acceptance pending) ·
   Dependencies: main `9306410` including PR210–214 · Risk: Medium (scoped financial reads).

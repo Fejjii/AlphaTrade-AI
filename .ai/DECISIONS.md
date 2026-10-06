@@ -2,6 +2,22 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-093 — Prospective allocation-weighted gross 1R entry floor
+
+- Date: 2026-10-06
+- Decision: Require exact gross allocation-weighted reward/risk ≥1 at the worst
+  allowed entry-zone price for new linear canonical plans, authorization, claim
+  and governed demo dispatch. Unpriced runner reward is zero; allocations sum to
+  one. Existing maximum-loss allowances retain costs; this is no net-R guarantee.
+- History: Preserve semantic schemas, hashes, target levels and existing replays.
+  Reads/reconciliation do not revoke history. Below-minimum unsent entry is refused.
+  Strategy exit changes require existing explicit new-version governance.
+- Evidence: Scoped compiled definition, exact immutable detector decision and
+  integrity-checked persisted assessment summary are read-only reference data.
+  Distinguish absence from inaccessible stores; retain unique material warnings.
+- Reference: `docs/minimum_planned_reward_risk_release.md`; AT-108. No deployment,
+  live repair, exchange order or full CI from implementation.
+
 ## AT-ADR-092 — Migration readiness uses the deployed package path
 
 - Date: 2026-10-06

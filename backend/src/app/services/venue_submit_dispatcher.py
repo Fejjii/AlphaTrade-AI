@@ -266,6 +266,12 @@ class VenueSubmitDispatcher:
             or plan.execution_policy_version != "governed-blofin-demo/v1"
         ):
             raise TradingPolicyError("Canonical governed demo plan required.")
+        from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk
+
+        try:
+            planned_reward_risk(plan)
+        except PlannedRewardRiskError as exc:
+            raise TradingPolicyError(str(exc), details={"reason": exc.reason}) from exc
         require_idle_session_for_provider_io(self._session)
         snapshot = require_committed_dispatch_authorization(
             load_committed_dispatch_authorization(self._session, command_id),
