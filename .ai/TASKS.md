@@ -21,6 +21,46 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   Supervising review/deploy, owner registration and UUID pin precede venue acceptance.
 - Reference: `docs/governed_blofin_demo_execution.md`; AT-ADR-083.
 
+## AT-101 — Focused development CI and complete release dispatch
+- Priority: P1 · Status: DONE (implemented; review/full acceptance pending) ·
+  Dependencies: PR207 logging correction · Risk: Medium.
+- Scope: Push/PR backend checks select a safety/workflow baseline, changed test
+  files, direct module matches and SFP neighbors. Keep existing quality, evaluation,
+  browser smoke, job names and dependencies. Explicit manual full_backend=true
+  dispatch runs the unfiltered backend suite and all existing checks.
+- Validation: Ten focused selector/workflow regression cases pass; strict script
+  mypy and scoped Ruff pass. Focused results are development evidence only.
+- Release: One exact-SHA complete run after supervising review, staging diagnostics
+  and fresh evaluations. Do not launch it now or change branch protection rules.
+- Safety: Demo stays disarmed, real trading disabled. No merge/deployment/orders.
+- Reference: `.ai/RELEASE.md`; AT-ADR-084.
+
+## AT-100 — SFP persisted evidence reuse and rejection diagnostics
+- Priority: P1 · Status: DONE (implemented; live attribution pending) · Dependencies:
+  main `c70d4bd` · Risk: Medium.
+- Scope: Reproduce wrapped contract rejection across persisted receipts, rolling
+  windows, repeated SFP scopes and restart. Accept canonical-equivalent decimal
+  encodings using complete typed candle equality; log bounded refusal diagnostics.
+- Safety: Original immutable rows/clocks, closed candles, hashes and revision
+  validation remain authoritative. True value conflicts still fail closed.
+  No execution activation, strategy/credential changes, merge, deployment or orders.
+- Validation: Original receipt-fix commit `4395924`: 121 focused cases pass,
+  covering SQLite/PostgreSQL reuse, conflict, revision,
+  sanitized logs, existing SFP detector/runtime and Watcher refusal regressions.
+  Scoped Ruff and receipt DAO strict mypy pass. Assembly/watcher have the same
+  38 pre-existing strict mypy errors as untouched main, with no added messages.
+- Logging follow-up: CI37380642481's empty diagnostic capture reproduces after
+  cached logger initialization and configuration replacement. Test-only scoped
+  capture covers cold/cached states; 16 affected tests pass, including PostgreSQL.
+  Exact diagnostic and secret-exclusion assertions remain; production caching unchanged.
+- Attribution: The decimal-encoding false conflict is reproduced locally with
+  the reported wrapper code. Exact October 5 live cause remains unconfirmed;
+  Render requires workspace confirmation before reading logs or stored rows.
+- Delivery: Separate PR. Preserve PR206 and its supervisor-restarted CI.
+  Focused PR CI is development evidence; AT-101's explicit full dispatch is the
+  final consolidated release gate. Fresh live SFP evaluations are supervised.
+- Reference: `docs/sfp_evidence_reuse.md`.
+
 ## AT-097 — Governed BloFin quote freshness at receipt
 - Priority: P1 · Status: DONE · Dependencies: merged PR203 (`fba79a4`) · Risk: Medium.
 - Scope: Compare ticker timestamps with the injected clock after receipt instead of

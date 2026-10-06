@@ -2,6 +2,25 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-084 — Focused development CI and explicit complete release acceptance
+
+- Date: 2026-10-06
+- Decision: Ordinary push/PR backend tests use a documented focused selection:
+  config/deployment/workflow baseline, changed test files, direct module matches
+  and explicit SFP receipt/logging neighbors. Full lint and the other five CI
+  jobs, including evaluation/browser dependencies, keep their identities and checks.
+- Release gate: Explicit `workflow_dispatch` with `full_backend=true` (manual default)
+  runs the unfiltered backend suite with PostgreSQL and every existing CI job.
+  Require the exact reviewed release SHA and all six jobs successful; skipped
+  evaluation/browser checks or focused backend success do not establish acceptance.
+- Limit: Focused selection is not exhaustive dependency analysis. Unmapped
+  cross-module behavior needs explicit focused coverage and final complete CI.
+- Safety: No protection-rule, credentials, deployment or activation changes.
+  No full run is launched by this implementation task. Real trading stays disabled.
+- Reference: `.ai/RELEASE.md`; AT-101; PR207 follow-up.
+
+---
+
 ## AT-ADR-083 — Paper account setup preserves canonical execution identity
 
 - Date: 2026-10-05
