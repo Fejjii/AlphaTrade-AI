@@ -15,6 +15,7 @@ from app.db.models import (
     ConversationMessage,
     ExecutionCommand,
     ExecutionFillFact,
+    GovernedDemoLifecycleResolution,
     JournalLifecycleEvent,
     JournalTrade,
     VenueSubmitEffect,
@@ -233,6 +234,8 @@ def _demo_explanation(
         "DEMO_PROTECTED": "verified at reconciliation",
         "DEMO_PROTECTION_MISSING": "missing at reconciliation",
         "DEMO_PROTECTION_UNAVAILABLE": "unavailable at reconciliation",
+        "DEMO_PROTECTED_EXIT_UNAVAILABLE": "verified; exit reconciliation unavailable",
+        "DEMO_CLOSED_RECONCILED": "completed; flat account and no pending orders at verified exit",
     }
     protection = (
         states.get(str(effect.reconciliation_disposition), "unavailable")
@@ -263,6 +266,36 @@ def _demo_explanation(
             LearningAttributionRecordRow.learning_venue_mode == "paper_exchange_demo",
         )
     )
+    resolution = session.scalar(
+        select(GovernedDemoLifecycleResolution).where(
+            GovernedDemoLifecycleResolution.command_id == command.id,
+            GovernedDemoLifecycleResolution.organization_id == command.organization_id,
+            GovernedDemoLifecycleResolution.user_id == command.user_id,
+            GovernedDemoLifecycleResolution.account_id == command.account_id,
+            GovernedDemoLifecycleResolution.revision_id == plan.revision_id,
+        )
+    )
+    exit_lines = []
+    if resolution is not None:
+        conclusion = "BloFin demo entry and exit have actual exchange fill evidence."
+        next_action = (
+            "Another entry still requires a fresh approved plan, risk checks "
+            "and all execution gates."
+        )
+        for exit_fill in resolution.evidence_payload.get("exit_fills", [])[:10]:
+            reported_pnl = (
+                exit_fill["fillPnl"] if exit_fill["fillPnl"] is not None else "unavailable"
+            )
+            exit_lines.append(
+                f"Actual demo exit fill {exit_fill['order_id']}:{exit_fill['trade_id']}: "
+                f"{exit_fill['quantity']} contracts at {exit_fill['price']}; "
+                f"occurred {exit_fill['occurred_at']}; fee {exit_fill['fee']}; "
+                f"venue-reported fillPnl {reported_pnl}."
+            )
+        exit_lines.append(
+            "Gross PnL, funding, net PnL and a complete win/loss outcome are unavailable; "
+            "they are not inferred from prices."
+        )
     prose = f"{conclusion} Protection: {protection}. {next_action}"
     lines = [
         f"Recorded BloFin demo command {command.id}; claim outcome {receipt.outcome.value}; "
@@ -278,6 +311,7 @@ def _demo_explanation(
             f"occurred {fill.occurred_at}; source {fill.source_fill_identity}."
             for fill in fills
         ],
+        *exit_lines,
         f"Protection evidence: {protection}. This is a stored reconciliation observation.",
         f"Journal {journal.id}: {journal.status.value}; recorded fees {journal.fees}; "
         f"net PnL {journal.net_pnl if journal.net_pnl is not None else 'unavailable'}."
@@ -306,6 +340,26 @@ def _demo_explanation(
         references.append((effect.id, "Latest demo reconciliation", ArtifactKind.OBSERVATION))
     if learning:
         references.append((learning.id, "Recorded learning attribution", ArtifactKind.OBSERVATION))
+    if resolution is not None:
+        references.extend(
+            [
+                (
+                    resolution.id,
+                    "Verified demo exit and account lifecycle",
+                    ArtifactKind.OBSERVATION,
+                ),
+                (
+                    resolution.journal_close_event_id,
+                    "Actual demo Journal close receipt",
+                    ArtifactKind.OBSERVATION,
+                ),
+                (
+                    resolution.audit_event_id,
+                    "Audited demo exposure release",
+                    ArtifactKind.OBSERVATION,
+                ),
+            ]
+        )
     facts = "\n".join(lines)[:16000]
     return ExecutionExplanation(
         reply=compose_visible_reply(prose, facts),

@@ -11,13 +11,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.errors import ExchangeRequestError
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.schemas.trade_plan import EntrySide, TradePlanRevision
+
+if TYPE_CHECKING:
+    from app.providers.exchange.governed_blofin_exit import VerifiedDemoExit
 
 
 @dataclass(frozen=True)
@@ -170,6 +173,13 @@ class GovernedBloFinDemoProvider:
             or permissions.can_transfer
         ):
             raise ValueError("Verified read/trade-only demo permissions required.")
+
+    def reconcile_exit(
+        self, *, plan: TradePlanRevision, entry: DemoOrderEvidence
+    ) -> VerifiedDemoExit | None:
+        from app.providers.exchange.governed_blofin_exit import reconcile_demo_exit
+
+        return reconcile_demo_exit(self._client, plan=plan, entry=entry, clock=self._clock)
 
     def submit(
         self, *, plan: TradePlanRevision, client_order_id: str, before_post: Callable[[], None]

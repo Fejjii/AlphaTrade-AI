@@ -778,10 +778,15 @@ class VenueSubmitDispatcher:
         accounting.reserved_notional -= unused
         if accounting.reserved_notional < 0:
             accounting.reserved_notional = Decimal("0")
-        accounting.reserved_daily_loss -= reservation.daily_loss_allocation
-        if accounting.reserved_daily_loss < 0:
-            accounting.reserved_daily_loss = Decimal("0")
-        accounting.reserved_trade_slots -= reservation.daily_trade_allocation
+        # Partial cancellation terminates only the unfilled remainder. Existing
+        # exposure retains its loss budget and converted daily trade count.
+        if not reservation.converted_trade_slots:
+            accounting.reserved_daily_loss -= reservation.daily_loss_allocation
+            if accounting.reserved_daily_loss < 0:
+                accounting.reserved_daily_loss = Decimal("0")
+        accounting.reserved_trade_slots -= max(
+            0, int(reservation.daily_trade_allocation) - int(reservation.converted_trade_slots)
+        )
         if accounting.reserved_trade_slots < 0:
             accounting.reserved_trade_slots = 0
         reserved = dict(accounting.symbol_reserved or {})
