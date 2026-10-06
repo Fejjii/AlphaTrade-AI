@@ -2,6 +2,25 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-085 — Journal target repair preserves immutable execution history
+
+- Date: 2026-10-06
+- Decision: New canonical execution events include approved targets with exact
+  decimal strings; Journal projection converts them to its existing target schema.
+  Keep semantic order and allocation, without redistributing reserved runner size.
+- Replay: Reuse stored approved-plan and fill payloads so producer fixes cannot
+  change historical event preimages/hashes. Do not repair projections implicitly.
+- Repair: A dry-run-first one-trade CLI delegates mutation to the Journal projector.
+  Require exact tenant/owner/account, canonical plan/envelope hashes, consumed PAPER
+  authorization, ALLOW command and every recorded canonical lifecycle event lineage.
+  Empty targets only; existing lifecycle/row locking, revalidation and strict audit
+  make application atomic and idempotent. No immutable history or authority change.
+- Acceptance: Reviewed deployment and supervising dry-run/apply/known-trade check
+  are required; focused local tests do not establish live repair or release acceptance.
+- Reference: `docs/journal_plan_target_repair.md`; AT-102.
+
+---
+
 ## AT-ADR-084 — Focused development CI and explicit complete release acceptance
 
 - Date: 2026-10-06

@@ -5,6 +5,25 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-102 — Approved plan targets in Journal and scoped projection repair
+- Priority: P1 · Status: DONE (implemented; supervised repair pending) ·
+  Dependencies: main `510dc2c` · Risk: Medium.
+- Scope: Copy exact approved target order, prices and allocation into canonical
+  approval/fill event payloads and the existing Journal schema. Preserve historical
+  approved/fill payloads on replay; repair only empty derived projections explicitly.
+- Repair: Exact tenant/owner/account/trade/revision, plan and envelope hash checks,
+  consumed PAPER authorization, ALLOW command and canonical event lineage; default
+  dry-run, explicit apply, lifecycle/row locks and atomic strict audit. No bulk mode.
+- Validation: 79 distinct focused regressions pass: 19 PostgreSQL target projection,
+  replay, tenant/owner/account isolation, concurrent repair and audit failure;
+  10 canonical execution, 18 simulated demo fill/protection and 32 shared Journal
+  projector/lineage cases. Scoped Ruff/format and five production/script mypy checks
+  pass. No complete backend suite or live repair was run.
+- Delivery: Separate reviewable PR and supervisor repair instructions; deployment,
+  reviewed dry-run/apply and verification of trade `83a7063d-c83f-4a91-a343-0f231f9585d3`
+  remain supervised. Demo stays disarmed; real trading remains disabled.
+- Reference: `docs/journal_plan_target_repair.md`; AT-ADR-085.
+
 ## AT-099 — Notification fixture and clean bounded Agent prose
 - Priority: P1 · Status: DONE · Dependencies: main `c70d4bd` / merged PR205 · Risk: Low.
 - Scope: Intercept only exact GET `/execution/accounts/paper` in the notification
