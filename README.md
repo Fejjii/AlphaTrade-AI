@@ -47,11 +47,13 @@ Risk can block an action. A strategy draft is not an approved strategy, and a mo
 
 ## What is verified, and what remains open?
 
-Source baseline: main `ff90d0c`, **October 6, 2026**. Implemented paths and operational acceptance are separate.
+Current source baseline: main `e75e8bf` (merged PR215), **October 6, 2026**. Implemented paths and operational acceptance are separate.
 
 The supervisor reports PR208/PR209 deployed on API/worker and a real Nested event through Candidate, risk, internal paper fill, Journal and received Telegram alert. These reports were **not independently reverified here**. Fresh SFP recovery, existing Journal target repair and BloFin demo execution acceptance remain pending. One event does not prove profitability or complete acceptance.
 
-[Dated evidence and component status](docs/current_status.md) · [Limitations and roadmap](docs/limitations_roadmap.md)
+The supervisor also reports PR215 deployed. Its conversation continuity and Agent document-import entry are implemented; live acceptance is still required. The prospective 1R policy and linked assessment retrieval are in [PR216](https://github.com/Fejjii/AlphaTrade-AI/pull/216), not this deployed baseline.
+
+[Dated submission/status addendum](docs/college_submission_handoff.md) · [Earlier component evidence](docs/current_status.md) · [Limitations and roadmap](docs/limitations_roadmap.md)
 
 ## Read further
 
