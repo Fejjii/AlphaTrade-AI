@@ -7,7 +7,14 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models import Chunk, Document, Order, UserRiskSettings, UserStrategy
+from app.db.models import (
+    Chunk,
+    ConversationMessage,
+    Document,
+    Order,
+    UserRiskSettings,
+    UserStrategy,
+)
 from app.interactive_agent.contracts import AgentTurnRequest
 from app.interactive_agent.knowledge_context import CONTEXT_BUDGET, build_knowledge_context
 from app.interactive_agent.service import InteractiveAgentService
@@ -240,3 +247,40 @@ def test_passage_budget_retains_each_topic_before_extra_context(agent_db):
         assert "stop limits" in context.text
         assert "Passage budget reached" in context.text
         assert len(context.text) <= CONTEXT_BUDGET
+
+
+def test_long_playbook_reply_keeps_grounding_and_full_recorded_evidence(agent_db):
+    factory, settings = agent_db
+    sentence = "The playbook proposes discipline guidance; decisions need explicit approval [K1]. "
+    model_reply = sentence * 45
+    captured = []
+
+    class Responder:
+        def compose(self, **kwargs):
+            captured.append(kwargs["factual_context"])
+            return model_reply
+
+    with factory() as session:
+        _document(session)
+        result = InteractiveAgentService(
+            session, settings=settings, responder=Responder()
+        ).handle_turn(
+            AgentTurnRequest(message=QUERY),
+            organization_id=ORG_A,
+            user_id=USER_A,
+        )
+        prose = result.reply.split("Recorded facts (not a confirmation):", 1)[0]
+        assert "Reply shortened to fit the display limit." in prose
+        retained = prose.split("\n\nReply shortened", 1)[0]
+        assert retained.endswith("[K1].")
+        assert model_reply.startswith(retained)
+        assert len(result.reply) <= 4000
+        assert "do not establish approved settings" in prose
+        assert result.recorded_evidence == captured[0].strip()
+        assert "never widen stops" in result.recorded_evidence
+        assert "daily loss percentage" in result.recorded_evidence
+        assistant = session.get(ConversationMessage, result.assistant_message_id)
+        assert assistant.payload["interactive_agent"]["recorded_evidence"] == captured[0]
+        assert (
+            result.connections and not result.authority_mutated and not result.execution_attempted
+        )

@@ -75,6 +75,19 @@ async function installNotificationFixture(page: Page, supported = true) {
       },
     });
   });
+  await page.route((url) => url.pathname === "/execution/accounts/paper", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    expect(route.request().headers().authorization).toBe(
+      `Bearer ${FIXTURE_ACCESS_TOKEN}`,
+    );
+    await route.fulfill({
+      status: 503,
+      json: { detail: "Unavailable in notification fixture" },
+    });
+  });
   // Unrelated Settings reads are deliberately unavailable, never fabricated.
   // Watchlist reads must not reach the backend with the synthetic fixture token:
   // a real 401 would correctly clear the session and redirect to /login.
