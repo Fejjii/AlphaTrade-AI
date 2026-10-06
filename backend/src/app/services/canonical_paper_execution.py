@@ -48,6 +48,7 @@ from app.schemas.trade_plan import EntrySide, TradePlanRevision
 from app.services.audit_service import AuditService
 from app.services.canonical_execution_journal import (
     CANONICAL_EXECUTION_SOURCE_SYSTEM,
+    canonical_planned_targets,
     project_canonical_execution_event,
 )
 from app.services.canonical_execution_learning import (
@@ -484,6 +485,25 @@ class CanonicalPaperExecutionService:
         payload["lineage"] = _lineage_payload(
             envelope, result.command_id, self._runtime
         ).model_dump(mode="json", exclude_none=True)
+        if result.replayed:
+            # Preserve the original event preimage, including legacy events
+            # without targets. Projection repair must never rewrite history.
+            recorded = self._session.scalar(
+                select(JournalLifecycleEvent).where(
+                    JournalLifecycleEvent.organization_id == request.organization_id,
+                    JournalLifecycleEvent.user_id == request.user_id,
+                    JournalLifecycleEvent.account_id == request.account_id,
+                    JournalLifecycleEvent.execution_lifecycle_id == result.command_id,
+                    JournalLifecycleEvent.event_type == JournalLifecycleEventType.APPROVED_PLAN,
+                    JournalLifecycleEvent.source_system == CANONICAL_EXECUTION_SOURCE_SYSTEM,
+                    JournalLifecycleEvent.source_aggregate == "execution-command",
+                    JournalLifecycleEvent.source_event_id == str(result.command_id),
+                    JournalLifecycleEvent.source_event_version == 1,
+                    JournalLifecycleEvent.supersession == 0,
+                )
+            )
+            if recorded is not None:
+                payload = dict(recorded.payload)
         event = JournalLifecycleEventInput(
             event_type=JournalLifecycleEventType.APPROVED_PLAN,
             execution_lifecycle_id=result.command_id,
@@ -527,6 +547,7 @@ def _instrument_payload(plan: TradePlanRevision) -> dict[str, object]:
         "thesis": "Canonical paper execution of an approved TradePlanRevision.",
         "planned_entry_price": str(plan.entry_zone.lower),
         "planned_stop_price": str(plan.risk_and_exits.stop.value),
+        "planned_targets": canonical_planned_targets(plan),
         "planned_risk_amount": str(plan.risk_and_exits.risk_budget.value),
         "size": str(
             plan.quantity.value * plan.instrument_rules.contract_multiplier

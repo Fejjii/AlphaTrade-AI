@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import JournalProjectionConflictError, ValidationAppError
+from app.core.operation_policy import PersistenceKind, assert_write_allowed
 from app.db.models import (
     JournalLifecycleEvent,
     JournalProjectionReceipt,
@@ -40,7 +41,9 @@ from app.schemas.common import (
     TradeResult,
 )
 from app.schemas.journal_lifecycle import JournalLifecycleEventInput, JournalProjectionResult
+from app.schemas.journal_trades import PlannedTarget
 from app.services.audit_service import AuditService
+from app.services.canonical_execution_journal import journal_planned_targets
 from app.services.canonical_serialization import canonical_sha256
 from app.services.journal_integrity import (
     is_journal_lifecycle_event_unique_violation,
@@ -53,6 +56,7 @@ from app.services.journal_lifecycle_lineage import (
     extract_lineage_map,
     merge_lineage_maps,
 )
+from app.services.journal_target_repair import approved_plan_for_target_repair
 
 _REQUEST_TAG = "journal-lifecycle-projector"
 _NON_CREATING = frozenset(
@@ -270,6 +274,82 @@ class JournalLifecycleProjector:
             replayed=False,
             skipped_reason=skipped_reason,
         )
+
+    def repair_planned_targets(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        account_id: uuid.UUID,
+        journal_trade_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        dry_run: bool = True,
+    ) -> dict[str, object]:
+        """Repair only empty derived targets. Caller owns commit/rollback; default read-only."""
+        assert_write_allowed(PersistenceKind.JOURNAL)
+        trade = self._session.scalar(
+            select(JournalTrade).where(
+                JournalTrade.id == journal_trade_id,
+                JournalTrade.organization_id == organization_id,
+                JournalTrade.user_id == user_id,
+                JournalTrade.account_id == account_id,
+            )
+        )
+        if trade is None:
+            raise JournalProjectionConflictError("Journal target repair scope does not match.")
+        if not dry_run:
+            lifecycle_id = trade.execution_lifecycle_id
+            self._lock_lifecycle(organization_id, lifecycle_id)
+            self._session.refresh(trade, with_for_update=True)
+            if (
+                trade.organization_id,
+                trade.user_id,
+                trade.account_id,
+                trade.execution_lifecycle_id,
+            ) != (organization_id, user_id, account_id, lifecycle_id):
+                raise JournalProjectionConflictError("Journal target repair scope changed.")
+        envelope = approved_plan_for_target_repair(self._session, trade, revision_id=revision_id)
+        targets = journal_planned_targets(envelope.plan)
+        status = "already_correct" if trade.planned_targets == targets else "would_repair"
+        if trade.planned_targets and trade.planned_targets != targets:
+            raise JournalProjectionConflictError(
+                "Existing Journal targets conflict; refusing overwrite."
+            )
+        if status == "would_repair" and not dry_run:
+            AuditService(self._session, strict_mode=True).record(
+                AuditRecordCreate(
+                    request_id="journal-target-repair",
+                    trace_id=str(journal_trade_id),
+                    event_type=AuditEventType.JOURNAL_LIFECYCLE_PROJECTED,
+                    action="repair_planned_targets",
+                    resource_type="journal_trade",
+                    resource_id=str(journal_trade_id),
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    actor_type=ActorType.SYSTEM,
+                    metadata={
+                        "action": "repair_planned_targets",
+                        "account_id": str(account_id),
+                        "execution_lifecycle_id": str(trade.execution_lifecycle_id),
+                        "revision_id": str(revision_id),
+                        "plan_content_hash": envelope.plan.content_hash,
+                        "before": [],
+                        "after": targets,
+                    },
+                )
+            )
+            trade.planned_targets = targets
+            trade.projector_lock_version = int(trade.projector_lock_version or 0) + 1
+            self._session.flush()
+            status = "repaired"
+        return {
+            "status": status,
+            "dry_run": dry_run,
+            "journal_trade_id": str(journal_trade_id),
+            "revision_id": str(revision_id),
+            "plan_content_hash": envelope.plan.content_hash,
+            "planned_targets": targets,
+        }
 
     def _require_provenance(self, event: JournalLifecycleEventInput) -> None:
         if not event.source_system or not event.source_aggregate or not event.source_event_id:
@@ -584,7 +664,12 @@ class JournalLifecycleProjector:
         for key in _CREATE_FIELDS:
             if key not in payload:
                 continue
-            setattr(row, key, _coerce_field(key, payload[key]))
+            value = payload[key]
+            if key == "planned_targets" and isinstance(value, list):
+                value = [
+                    PlannedTarget.model_validate(target).model_dump(mode="json") for target in value
+                ]
+            setattr(row, key, _coerce_field(key, value))
 
     def _apply_event(self, row: JournalTrade, event: JournalLifecycleEventInput) -> None:
         incoming_rank = _EVENT_RANK.get(event.event_type, 0)
