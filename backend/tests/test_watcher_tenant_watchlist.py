@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -301,7 +302,11 @@ def test_normal_production_composition_probes_all_five_without_candidates(db, so
         assert all(r["last_successful_scan"] is None for r in other)
     assert len(factory._entries) == 5 and len(worker.history.completed) == 5
     assert worker.history.peak_in_flight == 1
-    assert len([c for c in market.calls if c[1].endswith(("klines", "kline"))]) == 5
+    candle_reads = Counter(s for _, path, s in market.calls if path.endswith(("klines", "kline")))
+    # Binance REST v2 admission confirms each settled window; Bybit remains one read.
+    assert candle_reads == dict.fromkeys(
+        DEFAULT_WATCHLIST_SYMBOLS, 2 if source == "binance_usdm" else 1
+    )
 
 
 def test_worker_refreshes_same_database_and_replacement_evicts_state(db):

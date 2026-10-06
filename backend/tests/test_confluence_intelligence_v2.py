@@ -83,7 +83,9 @@ def world(*, family="nested", bearish=False, required=(), flow=False):
         )
     else:
         rows, spec = (BEAR if bearish else BULL), sfp_spec(bearish=bearish)
-    bars, _ = sfp_evidence(rows, start=END - timedelta(minutes=15 * len(rows)))
+    bars, _ = sfp_evidence(
+        rows, start=END - timedelta(minutes=15 * len(rows)), market_identity=ident
+    )
     observations = tuple(
         observation_from_ohlcv(
             b,

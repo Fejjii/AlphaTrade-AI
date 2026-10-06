@@ -256,7 +256,8 @@ def test_running_requires_live_lease_and_heartbeat(monitoring_db: sessionmaker[S
 
 
 @pytest.mark.parametrize(
-    "failure", [None, "stale", "future", "owner", "lease", "heartbeat", "kill"]
+    "failure",
+    [None, "stale", "future", "owner", "lease", "heartbeat", "kill", "refused", "disarmed"],
 )
 def test_separate_paper_worker_observed_with_api_disarmed(monitoring_db, failure):
     with monitoring_db() as session:
@@ -268,7 +269,8 @@ def test_separate_paper_worker_observed_with_api_disarmed(monitoring_db, failure
                 heartbeat_at=NOW + timedelta(seconds=10)
                 if failure == "future"
                 else (NOW - timedelta(days=1) if failure == "stale" else NOW),
-                activation_state="running",
+                activation_state=failure if failure in {"refused", "disarmed"} else "running",
+                last_scan_reason="migration_unhealthy" if failure == "refused" else "",
             )
         )
         if failure == "lease":
@@ -285,6 +287,10 @@ def test_separate_paper_worker_observed_with_api_disarmed(monitoring_db, failure
         assert snapshot.paper_posture.runtime_evidence is True
     else:
         assert snapshot.watcher_status.value != "RUNNING"
+    if failure in {"refused", "disarmed"}:
+        # A fresh idle heartbeat and even an old live lease cannot establish remote scanning.
+        assert snapshot.watcher_status.value == "STOPPED"
+        assert snapshot.config_flags.watcher_orchestration_enabled is False
     with monitoring_db() as session:
         other = WatcherMonitoringService(session, Settings(**_BASE), now=NOW).get_snapshot(
             organization_id=OTHER_ORG,

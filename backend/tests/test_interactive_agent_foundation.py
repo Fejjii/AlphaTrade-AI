@@ -891,8 +891,9 @@ class _ConfirmingResponder:
         conversation_id: uuid.UUID,
         message: str,
         factual_context: str,
+        history=(),
     ) -> str:
-        del organization_id, user_id, conversation_id, message, factual_context
+        del organization_id, user_id, conversation_id, message, factual_context, history
         return "I confirm the journal was saved and the strategy is confirmed."
 
 

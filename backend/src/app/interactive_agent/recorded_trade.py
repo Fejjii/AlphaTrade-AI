@@ -20,12 +20,14 @@ from app.db.models import (
     ExecutionReceipt,
     JournalTrade,
     RiskReservation,
+    TradePlanRevision,
     UserStrategy,
     UserStrategyVersion,
 )
 from app.interactive_agent.actions import ActionRequest, RecordedTradeInput
 from app.interactive_agent.contracts import ArtifactKind, ConnectionRef, ProvenanceSource
 from app.interactive_agent.parsing import extract_direction, extract_symbol
+from app.interactive_agent.presentation import readable_number, readable_percentage, readable_price
 from app.persistence.eligibility_postgres import PostgresActionEligibilityStore
 from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
 from app.schemas.agent_paper import AgentPaperResult
@@ -51,10 +53,20 @@ def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest |
         return None
     account = re.search(rf"\baccount\s*[=:]?\s*({_UUID})\b", message, re.I)
     trade = re.search(rf"\btrade\s*[=:]?\s*({_UUID})\b", message, re.I)
+    named = re.search(
+        r"\b(?:latest|last|recent|that|this|same)\s+([a-z0-9]{2,16})\s+"
+        r"(?:(?:short|long|paper)\s+)*trade\b",
+        message,
+        re.I,
+    )
+    market_name = named.group(1).upper() if named else None
+    if market_name in {"SHORT", "LONG", "PAPER", "TRADE"}:
+        market_name = None
     return ActionRequest(
         name="paper_trade.read_recorded",
         arguments={
             "symbol": extract_symbol(message) or symbol,
+            "market_name": market_name if extract_symbol(message) is None else None,
             "direction": extract_direction(message),
             "account_id": account.group(1) if account else None,
             "journal_trade_id": trade.group(1) if trade else None,
@@ -69,6 +81,7 @@ class RecordedTradeRead:
     reply: str
     recorded_evidence: str
     connections: list[ConnectionRef] = field(default_factory=list)
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass
@@ -104,8 +117,8 @@ def read_recorded_trade(
 ) -> RecordedTradeRead:
     with session.no_autoflush:
         selected = _select_trade(session, inputs, organization_id=organization_id, user_id=user_id)
-        if isinstance(selected, str):
-            return RecordedTradeRead(selected, selected)
+        if isinstance(selected, RecordedTradeRead):
+            return selected
         return _read_lineage(session, selected)
 
 
@@ -115,7 +128,7 @@ def _select_trade(
     *,
     organization_id: UUID,
     user_id: UUID,
-) -> JournalTrade | str:
+) -> JournalTrade | RecordedTradeRead:
     owned_account = (
         select(ExecutionAccount.id)
         .where(
@@ -139,6 +152,19 @@ def _select_trade(
             func.replace(func.replace(func.upper(JournalTrade.symbol), "-", ""), "/", "")
             == inputs.symbol.upper().replace("-", "").replace("/", "")
         )
+    if inputs.market_name:
+        filters.append(
+            select(TradePlanRevision.id)
+            .where(
+                TradePlanRevision.id == JournalTrade.trade_plan_revision_id,
+                TradePlanRevision.organization_id == organization_id,
+                TradePlanRevision.user_id == user_id,
+                TradePlanRevision.account_id == JournalTrade.account_id,
+                TradePlanRevision.semantic_payload["instrument_rules"]["base_currency"].as_string()
+                == inputs.market_name.upper(),
+            )
+            .exists()
+        )
     if inputs.direction is not None:
         filters.append(JournalTrade.direction == inputs.direction)
     if inputs.paper_only:
@@ -147,7 +173,35 @@ def _select_trade(
         session.scalars(select(JournalTrade.account_id).where(*filters).distinct().limit(2))
     )
     if len(accounts) > 1:
-        return "Matching trades exist in multiple accounts. Which account UUID should I use?"
+        names = {
+            row.id: row.name
+            for row in session.scalars(
+                select(ExecutionAccount).where(
+                    ExecutionAccount.id.in_(
+                        [identity for identity in accounts if identity is not None]
+                    ),
+                    ExecutionAccount.organization_id == organization_id,
+                    ExecutionAccount.user_id == user_id,
+                )
+            )
+        }
+        options = [
+            (
+                names.get(identity, "Unnamed account")
+                if identity is not None
+                else "Unassigned Journal",
+                identity,
+            )
+            for identity in accounts
+        ]
+        question = (
+            "Matching trades exist in multiple accounts. Please select an account: "
+            + ", ".join(name[:80] for name, _ in options)
+            + ". Account references are in Stored evidence."
+        )
+        return RecordedTradeRead(
+            question, "\n".join(f"Account {name}: {identity}" for name, identity in options)
+        )
     time = func.coalesce(JournalTrade.entry_time, JournalTrade.created_at)
     trades = list(
         session.scalars(
@@ -158,13 +212,26 @@ def _select_trade(
         )
     )
     if not trades:
-        return "No recorded Journal trade matches your selection in your authenticated scope."
+        reason = "No recorded Journal trade matches your selection in your authenticated scope."
+        return RecordedTradeRead(reason, reason)
     if len(trades) > 1 and (
         not inputs.latest
         or (trades[0].entry_time or trades[0].created_at)
         == (trades[1].entry_time or trades[1].created_at)
     ):
-        return "Multiple matching trades remain. Which Journal trade UUID should I explain?"
+        question = (
+            "Multiple matching trades remain. Please select a trade "
+            "or ask for the latest matching trade. "
+            "Trade references are in Stored evidence."
+        )
+        return RecordedTradeRead(
+            question,
+            "\n".join(
+                f"Journal {trade.id}: {trade.symbol} {trade.direction.value}; "
+                f"entry {trade.entry_time or trade.created_at}; account {trade.account_id}."
+                for trade in trades
+            ),
+        )
     return trades[0]
 
 
@@ -301,15 +368,31 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
             "use the plan values as planned targets, not filled exits."
         )
     fill_text = (
-        "; ".join(f"{fill.quantity} {fill.unit} at {fill.price}" for fill in fills) or "unavailable"
+        "; ".join(
+            f"{readable_number(fill.quantity)} {fill.unit.lower().replace('_', ' ')} at "
+            f"{readable_price(fill.price, plan.instrument_rules.tick_size)}"
+            for fill in fills
+        )
+        or "unavailable"
     )
     venue = _venue(plan.execution_venue, fills, evidence)
+    prices = plan.instrument_rules
+    display_targets = (
+        "; ".join(
+            f"{readable_price(target.price.value, prices.tick_size)} "
+            f"({readable_percentage(target.quantity_fraction)} allocation)"
+            for target in plan.risk_and_exits.targets[:10]
+        )
+        or "unavailable"
+    )
     summary = (
-        f"{trade.symbol} {trade.direction.value} — {trade.status.value}. "
+        f"{prices.base_currency} {trade.direction.value} — {trade.status.value.replace('_', ' ')}. "
         f"Strategy: {strategy_name}. "
-        f"Planned entry: {plan.entry_zone.lower} to {plan.entry_zone.upper}; "
+        f"Planned entry: {readable_price(plan.entry_zone.lower, prices.tick_size)} "
+        f"to {readable_price(plan.entry_zone.upper, prices.tick_size)} {prices.quote_currency}; "
         f"recorded fill: {fill_text}. "
-        f"Planned stop: {plan.risk_and_exits.stop.value}; target(s): {targets} (TradePlan). "
+        f"Planned stop: {readable_price(plan.risk_and_exits.stop.value, prices.tick_size)}; "
+        f"target(s): {display_targets} (immutable plan). "
         f"Execution venue: {venue}."
     )
     if not trade.planned_targets and plan.risk_and_exits.targets:
@@ -373,7 +456,7 @@ def _eligibility(
         f"checked {eligibility.checked_at}; risk snapshot identity {eligibility.risk_snapshot_id}.",
     )
     evidence.allowed.append(
-        f"Historical eligibility was {eligibility.state.value} [ActionEligibility]."
+        f"Historical eligibility was {eligibility.state.value.lower().replace('_', ' ')}."
     )
 
 
@@ -420,9 +503,10 @@ def _execution(
             f"expires {authorization.expires_at}. "
             "Historical authorization is not current permission or proof of a fill.",
         )
+        channel = authorization.channel.value.lower().replace("_", " ")
         evidence.allowed.append(
-            f"An exact plan authorization was recorded through {authorization.channel.value} "
-            f"(state {authorization.state.value}) [Authorization]."
+            f"An exact plan authorization was recorded through {channel} "
+            f"(state {authorization.state.value.lower()})."
         )
     else:
         evidence.missing.append("linked exact plan authorization")
@@ -466,7 +550,7 @@ def _execution(
         )
         evidence.allowed.append(
             f"The execution claim recorded {command.outcome.value} "
-            "with a deterministic risk reservation [Execution command, Risk reservation]."
+            "with a deterministic risk reservation."
         )
     else:
         evidence.missing.append("deterministic risk reservation")
@@ -548,9 +632,7 @@ def _captured_risk(
         "Captured Risk",
         f"{captured.risk_result.action.value}: {captured.risk_result.explanation[:1000]}",
     )
-    evidence.allowed.append(
-        f"Captured Risk decision: {captured.risk_result.action.value} [Captured Risk]."
-    )
+    evidence.allowed.append(f"Captured Risk decision: {captured.risk_result.action.value.lower()}.")
 
 
 def _venue(planned_venue: str, fills: list[ExecutionFillFact], evidence: _Evidence) -> str:
@@ -585,7 +667,9 @@ def _finish(summary: str, evidence: _Evidence) -> RecordedTradeRead:
         or "Authorization evidence is unavailable; no reason for approval is inferred."
     )
     missing = "; ".join(evidence.missing) or "None in the requested recorded entry lineage."
-    reply = f"{summary}\n\nWhy it was allowed: {allowed}\n\nMissing evidence: {missing}"
+    reply = (
+        f"{summary}\n\nWhy it was allowed: {allowed}\n\nMissing evidence: {missing.rstrip('.')}."
+    )
     facts = (
         reply
         + "\n\n"
@@ -597,4 +681,17 @@ def _finish(summary: str, evidence: _Evidence) -> RecordedTradeRead:
             "This read does not contact a venue, approve, repair, calculate risk or execute."
         )
     )
-    return RecordedTradeRead(reply, facts, evidence.refs)
+    warnings = []
+    if evidence.missing:
+        warnings.append("Missing evidence: " + "; ".join(evidence.missing) + ".")
+    if any("Journal targets are empty" in line for line in evidence.lines):
+        warnings.append(
+            "Journal targets are empty; targets come from the linked immutable plan "
+            "(projection discrepancy)."
+        )
+    elif any("Journal targets differ" in line for line in evidence.lines):
+        warnings.append(
+            "Journal targets differ from the linked immutable plan; "
+            "planned targets are not filled exits."
+        )
+    return RecordedTradeRead(reply, facts, evidence.refs, tuple(warnings))

@@ -496,3 +496,10 @@ def test_read_migration_revision_types_session() -> None:
     with factory() as session:
         assert isinstance(session, Session)
         assert read_migration_revision(session) is None
+
+
+def test_expected_migration_head_is_independent_of_process_working_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert expected_migration_head() == "a5demolifecycle001"

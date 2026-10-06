@@ -1,6 +1,8 @@
 "use client";
 
-import { ImageIcon, Send, MessageSquare } from "lucide-react";
+import { FileUp, Send, MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { KnowledgeStorePanel } from "@/components/knowledge/KnowledgeStorePanel";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -43,34 +45,50 @@ function messageLabel(role: ConversationMessageRecord["role"]): string {
   return "System";
 }
 
+function visibleReply(reply: string | null): string | null {
+  return reply?.split("\n\nRecorded facts (not a confirmation):\n", 1)[0] ?? null;
+}
+
 function MessageContent({ message }: { message: ConversationMessageRecord }) {
   const marker = "\n\nRecorded facts (not a confirmation):\n";
   const boundary = message.role === "assistant" ? message.content.indexOf(marker) : -1;
   const metadata = message.payload?.interactive_agent;
-  const stored =
-    metadata && typeof metadata === "object" && "recorded_evidence" in metadata
-      ? metadata.recorded_evidence
-      : null;
-  const evidence =
-    boundary >= 0
-      ? typeof stored === "string"
-        ? stored
-        : message.content.slice(boundary + marker.length)
-      : null;
+  const stored = metadata && typeof metadata === "object" && "recorded_evidence" in metadata
+    ? metadata.recorded_evidence : null;
+  const fullReply = metadata && typeof metadata === "object" && "full_reply" in metadata
+    ? metadata.full_reply : null;
+  const sources = metadata && typeof metadata === "object" && "sources" in metadata
+    && Array.isArray(metadata.sources) ? metadata.sources : [];
+  const evidence = message.role === "assistant"
+    ? typeof stored === "string" ? stored
+      : boundary >= 0 ? message.content.slice(boundary + marker.length) : null
+    : null;
+  const explanation = message.role === "assistant" && typeof fullReply === "string"
+    && fullReply !== message.content.split(marker, 1)[0] ? fullReply : null;
   return (
     <>
       <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
         {boundary >= 0 ? message.content.slice(0, boundary) : message.content}
       </p>
-      {evidence !== null ? (
+      {evidence !== null || explanation !== null || sources.length > 0 ? (
         <details className="mt-3 border-t border-border-subtle pt-2">
           <summary className="cursor-pointer rounded-control text-xs text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
             Stored evidence
           </summary>
-          <p className="mt-2 whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]">
-            Recorded facts (not a confirmation):{"\n"}
-            {evidence}
-          </p>
+          {explanation ? <p className="mt-2 whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]">
+            Full explanation (not execution authority):{"\n"}{explanation}
+          </p> : null}
+          {evidence !== null ? <p className="mt-2 whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]">
+            Recorded facts (not a confirmation):{"\n"}{evidence}
+          </p> : null}
+          {sources.length > 0 ? <ul aria-label="Source references" className="mt-2 space-y-1 text-xs [overflow-wrap:anywhere]">
+            {sources.map((source, index) => {
+              if (!source || typeof source !== "object") return null;
+              const title = "title" in source && typeof source.title === "string" ? source.title : "Stored record";
+              const identity = "record_id" in source && typeof source.record_id === "string" ? source.record_id : "unavailable";
+              return <li key={`${identity}-${index}`}>{title}: {identity}</li>;
+            })}
+          </ul> : null}
         </details>
       ) : null}
     </>
@@ -111,6 +129,7 @@ export function AgentWorkspace() {
   const [messages, setMessages] = useState<ConversationMessageRecord[]>([]);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
   const [symbol, setSymbol] = useState("");
   const [timeframe, setTimeframe] = useState("");
   const [strategyId, setStrategyId] = useState("");
@@ -301,7 +320,7 @@ export function AgentWorkspace() {
             role: "assistant",
             content: result.reply,
             payload: {
-              interactive_agent: { recorded_evidence: result.recorded_evidence },
+              interactive_agent: { recorded_evidence: result.recorded_evidence, full_reply: result.full_reply, sources: result.connections },
             },
             created_at: new Date().toISOString(),
           },
@@ -765,15 +784,10 @@ export function AgentWorkspace() {
                     <Send className="h-4 w-4" aria-hidden="true" />
                     {sending ? "Sending…" : "Send"}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled
-                    data-testid="agent-attach-image"
-                    aria-describedby="agent-attachment-contract"
-                  >
-                    <ImageIcon className="h-4 w-4" aria-hidden="true" />
-                    Attach screenshot
+                  <Button type="button" variant="outline" aria-expanded={importOpen}
+                    aria-controls="agent-document-import" onClick={() => setImportOpen((open) => !open)}>
+                    <FileUp className="h-4 w-4" aria-hidden="true" />
+                    {importOpen ? "Close document import" : "Import document"}
                   </Button>
                 </div>
                 <AgentVoiceControls
@@ -784,23 +798,10 @@ export function AgentWorkspace() {
                     killSwitchActive
                   }
                   conversationKey={String(voiceContextKey)}
-                  reply={
-                    latest?.reply ??
-                    [...messages]
-                      .reverse()
-                      .find((message) => message.role === "assistant")
-                      ?.content ??
-                    null
-                  }
+                  reply={visibleReply(latest?.reply ?? [...messages].reverse()
+                    .find((message) => message.role === "assistant")?.content ?? null)}
                   onSend={(transcript) => sendMessage(transcript, "voice")}
                 />
-                <p
-                  id="agent-attachment-contract"
-                  className="text-caption text-text-muted"
-                >
-                  Screenshot analysis is not available. No image is uploaded or
-                  interpreted.
-                </p>
                 {killSwitchActive ? (
                   <p className="text-sm text-danger">
                     Kill switch is active. New messages are paused.
@@ -816,6 +817,15 @@ export function AgentWorkspace() {
                   </p>
                 ) : null}
               </form>
+              {importOpen ? <section id="agent-document-import" aria-label="Document import to Knowledge" className="mt-4 space-y-3 border-t border-border-subtle pt-4">
+                <p className="text-sm text-text-secondary">
+                  Save documents to Knowledge. Preview the extracted text, then explicitly save.
+                  Importing does not approve strategies or create Journal entries.
+                </p>
+                <Link href="/knowledge" className="text-sm underline">Open Knowledge library</Link>
+                <KnowledgeStorePanel initialMode="file" />
+              </section> : null}
+
             </CardContent>
           </Card>
         </div>

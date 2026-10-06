@@ -270,10 +270,10 @@ def test_long_playbook_reply_keeps_grounding_and_full_recorded_evidence(agent_db
             user_id=USER_A,
         )
         prose = result.reply.split("Recorded facts (not a confirmation):", 1)[0]
-        assert "Reply shortened to fit the display limit." in prose
-        retained = prose.split("\n\nReply shortened", 1)[0]
-        assert retained.endswith("[K1].")
-        assert model_reply.startswith(retained)
+        assert "Further explanation is available in Stored evidence." in prose
+        retained = prose.split("\n\nFurther explanation", 1)[0]
+        assert retained.endswith("approval.")
+        assert model_reply.replace(" [K1]", "").startswith(retained)
         assert len(result.reply) <= 4000
         assert "do not establish approved settings" in prose
         assert result.recorded_evidence == captured[0].strip()

@@ -253,6 +253,7 @@ class AgentTurnResult(StrictModel):
     artifact_kinds: list[ArtifactKind]
     reply: str = Field(min_length=1, max_length=4000)
     recorded_evidence: str | None = Field(default=None, max_length=16000)
+    full_reply: str | None = Field(default=None, max_length=16000)
     proposals: list[StructuredActionProposal] = Field(default_factory=list)
     knowledge: list[KnowledgeHit] = Field(default_factory=list)
     strategies: list[StrategyHit] = Field(default_factory=list)

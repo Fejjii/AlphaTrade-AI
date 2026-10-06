@@ -77,8 +77,16 @@ def spec(*, bearish=False, **changes):
     )
 
 
-def evidence(prices=BULL, *, start=START, timeframe=Timeframe.M15, volumes=None, forming=False):
-    identity = first_slice_identity(timeframe=timeframe, replay=True)
+def evidence(
+    prices=BULL,
+    *,
+    start=START,
+    timeframe=Timeframe.M15,
+    volumes=None,
+    forming=False,
+    market_identity=None,
+):
+    identity = market_identity or first_slice_identity(timeframe=timeframe, replay=True)
     delta = interval_timedelta(timeframe)
     bars, observations = [], []
     for i, row in enumerate(prices):
@@ -100,6 +108,7 @@ def evidence(prices=BULL, *, start=START, timeframe=Timeframe.M15, volumes=None,
             quote_volume=volume * c,
             evaluated_at=observed,
             grace=timedelta(0),
+            adapter_version=identity.source.adapter_version,
         )
         bars.append(bar)
         observations.append(

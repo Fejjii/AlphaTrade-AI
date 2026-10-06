@@ -255,6 +255,82 @@ def test_telegram_projection_refusal_does_not_stop_telegram_heartbeat(
     assert health.telegram.last_delivery_at is None
 
 
+def test_startup_migration_refusal_keeps_heartbeating_without_retrying_activation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A healthy process after DB recovery does not establish scheduled evaluation."""
+    settings = Settings(**{**_CONTRACT, **_PRESENT_SECRETS, **_ARMED_WATCHER})
+    ready = False
+    preflight_calls: list[bool] = []
+    published: list[dict[str, object]] = []
+    telegram_calls: list[bool] = []
+
+    def preflight(*_args: object, **_kwargs: object) -> ActivationDecision:
+        preflight_calls.append(ready)
+        reason = "cleared" if ready else "migration_unhealthy"
+        return ActivationDecision(
+            allowed=ready,
+            reason_codes=(reason,),
+            primary_reason=reason,
+            phase="preflight",
+        )
+
+    def unexpected_start(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("startup refusal must not open a scanning runtime")
+
+    class Telegram:
+        def run_cycle(self) -> TelegramRuntimeCycle:
+            telegram_calls.append(True)
+            return TelegramRuntimeCycle(
+                posture="disarmed",
+                delivered=0,
+                poll_applied=0,
+                poll_rejected=0,
+                kill_switch_active=False,
+                lease_held=True,
+                last_error_code="",
+            )
+
+        def stop(self) -> None:
+            return None
+
+    monkeypatch.setattr("app.db.session.get_session_factory", lambda: object())
+    monkeypatch.setattr("app.workers.watcher_activation.run_staging_activation", preflight)
+    monkeypatch.setattr(
+        "app.workers.watcher_activation.open_staging_watcher_session", unexpected_start
+    )
+    monkeypatch.setattr(
+        "app.workers.watcher_paper.publish_idle_watcher_status",
+        lambda *_args, **kwargs: published.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "app.telegram_activation.runtime.build_telegram_runtime",
+        lambda *_args, **_kwargs: Telegram(),
+    )
+    supervisor = build_paper_worker_supervisor(settings)
+    try:
+        first = supervisor.run_round()
+        ready = True  # The external migration condition recovers after construction.
+        second = supervisor.run_round()
+    finally:
+        supervisor.close()
+
+    assert preflight_calls == [False]
+    assert len(published) == len(telegram_calls) == 2
+    assert all(status["reason"] == "migration_unhealthy" for status in published)
+    assert published[1]["worker_id"] == published[0]["worker_id"]
+    for health in (first, second):
+        assert health.watcher.status == "refused"
+        assert health.watcher.last_error == "migration_unhealthy"
+        assert health.watcher.last_heartbeat_at is not None
+        assert health.watcher.last_scan_at is None
+        assert health.telegram.status == "disarmed"
+        assert health.authority_intact is True
+    assert second.watcher.cycles_completed == 2
+    assert settings.enable_real_trading is settings.real_trading_enabled is False
+    assert settings.telegram_alerts_enabled is False
+
+
 def test_telegram_failure_does_not_corrupt_watcher_state() -> None:
     clock = _Clock()
 

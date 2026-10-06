@@ -217,8 +217,14 @@ def test_every_timeframe_compiles_acquires_and_uses_canonical_watcher(tenant_sto
         )
         assert loaded.evidence.bars_15m[-1].close == Decimal(114)
         assert requests[0].url.params["interval"] == timeframe.value
+        candle_reads = [r for r in requests if r.url.path.endswith("klines")]
+        # REST v2 confirms the settled window with two identical read-only requests.
+        assert len(candle_reads) == 2
+        assert candle_reads[0].url == candle_reads[1].url
+        assert all(r.method == "GET" for r in candle_reads)
+        count_before_reuse = len(requests)
         assert port.load(command) is loaded
-        assert len([r for r in requests if r.url.path.endswith("klines")]) == 1
+        assert len(requests) == count_before_reuse  # Cached command causes no new reads.
         assessment = evaluate_canonical_strategy(
             executable_policy=executable,
             command=loaded.assessment_command,

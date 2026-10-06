@@ -38,8 +38,8 @@ from app.market_contracts.first_slice import first_slice_identity
 from app.market_contracts.freshness import evaluate_freshness, first_slice_freshness_policy
 from app.market_contracts.hashing import with_content_hash
 from app.market_contracts.identity import (
-    ADAPTER_VERSION,
     AGGRESSOR_CONVENTION,
+    BINANCE_REST_ADAPTER_VERSION,
     InstrumentIdentity,
     binance_usdm_btcusdt,
     bybit_usdt_perpetual_btcusdt,
@@ -147,7 +147,7 @@ class _Primary:
             event_timestamp=start + timedelta(seconds=1),
             receive_timestamp=receive_at,
             source_connection_id=source_connection_id,
-            adapter_version=ADAPTER_VERSION,
+            adapter_version=BINANCE_REST_ADAPTER_VERSION,
             aggressor_convention=AGGRESSOR_CONVENTION,
         )
         ordered = order_trades([trade])

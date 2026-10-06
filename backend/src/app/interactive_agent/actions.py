@@ -91,6 +91,7 @@ class LearningStatusInput(StrictModel):
 
 
 class RecordedTradeInput(StrictModel):
+    market_name: str | None = Field(default=None, min_length=2, max_length=16)
     symbol: Symbol | None = None
     direction: TradeDirection | None = None
     account_id: UUID | None = None

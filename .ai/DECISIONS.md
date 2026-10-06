@@ -2,6 +2,40 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-092 — Migration readiness uses the deployed package path
+
+- Date: 2026-10-06
+- Decision: Resolve Watcher migration scripts relative to its located backend
+  package/alembic.ini, independent of the process working directory. Require one
+  expected head and one matching stored revision; unreadable or split history
+  remains a refusal. Preserve the literal migration chain in focused regressions.
+- Diagnostics: A startup refusal remains idle until a reviewed worker restart;
+  later DB recovery or a process heartbeat does not prove scanning. Reproduce this
+  behavior and provide fresh same-container preflight, posture, lease, scheduling
+  and successful evaluation checks. Do not automatically retry activation.
+- Limits: The declared Docker working directory normally resolves the old path;
+  the observed staging cause requires live evidence. No SFP tolerance, receipt,
+  strategy, execution, risk or deployment-authority change.
+- Reference: `docs/pr215_release_blockers.md`; AT-107 / PR215.
+
+## AT-ADR-091 — Conversation selections are scoped references, never authority
+
+- Date: 2026-10-06
+- Decision: Store one server-selected Journal/account reference in the existing
+  assistant transcript payload. Followups revalidate conversation, tenant, owner
+  and account and re-read current immutable lineage. Explicit selectors override;
+  failed/ambiguous selection invalidates earlier context. New chats remain separate.
+- Context: Bounded user/assistant history is conversational input only, distinct
+  from fresh stored facts. No parsing assistant prose into identity or authorization.
+- Presentation: Preserve bounded complete explanation, evidence and source references
+  in Stored evidence; clean sentence/citation endings, display-only readable numbers,
+  and mandatory material missing-evidence warnings. No economic record mutation.
+- Import: Agent reuses Knowledge preview and explicit save. Importing documents
+  grants no strategy, execution, risk or Journal authority; screenshot controls hide.
+- Limits: No reference backfill from old prose; bare currencies need stored plan
+  metadata. Live model/browser/import quality requires supervised acceptance.
+- Reference: `docs/agent_conversation_continuity.md`; AT-107.
+
 ## AT-ADR-090 — Only immutable audited actual-exit proof releases a demo lifecycle
 
 - Date: 2026-10-06
