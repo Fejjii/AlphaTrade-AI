@@ -16,8 +16,18 @@ FOLLOWUP = "Would that same plan pass the current minimum reward to risk rule?"
 
 
 @pytest.mark.parametrize("ui_symbol", [None, "ETHUSDT"])
-def test_exact_historical_question_routes_bare_asset_ahead_of_ui_market(ui_symbol):
-    routed = route_action(AgentTurnRequest(message=QUESTION, symbol=ui_symbol))
+@pytest.mark.parametrize(
+    "message",
+    [
+        QUESTION,
+        (
+            "Explain why my latest BTC short qualified as a Nested setup and whether "
+            "it passes the current minimum reward to risk rule?"
+        ),
+    ],
+)
+def test_exact_historical_question_routes_bare_asset_ahead_of_ui_market(ui_symbol, message):
+    routed = route_action(AgentTurnRequest(message=message, symbol=ui_symbol))
     assert routed is not None and routed.name == "paper_trade.read_recorded"
     assert routed.arguments["market_name"] == "BTC"
     assert routed.arguments["symbol"] is None

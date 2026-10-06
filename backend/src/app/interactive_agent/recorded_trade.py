@@ -52,8 +52,10 @@ _HISTORICAL_POSITION = re.compile(
     re.I,
 )
 _CURRENT_SETUP = re.compile(
-    r"\b(?:current|forming|developing)\b[^.!?\n]{0,70}\b(?:setups?|signals?)\b|"
-    r"\b(?:setups?|signals?)\b[^.!?\n]{0,50}\b(?:current|forming|developing|right now)\b",
+    r"\b(?:current(?!\s+(?:minimum|reward|risk|policy|rule)\b)|forming|developing)\b"
+    r"[^.!?\n]{0,70}\b(?:setups?|signals?)\b|"
+    r"\b(?:setups?|signals?)\s+(?:(?:is|are|that is|which is)\s+)?"
+    r"(?:current|currently forming|forming|developing|right now)\b",
     re.I,
 )
 
