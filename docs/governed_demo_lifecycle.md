@@ -6,6 +6,15 @@ activation, strategy approval, credential change or exchange order is performed
 by this implementation task. Real trading stays disabled; SFP stays detection and
 notification only. Broader simultaneous positions require a separate explicit policy.
 
+## Current integrated release boundary
+
+PR212–215 are merged in main `e75e8bf` as inspected October 6, 2026. The historical
+review order below describes delivery dependencies; do not reimplement those changes.
+Use the [current-main capability/gap assessment](five_market_demo_readiness.md#current-main-assessment--october-6-2026)
+for remaining gates. PR216's planned gross1R minimum is a separate review change,
+not a reason to modify stored targets or approve strategy versions automatically.
+Existing full release CI and native venue acceptance remain unverified by this assessment.
+
 ## Implemented lifecycle
 
 The existing worker reconciles unresolved demo commands without resubmitting entry

@@ -4,6 +4,39 @@ This first-entry change can be reviewed and released independently of repeat-ent
 and exit reconciliation. It does not arm execution, create strategies, approve
 versions, mutate venue settings or place orders. Real trading remains disabled.
 
+## Current-main assessment — October 6, 2026
+
+Inspected main `e75e8bf411918094bd50eaf3d633d459efd40b40`, including merged PR212–215.
+The first-entry sections below retain their original PR212 boundary. **PR214's
+[verified lifecycle](governed_demo_lifecycle.md) supersedes the lifetime-ALLOW and
+no-exit limitation for exactly proven supported closes.** Unresolved or ambiguous
+commands still block; a mutable Journal close does not release the slot.
+No new expansion implementation or activation was performed by this assessment.
+
+| Area | Implemented source | Remaining gap / gate |
+| --- | --- | --- |
+| Five markets / subscriptions | Exact authored market matching in [Watcher targets](../backend/src/app/workers/watcher_paper_targets.py); owner-scoped [ten-subscription preview](../backend/src/app/strategy_brain/nested_preview.py). | Read current provider contracts and explicitly author/compile/approve exact long/short15m versions. Watchlist membership and preview do not grant approval. |
+| Mapping / sizing | [Mapping](../backend/src/app/providers/exchange/mapping.py) produces BTC-USDT, ETH-USDT, ZEC-USDT, TAO-USDT, HYPE-USDT. [Demo provider](../backend/src/app/providers/exchange/governed_blofin.py) binds returned live linear USDT multiplier/tick/lot/minimum/maximum. | These are mappings, not proof the instruments are listed or reachable. Obtain dated Binance/BloFin read-only evidence; unavailable/unreachable stay distinct and never substitute. |
+| Protected entry | Canonical authorization/reservation, receipt-time quote checks, final constraints/expiry/fencing and one entry POST with attached stop/target exist. | Prove actual venue parent/protection linkage and fill identities; an acknowledgment or simulated fill is insufficient. The governed generator uses one target; general multi-target/runner execution is not established. |
+| Exit / repeat entry | [Native exit reader](../backend/src/app/providers/exchange/governed_blofin_exit.py), [audited resolution](../backend/src/app/services/demo_lifecycle_resolution.py) and [atomic history gate](../backend/src/app/services/demo_account_history.py) support proven closes and same-account reuse. | Prove native closing history, two flat/no-pending snapshots, exact parent linkage, one close/audit/release and another fresh eligible claim. Unfilled/uncertain or unexplained history remains an operator hold. |
+| Risk / concurrency | Account safety epoch serializes competing claims; one unresolved demo exposure blocks across all markets. Internal-paper history does not consume the demo slot. | Internal-paper exposure/reservations and retained daily counts/loss allocations can still exhaust risk capacity. Reconcile legitimately; never reset accounts/history or broaden concurrency policy. |
+| Journal / learning / Agent | Actual entry/exit fees and native fillPnl evidence, linked close/resolution and explanations exist. | Gross/net PnL, funding and win/loss semantics remain explicitly missing. CLOSED lifecycle can retain OPEN as the current unset result sentinel. Do not present that sentinel as an open position or a realized outcome. |
+| Entry reward/risk | [PR216](https://github.com/Fejjii/AlphaTrade-AI/pull/216) adds a prospective allocation-weighted gross1R floor. | Review/integrate separately. A below1R approved setup must refuse entry; changing exit definitions requires an explicitly reviewed new version, never moved targets or silent approval. |
+
+Configuration gaps are provider reachability/current instruments, correct existing
+PAPER/NET account, explicitly approved exact subscriptions, acquisition budgets,
+flat/no-pending account and scoped supervised demo activation. Remaining
+implementation limits are bounded/exclusive history, unsupported outcome semantics,
+held unfilled/ambiguous lifecycles and no general multi-position or runner executor.
+No live provider calls, credential mutations or exchange orders were made here.
+
+Use the later lifecycle's seven acceptance steps for the integrated release:
+review → one consolidated exact-SHA full CI/evaluation/browser gate → disarmed
+deployment/migration → five-market read-only preflight → explicit version approval →
+supervised natural protected fill → native exit and same-account repeat proof.
+Keep real trading disabled and SFP detection/notification only. The final activation
+is supervising work, not implied permission for this coding task to send orders.
+
 ## Existing capabilities and configuration gaps
 
 The tenant watchlist already supports BTCUSDT, ETHUSDT, ZECUSDT, TAOUSDT and HYPEUSDT.
