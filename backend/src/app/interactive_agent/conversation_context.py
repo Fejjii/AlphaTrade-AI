@@ -18,6 +18,7 @@ from app.interactive_agent.contracts import (
     ConnectionRef,
 )
 from app.interactive_agent.parsing import extract_direction, extract_symbol
+from app.interactive_agent.recorded_trade import is_current_setup_request
 from app.providers.llm import LLMMessage
 from app.schemas.common import ConversationMessageRole, StrictModel
 from app.services.conversation_service import ConversationService
@@ -33,7 +34,7 @@ _MUTATION = re.compile(
     r"\b(?:prepare|execute|submit|activate|approve|place|create|log|save)\b", re.I
 )
 _FOLLOWUP = re.compile(
-    r"\b(?:that|this|same)\s+(?:paper\s+)?trade\b|"
+    r"\b(?:that|this|same)\s+(?:(?:paper|same|recorded|approved)\s+)?(?:trade|plan)\b|"
     r"\b(?:explain|describe|summari[sz]e)\s+it\b|"
     r"\b(?:why|how|where|what)\b.{0,70}\b(?:it|its)\b|"
     r"\bwhat\s+(?:was|were)\s+(?:the|its)\s+"
@@ -133,6 +134,8 @@ def resolve_trade_followup(
     routed: ActionRequest | None,
 ) -> FollowupResolution:
     if request.action is not None or request.analytics_filters is not None:
+        return FollowupResolution(routed)
+    if is_current_setup_request(request.message):
         return FollowupResolution(routed)
     if _MUTATION.search(request.message) or not _FOLLOWUP.search(request.message):
         return FollowupResolution(routed)

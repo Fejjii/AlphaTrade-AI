@@ -35,9 +35,9 @@ from app.schemas.agent_paper import AgentPaperResult
 from app.schemas.canonical_trade_plan import CanonicalTradePlanRevision
 from app.schemas.common import ConversationMessageRole, JournalTradeSource
 from app.schemas.trade_plan import AuthorizationState, TradePlanRevisionSemantic
+from app.services import planned_reward_risk as reward_risk_policy
 from app.services.canonical_execution_journal import journal_planned_targets
 from app.services.canonical_serialization import canonical_sha256
-from app.services.planned_reward_risk import PlannedRewardRiskError, measure_planned_reward_risk
 from app.signal_fusion.types import hashed_model
 
 _READ = re.compile(
@@ -46,10 +46,32 @@ _READ = re.compile(
 _MUTATE = re.compile(r"\b(?:prepare|execute|submit|activate|approve|place|create|log|save)\b", re.I)
 _UUID = r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}"
 _FILL_LIMIT = 10
+_HISTORICAL_POSITION = re.compile(
+    r"\b(?:latest|last|most recent|recorded|executed)\s+"
+    r"(?:([a-z0-9]{2,16})\s+)?(?:short|long)\b",
+    re.I,
+)
+_CURRENT_SETUP = re.compile(
+    r"\b(?:current|forming|developing)\b[^.!?\n]{0,70}\b(?:setups?|signals?)\b|"
+    r"\b(?:setups?|signals?)\b[^.!?\n]{0,50}\b(?:current|forming|developing|right now)\b",
+    re.I,
+)
+
+
+def is_current_setup_request(message: str) -> bool:
+    return bool(_CURRENT_SETUP.search(message))
 
 
 def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest | None:
-    if not re.search(r"\btrades?\b", message, re.I) or not _READ.search(message):
+    if is_current_setup_request(message):
+        return None
+    position = _HISTORICAL_POSITION.search(message)
+    historical_position = position is not None and bool(
+        re.search(r"\b(?:qualified|executed|filled|taken|traded)\b", message, re.I)
+    )
+    if not (re.search(r"\btrades?\b", message, re.I) or historical_position) or not _READ.search(
+        message
+    ):
         return None
     if _MUTATE.search(message):
         return None
@@ -61,13 +83,19 @@ def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest |
         message,
         re.I,
     )
-    market_name = named.group(1).upper() if named else None
+    market_name = (
+        named.group(1).upper()
+        if named
+        else position.group(1).upper()
+        if historical_position and position and position.group(1)
+        else None
+    )
     if market_name in {"SHORT", "LONG", "PAPER", "TRADE"}:
         market_name = None
     return ActionRequest(
         name="paper_trade.read_recorded",
         arguments={
-            "symbol": extract_symbol(message) or symbol,
+            "symbol": extract_symbol(message) or (None if market_name else symbol),
             "market_name": market_name if extract_symbol(message) is None else None,
             "direction": extract_direction(message),
             "account_id": account.group(1) if account else None,
@@ -92,6 +120,7 @@ class _Evidence:
     refs: list[ConnectionRef] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     allowed: list[str] = field(default_factory=list)
+    required: list[str] = field(default_factory=list)
 
     def add(self, identity: UUID, title: str, detail: str, *, journal: bool = False) -> None:
         self.refs.append(
@@ -405,16 +434,41 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
         f"Execution venue: {venue}."
     )
     try:
-        measured = measure_planned_reward_risk(plan)
+        measured = reward_risk_policy.measure_planned_reward_risk(plan)
+        minimum = str(reward_risk_policy.MINIMUM_REWARD_RISK)
+        policy = (
+            f"Current application entry policy requires gross allocation-weighted reward/risk "
+            f"of at least {minimum}:1. This recorded plan is "
+            f"{readable_number(measured.ratio, places=2)}R and "
+            f"{'passes' if measured.meets_minimum else 'fails'} that minimum. "
+            "This comparison does not change historical authorization "
+            "or establish current eligibility."
+        )
+        evidence.refs.append(
+            ConnectionRef(
+                artifact_kind=ArtifactKind.RULE,
+                record_id=reward_risk_policy.POLICY_VERSION,
+                title="Application entry policy",
+                relation="current deterministic entry authority",
+                provenance=ProvenanceSource.SYSTEM_GENERATED,
+            )
+        )
+        evidence.lines.insert(
+            0,
+            f"[Application entry policy] {reward_risk_policy.POLICY_VERSION}: "
+            f"minimum_gross_allocation_weighted_R={minimum}; "
+            "authority=app.services.planned_reward_risk, not Knowledge or strategy prose. "
+            "Worst allowed entry-zone boundary; unpriced runners contribute zero reward; "
+            "fees/funding/slippage remain in separate loss checks, not a net 1R promise.",
+        )
         evidence.lines.append(
             f"Historical planned gross allocation-weighted reward/risk: {measured.ratio}; "
             "worst entry-zone boundary; unpriced runner reward zero; costs excluded. "
             "This current policy comparison does not change historical authorization."
         )
-        summary += f" Planned gross reward/risk: {readable_number(measured.ratio, places=2)}R."
-        if not measured.meets_minimum:
-            summary += " This historical plan falls below the current 1R minimum for a new entry."
-    except PlannedRewardRiskError:
+        summary += " " + policy
+        evidence.required.append(policy)
+    except reward_risk_policy.PlannedRewardRiskError:
         evidence.missing.append("planned reward/risk cannot be measured from these stored terms")
     if not trade.planned_targets and plan.risk_and_exits.targets:
         summary += (
@@ -704,7 +758,7 @@ def _finish(summary: str, evidence: _Evidence) -> RecordedTradeRead:
             "This read does not contact a venue, approve, repair, calculate risk or execute."
         )
     )
-    warnings = []
+    warnings = list(evidence.required)
     if evidence.missing:
         warnings.append("Missing evidence: " + "; ".join(evidence.missing) + ".")
     if any("Journal targets are empty" in line for line in evidence.lines):

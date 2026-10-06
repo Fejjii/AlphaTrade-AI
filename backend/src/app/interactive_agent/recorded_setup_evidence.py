@@ -60,6 +60,15 @@ def read_setup_evidence(
 
     try:
         with session.connection().begin_nested():
+            decision_filters = (
+                BrainSetupEventRow.organization_id == plan.organization_id,
+                BrainSetupEventRow.kind.in_(("paper_decision", "paper_trade_opened")),
+                BrainSetupEventRow.payload["candidate_id"].as_string() == str(lineage.candidate_id),
+                BrainSetupEventRow.payload["assessment_id"].as_string()
+                == str(lineage.assessment_id),
+                BrainSetupEventRow.payload["trade_plan_revision_id"].as_string()
+                == str(plan.revision_id),
+            )
             rows = session.scalars(
                 select(BrainSetupRow)
                 .join(UserStrategy)
@@ -68,14 +77,18 @@ def read_setup_evidence(
                     UserStrategy.organization_id == plan.organization_id,
                     UserStrategy.user_id == plan.user_id,
                     BrainSetupRow.strategy_version_id == plan.strategy_version_id,
-                    BrainSetupRow.candidate_id == lineage.candidate_id,
-                    BrainSetupRow.assessment_id == lineage.assessment_id,
+                    # Resolve immutable decisions, not mutable projection identity/state.
+                    select(BrainSetupEventRow.id)
+                    .where(BrainSetupEventRow.setup_id == BrainSetupRow.id, *decision_filters)
+                    .exists(),
                 )
                 .limit(2)
             ).all()
             if not rows:
                 missing.append(
-                    "linked detector setup observation absent from authenticated owner scope"
+                    "linked detector setup observation absent from authenticated owner scope; "
+                    "immutable setup decision for this plan absent; "
+                    "current projection is not historical proof"
                 )
             elif len(rows) > 1:
                 missing.append("linked detector setup observations are ambiguous")
@@ -84,14 +97,8 @@ def read_setup_evidence(
                 events = session.scalars(
                     select(BrainSetupEventRow)
                     .where(
-                        BrainSetupEventRow.organization_id == plan.organization_id,
                         BrainSetupEventRow.setup_id == row.id,
-                        BrainSetupEventRow.payload["candidate_id"].as_string()
-                        == str(lineage.candidate_id),
-                        BrainSetupEventRow.payload["assessment_id"].as_string()
-                        == str(lineage.assessment_id),
-                        BrainSetupEventRow.payload["trade_plan_revision_id"].as_string()
-                        == str(plan.revision_id),
+                        *decision_filters,
                     )
                     .order_by(BrainSetupEventRow.occurred_at.desc(), BrainSetupEventRow.id)
                     .limit(2)
@@ -105,6 +112,8 @@ def read_setup_evidence(
                     event = events[0]
                     keys = (
                         "state",
+                        "stage",
+                        "completed_continuations",
                         "family",
                         "kind",
                         "direction",
@@ -116,10 +125,34 @@ def read_setup_evidence(
                         "evidence_at",
                         "sweep",
                         "anchor_index",
+                        "impulse_index",
+                        "pullback_index",
+                        "confirmed_index",
                         "event_index",
+                        "extension",
+                        "quality_components",
+                        "invalidation_state",
+                        "evidence",
+                        "data_quality",
+                        "canonical_scan_reference",
                         "paper_stage",
                         "risk_state",
                     )
+                    observation = {key: event.payload[key] for key in keys if key in event.payload}
+                    references = observation.get("bar_references")
+                    if isinstance(references, list) and references:
+                        observation["bar_reference_count"] = len(references)
+                        observation["bar_references"] = references[:12]
+                        observation["bar_references_truncated"] = len(references) > 12
+                        observation["candle_detail"] = (
+                            "stored candle hashes only; OHLCV values not loaded by this read"
+                        )
+                        missing.append(
+                            "historical candle OHLCV values unavailable in this read; "
+                            "linked decision supplies references only"
+                        )
+                    else:
+                        missing.append("historical candle references absent from linked decision")
                     add(
                         event.id,
                         "Setup observation",
@@ -127,9 +160,7 @@ def read_setup_evidence(
                             {
                                 "setup_record": str(row.id),
                                 "occurred_at": event.occurred_at.isoformat(),
-                                "observation": {
-                                    key: event.payload[key] for key in keys if key in event.payload
-                                },
+                                "observation": observation,
                                 "meaning": "historical detector/decision, no execution authority",
                             }
                         ),

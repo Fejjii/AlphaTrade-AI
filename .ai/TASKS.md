@@ -5,6 +5,20 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-109 — Recorded Nested qualification routing and current minimum evidence
+- Priority: P0 · Status: DONE (implementation; review/live acceptance pending) ·
+  Dependencies: main `c9df311` including PR216–218 · Risk: Medium (scoped reads).
+- Root cause: Exact question lacks literaltrade noun and fell into current setup
+  retrieval; same-plan followup was unsupported. Policy lacked explicit source context.
+- Scope: Historical qualification grammar, scoped same-plan context, immutable
+  decision lookup, current deterministic policy reference and bounded candle hashes.
+  Explicit current-setup requests remain current; no invented OHLCV values.
+- Validation: Focused routing/PostgreSQL/Agent selection/isolation/evidence/reply
+  regressions, scoped Ruff/format/mypy. No full suite or live quality claim.
+- Reference: `docs/agent_historical_setup_explanation.md`; AT-ADR-094.
+- Release: Review/deploy/repeat exact question and contrast, then consolidated CI.
+  No strategy thresholds, historical records or execution flags changed.
+
 ## AT-108 — Presentation MVP 1R policy and linked evidence release
 - Priority: P0 · Status: DONE (implementation; review/live acceptance pending) · Dependencies:
   main `e75e8bf` including merged PR215 · Risk: High (new entry refusal).
