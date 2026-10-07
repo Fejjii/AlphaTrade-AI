@@ -2367,3 +2367,14 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
   returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
 - Note: Do not merge automatically. Do not deploy.
+
+
+## AT-111 — Agent Journal target evidence
+
+Queued after completed PR220. Read-only follow-up from main 8bab505: expose bounded
+Journal planned target prices and allocations, explicitly compare them with the
+linked immutable canonical plan, and preserve missing/mismatch evidence. Matching
+planned values never establish venue protection or exit fills. Owner reports the
+historical target repair independently verified; this task does not repair live DB.
+Focused PostgreSQL and Agent context/followup checks only; final evidence in PR and
+handoff. Preserve running full backend CI, history, risk and execution authority.

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -34,6 +36,7 @@ from app.persistence.trade_plan_postgres import PostgresCanonicalTradePlanStore
 from app.schemas.agent_paper import AgentPaperResult
 from app.schemas.canonical_trade_plan import CanonicalTradePlanRevision
 from app.schemas.common import ConversationMessageRole, JournalTradeSource
+from app.schemas.journal_trades import PlannedTarget
 from app.schemas.trade_plan import AuthorizationState, TradePlanRevisionSemantic
 from app.services import planned_reward_risk as reward_risk_policy
 from app.services.canonical_execution_journal import journal_planned_targets
@@ -46,6 +49,8 @@ _READ = re.compile(
 _MUTATE = re.compile(r"\b(?:prepare|execute|submit|activate|approve|place|create|log|save)\b", re.I)
 _UUID = r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}"
 _FILL_LIMIT = 10
+_TARGET_DISPLAY_LIMIT = 10
+_TARGET_COMPARE_LIMIT = 100
 _HISTORICAL_POSITION = re.compile(
     r"\b(?:latest|last|most recent|recorded|executed)\s+"
     r"(?:([a-z0-9]{2,16})\s+)?(?:short|long)\b",
@@ -268,15 +273,62 @@ def _select_trade(
     return trades[0]
 
 
+def _journal_target_evidence(
+    raw_targets: list[dict[str, object]], evidence: _Evidence
+) -> tuple[str, list[PlannedTarget] | None]:
+    """Bounded projection facts; normalization never writes or implies protection."""
+    targets: list[PlannedTarget] = []
+    details: list[str] = []
+    complete = len(raw_targets) <= _TARGET_COMPARE_LIMIT
+    for index, raw in enumerate(raw_targets[:_TARGET_COMPARE_LIMIT]):
+        try:
+            # Require the recorded allocation, not PlannedTarget's create-time default.
+            for key in ("price", "size_fraction"):
+                if key not in raw or isinstance(raw[key], bool) or len(str(raw[key])) > 64:
+                    raise ValueError("Unreadable target terms")
+            target = PlannedTarget.model_validate(raw)
+            price = target.price
+            if (
+                not price.is_finite()
+                or price <= 0
+                or len(price.as_tuple().digits) > 24
+                or abs(int(price.as_tuple().exponent)) > 18
+            ):
+                raise ValueError("Unbounded target price")
+        except (ValidationError, ValueError, TypeError):
+            complete = False
+            if index < _TARGET_DISPLAY_LIMIT:
+                details.append(f"target {index + 1}: unreadable price or allocation")
+            continue
+        targets.append(target)
+        if index < _TARGET_DISPLAY_LIMIT:
+            label = " ".join((target.label or f"target {index + 1}").split())[:40]
+            details.append(
+                f"{label}: price {price}, allocation {Decimal(str(target.size_fraction))}"
+            )
+    if len(raw_targets) > _TARGET_DISPLAY_LIMIT:
+        details.append(
+            f"{len(raw_targets) - _TARGET_DISPLAY_LIMIT} additional Journal targets not displayed"
+        )
+    if not complete:
+        evidence.missing.append(
+            "complete readable Journal planned targets within the 100-target comparison bound"
+        )
+    return "; ".join(details) or "none recorded", targets if complete else None
+
+
 def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
     evidence = _Evidence()
+    journal_targets, normalized_targets = _journal_target_evidence(trade.planned_targets, evidence)
     evidence.add(
         trade.id,
         "Journal",
         f"{trade.symbol} {trade.direction.value}; status {trade.status.value}; "
         f"account {trade.account_id}; projected entry {trade.entry_price}; "
         f"planned entry {trade.planned_entry_price}; planned stop {trade.planned_stop_price}; "
-        f"planned target count {len(trade.planned_targets)}.",
+        f"planned target count {len(trade.planned_targets)}; "
+        f"Journal planned targets in stored order: {journal_targets}. "
+        "These are planned values, not verified protection or exit fills.",
         journal=True,
     )
     envelope = _plan(session, trade)
@@ -290,6 +342,9 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
             f"{trade.entry_price if trade.entry_price is not None else 'unavailable'}. "
             "Execution venue and authorization are unavailable; "
             "Journal values alone do not prove a fill."
+        )
+        evidence.lines.append(
+            "Journal target comparison: unverified; linked immutable plan unavailable."
         )
         return _finish(summary, evidence)
     plan, lineage = envelope.plan, envelope.lineage
@@ -396,17 +451,47 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
                 "immutable fill evidence",
             ]
         )
+    target_comparison = ""
     if not trade.planned_targets and plan.risk_and_exits.targets:
         evidence.lines.append(
             "Journal targets are empty; linked TradePlan contains targets. "
             "This is a projection discrepancy. "
             "Targets below come from the immutable plan; this read does not repair the Journal."
         )
-    elif trade.planned_targets != journal_planned_targets(plan):
+        evidence.lines.append("Journal target comparison: missing; no match can be confirmed.")
+    elif normalized_targets is None or len(plan.risk_and_exits.targets) > _TARGET_COMPARE_LIMIT:
+        target_comparison = (
+            "Journal target comparison is unverified because targets are unreadable "
+            "or exceed the comparison bound."
+        )
+        evidence.lines.append(target_comparison)
+        evidence.required.append(target_comparison)
+        if (
+            len(trade.planned_targets) <= _TARGET_COMPARE_LIMIT
+            and len(plan.risk_and_exits.targets) <= _TARGET_COMPARE_LIMIT
+            and trade.planned_targets != journal_planned_targets(plan)
+        ):
+            evidence.lines.append(
+                "Journal targets differ from the expected plan projection representation; "
+                "complete price/allocation agreement is unverified."
+            )
+    elif normalized_targets != [
+        PlannedTarget.model_validate(target) for target in journal_planned_targets(plan)
+    ]:
+        evidence.lines.append(
+            "Journal target comparison: mismatch in ordered prices, allocations or labels."
+        )
         evidence.lines.append(
             "Journal targets differ from the immutable plan; "
             "use the plan values as planned targets, not filled exits."
         )
+    else:
+        target_comparison = (
+            "Journal planned target prices, allocations and order match the linked immutable plan. "
+            "This confirms planned values only, not verified protection or exit fills."
+        )
+        evidence.lines.append("Journal target comparison: match. " + target_comparison)
+        evidence.required.append(target_comparison)
     fill_text = (
         "; ".join(
             f"{readable_number(fill.quantity)} {fill.unit.lower().replace('_', ' ')} at "
@@ -477,6 +562,8 @@ def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
             " Journal targets are empty; the target source is the linked plan, "
             "a projection discrepancy."
         )
+    if target_comparison:
+        summary += " " + target_comparison
     return _finish(summary, evidence)
 
 
@@ -769,8 +856,14 @@ def _finish(summary: str, evidence: _Evidence) -> RecordedTradeRead:
             "(projection discrepancy)."
         )
     elif any("Journal targets differ" in line for line in evidence.lines):
-        warnings.append(
-            "Journal targets differ from the linked immutable plan; "
-            "planned targets are not filled exits."
-        )
+        if any("Journal target comparison is unverified" in line for line in evidence.lines):
+            warnings.append(
+                "Journal targets differ from the expected plan projection representation; "
+                "complete target agreement is unverified. Planned targets are not filled exits."
+            )
+        else:
+            warnings.append(
+                "Journal targets differ from the linked immutable plan; "
+                "planned targets are not filled exits."
+            )
     return RecordedTradeRead(reply, facts, evidence.refs, tuple(warnings))
