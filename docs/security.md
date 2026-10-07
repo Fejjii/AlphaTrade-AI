@@ -1,6 +1,6 @@
 # Security and trading boundaries
 
-This guide describes mechanisms in main `ff90d0c`, inspected October 6, 2026. It is not a penetration test, certification or claim of comprehensive protection. [Runtime evidence and unknowns](current_status.md) are separate from implementation.
+This guide describes mechanisms in main `b58beda`, inspected October 7, 2026. It is not a penetration test, certification or claim of comprehensive protection. [Runtime evidence and unknowns](current_status.md) are separate from implementation.
 
 ## Authentication and browser sessions
 
@@ -54,6 +54,8 @@ Only the Candidate lifecycle authority can publish an eligible confirmed Candida
 Supported user execution binds approval to an immutable plan revision/hash. An explicitly armed worker may continue an approved strategy without asking for a new conversational confirmation at every setup. That operator authority is scoped; it is not general permission for the Agent or Telegram to trade. Idempotent claims, worker fences and durable execution receipts support restart/duplicate handling.
 
 [Architecture flow](architecture.md) · [Agent paper command](agent_paper_execution_v4.md) · [governed demo dispatch](governed_blofin_demo_execution.md) · [SFP immutable history](sfp_candle_finalization_recovery.md).
+
+The [manual BloFin demo capability](manual_blofin_demo_acceptance.md) adds staging-only owner scope and exact preview/confirmation. It does not fabricate strategy/Candidate authority or grant Agent trading permissions. New entry authority also enforces the deterministic [gross allocation-weighted 1R floor](../backend/src/app/services/planned_reward_risk.py); historical plans remain readable.
 
 ## Audit and real-money restrictions
 

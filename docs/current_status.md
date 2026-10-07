@@ -1,74 +1,64 @@
 # Current status and evidence
 
-**Documentation inspection date:** October 6, 2026.
+**Documentation inspection date:** October 7, 2026. **GitHub evidence check:** 15:32:19 Europe/Berlin (13:32:19 UTC).
 
-**Main commit inspected:** `ff90d0c8f51b72d0ee215335321be7a7f4d56dcd` (PR209).
+**Main/source baseline:** [`b58bedae1baad82b36fd32b04d056372cac3c733`](https://github.com/Fejjii/AlphaTrade-AI/commit/b58bedae1baad82b36fd32b04d056372cac3c733), the merge of [PR220](https://github.com/Fejjii/AlphaTrade-AI/pull/220). The documentation branch starts from that commit. Local tree `9b36f0e1c681a2b3f5ec307e2da17bc124b5eba6` was verified against GitHub before editing.
 
-**Scope of this verification:** repository source, manifests, committed deployment options and existing documentation/images. Remote main was checked through the GitHub connector and then a fresh fetch in the isolated documentation checkout. No deployed API, worker, database, exchange, microphone or Telegram transport was probed here.
-
-## Reading a claim
+## What each kind of evidence means
 
 | Label | What it establishes |
 | --- | --- |
-| Implemented | A path exists in the inspected source; this does not establish deployment or successful runtime use. |
-| Configured option/default | A manifest, Settings field or committed template declares it; this does not establish an active service. |
-| Recorded development evidence | An earlier document records tests on its stated base; those tests were not rerun for this documentation change. |
-| Supervisor-reported deployment/runtime | Supplied by the October 6 supervising session; not independently verified here. |
-| Pending / UNKNOWN | Acceptance or current runtime detail is not established. |
-| Planned | Product direction beyond the inspected implementation. |
+| Implemented | The inspected source contains the path and its wiring. |
+| Configured | A manifest/default declares an option; this does not establish active runtime state. |
+| Deployed, supplied observation | The release supervisor reports a direct service/database check on the stated commit. This documentation pass did not repeat the live probe. |
+| Demonstrated, supplied observation | The user reports an actual received notification, stored paper record or account-sync result. No private identifiers or raw payloads are reproduced. |
+| Independently checked GitHub | Repository, PR, status or Actions metadata was read through GitHub during this task. |
+| Recorded development evidence | A checked-in acceptance record or PR summary describes tests on its own base; these are not fresh live acceptance. |
+| Pending / unknown / planned | Acceptance, runtime detail or broader product behavior is not established. |
 
-## Repository findings
+## Deployment and demonstrated evidence
 
-| Area | Implemented/source evidence | Limit |
+| Area | Evidence and provenance | Supported conclusion / remaining limit |
 | --- | --- | --- |
-| Product shell | Six destinations in [navigation configuration](../frontend/src/components/layout/navigation-config.ts). | Browser/device acceptance is separate. |
-| Canonical paper lifecycle | [Canonical runtime](../backend/src/app/runtime/canonical.py), [Watcher](../backend/src/app/workers/watcher_paper.py), [internal loop](../backend/src/app/services/automated_paper_loop.py). | Requires approved strategy, evidence, account, eligibility/risk and explicit authority. |
-| Nested and SFP | [Strategy Brain](../backend/src/app/strategy_brain/) and [canonical evaluation policy](AT067_canonical_strategy_evaluation_policy.md). | Strategy-specific support; current SFP structural research has no authorized SFP execution plan. No universal natural-language strategy engine. |
-| Agent | [Interactive Agent](../backend/src/app/interactive_agent/), [model router](../backend/src/app/services/model_router.py). | Model conversation and proposals are separate from confirmation and execution authority. |
-| Knowledge | [Scoped retrieval](../backend/src/app/interactive_agent/retrieval.py), [file import](knowledge_file_import.md), [provider policy](../backend/src/app/core/provider_policy.py). | Default Agent retrieval is lexical; Qdrant is not automatically queried by every turn. |
-| Learning | [Governed learning lifecycle](governed_learning_promotion_001_handoff.md), [promotion service](../backend/src/app/services/strategy_promotion.py). | Human approval and recorded validation are required; no silent self-modification. |
-| Voice | [Browser speech provider](../frontend/src/lib/voice/browser-voice-provider.ts). | Earlier fixture evidence only; actual microphone, speech service and Safari/iOS acceptance UNKNOWN here. Server voice contracts remain unimplemented. |
-| Real trading | [Permanent paper safety](../backend/src/app/core/paper_safety.py). | `ENABLE_REAL_TRADING=true` / trade mode are refused; not a normal enablement option. |
+| Current repository | GitHub main points to `b58beda`; PR220 is merged. | The owner-confirmed manual-demo implementation is part of main. |
+| Render API | Supplied release observation: directly verified live on `b58beda`. | Reported deployed API baseline; no fresh runtime probe by this documentation task. |
+| Render paper worker | Supplied release observation: directly verified live on `b58beda`. | Reported deployed worker baseline; worker arming and current dependency health remain separate observations. |
+| PostgreSQL | Supplied release observation: migration `a6manualdemo001` applied. [Source migration](../backend/src/app/db/migrations/versions/a6manualdemo001_manual_demo_origin.py). | Reported schema baseline; current server version and restore readiness are not established. |
+| Vercel | GitHub commit status is `success`, updated October 7 at 14:32:42 Europe/Berlin. [Deployment status target](https://vercel.com/alphatrade-ai/alpha-trade-ai/5ww5tiQg1Zv26h9YQJxhGnrCYEJC). | Deployment success for `b58beda`; not a browser end-to-end acceptance result. |
+| Full release CI | [Run #783](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37622005520), exact SHA `b58beda`, `workflow_dispatch`, still **in progress** at this check. | Frontend, deployment-safety and Docker build jobs succeeded. Backend Ruff/format succeeded; complete backend acceptance step remains in progress. No full-suite pass claimed. |
+| Ordinary CI | Runs [#781](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37621545658) and [#782](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37621569938) succeeded on `b58beda`. | Ordinary workflow success is distinct from complete backend acceptance. |
+| Telegram | User-supplied operational evidence: a Watcher-generated notification was received. | Actual notification receipt was reported; universal notification reliability is not established. |
+| Historical trade | User-supplied operational evidence: Nested BTC short has an internal paper fill and Journal. | A historical simulation record exists; it is not a native BloFin fill, a completed exchange exit or a profitability result. |
+| BloFin account context | User-supplied operational evidence: demo account sync succeeded. | Read/account-context path demonstrated; native demo order execution acceptance is **not yet demonstrated**. |
 
-## October 6 presentation release follow-up
+The supplied operational observations have no separate timestamped capture in this checkout. Their inclusion records the evidence supplied for the October 7 package, not a claim that all events occurred on October 7. GitHub metadata is independently checked; Render/database/trade/Telegram/account-sync observations retain their supplied provenance. A compact [machine-readable snapshot](evidence/reviewer_status_2026-10-07.json) records the distinction.
 
-Main `e75e8bf411918094bd50eaf3d633d459efd40b40` includes PR211–215. The supervisor
-reports PR215 deployed; this source inspection does not establish live acceptance.
-Agent trade continuity, readable presentation and Knowledge preview/explicit save
-are implemented. Five-market Nested preview and native demo lifecycle foundations
-are also implemented; live instrument/strategy activation and actual protected demo
-fill/exit acceptance remain unverified. Earlier specialist runbooks describe their
-original PR boundaries and must be read with the later lifecycle follow-up.
+## Implemented capability and current boundary
 
-The [minimum planned-R release](minimum_planned_reward_risk_release.md) adds a
-prospective gross allocation-weighted1R floor and linked setup/assessment evidence
-reads on a separate review branch. It is not yet deployed or fully accepted.
-The known0.65R historical trade and its target projection need the existing scoped
-supervising repair/verification. College destination inspection is access-blocked;
-no submission synchronization has occurred. Existing historical evidence below
-retains its original date and limitations.
-
-## October 6 supervising evidence
-
-These are supplied reports, **not runtime verification performed by the documentation agent**. They contain no private account IDs, trade IDs, credentials or audit payloads.
-
-| Report | Supported conclusion | Still pending / UNKNOWN |
+| Area | Source path | Boundary |
 | --- | --- | --- |
-| PR208 and PR209 deployed on Render API and worker. | Supervisor reports the Journal projection and Binance REST finalization code reached both services. | Exact currently running SHA, healthy migration revision, rollout consistency and full release acceptance were not probed here. |
-| Real Nested Watcher event → Candidate → risk decision → internal paper fill → Journal → received Telegram alert. | A supervised real-data event reportedly exercised those linked paper paths and notification receipt. | Profitability, statistical reliability, every strategy/symbol, complete MVP acceptance and BloFin execution are not established. |
-| Journal target projection corrected by PR208. | [Merged source/documentation](journal_plan_target_repair.md) describes preservation of approved plan targets. | Existing Journal target repair and its acceptance remain pending; do not infer old rows are repaired by deployment. |
-| PR209 finalization/history correction deployed. | [Merged acquisition policy](sfp_candle_finalization_recovery.md) guards and confirms REST rows while preserving v1 evidence. | Fresh live SFP recovery acceptance remains pending. Neither a merge nor deployment proves both SFP scopes now succeed. |
-| Owner accepted mobile page loading. | A supervising usability report exists for page loading. | Comprehensive physical-device, voice and Safari verification is not established. |
-| BloFin demo implementation exists. | [Governed demo guide](governed_blofin_demo_execution.md) records simulated/disposable development evidence. | Real demo execution/protection/fill reconciliation acceptance remains pending. |
+| Six workspaces | [Navigation](../frontend/src/components/layout/navigation-config.ts). | Current authenticated browser/device acceptance needs actual captures. |
+| Canonical paper continuation | [Runtime](../backend/src/app/runtime/canonical.py), [Watcher](../backend/src/app/workers/watcher_paper.py), [internal loop](../backend/src/app/services/automated_paper_loop.py). | Supported approved strategy, genuine setup, account, eligibility, risk and explicit authority required. |
+| Entry policy | [Planned reward/risk](../backend/src/app/services/planned_reward_risk.py). | Prospective allocation-weighted gross 1R minimum; historical plans are not rewritten. |
+| Agent grounding | [Interactive Agent](../backend/src/app/interactive_agent/), [recorded-trade guide](agent_recorded_trade_grounding.md), [historical setup guide](agent_historical_setup_explanation.md). | Bounded facts/context; exact historical lineage; prose cannot confirm or execute. |
+| Knowledge | [Retrieval](../backend/src/app/interactive_agent/retrieval.py), [RagService](../backend/src/app/services/rag_service.py), [file import](knowledge_file_import.md). | Default Agent retrieval is lexical; Qdrant indexing/search is a separate path. |
+| SFP | [Canonical evaluation policy](AT067_canonical_strategy_evaluation_policy.md), [recovery guide](sfp_candle_finalization_recovery.md). | Structural detection/research supported; authorized automatic SFP execution plan unsupported; fresh recovery acceptance pending. |
+| Journal targets | [Projection/repair guide](journal_plan_target_repair.md). | Plan targets and Journal projection are separate; existing affected-row repair acceptance remains pending. Agent reads can expose a discrepancy without repairing it. |
+| Manual BloFin demo | [Service](../backend/src/app/services/manual_demo_service.py), [acceptance procedure](manual_blofin_demo_acceptance.md). | Default-off, staging-only, owner-confirmed BTC MARKET, one 100% target. No limit orders, manual exit, complete exit/PnL/funding reconciliation or repeat-entry release. |
+| Learning | [Promotion service](../backend/src/app/services/strategy_promotion.py). | Exact validation/paper evidence and human promotion; no silent self-modification. Manual demo tests are excluded from strategy validation/learning. |
+| Voice | [Browser provider](../frontend/src/lib/voice/browser-voice-provider.ts). | Browser dictation/playback implemented; physical microphone/service/Safari/iOS acceptance unknown; server voice/image-analysis contracts unimplemented. |
+| Real trading | [Permanent paper safety](../backend/src/app/core/paper_safety.py). | Real mode and enablement are refused by the inspected source. |
 
-## Runtime details not established here
+## Unknowns and final acceptance updates
 
-Current resolved Agent/embedding model, deployed dependency/server versions, authoritative Qdrant health, active Bybit failover, exact watchlist/strategy versions, activation flags and current hosting inventory are **UNKNOWN** without a fresh scoped observation. Committed Render/Compose settings and historical staging URLs are not such observations.
+Current resolved model identities, managed PostgreSQL/Redis/Qdrant versions, authoritative provider health, active Bybit failover, precise watchlist/strategy runtime state and comprehensive device acceptance were not observed here. A deployment status cannot resolve those questions.
 
-Use [deployment](deployment.md) and [monitoring](observability.md) to establish these facts in a separately authorized operational session. Use [limitations](limitations_roadmap.md) to distinguish implemented foundations from future product direction.
+Before presenting, read the existing CI #783 result and update its status **only from the result**. Fresh SFP recovery, the historical Journal target repair and native demo fill/protection acceptance need their own scoped records. Complete demo exit/outcome/funding support is an implementation gap, not merely a missing screenshot.
 
-## Historical documents
+## Visual evidence and historical records
 
-The [v0.1.0 release](releases/v0.1.0-paper-mvp.md), [AT010 audit](AT010_readiness_audit.md), release/acceptance JSON, exact-base handoffs and old screenshot sets are historical evidence. Keep their original results and decisions; do not combine results from different commits into a claim that today's full suite or deployed product passed. Migration-head and environment tables in older handoffs apply to their recorded release only.
+The main showcase uses rendered, source-verified diagrams. Existing screenshot sets are dated local/synthetic fixtures, sometimes with obsolete navigation or unavailable providers. They remain preserved but are not current product proof. [Authentic capture instructions](screenshots_checklist.md).
 
-Current reading order: [README](../README.md) → [architecture](architecture.md) → [Agent](agent_workflow.md)/[retrieval](rag_system.md)/[security](security.md) → [deployment](deployment.md). Specialist documents supply exact contracts and earlier development evidence rather than a competing top-level product description.
+[Earlier closed-loop acceptance](evidence/full_paper_closed_loop_acceptance_001.json), its [verification campaign](evidence/full_paper_closed_loop_verification_001.json), [product acceptance](evidence/final_product_acceptance_001.json), historical release notes and exact-base handoffs retain their original verdicts and scope. Do not combine tests from different commits into a claim that today's full product passed.
+
+Current reading order: [README](../README.md) → [presentation](reviewer_presentation.md) / [architecture](architecture.md) → [Agent](agent_workflow.md) / [retrieval](rag_system.md) → [deployment](deployment.md). [Reviewer evidence checklist](reviewer_evidence.md).

@@ -1,0 +1,8 @@
+flowchart TD
+  Records["Durable record families<br/>Identity + accounts + scoped settings<br/>Strategy versions + validation<br/>Evidence + assessments + Candidates<br/>Plans + authorizations + commands + fills<br/>Journal + observations + attribution<br/>Conversations + drafts + knowledge + audit"] --> SQL[("PostgreSQL<br/>Durable application memory")]
+  SQL --> Review["Deterministic review<br/>Analytics + learning status"]
+  Review --> Proposal["Proposed learning<br/>or strategy change"]
+  Proposal --> Validate["Exact baseline/candidate evidence<br/>Supported paper validation"]
+  Validate --> Human["Explicit human<br/>promotion decision"]
+  Human --> Version["Governed version<br/>lifecycle update"]
+  Version -->|persist lifecycle| SQL

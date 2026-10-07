@@ -1,6 +1,6 @@
 # Knowledge retrieval, memory and learning
 
-Retrieval brings recorded playbooks, policies and lessons into a conversation with source references. It does not turn a document into market truth or an execution instruction. This guide reflects main `ff90d0c`, inspected October 6, 2026; [current status](current_status.md) records runtime unknowns.
+Retrieval brings recorded playbooks, policies and lessons into a conversation with source references. It does not turn a document into market truth or an execution instruction. This guide reflects main `b58beda`, inspected October 7, 2026; [current status](current_status.md) records runtime unknowns.
 
 ## Two implemented retrieval paths
 
@@ -10,6 +10,8 @@ Retrieval brings recorded playbooks, policies and lessons into a conversation wi
 | Current `/agent/turns` | [Interactive retrieval](../backend/src/app/interactive_agent/retrieval.py) searches existing SQL documents/chunks lexically, scanning at most 200 chunks and returning five hits by default. | Qdrant is not queried unless a vector retriever is injected. A configured Qdrant service does not imply vector retrieval on every Agent turn. |
 
 Optional vector hits are reloaded from organization/user-scoped SQL chunks/documents before presentation. Organization-shared and user-owned content have different visibility. The [knowledge context builder](../backend/src/app/interactive_agent/knowledge_context.py) carries titles, source labels, chunk references and limitations into bounded model context. Stored guidance remains reference data; current strategy approval/risk settings need canonical application evidence.
+
+The actual [Agent route composition](../backend/src/app/api/routes/interactive_agent.py) injects a market reader and conversational responder, but no vector retriever. Some typed reads bypass generic retrieval entirely, including recorded execution explanation and learning status. The [architecture diagram](architecture.md#agent-conversation-grounding-and-human-confirmation) shows the two paths separately.
 
 ## Storage and provider options
 

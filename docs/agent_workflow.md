@@ -2,7 +2,7 @@
 
 The primary Agent workspace is `/agent`. It reads recorded application facts, retrieves relevant knowledge, produces conversational explanations and drafts supported actions. **Sending a message persists a conversation turn; it does not confirm the proposed domain action.**
 
-Baseline: main `ff90d0c`, October 6, 2026. Runtime model selection and operational success are UNKNOWN without a fresh observation; see [current status](current_status.md).
+Baseline: main `b58beda`, October 7, 2026. Resolved runtime models and fresh Agent conversation acceptance are unverified here; see [current status](current_status.md).
 
 ## One turn and a separate decision
 
@@ -55,6 +55,12 @@ Local `PROVIDER_MODE=mock` forces mock LLM/embeddings even with a key present. C
 | Strategy analytics, learning status, Daily Review | Read-through deterministic services with source/sample limitations. | No promotion/rollback mutation tool in the learning-status read. |
 
 Relevant contracts: [action application](agent_action_application_v3.md), [paper command](agent_paper_execution_v4.md), [analytics](agent_strategy_analytics_001.md), [Daily Review](agent_daily_review_001.md). These specialist documents record their original implementation evidence; they are not proof of today's deployed acceptance.
+
+## Recorded trade explanations and manual-demo boundary
+
+The current Agent can read the selected trade's exact immutable plan, historical authorization/eligibility, recorded fill venue and linked assessment. It compares planned targets with the Journal projection and distinguishes today's gross 1R entry policy from historical authority. It does not repair projections, invent missing candle OHLCV or infer venue protection from a target. See [recorded trade grounding](agent_recorded_trade_grounding.md) and [historical setup explanation](agent_historical_setup_explanation.md).
+
+PR220's [owner-confirmed manual BTC market demo test](manual_blofin_demo_acceptance.md) is a separate Settings/API capability. It creates no strategy/Candidate lineage and grants no general Agent order authority. Account sync, internal paper fills and native demo orders remain distinct evidence.
 
 ## Retrieval, context and memory
 

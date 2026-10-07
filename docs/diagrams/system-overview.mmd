@@ -1,0 +1,16 @@
+flowchart LR
+  Browser["Trader's browser"] --> Web["Next.js / Vercel<br/>Six workspaces"]
+  Browser -->|HTTPS| API["FastAPI / Render<br/>Agent + services"]
+  Worker["Render paper worker<br/>Watcher + Telegram"] --> PG[("PostgreSQL<br/>Durable decision record")]
+  API --> PG
+  API --> Redis["Redis<br/>Security + cache"]
+  API --> Knowledge["AI + knowledge services<br/>LLM / embeddings / Qdrant"]
+  API -->|public reads| Market["Market evidence<br/>Binance / Bybit"]
+  Worker -->|public reads| Market
+  Worker -->|separately armed| Telegram["Telegram<br/>Delivery and discussion"]
+  API -->|reads / gated manual demo| BloFin["BloFin demo<br/>Separate execution gates"]
+  Worker -.->|gated strategy demo| BloFin
+  classDef core fill:#ecfdf5,stroke:#0f766e,stroke-width:2px,color:#102a43
+  classDef store fill:#eff6ff,stroke:#3b82f6,color:#102a43
+  class API,Worker,Web core
+  class PG,Redis store

@@ -1,6 +1,6 @@
 # Interview pitch
 
-Use these as spoken explanations of the inspected product. Replace “I built” with your actual contribution when appropriate. Facts reflect main `ff90d0c`, October 6, 2026; [status](current_status.md) separates supplied runtime reports from verified source.
+Use these as spoken explanations of the inspected product. Replace “I built” with your actual contribution when appropriate. Facts reflect main `b58beda`, October 7, 2026; [status](current_status.md) separates supplied runtime reports from verified source.
 
 ## Thirty seconds
 
@@ -12,7 +12,7 @@ Use these as spoken explanations of the inspected product. Replace “I built”
 
 Public market evidence feeds deterministic strategy detection. A genuine confirmed setup can become a Candidate, but risk, permissions, an immutable plan and explicit authority still gate paper execution. The Journal links the outcome back to its strategy and evidence. The Agent can explain those records and propose supported changes; a message does not confirm its draft.
 
-A supervising staging session reports one real Nested event through the internal paper and Telegram paths. Further SFP recovery, Journal repair and demo-venue acceptance remain pending. That is useful engineering evidence, not a profitability or complete acceptance claim.”
+The release evidence includes a received Watcher notification, a historical Nested internal paper fill and Journal, and successful BloFin demo account sync. Further SFP recovery, Journal repair and demo-venue acceptance remain pending. That is useful engineering evidence, not a profitability or complete acceptance claim.”
 
 ## Two-minute technical explanation
 
@@ -26,4 +26,4 @@ The main tradeoffs are strict evidence consistency versus availability, external
 
 ## Follow-up material
 
-Use [the three-minute tour](demo_script.md), [architecture diagrams](architecture.md), [technical walkthrough/glossary](interview_package.md), [defensible answers](technical_qa.md) and [limitations](limitations_roadmap.md). Do not promise a populated setup or use synthetic screenshot balances as results.
+Use [the five-minute tour](demo_script.md) and [12-slide presentation](reviewer_presentation.md), [architecture diagrams](architecture.md), [technical walkthrough/glossary](interview_package.md), [defensible answers](technical_qa.md) and [limitations](limitations_roadmap.md). Do not promise a populated setup or use synthetic screenshot balances as results.

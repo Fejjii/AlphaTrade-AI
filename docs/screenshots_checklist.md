@@ -1,4 +1,33 @@
-# Screenshot provenance and reproduction
+# Product screenshot capture and provenance
+
+The current reviewer package uses rendered architecture/workflow diagrams because no suitable authenticated current-product capture was available in this documentation session. Existing images are preserved as dated fixtures; they are not used as the main showcase. This guide gives an exact handoff for obtaining authentic captures without manufacturing market or execution events.
+
+## Current product capture plan
+
+Use an existing authorized session on the reviewed frontend, backed by the intended API release. Before capture, record the actual frontend/API commit and capture date; if they differ from `b58beda`, state both. Use a desktop viewport of **1440 × 1000** at 100% zoom, plus a **390 × 844** portrait capture where useful. Keep the six destinations, paper label and relevant evidence/source state readable. Wait for real records to finish loading; a source outage is not a suitable hero capture.
+
+Store new reviewed files under `docs/screenshots/reviewer/` only when they exist. The filenames below are a capture plan, not image links or placeholders.
+
+| Capture | Route and exact view | Proposed filename | Caption and acceptance |
+| --- | --- | --- | --- |
+| A — product entry | `/`: paper account, daily attention and monitoring, six-workspace navigation visible. | `dashboard-current.png` | Actual UI, source/date/SHA stated. Crop account/email identifiers; retain paper and source/freshness labels. No synthetic balance presented as live. |
+| B — historical decision | `/journal`: open the existing Nested BTC short; show plan entry/stop/targets beside actual recorded internal fill/venue. | `journal-nested-paper.png` | “Historical Nested BTC short — internal paper simulation.” A missing target projection stays a disclosed gap; do not repair it for capture. Hide record/account IDs. |
+| C — grounded Agent | `/agent`: select the exact recorded trade; ask the two prompts in [demo script](demo_script.md). Capture summary plus readable source labels, and a separate cropped Stored evidence view if safe. | `agent-recorded-trade.png` | Identify historical context. Retain distinctions between plan, fill, current 1R policy and missing evidence. Hide raw UUIDs/hashes and private conversation content. |
+| D — Knowledge | `/knowledge`: show an existing nonsensitive playbook/source. Optionally use the existing file-import form and **Preview file** on a harmless local document, then stop before **Save previewed file**. | `knowledge-preview.png` | “Extracted-text preview; not yet saved/indexed” if preview is shown. Use only content authorized for public sharing; no artificial search success. |
+| E — governed context | `/settings`: **Risk**, **Notifications**, or **Account and system** section; capture meaningful public controls. | `settings-controls.png` | Settings visibility does not establish an armed worker or an order. Hide credentials, account balances/identifiers and chat/email data as needed. |
+| F — actual notification, optional | Existing received Watcher notification in Telegram, only through access already authorized by the owner. | `telegram-received.png` | Historical receipt with date retained; hide chat/bot/private account identity. Do not send a new notification for capture. |
+
+For Knowledge preview, a nonsensitive local `.txt` or `.md` file is sufficient. Preview does not save/index content; do not click Save or issue an ingest request during this observational capture. Opening Settings' manual-demo form is not proof of execution. Do not click **Preview demo entry**, **Confirm and submit demo market order**, recovery, reconciliation or cancellation controls merely to obtain a screenshot; they belong to the separately supervised [manual acceptance procedure](manual_blofin_demo_acceptance.md).
+
+Before publishing each actual image, review the full frame for passwords, API keys, JWTs, real emails, organization/user/account/chat IDs, private document text and sensitive audit/record payloads. Crop those regions from the capture or use an owner-approved sanitized display; do not alter prices, states, receipts or results. Record provenance alongside the files: capture date/time, route, viewport/browser, actual frontend/API SHA, paper/data context, and any crop/redaction. A technical evidence panel may be unsuitable for public sharing even when it is useful during a private demo.
+
+A received notification, account-sync panel and Journal paper fill cannot be captioned as native BloFin order execution. For that claim, only separately accepted native order/fill/protection evidence is suitable. No such acceptance capture was available here.
+
+## Preserve historical fixture reproduction
+
+The original guide below documents existing sets and their October 6 inspection. Its fixture commands remain useful for technical UI regression work. A fixture screenshot must retain its watermark and cannot replace an authentic current-product capture in the reviewer showcase.
+
+### Historical screenshot provenance and reproduction
 
 Screenshots must come from the application or its declared test fixtures. Keep source context visible: local mock/replay, synthetic frontend fixture or separately authorized live-data paper context. Do not fabricate UI, trade results or provider activity.
 

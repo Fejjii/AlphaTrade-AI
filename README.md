@@ -1,73 +1,103 @@
 # AlphaTrade AI
 
-![CI](https://github.com/Fejjii/AlphaTrade-AI/actions/workflows/ci.yml/badge.svg)
+**A personal AI trading workspace that connects market evidence, strategy rules, paper trades and lessons in one traceable workflow.**
 
-**A paper trading workspace that connects market evidence, trading rules, risk decisions and review — with an AI assistant to explain the record.**
+AlphaTrade helps discretionary crypto traders answer three questions: *Why is this a setup? Can I act within my rules? What should I learn from the result?* It brings together context that otherwise sits across charts, AI chats, exchange screens and scattered notes.
 
-## The problem and the user
+The vision is a **personal AI trading operating system**: an assistant that understands the trader's playbooks and history, helps prepare decisions, and carries the reasoning into review. Today's product provides a paper-first foundation for that vision, with six connected workspaces and explicit control over supported actions.
 
-Crypto traders often split charts, AI chats and notes. The original rationale, risk limits and lessons can get lost between idea and trade.
+[Five-minute demo](docs/demo_script.md) · [Presentation](docs/reviewer_presentation.md) · [Offline slide deck](docs/reviewer_presentation.html) · [Architecture](docs/architecture.md) · [Local setup](docs/local_setup.md)
 
-AlphaTrade connects an approved strategy, setup evidence, risk checks, paper execution and Journal review. The Agent explains records and drafts changes; application services control what can be saved or executed.
+## One workspace, from preparation to review
 
-The vision is a personal trading assistant with useful memory and decision support. Current foundations do not establish profitability or complete MVP acceptance.
-
-## What the current workflow does
-
-```mermaid
-flowchart LR
-  Evidence["Read-only market evidence"] --> Setup["Approved strategy detects a setup"]
-  Setup --> Risk["Deterministic risk and eligibility"]
-  Risk --> Paper["Authorized paper execution"]
-  Paper --> Journal["Journal and review"]
-  Journal --> Proposal["Suggested improvement for human review"]
-```
-
-Risk can block an action. A strategy draft is not an approved strategy, and a model reply is not confirmation. Paper execution can follow an explicit user action or an explicitly armed worker for an approved strategy. Real-money execution is permanently refused by the inspected source. A separately gated BloFin **demo** integration exists; its live acceptance is pending.
-
-## Six workspaces
-
-| Workspace | What the trader does |
+| Workspace | What it helps the trader do |
 | --- | --- |
-| **Dashboard** | Reviews the paper account, daily state, monitoring and next review. |
-| **Agent** | Discusses recorded facts and reviews drafts before confirming supported actions. |
-| **Journal** | Follows trades, outcomes, observations and lessons. |
-| **Strategies** | Inspects strategy versions, rules, setup evidence and validation. |
-| **Knowledge** | Finds playbooks and notes; previews files before saving them. |
-| **Settings** | Manages risk, watchlists, notifications and advanced tools. |
+| **Dashboard** | See the paper account, daily review, monitoring state and items needing attention. |
+| **Agent** | Discuss stored rules and trades, inspect supporting evidence, and review structured action drafts. |
+| **Journal** | Follow planned entries, stops and targets alongside recorded fills, outcomes, observations and lessons. |
+| **Strategies** | Inspect strategy versions, rules, detected setups, research and approval state. |
+| **Knowledge** | Organize playbooks and notes, search sources, and preview supported files before saving them. |
+| **Settings** | Manage risk, watchlists, notification preferences and account context, with advanced operational tools kept together. |
 
-## A three-minute guided demo
+## How the system connects
 
-1. **Dashboard:** establish paper mode and market evidence availability.
-2. **Strategies → Journal:** follow an existing setup through risk, paper execution and outcome; explain missing records honestly.
-3. **Agent:** ask “What evidence is missing?” Show separate draft Confirm/Reject controls.
-4. **Knowledge → Settings:** show a source citation, file preview and risk limits.
+![AlphaTrade overview: browser and Vercel frontend, Render API and worker, storage and external providers](docs/diagrams/system-overview.svg)
 
-[Demo preparation and longer walkthrough](docs/demo_script.md) · [Local setup](docs/local_setup.md)
+The browser presents the six workspaces. The API handles authenticated actions; an independent worker monitors approved strategies and runs separately authorized paper workflows. PostgreSQL preserves the decision record across both processes. The Agent explains scoped facts and sources, while deterministic services decide eligibility, risk and execution authority.
 
-## What is verified, and what remains open?
+[Detailed architecture and four workflow diagrams](docs/architecture.md) · [Editable overview diagram](docs/diagrams/system-overview.mmd)
 
-Source baseline: main `ff90d0c`, **October 6, 2026**. Implemented paths and operational acceptance are separate.
+## A governed trading workflow
 
-The supervisor reports PR208/PR209 deployed on API/worker and a real Nested event through Candidate, risk, internal paper fill, Journal and received Telegram alert. These reports were **not independently reverified here**. Fresh SFP recovery, existing Journal target repair and BloFin demo execution acceptance remain pending. One event does not prove profitability or complete acceptance.
+1. **Observe:** read public perpetual-market evidence from Binance, with Bybit as a configured secondary source. Preserve source, freshness and candle-finalization information.
+2. **Detect:** evaluate supported compiled strategies. A confirmed setup can become a persisted **Candidate**, a reviewable opportunity with evidence attached.
+3. **Authorize:** bind the exact entry, quantity, stop and targets to an immutable plan. Supported user commands require explicit confirmation; an armed worker operates within its approved strategy and configured authority.
+4. **Check and execute:** recheck eligibility, deterministic risk, freshness, account state and the kill switch. Internal paper execution records a simulated fill. BloFin demo execution has its own gates and venue evidence requirements.
+5. **Review:** connect the plan and fill to the Journal, then use analytics, observations and learning proposals to inform the next decision. Strategy changes retain validation and human-promotion gates.
 
-[Dated evidence and component status](docs/current_status.md) · [Limitations and roadmap](docs/limitations_roadmap.md)
+A conversational answer can explain or propose an action. Confirmation and application services determine what actually happens. New entry authority requires at least **1R of allocation-weighted gross planned reward/risk**; fees and execution effects mean this is not a guaranteed net return. Real-money trading is disabled and refused by the current source.
 
-## Read further
+## Technology at a glance
 
-| Need | Guide |
+| Layer | Technology and purpose |
 | --- | --- |
-| Understand the system and component versions | [Architecture](docs/architecture.md) |
-| Understand the Agent, models, tools and memory | [Agent workflow](docs/agent_workflow.md) · [Retrieval](docs/rag_system.md) |
-| Assess security and trading boundaries | [Security](docs/security.md) |
-| Run or operate it | [Setup](docs/local_setup.md) · [Deployment](docs/deployment.md) · [Monitoring](docs/observability.md) · [Testing and evaluation](docs/evaluation.md) |
-| Prepare an interview | [Product positioning](docs/portfolio_positioning.md) · [Technical walkthrough and glossary](docs/interview_package.md) · [Pitch](docs/interview_pitch.md) · [Q&A](docs/technical_qa.md) |
-| Review authentic UI captures | [Screenshot provenance and reproduction](docs/screenshots_checklist.md) |
+| Web application | Next.js 15, React 19, TypeScript, Tailwind CSS and Recharts; hosted on Vercel. |
+| API and worker | Python 3.12, FastAPI and Pydantic; Render API plus an independent paper worker. |
+| Durable records | PostgreSQL, SQLAlchemy and Alembic migrations. |
+| Security and cache | Redis for applicable token revocation, rate limiting and market-data caching. |
+| AI and knowledge | Configured OpenAI-compatible LLM/embedding providers; Qdrant knowledge indexing/search; bounded SQL lexical retrieval in the default Agent route. |
+| Integrations | Binance/Bybit market evidence, Telegram delivery, BloFin account context and separately governed demo execution. |
+| Verification | Pytest, Ruff, mypy, Vitest, TypeScript and Playwright; focused development CI and a separate full acceptance gate. |
 
-Earlier six-workspace navigation capture: synthetic session, unavailable data sources. The Agent's voice controls have since changed; this image is a layout reference, not a current runtime result.
+See [architecture](docs/architecture.md) for manifest versions, component boundaries and source links.
 
-![Earlier six-workspace Agent navigation fixture](docs/screenshots/primary-navigation-6/desktop-agent.png)
+## Five-minute demonstration
 
-Historical release notes, acceptance records and branch handoffs remain in `docs/`. Their dates, exact bases and test results apply to those snapshots; use the guides above for the current overview. The [referenced design artifacts](docs/source/README.md) are absent from this checkout; when supplied, they describe intent rather than implementation proof.
+| Time | Route | Show |
+| --- | --- | --- |
+| 0:00–0:45 | Dashboard | The paper account, monitoring state and evidence availability. |
+| 0:45–1:30 | Strategies | An existing strategy version and its recorded setup/approval context. |
+| 1:30–2:30 | Journal | The historical Nested BTC short: planned terms, internal paper fill and linked evidence. |
+| 2:30–3:45 | Agent | Ask it to explain that recorded trade and compare its historical plan with today's entry policy. |
+| 3:45–4:30 | Knowledge | A playbook/source reference and the file-preview-before-save boundary. |
+| 4:30–5:00 | Settings | Risk controls, notification preferences and account/demo boundaries. |
 
-Paper simulation, backtests and demo exchange results do not guarantee real-world performance. Not financial advice.
+Use existing records when there is no fresh setup. The [complete script](docs/demo_script.md) includes speaker wording, a recorded-evidence fallback and preparation steps. The [12-slide presentation](docs/reviewer_presentation.md) supports a longer interview.
+
+## Current evidence and limits
+
+**Source baseline: main [`b58beda`](https://github.com/Fejjii/AlphaTrade-AI/commit/b58bedae1baad82b36fd32b04d056372cac3c733), October 7, 2026.**
+
+| Evidence | What is established |
+| --- | --- |
+| Repository and GitHub | PR220 is merged; Vercel reports successful deployment for `b58beda`. Full backend acceptance [CI #783](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37622005520) was **in progress** at this documentation check. |
+| Supplied operational verification | Render API and paper worker were directly verified on `b58beda`; database migration `a6manualdemo001` was verified applied. These observations were supplied by the supervising release session. |
+| Supplied product evidence | A Watcher-generated Telegram notification was received; a historical Nested BTC short has an internal paper fill and Journal; BloFin demo account sync succeeded. |
+
+**Native BloFin order execution acceptance remains undemonstrated**; account sync and internal simulation do not prove it. PR220 adds a separately gated, owner-confirmed **BTC market demo test** with one full target. It does not add limit entries, unrestricted Agent trading, automatic SFP execution, manual exchange exits or complete exit/PnL/funding reconciliation. Fresh SFP recovery and the existing Journal target repair still require their own acceptance evidence.
+
+The stored screenshots show historical synthetic fixtures and are unsuitable as current product proof. This entry point uses source-verified diagrams; [exact capture instructions](docs/screenshots_checklist.md) describe the authentic images needed for the presentation. No unavailable-service screenshot is used as the showcase.
+
+[Dated status and evidence](docs/current_status.md) · [Reviewer evidence checklist](docs/reviewer_evidence.md) · [Limitations](docs/limitations_roadmap.md)
+
+## Focused roadmap
+
+- **Finish acceptance:** close the exact-release CI gate, verify fresh SFP recovery and Journal target repair, and conduct the separately supervised native demo test.
+- **Complete the demo lifecycle:** establish supported exchange exit, outcome and funding reconciliation before expanding execution scope.
+- **Strengthen assistance:** evaluate grounded responses, improve cross-workspace context and verify real-device voice behavior.
+- **Grow validated strategies and learning:** add strategy families and promotion evidence while retaining deterministic risk and human control.
+
+## Run it locally or read deeper
+
+Start with [local setup](docs/local_setup.md) for the disposable Docker Compose or host-development path. Local mock/replay mode needs no exchange or Telegram credentials. Configuration templates: [backend/local](.env.example), [frontend](frontend/.env.example), [staging](.env.staging.example). Hosted operations use the [deployment guide](docs/deployment.md).
+
+| Topic | Guide |
+| --- | --- |
+| Agent, grounding and memory | [Agent workflow](docs/agent_workflow.md) · [Retrieval](docs/rag_system.md) |
+| Risk, security and execution | [Risk management](docs/risk_management.md) · [Security](docs/security.md) · [Manual BloFin demo acceptance](docs/manual_blofin_demo_acceptance.md) |
+| Operations and engineering evidence | [Deployment](docs/deployment.md) · [Observability](docs/observability.md) · [Evaluation](docs/evaluation.md) |
+| Interview preparation | [Presentation](docs/reviewer_presentation.md) · [Technical walkthrough](docs/interview_package.md) · [Technical Q&A](docs/technical_qa.md) |
+
+Documentation and image links are repository-relative so the package can be copied with its `docs/`, `frontend/` and `backend/` directories into the Turing College repository. GitHub release/evidence links intentionally identify the original project. Assignment files and dated historical evidence remain preserved.
+
+Paper, backtest and exchange-demo results do not establish profitability or real-money readiness.
