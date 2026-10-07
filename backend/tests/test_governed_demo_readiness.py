@@ -208,7 +208,8 @@ def test_paper_history_does_not_bypass_existing_risk_limits():
 
 
 @requires_postgres
-def test_competing_market_claims_have_only_one_demo_allow():
+@pytest.mark.parametrize("worker_enabled", [False, True])
+def test_competing_market_claims_have_only_one_demo_allow(worker_enabled):
     factory = phase7_plan_session_factory()
     with factory() as session:
         ids, first, first_auth = prepared_authorized_plan(session)
@@ -220,7 +221,7 @@ def test_competing_market_claims_have_only_one_demo_allow():
         ]
         session.commit()
     settings = paper_settings(database_url="sqlite+pysqlite:///:memory:").model_copy(
-        update={"governed_blofin_demo_enabled": True}
+        update={"governed_blofin_demo_enabled": worker_enabled}
     )
     barrier = Barrier(2)
 

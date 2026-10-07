@@ -19,7 +19,8 @@ def test_knowledge_metadata_revision_precedes_the_single_migration_head():
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "src/app/db/migrations"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["a5demolifecycle001"]
+    assert script.get_heads() == ["a6manualdemo001"]
+    assert script.get_revision("a6manualdemo001").down_revision == "a5demolifecycle001"
     assert script.get_revision("a5demolifecycle001").down_revision == "a4knowledge001"
     assert script.get_revision("a4knowledge001").down_revision == "a3release002"
 

@@ -28,7 +28,7 @@ from app.runtime.canonical import build_production_canonical_runtime
 from app.security.rate_limit import reset_rate_limiter
 from tests.support.postgres_persistence import POSTGRES_URL, requires_postgres
 
-CURRENT_HEAD = "a5demolifecycle001"
+CURRENT_HEAD = "a6manualdemo001"
 
 
 def _alembic_config() -> Config:
