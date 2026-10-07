@@ -1,6 +1,8 @@
-# Risk management (paper discipline)
+# Risk management
 
-Slice 45 adds tenant-scoped **user risk settings** that drive the daily discipline snapshot and dashboard guidance. Real exchange execution remains disabled.
+At main `b58beda` (October 7, 2026), deterministic eligibility, account exposure, daily limits, immutable plan authorization, freshness and kill-switch checks gate canonical paper/demo entry. New authority requires [allocation-weighted gross planned 1R](../backend/src/app/services/planned_reward_risk.py); historical plans are not rewritten. Manual demo exposure counts for risk even though manual tests are excluded from strategy validation/learning. See [current architecture](architecture.md#setup-detection-to-authorization-execution-and-journal) and [manual demo bounds](manual_blofin_demo_acceptance.md). Real-money execution is refused.
+
+The detailed discipline APIs and legacy PnL/Agent-tool contract below retain the Slice 45 material. Their listed PnL sources describe that dashboard/compatibility contract; they are not a complete inventory of canonical execution risk accounting or native exchange outcomes.
 
 ## User risk settings
 

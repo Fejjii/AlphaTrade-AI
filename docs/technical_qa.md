@@ -1,6 +1,6 @@
 # Technical interview questions and answers
 
-Answers reflect main `ff90d0c`, inspected October 6, 2026. The [status record](current_status.md) distinguishes deployed reports, unknowns and pending acceptance. Use these to explain the work you can substantiate.
+Answers reflect main `b58beda`, inspected October 7, 2026. The [status record](current_status.md) distinguishes deployed reports, unknowns and pending acceptance. Use these to explain the work you can substantiate.
 
 ## What does the user gain?
 
@@ -48,7 +48,7 @@ The backend resolves persisted membership and scopes resources; reader/trader/ow
 
 ## Can it send real exchange orders?
 
-Real-money trading is permanently refused by the inspected source in every environment. Internal paper simulation is the default. A separately gated BloFin demo integration exists with ambiguous-dispatch and protection/fill reconciliation; its real demo acceptance remains pending. Neither internal paper success nor Telegram receipt proves BloFin execution.
+Real-money trading is permanently refused by the inspected source in every environment. Internal paper simulation is the default. A separately gated BloFin demo integration includes native evidence reads and PR220's owner-confirmed BTC MARKET test with one full target. Native demo acceptance remains pending; the manual capability has no limit entry, manual exit or complete exit/PnL/funding reconciliation. Neither internal paper success nor Telegram receipt proves BloFin execution.
 
 ## How far does voice go?
 
@@ -56,7 +56,7 @@ Browser dictation, transcript review/send and optional reply playback are implem
 
 ## What has actually been verified?
 
-This documentation task inspected source/manifests/configuration and authentic screenshots, then checked documentation facts/links/diagrams. Prior exact-base documents record their own tests. The supervisor reports PR208/PR209 deployment and a real Nested/internal-paper/Journal/Telegram event; those were not independently reverified here. Fresh SFP recovery, existing Journal target repair, BloFin demo acceptance and complete MVP acceptance remain open. [Evidence](current_status.md).
+This documentation task checked source/manifests, GitHub main/PR220, Vercel commit status and CI #783 metadata, then validated documentation links and rendered diagrams. Existing captures have historical fixture provenance, so the main showcase uses diagrams. Supplied API/worker/migration, received notification, internal-paper/Journal and demo-account-sync observations are recorded separately. Prior exact-base documents retain their own tests. Fresh SFP recovery, existing Journal target repair, BloFin demo acceptance and complete MVP acceptance remain open. [Evidence](current_status.md).
 
 ## What would you improve next?
 

@@ -1,0 +1,20 @@
+flowchart TD
+  User["Message or reviewed voice transcript"] --> Scope["Authenticate and scope conversation"]
+  Scope --> Route["Deterministic intent and typed action registry"]
+  Route --> Reads["Scoped read tools<br/>Strategy / Journal / portfolio / market"]
+  Route --> Lexical["Default Agent retrieval<br/>Bounded SQL lexical search"]
+  Docs["PostgreSQL documents and chunks"] --> Lexical
+  Reads --> Facts["Recorded facts + source references<br/>Missing evidence"]
+  Lexical --> Facts
+  Facts --> Model["ModelRouter<br/>Bounded synthesis when applicable"]
+  Facts --> Reply["Visible reply and Stored evidence"]
+  Model --> Reply
+  Route --> Draft["Typed structured draft when supported"]
+  Draft --> Decision{"Separate Confirm or Reject request"}
+  Decision -->|confirm| Validate["Revalidate ownership + hash<br/>Expected state + action gates"]
+  Validate --> Domain["Existing domain service<br/>Additional execution risk gates"]
+  Decision -->|reject| Rejected["Persist rejection"]
+  Import["Explicitly saved knowledge content"] --> Index["Knowledge ingestion<br/>Configured embeddings"]
+  Index --> Docs
+  Index --> Qdrant["Qdrant vector index"]
+  Qdrant --> Search["Knowledge search and legacy graph retrieval"]

@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "source_baseline": "b58bedae1baad82b36fd32b04d056372cac3c733",
+  "source_tree": "9b36f0e1c681a2b3f5ec307e2da17bc124b5eba6",
+  "checked_at_utc": "2026-10-07 13:32:19 UTC",
+  "display_timezone": "Europe/Berlin",
+  "independent_github": {
+    "main_sha": "b58bedae1baad82b36fd32b04d056372cac3c733",
+    "pr220": {
+      "merged": true,
+      "merge_commit_sha": "b58bedae1baad82b36fd32b04d056372cac3c733",
+      "url": "https://github.com/Fejjii/AlphaTrade-AI/pull/220"
+    },
+    "vercel": {
+      "state": "success",
+      "sha": "b58bedae1baad82b36fd32b04d056372cac3c733",
+      "status_updated_at_utc": "2026-10-07T12:32:42Z",
+      "url": "https://vercel.com/alphatrade-ai/alpha-trade-ai/5ww5tiQg1Zv26h9YQJxhGnrCYEJC"
+    },
+    "full_backend_ci": {
+      "id": 37622005520,
+      "run_number": 783,
+      "head_sha": "b58bedae1baad82b36fd32b04d056372cac3c733",
+      "event": "workflow_dispatch",
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37622005520",
+      "jobs": [
+        {
+          "name": "frontend",
+          "status": "completed",
+          "conclusion": "success",
+          "complete_backend_step": null
+        },
+        {
+          "name": "deployment-safety",
+          "status": "completed",
+          "conclusion": "success",
+          "complete_backend_step": null
+        },
+        {
+          "name": "backend",
+          "status": "in_progress",
+          "conclusion": null,
+          "complete_backend_step": {
+            "name": "Complete backend release acceptance",
+            "status": "in_progress",
+            "conclusion": null,
+            "number": 9
+          }
+        },
+        {
+          "name": "docker-build",
+          "status": "completed",
+          "conclusion": "success",
+          "complete_backend_step": null
+        }
+      ]
+    }
+  },
+  "supplied_observations": {
+    "provenance": "User request / supervising release session, supplied for the October 7 reviewer package; individual event timestamps and raw captures were not supplied.",
+    "render_api": {
+      "verified_live_sha": "b58bedae1baad82b36fd32b04d056372cac3c733",
+      "reprobed_by_documentation_task": false
+    },
+    "render_paper_worker": {
+      "verified_live_sha": "b58bedae1baad82b36fd32b04d056372cac3c733",
+      "reprobed_by_documentation_task": false
+    },
+    "database": {
+      "verified_applied_revision": "a6manualdemo001",
+      "reprobed_by_documentation_task": false
+    },
+    "watcher_telegram_notification": "received",
+    "historical_nested_btc_short": "internal paper fill and Journal exist",
+    "blofin_demo_account_sync": "succeeded"
+  },
+  "pending": [
+    "native BloFin demo order/fill/protection acceptance",
+    "fresh SFP recovery acceptance",
+    "existing Journal target repair acceptance"
+  ],
+  "limitations": [
+    "Internal simulation and account sync do not demonstrate native demo execution.",
+    "PR220 manual capability is BTC MARKET only with one full target.",
+    "No manual exit, complete exit/PnL/funding reconciliation or repeat-entry release in the manual capability.",
+    "No authentic current-product capture was available.",
+    "Real trading remains disabled and refused by source."
+  ]
+}

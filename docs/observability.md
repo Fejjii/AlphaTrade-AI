@@ -1,6 +1,6 @@
 # Monitoring and audit
 
-Use this guide to observe an authorized environment without confusing configured flags, health, durable authority and actual outcomes. It reflects source at main `ff90d0c`, October 6, 2026. No runtime probes or metric scrapes ran for this documentation task.
+Use this guide to observe an authorized environment without confusing configured flags, health, durable authority and actual outcomes. It reflects source at main `b58beda`, October 7, 2026. No runtime probes or metric scrapes ran for this documentation task.
 
 ## Signals and their limits
 
@@ -33,7 +33,7 @@ Telegram queue/admission/preview state is different from successful transport re
 
 For PR209/SFP, follow the [bounded recovery procedure](sfp_candle_finalization_recovery.md): correct v2 policy/receipt clocks, preserved v1 rows and fresh evaluation acceptance. A `no_setup`/warm-up result can be legitimate; do not treat repeated contract errors as successful acceptance.
 
-The October 6 supervisor reports a real Nested/internal-paper/Journal/Telegram event and deployment of PR208/PR209. Fresh SFP recovery, existing Journal repair and demo-venue acceptance remain pending. [Current status](current_status.md) records those limits; these reports were not reverified here.
+The October 7 package includes supplied API/worker verification on `b58beda`, applied migration `a6manualdemo001`, received Watcher notification, historical internal-paper/Journal record and successful BloFin demo account sync. [Current status](current_status.md) separates those reports from independently checked GitHub metadata. Native demo order acceptance, fresh SFP recovery and existing Journal repair remain pending.
 
 ## Operational references
 

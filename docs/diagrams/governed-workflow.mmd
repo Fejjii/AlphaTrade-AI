@@ -1,0 +1,26 @@
+flowchart TD
+  Evidence["Fresh, source-identified<br/>finalized evidence"] --> Detect["Supported deterministic<br/>strategy detection"]
+  Strategy["Approved compiled<br/>strategy version"] --> Detect
+  Detect --> Setup{"Confirmed setup?"}
+  Setup -->|no| Observe["Observe / no setup / unavailable"]
+  Setup -->|yes| Candidate["Candidate + assessment lineage"]
+  Candidate --> Eligibility["Eligibility + preliminary risk"]
+  Eligibility -->|allowed| Plan["Immutable plan<br/>Exact revision + hash"]
+  Eligibility -->|refused| Refused["Record refusal<br/>No new entry"]
+  Plan --> Authority["Exact authorization<br/>User or armed worker"]
+  Authority --> Gates{"Current execution<br/>gates pass?"}
+  Gates -->|no| Refused
+  Gates -->|yes| Command["Durable command<br/>Reservations + fencing"]
+  Command --> Venue{"Authorized venue"}
+  Venue -->|internal paper| Sim["Simulated fill<br/>Recorded execution basis"]
+  Venue -->|gated strategy demo| Native["BloFin demo dispatch<br/>Native evidence reads"]
+  Manual["Separate owner preview<br/>BTC MARKET demo test"] --> ManualPlan["Manual immutable plan<br/>No strategy or Candidate"]
+  ManualPlan --> Owner["Owner confirms<br/>Exact revision + hash"]
+  Owner --> ManualGates{"Manual demo<br/>gates pass?"}
+  ManualGates -->|no| Refused
+  ManualGates -->|yes| ManualCommand["Manual durable command<br/>Reservations + fencing"]
+  ManualCommand --> Native
+  Sim --> Journal["Journal: plan, provenance<br/>Recorded fill facts"]
+  Native -->|verified fill facts| Journal
+  Native --> Hold["Uncertain / partial / failed protection<br/>Operator hold"]
+  Journal --> Review["Review + analytics<br/>Outcome only when recorded"]

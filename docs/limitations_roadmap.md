@@ -1,17 +1,17 @@
 # Limitations and roadmap
 
-Baseline: main `ff90d0c`, October 6, 2026. “Implemented” means source exists; “accepted” needs evidence for the relevant runtime and release. [Current status](current_status.md) records supplied supervising evidence and unknowns.
+Baseline: main `b58beda`, October 7, 2026. “Implemented” means source exists; “accepted” needs evidence for the relevant runtime and release. [Current status](current_status.md) records supplied supervising evidence and unknowns.
 
 ## Current boundaries
 
 | Area | Implemented foundation | Limit or outstanding acceptance |
 | --- | --- | --- |
-| Paper lifecycle | Approved strategy/evidence → Candidate → risk/plan authority → paper fill → Journal/attribution. | Supervisor reports a real Nested/internal-paper event; complete MVP acceptance and all strategy/symbol paths are not established. |
+| Paper lifecycle | Approved strategy/evidence → Candidate → risk/plan authority → paper fill → Journal/attribution. | User reports a historical Nested/internal-paper fill and Journal; full CI #783 is pending at check, and all strategy/symbol paths are not established. |
 | Nested strategy | Supported compiled structural family and canonical paper continuation. | Supported timeframes/source constraints apply; a generic NL strategy is not automatically executable. |
 | SFP | Structural detection/research lifecycle, reusable immutable receipts and frontend surface. | Existing structural research support does not provide an authorized SFP execution plan or trade-return promotion evidence. Fresh live recovery after PR209 remains pending. |
 | Journal | Canonical lineage and preservation of approved plan targets in PR208. | Repair/acceptance for existing affected Journal targets remains pending. Deployment does not rewrite old rows automatically. |
 | Binance REST finalization | PR209 guards/compares eligible REST candles and versions the application policy without rewriting v1 history. | This is not a provider finality guarantee; bounded fresh SFP acceptance remains pending. |
-| BloFin demo | Separately governed demo dispatch, protection/fill reconciliation and scoped authority. | Actual demo-venue execution acceptance pending. Internal paper fills are not venue fills. |
+| BloFin demo | Demo account context, separately governed dispatch and native evidence reads; PR220 owner-confirmed BTC MARKET test with one full target. | Account sync succeeded in supplied evidence; native order/fill/protection acceptance is pending. No LIMIT entry, manual exit, complete exit/PnL/funding reconciliation or repeat-entry release in the manual capability. |
 | Agent | Model conversation, scoped reads, structured proposals and explicit confirmation. | Models can err; bounded context/retrieval and provenance do not establish perfect answers. |
 | Retrieval | Knowledge indexing/search; default Agent bounded lexical SQL retrieval. | No default vector lookup on every Agent turn; ranking/citation is not truth. SQL/vector commit consistency has external-store limits. |
 | Learning/behavior | Journal review, deterministic analytics/attribution and governed version promotion. | No silent online training, automatic strategy self-modification or proven behavior/performance improvement. Samples and strategy-specific support constrain conclusions. |
@@ -27,7 +27,7 @@ Real-money execution is permanently refused by the inspected source. It cannot b
 1. Complete bounded fresh SFP recovery acceptance on the intended deployed policy/SHA while preserving historical receipts.
 2. Complete and verify the separately supervised existing Journal target repair without inventing/backdating outcomes.
 3. If explicitly authorized, complete governed BloFin demo protection/fill/restart acceptance; keep actual demo exposure supervision separate from internal paper checks.
-4. Finish the relevant exact-SHA complete release gates and documented product acceptance. A focused CI pass, page loading report or one paper event is insufficient.
+4. Read the existing full acceptance CI #783 result on `b58beda`, then finish the relevant exact-SHA release/product acceptance gates. A focused CI pass, page loading report or one paper event is insufficient.
 5. Record observed model/provider/hosting versions and device/voice acceptance instead of promoting defaults or fixture results to runtime facts.
 
 These are documentation priorities, not authorization to deploy, repair databases, arm services or place orders.

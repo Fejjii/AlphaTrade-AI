@@ -1,0 +1,16 @@
+flowchart LR
+  Browser["Trader's browser"] -->|loads application| Web["Next.js frontend on Vercel"]
+  Browser -->|authenticated HTTPS API calls| API["FastAPI on Render"]
+  Worker["Independent paper worker on Render"] -->|shared durable records| PG["PostgreSQL"]
+  API -->|application transactions| PG
+  API -->|denylist, rate limits, optional market cache| Redis["Redis"]
+  API -->|knowledge indexing and vector search| Qdrant["Qdrant"]
+  API -->|conversation and embeddings| AI["Configured LLM and embedding providers"]
+  API -->|read public evidence| Binance["Binance USD-M: primary evidence"]
+  Worker -->|read public evidence| Binance
+  API -.->|configured whole-source failover| Bybit["Bybit USDT perpetual: secondary evidence"]
+  Worker -.->|configured whole-source failover| Bybit
+  Worker -->|separately armed delivery and interaction| Telegram["Telegram"]
+  API -->|account context reads| BloFin["BloFin demo venue"]
+  API -.->|owner-confirmed manual demo dispatcher| BloFin
+  Worker -.->|separately armed governed demo dispatcher| BloFin

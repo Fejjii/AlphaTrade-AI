@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AlphaTrade AI — Reviewer Presentation</title><style>
+:root{color-scheme:light;--ink:#142a34;--muted:#506674;--green:#0f766e;--line:#d8e4e6;--paper:#f7faf9}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif}button,a{touch-action:manipulation}a{color:var(--green)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #eaad40;outline-offset:5px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 4vw;border-bottom:1px solid var(--line);background:#fff}.brand{font-weight:800;letter-spacing:.04em}.brand span{font-weight:400;color:var(--muted);font-size:13px;margin-left:12px}.controls{display:flex;align-items:center;gap:9px}button{border:1px solid var(--line);border-radius:7px;padding:9px 14px;background:#fff;color:var(--ink);cursor:pointer;font-size:14px}button:hover{background:#ecfdf5}button:disabled{opacity:.45;cursor:default}.slide{padding:30px 4vw 24px;min-height:calc(100vh - 128px);max-width:1800px;margin:auto}.slide[hidden],#demo[hidden]{display:none}.slide-top{display:flex;justify-content:space-between;align-items:center}.eyebrow{color:var(--green);font-size:13px;letter-spacing:.14em;font-weight:700}.slide-number{font-size:14px;color:var(--muted)}.columns{display:grid;grid-template-columns:.85fr 1.15fr;gap:4vw;align-items:center;margin-top:28px}.story h1{font-size:clamp(30px,3.6vw,58px);line-height:1.04;letter-spacing:-.035em;margin:0 0 22px}.message{font-size:clamp(18px,1.7vw,26px);line-height:1.4;color:var(--green);font-weight:600;margin:0 0 24px}.story ul{list-style:none;padding:0;margin:0}.story li{position:relative;padding:12px 0 12px 24px;border-top:1px solid var(--line);font-size:clamp(16px,1.4vw,21px);line-height:1.45}.story li:before{content:'•';position:absolute;left:0;color:var(--green)}.visual{padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;min-height:380px;display:flex;flex-direction:column;justify-content:center}.diagram{display:flex;flex-direction:column;align-items:center;gap:18px;text-decoration:none}.diagram img{width:100%;height:clamp(300px,48vh,560px);object-fit:contain}.diagram span,.caption{font-size:13px;color:var(--muted);line-height:1.5}.workspaces{display:grid;grid-template-columns:1fr 1fr;gap:16px}.workspaces div{padding:16px;border-radius:10px;background:#eff7f5}h3{font-size:22px;margin:0 0 8px;letter-spacing:-.02em}.visual p{font-size:16px;color:var(--muted);line-height:1.5;margin:0}.journey{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.journey div{padding:16px;background:#eff7f5;border-radius:10px}.journey b,.roadmap span{display:block;color:var(--green);font-size:30px;margin-bottom:20px}.journey h3{font-size:23px}.caption{margin-top:18px!important}.evidence{display:grid;gap:14px}.evidence div{border-bottom:1px solid var(--line);padding-bottom:12px}.evidence span,.bounds>span{font-size:11px;font-weight:700;color:var(--green);letter-spacing:.1em}.evidence h3{margin-top:8px}.bounds h3{font-size:30px;margin:16px 0}.bounds hr{border:0;border-top:1px solid var(--line);margin:24px 0}.roadmap{display:grid;grid-template-columns:1fr 1fr;gap:20px}.roadmap div{border-left:3px solid var(--green);padding-left:18px}.notes{margin-top:28px;padding:16px 20px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:16px;line-height:1.6}.notes summary{cursor:pointer;color:var(--green);font-weight:600}.footer{padding:13px 4vw;display:flex;justify-content:space-between;gap:18px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}.footer a{margin-left:12px}#demo{max-width:1050px;margin:auto;padding:30px 4vw;line-height:1.6}#demo table{border-collapse:collapse;font-size:14px;width:100%}#demo th,#demo td{border:1px solid var(--line);padding:10px;vertical-align:top}#demo blockquote{border-left:3px solid var(--green);padding-left:18px}#progress{height:4px;background:var(--green);transition:width .2s} @media(max-width:850px){.columns{grid-template-columns:1fr;gap:25px}.slide{padding:25px 6vw}.visual{min-height:0}.toolbar{flex-wrap:wrap}.brand span{display:none}.journey{grid-template-columns:1fr}.footer{flex-wrap:wrap}.diagram img{height:380px}.story h1{font-size:38px}}@media print{@page{size:A4 landscape;margin:10mm}.toolbar,.footer,#progress,.notes{display:none}.slide,.slide[hidden]{display:block;min-height:0;height:180mm;padding:8mm;break-after:page}.columns{grid-template-columns:.9fr 1.1fr;gap:10mm}.story h1{font-size:30px}.story li{font-size:16px}.message{font-size:19px}.visual{padding:12px;min-height:0}.diagram img{height:120mm}#demo{display:none}}
+</style></head><body><header class="toolbar"><div class="brand">ALPHATRADE AI <span>Reviewer presentation</span></div><nav class="controls" aria-label="Presentation controls"><button id="prev" aria-label="Previous slide">← Previous</button><span id="counter" aria-live="polite">1 / 12</span><button id="next" aria-label="Next slide">Next →</button><button id="notes" aria-pressed="false">Notes</button><button id="demo-toggle">Demo script</button></nav></header><main><section class="slide" id="slide-1" aria-labelledby="title-1" ><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE PROBLEM</span><span class="slide-number">01 / 12</span></div><div class="columns"><div class="story"><h1 id="title-1">Keep the reason with the trade</h1><p class="message">Traders need continuity between preparation, action and review.</p><ul>
+<li>Charts, chats and notes fragment the decision.</li>
+<li>Entry rationale and risk rules are easy to lose.</li>
+<li>Outcomes alone do not explain decision quality.</li>
+</ul>
+</div><div class="visual"><div class="journey"><div><b>01</b><h3>Prepare</h3><p>Market evidence<br>Strategy rules</p></div><div><b>02</b><h3>Act</h3><p>Plan authority<br>Paper execution</p></div><div><b>03</b><h3>Review</h3><p>Journal facts<br>Learning proposals</p></div></div><p class="caption">Concept diagram: keep the reasoning with the decision.</p></div></div><details class="notes"><summary>Speaker notes</summary><p>“The problem is not a shortage of information. It is keeping the right context attached to a decision. I built AlphaTrade to make that context available before and after a paper trade.”</p>
+</details></section>
+<section class="slide" id="slide-2" aria-labelledby="title-2" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE VISION</span><span class="slide-number">02 / 12</span></div><div class="columns"><div class="story"><h1 id="title-2">A personal AI trading operating system</h1><p class="message">The product connects the trader's workflow around durable context.</p><ul>
+<li>One place for strategies, knowledge and Journal history.</li>
+<li>An Agent that explains stored facts and drafts supported actions.</li>
+<li>Paper-first decisions with explicit authority.</li>
+<li>A vision of better assistance, grounded in today&#39;s bounded product.</li>
+</ul>
+</div><div class="visual"><a class="diagram" href="diagrams/system-overview.svg" target="_blank" rel="noopener"><img src="diagrams/system-overview.svg" alt="The vision diagram"><span>Source-verified diagram · open to inspect</span></a></div></div><details class="notes"><summary>Speaker notes</summary><p>“Operating system describes the product direction: the work is connected rather than spread across isolated tools. The implemented foundation is a paper workspace. Broader assistance and evaluated long-term learning remain roadmap work.”</p>
+</details></section>
+<section class="slide" id="slide-3" aria-labelledby="title-3" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE JOURNEY</span><span class="slide-number">03 / 12</span></div><div class="columns"><div class="story"><h1 id="title-3">Follow one decision</h1><p class="message">A reviewable record connects a setup to its eventual learning.</p><ul>
+<li>Inspect strategy rules and market evidence.</li>
+<li>Follow a confirmed opportunity into eligibility and plan authority.</li>
+<li>Compare planned terms with recorded fills in the Journal.</li>
+<li>Ask the Agent to explain the decision and missing evidence.</li>
+</ul>
+</div><div class="visual"><div class="workspaces"><div><h3>Observe + detect</h3><p>Approved rules and usable evidence</p></div><div><h3>Review a Candidate</h3><p>Recorded opportunity and assessment</p></div><div><h3>Authorize + check</h3><p>Exact plan and current deterministic gates</p></div><div><h3>Execute + review</h3><p>Paper or gated demo facts in the Journal</p></div></div><p class="caption">Diagram summary · <a href="diagrams/governed-workflow.svg" target="_blank" rel="noopener">inspect the complete source-verified flow</a></p></div></div><details class="notes"><summary>Speaker notes</summary><p>“A Candidate is a recorded opportunity, not an order. The historical Nested BTC short gives us an existing example to discuss even when the market has no new setup. Its fill is internal paper simulation.”</p>
+</details></section>
+<section class="slide" id="slide-4" aria-labelledby="title-4" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE PRODUCT</span><span class="slide-number">04 / 12</span></div><div class="columns"><div class="story"><h1 id="title-4">Six connected workspaces</h1><p class="message">Each destination answers a practical trader question.</p><ul>
+<li>Dashboard: what needs attention? Agent: what does the record mean?</li>
+<li>Strategies: what are my rules? Knowledge: where is my reference material?</li>
+<li>Journal: what happened and what can I learn?</li>
+<li>Settings: what are my risk, account and notification boundaries?</li>
+</ul>
+</div><div class="visual"><div class="workspaces"><div><h3>Dashboard</h3><p>What needs attention?</p></div><div><h3>Agent</h3><p>What does the record mean?</p></div><div><h3>Journal</h3><p>What happened?</p></div><div><h3>Strategies</h3><p>What are my rules?</p></div><div><h3>Knowledge</h3><p>Where are my sources?</p></div><div><h3>Settings</h3><p>What are my boundaries?</p></div></div></div></div><details class="notes"><summary>Speaker notes</summary><p>“These are six user destinations. Technical and operational tools stay contextual or under Settings. The structure keeps the everyday workflow accessible without requiring the reviewer to understand the backend.”</p>
+</details></section>
+<section class="slide" id="slide-5" aria-labelledby="title-5" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE ASSISTANT</span><span class="slide-number">05 / 12</span></div><div class="columns"><div class="story"><h1 id="title-5">An assistant that can show its sources</h1><p class="message">Agent explanations are tied to recorded facts and scoped reference material.</p><ul>
+<li>Reads exact strategy, trade and assessment context.</li>
+<li>Separates planned terms from actual fills and protection.</li>
+<li>Shows source references and missing evidence.</li>
+<li>Produces drafts with separate Confirm/Reject controls.</li>
+</ul>
+</div><div class="visual"><div class="workspaces"><div><h3>Agent conversation</h3><p>Scoped tools + SQL lexical retrieval</p></div><div><h3>Grounded context</h3><p>Facts, source references and gaps</p></div><div><h3>Knowledge service</h3><p>Explicit save → embeddings → Qdrant search</p></div><div><h3>Separate decision</h3><p>Confirm/Reject invokes domain services</p></div></div><p class="caption">Diagram summary · <a href="diagrams/agent-grounding.svg" target="_blank" rel="noopener">inspect the complete source-verified flow</a></p></div></div><details class="notes"><summary>Speaker notes</summary><p>“The current Agent retrieves bounded SQL text lexically. The Knowledge service separately embeds and searches vectors with Qdrant. They are distinct paths. A fluent answer neither verifies a missing fact nor authorizes a trade.”</p>
+</details></section>
+<section class="slide" id="slide-6" aria-labelledby="title-6" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE CONTROLS</span><span class="slide-number">06 / 12</span></div><div class="columns"><div class="story"><h1 id="title-6">Control belongs to application services</h1><p class="message">Deterministic checks govern an action after the assistant has explained it.</p><ul>
+<li>Exact immutable plan revision and content hash.</li>
+<li>Eligibility, account exposure and deterministic risk checks.</li>
+<li>Freshness, expiry, permissions and kill-switch enforcement.</li>
+<li>Durable command identity, reservations and worker fencing.</li>
+</ul>
+</div><div class="visual"><div class="workspaces"><div><h3>Exact content</h3><p>Immutable plan revision + hash</p></div><div><h3>Current gates</h3><p>Risk, 1R policy, freshness and expiry</p></div><div><h3>Dispatch control</h3><p>Durable command, reservations and fencing</p></div><div><h3>Recorded result</h3><p>Fill facts; uncertainty holds for review</p></div></div><p class="caption">Diagram summary · <a href="diagrams/governed-workflow.svg" target="_blank" rel="noopener">inspect the complete source-verified flow</a></p></div></div><details class="notes"><summary>Speaker notes</summary><p>“The same facts and policy should yield the same risk decision. New entry authority needs at least allocation-weighted gross 1R. That is a planned price-distance rule, not a promise about net returns. Real-money execution is refused by the current source.”</p>
+</details></section>
+<section class="slide" id="slide-7" aria-labelledby="title-7" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE ARCHITECTURE</span><span class="slide-number">07 / 12</span></div><div class="columns"><div class="story"><h1 id="title-7">One web app, an independent worker</h1><p class="message">Interactive requests and background monitoring share durable records but have separate lifecycles.</p><ul>
+<li>Next.js on Vercel; FastAPI on Render.</li>
+<li>Independent Render paper worker for Watcher and Telegram.</li>
+<li>PostgreSQL for durable facts; Redis for applicable security/cache.</li>
+<li>Public Binance/Bybit evidence and separately governed external channels.</li>
+</ul>
+</div><div class="visual"><a class="diagram" href="diagrams/system-overview.svg" target="_blank" rel="noopener"><img src="diagrams/system-overview.svg" alt="The architecture diagram"><span>Source-verified diagram · open to inspect</span></a></div></div><details class="notes"><summary>Speaker notes</summary><p>“The browser calls the API over authenticated HTTPS. The worker is not inside a browser request. Shared PostgreSQL records coordinate decisions; Redis and Qdrant serve different purposes. The hosting boxes describe the deployment design, while the evidence table states which observations were verified.”</p>
+</details></section>
+<section class="slide" id="slide-8" aria-labelledby="title-8" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE MEMORY</span><span class="slide-number">08 / 12</span></div><div class="columns"><div class="story"><h1 id="title-8">Memory that supports review</h1><p class="message">Persisted history supports learning proposals without silently changing authority.</p><ul>
+<li>Conversations, playbooks and strategy versions preserve context.</li>
+<li>Journal facts retain decision and execution lineage.</li>
+<li>Review distinguishes observations, inference and suggestions.</li>
+<li>Promotion needs validation, paper evidence and a human decision.</li>
+</ul>
+</div><div class="visual"><div class="workspaces"><div><h3>Application memory</h3><p>Conversations, playbooks and strategy history</p></div><div><h3>Decision record</h3><p>Evidence, plans, fills and Journal lineage</p></div><div><h3>Proposed learning</h3><p>Exact validation and supported paper evidence</p></div><div><h3>Human promotion</h3><p>Governed version lifecycle update</p></div></div><p class="caption">Diagram summary · <a href="diagrams/persistence-learning.svg" target="_blank" rel="noopener">inspect the complete source-verified flow</a></p></div></div><details class="notes"><summary>Speaker notes</summary><p>“This is stored application memory, not online model training. A suggested improvement must move through governed validation and promotion. Manual demo tests contribute risk and execution facts, but they are excluded from strategy validation and learning attribution.”</p>
+</details></section>
+<section class="slide" id="slide-9" aria-labelledby="title-9" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE EVIDENCE</span><span class="slide-number">09 / 12</span></div><div class="columns"><div class="story"><h1 id="title-9">Evidence we can describe precisely</h1><p class="message">Deployment, notification receipt, simulation and exchange orders establish different things.</p><ul>
+<li>Supplied: Render API/worker verified on <code>b58beda</code>; migration <code>a6manualdemo001</code> applied.</li>
+<li>Supplied: Watcher Telegram notification received; Nested BTC internal paper fill and Journal exist.</li>
+<li>Supplied: BloFin demo account sync succeeded; native order acceptance is still pending.</li>
+<li>GitHub checked: Vercel success; full acceptance CI #783 in progress at the recorded check.</li>
+</ul>
+</div><div class="visual"><div class="evidence"><div><span>SUPPLIED</span><h3>Deployed baseline</h3><p>Render API + worker: b58beda<br>Migration: a6manualdemo001</p></div><div><span>SUPPLIED</span><h3>Demonstrated parts</h3><p>Received Watcher notification<br>Internal paper fill + Journal<br>Demo account sync</p></div><div><span>GITHUB CHECKED</span><h3>Release state</h3><p>Vercel: success<br>Full CI #783: in progress at check</p></div><div><span>ACCEPTANCE GAP</span><h3>Native demo order evidence</h3><p>Fill and protection acceptance remains pending.</p></div></div></div></div><details class="notes"><summary>Speaker notes</summary><p>“The release supervisor supplied the operational observations; this documentation pass independently checked GitHub. Account sync is a read success. A paper fill is simulation. Neither establishes a protected native demo order. Read the current CI result before presenting and update only from that result.”</p>
+</details></section>
+<section class="slide" id="slide-10" aria-labelledby="title-10" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE ENGINEERING</span><span class="slide-number">10 / 12</span></div><div class="columns"><div class="story"><h1 id="title-10">Engineering quality through explicit contracts</h1><p class="message">Quality is demonstrated by scoped checks and inspectable failure behavior.</p><ul>
+<li>Typed API and action contracts; tenant/user scoping.</li>
+<li>Immutable evidence and auditable plan/execution identities.</li>
+<li>Backend unit/integration checks and frontend/browser checks.</li>
+<li>Focused development CI separated from full release acceptance.</li>
+</ul>
+</div><div class="visual"><div class="workspaces"><div><h3>Typed boundaries</h3><p>API schemas and scoped actions</p></div><div><h3>Durable facts</h3><p>Plans, receipts and Journal lineage</p></div><div><h3>Focused checks</h3><p>Backend, frontend and browser layers</p></div><div><h3>Separate acceptance</h3><p>Exact-SHA full release gate</p></div></div><p class="caption">Test framework presence and prior results do not imply every current gate passed.</p></div></div><details class="notes"><summary>Speaker notes</summary><p>“The repository contains Pytest, Ruff, mypy, Vitest, TypeScript and Playwright checks. Historical acceptance records apply to their own bases. This PR only runs documentation checks; it does not launch another complete backend campaign or claim all operational paths passed.”</p>
+</details></section>
+<section class="slide" id="slide-11" aria-labelledby="title-11" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE BOUNDARIES</span><span class="slide-number">11 / 12</span></div><div class="columns"><div class="story"><h1 id="title-11">Bounded execution, honest limitations</h1><p class="message">The current scope is narrow enough to explain and test.</p><ul>
+<li>SFP research/detection exists; automatic SFP execution is unsupported.</li>
+<li>PR220: owner-confirmed BTC MARKET demo entry, one full target.</li>
+<li>No limit entry or complete demo exit/PnL/funding reconciliation in that capability.</li>
+<li>Fresh SFP, Journal repair and native demo acceptance remain separate gates.</li>
+</ul>
+</div><div class="visual"><div class="bounds"><span>CURRENT MANUAL DEMO SCOPE</span><h3>BTC · MARKET · one full target</h3><p>Owner preview and exact confirmation<br>Separate staging-only gate<br>Native acceptance pending</p><hr><p>Limit entry, manual exit and complete exit/PnL/funding reconciliation remain outside this capability.</p></div></div></div><details class="notes"><summary>Speaker notes</summary><p>“The manual test is a separate origin, not a fabricated strategy setup. It has real native dispatch code and simulated protocol tests, but native compatibility and protection still need supervised acceptance. Broader Agent autonomy and complete venue lifecycle support are not today&#39;s claims.”</p>
+</details></section>
+<section class="slide" id="slide-12" aria-labelledby="title-12" hidden><div class="slide-top"><span class="eyebrow">ALPHATRADE AI / THE ROADMAP</span><span class="slide-number">12 / 12</span></div><div class="columns"><div class="story"><h1 id="title-12">Grow from evidence</h1><p class="message">The next steps improve completeness and evaluated assistance.</p><ul>
+<li>Complete exact-release and fresh operational acceptance.</li>
+<li>Finish supported exchange outcomes before expanding execution scope.</li>
+<li>Evaluate grounding, context continuity and real-device voice.</li>
+<li>Add validated strategy families and governed learning evidence.</li>
+</ul>
+</div><div class="visual"><div class="roadmap"><div><span>01</span><h3>Accept</h3><p>Finish release and operational evidence</p></div><div><span>02</span><h3>Reconcile</h3><p>Complete supported venue outcomes</p></div><div><span>03</span><h3>Evaluate</h3><p>Grounding, context and real-device voice</p></div><div><span>04</span><h3>Expand</h3><p>Validated strategies and governed learning</p></div></div></div></div><details class="notes"><summary>Speaker notes</summary><p>“The value today is a connected decision record with understandable assistance and deterministic control. The roadmap grows that foundation through evidence. The next five minutes show how a trader moves through it.”</p>
+</details></section><article id="demo" hidden><h1>Five-minute demonstration and fallback</h1><p>Use <a href="demo_script.md">the full preparation and fallback guide</a>. Open the six destinations in advance with an existing authorized session and the recorded BTC trade selected. Do not make shared-state changes for the presentation.</p>
+<table>
+<thead>
+<tr>
+<th>Time</th>
+<th>Action</th>
+<th>Say</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0:00–0:45</td>
+<td>Dashboard: paper account, daily attention and market state.</td>
+<td>“This is the trader&#39;s starting point. Source freshness and paper mode tell us what we can responsibly discuss.”</td>
+</tr>
+<tr>
+<td>0:45–1:30</td>
+<td>Strategies: existing Nested version, rules and recorded setup context.</td>
+<td>“An approved rule set and a confirmed setup are different stages. This is the version attached to the record.”</td>
+</tr>
+<tr>
+<td>1:30–2:30</td>
+<td>Journal: recorded BTC short, plan and internal paper fill; inspect targets if available.</td>
+<td>“The Journal keeps intended terms beside recorded execution. This example is internal simulation; any missing projection stays visible.”</td>
+</tr>
+<tr>
+<td>2:30–3:45</td>
+<td>Agent: ask “Explain my recorded BTC short, including its plan, authorization, risk and execution venue.” Then “Would that same plan pass the current minimum reward to risk rule?”</td>
+<td>“The Agent reads the historical record. Historical authorization and today&#39;s entry policy are different questions. Stored evidence lets us inspect its answer.”</td>
+</tr>
+<tr>
+<td>3:45–4:30</td>
+<td>Knowledge: an existing playbook and source reference; show preview workflow only if already prepared.</td>
+<td>“My reference material is searchable. Preview is a review step; saving and indexing require an explicit action.”</td>
+</tr>
+<tr>
+<td>4:30–5:00</td>
+<td>Settings: risk, notification and account context.</td>
+<td>“Account sync, paper fills and a native demo order each need their own evidence. The manual demo capability remains separately gated.”</td>
+</tr>
+</tbody></table>
+<p>If the prompt matches multiple trades, select the intended record or use its existing UI context. Do not force the Agent to guess. The documented historical 0.65R example fails today&#39;s gross 1R floor <strong>only if the selected stored plan is that example</strong>; let the record establish the terms.</p>
+<h2>Fallback: the market is quiet or the app is unavailable</h2>
+<p><strong>No fresh setup:</strong> use the historical trade and existing received notification, if they are accessible in the authorized session. State that the event is historical. No new signal, approval or order is needed.</p>
+<p><strong>No authorized runtime access:</strong> open the checked-in architecture diagrams, <a href="current_status.md">dated status</a> and <a href="evidence/full_paper_closed_loop_acceptance_001.json">full paper closed-loop acceptance record</a>. That record is an offline development rehearsal at base <code>8673d8f</code>, not the user&#39;s live BTC event or a BloFin fill. Its <a href="evidence/full_paper_closed_loop_verification_001.json">verification companion</a> records the original test campaign. Show the traceability fields and explain their role without turning recorded tests into current operational acceptance.</p>
+<p>The older <a href="evidence/final_product_acceptance_001.json">product acceptance record</a> includes a BLOCKED verdict and later integration context; preserve both rather than showing only successful fields. The <a href="screenshots/README.md">historical screenshots</a> may be discussed as dated fixtures in technical Q&amp;A, but are not the main showcase.</p>
+<p>No ready-to-play recording of the supplied Telegram/BTC/account-sync observations was available in this checkout. Describe those observations as supplied evidence unless an authentic sanitized recording is provided. Never stage a fictional live setup or imply native order execution from an account screenshot.</p>
+</article></main><div id="progress"></div><footer class="footer"><span>Source: b58beda · Evidence checked October 7, 2026 · Paper-first product</span><span><a href="reviewer_presentation.md">Full narrative</a><a href="current_status.md">Dated evidence</a><a href="screenshots_checklist.md">Capture plan</a></span></footer><script>
+const slides=[...document.querySelectorAll('.slide')];let current=0,notes=false,demo=false;
+function show(i){current=Math.max(0,Math.min(slides.length-1,i));slides.forEach((s,n)=>{s.hidden=demo||n!==current;s.querySelector('.notes').open=notes});document.querySelector('#demo').hidden=!demo;document.querySelector('#counter').textContent=demo?'Demo':(current+1)+' / '+slides.length;document.querySelector('#prev').disabled=demo||current===0;document.querySelector('#next').disabled=demo||current===slides.length-1;document.querySelector('#progress').style.width=((current+1)/slides.length*100)+'%';document.querySelector('#notes').setAttribute('aria-pressed',String(notes));document.querySelector('#demo-toggle').textContent=demo?'Back to slides':'Demo script';history.replaceState(null,'',demo?'#demo':'#slide-'+(current+1));}
+document.querySelector('#prev').onclick=()=>show(current-1);document.querySelector('#next').onclick=()=>show(current+1);document.querySelector('#notes').onclick=()=>{notes=!notes;show(current)};document.querySelector('#demo-toggle').onclick=()=>{demo=!demo;show(current)};document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.altKey||e.metaKey||e.ctrlKey)return;if(['ArrowRight','PageDown',' '].includes(e.key)&&!demo){e.preventDefault();show(current+1)}else if(['ArrowLeft','PageUp'].includes(e.key)&&!demo){e.preventDefault();show(current-1)}else if(e.key==='Home'&&!demo)show(0);else if(e.key==='End'&&!demo)show(slides.length-1);else if(e.key.toLowerCase()==='n'){notes=!notes;show(current)}});demo=location.hash==='#demo';const initial=location.hash.match(/^#slide-(d+)$/);show(initial?Number(initial[1])-1:0);
+</script></body></html>

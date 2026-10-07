@@ -1,8 +1,10 @@
 # Technical interview walkthrough
 
-Read [the README](../README.md) for the product in three minutes and [the timed pitch](interview_pitch.md) for a spoken introduction. This guide supplies technical depth and vocabulary without replacing the authoritative architecture/security/Agent guides.
+Read [the README](../README.md) for the product overview and [the timed pitch](interview_pitch.md) for a spoken introduction. This guide supplies technical depth and vocabulary without replacing the authoritative architecture/security/Agent guides.
 
-Baseline: main `ff90d0c`, October 6, 2026. [Current status](current_status.md) records what was source-verified, supervisor-reported and still pending.
+Baseline: main `b58beda`, October 7, 2026. [Current status](current_status.md) records what was source-verified, supervisor-reported and still pending.
+
+[12-slide presentation](reviewer_presentation.md) · [Five-minute demo](demo_script.md) · [Evidence checklist](reviewer_evidence.md)
 
 ## Follow one decision
 
@@ -39,7 +41,7 @@ Model prose cannot confirm, save or activate an action. Explain the separate str
 
 Repository code and manifests establish implemented paths and declarations. Prior handoffs establish recorded development results on their exact bases. Current CI on an exact SHA establishes only jobs actually run; ordinary PR backend CI is focused, while complete backend release acceptance is explicit dispatch.
 
-The October 6 supervisor reports PR208/PR209 deployment and a real Nested/internal-paper/Journal/Telegram event. That was not independently probed here. Fresh SFP recovery, existing Journal target repair and real BloFin demo acceptance remain pending. Mobile page-loading acceptance is a supplied report, not comprehensive device/voice verification. No complete MVP or profitability claim follows.
+The October 7 package records supplied API/worker verification on `b58beda`, migration `a6manualdemo001`, received Watcher notification, historical Nested/internal-paper/Journal record and successful BloFin demo account sync. GitHub Vercel status is successful; full CI #783 is in progress at check. Native demo order acceptance, fresh SFP recovery and Journal target repair remain pending. No complete MVP, device/voice or profitability claim follows.
 
 [Testing/evaluation](evaluation.md) · [monitoring](observability.md) · [status record](current_status.md).
 

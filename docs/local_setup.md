@@ -1,6 +1,6 @@
 # Local setup
 
-Use this guide for a disposable local paper demo or development environment. The [README](../README.md) describes the product; [deployment](deployment.md) covers hosted operations. Commands below were checked against repository paths/configuration on October 6, 2026, but a new stack was not launched for this documentation task.
+Use this guide for a disposable local paper demo or development environment. The [README](../README.md) describes the product; [deployment](deployment.md) covers hosted operations. Commands below were checked against repository paths/configuration at main `b58beda` on October 7, 2026, but a new stack was not launched for this documentation task.
 
 ## Requirements and safe context
 

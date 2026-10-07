@@ -1,6 +1,6 @@
 # Testing and evaluation
 
-AlphaTrade uses unit/integration regressions, frontend browser checks, offline evaluation scripts and separately supervised runtime acceptance. Each answers a different question. This guide reflects main `ff90d0c`, October 6, 2026; no application suite or broad CI dispatch was run for the documentation change.
+AlphaTrade uses unit/integration regressions, frontend browser checks, offline evaluation scripts and separately supervised runtime acceptance. Each answers a different question. This guide reflects main `b58beda`, October 7, 2026; no application suite or broad CI dispatch was run for the documentation change.
 
 ## Choose the evidence you need
 
@@ -58,7 +58,7 @@ For a canonical paper loop, verify source/strategy identity, fresh admissible ev
 
 One event, a screenshot, mock provider test or internal paper fill does not prove returns, reliability across all strategies or complete MVP acceptance. Governed promotion binds version/data comparisons and paper evidence plus human approval. Small samples remain limited even when the software executes correctly.
 
-The October 6 supervisor reports PR208/PR209 deployment and one real Nested/internal-paper/Journal/Telegram event. Fresh SFP recovery, existing Journal target repair and real BloFin demo acceptance are pending. [Status](current_status.md) · [limitations](limitations_roadmap.md) · [two-week evaluation protocol](evaluation/two_week_paper_evaluation_protocol.md).
+The October 7 package records supplied API/worker verification on `b58beda`, migration `a6manualdemo001`, received Watcher Telegram notification, historical Nested internal paper fill/Journal and successful BloFin demo account sync. GitHub confirms Vercel success; full acceptance CI #783 remains in progress at the documentation check. Fresh SFP recovery, existing Journal target repair and native BloFin demo order acceptance still need their own evidence. [Status](current_status.md) · [limitations](limitations_roadmap.md) · [two-week evaluation protocol](evaluation/two_week_paper_evaluation_protocol.md).
 
 ## Documentation and screenshot verification
 

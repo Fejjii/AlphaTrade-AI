@@ -1,44 +1,53 @@
-# Guided product demo
+# Five-minute product demonstration
 
-The short tour fits three minutes; a technical discussion can extend it to eight. It demonstrates traceability and action boundaries, not returns. This script uses the six current primary workspaces in main `ff90d0c` (October 6, 2026).
+Show how AlphaTrade carries a decision from rules and evidence into a reviewable paper record. The tour uses all six workspaces in main `b58beda` (October 7, 2026). It demonstrates traceability and understandable control.
 
-## Prepare the context
+## Prepare an existing context
 
-Use a disposable local mock/replay stack from [local setup](local_setup.md), an authenticated synthetic fixture, or a separately authorized existing staging login. Do not seed/repair a shared environment, arm Watcher/Telegram, submit an order or change risk settings just to obtain a screenshot. This documentation task did not launch a new demo stack.
+1. Use an existing authorized staging session, or a disposable local context from [local setup](local_setup.md). State **supervised staging**, **local mock/replay** or **frontend fixture** before discussing results.
+2. Confirm the UI's paper posture and current source availability. A stale or unavailable source is a visible limitation, not a reason to invent a current price.
+3. Open Dashboard, Strategies, Journal, Agent, Knowledge and Settings in advance. Locate the historical Nested BTC short if it is available in this session; select its exact strategy/trade context.
+4. Check [current status](current_status.md) and the exact [CI #783 result](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37622005520). A pending run cannot be introduced as a pass.
+5. Keep a local copy of the [architecture diagrams](architecture.md) and [recorded-evidence fallback](#recorded-evidence-fallback). Obtain fresh captures only through [the capture plan](screenshots_checklist.md).
 
-Before presenting, state the evidence context: **local mock**, **frontend fixture**, or **supervised staging**. Check paper posture and whether sources are fresh, stale or unavailable. A synthetic balance/result is a UI example. A real-data paper fill is still simulated execution.
+The tour is observational: it does not need new strategy approval, a worker/Telegram arm, changed risk, a database repair, a seed or an order. The manual BloFin test's **Confirm and submit demo market order** control is outside this demonstration. Its [supervised acceptance guide](manual_blofin_demo_acceptance.md) governs that separate activity.
 
-For staging, the October 6 supervisor reports a linked Nested/internal-paper/Journal/Telegram event; [current status](current_status.md) preserves its limits. Fresh SFP recovery, old Journal target repair and BloFin demo acceptance are pending. Do not say every workflow is accepted or the product is profitable.
+## Timed route and speaker wording
 
-## Three-minute tour
-
-| Time | Workspace/action | Explain |
+| Time | Workspace | What to show and say |
 | --- | --- | --- |
-| 0:00–0:30 | Dashboard (`/`) | Paper account, day/monitoring state and explicit evidence availability. |
-| 0:30–1:15 | Strategies (`/strategies`), then Journal (`/journal`) | Follow an existing approved version/setup through recorded risk, paper fill and review. Use only records available in this context. |
-| 1:15–2:15 | Agent (`/agent`) | Ask about actual recorded rules or missing evidence. Show citation/facts and the separate proposal decision boundary. |
-| 2:15–2:45 | Knowledge (`/knowledge`) | Show a scoped playbook/source reference or an unsaved file preview. |
-| 2:45–3:00 | Settings (`/settings`) | Locate risk/watchlist/notification controls; explain that configuration and worker activation are separate. |
+| 0:00–0:45 | Dashboard `/` | “This is the paper account and today's attention. These source labels tell us whether we have usable market evidence.” |
+| 0:45–1:30 | Strategies `/strategies` | Show an existing version, its actual rules and setup context. “Rules, approval and a confirmed setup are different stages.” |
+| 1:30–2:30 | Journal `/journal` | Open the recorded BTC short. Compare planned entry/stop/targets with actual recorded fill and venue. “This fill is internal paper simulation. Missing target projection or outcome data remains visible.” |
+| 2:30–3:45 | Agent `/agent` | Ask the two prompts below and inspect Stored evidence. “The answer follows this historical record, rather than substituting today's setup.” |
+| 3:45–4:30 | Knowledge `/knowledge` | Show an existing playbook and source reference. If a file preview is already prepared, show extracted text without saving. “Preview is separate from ingestion.” |
+| 4:30–5:00 | Settings `/settings` | Show risk and notification controls plus account context. “Demo account sync is a read result; native demo execution remains a separate acceptance gate.” |
 
-Suggested read-oriented prompts after selecting a relevant strategy/context:
+Agent prompts with the recorded trade selected:
 
-- “Explain the selected strategy's recorded rules.”
-- “What evidence is missing for the selected setup?”
-- “Help me review my paper portfolio.”
-- “Help me reflect on my last trade.”
+> Explain my recorded BTC short, including its plan, authorization, risk and execution venue.
+>
+> Would that same plan pass the current minimum reward to risk rule?
 
-These prompts are examples, not a guarantee of a particular populated response. Inspect the capability/state shown by the current app. An unavailable response can demonstrate a correct boundary: do not fabricate a setup, result or market price for the tour.
+If multiple records match, choose the exact trade instead of guessing. The known historical 0.65R plan fails today's allocation-weighted gross 1R floor, but quote that comparison only when the selected record confirms those terms. Historical authorization does not grant a new entry under current policy. Targets in a plan are not evidence of venue protection or an exit fill.
 
-## Extend the discussion
+For a short confirmation demonstration, inspect an **existing** supported draft and its Confirm/Reject controls. Explain that a separate request rechecks scope, content and action state. Leave the draft unconfirmed during the observational tour.
 
-Show an existing draft and its **Confirm/Reject** controls. Sending a message only records a turn; confirming a draft invokes a scoped supported domain action. Do not confirm trading or mutation actions during an observation-only tour.
+## Recorded-evidence fallback
 
-For a technical interviewer, follow the [architecture diagrams](architecture.md), [Agent/model/retrieval flow](agent_workflow.md) and [security](security.md). Explain immutable plan hashes, provider freshness, worker fences and Journal lineage using available records without exposing private identifiers.
+| Condition | Use | Explain |
+| --- | --- | --- |
+| No fresh setup | Existing historical Nested trade and received Telegram notification, if accessible. | “This is a recorded event. We are reviewing it, not claiming a fresh signal.” |
+| Market evidence unavailable | Existing Journal/strategy records and [governed workflow diagram](diagrams/governed-workflow.svg). | “Historical facts remain reviewable; current eligibility cannot be inferred from them.” |
+| App/session unavailable | [README](../README.md), [system overview](diagrams/system-overview.svg), [Agent diagram](diagrams/agent-grounding.svg), [current status](current_status.md). | “This is the source-verified architecture and dated evidence, not a live UI demonstration.” |
+| Technical proof requested offline | [Closed-loop acceptance JSON](evidence/full_paper_closed_loop_acceptance_001.json) and [verification JSON](evidence/full_paper_closed_loop_verification_001.json). | “These preserve an offline development rehearsal at base `8673d8f`; they are not the supplied live BTC event or native BloFin execution.” |
 
-Browser voice dictation/transcript review and optional playback are implemented, but the stored [voice captures](screenshots/voice-agent/README.md) use speech fixtures. If hardware/browser support is unavailable, use text and disclose the limitation. Chart-image analysis and server voice I/O remain unimplemented contracts.
+For the five-minute offline version: spend 45 seconds on the workspace table, 45 seconds on the overview, 60 seconds on governed workflow, 75 seconds on Agent grounding, 45 seconds on the recorded acceptance fields, and 30 seconds on the status/roadmap. The historical [product acceptance JSON](evidence/final_product_acceptance_001.json) records a BLOCKED verdict and later integration context; keep those qualifications visible.
 
-## Capture and acceptance limits
+No runtime recording of the supplied Telegram notification, BTC trade or account sync is checked into this repository. If those records cannot be opened, state the supplied observations and their verification limits. Use accurate diagrams, not fabricated screenshots or exchange receipts.
 
-Use [screenshot provenance/reproduction](screenshots_checklist.md). Every new capture needs a date, source commit, viewport, fixture/live label and sanitization review. Keep passwords, tokens, real emails/account IDs and sensitive audit content out of frame.
+## Technical follow-up
 
-A tour, screenshot, CI badge, deployed commit and full operational acceptance are different evidence. Document the observed result rather than expanding a partial success into complete MVP acceptance.
+Use [architecture](architecture.md) to discuss storage, provider boundaries, leases, fencing and immutable plans. Use [Agent](agent_workflow.md) and [retrieval](rag_system.md) to explain default lexical retrieval versus Qdrant indexing/search. Browser voice dictation/playback is implemented, but actual microphone/service/Safari/iOS acceptance is not established by fixture screenshots; text is the reliable presentation fallback.
+
+For slide wording and notes, use [the reviewer presentation](reviewer_presentation.md). For claims still awaiting evidence, use [the evidence checklist](reviewer_evidence.md).
