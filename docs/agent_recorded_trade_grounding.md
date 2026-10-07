@@ -38,7 +38,12 @@ refuse. It does not replace historical eligibility with the latest evaluation or
 use today's strategy selection/approval to explain a past execution.
 
 Facts distinguish planned entry zone/reference price, stop and ordered target
-allocations from actual fill quantities/prices. Empty Journal targets with plan
+allocations from actual fill quantities/prices. Journal evidence includes the first ten
+ordered target prices and recorded allocations. Up to 100 targets are compared
+against the linked immutable plan after numeric normalization; labels and ordering
+are preserved. Matching values are explicitly confirmed as planned values only,
+never verified protection or exit fills. Unreadable or over-budget target lists
+leave the comparison unverified. Empty Journal targets with plan
 targets are identified as a projection discrepancy; no repair occurs. Venue
 attribution requires matching recorded fill sources. A planned BloFin venue with
 fake/internal fills cannot be described as exchange execution; ALLOW or an
@@ -70,7 +75,11 @@ original live question in the authenticated owner account. Verify the selected
 Journal UUID against that account's latest matching record, actual strategy
 version, plan prices/allocations, fill price/venue and authorization references.
 If the Journal is unrepaired, verify the Agent identifies the plan target source
-and projection discrepancy. If detailed RiskEngine capture is absent, verify it
+and projection discrepancy. For a repaired Journal, verify the bounded Journal
+prices and allocations are visible in Stored evidence and the reply explicitly
+confirms they match the linked immutable plan. The known historical BTC short
+should show TP1 at 84714.10 with 100% allocation. This match must not be described
+as verified stop/target protection or an exit fill. If detailed RiskEngine capture is absent, verify it
 reports that limit rather than inventing a reason from the playbook. Confirm the
 read creates no order, authorization, fill, Journal mutation or strategy change.
 
