@@ -19,7 +19,6 @@ import {
   watcherTraderLabel,
 } from "@/components/dashboard/trader-dashboard";
 import { TradingMetric } from "@/components/dashboard/TradingMetric";
-import { journalEntryHref } from "@/components/journal/journalContext";
 import { EmptyState, UnavailableState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,10 +38,9 @@ import {
 import type {
   CanonicalMarketMonitorStatusRead,
   DashboardSummary,
-  JournalEntry,
+  CanonicalJournalTradeListItem,
   JournalStatsResponse,
-  PaginatedJournalEntries,
-  PaginatedPositions,
+  PaginatedCanonicalJournalTrades,
   PaperAlert,
   PaperPortfolioResponse,
   WatcherMonitoringSnapshot,
@@ -50,8 +48,7 @@ import type {
 
 export type TraderDashboardData = {
   portfolio: SourceResult<PaperPortfolioResponse>;
-  positions: SourceResult<PaginatedPositions>;
-  journal: SourceResult<PaginatedJournalEntries>;
+  journal: SourceResult<PaginatedCanonicalJournalTrades>;
   strategyStats: SourceResult<JournalStatsResponse>;
   summary: SourceResult<DashboardSummary>;
   watcher: SourceResult<WatcherMonitoringSnapshot>;
@@ -71,11 +68,11 @@ function SectionEmpty({
   );
 }
 
-function TradeLine({ entry }: { entry: JournalEntry }) {
+function TradeLine({ entry }: { entry: CanonicalJournalTradeListItem }) {
   return (
     <li className="border-b border-border-subtle last:border-b-0">
       <Link
-        href={journalEntryHref(entry.id)}
+        href={`/journal?trade_id=${encodeURIComponent(entry.id)}`}
         className="flex min-h-16 items-center justify-between gap-3 rounded-control py-3 hover:bg-surface-2/50"
       >
         <div className="min-w-0">
@@ -83,11 +80,13 @@ function TradeLine({ entry }: { entry: JournalEntry }) {
             {entry.symbol} · {entry.direction}
           </p>
           <p className="mt-1 text-xs text-text-secondary">
-            {humanizeToken(entry.result || "unavailable")} ·{" "}
-            {formatDateTime(entry.created_at)}
+            {humanizeToken(
+              entry.status === "open" ? "open" : entry.result || "unavailable",
+            )} ·{" "}
+            {formatDateTime(entry.entry_time ?? entry.created_at)}
           </p>
         </div>
-        <DataNumber value={formatMonetary(entry.pnl)} className="shrink-0" />
+        <DataNumber value={formatMonetary(entry.net_pnl)} className="shrink-0" />
       </Link>
     </li>
   );
@@ -106,7 +105,7 @@ export function TraderDashboardView({
 }) {
   const winRate = portfolioWinRate(data.portfolio);
   const expectancy = portfolioExpectancy(data.portfolio);
-  const positions = openPositionRows(data.positions);
+  const positions = openPositionRows(data.summary);
   const trades = recentTradeRows(data.journal);
   const byStrategy = strategyPerformanceRows(data.strategyStats);
   const closedByStrategy = closedStrategyRows(data.portfolio);
@@ -120,7 +119,6 @@ export function TraderDashboardView({
     : "Unavailable";
   const unavailable = [
     ["Portfolio", data.portfolio],
-    ["Positions", data.positions],
     ["Recent trades", data.journal],
     ["Journal statistics", data.strategyStats],
     ["Daily status", data.summary],
@@ -222,6 +220,10 @@ export function TraderDashboardView({
           </p>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <p className="col-span-2 text-xs text-text-secondary lg:col-span-3">
+            Portfolio value and closed-trade metrics cover proposal and validation history.
+            Open positions and recent trades use your Journal; these scopes can differ.
+          </p>
           <TradingMetric
             label="Portfolio value"
             value={portfolioEquity(data.portfolio)}
@@ -237,8 +239,8 @@ export function TraderDashboardView({
           />
           <TradingMetric
             label="Open positions"
-            value={openPositionCount(data.positions)}
-            note="Total open · details below"
+            value={openPositionCount(data.summary)}
+            note="Journal paper execution and validation · all accounts"
             testId="dashboard-open-count"
           />
           <TradingMetric
@@ -294,6 +296,7 @@ export function TraderDashboardView({
                   {daily.recommended_action}
                 </p>
                 <p className="text-xs text-text-secondary">
+                  Proposal and validation activity · {daily.date} · {daily.timezone}: {" "}
                   {formatCount(daily.paper_trades_opened_today)} opened ·{" "}
                   {formatCount(daily.paper_trades_closed_today)} closed ·{" "}
                   {formatCount(daily.remaining_trades_allowed)} remaining
@@ -461,10 +464,10 @@ export function TraderDashboardView({
           <CardHeader className="flex-row flex-wrap items-center justify-between">
             <CardTitle>Open positions</CardTitle>
             <Link
-              href="/portfolio"
+              href="/journal"
               className="inline-flex min-h-11 items-center text-sm text-accent hover:underline"
             >
-              Portfolio
+              Journal
             </Link>
           </CardHeader>
           <CardContent>
@@ -477,25 +480,34 @@ export function TraderDashboardView({
             ) : positions.length === 0 ? (
               <SectionEmpty
                 title="No open positions"
-                description="Open paper positions will appear here with recorded unrealized PnL."
+                description="No open paper execution or validation trades in your Journal across all accounts."
               />
             ) : (
               <>
                 <p className="mb-2 text-right text-xs text-text-secondary">
-                  Unrealized PnL
+                  All accounts · all dates · manual demo tests excluded. Unrealized PnL unavailable.
                 </p>
                 <ul>
                   {positions.map((position) => (
                     <li
-                      key={position.id}
+                      key={position.journal_trade_id}
                       className="flex items-center justify-between gap-3 border-b border-border-subtle py-3 last:border-b-0"
                     >
                       <div className="min-w-0">
                         <p className="break-words text-sm font-medium">
-                          {position.symbol} · {position.direction}
+                          <Link
+                            href={`/journal?trade_id=${encodeURIComponent(position.journal_trade_id ?? "")}`}
+                            className="text-accent hover:underline"
+                          >
+                            {position.symbol} · {position.direction}
+                          </Link>
                         </p>
                         <p className="mt-1 text-xs text-text-secondary">
-                          Entry {formatPrice(position.entry_price)}
+                          Entry {formatPrice(position.entry_price)} · {" "}
+                          {position.exchange ?? "Venue unavailable"}
+                          {position.account_id
+                            ? ` · Account ${position.account_id.slice(0, 8)}`
+                            : " · Account unavailable"}
                         </p>
                       </div>
                       <DataNumber
@@ -505,12 +517,13 @@ export function TraderDashboardView({
                     </li>
                   ))}
                 </ul>
-                {data.positions.data &&
-                data.positions.data.total > positions.length ? (
+                {data.summary.data?.open_paper_trades_summary &&
+                data.summary.data.open_paper_trades_summary.total_count > positions.length ? (
                   <p className="mt-3 text-xs text-text-secondary">
                     Showing {positions.length} of{" "}
-                    {formatCount(data.positions.data.total)} open positions.
-                    View the portfolio for more.
+                    {formatCount(data.summary.data.open_paper_trades_summary.total_count)}{" "}
+                    open positions.
+                    View the Journal for more.
                   </p>
                 ) : null}
               </>
@@ -537,12 +550,12 @@ export function TraderDashboardView({
             ) : trades.length === 0 ? (
               <SectionEmpty
                 title="No journaled trades yet"
-                description="Record a trade in the Journal to review its reasoning and outcome."
+                description="No trade records in your Journal. All sources, accounts and dates are included."
               />
             ) : (
               <>
                 <p className="mb-2 text-xs text-text-secondary">
-                  Recent journal entries · recorded PnL
+                  All Journal sources and accounts · newest records · recorded net PnL
                 </p>
                 <ul>
                   {trades.map((entry) => (

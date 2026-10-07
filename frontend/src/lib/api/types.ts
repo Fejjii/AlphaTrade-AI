@@ -1074,6 +1074,10 @@ export interface ActivePaperValidationItem {
 }
 
 export interface OpenPaperTradeItem {
+  journal_trade_id?: string | null;
+  account_id?: string | null;
+  exchange?: string | null;
+  entry_price?: string | null;
   position_id: string | null;
   paper_trade_id?: string | null;
   strategy_id?: string | null;
@@ -1094,6 +1098,7 @@ export interface DisciplineScoreSummary {
 }
 
 export interface OpenPaperTradesSummary {
+  paper_execution_count?: number;
   proposal_flow_count: number;
   paper_validation_count: number;
   total_count: number;
@@ -3123,6 +3128,10 @@ export interface PaperSignalResult {
 }
 
 export interface CanonicalJournalTradeListItem {
+  source?: JournalTradeSource;
+  exchange?: string | null;
+  entry_time?: string | null;
+  created_at?: string;
   id: string;
   symbol: string;
   timeframe: string;

@@ -223,7 +223,9 @@ class BloFinClient:
             method=method,
             path=path,
             endpoint=endpoint_label(method, path),
-            error=self._last_error,
+            error_type=type(last_exc).__name__
+            if last_exc is not None
+            else "ExchangeUnavailableError",
         )
         endpoint = endpoint_label(method, path)
         details = VenueErrorDetails(endpoint_name=endpoint)

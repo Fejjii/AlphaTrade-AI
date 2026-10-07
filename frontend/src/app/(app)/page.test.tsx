@@ -9,13 +9,11 @@ import type { TraderDashboardData } from "@/components/dashboard/TraderDashboard
 import type {
   CanonicalMarketMonitorStatusRead,
   DashboardSummary,
-  JournalEntry,
+  CanonicalJournalTradeListItem,
   JournalStatsResponse,
-  PaginatedJournalEntries,
-  PaginatedPositions,
+  PaginatedCanonicalJournalTrades,
   PaperAlert,
   PaperPortfolioResponse,
-  Position,
 } from "@/lib/api/types";
 
 const safetyPosture = {
@@ -50,19 +48,6 @@ function dashboardData(
 ): TraderDashboardData {
   const base: TraderDashboardData = {
     portfolio: okSource(portfolio(4, 0.5)),
-    positions: okSource({
-      items: [
-        {
-          id: "p1",
-          symbol: "BTCUSDT",
-          direction: "long",
-          unrealized_pnl: "5",
-        } as Position,
-      ],
-      total: 1,
-      limit: 20,
-      offset: 0,
-    } as PaginatedPositions),
     journal: okSource({
       items: [
         {
@@ -70,13 +55,15 @@ function dashboardData(
           symbol: "ETHUSDT",
           direction: "short",
           result: "loss",
-          pnl: "-2.00",
-        } as JournalEntry,
+          net_pnl: "-2.00",
+          status: "closed",
+          created_at: "2026-10-01T00:00:00Z",
+        } as CanonicalJournalTradeListItem,
       ],
       total: 1,
       limit: 8,
       offset: 0,
-    } as PaginatedJournalEntries),
+    } as PaginatedCanonicalJournalTrades),
     strategyStats: okSource({
       buckets: [
         {
@@ -88,6 +75,17 @@ function dashboardData(
     } as JournalStatsResponse),
     summary: okSource({
       safety: { execution_mode: "paper", real_trading_enabled: false },
+      open_paper_trades_summary: {
+        total_count: 1,
+        items: [{
+          journal_trade_id: "canonical-p1",
+          symbol: "BTCUSDT",
+          direction: "long",
+          exchange: "PAPER_INTERNAL",
+          account_id: "account-one",
+          unrealized_pnl: null,
+        }],
+      },
     } as DashboardSummary),
     watcher: okSource(makeWatcherMonitoringSnapshot()),
     market: okSource({
@@ -237,7 +235,12 @@ describe("Trader dashboard", () => {
   it("keeps unavailable daily status explicit and reports total open positions", () => {
     const data = dashboardData();
     asyncState.data = dashboardData({
-      positions: okSource({ ...data.positions.data!, total: 25 }),
+      summary: okSource({
+        ...data.summary.data!,
+        open_paper_trades_summary: {
+          ...data.summary.data!.open_paper_trades_summary!, total_count: 25,
+        },
+      }),
     });
     render(<DashboardPage />);
     expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("25");
@@ -253,6 +256,23 @@ describe("Trader dashboard", () => {
     expect(screen.getByTestId("dashboard-expectancy")).toHaveTextContent(
       "Expectancy unavailable",
     );
+  });
+
+  it("links canonical trades and labels scope differences without inventing PnL", () => {
+    render(<DashboardPage />);
+    expect(screen.getByRole("link", { name: /ETHUSDT/ })).toHaveAttribute("href", "/journal?trade_id=j1");
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("manual demo tests excluded");
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("PAPER_INTERNAL");
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("Unrealized PnL unavailable");
+    expect(screen.getByText(/these scopes can differ/)).toBeInTheDocument();
+  });
+
+  it("never falls back to legacy positions when canonical open records fail", () => {
+    asyncState.data = dashboardData({ summary: failedSource("down") });
+    render(<DashboardPage />);
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent(UNAVAILABLE);
+    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("Open positions unavailable");
+    expect(screen.queryByText("No open positions")).not.toBeInTheDocument();
   });
 
   it("shows loading and error states", () => {

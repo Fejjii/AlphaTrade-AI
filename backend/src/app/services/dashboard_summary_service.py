@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import PaperTrade, UserStrategy
+from app.db.models import JournalTrade
 from app.schemas.common import (
+    JournalTradeSource,
+    JournalTradeStatus,
     LessonCandidateStatus,
     PaperAlertSeverity,
-    PaperTradeStatus,
-    PositionStatus,
 )
 from app.schemas.dashboard import (
     ActivePaperValidationItem,
@@ -29,6 +30,7 @@ from app.schemas.dashboard import (
     MarketWatcherDashboardStatus,
     OpenPaperTradeItem,
     OpenPaperTradesSummary,
+    StrategyReadinessSummary,
 )
 from app.services.analytics.discipline_score import DisciplineScoreService
 from app.services.dashboard.daily_discipline import build_daily_discipline_snapshot
@@ -138,16 +140,7 @@ class DashboardSummaryService:
             lambda: self._open_paper_trades_summary(organization_id, user_id),
         )
 
-        open_trades = (
-            open_trades_summary.items
-            if open_trades_summary is not None
-            else self._safe_section(
-                "open_paper_trades",
-                limitations,
-                lambda: self._open_paper_trades(organization_id, user_id),
-                default=[],
-            )
-        )
+        open_trades = open_trades_summary.items if open_trades_summary is not None else []
 
         alerts_lessons = self._safe_section(
             "alerts_lessons",
@@ -205,7 +198,9 @@ class DashboardSummaryService:
             limitations=limitations,
         )
 
-    def _safe_section(self, name: str, limitations: list[str], builder, default=None):
+    def _safe_section(
+        self, name: str, limitations: list[str], builder: Callable[[], Any], default: Any = None
+    ) -> Any:
         try:
             return builder()
         except Exception as exc:
@@ -215,7 +210,9 @@ class DashboardSummaryService:
             limitations.append(f"{name} unavailable: source temporarily unavailable")
             return default
 
-    def _build_strategy_readiness(self, organization_id: uuid.UUID, user_id: uuid.UUID):
+    def _build_strategy_readiness(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> StrategyReadinessSummary:
         strategies, _ = self._strategies.list_strategies(
             organization_id=organization_id,
             user_id=user_id,
@@ -267,113 +264,68 @@ class DashboardSummaryService:
     def _open_paper_trades_summary(
         self, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> OpenPaperTradesSummary:
-        limitations: list[str] = []
-        items: list[OpenPaperTradeItem] = []
-
-        if self._positions is None:
-            from app.services.audit_service import AuditService
-
-            self._positions = PositionService(self._session, AuditService(self._session))
-        position_rows, _ = self._positions.list_positions(
-            organization_id=organization_id,
-            user_id=user_id,
-            status=PositionStatus.OPEN,
-            limit=10,
+        # Match Attention's canonical, owner-private paper scope. No date/account filter.
+        filters = (
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.user_id == user_id,
+            JournalTrade.status == JournalTradeStatus.OPEN,
+            JournalTrade.source.in_(
+                (JournalTradeSource.PAPER_EXECUTION, JournalTradeSource.PAPER_VALIDATION)
+            ),
         )
-        for row in position_rows:
-            items.append(
-                OpenPaperTradeItem(
-                    position_id=row.id,
-                    symbol=row.symbol,
-                    direction=row.direction.value,
-                    unrealized_pnl=row.unrealized_pnl,
-                    status="open",
-                    source="proposal_flow",
+        with self._session.no_autoflush:
+            counts: dict[JournalTradeSource, int] = dict(
+                self._session.execute(
+                    select(JournalTrade.source, func.count())
+                    .where(*filters)
+                    .group_by(JournalTrade.source)
                 )
+                .tuples()
+                .all()
             )
-
-        paper_rows = self._session.scalars(
-            select(PaperTrade)
-            .where(
-                PaperTrade.organization_id == organization_id,
-                PaperTrade.user_id == user_id,
-                PaperTrade.status == PaperTradeStatus.OPEN,
-            )
-            .order_by(PaperTrade.entry_time.desc())
-            .limit(10)
-        ).all()
-        strategy_names = self._strategy_name_map(
-            {row.strategy_id for row in paper_rows if row.strategy_id is not None}
-        )
-        for row in paper_rows:
-            items.append(
+            rows = self._session.scalars(
+                select(JournalTrade)
+                .where(*filters)
+                .order_by(
+                    func.coalesce(JournalTrade.entry_time, JournalTrade.created_at).desc(),
+                    JournalTrade.id.desc(),
+                )
+                .limit(10)
+            ).all()
+            items = [
                 OpenPaperTradeItem(
-                    paper_trade_id=row.id,
-                    strategy_id=row.strategy_id,
-                    strategy_name=strategy_names.get(row.strategy_id),
+                    journal_trade_id=row.id,
+                    position_id=row.linked_position_id,
+                    paper_trade_id=row.linked_paper_trade_id,
+                    account_id=row.account_id,
+                    exchange=row.exchange,
+                    entry_price=row.entry_price,
+                    strategy_id=row.user_strategy_id,
+                    strategy_name=row.strategy_label,
                     symbol=row.symbol,
                     direction=row.direction.value,
                     unrealized_pnl=None,
                     status="open",
-                    source="paper_validation",
+                    source=row.source.value,
                 )
-            )
-            limitations.append(
-                "Paper-validation open trades do not include live unrealized PnL in this slice."
-            )
-
-        exposure: Decimal | None = None
-        position_exposure = sum(
-            (abs(row.unrealized_pnl) for row in position_rows),
-            Decimal("0"),
-        )
-        if position_rows:
-            exposure = position_exposure
-        if paper_rows and exposure is None:
-            exposure = Decimal("0")
-
-        unique_limits = list(dict.fromkeys(limitations))
+                for row in rows
+            ]
+        execution_count = counts.get(JournalTradeSource.PAPER_EXECUTION, 0)
+        validation_count = counts.get(JournalTradeSource.PAPER_VALIDATION, 0)
         return OpenPaperTradesSummary(
-            proposal_flow_count=len(position_rows),
-            paper_validation_count=len(paper_rows),
-            total_count=len(position_rows) + len(paper_rows),
-            total_open_exposure=exposure,
-            items=items[:10],
-            limitations=unique_limits,
+            # Retain the old field for clients; its count now uses canonical execution rows.
+            proposal_flow_count=execution_count,
+            paper_execution_count=execution_count,
+            paper_validation_count=validation_count,
+            total_count=execution_count + validation_count,
+            items=items,
+            limitations=[
+                "Canonical open paper execution and validation Journal trades for this user "
+                "across all accounts and venues; no date filter. Manual demo tests are excluded.",
+                "Unrealized PnL and current open exposure are unavailable from recorded Journal "
+                "facts; neither is inferred from realized PnL or counted as zero.",
+            ],
         )
-
-    def _strategy_name_map(self, strategy_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
-        if not strategy_ids:
-            return {}
-        rows = self._session.scalars(
-            select(UserStrategy).where(UserStrategy.id.in_(strategy_ids))
-        ).all()
-        return {row.id: row.name for row in rows}
-
-    def _open_paper_trades(
-        self, organization_id: uuid.UUID, user_id: uuid.UUID
-    ) -> list[OpenPaperTradeItem]:
-        if self._positions is None:
-            from app.services.audit_service import AuditService
-
-            self._positions = PositionService(self._session, AuditService(self._session))
-        rows, _ = self._positions.list_positions(
-            organization_id=organization_id,
-            user_id=user_id,
-            status=PositionStatus.OPEN,
-            limit=10,
-        )
-        return [
-            OpenPaperTradeItem(
-                position_id=row.id,
-                symbol=row.symbol,
-                direction=row.direction.value,
-                unrealized_pnl=row.unrealized_pnl,
-                status="open",
-                source="proposal_flow",
-            )
-            for row in rows
-        ]
 
     def _alerts_lessons_summary(
         self, organization_id: uuid.UUID, user_id: uuid.UUID

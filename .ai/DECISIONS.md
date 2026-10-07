@@ -3025,3 +3025,24 @@ hold. One durable cancellation intent permits only an entry remainder cancellati
 terminal venue proof controls unused reservation release. Manual Journal source is
 excluded from strategy lineage/learning but included in portfolio risk. Exit outcomes
 and repeated-entry release are deliberately unsupported until separately governed.
+
+## AT-ADR-096 — Safe preflight stages and canonical Dashboard paper scope
+
+Date: 2026-10-07. Task: AT-115. Base: main e4a7816.
+
+The supervised manual demo provider snapshot must retain the failing read or
+validation stage while refusing the preview. Diagnostics allow fixed stage,
+endpoint, reason and type labels plus bounded numeric HTTP/venue fields; they
+exclude arbitrary exception text, credentials, signatures and private payloads.
+They do not infer missing credentials, authorize a trade, retry a POST, mutate an
+account setting or weaken a safety predicate. Actual venue root cause remains
+unknown without live failure evidence.
+
+Dashboard open positions use the owner-private canonical open paper execution
+and validation JournalTrade cohort also used by Attention. Count all matches
+independently of the detail limit; keep account and recorded venue visible.
+Recent trades use the canonical Journal list across all sources/statuses/dates.
+Existing portfolio and daily discipline projections keep their scope and explicit
+UI labels. Manual demo tests remain excluded from the Attention/open-paper count;
+recent Journal records can include them. Missing current PnL/exposure stays null.
+No legacy fallback after a canonical error or historical record rewrite.

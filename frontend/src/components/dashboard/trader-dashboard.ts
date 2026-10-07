@@ -8,12 +8,13 @@ import {
 } from "@/lib/format";
 import type {
   CanonicalMarketMonitorStatusRead,
-  JournalEntry,
+  CanonicalJournalTradeListItem,
+  DashboardSummary,
+  OpenPaperTradeItem,
   JournalStatsBucket,
   PaperAlert,
   PaperPortfolioResponse,
   PortfolioGroupBreakdown,
-  Position,
   WatcherMonitoringRuntimeState,
 } from "@/lib/api/types";
 
@@ -112,23 +113,22 @@ export function portfolioExpectancy(
 }
 
 export function openPositionCount(
-  positions: SourceResult<{ total: number }>,
+  summary: SourceResult<DashboardSummary>,
 ): string {
-  return positions.available && positions.data
-    ? formatCount(positions.data.total)
-    : UNAVAILABLE;
+  const open = summary.available ? summary.data?.open_paper_trades_summary : null;
+  return open ? formatCount(open.total_count) : UNAVAILABLE;
 }
 
 export function openPositionRows(
-  positions: SourceResult<{ items: Position[] }>,
-): Position[] | null {
-  if (!positions.available || !positions.data) return null;
-  return positions.data.items.slice(0, 8);
+  summary: SourceResult<DashboardSummary>,
+): OpenPaperTradeItem[] | null {
+  const open = summary.available ? summary.data?.open_paper_trades_summary : null;
+  return open ? open.items.slice(0, 8) : null;
 }
 
 export function recentTradeRows(
-  journal: SourceResult<{ items: JournalEntry[] }>,
-): JournalEntry[] | null {
+  journal: SourceResult<{ items: CanonicalJournalTradeListItem[] }>,
+): CanonicalJournalTradeListItem[] | null {
   if (!journal.available || !journal.data) return null;
   return journal.data.items.slice(0, 6);
 }

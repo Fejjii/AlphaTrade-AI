@@ -5,7 +5,7 @@ import DashboardPage from "./page";
 import type { TraderDashboardData } from "@/components/dashboard/TraderDashboardView";
 import { failedSource, okSource } from "@/components/workflows/sourceResult";
 import { UNAVAILABLE } from "@/lib/format";
-import type { PaginatedPositions } from "@/lib/api/types";
+import type { DashboardSummary } from "@/lib/api/types";
 
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => ({
@@ -17,7 +17,6 @@ vi.mock("@/contexts/AppContext", () => ({
 function failedDashboard(): TraderDashboardData {
   return {
     portfolio: failedSource("portfolio down"),
-    positions: failedSource("positions down"),
     journal: failedSource("journal down"),
     strategyStats: failedSource("stats down"),
     summary: failedSource("summary down"),
@@ -87,12 +86,10 @@ describe("Trader dashboard unavailable sources", () => {
   it("treats an empty open-position list as empty, not unavailable", () => {
     asyncState.data = {
       ...failedDashboard(),
-      positions: okSource({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      } as PaginatedPositions),
+      summary: okSource({
+        safety: { execution_mode: "paper", real_trading_enabled: false },
+        open_paper_trades_summary: { items: [], total_count: 0 },
+      } as unknown as DashboardSummary),
     };
     render(<DashboardPage />);
     expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
