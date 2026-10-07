@@ -109,6 +109,22 @@ def governed_demo_worker_access_requested(settings: Settings) -> bool:
     return True
 
 
+def manual_demo_access_requested(settings: Settings) -> bool:
+    """Separately armed, owner-pinned staging API capability; no strategy authority."""
+    if not (settings.manual_blofin_demo_enabled and settings.environment is Environment.STAGING):
+        return False
+    try:
+        for value in (
+            settings.governed_blofin_demo_organization_id,
+            settings.governed_blofin_demo_user_id,
+            settings.governed_blofin_demo_account_id,
+        ):
+            UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
 def blofin_execution_authorized(settings: Settings) -> bool:
     """Return whether an authenticated BloFin client may be constructed.
 
@@ -122,6 +138,7 @@ def blofin_execution_authorized(settings: Settings) -> bool:
     if _live_usd_m_evidence(settings) and not (
         live_evidence_demo_access_requested(settings)
         or governed_demo_worker_access_requested(settings)
+        or manual_demo_access_requested(settings)
     ):
         return False
     if settings.execution_mode is not ExecutionMode.PAPER:

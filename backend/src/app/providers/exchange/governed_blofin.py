@@ -54,6 +54,7 @@ class DemoOrderEvidence:
     fills: tuple[DemoFill, ...]
     protected: bool
     protection_status: str
+    protection_order_ids: tuple[str, ...] = ()
 
 
 def _rows(data: Any) -> list[dict[str, Any]]:
@@ -210,6 +211,13 @@ class GovernedBloFinDemoProvider:
             > plan.basis_policy.tolerance_bps
         ):
             raise ValueError("Demo cross-venue basis moved beyond the authorized bound.")
+        if plan.schema_version == "ManualDemoTradePlanV1":
+            equity = min(snapshot.equity, snapshot.available)
+            notional = plan.quantity.value * snapshot.multiplier * snapshot.price
+            if plan.risk_and_exits.maximum_loss.value > equity * Decimal(
+                "0.01"
+            ) or notional > equity * Decimal("0.05"):
+                raise ValueError("Fresh demo balance no longer supports the authorized risk/size.")
         body = {
             "instId": plan.execution_instrument,
             "marginMode": "cross",
@@ -236,6 +244,24 @@ class GovernedBloFinDemoProvider:
         if not order_id or row.get("clientOrderId", client_order_id) != client_order_id:
             raise ValueError("Ambiguous demo submit identity.")
         return order_id
+
+    def cancel_entry(self, *, plan: TradePlanRevision, evidence: DemoOrderEvidence) -> None:
+        """Cancel only an identity-verified live entry, never its protective TPSL."""
+        self.verify_permissions()
+        if (
+            plan.schema_version != "ManualDemoTradePlanV1"
+            or evidence.status not in {"live", "partially_filled"}
+            or not evidence.order_id
+            or not evidence.client_order_id
+        ):
+            raise ValueError("Verified pending manual demo entry required for cancellation.")
+        self._client.request(
+            "POST",
+            "/api/v1/trade/cancel-order",
+            signed=True,
+            body={"instId": plan.execution_instrument, "orderId": evidence.order_id},
+        )
+        # An acknowledgment is not proof of cancellation. Caller must read again.
 
     def reconcile(
         self, *, plan: TradePlanRevision, client_order_id: str
@@ -329,6 +355,10 @@ class GovernedBloFinDemoProvider:
             protection = []
             protection_status = "unavailable"
         protected = False
+        verified_protection_ids: list[str] = []
+        if len(protection) >= 100:
+            protection = []
+            protection_status = "unavailable"
         for p in protection:
             # Unrelated orders cannot establish protection or obstruct linked evidence.
             if p.get("clientOrderId") != client_order_id:
@@ -355,6 +385,11 @@ class GovernedBloFinDemoProvider:
                 protection_status = "unavailable"
                 continue
             protected = protected or matches
+            if matches:
+                verified_protection_ids.append(str(p["tpslId"]))
+        if plan.schema_version == "ManualDemoTradePlanV1" and len(verified_protection_ids) > 1:
+            protected = False
+            protection_status = "ambiguous"
         return DemoOrderEvidence(
             order_id,
             client_order_id,
@@ -362,4 +397,5 @@ class GovernedBloFinDemoProvider:
             tuple(fills),
             protected,
             "verified" if protected else protection_status,
+            tuple(verified_protection_ids),
         )

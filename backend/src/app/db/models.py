@@ -497,8 +497,14 @@ class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="uq_trade_proposal_tenant_owner",
         ),
         CheckConstraint(
-            "plan_root_kind IN ('analysis_proposal', 'canonical_plan_root')",
+            "plan_root_kind IN ('analysis_proposal', 'canonical_plan_root', 'manual_demo_test')",
             name="ck_trade_proposals_plan_root_kind",
+        ),
+        CheckConstraint(
+            "(plan_root_kind = 'manual_demo_test' AND strategy_id IS NULL "
+            "AND signal_id IS NULL AND user_strategy_id IS NULL) OR "
+            "(plan_root_kind <> 'manual_demo_test' AND strategy_id IS NOT NULL)",
+            name="ck_trade_proposals_manual_origin",
         ),
     )
 
@@ -509,7 +515,7 @@ class TradeProposal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     signal_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("strategy_signals.id"), nullable=True
     )
-    strategy_id: Mapped[StrategyId] = mapped_column(_enum(StrategyId), nullable=False)
+    strategy_id: Mapped[StrategyId | None] = mapped_column(_enum(StrategyId), nullable=True)
     symbol: Mapped[str] = mapped_column(String(30), nullable=False)
     timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
     direction: Mapped[TradeDirection] = mapped_column(_enum(TradeDirection), nullable=False)
@@ -1704,25 +1710,42 @@ class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "account_id",
             name="uq_trade_plan_revision_binding",
         ),
-        CheckConstraint("schema_version = 'CanonicalTradePlanContentV1'", name="ck_plan_schema_v1"),
+        CheckConstraint(
+            "schema_version IN ('CanonicalTradePlanContentV1', 'ManualDemoTradePlanV1')",
+            name="ck_plan_schema_v1",
+        ),
         CheckConstraint("operation = 'SUBMIT_ENTRY'", name="ck_plan_submit_entry"),
         CheckConstraint("expected_account_mode = 'NET'", name="ck_plan_expected_net"),
         CheckConstraint("length(content_hash) = 64", name="ck_plan_content_hash_length"),
         CheckConstraint(
-            "plan_authority IN ('paper_validation', 'canonical')",
+            "plan_authority IN ('paper_validation', 'canonical', 'manual_demo_test')",
             name="ck_tpr_plan_authority",
         ),
         CheckConstraint(
-            "(plan_authority = 'paper_validation' AND canonical_candidate_id IS NULL) OR "
+            "(plan_authority IN ('paper_validation', 'manual_demo_test') AND "
+            "canonical_candidate_id IS NULL) OR "
             "(plan_authority = 'canonical' AND canonical_candidate_id IS NOT NULL "
             "AND canonical_candidate_id = candidate_id)",
             name="ck_tpr_canonical_candidate_bind",
         ),
         CheckConstraint(
-            "(plan_authority = 'paper_validation' AND compiled_setup_definition_id IS NULL) OR "
+            "(plan_authority IN ('paper_validation', 'manual_demo_test') AND "
+            "compiled_setup_definition_id IS NULL) OR "
             "(plan_authority = 'canonical' AND compiled_setup_definition_id IS NOT NULL "
             "AND compiled_setup_definition_id = setup_definition_id)",
             name="ck_tpr_compiled_setup_bind",
+        ),
+        CheckConstraint(
+            "(plan_authority = 'manual_demo_test' AND schema_version = 'ManualDemoTradePlanV1' "
+            "AND strategy_version_id IS NULL AND setup_definition_id IS NULL AND "
+            "candidate_id IS NULL "
+            "AND execution_venue = 'BLOFIN_DEMO' AND execution_policy_version = "
+            "'manual-blofin-demo/v1') OR "
+            "(plan_authority <> 'manual_demo_test' AND schema_version = "
+            "'CanonicalTradePlanContentV1' "
+            "AND strategy_version_id IS NOT NULL AND setup_definition_id IS NOT NULL AND"
+            " candidate_id IS NOT NULL)",
+            name="ck_tpr_manual_origin",
         ),
         Index(
             "ix_trade_plan_revisions_plan_created",
@@ -1741,11 +1764,11 @@ class TradePlanRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     exchange_account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     operation: Mapped[PlanOperation] = mapped_column(_enum(PlanOperation), nullable=False)
-    strategy_version_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user_strategy_versions.id"), nullable=False
+    strategy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_strategy_versions.id"), nullable=True
     )
-    setup_definition_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    candidate_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    setup_definition_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     plan_authority: Mapped[str] = mapped_column(
         String(32), nullable=False, default=PLAN_AUTHORITY_PAPER_VALIDATION
     )

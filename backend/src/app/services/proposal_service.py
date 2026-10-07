@@ -291,6 +291,11 @@ class ProposalService:
         return row
 
     def _reject_canonical_plan_root(self, row: TradeProposalModel) -> None:
+        if row.plan_root_kind == "manual_demo_test":
+            raise TradingPolicyError(
+                "Manual demo tests require their explicit preview/confirmation service.",
+                details={"reason": "manual_demo_not_proposal_authority"},
+            )
         if row.plan_root_kind == PLAN_ROOT_CANONICAL:
             raise TradingPolicyError(
                 "canonical_plan_root is not a ProposalService trading authority.",

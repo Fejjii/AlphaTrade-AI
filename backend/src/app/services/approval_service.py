@@ -348,6 +348,7 @@ class ApprovalService:
         user_id: uuid.UUID,
         channel: AuthorizationChannel,
         assertion: ApprovalAuthorizationAssertion | None = None,
+        manual_demo_confirmation_hash: str | None = None,
     ) -> ApprovalAuthorization:
         """Idempotently issue the sole authorization; reject non-APPROVE discriminators."""
         operation_decision = get_operation_decision()
@@ -383,6 +384,10 @@ class ApprovalService:
         if proposal is None or proposal.latest_plan_revision_id != revision.id:
             raise ValidationAppError("Plan revision has been superseded.")
 
+        if revision.plan_authority == "manual_demo_test" and (
+            manual_demo_confirmation_hash != revision.content_hash
+        ):
+            raise TradingPolicyError("Manual demo requires explicit exact-plan confirmation.")
         semantic = TradePlanRevisionSemantic.model_validate(revision.semantic_payload)
         computed_plan_hash = canonical_sha256(semantic)
         if computed_plan_hash != revision.content_hash:

@@ -2393,3 +2393,18 @@ paper-only enforcement, staging deploy). Gaps below are incremental hardening.
   were read from `www.binance.com/fapi/v1/exchangeInfo` after `fapi.binance.com`
   returned HTTP 451. Live kline reads remain on `fapi.binance.com`.
 - Note: Do not merge automatically. Do not deploy.
+
+
+## AT-110 — Supervised manual BloFin demo acceptance
+
+Owner request: add explicit manual demo test preview and exact confirmation without
+fabricating strategy/Watcher/Candidate authority. Isolated branch from main 8bab505.
+Implementation: separately disarmed owner-pinned staging API, BTC market-only plan
+origin, existing deterministic 1R/risk/account claim/dispatch fences, native fills
+and protection reads, partial remainder cancellation, distinct Journal source and
+no strategy learning attribution. Preserve real trading refusal and immutable history.
+Validation: focused PostgreSQL, authenticated API, simulated venue, migration and UI
+regressions; final result recorded in PR/handoff. Full release CI and live acceptance
+remain supervising gates. No deployment, arming or exchange orders in coding task.
+Runbook: docs/manual_blofin_demo_acceptance.md. Limits: no limit entry, manual exit,
+realized outcome or repeat-entry release; unresolved history remains held.

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.trade_plan import CanonicalModel, TradePlanRevision, TradePlanRevisionCreate
 from app.signal_fusion.enums import ActionEligibilityState
@@ -56,6 +56,12 @@ class CanonicalTradePlanRevision(CanonicalModel):
     paper_actionable: Literal[True] = True
     live_executable: Literal[False] = False
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _requires_strategy_origin(self) -> CanonicalTradePlanRevision:
+        if self.plan.schema_version != "CanonicalTradePlanContentV1":
+            raise ValueError("Manual demo tests cannot claim canonical strategy lineage.")
+        return self
 
 
 class CanonicalTradePlanDatabaseRequirement(CanonicalModel):

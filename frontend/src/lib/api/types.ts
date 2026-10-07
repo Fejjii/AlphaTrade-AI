@@ -4394,6 +4394,7 @@ export type JournalStatsGroupBy =
 export type JournalEntryMethod = "manual" | "auto" | "import" | "backfill";
 
 export type JournalTradeSource =
+  | "manual_demo_test"
   | "manual"
   | "paper_execution"
   | "paper_validation"

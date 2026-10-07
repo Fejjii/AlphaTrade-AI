@@ -3005,3 +3005,23 @@ Contract eligibility refusals cross the strategy evidence boundary as typed erro
   Real child TPSL/client-ID linkage and a natural venue fill must be proven in staging.
   No merge, deploy, infrastructure mutation or network exchange order occurs in this task.
 - **Runbook:** `docs/governed_blofin_demo_execution.md` (activation, evidence and rollback).
+
+
+## AT-ADR-095 — Explicit manual demo origin reuses execution protocol
+
+Manual demo tests use a distinct immutable schema/authority discriminator with
+null strategy/setup/Candidate identities, rather than manufacturing market setup
+or approval evidence. Canonical strategy lineage remains mandatory for canonical
+plans. Owner confirmation binds the stored revision/hash; generic proposal,
+approval and paper-execution APIs cannot bypass this manual confirmation boundary.
+
+Reuse existing authorization hashes, atomic account risk reservation and one
+unresolved demo command gate, durable client identity, fencing, kill/TTL guards and
+one native POST. A separate staging-only manual API arm does not activate Watcher
+or strategy governance. First scope is BTC market entry with one full stop/target.
+
+Persist native fills/fees and verify protection; partial fills and uncertain sends
+hold. One durable cancellation intent permits only an entry remainder cancellation;
+terminal venue proof controls unused reservation release. Manual Journal source is
+excluded from strategy lineage/learning but included in portfolio risk. Exit outcomes
+and repeated-entry release are deliberately unsupported until separately governed.

@@ -292,6 +292,7 @@ class AuditEventType(StrEnum):
     APPROVAL_DECISION = "approval_decision"
     PAPER_ORDER_CREATED = "paper_order_created"
     EXECUTION_ACCOUNT_REGISTERED = "execution_account_registered"
+    MANUAL_DEMO_CANCEL_REQUESTED = "manual_demo_cancel_requested"
     DEMO_LIFECYCLE_RECONCILED = "demo_lifecycle_reconciled"
     PAPER_ORDER_REJECTED = "paper_order_rejected"
     EXCHANGE_DEMO_ORDER_CREATED = "exchange_demo_order_created"
@@ -447,6 +448,7 @@ class JournalTradeSource(StrEnum):
 
     MANUAL = "manual"
     PAPER_EXECUTION = "paper_execution"
+    MANUAL_DEMO_TEST = "manual_demo_test"
     PAPER_VALIDATION = "paper_validation"
     BACKTEST = "backtest"
     IMPORTED = "imported"

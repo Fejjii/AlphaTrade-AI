@@ -6,7 +6,7 @@ import uuid
 
 from sqlalchemy import func, select
 
-from app.db.canonical_trade_plans import PLAN_ROOT_CANONICAL
+from app.db.canonical_trade_plans import PLAN_ROOT_ANALYSIS
 from app.db.models import TradeProposal
 from app.repositories.base import SQLAlchemyRepository
 
@@ -27,7 +27,7 @@ class ProposalRepository(SQLAlchemyRepository[TradeProposal]):
             filters.append(TradeProposal.organization_id == organization_id)
         if user_id is not None:
             filters.append(TradeProposal.user_id == user_id)
-        filters.append(TradeProposal.plan_root_kind != PLAN_ROOT_CANONICAL)
+        filters.append(TradeProposal.plan_root_kind == PLAN_ROOT_ANALYSIS)
 
         count_stmt = select(func.count()).select_from(TradeProposal)
         list_stmt = select(TradeProposal).order_by(TradeProposal.created_at.desc())

@@ -236,7 +236,6 @@ class PaperPlanClaimService:
         if (
             blocked_reason is None
             and plan.execution_venue == "BLOFIN_DEMO"
-            and self._settings.governed_blofin_demo_enabled
             and has_demo_entry_history(
                 self._session,
                 organization_id=request.organization_id,

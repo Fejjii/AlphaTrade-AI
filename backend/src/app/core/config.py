@@ -207,6 +207,7 @@ class Settings(BaseSettings):
     watcher_paper_staging_activation: bool = False
     # Governed demo dispatch is a separate staging worker capability. One key
     # is pinned to one tenant/user/account; defaults never construct a client.
+    manual_blofin_demo_enabled: bool = False
     governed_blofin_demo_enabled: bool = False
     governed_blofin_demo_organization_id: str = ""
     governed_blofin_demo_user_id: str = ""
