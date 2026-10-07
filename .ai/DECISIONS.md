@@ -2,6 +2,23 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-094 — Past qualification selects immutable trade lineage
+
+- Date: 2026-10-06
+- Decision: Latest-position past qualification routes to scoped recorded Journal
+  lineage even without a literaltrade noun. Same-plan followups reuse only a
+  revalidated persisted selection; explicit current setup requests retain their path.
+- Evidence: Locate the exact immutable candidate/assessment/plan setup decision,
+  independent of mutable projection identity/state. Owner/version isolation remains.
+  Recorded conditions and bounded candle hashes are references, not reconstructed
+  historical OHLCV or current evidence. Material candle-value gaps stay visible.
+- Policy: Read current minimum/version and compare original plan terms through
+  existing deterministic application authority; preserve its visible conclusion.
+  Knowledge prose never sets policy; historical approval is not current eligibility.
+- Limits: Read-only Agent repair; no strategy thresholds, history or execution-flag
+  change. Focused/mocked tests do not establish live conversational acceptance.
+- Reference: `docs/agent_historical_setup_explanation.md`; AT-109.
+
 ## AT-ADR-093 — Prospective allocation-weighted gross 1R entry floor
 
 - Date: 2026-10-06
