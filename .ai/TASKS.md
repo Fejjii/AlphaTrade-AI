@@ -19,6 +19,22 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
 - Release: Review/deploy/repeat exact question and contrast, then consolidated CI.
   No strategy thresholds, historical records or execution flags changed.
 
+## AT-112 — Repair two confirmed full backend CI failures
+- Status: DONE (implementation; review/release acceptance pending).
+- Base: main `8bab505`; CI 37599185453 / backend job 112719114802
+  (4,452 passed, 2 failed, 6 skipped).
+- Agent cause: conversation creation precedes typed action and persisted membership
+  validation; order.submit is the first failing action. Fresh fixtures and module
+  reproduce it. Reject before new transcript or existing conversation mutation.
+- Inverse cause: earlier linear gross 1R authorization correctly refuses the old
+  claim fixture. Cover fresh authorization refusal and historical authorization
+  claim refusal separately; no inverse support or risk policy relaxation.
+- Validation: 142 affected/adjacent cases + 19 continuity cases passed; relevant
+  Ruff/format, scoped mypy and diff checks passed. Foreign conversations still
+  receive scoped not-found refusal before any conversation mutation.
+- Scope: focused affected and adjacent regressions only. PR220/221 preserved; no
+  full CI rerun, merge, deploy, activation or exchange orders.
+
 ## AT-108 — Presentation MVP 1R policy and linked evidence release
 - Priority: P0 · Status: DONE (implementation; review/live acceptance pending) · Dependencies:
   main `e75e8bf` including merged PR215 · Risk: High (new entry refusal).

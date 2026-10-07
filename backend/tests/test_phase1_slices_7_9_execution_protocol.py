@@ -1164,8 +1164,8 @@ def test_linear_base_quantity_ignores_contract_multiplier(session: Session) -> N
     )
 
 
-def test_inverse_contract_fails_closed_at_claim(session: Session) -> None:
-    rules = {
+def _inverse_rules() -> dict[str, str]:
+    return {
         "contract_multiplier": "1",
         "contract_type": "INVERSE",
         "base_currency": "BTC",
@@ -1177,7 +1177,41 @@ def test_inverse_contract_fails_closed_at_claim(session: Session) -> None:
         "minimum_notional": "5",
         "rules_version": "blofin-rules-2026-09-15",
     }
-    ids, plan, authorization = prepared_authorized_plan(session, instrument_rules=rules)
+
+
+def test_inverse_contract_fails_closed_at_authorization(session: Session) -> None:
+    ids = seed_support(session)
+    plan = persist_plan(session, ids, plan_request(ids, instrument_rules=_inverse_rules()))
+    with pytest.raises(TradingPolicyError, match="linear instruments only") as exc:
+        approve_plan(session, ids, plan)
+    assert exc.value.details["reason"] == "planned_reward_risk_invalid"
+    session.flush()
+    assert session.scalar(select(func.count()).select_from(ApprovalAuthorization)) == 0
+    assert session.scalars(select(ApprovalRequest)).one().status is ApprovalStatus.PENDING
+    for model in (
+        ExecutionCommand,
+        PlanEntryExecutionClaim,
+        RiskReservation,
+        VenueSubmitEffect,
+        ExecutionFillFact,
+        Order,
+        Position,
+    ):
+        assert session.scalar(select(func.count()).select_from(model)) == 0
+
+
+def test_inverse_contract_fails_closed_at_claim(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Reproduce a historical authorization issued before the linear gross1R gate.
+    # Restore current policy before execution; no immutable plan or auth is altered.
+    with monkeypatch.context() as historical:
+        historical.setattr(
+            "app.services.planned_reward_risk.planned_reward_risk", lambda _terms: None
+        )
+        ids, plan, authorization = prepared_authorized_plan(
+            session, instrument_rules=_inverse_rules()
+        )
     service = execution_service(session)
     with pytest.raises(TradingPolicyError) as exc:
         service.execute_paper_plan(
@@ -1185,7 +1219,19 @@ def test_inverse_contract_fails_closed_at_claim(session: Session) -> None:
             clock=lambda: EXECUTE_AT,
         )
     assert exc.value.details["reason"] == "inverse_contract_exposure_undefined"
-    assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 0
+    assert session.get(ApprovalAuthorization, authorization.authorization_id).state is (
+        AuthorizationState.AVAILABLE
+    )
+    for model in (
+        ExecutionCommand,
+        PlanEntryExecutionClaim,
+        RiskReservation,
+        VenueSubmitEffect,
+        ExecutionFillFact,
+        Order,
+        Position,
+    ):
+        assert session.scalar(select(func.count()).select_from(model)) == 0
 
 
 def test_missing_and_empty_source_fill_identity_rejected(session: Session) -> None:
