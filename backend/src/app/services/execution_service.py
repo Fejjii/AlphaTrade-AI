@@ -273,6 +273,8 @@ class ExecutionService:
             organization_id=request.organization_id,
             user_id=request.user_id,
         )
+        if plan_row is not None and plan_row.plan_authority == "manual_demo_test":
+            raise TradingPolicyError("Manual demo requires its explicit preview/confirmation API.")
         if plan_row is not None and is_canonical_plan_authority(plan_row.plan_authority):
             if self._canonical_runtime is None:
                 raise TradingPolicyError(

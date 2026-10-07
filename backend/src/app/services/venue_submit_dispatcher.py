@@ -25,6 +25,7 @@ from app.core.errors import ConflictError, NotFoundError, TradingPolicyError
 from app.core.execution_credentials import (
     blofin_execution_authorized,
     governed_demo_worker_access_requested,
+    manual_demo_access_requested,
 )
 from app.db.models import AccountSafetyEpoch, ExecutionCommand, ExecutionFillFact, VenueSubmitEffect
 from app.guardrails.redaction import redact_text
@@ -258,12 +259,17 @@ class VenueSubmitDispatcher:
         """
         if not isinstance(provider, GovernedBloFinDemoProvider) or not (
             blofin_execution_authorized(settings)
-            and governed_demo_worker_access_requested(settings)
+            and (
+                manual_demo_access_requested(settings)
+                if plan.schema_version == "ManualDemoTradePlanV1"
+                else governed_demo_worker_access_requested(settings)
+            )
         ):
             raise TradingPolicyError("Governed demo dispatch is disarmed.")
-        if (
-            plan.execution_venue != "BLOFIN_DEMO"
-            or plan.execution_policy_version != "governed-blofin-demo/v1"
+        if plan.execution_venue != "BLOFIN_DEMO" or plan.execution_policy_version != (
+            "manual-blofin-demo/v1"
+            if plan.schema_version == "ManualDemoTradePlanV1"
+            else "governed-blofin-demo/v1"
         ):
             raise TradingPolicyError("Canonical governed demo plan required.")
         from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk

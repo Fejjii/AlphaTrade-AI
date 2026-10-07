@@ -709,6 +709,7 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                     == UUID(self._settings.governed_blofin_demo_account_id),
                     ExecutionCommand.outcome == ExecutionCommandOutcome.ALLOW,
                     TradePlanRevision.execution_venue == "BLOFIN_DEMO",
+                    TradePlanRevision.execution_policy_version == DEMO_POLICY,
                     GovernedDemoLifecycleResolution.id.is_(None),
                 )
                 .order_by(ExecutionCommand.created_at)

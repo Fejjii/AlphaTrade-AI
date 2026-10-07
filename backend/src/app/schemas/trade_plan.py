@@ -253,13 +253,15 @@ class CalculationInput(CanonicalModel):
 class TradePlanExecutionTerms(CanonicalModel):
     """Every execution-affecting field required for an executable revision."""
 
-    schema_version: Literal["CanonicalTradePlanContentV1"] = "CanonicalTradePlanContentV1"
+    schema_version: Literal["CanonicalTradePlanContentV1", "ManualDemoTradePlanV1"] = (
+        "CanonicalTradePlanContentV1"
+    )
     account_id: UUID
     exchange_account_id: UUID | None
     operation: Literal[PlanOperation.SUBMIT_ENTRY] = PlanOperation.SUBMIT_ENTRY
-    strategy_version_id: UUID
-    setup_definition_id: UUID
-    candidate_id: UUID
+    strategy_version_id: UUID | None
+    setup_definition_id: UUID | None
+    candidate_id: UUID | None
     expected_account_mode: Literal[AccountMode.NET] = AccountMode.NET
     permission_attestation_id: UUID
     permission_attestation_version: str = Field(min_length=1, max_length=64)
@@ -308,6 +310,29 @@ class TradePlanExecutionTerms(CanonicalModel):
 
     @model_validator(mode="after")
     def _validate_order_and_validity(self) -> TradePlanExecutionTerms:
+        lineage = (self.strategy_version_id, self.setup_definition_id, self.candidate_id)
+        if self.schema_version == "ManualDemoTradePlanV1":
+            if any(value is not None for value in lineage):
+                raise ValueError("Manual demo tests cannot claim strategy or Candidate lineage.")
+            if (
+                self.execution_venue != "BLOFIN_DEMO"
+                or self.execution_policy_version != "manual-blofin-demo/v1"
+                or self.exchange_account_id is not None
+                or self.execution_market is not MarketType.PERPETUAL
+                or self.order_type is not EntryOrderType.MARKET
+                or len(self.risk_and_exits.targets) != 1
+                or self.risk_and_exits.targets[0].quantity_fraction != 1
+                or self.risk_and_exits.runner.enabled
+                or self.evidence_venue != "BLOFIN_DEMO"
+                or self.basis_policy.evidence_price != self.basis_policy.execution_price
+            ):
+                raise ValueError(
+                    "Manual demo supports one market entry with full stop/target only."
+                )
+        elif any(value is None for value in lineage):
+            raise ValueError(
+                "Canonical strategy plans require complete strategy/Candidate lineage."
+            )
         if self.valid_until <= self.valid_from:
             raise ValueError("Plan validity must end after it starts.")
         if self.evidence_observed_at > self.valid_from:

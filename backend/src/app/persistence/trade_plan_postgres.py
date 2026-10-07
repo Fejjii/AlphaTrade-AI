@@ -203,11 +203,14 @@ class PostgresCanonicalTradePlanStore:
         on_inserted: Callable[[], None] | None = None,
     ) -> CanonicalTradePlanRevision:
         plan = revision.plan
+        candidate_id = plan.candidate_id
+        if candidate_id is None:
+            raise CanonicalTradePlanLineageError("Manual demo is not a canonical strategy plan.")
 
         def work(session: Session) -> CanonicalTradePlanRevision:
             if revision.uniqueness_hash != digest:
                 raise CanonicalTradePlanLineageError("Plan uniqueness hash drifted during insert.")
-            locked = _lock_candidate(session, plan.organization_id, plan.candidate_id)
+            locked = _lock_candidate(session, plan.organization_id, candidate_id)
             if locked is None:
                 raise CanonicalTradePlanLineageError(
                     "Canonical TradePlanRevision cannot persist without a canonical Candidate."
@@ -238,7 +241,7 @@ class PostgresCanonicalTradePlanStore:
                 organization_id=plan.organization_id,
                 user_id=plan.user_id,
                 account_id=plan.account_id,
-                candidate_id=plan.candidate_id,
+                candidate_id=candidate_id,
             )
             if bound_scope is not None:
                 raise ConflictingTradePlanIdempotencyError(

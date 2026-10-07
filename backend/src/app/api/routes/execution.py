@@ -11,6 +11,7 @@ from app.core.dependencies import (
     ExecutionServiceDep,
     ProposalServiceDep,
     SessionDep,
+    SettingsDep,
     UsageServiceDep,
 )
 from app.schemas.execution import PaginatedPaperOrders, PaperOrder, PaperOrderRequest
@@ -28,12 +29,20 @@ from app.schemas.execution_protocol import (
     ExecutePaperPlanResult,
     ExecutionCommandOutcome,
 )
+from app.schemas.manual_demo import (
+    ManualDemoCancelRequest,
+    ManualDemoConfirmation,
+    ManualDemoPreview,
+    ManualDemoPreviewRequest,
+    ManualDemoStatus,
+)
 from app.schemas.usage import UsageEventCreate
 from app.security.quota_enforcement import require_quota
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, TraderDep
 from app.security.tenant import ensure_same_organization
 from app.services.execution_account_service import ExecutionAccountService
+from app.services.manual_demo_service import ManualDemoService
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -229,3 +238,44 @@ async def get_order(
     order = execution_service.get_order(order_id)
     ensure_same_organization(order.organization_id, tenant)
     return order
+
+
+@router.post("/manual-demo/preview", dependencies=[_PAPER_PLAN_RATE_LIMIT])
+def preview_manual_demo(
+    body: ManualDemoPreviewRequest,
+    tenant: OwnerDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ManualDemoPreview:
+    return ManualDemoService(session, settings).preview(tenant, body)
+
+
+@router.post("/manual-demo/confirm", dependencies=[_PAPER_PLAN_RATE_LIMIT, _PAPER_EXECUTION_QUOTA])
+def confirm_manual_demo(
+    body: ManualDemoConfirmation,
+    tenant: OwnerDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ManualDemoStatus:
+    return ManualDemoService(session, settings).confirm(tenant, body)
+
+
+@router.post("/manual-demo/{command_id}/reconcile", dependencies=[_PAPER_PLAN_RATE_LIMIT])
+def reconcile_manual_demo(
+    command_id: uuid.UUID,
+    tenant: OwnerDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ManualDemoStatus:
+    return ManualDemoService(session, settings).reconcile(tenant, command_id)
+
+
+@router.post("/manual-demo/{command_id}/cancel", dependencies=[_PAPER_PLAN_RATE_LIMIT])
+def cancel_manual_demo(
+    command_id: uuid.UUID,
+    body: ManualDemoCancelRequest,
+    tenant: OwnerDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ManualDemoStatus:
+    return ManualDemoService(session, settings).cancel(tenant, command_id)

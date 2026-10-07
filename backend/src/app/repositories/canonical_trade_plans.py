@@ -150,6 +150,8 @@ class InMemoryCanonicalTradePlanStore:
         on_inserted: Callable[[], None] | None = None,
     ) -> CanonicalTradePlanRevision:
         plan = revision.plan
+        if plan.candidate_id is None:
+            raise CanonicalTradePlanLineageError("Manual demo is not a canonical strategy plan.")
         scope = (plan.organization_id, plan.user_id, plan.account_id, plan.candidate_id)
         idem_key = (plan.organization_id, idempotency_key)
         with self._lock:
@@ -195,6 +197,8 @@ class InMemoryCanonicalTradePlanStore:
             if revision is None:
                 return
             plan = revision.plan
+            if plan.candidate_id is None:
+                raise CanonicalTradePlanLineageError("Canonical Candidate identity is required.")
             self._by_revision.pop(plan.revision_id, None)
             self._by_candidate_scope.pop(
                 (plan.organization_id, plan.user_id, plan.account_id, plan.candidate_id),

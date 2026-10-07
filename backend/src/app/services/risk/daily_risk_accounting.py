@@ -179,7 +179,9 @@ class DailyRiskAccounting:
         scope = (
             JournalTrade.organization_id == organization_id,
             JournalTrade.user_id == user_id,
-            JournalTrade.source == JournalTradeSource.PAPER_EXECUTION,
+            JournalTrade.source.in_(
+                (JournalTradeSource.PAPER_EXECUTION, JournalTradeSource.MANUAL_DEMO_TEST)
+            ),
             JournalTrade.execution_lifecycle_id.is_not(None),
             JournalTrade.linked_position_id.is_(None),
         )
