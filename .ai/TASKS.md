@@ -45,6 +45,20 @@ handoff. Preserve running full backend CI, history, risk and execution authority
 - Scope: focused affected and adjacent regressions only. PR220/221 preserved; no
   full CI rerun, merge, deploy, activation or exchange orders.
 
+## AT-114 — CI #783 migration head and capacity fixture repair
+
+- Priority: P0 · Status: DONE (implementation; release review pending).
+- Base: main `b58bedae`; exact CI `37622005520`, backend job `112794311174`.
+- Root causes: Twelve stale head expectations; capacity fixtures used demo plans,
+  so the valid demo account history lock preceded the exposure capacity predicate.
+- Scope: Update expected head to `a6manualdemo001`, preserve ancestry and migration
+  cycles/data assertions. Use internal paper for capacity, equal-sized plans for
+  the PostgreSQL race, and verify demo lock with worker flag enabled/disarmed.
+- Validation: 101 affected migration/protocol/manual tests and 51 PostgreSQL
+  protocol/readiness tests passed (three overlap); scoped Ruff/format passed.
+- Release: Review and consolidate, then one complete acceptance CI. No application
+  safeguards or migration code changed; documentation PR223 remains untouched.
+
 ## AT-108 — Presentation MVP 1R policy and linked evidence release
 - Priority: P0 · Status: DONE (implementation; review/live acceptance pending) · Dependencies:
   main `e75e8bf` including merged PR215 · Risk: High (new entry refusal).

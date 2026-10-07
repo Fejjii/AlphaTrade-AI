@@ -261,12 +261,13 @@ def test_postgres_different_keys_same_plan_one_claim() -> None:
 def test_postgres_capacity_race_one_allow_one_block() -> None:
     factory, url = _factory()
     with factory() as setup:
-        ids, plan, authorization = prepared_authorized_plan(setup)
-        other = persist_plan(
-            setup, ids, plan_request(ids, quantity={"value": "3", "unit": "CONTRACTS"})
-        )
+        # Both entries fit individually; only their combined reservations exceed capacity.
+        # Internal paper keeps the earlier demo-history lock out of this race.
+        ids, plan, authorization = prepared_authorized_plan(setup, execution_venue="PAPER_INTERNAL")
+        other = persist_plan(setup, ids, plan_request(ids, execution_venue="PAPER_INTERNAL"))
         other_auth = approve_plan(setup, ids, other)
         intent = conservative_reservation(plan)
+        assert conservative_reservation(other).pending_notional == intent.pending_notional
         setup.add(
             AccountRiskAccountingState(
                 organization_id=ids["organization"].id,
@@ -294,6 +295,7 @@ def test_postgres_capacity_race_one_allow_one_block() -> None:
 
     barrier = threading.Barrier(2)
     outcomes: list[str] = []
+    blocked_reasons: list[str | None] = []
     lock = threading.Lock()
 
     def worker(request: object) -> None:
@@ -306,6 +308,8 @@ def test_postgres_capacity_race_one_allow_one_block() -> None:
             session.commit()
             with lock:
                 outcomes.append(result.outcome.value)
+                if result.outcome is ExecutionCommandOutcome.BLOCKED:
+                    blocked_reasons.append(result.blocked_reason_code)
 
     threads = [
         threading.Thread(target=worker, args=(req_a,)),
@@ -316,9 +320,18 @@ def test_postgres_capacity_race_one_allow_one_block() -> None:
     for thread in threads:
         thread.join(timeout=30)
     assert sorted(outcomes) == ["ALLOW", "BLOCKED"]
+    assert blocked_reasons == ["insufficient_total_exposure"]
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(RiskReservation)) == 1
         assert session.scalar(select(func.count()).select_from(PlanEntryExecutionClaim)) == 1
+        assert session.scalar(select(func.count()).select_from(VenueSubmitEffect)) == 1
+        accounting = session.scalar(select(AccountRiskAccountingState))
+        assert accounting is not None
+        assert accounting.reserved_notional == intent.pending_notional
+        assert accounting.reserved_trade_slots == 1
+        assert sorted(session.scalars(select(ApprovalAuthorization.state))) == sorted(
+            [AuthorizationState.AVAILABLE, AuthorizationState.CONSUMED]
+        )
 
 
 @requires_postgres

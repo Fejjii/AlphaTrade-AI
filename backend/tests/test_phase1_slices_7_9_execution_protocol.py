@@ -265,7 +265,8 @@ def test_kill_switch_before_claim_blocks_without_consumption(session: Session) -
 
 
 def test_serializable_capacity_blocks_second_command(session: Session) -> None:
-    ids, plan, authorization = prepared_authorized_plan(session)
+    # Demo history has a separate, earlier account lock; isolate exposure capacity.
+    ids, plan, authorization = prepared_authorized_plan(session, execution_venue="PAPER_INTERNAL")
     intent = conservative_reservation(plan)
     session.add(
         AccountRiskAccountingState(
@@ -289,7 +290,11 @@ def test_serializable_capacity_blocks_second_command(session: Session) -> None:
         )
     )
     other = persist_plan(
-        session, ids, plan_request(ids, quantity={"value": "3", "unit": "CONTRACTS"})
+        session,
+        ids,
+        plan_request(
+            ids, execution_venue="PAPER_INTERNAL", quantity={"value": "3", "unit": "CONTRACTS"}
+        ),
     )
     other_auth = approve_plan(session, ids, other)
     session.commit()
@@ -308,6 +313,15 @@ def test_serializable_capacity_blocks_second_command(session: Session) -> None:
     assert second.outcome is ExecutionCommandOutcome.BLOCKED
     assert second.blocked_reason_code == "insufficient_total_exposure"
     assert session.scalar(select(func.count()).select_from(RiskReservation)) == 1
+    assert session.scalar(select(func.count()).select_from(PlanEntryExecutionClaim)) == 1
+    assert session.scalar(select(func.count()).select_from(VenueSubmitEffect)) == 1
+    accounting = session.scalar(select(AccountRiskAccountingState))
+    assert accounting is not None
+    assert accounting.reserved_notional == intent.pending_notional
+    assert accounting.reserved_trade_slots == 1
+    other_auth_row = session.get(ApprovalAuthorization, other_auth.authorization_id)
+    assert other_auth_row is not None
+    assert other_auth_row.state is AuthorizationState.AVAILABLE
 
 
 def test_dispatch_barriers_and_fake_ack(session: Session) -> None:
