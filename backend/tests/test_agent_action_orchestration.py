@@ -24,6 +24,7 @@ from app.db.canonical_candidates import CanonicalCandidateRow
 from app.db.models import (
     Chunk,
     Conversation,
+    ConversationMessage,
     Document,
     Membership,
     Order,
@@ -597,8 +598,59 @@ def test_unknown_action_and_authority_injection_fail_before_persistence(agent_db
         ):
             with pytest.raises(ValidationAppError):
                 turn(session, settings, name=name, arguments=arguments)
-            assert _count(session, Conversation) == 0
+            assert _count(session, Conversation) == 0, name
+            assert _count(session, ConversationMessage) == 0, name
         assert _count(session, Order) == 0
+
+
+@pytest.mark.parametrize(
+    "name,arguments",
+    [
+        ("order.submit", {}),
+        ("paper_trade.propose", {"risk_result": {"action": "allow"}}),
+        ("paper_trade.propose", {"position_size": "999"}),
+        ("knowledge.propose", {"text": "Wait", "organization_id": str(ORG_B)}),
+        ("proposal.confirm", {}),
+    ],
+)
+def test_invalid_action_cannot_rebind_or_append_to_existing_conversation(agent_db, name, arguments):
+    factory, settings = agent_db
+    with factory() as session:
+        existing = turn(session, settings, name="context.read")[1]
+        row = session.get(Conversation, existing.conversation_id)
+        original = (row.strategy_id, row.updated_at, _count(session, ConversationMessage))
+        scoped_strategy = strategy(session)
+        session.commit()
+        with pytest.raises(ValidationAppError):
+            turn(
+                session,
+                settings,
+                name=name,
+                arguments=arguments,
+                conversation_id=row.id,
+                strategy_id=scoped_strategy.id,
+            )
+        session.flush()  # Check persistence without rolling back the rejected turn.
+        assert (row.strategy_id, row.updated_at, _count(session, ConversationMessage)) == original
+        assert _count(session, Conversation) == 1
+
+
+def test_unauthorized_action_fails_before_new_transcript_persistence(agent_db):
+    factory, settings = agent_db
+    with factory() as session:
+        member = session.scalar(
+            select(Membership).where(
+                Membership.organization_id == ORG_A,
+                Membership.user_id == USER_A,
+            )
+        )
+        member.role = MembershipRole.VIEWER
+        session.commit()
+        with pytest.raises(ForbiddenError):
+            turn(session, settings, name="knowledge.propose", arguments={"text": "Wait"})
+        assert _count(session, Conversation) == 0
+        assert _count(session, ConversationMessage) == 0
+        assert _count(session, Document) == 0
 
 
 def test_permissions_are_persisted_and_rechecked_at_confirm(agent_db):

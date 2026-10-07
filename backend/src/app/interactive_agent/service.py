@@ -179,6 +179,24 @@ class InteractiveAgentService:
         """Persist a turn and prepare proposals through bounded canonical authorities."""
         safety = paper_safety_contract(self._settings)
         classification = classify_turn(request.message)
+        if request.conversation_id is not None:
+            # Preserve scoped not-found refusal without rebinding or updating the transcript.
+            self._conversations.require(
+                request.conversation_id, organization_id=organization_id, user_id=user_id
+            )
+        # Reject invalid actions and unauthorized membership before any transcript write.
+        # Scoped followup selection is still resolved and revalidated under the lock below.
+        routed = (
+            route_action(request) if classification.operation is not TurnOperation.REFUSE else None
+        )
+        if routed is not None:
+            tool, _inputs = resolve_action(routed)
+            require_action_permission(
+                self._session,
+                organization_id=organization_id,
+                user_id=user_id,
+                read=tool.behavior == "read",
+            )
         conversation = (
             self._conversations.get_or_create(
                 organization_id=organization_id,
@@ -210,7 +228,6 @@ class InteractiveAgentService:
         missing_trade_context = None
         action: tuple[Tool, StrictModel] | None = None
         if classification.operation is not TurnOperation.REFUSE:
-            routed = route_action(request)
             continuity = resolve_trade_followup(
                 self._session, conversation=conversation, request=request, routed=routed
             )
