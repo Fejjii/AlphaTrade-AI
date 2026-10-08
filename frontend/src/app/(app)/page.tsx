@@ -18,7 +18,6 @@ export default function DashboardPage() {
   const loader = useCallback(async (): Promise<TraderDashboardData> => {
     const [
       portfolio,
-      positions,
       journal,
       strategyStats,
       summary,
@@ -27,8 +26,7 @@ export default function DashboardPage() {
       alerts,
     ] = await Promise.all([
       loadSource(api.performance.portfolio()),
-      loadSource(api.positions.list({ status: "open", limit: 20 })),
-      loadSource(api.journal.list({ limit: 8 })),
+      loadSource(api.journal.listTrades({ limit: 8 })),
       loadSource(api.journal.statistics({ group_by: "strategy", limit: 8 })),
       loadSource(api.dashboard.summary()),
       loadSource(api.marketWatcher.monitoring()),
@@ -37,7 +35,6 @@ export default function DashboardPage() {
     ]);
     return {
       portfolio,
-      positions,
       journal,
       strategyStats,
       summary,

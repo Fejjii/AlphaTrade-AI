@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from app.db.models import (
     VenueSubmitEffect,
 )
 from app.db.models import TradePlanRevision as PlanRow
+from app.providers.exchange.demo_preflight import failure_diagnostics
 from app.providers.exchange.factory import build_blofin_client
 from app.providers.exchange.governed_blofin import DemoFill, GovernedBloFinDemoProvider
 from app.schemas.audit import AuditRecordCreate
@@ -76,6 +78,8 @@ from app.services.risk.rules import RiskEvaluationContext
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.safety_epoch import SafetyEpochService
 from app.services.venue_submit_dispatcher import VenueSubmitDispatcher
+
+logger = structlog.get_logger(__name__)
 
 
 class ManualDemoService:
@@ -199,11 +203,23 @@ class ManualDemoService:
     ) -> ManualDemoPreview:
         account_id = self._scope(tenant).id
         self.session.commit()  # No DB lock/transaction across venue reads.
+        stage = "provider_initialization"
         try:
-            snapshot = self._provider().snapshot(symbol=request.symbol, now=self.clock())
+            provider = self._provider()
+            stage = "snapshot"
+            snapshot = provider.snapshot(symbol=request.symbol, now=self.clock())
         except Exception as exc:
+            diagnostics = failure_diagnostics(exc, stage=stage)
+            logger.warning(
+                "manual_demo_preflight_failed",
+                organization_id=str(tenant.organization_id),
+                user_id=str(tenant.user_id),
+                account_id=str(account_id),
+                **diagnostics,
+            )
             raise TradingPolicyError(
-                "Demo preflight unavailable; preview cannot be saved."
+                "Demo preflight unavailable; preview cannot be saved.",
+                details={"preflight": diagnostics},
             ) from exc
         try:
             semantic = build_manual_plan(

@@ -1,0 +1,100 @@
+{
+  "task": "AT-115",
+  "baseline_main": "e4a781679ccda9258c28d5330671d3aaa54376d8",
+  "branch": "codex/presentation-preflight-dashboard",
+  "recorded_at_utc": "2026-10-07T20:37:07.756998+00:00",
+  "implementation": "Safe staged preflight diagnostics and canonical Dashboard paper reads",
+  "verified_live": false,
+  "live_blofin_root_cause": "Unknown; owner-reported 2026-10-07T16:11:33Z preview403 not reproduced",
+  "backend": {
+    "distinct_passed": 232,
+    "full_suite_run": false,
+    "groups": [
+      {
+        "name": "preflight_and_demo_protocol",
+        "passed": 139,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "modules": {
+          "tests.test_demo_preflight_diagnostics": 41,
+          "tests.test_manual_blofin_demo": 31,
+          "tests.test_governed_blofin_demo": 20,
+          "tests.test_governed_demo_readiness": 35,
+          "tests.test_governed_blofin_quote_freshness": 12
+        },
+        "junit": "local /tmp/alphatrade-preflight-focused.xml",
+        "environment": "Disposable PostgreSQL 17.11 UTF8 test DB; simulated httpx.MockTransport"
+      },
+      {
+        "name": "dashboard_and_attention",
+        "passed": 41,
+        "failed": 0,
+        "skipped": 0,
+        "modules": {
+          "tests.test_dashboard_slice_44": 19,
+          "tests.test_attention_queue": 22
+        },
+        "environment": "SQLite and authenticated FastAPI TestClient"
+      },
+      {
+        "name": "existing_blofin_provider",
+        "passed": 52,
+        "failed": 0,
+        "skipped": 0,
+        "environment": "Simulated venue",
+        "final_junit": "local /tmp/alphatrade-final-provider-dashboard.xml",
+        "overlapping_dashboard_cases_in_final_group": 2
+      }
+    ]
+  },
+  "frontend": {
+    "distinct_passed": 80,
+    "groups": [
+      {
+        "name": "dashboard_and_daily_review",
+        "files": 5,
+        "passed": 32,
+        "failed": 0
+      },
+      {
+        "name": "adjacent_portfolio",
+        "files": 2,
+        "passed": 48,
+        "failed": 0
+      }
+    ],
+    "typecheck": "passed",
+    "scoped_eslint_zero_warnings": "passed",
+    "browser_acceptance_run": false,
+    "local_build_run": false
+  },
+  "static_checks": {
+    "scoped_ruff": "passed",
+    "scoped_format": "passed",
+    "strict_mypy_changed_production_modules": 6,
+    "mypy": "passed",
+    "diff_whitespace": "passed"
+  },
+  "baseline_reproduction": {
+    "fixture": "One canonical open paper JournalTrade and zero legacy positions/trades",
+    "unchanged_main_count": 0,
+    "repaired_count": 1,
+    "history_rewrites": 0
+  },
+  "boundaries": {
+    "real_money_enabled": false,
+    "exchange_orders_submitted": 0,
+    "deployments_performed": 0,
+    "credential_or_account_setting_changes": 0,
+    "automatic_exchange_execution_activated": false,
+    "full_backend_ci_dispatched": false
+  },
+  "automatic_pr_ci": {
+    "expected_backend": "Existing focused development selector",
+    "broader_jobs": "Existing full frontend, deployment-safety, evaluation/security checks may run automatically; no bypass or cancellation",
+    "result": "Pending PR creation; remote results are separate from local evidence"
+  },
+  "remaining_gate": "Review consolidated PR, run one complete exact-SHA backend CI, deploy disarmed, then original preview-only and canonical Dashboard acceptance",
+  "commands_and_acceptance": "docs/presentation_repairs_20261007.md"
+}

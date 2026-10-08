@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
+from app.providers.exchange.demo_preflight import preflight_stage
 from app.providers.exchange.errors import ExchangeRequestError
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.schemas.trade_plan import EntrySide, TradePlanRevision
@@ -98,82 +99,101 @@ class GovernedBloFinDemoProvider:
 
     def snapshot(self, *, symbol: str, now: datetime) -> DemoVenueSnapshot:
         self.verify_permissions()
-        if self._account.get_position_mode().position_mode != "net_mode":
-            raise ValueError("Governed demo requires the existing NET account mode.")
-        instrument = to_blofin_inst_id(symbol)
-        rows = _rows(
-            self._client.request("GET", "/api/v1/market/instruments", params={"instId": instrument})
-        )
-        row = next((r for r in rows if r.get("instId") == instrument), None)
-        if row is None or row.get("state") != "live":
-            raise ValueError("Demo instrument unavailable.")
-        if (
-            row.get("quoteCurrency") != "USDT"
-            or row.get("baseCurrency") != symbol.removesuffix("USDT")
-            or row.get("contractType") != "linear"
-        ):
-            raise ValueError("Only base-valued linear USDT contracts are supported.")
-        if row.get("instType") not in {"SWAP", "PERPETUAL"}:
-            raise ValueError("Demo perpetual instrument required.")
-        leverage = self._account.get_leverage_info(inst_id=instrument, margin_mode="cross")
-        if leverage.leverage != Decimal("1"):
-            raise ValueError("Demo account must already use leverage 1; no leverage mutation.")
+        with preflight_stage("position_mode", "GET /api/v1/account/position-mode"):
+            if self._account.get_position_mode().position_mode != "net_mode":
+                raise ValueError("Governed demo requires the existing NET account mode.")
+        with preflight_stage("instrument", "GET /api/v1/market/instruments"):
+            instrument = to_blofin_inst_id(symbol)
+            rows = _rows(
+                self._client.request(
+                    "GET", "/api/v1/market/instruments", params={"instId": instrument}
+                )
+            )
+            row = next((r for r in rows if r.get("instId") == instrument), None)
+            if row is None or row.get("state") != "live":
+                raise ValueError("Demo instrument unavailable.")
+            if (
+                row.get("quoteCurrency") != "USDT"
+                or row.get("baseCurrency") != symbol.removesuffix("USDT")
+                or row.get("contractType") != "linear"
+            ):
+                raise ValueError("Only base-valued linear USDT contracts are supported.")
+            if row.get("instType") not in {"SWAP", "PERPETUAL"}:
+                raise ValueError("Demo perpetual instrument required.")
+            tick = _positive(row.get("tickSize"))
+            lot = _positive(row.get("lotSize"))
+            minimum = _positive(row.get("minSize"))
+            multiplier = _positive(row.get("contractValue"))
+            maximum = _positive(row.get("maxMarketSize"))
+        with preflight_stage("leverage", "GET /api/v1/account/leverage-info"):
+            leverage = self._account.get_leverage_info(inst_id=instrument, margin_mode="cross")
+            if leverage.leverage != Decimal("1"):
+                raise ValueError("Demo account must already use leverage 1; no leverage mutation.")
         self.verify_flat_account()
-        balances = self._account.get_balances()
-        balance = next((b for b in balances if b.asset == "USDT"), None)
-        if balance is None or balance.available <= 0 or balance.total <= 0:
-            raise ValueError("Demo USDT equity unavailable.")
-        ticker = _rows(
-            self._client.request("GET", "/api/v1/market/tickers", params={"instId": instrument})
-        )
-        # Preflight IO can outlast the caller's timestamp. Check freshness at receipt.
-        now = self._clock()
-        quote = next((r for r in ticker if r.get("instId") == instrument), None)
-        if quote is None:
-            raise ValueError("Demo quote unavailable.")
-        observed = _time(quote.get("ts"))
-        if not 0 <= (now - observed).total_seconds() < 10:
-            raise ValueError("Demo quote stale or future dated.")
+        with preflight_stage("balance", "GET /api/v1/account/balance"):
+            balances = self._account.get_balances()
+            balance = next((b for b in balances if b.asset == "USDT"), None)
+            if balance is None or balance.available <= 0 or balance.total <= 0:
+                raise ValueError("Demo USDT equity unavailable.")
+        with preflight_stage("quote", "GET /api/v1/market/tickers"):
+            ticker = _rows(
+                self._client.request("GET", "/api/v1/market/tickers", params={"instId": instrument})
+            )
+            # Preflight IO can outlast the caller's timestamp. Check freshness at receipt.
+            now = self._clock()
+            quote = next((r for r in ticker if r.get("instId") == instrument), None)
+            if quote is None:
+                raise ValueError("Demo quote unavailable.")
+            observed = _time(quote.get("ts"))
+            if not 0 <= (now - observed).total_seconds() < 10:
+                raise ValueError("Demo quote stale or future dated.")
+            price = _positive(quote.get("last"))
         return DemoVenueSnapshot(
             instrument=instrument,
-            price=_positive(quote.get("last")),
+            price=price,
             observed_at=observed,
-            tick=_positive(row.get("tickSize")),
-            lot=_positive(row.get("lotSize")),
-            minimum=_positive(row.get("minSize")),
-            multiplier=_positive(row.get("contractValue")),
+            tick=tick,
+            lot=lot,
+            minimum=minimum,
+            multiplier=multiplier,
             equity=balance.total,
             available=balance.available,
-            maximum=_positive(row.get("maxMarketSize")),
+            maximum=maximum,
         )
 
     def verify_flat_account(self) -> None:
         """Account-wide proof, including orders on other watchlist markets."""
-        positions = _account_rows(
-            self._client.request("GET", "/api/v1/account/positions", signed=True)
-        )
-        for position in positions:
-            quantity = Decimal(str(position.get("positions")))
-            if not quantity.is_finite() or quantity != 0:
-                raise ValueError("Demo position already open or unreadable; new entry refused.")
-        for endpoint in ("orders-pending", "orders-tpsl-pending"):
-            pending = _account_rows(
-                self._client.request(
-                    "GET", f"/api/v1/trade/{endpoint}", params={"limit": "100"}, signed=True
-                )
+        with preflight_stage("positions", "GET /api/v1/account/positions"):
+            positions = _account_rows(
+                self._client.request("GET", "/api/v1/account/positions", signed=True)
             )
-            if pending:
-                raise ValueError("Demo pending orders or protection; new entry refused.")
+            for position in positions:
+                quantity = Decimal(str(position.get("positions")))
+                if not quantity.is_finite() or quantity != 0:
+                    raise ValueError("Demo position already open or unreadable; new entry refused.")
+        for stage, endpoint in (
+            ("pending_orders", "orders-pending"),
+            ("pending_protection", "orders-tpsl-pending"),
+        ):
+            with preflight_stage(stage, f"GET /api/v1/trade/{endpoint}"):
+                pending = _account_rows(
+                    self._client.request(
+                        "GET", f"/api/v1/trade/{endpoint}", params={"limit": "100"}, signed=True
+                    )
+                )
+                if pending:
+                    raise ValueError("Demo pending orders or protection; new entry refused.")
 
     def verify_permissions(self) -> None:
-        permissions = self._account.get_account_permissions()
-        if (
-            not permissions.can_read
-            or not permissions.can_trade
-            or permissions.can_withdraw
-            or permissions.can_transfer
-        ):
-            raise ValueError("Verified read/trade-only demo permissions required.")
+        with preflight_stage("permissions", "GET /api/v1/user/query-apikey"):
+            permissions = self._account.get_account_permissions()
+            if (
+                not permissions.can_read
+                or not permissions.can_trade
+                or permissions.can_withdraw
+                or permissions.can_transfer
+            ):
+                raise ValueError("Verified read/trade-only demo permissions required.")
 
     def reconcile_exit(
         self, *, plan: TradePlanRevision, entry: DemoOrderEvidence

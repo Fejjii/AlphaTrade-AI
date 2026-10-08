@@ -62,6 +62,7 @@ class DisciplineScoreSummary(StrictModel):
 
 class OpenPaperTradesSummary(StrictModel):
     proposal_flow_count: int = 0
+    paper_execution_count: int = 0
     paper_validation_count: int = 0
     total_count: int = 0
     total_open_exposure: Decimal | None = None
@@ -70,6 +71,10 @@ class OpenPaperTradesSummary(StrictModel):
 
 
 class OpenPaperTradeItem(StrictModel):
+    journal_trade_id: UUID | None = None
+    account_id: UUID | None = None
+    exchange: str | None = None
+    entry_price: Decimal | None = None
     position_id: UUID | None = None
     paper_trade_id: UUID | None = None
     strategy_id: UUID | None = None
@@ -78,7 +83,7 @@ class OpenPaperTradeItem(StrictModel):
     direction: str
     unrealized_pnl: Decimal | None = None
     status: str = "open"
-    source: str = Field(description="proposal_flow or paper_validation")
+    source: str = Field(description="Canonical Journal source: paper_execution or paper_validation")
 
 
 class StrategyReadinessCounts(StrictModel):

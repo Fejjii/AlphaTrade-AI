@@ -5,6 +5,26 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-115 — Presentation preflight and Dashboard consistency
+
+- Priority: P0 · Status: DONE (implementation; review/deployment/live acceptance pending).
+- Base: main `e4a781679ccda9258c28d5330671d3aaa54376d8`; preserves PR220–224.
+- BloFin: owner-reported preview403 at 2026-10-07T16:11:33Z; live root cause
+  unverified. Stage/endpoint, fixed reason/type and bounded numeric protocol fields
+  replace the blanket diagnostic silence; no private response/error text is logged.
+- Dashboard cause: stale Position/TradeJournal projections differ from canonical
+  JournalTrade used by Attention and Agent. Align open positions/counts and recent
+  trades; count beyond page limits; label account/venue/date and portfolio scopes.
+- Validation: 139 PostgreSQL/simulated venue, 41 Dashboard/Attention, 52 existing
+  BloFin provider cases; focused frontend, Ruff/format and six-source mypy.
+  Final frontend counts and exact commands recorded in the delivery handoff.
+- Boundaries: no orders, account mutations, history rewrites, full backend runs,
+  deployment, exchange/worker activation or safety relaxation.
+- Release: one consolidated PR; review, one exact-SHA full_backend=true CI gate,
+  deploy disarmed and repeat the original preview only. Live provider root cause
+  awaits structured deployed evidence; no credential recreation requested.
+- Reference: `docs/presentation_repairs_20261007.md`; AT-ADR-096.
+
 ## AT-111 — Agent Journal target evidence
 
 Queued after completed PR220. Read-only follow-up from main 8bab505: expose bounded

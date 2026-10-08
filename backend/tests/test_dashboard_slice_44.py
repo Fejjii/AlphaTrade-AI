@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.db.base import Base
 from app.db.models import (
     DailyRiskState,
+    JournalTrade,
     LessonCandidate,
     MarketWatcherScanRecord,
     Membership,
@@ -34,6 +35,8 @@ from app.db.session import get_session
 from app.main import create_app
 from app.schemas.common import (
     BacktestStatus,
+    JournalTradeSource,
+    JournalTradeStatus,
     LessonCandidateStatus,
     LessonSeverity,
     LessonSourceType,
@@ -268,6 +271,110 @@ def test_summary_returns_paper_safety_status(dashboard_client: TestClient) -> No
     assert body["safety"]["execution_mode"] == "paper"
     assert body["safety"]["paper_only"] is True
     assert body["safety"]["real_trading_disabled"] is True
+
+
+def test_canonical_open_count_matches_attention_across_accounts_dates_and_venues(
+    dashboard_db, dashboard_client
+):
+    factory, _ = dashboard_db
+    expected_ids = set()
+    with factory() as session:
+        for index in range(14):
+            row = JournalTrade(
+                organization_id=ORG_A,
+                user_id=USER_A,
+                source=JournalTradeSource.PAPER_EXECUTION
+                if index < 12
+                else JournalTradeSource.PAPER_VALIDATION,
+                status=JournalTradeStatus.OPEN,
+                symbol="BTCUSDT" if index < 12 else "ETHUSDT",
+                direction=TradeDirection.LONG,
+                timeframe="15m",
+                exchange="PAPER_INTERNAL" if index % 2 == 0 else "BLOFIN_DEMO",
+                account_id=uuid.UUID(int=1000 + index % 2),
+                entry_time=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index),
+                entry_price=Decimal("100000"),
+            )
+            session.add(row)
+            session.flush()
+            expected_ids.add(str(row.id))
+        for org, user, source, status in (
+            (ORG_B, USER_B, JournalTradeSource.PAPER_EXECUTION, JournalTradeStatus.OPEN),
+            (ORG_A, USER_B, JournalTradeSource.PAPER_EXECUTION, JournalTradeStatus.OPEN),
+            (ORG_A, USER_A, JournalTradeSource.PAPER_EXECUTION, JournalTradeStatus.CLOSED),
+            (ORG_A, USER_A, JournalTradeSource.PAPER_EXECUTION, JournalTradeStatus.PLANNED),
+            (ORG_A, USER_A, JournalTradeSource.MANUAL, JournalTradeStatus.OPEN),
+            (ORG_A, USER_A, JournalTradeSource.MANUAL_DEMO_TEST, JournalTradeStatus.OPEN),
+        ):
+            session.add(
+                JournalTrade(
+                    organization_id=org,
+                    user_id=user,
+                    source=source,
+                    status=status,
+                    symbol="ZECUSDT",
+                    direction=TradeDirection.SHORT,
+                    timeframe="15m",
+                )
+            )
+        session.commit()
+    headers = _auth_headers(dashboard_client, "dashboard-a@test.example")
+    summary_response = dashboard_client.get("/dashboard/summary", headers=headers)
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    open_trades = summary["open_paper_trades_summary"]
+    assert open_trades["total_count"] == 14
+    assert open_trades["paper_execution_count"] == 12
+    assert open_trades["proposal_flow_count"] == 12  # Existing client compatibility.
+    assert open_trades["paper_validation_count"] == 2
+    assert len(open_trades["items"]) == 10
+    assert {r["journal_trade_id"] for r in open_trades["items"]} <= expected_ids
+    assert {r["exchange"] for r in open_trades["items"]} == {"PAPER_INTERNAL", "BLOFIN_DEMO"}
+    assert {r["account_id"] for r in open_trades["items"]} == {
+        str(uuid.UUID(int=1000)),
+        str(uuid.UUID(int=1001)),
+    }
+    assert open_trades["total_open_exposure"] is None
+    assert all(r["unrealized_pnl"] is None for r in open_trades["items"])
+    assert summary["open_paper_trades"] == open_trades["items"]
+    attention = dashboard_client.get("/dashboard/attention", headers=headers).json()
+    position_ids = {
+        source["record_id"]
+        for item in attention["items"]
+        if item["category"] == "paper_position"
+        for source in item["sources"]
+        if source["record_type"] == "journal_trades"
+    }
+    assert position_ids == expected_ids
+    recent = dashboard_client.get("/journal/trades?limit=8", headers=headers).json()
+    assert recent["total"] == 18  # Recent Journal deliberately includes all source/status types.
+    assert all(row["user_id"] == str(USER_A) for row in recent["items"])
+
+
+def test_canonical_open_read_does_not_flush_or_rewrite_pending_records(dashboard_db):
+    factory, settings = dashboard_db
+    statements = []
+    with factory() as session:
+        session.add(
+            JournalTrade(
+                organization_id=ORG_A,
+                user_id=USER_A,
+                source=JournalTradeSource.PAPER_EXECUTION,
+                status=JournalTradeStatus.OPEN,
+                symbol="BTCUSDT",
+                direction=TradeDirection.LONG,
+                timeframe="15m",
+            )
+        )
+        event.listen(
+            session.bind, "before_cursor_execute", lambda _c, _u, sql, *_a: statements.append(sql)
+        )
+        result = DashboardSummaryService(session, settings)._open_paper_trades_summary(
+            ORG_A, USER_A
+        )
+        assert result.total_count == 0
+        assert len(session.new) == 1
+    assert statements and all(sql.lstrip().upper().startswith("SELECT") for sql in statements)
 
 
 def test_daily_snapshot_counts_trades_today(

@@ -11,7 +11,11 @@ import {
   watcherTraderLabel,
 } from "@/components/dashboard/trader-dashboard";
 import { UNAVAILABLE } from "@/lib/format";
-import type { PaperAlert, PaperPortfolioResponse } from "@/lib/api/types";
+import type {
+  DashboardSummary,
+  PaperAlert,
+  PaperPortfolioResponse,
+} from "@/lib/api/types";
 
 describe("trader dashboard view model", () => {
   it("maps watcher and market evidence into trader language", () => {
@@ -64,8 +68,14 @@ describe("trader dashboard view model", () => {
   });
 
   it("uses the total position count instead of the truncated display window", () => {
-    expect(openPositionCount(okSource({ total: 25 }))).toBe("25");
+    const summary = okSource({
+      open_paper_trades_summary: { total_count: 25, items: [] },
+    } as unknown as DashboardSummary);
+    expect(openPositionCount(summary)).toBe("25");
     expect(openPositionCount(failedSource("down"))).toBe(UNAVAILABLE);
+    expect(openPositionCount(
+      okSource({ open_paper_trades_summary: null } as DashboardSummary),
+    )).toBe(UNAVAILABLE);
   });
 
   it("shows recorded zero expectancy, but never measures an empty or failed sample", () => {

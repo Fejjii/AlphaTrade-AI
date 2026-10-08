@@ -108,7 +108,7 @@ describe("Daily Review", () => {
   it("exposes Daily Review on the existing trader dashboard even when other sources fail", async () => {
     dailyReview.mockResolvedValue(review);
     render(<TraderDashboardView data={{
-      portfolio: failedSource("down"), positions: failedSource("down"),
+      portfolio: failedSource("down"),
       journal: failedSource("down"), strategyStats: failedSource("down"),
       summary: failedSource("down"), watcher: failedSource("down"),
       market: failedSource("down"), alerts: failedSource("down"),
