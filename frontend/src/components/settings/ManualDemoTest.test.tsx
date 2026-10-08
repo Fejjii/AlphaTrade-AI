@@ -23,6 +23,7 @@ const status: ManualDemoStatus = {
   fees: "0.02", protection: "verified", journal_trade_id: "journal", missing_evidence: ["Exit is not reconciled."],
 };
 beforeEach(() => {
+  vi.spyOn(manualDemo, "history").mockResolvedValue({ items: [], total: 0, limit: 5, offset: 0 });
   vi.spyOn(manualDemo, "instrument").mockResolvedValue(instrument);
   vi.spyOn(manualDemo, "preview").mockResolvedValue(preview);
   vi.spyOn(manualDemo, "confirm").mockResolvedValue(status);
@@ -75,7 +76,7 @@ it("lost response only offers recovery of the same plan", async () => {
   expect(manualDemo.confirm).toHaveBeenNthCalledWith(2, preview);
 });
 it("partial fills expose actual facts and allow cancellation and reconciliation", async () => {
-  vi.mocked(manualDemo.confirm).mockResolvedValueOnce({ ...status, status: "partial_fill_protected_operator_hold", filled_quantity: "1", remaining_quantity: "1" });
+  vi.mocked(manualDemo.confirm).mockResolvedValueOnce({ ...status, status: "partial_fill_protected_operator_hold", filled_quantity: "1", remaining_quantity: "1", can_cancel: true });
   await prepare();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Confirm and submit demo market order" }));

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.schemas.agent_paper import AgentPaperTradeIntent
 from app.schemas.backtest import BacktestRunCreate
@@ -100,6 +100,21 @@ class RecordedTradeInput(StrictModel):
     paper_only: bool = False
     execution_venue: Literal["PAPER_INTERNAL", "BLOFIN_DEMO", "BLOFIN_REAL", "BLOFIN"] | None = None
     trade_origin: Literal["manual_demo_test", "paper_execution", "manual"] | None = None
+    command_id: UUID | None = None
+    since: datetime | None = None
+    until: datetime | None = None
+    requested_quantity: PositiveDecimal | None = None
+    submission_status: Literal["attempt", "blocked", "submitted", "uncertain", "filled"] = "attempt"
+    unsupported_filters: list[str] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def validate_times(self) -> RecordedTradeInput:
+        for value in (self.since, self.until):
+            if value is not None and value.utcoffset() is None:
+                raise ValueError("Time filters require an explicit timezone.")
+        if self.since and self.until and self.since > self.until:
+            raise ValueError("Submission-time range is reversed.")
+        return self
 
 
 class PaperExecutionExplanationInput(StrictModel):

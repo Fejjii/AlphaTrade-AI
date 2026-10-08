@@ -43,6 +43,19 @@ class ManualVenue(Venue):
     cancelled = False
 
     def handle(self, request):
+        if request.url.path.endswith("orders-tpsl-history"):
+            return httpx.Response(200, json={"code": "0", "data": []})
+        if request.url.path.endswith("orders-history"):
+            if self.order is None:
+                data = []
+            else:
+                detail_request = httpx.Request(
+                    "GET",
+                    "https://demo-trading-openapi.blofin.com/api/v1/trade/order-detail",
+                    params={"clientOrderId": self.order["clientOrderId"]},
+                )
+                data = self.handle(detail_request).json()["data"]
+            return httpx.Response(200, json={"code": "0", "data": data})
         if request.url.path.endswith("cancel-order"):
             assert request.method == "POST"
             self.cancel_count += 1

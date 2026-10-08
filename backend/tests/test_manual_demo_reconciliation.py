@@ -59,7 +59,9 @@ def native(world, monkeypatch):
             content["data"][0]["ts"] = LIVE_TS
         if venue.order is not None:
             client = venue.order["clientOrderId"]
-            if request.url.path.endswith("order-detail"):
+            if request.url.path.endswith("order-detail") or request.url.path.endswith(
+                "orders-history"
+            ):
                 # Native order detail object, not a reflected POST request.
                 content["data"] = {
                     "orderId": "28697026",
@@ -77,6 +79,8 @@ def native(world, monkeypatch):
                     "tpslId": "2411",
                     **changes["order"],
                 }
+                if request.url.path.endswith("orders-history"):
+                    content["data"] = [content["data"]]
             elif request.url.path.endswith("fills-history"):
                 content["data"] = [
                     {

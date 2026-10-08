@@ -7,6 +7,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = (
     "scripts/check-env.sh",
@@ -171,6 +173,46 @@ def test_backend_entrypoint_honors_custom_command() -> None:
     assert 'if [ "$#" -gt 0 ]' in text
     assert 'exec "$@"' in text
     assert "alembic upgrade head" in text
+
+
+@pytest.mark.parametrize("migration_exit", [0, 23])
+def test_backend_entrypoint_starts_api_only_after_successful_migration(
+    tmp_path: Path, migration_exit: int
+) -> None:
+    """Exercise the real boot script; a failed migration must never reach the API."""
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    trace = tmp_path / "boot.log"
+    for name, script in (
+        ("alembic", 'printf "alembic %s\\n" "$*" >> "$BOOT_TRACE"\nexit "$MIGRATION_EXIT"'),
+        ("uvicorn", 'printf "uvicorn %s\\n" "$*" >> "$BOOT_TRACE"'),
+    ):
+        executable = commands / name
+        executable.write_text("#!/bin/sh\n" + script + "\n", encoding="utf-8")
+        executable.chmod(0o755)
+    result = subprocess.run(
+        ["/bin/sh", str(ROOT / "backend/docker/entrypoint.sh")],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": str(commands),
+            "BOOT_TRACE": str(trace),
+            "MIGRATION_EXIT": str(migration_exit),
+            "PORT": "8123",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == migration_exit
+    called = trace.read_text(encoding="utf-8").splitlines()
+    assert called[0] == "alembic upgrade head"
+    if migration_exit:
+        assert called == ["alembic upgrade head"]
+    else:
+        assert len(called) == 2
+        assert called[1].startswith("uvicorn app.main:app ")
+        assert "--port 8123" in called[1]
 
 
 def test_staging_env_example_requires_hosted_qdrant() -> None:

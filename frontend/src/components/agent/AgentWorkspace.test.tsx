@@ -197,6 +197,25 @@ describe("Agent workspace", () => {
     expect(details).not.toHaveAttribute("open");
   });
 
+  it("presents bounded manual command choices as visible durable links", async () => {
+    apiMocks.listMessages.mockResolvedValue({ items: [{
+      id: "choices", role: "assistant", created_at: "2026-10-08",
+      content: "Multiple manual BloFin demo orders match. Select an exact command.",
+      payload: { interactive_agent: { sources: [
+        { relation: "manual demo choice", record_id: "original-command", title: "12:56 UTC | 0.1 contracts | filled" },
+        { relation: "manual demo choice", record_id: "blocked-command", title: "13:02 UTC | 1 contracts | blocked" },
+      ] } },
+    }] });
+    render(<AgentWorkspace />);
+    fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
+    const choices = await screen.findByRole("list", { name: "Matching manual demo attempts" });
+    expect(choices).toHaveTextContent("0.1 contracts | filled");
+    expect(choices).toHaveTextContent("1 contracts | blocked");
+    expect(screen.getByRole("link", { name: "12:56 UTC | 0.1 contracts | filled" })).toHaveAttribute("href", "/execution/manual-demo/original-command");
+    expect(screen.getByRole("link", { name: "13:02 UTC | 1 contracts | blocked" })).toHaveAttribute("href", "/execution/manual-demo/blocked-command");
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+  });
+
   it("keeps full evidence available when the post-turn history request fails", async () => {
     apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
     apiMocks.agentTurn.mockResolvedValue({

@@ -131,6 +131,7 @@ def reconcile_native(
             "order_identity_mismatch",
         )
         order_id = identity(order.get("orderId"))
+        native_tpsl_id = identity(order["tpslId"]) if order.get("tpslId") else None
         require(
             order.get("side") == ("buy" if plan.side is EntrySide.BUY else "sell")
             and number(order.get("size"), field="size", positive=True) == plan.quantity.value
@@ -296,4 +297,5 @@ def reconcile_native(
         "verified" if verified else protection_status,
         tuple(verified),
         tuple(diagnostics[:4]),
+        native_tpsl_id,
     )

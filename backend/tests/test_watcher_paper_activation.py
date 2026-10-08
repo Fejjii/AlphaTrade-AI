@@ -212,6 +212,11 @@ def test_unhealthy_migration_cannot_start() -> None:
         _config(),
         _observations(worker_id, migration_revision="b6f2d9a10e73"),
     )
+    _refuses(
+        "migration_unhealthy",
+        _config(),
+        _observations(worker_id, migration_revision="a6manualdemo001"),
+    )
 
 
 def test_settings_cannot_construct_real_trading_or_armed_replay() -> None:
@@ -390,13 +395,14 @@ def test_migration_reader_fails_closed_without_one_revision() -> None:
     with factory() as session:
         assert read_migration_revision(session) is None
         session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        assert read_migration_revision(session) is None
         session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('d9e0f1a2b3c4')"))
         session.commit()
         assert read_migration_revision(session) == "d9e0f1a2b3c4"
         session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('other')"))
         session.commit()
         assert read_migration_revision(session) is None
-    assert expected_migration_head() == "a6manualdemo001"
+    assert expected_migration_head() == "a7manualrecovery001"
 
 
 @pytest.mark.parametrize(
@@ -502,4 +508,4 @@ def test_expected_migration_head_is_independent_of_process_working_directory(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert expected_migration_head() == "a6manualdemo001"
+    assert expected_migration_head() == "a7manualrecovery001"

@@ -1,8 +1,8 @@
 """Owner-confirmed manual demo origin using existing claim, fences and venue facts.
 
-No strategy approval or synthetic Candidate. Account history remains held until
-operator review; this first-entry acceptance capability does not enable repeat
-entries or synthesize exit outcomes.
+No strategy approval or synthetic Candidate. An explicit audited recovery can
+resolve only this command's verified completed or definitively unsent lifecycle.
+Incomplete evidence retains its account claim; global safety remains unchanged.
 """
 
 from collections.abc import Callable
@@ -25,6 +25,7 @@ from app.db.models import (
     ExecutionFillFact,
     ExecutionProjection,
     JournalTrade,
+    ManualDemoLifecycleResolution,
     RiskReservation,
     TradeProposal,
     VenueSubmitEffect,
@@ -41,6 +42,10 @@ from app.providers.exchange.governed_blofin import (
     DemoFill,
     DemoVenueSnapshot,
     GovernedBloFinDemoProvider,
+)
+from app.providers.exchange.manual_demo_lifecycle import (
+    ManualLifecycleObservation,
+    observe_lifecycle,
 )
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
@@ -83,8 +88,14 @@ from app.services.canonical_serialization import canonical_sha256
 from app.services.execution_account_service import ExecutionAccountService
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
 from app.services.execution_fills import fill_content_hash
+from app.services.manual_demo_history import ManualDemoHistoryService
 from app.services.manual_demo_plan import MANUAL_DEMO_ORIGIN, build_manual_plan
 from app.services.manual_demo_policy import validate_manual_demo
+from app.services.manual_demo_recovery import (
+    project_verified_exits,
+    record_lifecycle,
+    resolve_manual_lifecycle,
+)
 from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 from app.services.planned_reward_risk import PlannedRewardRiskError, execution_reward_risk
 from app.services.risk.kill_switch import KillSwitchService
@@ -530,6 +541,11 @@ class ManualDemoService:
 
     def reconcile(self, tenant: TenantContext, command_id: UUID) -> ManualDemoStatus:
         command, plan, effect = self._command(tenant, command_id)
+        resolved = self.session.scalar(
+            select(ManualDemoLifecycleResolution).where(
+                ManualDemoLifecycleResolution.command_id == command_id
+            )
+        )
         status = command.blocked_reason_code or "not_sent"
         protection = "unverified"
         evidence = None
@@ -567,6 +583,26 @@ class ManualDemoService:
                 self.session.commit()
             else:
                 status = "ambiguous_operator_hold" if evidence is None else evidence.status
+        locally_unsent = command.outcome.value == "BLOCKED" or (
+            effect is not None
+            and effect.state
+            in {
+                VenueSubmitEffectState.CREATED,
+                VenueSubmitEffectState.LEASED,
+                VenueSubmitEffectState.PROVEN_UNSENT,
+            }
+            and effect.dispatch_authorized_at is None
+            and not effect.uncertainty
+        )
+        observation = None
+        if not diagnostics:
+            self.session.commit()
+            observation = observe_lifecycle(
+                self._provider(), plan=plan, entry=evidence, proven_unsent=locally_unsent
+            )
+            self.epochs.lock_epoch(
+                organization_id=tenant.organization_id, account_id=plan.account_id
+            )
         if evidence is not None:
             diagnostics = evidence.diagnostics
             self.epochs.lock_epoch(
@@ -618,6 +654,7 @@ class ManualDemoService:
                 "planned_target": str(plan.risk_and_exits.targets[0].price.value),
                 "filled_quantity": str(sum((f.quantity for f in evidence.fills), Decimal("0"))),
                 "plan_content_hash": plan.content_hash,
+                "native_tpsl_id": evidence.native_tpsl_id,
                 "diagnostics": [d.model_dump(exclude_none=True) for d in diagnostics],
             }
             receipt_hash = canonical_sha256(receipt)
@@ -637,6 +674,15 @@ class ManualDemoService:
                     command_id,
                     "manual_demo_native_order_receipt",
                     {"receipt_hash": receipt_hash, **receipt},
+                )
+            if observation:
+                record_lifecycle(
+                    self.session,
+                    command=command,
+                    plan=plan,
+                    observation=observation,
+                    audit=self.audit,
+                    native_receipt_hash=receipt_hash,
                 )
             fees = sum((f.fee for f in evidence.fills), Decimal("0"))
             for fact in evidence.fills:
@@ -691,9 +737,29 @@ class ManualDemoService:
                     )
             protection = evidence.protection_status
             self._journal(tenant, command, plan, evidence.fills, fees, protection)
+            if observation and evidence.fills:
+                project_verified_exits(
+                    self.session,
+                    command=command,
+                    plan=plan,
+                    observation=observation,
+                    entry_fees=fees,
+                )
             if evidence.status in {"canceled", "cancelled", "expired"}:
                 self._dispatcher().record_demo_terminal(command_id=command_id)
-            if evidence.fills and not evidence.protected:
+            recorded_closed = (
+                ManualDemoHistoryService(self.session)
+                .get(tenant, command_id)
+                .evidence.execution_status
+                == "closed"
+            )
+            if (
+                evidence.fills
+                and not evidence.protected
+                and not resolved
+                and not recorded_closed
+                and (observation is None or observation.position_status != "closed_verified")
+            ):
                 KillSwitchService(self.session, self.audit, self.settings).activate(
                     organization_id=tenant.organization_id,
                     actor_user_id=tenant.user_id,
@@ -710,7 +776,7 @@ class ManualDemoService:
                     == plan.quantity.value
                     else "partial_fill_protected_operator_hold"
                 )
-            if any(
+            if not resolved and any(
                 not plan.entry_zone.lower <= f.price <= plan.entry_zone.upper
                 for f in evidence.fills
             ):
@@ -724,6 +790,10 @@ class ManualDemoService:
                 )
                 status = "actual_fill_outside_plan_operator_hold"
             self.session.commit()
+        elif observation:
+            record_lifecycle(
+                self.session, command=command, plan=plan, observation=observation, audit=self.audit
+            )
         projection = self.session.scalar(
             select(ExecutionProjection)
             .join(VenueSubmitEffect, VenueSubmitEffect.receipt_id == ExecutionProjection.receipt_id)
@@ -737,8 +807,10 @@ class ManualDemoService:
             )
         )
         missing = [
-            "Exit and realized outcome are not reconciled by this first-entry manual capability.",
-            "Account remains held for operator review; no automatic repeat entry.",
+            (
+                "Account claim remains held until explicit evidence-backed "
+                "recovery; global safety is unchanged."
+            )
         ]
         cancel_requested = self.session.scalar(
             select(AuditLog.id).where(
@@ -770,13 +842,15 @@ class ManualDemoService:
                 "against this order in BloFin demo, then refresh this SAME command. "
                 "Do not resubmit or clear the operator hold."
             )
+        self.session.commit()
+        durable = ManualDemoHistoryService(self.session).get(tenant, command_id).evidence
         return ManualDemoStatus(
             revision_id=plan.revision_id,
             command_id=command_id,
             client_order_id=effect.client_order_id if effect else "",
             venue_order_id=evidence.order_id if evidence else None,
             protection_order_ids=evidence.protection_order_ids if evidence else (),
-            status=status,
+            status=durable.status if resolved else status,
             filled_quantity=projection.filled_quantity if projection else Decimal("0"),
             remaining_quantity=projection.remaining_quantity if projection else plan.quantity.value,
             average_fill_price=projection.weighted_price if projection else None,
@@ -784,8 +858,87 @@ class ManualDemoService:
             protection=protection,
             journal_trade_id=trade.id if trade else None,
             missing_evidence=tuple(missing),
-            reconciliation_diagnostics=diagnostics,
+            reconciliation_diagnostics=diagnostics
+            + (observation.diagnostics if observation else ()),
+            execution_status=durable.execution_status,
+            position_status=durable.position_status,
+            account_status=durable.account_status,
+            protection_history=durable.protection_history,
+            exit_fills=durable.exit_fills,
+            observed_at=durable.observed_at,
+            reconciliation_freshness=durable.reconciliation_freshness,
+            exit_quantity=durable.exit_quantity,
+            exit_price=durable.exit_price,
+            exit_fees=durable.exit_fees,
+            venue_reported_fill_pnl=durable.venue_reported_fill_pnl,
+            recovery_status=durable.recovery_status,
+            recovery_reason=durable.recovery_reason,
+            account_claim_command_ids=durable.account_claim_command_ids,
+            reservation_status=durable.reservation_status,
+            can_reconcile=durable.can_reconcile,
+            can_cancel=durable.can_cancel,
+            can_resolve=durable.can_resolve,
         )
+
+    def resolve(self, tenant: TenantContext, command_id: UUID) -> ManualDemoStatus:
+        """Explicit audited local recovery; refresh proof, never change venue state."""
+        command, plan, effect = self._command(tenant, command_id)
+        existing = self.session.scalar(
+            select(ManualDemoLifecycleResolution).where(
+                ManualDemoLifecycleResolution.command_id == command_id
+            )
+        )
+        if existing:
+            return ManualDemoHistoryService(self.session).get(tenant, command_id).evidence
+        if effect and effect.state in {
+            VenueSubmitEffectState.CREATED,
+            VenueSubmitEffectState.LEASED,
+            VenueSubmitEffectState.PROVEN_UNSENT,
+        }:
+            self._dispatcher().fence_proven_unsent(command_id=command_id)
+            self.session.commit()
+        current = self.reconcile(tenant, command_id)
+        if not current.can_resolve:
+            raise TradingPolicyError(
+                current.recovery_reason or "Complete terminal evidence is required.",
+                details={"reason": "manual_demo_resolution_evidence_incomplete"},
+            )
+        # Use the just-read full precision observation, not rounded Journal values
+        # or client-supplied proof. The epoch serializes release with new claims.
+        latest = self.session.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.organization_id == tenant.organization_id,
+                AuditLog.user_id == tenant.user_id,
+                AuditLog.resource_id == str(command_id),
+                AuditLog.redacted_metadata["operation"].as_string()
+                == "manual_demo_lifecycle_observed",
+            )
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .limit(1)
+        )
+        assert latest is not None
+        facts = latest.redacted_metadata
+        observation = ManualLifecycleObservation(
+            observed_at=datetime.fromisoformat(facts["observed_at"]),
+            position_status=facts["position_status"],
+            protection_history=tuple(facts["protection_history"]),
+            exit_fills=tuple(facts["exit_fills"]),
+            account_flat=facts["account_flat"],
+            account_idle=facts["account_idle"],
+            resolution_reason=facts["resolution_reason"],
+            recovery_reason=facts["recovery_reason"],
+        )
+        resolve_manual_lifecycle(
+            self.session,
+            command=command,
+            plan=plan,
+            observation=observation,
+            epochs=self.epochs,
+            audit=self.audit,
+        )
+        self.session.commit()
+        return ManualDemoHistoryService(self.session).get(tenant, command_id).evidence
 
     def _replay_representation(
         self, tenant: TenantContext, command_id: UUID, fact: DemoFill
@@ -904,8 +1057,22 @@ class ManualDemoService:
         trade.entry_price = sum((f.quantity * f.price for f in fills), Decimal("0")) / total
         trade.size = total * plan.instrument_rules.contract_multiplier
         trade.entry_time = min(f.occurred_at for f in fills)
-        trade.fees = fees
-        trade.status = JournalTradeStatus.OPEN
+        exits = list(
+            self.session.scalars(
+                select(AuditLog).where(
+                    AuditLog.organization_id == tenant.organization_id,
+                    AuditLog.user_id == tenant.user_id,
+                    AuditLog.resource_type == "manual_demo_test",
+                    AuditLog.resource_id == str(command.id),
+                    AuditLog.redacted_metadata["operation"].as_string() == "manual_demo_exit_fill",
+                )
+            )
+        )
+        trade.fees = fees + sum(
+            (Decimal(a.redacted_metadata["fact"]["fee"]) for a in exits), Decimal("0")
+        )
+        if trade.exit_price is None:
+            trade.status = JournalTradeStatus.OPEN
         trade.entry_plan = (
             f"Actual BloFin demo fills; protection {protection}; plan {plan.revision_id}"
         )

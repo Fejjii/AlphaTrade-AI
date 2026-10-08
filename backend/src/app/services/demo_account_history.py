@@ -5,7 +5,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ExecutionCommand, GovernedDemoLifecycleResolution, TradePlanRevision
+from app.db.models import (
+    ExecutionCommand,
+    GovernedDemoLifecycleResolution,
+    ManualDemoLifecycleResolution,
+    TradePlanRevision,
+)
 from app.schemas.execution_protocol import ExecutionCommandOutcome
 
 
@@ -38,6 +43,17 @@ def has_demo_entry_history(session: Session, *, organization_id: UUID, account_i
                 ExecutionCommand.outcome == ExecutionCommandOutcome.ALLOW,
                 TradePlanRevision.execution_venue == "BLOFIN_DEMO",
                 GovernedDemoLifecycleResolution.id.is_(None),
+                ~select(ManualDemoLifecycleResolution.id)
+                .where(
+                    ManualDemoLifecycleResolution.command_id == ExecutionCommand.id,
+                    ManualDemoLifecycleResolution.organization_id
+                    == ExecutionCommand.organization_id,
+                    ManualDemoLifecycleResolution.user_id == ExecutionCommand.user_id,
+                    ManualDemoLifecycleResolution.account_id == ExecutionCommand.account_id,
+                    ManualDemoLifecycleResolution.revision_id == ExecutionCommand.revision_id,
+                    TradePlanRevision.plan_authority == "manual_demo_test",
+                )
+                .exists(),
             )
             .limit(1)
         )

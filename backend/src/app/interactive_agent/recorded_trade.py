@@ -28,6 +28,7 @@ from app.db.models import (
 )
 from app.interactive_agent.actions import ActionRequest, RecordedTradeInput
 from app.interactive_agent.contracts import ArtifactKind, ConnectionRef, ProvenanceSource
+from app.interactive_agent.manual_demo_selection import manual_selectors
 from app.interactive_agent.parsing import extract_direction, extract_symbol
 from app.interactive_agent.presentation import readable_number, readable_percentage, readable_price
 from app.interactive_agent.recorded_setup_evidence import read_setup_evidence
@@ -96,9 +97,12 @@ def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest |
     historical_position = position is not None and bool(
         re.search(r"\b(?:qualified|executed|filled|taken|traded)\b", message, re.I)
     )
-    scoped_demo = trade_scope(message)["trade_origin"] == "manual_demo_test"
+    precise = manual_selectors(message)
+    scoped_demo = trade_scope(message)["trade_origin"] == "manual_demo_test" or bool(
+        precise.get("command_id")
+    )
     has_record = bool(re.search(r"\btrades?\b", message, re.I)) or historical_position
-    if scoped_demo and re.search(r"\b(?:orders?|positions?)\b", message, re.I):
+    if scoped_demo and re.search(r"\b(?:orders?|positions?|attempts?|commands?)\b", message, re.I):
         has_record = True
     has_read = bool(_READ.search(message)) or (
         scoped_demo and bool(re.search(r"\b(?:what|why|how|show|summari[sz]e)\b", message, re.I))
@@ -130,6 +134,7 @@ def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest |
         name="paper_trade.read_recorded",
         arguments={
             **trade_scope(message),
+            **(precise if scoped_demo else {}),
             "symbol": extract_symbol(message) or (None if market_name else symbol),
             "market_name": market_name if extract_symbol(message) is None else None,
             "direction": extract_direction(message),
@@ -183,13 +188,35 @@ def read_recorded_trade(
     user_id: UUID,
 ) -> RecordedTradeRead:
     with session.no_autoflush:
+        if inputs.unsupported_filters:
+            reason = (
+                "Unsupported selection filters: "
+                + " ".join(inputs.unsupported_filters)
+                + " No record was selected."
+            )
+            return RecordedTradeRead(reason, reason, allow_model=False)
+        if (
+            (
+                inputs.since
+                or inputs.until
+                or inputs.requested_quantity is not None
+                or inputs.submission_status != "attempt"
+            )
+            and inputs.trade_origin != "manual_demo_test"
+            and inputs.command_id is None
+        ):
+            reason = (
+                "Time, contract quantity and submission-status filters currently "
+                "require manual BloFin demo scope. No filter was silently ignored."
+            )
+            return RecordedTradeRead(reason, reason, allow_model=False)
         if inputs.execution_venue == "BLOFIN":
             reason = (
                 "BloFin venue selection is incomplete. Specify BloFin demo or real; no other "
                 "trade is substituted."
             )
             return RecordedTradeRead(reason, reason)
-        if inputs.trade_origin == "manual_demo_test" and inputs.journal_trade_id is None:
+        if inputs.command_id is not None or inputs.trade_origin == "manual_demo_test":
             from app.interactive_agent.manual_demo_evidence import select_manual_demo
 
             return select_manual_demo(
