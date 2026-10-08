@@ -3,13 +3,12 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
     ApprovalAuthorization,
     AuditLog,
-    ExecutionAccount,
     ExecutionCommand,
     ExecutionFillFact,
     ExecutionReceipt,
@@ -29,68 +28,106 @@ from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 def select_manual_demo(
     session: Session, inputs: RecordedTradeInput, *, organization_id: UUID, user_id: UUID
 ) -> RecordedTradeRead:
-    filters = [
-        ExecutionCommand.organization_id == organization_id,
-        ExecutionCommand.user_id == user_id,
-        TradePlanRevision.organization_id == organization_id,
-        TradePlanRevision.user_id == user_id,
-        TradePlanRevision.account_id == ExecutionCommand.account_id,
-        TradePlanRevision.schema_version == "ManualDemoTradePlanV1",
-        TradePlanRevision.plan_authority == MANUAL_DEMO_ORIGIN,
-        TradePlanRevision.execution_venue == "BLOFIN_DEMO",
-        ExecutionAccount.organization_id == organization_id,
-        ExecutionAccount.user_id == user_id,
-    ]
-    if inputs.paper_only or inputs.execution_venue not in {None, "BLOFIN_DEMO"}:
-        return _missing()
-    if inputs.account_id:
-        filters.append(ExecutionCommand.account_id == inputs.account_id)
-    if inputs.symbol:
-        filters.append(
-            func.replace(TradePlanRevision.execution_instrument, "-", "")
-            == inputs.symbol.replace("-", "").replace("/", "")
-        )
-    if inputs.market_name:
-        filters.append(
-            TradePlanRevision.semantic_payload["instrument_rules"]["base_currency"].as_string()
-            == inputs.market_name.upper()
-        )
-    if inputs.direction:
-        filters.append(
-            TradePlanRevision.semantic_payload["side"].as_string()
-            == ("BUY" if inputs.direction.value == "long" else "SELL")
-        )
-    query = (
-        select(ExecutionCommand)
-        .join(TradePlanRevision, TradePlanRevision.id == ExecutionCommand.revision_id)
-        .join(ExecutionAccount, ExecutionAccount.id == ExecutionCommand.account_id)
-        .where(*filters)
-    )
-    accounts = list(
-        session.scalars(query.with_only_columns(ExecutionCommand.account_id).distinct().limit(2))
-    )
-    if len(accounts) > 1:
-        text = (
-            "Matching manual BloFin demo orders exist in multiple accounts. Select an "
-            "account; no identities are merged."
-        )
-        return RecordedTradeRead(text, text)
-    commands = list(
-        session.scalars(
-            query.order_by(ExecutionCommand.created_at.desc(), ExecutionCommand.id.desc()).limit(2)
-        )
-    )
-    if not commands:
-        return _missing()
-    if len(commands) == 2 and (
-        not inputs.latest or commands[0].created_at == commands[1].created_at
+    from app.interactive_agent.contracts import ArtifactKind, ConnectionRef, ProvenanceSource
+    from app.schemas.common import MembershipRole
+    from app.schemas.manual_demo import ManualDemoHistoryFilter
+    from app.schemas.trade_plan import EntrySide
+    from app.security.tenant import TenantContext
+    from app.services.manual_demo_history import ManualDemoHistoryService, command_query
+
+    if (
+        inputs.paper_only
+        or inputs.execution_venue not in {None, "BLOFIN_DEMO"}
+        or inputs.trade_origin not in {None, "manual_demo_test"}
     ):
-        text = (
-            "Multiple manual BloFin demo orders match. Select a trade or ask for the "
-            "latest matching order; no identities are merged."
+        return _missing(journal=inputs.journal_trade_id is not None)
+    if inputs.journal_trade_id:
+        journal = session.scalar(
+            select(JournalTrade).where(
+                JournalTrade.id == inputs.journal_trade_id,
+                JournalTrade.organization_id == organization_id,
+                JournalTrade.user_id == user_id,
+                JournalTrade.source == JournalTradeSource.MANUAL_DEMO_TEST,
+                JournalTrade.exchange == "BLOFIN_DEMO",
+            )
         )
-        return RecordedTradeRead(text, text)
-    command = commands[0]
+        if journal is None or (
+            inputs.command_id is not None and inputs.command_id != journal.execution_lifecycle_id
+        ):
+            return _missing(journal=True)
+        inputs = inputs.model_copy(update={"command_id": journal.execution_lifecycle_id})
+    tenant = TenantContext(user_id, organization_id, "recorded-read", MembershipRole.OWNER)
+    symbol = inputs.symbol or (inputs.market_name + "USDT" if inputs.market_name else None)
+    filters = ManualDemoHistoryFilter(
+        command_id=inputs.command_id,
+        account_id=inputs.account_id,
+        symbol=symbol,
+        side=EntrySide.BUY
+        if inputs.direction and inputs.direction.value == "long"
+        else EntrySide.SELL
+        if inputs.direction
+        else None,
+        since=inputs.since,
+        until=inputs.until,
+        requested_quantity=inputs.requested_quantity,
+        submission_status=inputs.submission_status,
+        limit=6,
+    )
+    page = ManualDemoHistoryService(session).list(tenant, filters)
+    if not page.items:
+        return _missing(journal=inputs.journal_trade_id is not None)
+    accounts = set(
+        session.scalars(
+            command_query(tenant, filters)
+            .with_only_columns(ExecutionCommand.account_id)
+            .distinct()
+            .limit(2)
+        )
+    )
+    ambiguous = len(page.items) > 1 and (
+        not inputs.latest
+        or len(accounts) > 1
+        or (page.items[0].submitted_at or page.items[0].attempted_at)
+        == (page.items[1].submitted_at or page.items[1].attempted_at)
+    )
+    if ambiguous:
+        text = (
+            "Multiple manual BloFin demo orders match. Select an exact command "
+            "from these recorded attempts:\n"
+        )
+        choices = page.items[:5]
+        for item in choices:
+            text += (
+                f"{item.submitted_at or item.attempted_at} | "
+                f"{item.requested_contracts} contracts | "
+                f"{item.evidence.execution_status} | account {item.account_id} | "
+                f"command {item.command_id} | {item.detail_url}\n"
+            )
+        if page.total > 5:
+            text += (
+                f"{page.total} total matches; refine time, quantity, account or submission status."
+            )
+        return RecordedTradeRead(
+            text,
+            text,
+            [
+                ConnectionRef(
+                    artifact_kind=ArtifactKind.TRADE_DECISION,
+                    record_id=str(item.command_id),
+                    title=(
+                        f"{item.submitted_at or item.attempted_at} | {item.requested_contracts} "
+                        f"contracts | {item.evidence.execution_status}"
+                    ),
+                    relation="manual demo choice",
+                    provenance=ProvenanceSource.SYSTEM_GENERATED,
+                )
+                for item in choices
+            ],
+            allow_model=False,
+        )
+    selected = page.items[0]
+    command = session.get(ExecutionCommand, selected.command_id)
+    assert command is not None
     trade = session.scalar(
         select(JournalTrade).where(
             JournalTrade.organization_id == organization_id,
@@ -104,13 +141,17 @@ def select_manual_demo(
     return _read(session, command, trade)
 
 
-def _missing() -> RecordedTradeRead:
+def _missing(*, journal: bool = False) -> RecordedTradeRead:
     text = (
+        "No recorded Journal trade matches your selection in your authenticated scope. "
+        if journal
+        else ""
+    ) + (
         "No matching recorded manual BloFin demo order or fill is available in your authenticated "
         "account scope. Reconcile the existing command to obtain native evidence. "
         "No internal simulator or different-origin trade is substituted."
     )
-    return RecordedTradeRead(text, text)
+    return RecordedTradeRead(text, text, allow_model=False)
 
 
 def read_manual_journal(session: Session, trade: JournalTrade) -> RecordedTradeRead:
@@ -176,6 +217,7 @@ def _read(
         f"origin manual_demo_test; outcome {command.outcome.value}; "
         f"account {command.account_id}; revision {row.id}; hash {plan.content_hash}.",
     )
+    evidence.refs[-1] = evidence.refs[-1].model_copy(update={"relation": "manual demo command"})
     evidence.add(
         row.id,
         "Manual demo plan",
@@ -258,20 +300,9 @@ def _read(
         ),
         "manual fill venue/receipt",
     )
-    native = session.scalar(
-        select(AuditLog)
-        .where(
-            AuditLog.organization_id == command.organization_id,
-            AuditLog.user_id == command.user_id,
-            AuditLog.resource_type == "manual_demo_test",
-            AuditLog.resource_id == str(command.id),
-            AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
-            AuditLog.redacted_metadata["operation"].as_string()
-            == "manual_demo_native_order_receipt",
-        )
-        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        .limit(1)
-    )
+    from app.services.manual_demo_history import current_native_receipt
+
+    native = current_native_receipt(session, command)
     protection = "unverified"
     order_id = None
     if native:
@@ -344,6 +375,17 @@ def _read(
             "actual BloFin demo fills; the user's position report is not recorded fill proof"
         )
     average_text = format(average.normalize(), "f") if average is not None else "unavailable"
+    from app.schemas.common import MembershipRole
+    from app.security.tenant import TenantContext
+    from app.services.manual_demo_history import ManualDemoHistoryService
+
+    durable = ManualDemoHistoryService(session).get(
+        TenantContext(
+            command.user_id, command.organization_id, "recorded-read", MembershipRole.OWNER
+        ),
+        command.id,
+    )
+    lifecycle = durable.evidence
     summary = (
         f"Manual BloFin demo {plan.execution_instrument} "
         f"{'long' if plan.side.value == 'BUY' else 'short'}. "
@@ -355,7 +397,14 @@ def _read(
         f"Planned stop {plan.risk_and_exits.stop.value}; planned target "
         f"{plan.risk_and_exits.targets[0].price.value}. "
         f"Recorded protection: {protection}. No detected strategy is claimed. "
-        "The account remains held for operator review; no new order is authorized."
+        f"Attempt time {durable.attempted_at}; requested {durable.requested_contracts} contracts. "
+        f"Execution: {lifecycle.execution_status}; "
+        f"recorded position lifecycle: {lifecycle.position_status}; "
+        f"current account evidence: {lifecycle.account_status}; "
+        f"recorded exit fills: {lifecycle.exit_quantity} contracts; "
+        f"exit price {lifecycle.exit_price or 'unverified'}; "
+        f"recovery: {lifecycle.recovery_status}. {lifecycle.recovery_reason} "
+        "No new order is authorized."
     )
     evidence.required.append(
         "This is a manual BloFin demo connectivity test, excluded from strategy validation; "

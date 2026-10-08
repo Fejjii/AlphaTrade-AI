@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 
 import structlog
 from sqlalchemy.exc import IntegrityError
@@ -27,7 +27,13 @@ from app.core.execution_credentials import (
     governed_demo_worker_access_requested,
     manual_demo_access_requested,
 )
-from app.db.models import AccountSafetyEpoch, ExecutionCommand, ExecutionFillFact, VenueSubmitEffect
+from app.db.models import (
+    AccountSafetyEpoch,
+    ExecutionCommand,
+    ExecutionFillFact,
+    VenueSubmitEffect,
+)
+from app.db.models import TradePlanRevision as PlanRow
 from app.guardrails.redaction import redact_text
 from app.providers.exchange.errors import ExchangeRequestError
 from app.providers.exchange.governed_blofin import GovernedBloFinDemoProvider
@@ -50,6 +56,7 @@ from app.schemas.execution_protocol import (
     VenueSubmitEffectState,
 )
 from app.schemas.trade_plan import TradePlanRevision
+from app.services.execution_claim import conservative_reservation
 from app.services.execution_dispatch_boundary import (
     commit_barrier3,
     load_committed_dispatch_authorization,
@@ -63,6 +70,7 @@ from app.services.execution_fills import (
 )
 from app.services.execution_integrity import ensure_db_transaction, is_fill_fact_unique_violation
 from app.services.execution_transitions import append_transition, apply_projection_transition
+from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 from app.services.safety_epoch import SafetyEpochService
 
 _LEASE_SECONDS = 30
@@ -379,6 +387,11 @@ class VenueSubmitDispatcher:
         """Record an identity-verified read response; no order IO or fill invention."""
         effect = self._require_effect(command_id)
         if rejected:
+            if (
+                effect.reconciliation_disposition == VenueSendDisposition.REJECTED.value
+                and not effect.uncertainty
+            ):
+                return effect
             return self._mark_rejected(
                 command_id=command_id, now=_aware(self._clock()), source="blofin_demo"
             )
@@ -435,6 +448,31 @@ class VenueSubmitDispatcher:
             reason=RiskReservationReleaseReason.UNUSED_REMAINDER_AFTER_CANCELLATION,
             now=now,
         )
+        return effect
+
+    def fence_proven_unsent(self, *, command_id: uuid.UUID) -> VenueSubmitEffect:
+        """Fence an existing never-dispatched effect; no provider request or retry."""
+        command = self._require_command(command_id)
+        self._epochs.lock_epoch(
+            organization_id=command.organization_id, account_id=command.account_id
+        )
+        effect = self._require_effect_locked(command_id)
+        if (
+            effect.state
+            not in {
+                VenueSubmitEffectState.CREATED,
+                VenueSubmitEffectState.LEASED,
+                VenueSubmitEffectState.PROVEN_UNSENT,
+            }
+            or effect.dispatch_authorized_at is not None
+            or effect.uncertainty
+        ):
+            raise TradingPolicyError("Dispatch may have occurred; local unsent recovery refused.")
+        if effect.state != VenueSubmitEffectState.PROVEN_UNSENT:
+            effect.fencing_token += 1
+            self._block_before_dispatch(
+                command=command, effect=effect, now=_aware(self._clock()), release_reservation=False
+            )
         return effect
 
     def recover_after_crash(self, *, command_id: uuid.UUID, owner: str) -> VenueSubmitEffect:
@@ -611,6 +649,7 @@ class VenueSubmitDispatcher:
         command: ExecutionCommand,
         effect: VenueSubmitEffect,
         now: datetime,
+        release_reservation: bool = True,
     ) -> None:
         if effect.state is VenueSubmitEffectState.DISPATCH_AUTHORIZED:
             raise ConflictError(
@@ -648,11 +687,12 @@ class VenueSubmitDispatcher:
         effect.lease_owner = None
         effect.lease_expires_at = None
         effect.updated_at = now
-        self._release_unused_reservation(
-            command_id=command.id,
-            reason=RiskReservationReleaseReason.UNUSED_REMAINDER_AFTER_PROVEN_UNSENT,
-            now=now,
-        )
+        if release_reservation:
+            self._release_unused_reservation(
+                command_id=command.id,
+                reason=RiskReservationReleaseReason.UNUSED_REMAINDER_AFTER_PROVEN_UNSENT,
+                now=now,
+            )
         self._session.flush()
 
     def _mark_ambiguous(self, *, command_id: uuid.UUID, now: datetime) -> VenueSubmitEffect:
@@ -781,6 +821,18 @@ class VenueSubmitDispatcher:
         unused = reservation.remaining_reserved_notional
         if unused <= 0:
             return
+        plan_row = self._session.get(PlanRow, command.revision_id)
+        if plan_row is not None and plan_row.schema_version == "ManualDemoTradePlanV1":
+            plan = trade_plan_revision_to_schema(plan_row)
+            from app.services.manual_demo_recovery import verified_entry_notional
+
+            actual = verified_entry_notional(self._session, command, plan)
+            exact_unused = max(
+                Decimal("0"), conservative_reservation(plan).pending_notional - actual
+            )
+            if abs(exact_unused - unused) > Decimal("0.00000001"):
+                raise TradingPolicyError("Manual reservation remainder conflicts with plan/fills.")
+            unused = min(unused, exact_unused.quantize(Decimal("0.00000001"), rounding=ROUND_FLOOR))
         accounting = self._epochs.lock_risk_accounting(
             organization_id=command.organization_id,
             account_id=command.account_id,

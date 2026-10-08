@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { ManualDemoActivity } from "@/components/settings/ManualDemoActivity";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -153,6 +155,7 @@ export function ManualDemoTest() {
         </div>}
         {result && <div role="status" className="space-y-2">
           <p>Manual demo test: {result.status.replaceAll("_", " ")}</p>
+          <Link className="underline" href={`/execution/manual-demo/${encodeURIComponent(result.command_id)}`}>Open persistent attempt detail</Link>
           <p>Actual filled contracts: {result.filled_quantity} · remaining: {result.remaining_quantity}</p>
           <p>Actual fill price: {result.average_fill_price ?? "Not verified"} · fees: {result.fees ?? "Not verified"} USDT</p>
           <p>Stop/target protection: {result.protection}</p>
@@ -167,10 +170,11 @@ export function ManualDemoTest() {
           ))}
           {result.missing_evidence.map((warning) => <p key={warning}>{warning}</p>)}
           <Button disabled={busy} onClick={() => void act(async () => { setResult(await manualDemo.reconcile(result.command_id)); })}>Refresh venue evidence</Button>
-          {Number(result.remaining_quantity) > 0 && <Button disabled={busy} onClick={() => void act(async () => { setResult(await manualDemo.cancel(result.command_id)); })}>Cancel unfilled entry remainder</Button>}
+          {result.can_cancel && <Button disabled={busy} onClick={() => void act(async () => { setResult(await manualDemo.cancel(result.command_id)); })}>Cancel unfilled entry remainder</Button>}
           <details><summary>Stored evidence</summary><p>Command: {result.command_id}</p><p>Client order: {result.client_order_id}</p><p>Venue order: {result.venue_order_id ?? "Not verified"}</p><p>Protection orders: {result.protection_order_ids?.join(", ") || "Not verified"}</p><p>Plan: {result.revision_id}</p><p>Hash: {preview?.content_hash}</p><p>Journal: {result.journal_trade_id ?? "No actual fill recorded"}</p></details>
         </div>}
       </>}
+      <ManualDemoActivity refreshKey={result?.command_id} />
       {error && <div role="alert" className="space-y-1">
         <p>{error.message}</p>
         {error.category && <p>Policy group: {error.category.replaceAll("_", " ")}</p>}

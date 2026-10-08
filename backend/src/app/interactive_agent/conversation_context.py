@@ -9,7 +9,14 @@ from pydantic import Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Conversation, ConversationMessage, ExecutionAccount, JournalTrade
+from app.db.models import (
+    Conversation,
+    ConversationMessage,
+    ExecutionAccount,
+    ExecutionCommand,
+    JournalTrade,
+    TradePlanRevision,
+)
 from app.interactive_agent.actions import ActionRequest, RecordedTradeInput
 from app.interactive_agent.contracts import (
     PAYLOAD_KEY,
@@ -34,7 +41,7 @@ _MUTATION = re.compile(
     r"\b(?:prepare|execute|submit|activate|approve|place|create|log|save)\b", re.I
 )
 _FOLLOWUP = re.compile(
-    r"\b(?:that|this|same)\s+(?:(?:paper|same|recorded|approved)\s+)?(?:trade|plan)\b|"
+    r"\b(?:that|this|same)\s+(?:(?:paper|same|recorded|approved)\s+)?(?:trade|plan|order|attempt|command)\b|"
     r"\b(?:explain|describe|summari[sz]e)\s+it\b|"
     r"\b(?:why|how|where|what)\b.{0,70}\b(?:it|its)\b|"
     r"\bwhat\s+(?:was|were)\s+(?:the|its)\s+"
@@ -44,7 +51,8 @@ _FOLLOWUP = re.compile(
 
 
 class TradeReference(StrictModel):
-    journal_trade_id: UUID
+    journal_trade_id: UUID | None = None
+    command_id: UUID | None = None
     account_id: UUID | None
     organization_id: UUID
     user_id: UUID
@@ -115,6 +123,20 @@ def _stored_reference(session: Session, conversation: Conversation) -> TradeRefe
         conversation.user_id,
     ):
         return None
+    if reference.command_id:
+        found_command = session.scalar(
+            select(ExecutionCommand.id)
+            .join(TradePlanRevision, TradePlanRevision.id == ExecutionCommand.revision_id)
+            .where(
+                ExecutionCommand.id == reference.command_id,
+                ExecutionCommand.organization_id == reference.organization_id,
+                ExecutionCommand.user_id == reference.user_id,
+                ExecutionCommand.account_id == reference.account_id,
+                TradePlanRevision.plan_authority == "manual_demo_test",
+                TradePlanRevision.execution_venue == "BLOFIN_DEMO",
+            )
+        )
+        return reference if found_command is not None else None
     found = session.scalar(
         select(JournalTrade.id).where(
             JournalTrade.id == reference.journal_trade_id,
@@ -148,7 +170,12 @@ def resolve_trade_followup(
     selectors = selectors.model_copy(update=explicit_scope)
     explicit_symbol = extract_symbol(request.message)
     if (
-        selectors.journal_trade_id is not None
+        selectors.command_id is not None
+        or selectors.since is not None
+        or selectors.until is not None
+        or selectors.requested_quantity is not None
+        or selectors.submission_status != "attempt"
+        or selectors.journal_trade_id is not None
         or selectors.account_id is not None
         or selectors.direction is not None
         or selectors.latest
@@ -185,7 +212,12 @@ def resolve_trade_followup(
         ActionRequest(
             name="paper_trade.read_recorded",
             arguments={
-                "journal_trade_id": str(reference.journal_trade_id),
+                "journal_trade_id": str(reference.journal_trade_id)
+                if reference.journal_trade_id
+                else None,
+                "command_id": str(reference.command_id) if reference.command_id else None,
+                "execution_venue": "BLOFIN_DEMO" if reference.command_id else None,
+                "trade_origin": "manual_demo_test" if reference.command_id else None,
                 "account_id": str(reference.account_id) if reference.account_id else None,
                 "paper_only": selectors.paper_only,
             },
@@ -219,6 +251,43 @@ def context_from_sources(
     session: Session, conversation: Conversation, sources: list[ConnectionRef]
 ) -> StoredTradeContext:
     """Persist only a single scoped Journal identity produced by a server read."""
+    commands: set[UUID] = set()
+    for source in sources:
+        if source.relation == "manual demo command":
+            try:
+                commands.add(UUID(source.record_id))
+            except ValueError:
+                continue
+    if len(commands) == 1:
+        command = session.scalar(
+            select(ExecutionCommand)
+            .join(TradePlanRevision, TradePlanRevision.id == ExecutionCommand.revision_id)
+            .join(ExecutionAccount, ExecutionAccount.id == ExecutionCommand.account_id)
+            .where(
+                ExecutionCommand.id.in_(commands),
+                ExecutionCommand.organization_id == conversation.organization_id,
+                ExecutionCommand.user_id == conversation.user_id,
+                ExecutionAccount.organization_id == conversation.organization_id,
+                ExecutionAccount.user_id == conversation.user_id,
+                TradePlanRevision.plan_authority == "manual_demo_test",
+                TradePlanRevision.execution_venue == "BLOFIN_DEMO",
+            )
+        )
+        if command:
+            plan = session.get(TradePlanRevision, command.revision_id)
+            assert plan is not None
+            return StoredTradeContext(
+                conversation_id=conversation.id,
+                organization_id=conversation.organization_id,
+                user_id=conversation.user_id,
+                selected=TradeReference(
+                    command_id=command.id,
+                    account_id=command.account_id,
+                    organization_id=conversation.organization_id,
+                    user_id=conversation.user_id,
+                    symbol=plan.execution_instrument.replace("-", ""),
+                ),
+            )
     identities: set[UUID] = set()
     for source in sources:
         if source.artifact_kind == ArtifactKind.JOURNAL_ENTRY:

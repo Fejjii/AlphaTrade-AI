@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.schemas.trade_plan import CanonicalModel, EntrySide, PositiveCanonicalDecimal
 
@@ -95,6 +95,9 @@ class DemoReconciliationDiagnostic(CanonicalModel):
         "fill_parse",
         "protection_lookup",
         "protection_parse",
+        "account_lookup",
+        "exit_lookup",
+        "exit_parse",
     ]
     reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,79}$")
     error_type: Literal[
@@ -109,6 +112,10 @@ class DemoReconciliationDiagnostic(CanonicalModel):
         "GET /api/v1/trade/order-detail",
         "GET /api/v1/trade/fills-history",
         "GET /api/v1/trade/orders-tpsl-pending",
+        "GET /api/v1/account/positions",
+        "GET /api/v1/trade/orders-pending",
+        "GET /api/v1/trade/orders-history",
+        "GET /api/v1/trade/orders-tpsl-history",
     ]
     http_status: int | None = Field(default=None, ge=100, le=599)
     venue_error_code: str | None = Field(default=None, pattern=r"^[0-9]{1,16}$")
@@ -123,9 +130,29 @@ class DemoReconciliationDiagnostic(CanonicalModel):
             "tpOrderPrice",
             "slTriggerPrice",
             "tpTriggerPrice",
+            "positions",
+            "fillPnl",
+            "actualSize",
         ]
         | None
     ) = None
+
+
+class ManualDemoProtectionHistory(CanonicalModel):
+    tpsl_id: str
+    state: Literal["effective", "canceled", "order_failed"]
+
+
+class ManualDemoExitFill(CanonicalModel):
+    identity: str
+    order_id: str
+    trade_id: str
+    quantity: Decimal
+    price: Decimal
+    occurred_at: datetime
+    fee: Decimal
+    fillPnl: Decimal | None  # noqa: N815 — native field; excludes invented net PnL
+    category: str
 
 
 class ManualDemoStatus(CanonicalModel):
@@ -144,6 +171,74 @@ class ManualDemoStatus(CanonicalModel):
     journal_trade_id: UUID | None
     missing_evidence: tuple[str, ...]
     reconciliation_diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
+    execution_status: str = "submission_uncertain"
+    position_status: str = "unknown"
+    account_status: str = "unknown"
+    protection_history: tuple[ManualDemoProtectionHistory, ...] = ()
+    exit_fills: tuple[ManualDemoExitFill, ...] = ()
+    observed_at: datetime | None = None
+    reconciliation_freshness: str = "never_observed"
+    exit_quantity: Decimal = Decimal("0")
+    exit_price: Decimal | None = None
+    exit_fees: Decimal | None = None
+    venue_reported_fill_pnl: Decimal | None = None
+    recovery_status: str = "unresolved"
+    recovery_reason: str | None = None
+    account_claim_command_ids: tuple[UUID, ...] = ()
+    reservation_status: str = "none"
+    can_reconcile: bool = False
+    can_cancel: bool = False
+    can_resolve: bool = False
+
+
+class ManualDemoHistoryFilter(CanonicalModel):
+    command_id: UUID | None = None
+    account_id: UUID | None = None
+    symbol: str | None = None
+    side: EntrySide | None = None
+    requested_quantity: PositiveCanonicalDecimal | None = None
+    since: datetime | None = None
+    until: datetime | None = None
+    submission_status: Literal["attempt", "blocked", "submitted", "uncertain", "filled"] = "attempt"
+    limit: int = Field(default=10, ge=1, le=50)
+    offset: int = Field(default=0, ge=0, le=10000)
+
+    @model_validator(mode="after")
+    def valid_time_range(self) -> "ManualDemoHistoryFilter":
+        for value in (self.since, self.until):
+            if value is not None and value.utcoffset() is None:
+                raise ValueError("Submission-time filters require an explicit timezone.")
+        if self.since and self.until and self.since > self.until:
+            raise ValueError("Submission-time range is reversed.")
+        return self
+
+
+class ManualDemoAttempt(CanonicalModel):
+    command_id: UUID
+    account_id: UUID
+    account_name: str
+    venue: Literal["BLOFIN_DEMO"] = "BLOFIN_DEMO"
+    origin: Literal["manual_demo_test"] = "manual_demo_test"
+    attempted_at: datetime
+    submitted_at: datetime | None
+    symbol: str
+    side: EntrySide
+    requested_contracts: Decimal
+    base_quantity: Decimal
+    stop: Decimal
+    target: Decimal
+    content_hash: str
+    submission_outcome: Literal["ALLOW", "BLOCKED"]
+    blocked_reason: str | None
+    detail_url: str
+    evidence: ManualDemoStatus
+
+
+class ManualDemoHistory(CanonicalModel):
+    items: tuple[ManualDemoAttempt, ...]
+    total: int
+    limit: int
+    offset: int
 
 
 class ManualDemoCancelRequest(CanonicalModel):

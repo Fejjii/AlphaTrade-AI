@@ -70,6 +70,23 @@ function MessageContent({ message }: { message: ConversationMessageRecord }) {
       <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
         {boundary >= 0 ? message.content.slice(0, boundary) : message.content}
       </p>
+      {sources.some((source) => source && typeof source === "object"
+        && "relation" in source && source.relation === "manual demo choice") && (
+        <ul aria-label="Matching manual demo attempts" className="mt-2 space-y-2">
+          {sources.map((source, index) => {
+            if (!source || typeof source !== "object" || !("relation" in source)
+              || source.relation !== "manual demo choice" || !("record_id" in source)
+              || typeof source.record_id !== "string") return null;
+            const title = "title" in source && typeof source.title === "string"
+              ? source.title : "Open matching attempt";
+            return <li key={`${source.record_id}-${index}`}>
+              <Link className="underline" href={`/execution/manual-demo/${encodeURIComponent(source.record_id)}`}>
+                {title}
+              </Link>
+            </li>;
+          })}
+        </ul>
+      )}
       {evidence !== null || explanation !== null || sources.length > 0 ? (
         <details className="mt-3 border-t border-border-subtle pt-2">
           <summary className="cursor-pointer rounded-control text-xs text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
@@ -86,7 +103,10 @@ function MessageContent({ message }: { message: ConversationMessageRecord }) {
               if (!source || typeof source !== "object") return null;
               const title = "title" in source && typeof source.title === "string" ? source.title : "Stored record";
               const identity = "record_id" in source && typeof source.record_id === "string" ? source.record_id : "unavailable";
-              return <li key={`${identity}-${index}`}>{title}: {identity}</li>;
+              const manualCommand = "relation" in source && (source.relation === "manual demo choice" || source.relation === "manual demo command");
+              return <li key={`${identity}-${index}`}>
+                {manualCommand ? <Link className="underline" href={`/execution/manual-demo/${encodeURIComponent(identity)}`}>{title}: {identity}</Link> : <>{title}: {identity}</>}
+              </li>;
             })}
           </ul> : null}
         </details>

@@ -7,7 +7,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from app.db.base import Base
 from app.db.models import TradePlanRevision
@@ -24,7 +24,8 @@ def test_single_head_extends_verified_demo_lifecycle():
         "script_location", str(Path(__file__).parents[1] / "src/app/db/migrations")
     )
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["a6manualdemo001"]
+    assert scripts.get_heads() == ["a7manualrecovery001"]
+    assert scripts.get_revision("a7manualrecovery001").down_revision == "a6manualdemo001"
     assert scripts.get_revision("a6manualdemo001").down_revision == "a5demolifecycle001"
 
 
@@ -56,3 +57,41 @@ def test_upgrade_preserves_canonical_payload_hash_and_lineage():
             for c in inspect(session.connection()).get_check_constraints("trade_plan_revisions")
         }
         assert "ck_trade_plan_revisions_ck_tpr_manual_origin" in checks
+
+
+@requires_postgres
+def test_recovery_migration_roundtrip_keeps_existing_command_plan_and_hash():
+    recovery = importlib.import_module(
+        "app.db.migrations.versions.a7manualrecovery001_manual_demo_recovery"
+    )
+    factory = phase7_plan_session_factory()
+    world = postgres_plan_world(factory)
+    plan = world.plans.create(plan_command(world)).plan
+    with factory() as session:
+        before = session.get(TradePlanRevision, plan.revision_id).semantic_payload.copy()
+        with Operations.context(
+            MigrationContext.configure(
+                session.connection(), opts={"target_metadata": Base.metadata}
+            )
+        ):
+            recovery.downgrade()
+            recovery.upgrade()
+        session.commit()
+        session.expire_all()
+        preserved = session.get(TradePlanRevision, plan.revision_id)
+        assert preserved.semantic_payload == before and preserved.content_hash == plan.content_hash
+        constraints = inspect(session.connection()).get_unique_constraints(
+            "manual_demo_lifecycle_resolutions"
+        )
+        assert any(c["column_names"] == ["command_id"] for c in constraints)
+        triggers = (
+            session.execute(
+                text(
+                    "SELECT tgname FROM pg_trigger WHERE "
+                    "tgrelid = 'manual_demo_lifecycle_resolutions'::regclass AND NOT tgisinternal"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert "trg_manual_demo_lifecycle_resolutions_immutable" in triggers

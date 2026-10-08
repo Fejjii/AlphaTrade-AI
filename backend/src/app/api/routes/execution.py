@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import ValidationError
 
 from app.core.auth import TenantDep
 from app.core.dependencies import (
@@ -14,6 +18,7 @@ from app.core.dependencies import (
     SettingsDep,
     UsageServiceDep,
 )
+from app.core.errors import ValidationAppError
 from app.schemas.execution import PaginatedPaperOrders, PaperOrder, PaperOrderRequest
 from app.schemas.execution_account import (
     PaperAccountRegistration,
@@ -30,19 +35,24 @@ from app.schemas.execution_protocol import (
     ExecutionCommandOutcome,
 )
 from app.schemas.manual_demo import (
+    ManualDemoAttempt,
     ManualDemoCancelRequest,
     ManualDemoConfirmation,
+    ManualDemoHistory,
+    ManualDemoHistoryFilter,
     ManualDemoInstrument,
     ManualDemoPreview,
     ManualDemoPreviewRequest,
     ManualDemoStatus,
 )
+from app.schemas.trade_plan import EntrySide
 from app.schemas.usage import UsageEventCreate
 from app.security.quota_enforcement import require_quota
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, TraderDep
 from app.security.tenant import ensure_same_organization
 from app.services.execution_account_service import ExecutionAccountService
+from app.services.manual_demo_history import ManualDemoHistoryService
 from app.services.manual_demo_service import ManualDemoService
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -268,6 +278,59 @@ def confirm_manual_demo(
     settings: SettingsDep,
 ) -> ManualDemoStatus:
     return ManualDemoService(session, settings).confirm(tenant, body)
+
+
+@router.get("/manual-demo/commands")
+def list_manual_demo_commands(
+    tenant: OwnerDep,
+    session: SessionDep,
+    account_id: uuid.UUID | None = None,
+    symbol: str | None = None,
+    side: EntrySide | None = None,
+    requested_quantity: Decimal | None = Query(default=None, gt=0),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    submission_status: Literal[
+        "attempt", "blocked", "submitted", "uncertain", "filled"
+    ] = "attempt",
+    limit: int = Query(default=10, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=10000),
+) -> ManualDemoHistory:
+    try:
+        filters = ManualDemoHistoryFilter(
+            account_id=account_id,
+            symbol=symbol,
+            side=side,
+            requested_quantity=requested_quantity,
+            since=since,
+            until=until,
+            submission_status=submission_status,
+            limit=limit,
+            offset=offset,
+        )
+    except ValidationError as exc:
+        raise ValidationAppError(
+            "History filters require timezone-aware dates and a valid time range."
+        ) from exc
+    return ManualDemoHistoryService(session).list(tenant, filters)
+
+
+@router.get("/manual-demo/commands/{command_id}")
+def get_manual_demo_command(
+    command_id: uuid.UUID, tenant: OwnerDep, session: SessionDep
+) -> ManualDemoAttempt:
+    return ManualDemoHistoryService(session).get(tenant, command_id)
+
+
+@router.post("/manual-demo/{command_id}/resolve", dependencies=[_PAPER_PLAN_RATE_LIMIT])
+def resolve_manual_demo_command(
+    command_id: uuid.UUID,
+    body: ManualDemoCancelRequest,
+    tenant: OwnerDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ManualDemoStatus:
+    return ManualDemoService(session, settings).resolve(tenant, command_id)
 
 
 @router.post("/manual-demo/{command_id}/reconcile", dependencies=[_PAPER_PLAN_RATE_LIMIT])

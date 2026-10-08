@@ -386,6 +386,7 @@ export const api = {
       strategy_id?: string;
       symbol?: string;
       timeframe?: string;
+      action?: { name: string; arguments: Record<string, unknown> };
     }, options?: { signal?: AbortSignal }) =>
       apiFetch<AgentTurnResult>("/agent/turns", {
         method: "POST",

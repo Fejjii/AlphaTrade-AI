@@ -62,6 +62,7 @@ class DemoOrderEvidence:
     protection_status: str
     protection_order_ids: tuple[str, ...] = ()
     diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
+    native_tpsl_id: str | None = None
 
 
 def _rows(data: Any) -> list[dict[str, Any]]:

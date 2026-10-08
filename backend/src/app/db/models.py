@@ -2275,6 +2275,49 @@ def _prevent_demo_lifecycle_mutation(_mapper: object, _connection: object, _targ
     raise ValueError("Governed demo lifecycle resolutions are immutable.")
 
 
+class ManualDemoLifecycleResolution(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable scoped proof that releases one manual demo account claim."""
+
+    __tablename__ = "manual_demo_lifecycle_resolutions"
+    __table_args__ = (
+        UniqueConstraint("command_id", name="uq_manual_demo_resolution_command"),
+        CheckConstraint("length(content_hash) = 64", name="ck_manual_demo_resolution_hash"),
+        CheckConstraint("released_notional >= 0", name="ck_manual_demo_resolution_release"),
+        CheckConstraint(
+            "reason IN ('verified_exit', 'terminal_unfilled', 'proven_unsent')",
+            name="ck_manual_demo_resolution_reason",
+        ),
+        Index("ix_manual_demo_resolution_scope", "organization_id", "account_id"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_accounts.id"), nullable=False
+    )
+    command_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_commands.id"), nullable=False
+    )
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("trade_plan_revisions.id"), nullable=False
+    )
+    audit_event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("audit_logs.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_notional: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+
+
+@event.listens_for(ManualDemoLifecycleResolution, "before_update")
+@event.listens_for(ManualDemoLifecycleResolution, "before_delete")
+def _prevent_manual_demo_resolution_mutation(
+    _mapper: object, _connection: object, _target: object
+) -> None:
+    raise ValueError("Manual demo lifecycle resolutions are immutable.")
+
+
 class ExecutionProjection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Rebuildable optimistic-version projection of a receipt."""
 
