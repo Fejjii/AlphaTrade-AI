@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createBrowserVoiceProvider } from "@/lib/voice/browser-voice-provider";
 import type {
+  VoiceError,
   VoiceInputState,
   VoiceProvider,
   VoiceProviderFactory,
@@ -27,6 +28,8 @@ export function AgentVoiceControls({
 }) {
   const provider = useRef<VoiceProvider | null>(null);
   const inputSession = useRef<VoiceSession | null>(null);
+  const diagnosticSession = useRef<VoiceSession | null>(null);
+  const sendPending = useRef(false);
   const outputSession = useRef<VoiceSession | null>(null);
   const generation = useRef(0);
   const contextGeneration = useRef(0);
@@ -43,7 +46,11 @@ export function AgentVoiceControls({
   const [speech, setSpeech] = useState<"idle" | "starting" | "speaking">(
     "idle",
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<VoiceError | null>(null);
+  const [diagnostic, setDiagnostic] = useState<"idle" | "checking" | "passed">(
+    "idle",
+  );
+  const [canDiagnose, setCanDiagnose] = useState(false);
 
   const stopSpeech = useCallback(() => {
     speechGeneration.current++;
@@ -55,6 +62,9 @@ export function AgentVoiceControls({
     generation.current++;
     inputSession.current?.cancel();
     inputSession.current = null;
+    diagnosticSession.current?.cancel();
+    diagnosticSession.current = null;
+    setDiagnostic("idle");
     setState("idle");
   }, []);
   const clear = useCallback(() => {
@@ -71,6 +81,7 @@ export function AgentVoiceControls({
     const instance = createProvider();
     provider.current = instance;
     setCapabilities(instance.capabilities);
+    setCanDiagnose(Boolean(instance.diagnoseMicrophone));
     const pause = () => {
       if (document.hidden) {
         cancelListening();
@@ -100,7 +111,14 @@ export function AgentVoiceControls({
   }, [reply, stopSpeech]);
 
   function start() {
-    if (disabled || sending || state !== "idle" || !provider.current) return;
+    if (
+      disabled ||
+      sending ||
+      diagnostic === "checking" ||
+      state !== "idle" ||
+      !provider.current
+    )
+      return;
     clear();
     const token = generation.current;
     inputSession.current = provider.current.listen({
@@ -120,13 +138,14 @@ export function AgentVoiceControls({
         if (token !== generation.current) return;
         setState("idle");
         setReady(false);
-        setError(failure.message);
+        setError(failure);
       },
     });
   }
 
   async function send() {
-    if (disabled || sending || !ready || sent) return;
+    if (disabled || sendPending.current || !ready || sent) return;
+    sendPending.current = true;
     stopSpeech();
     setSending(true);
     const token = contextGeneration.current;
@@ -137,12 +156,45 @@ export function AgentVoiceControls({
         setReady(false);
       }
     } finally {
+      sendPending.current = false;
       setSending(false);
     }
   }
 
+  function diagnoseMicrophone() {
+    if (
+      disabled ||
+      sending ||
+      state !== "idle" ||
+      diagnostic === "checking" ||
+      !provider.current?.diagnoseMicrophone
+    )
+      return;
+    cancelListening();
+    stopSpeech();
+    setDiagnostic("checking");
+    const token = generation.current;
+    diagnosticSession.current = provider.current.diagnoseMicrophone({
+      onComplete: () => {
+        if (token === generation.current) setDiagnostic("passed");
+      },
+      onError: (failure) => {
+        if (token !== generation.current) return;
+        setDiagnostic("idle");
+        setError(failure);
+      },
+    });
+  }
+
   function speak() {
-    if (!reply || disabled || state !== "idle" || !provider.current) return;
+    if (
+      !reply ||
+      disabled ||
+      diagnostic === "checking" ||
+      state !== "idle" ||
+      !provider.current
+    )
+      return;
     stopSpeech();
     setError(null);
     setSpeech("starting");
@@ -157,7 +209,7 @@ export function AgentVoiceControls({
       onError: (failure) => {
         if (token !== speechGeneration.current) return;
         setSpeech("idle");
-        setError(failure.message);
+        setError(failure);
       },
     });
   }
@@ -165,7 +217,7 @@ export function AgentVoiceControls({
   const active = state !== "idle";
   const status =
     state === "requesting"
-      ? "Waiting for microphone permission…"
+      ? "Starting browser speech recognition…"
       : state === "listening"
         ? "Recording · microphone on"
         : state === "transcribing"
@@ -190,6 +242,7 @@ export function AgentVoiceControls({
           disabled={
             disabled ||
             sending ||
+            diagnostic === "checking" ||
             !capabilities.input ||
             state === "transcribing"
           }
@@ -207,7 +260,12 @@ export function AgentVoiceControls({
           variant="ghost"
           className="min-h-11"
           disabled={
-            sending || (!active && !transcript && !error && speech === "idle")
+            sending ||
+            (!active &&
+              !transcript &&
+              !error &&
+              diagnostic === "idle" &&
+              speech === "idle")
           }
           onClick={clear}
         >
@@ -243,8 +301,30 @@ export function AgentVoiceControls({
       ) : null}
       {error ? (
         <p role="alert" className="text-sm text-danger">
-          {error}
+          {error.message}
+          {error.sourceCode ? ` (Browser code: ${error.sourceCode})` : ""}
         </p>
+      ) : null}
+      {canDiagnose && error ? (
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              disabled || sending || active || diagnostic === "checking"
+            }
+            onClick={diagnoseMicrophone}
+          >
+            Check microphone capture
+          </Button>
+          <p role="status" className="text-xs text-text-secondary">
+            {diagnostic === "checking"
+              ? "Checking microphone capture…"
+              : diagnostic === "passed"
+                ? "Microphone capture works; all tracks stopped. Speech recognition is a separate browser service."
+                : "This check briefly opens the microphone, stops every track immediately, and records or uploads no audio."}
+          </p>
+        </div>
       ) : null}
       {!capabilities.input ? (
         <p className="text-xs text-text-secondary">
@@ -267,6 +347,7 @@ export function AgentVoiceControls({
             disabled ||
             sending ||
             active ||
+            diagnostic === "checking" ||
             !reply ||
             !capabilities.output ||
             speech !== "idle"
