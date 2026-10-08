@@ -81,7 +81,8 @@ describe("browser voice transport", () => {
 
   it.each([
     ["not-allowed", "permission"],
-    ["service-not-allowed", "permission"],
+    ["service-not-allowed", "service"],
+    ["language-not-supported", "language"],
     ["audio-capture", "unavailable"],
     ["network", "network"],
     ["no-speech", "no-speech"],
@@ -94,13 +95,134 @@ describe("browser voice transport", () => {
     recognition.onerror?.({ error: browserError });
     late?.({ results: [{ isFinal: true, 0: { transcript: "Late request" } }] });
     expect(events.onError).toHaveBeenCalledWith(
-      expect.objectContaining({ code }),
+      expect.objectContaining({ code, sourceCode: browserError }),
     );
     expect(recognition.abort).toHaveBeenCalled();
     expect(events.onTranscript).not.toHaveBeenCalled();
     expect(events.onComplete).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("does not infer microphone denial from recognition denial and omits unsafe codes", () => {
+    const events = callbacks();
+    const provider = createBrowserVoiceProvider();
+    for (const code of [
+      "not-allowed",
+      "service-not-allowed",
+      "unexpected provider secret",
+    ]) {
+      provider.listen(events);
+      Recognition.instances.at(-1)?.onerror?.({ error: code });
+      const failure = events.onError.mock.lastCall?.[0];
+      expect(failure.message).not.toContain("Microphone permission was denied");
+      expect(failure.message).not.toContain("unexpected provider secret");
+      expect(failure.sourceCode).toBe(
+        code.startsWith("unexpected") ? undefined : code,
+      );
+    }
+  });
+
+  it("recovers from a service rejection with a new gesture and browser language", () => {
+    const provider = createBrowserVoiceProvider();
+    const events = callbacks();
+    provider.listen(events);
+    const first = Recognition.instances[0];
+    first.onerror?.({ error: "service-not-allowed" });
+    expect(first.onstart).toBeNull();
+    expect(first.onend).toBeNull();
+    provider.listen(events);
+    const retry = Recognition.instances[1];
+    expect(retry.start).toHaveBeenCalledTimes(1);
+    expect(retry.lang).toBe(navigator.language);
+    retry.onstart?.();
+    retry.result("Recovered transcript");
+    retry.onend?.();
+    expect(events.onComplete).toHaveBeenCalledExactlyOnceWith(
+      "Recovered transcript",
+    );
+    provider.dispose();
+    expect(retry.abort).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("checks audio capture independently and immediately stops every track", async () => {
+    const tracks = [{ stop: vi.fn() }, { stop: vi.fn() }];
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => tracks });
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia },
+      language: "en-US",
+    });
+    const events = { onComplete: vi.fn(), onError: vi.fn() };
+    createBrowserVoiceProvider().diagnoseMicrophone?.(events);
+    expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({
+      audio: true,
+      video: false,
+    });
+    await Promise.resolve();
+    expect(tracks.every((track) => track.stop.mock.calls.length === 1)).toBe(
+      true,
+    );
+    expect(events.onComplete).toHaveBeenCalledTimes(1);
+    expect(events.onError).not.toHaveBeenCalled();
+    expect(Recognition.instances).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ["NotAllowedError", "permission"],
+    ["SecurityError", "permission"],
+    ["NotFoundError", "unavailable"],
+    ["NotReadableError", "unavailable"],
+    ["OverconstrainedError", "unavailable"],
+    ["AbortError", "unavailable"],
+  ])(
+    "classifies local capture %s separately from speech service failure",
+    async (name, code) => {
+      const getUserMedia = vi
+        .fn()
+        .mockRejectedValue(new DOMException("private device details", name));
+      vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+      const events = { onComplete: vi.fn(), onError: vi.fn() };
+      createBrowserVoiceProvider().diagnoseMicrophone?.(events);
+      await Promise.resolve();
+      expect(events.onError).toHaveBeenCalledWith(
+        expect.objectContaining({ code, sourceCode: name }),
+      );
+      expect(events.onError.mock.lastCall?.[0].message).not.toContain(
+        "private device details",
+      );
+    },
+  );
+
+  it.each(["cancel", "dispose", "timeout"])(
+    "stops capture resolved after %s without a success callback",
+    async (action) => {
+      let finish!: (stream: MediaStream) => void;
+      const getUserMedia = vi.fn(
+        () =>
+          new Promise<MediaStream>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+      const events = { onComplete: vi.fn(), onError: vi.fn() };
+      const provider = createBrowserVoiceProvider();
+      const session = provider.diagnoseMicrophone?.(events);
+      if (action === "cancel") session?.cancel();
+      if (action === "dispose") provider.dispose();
+      if (action === "timeout")
+        vi.advanceTimersByTime(VOICE_TIMEOUTS.permission);
+      const stop = vi.fn();
+      finish({ getTracks: () => [{ stop }] } as unknown as MediaStream);
+      await Promise.resolve();
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(events.onComplete).not.toHaveBeenCalled();
+      expect(events.onError).toHaveBeenCalledTimes(
+        action === "timeout" ? 1 : 0,
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it("bounds the permission wait and can retry", () => {
     const provider = createBrowserVoiceProvider();
@@ -177,6 +299,35 @@ describe("browser voice transport", () => {
     expect(Recognition.instances[0].abort).toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each([
+    ["NotAllowedError", "permission"],
+    ["SecurityError", "permission"],
+    ["NotSupportedError", "unsupported"],
+    ["InvalidStateError", "failed"],
+    ["AbortError", "failed"],
+  ])(
+    "retains a safe synchronous recognition %s without exposing raw messages",
+    (name, code) => {
+      // Instance field mock is overridden for this browser construction only.
+      class FailingRecognition extends Recognition {
+        start = vi.fn(() => {
+          throw new DOMException("private browser details", name);
+        });
+      }
+      vi.stubGlobal("SpeechRecognition", FailingRecognition);
+      const events = callbacks();
+      createBrowserVoiceProvider().listen(events);
+      expect(events.onError).toHaveBeenCalledWith(
+        expect.objectContaining({ code, sourceCode: name }),
+      );
+      expect(events.onError.mock.lastCall?.[0].message).not.toContain(
+        "private browser details",
+      );
+      expect(Recognition.instances[0].abort).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it("stops speech on interruption and ignores late speech events", () => {
     let spoken: SpeechSynthesisUtterance | undefined;

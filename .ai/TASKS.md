@@ -2454,3 +2454,10 @@ regressions; final result recorded in PR/handoff. Full release CI and live accep
 remain supervising gates. No deployment, arming or exchange orders in coding task.
 Runbook: docs/manual_blofin_demo_acceptance.md. Limits: no limit entry, manual exit,
 realized outcome or repeat-entry release; unresolved history remains held.
+
+## AT-111 — BloFin executable demo quote and Chrome voice repair
+- Priority: P0 quote / P1 voice; Status: implementation complete; PR review and live acceptance pending; dependency: merged PR226 (`d8ef205`).
+- Goal: demo-only side/depth/quantity quote validation in preview and confirmation; actionable safe errors and separate browser capture diagnostics.
+- Risk: High (execution preflight); preserve strict <10s venue timestamps, strategy minimum 1R, explicit hash-bound manual connectivity exception, exact plan confirmation, risk/protection/idempotency gates and disabled real trading.
+- Validation: focused mocked quote/provider/preview/refusal and voice lifecycle tests; live demo and affected Chrome acceptance separate. No orders, merge, deployment, credentials/account/activation changes or full backend CI dispatch.
+- Recommended model: strongest available coding model, high reasoning.

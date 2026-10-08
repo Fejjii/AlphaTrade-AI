@@ -28,7 +28,7 @@ from app.db.models import (
     VenueSubmitEffect,
 )
 from app.db.models import TradePlanRevision as PlanRow
-from app.providers.exchange.demo_preflight import failure_diagnostics
+from app.providers.exchange.demo_preflight import failure_diagnostics, preflight_message
 from app.providers.exchange.factory import build_blofin_client
 from app.providers.exchange.governed_blofin import DemoFill, GovernedBloFinDemoProvider
 from app.schemas.audit import AuditRecordCreate
@@ -70,7 +70,7 @@ from app.services.execution_account_service import ExecutionAccountService
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
 from app.services.manual_demo_plan import MANUAL_DEMO_ORIGIN, build_manual_plan
 from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
-from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk
+from app.services.planned_reward_risk import PlannedRewardRiskError, execution_reward_risk
 from app.services.risk.daily_risk_accounting import DailyRiskAccounting
 from app.services.risk.engine import RiskEngine
 from app.services.risk.kill_switch import KillSwitchService
@@ -154,7 +154,7 @@ class ManualDemoService:
 
     def _risk(self, tenant: TenantContext, plan: TradePlanRevisionSemantic) -> None:
         try:
-            planned_reward_risk(plan)
+            execution_reward_risk(plan)
         except PlannedRewardRiskError as exc:
             raise TradingPolicyError(str(exc), details={"reason": exc.reason}) from exc
         daily = DailyRiskAccounting(
@@ -171,7 +171,16 @@ class ManualDemoService:
             > equity * min(user.max_risk_per_trade_percent, Decimal("1")) / 100
         ):
             raise TradingPolicyError(
-                "Manual demo maximum planned loss exceeds the per-trade risk limit."
+                "Manual demo maximum planned loss exceeds the per-trade risk limit.",
+                details={"reason": "manual_demo_per_trade_risk_limit"},
+            )
+        notional = (
+            plan.quantity.value * plan.instrument_rules.contract_multiplier * plan.entry_zone.upper
+        )
+        if notional > equity * Decimal("0.05"):
+            raise TradingPolicyError(
+                "Manual demo entry notional exceeds 5% of available demo equity.",
+                details={"reason": "manual_demo_notional_limit"},
             )
         result = RiskEngine().evaluate(
             RiskCheckRequest(
@@ -196,7 +205,10 @@ class ManualDemoService:
             ),
         )
         if result.action is RiskAction.BLOCK:
-            raise TradingPolicyError(result.explanation)
+            blocked = next(
+                rule for rule in result.triggered_rules if rule.action is RiskAction.BLOCK
+            )
+            raise TradingPolicyError(result.explanation, details={"reason": blocked.rule_id.value})
 
     def preview(
         self, tenant: TenantContext, request: ManualDemoPreviewRequest
@@ -207,7 +219,12 @@ class ManualDemoService:
         try:
             provider = self._provider()
             stage = "snapshot"
-            snapshot = provider.snapshot(symbol=request.symbol, now=self.clock())
+            snapshot = provider.snapshot(
+                symbol=request.symbol,
+                now=self.clock(),
+                side=request.side,
+                quantity=request.quantity,
+            )
         except Exception as exc:
             diagnostics = failure_diagnostics(exc, stage=stage)
             logger.warning(
@@ -218,7 +235,7 @@ class ManualDemoService:
                 **diagnostics,
             )
             raise TradingPolicyError(
-                "Demo preflight unavailable; preview cannot be saved.",
+                preflight_message(diagnostics),
                 details={"preflight": diagnostics},
             ) from exc
         try:
@@ -232,7 +249,14 @@ class ManualDemoService:
             )
         except (PlannedRewardRiskError, ValueError) as exc:
             raise TradingPolicyError(str(exc)) from exc
-        self._risk(tenant, semantic)
+        reward_risk = execution_reward_risk(semantic)
+        try:
+            self._risk(tenant, semantic)
+        except TradingPolicyError as exc:
+            raise TradingPolicyError(
+                exc.message,
+                details={**exc.details, "gross_reward_risk": str(reward_risk.ratio)},
+            ) from exc
         root = TradeProposal(
             id=semantic.plan_id,
             organization_id=tenant.organization_id,
@@ -315,7 +339,7 @@ class ManualDemoService:
             stop=request.stop,
             target=request.target,
             maximum_planned_loss=semantic.risk_and_exits.maximum_loss.value,
-            gross_reward_risk=planned_reward_risk(semantic).ratio,
+            gross_reward_risk=reward_risk.ratio,
             valid_until=semantic.valid_until,
         )
 

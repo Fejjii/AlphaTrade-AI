@@ -100,7 +100,7 @@ class Venue:
                     "instType": "SWAP",
                 }
             ]
-        elif path.endswith("tickers"):
+        elif path.endswith("books"):
             self.ticker_reads += 1
             quoted = self.price * Decimal("1.01") if self.behavior == "basis" else self.price
             if self.behavior == "expiry" and self.ticker_reads == 2:
@@ -110,7 +110,8 @@ class Venue:
             data = [
                 {
                     "instId": "BTC-USDT",
-                    "last": str(quoted),
+                    "asks": [[str(quoted + Decimal("0.1")), "1000000"]],
+                    "bids": [[str(quoted), "1000000"]],
                     "ts": str(int(_TS) - 11000) if self.behavior == "stale" else _TS,
                 }
             ]

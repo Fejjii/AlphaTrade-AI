@@ -60,7 +60,7 @@ describe("Agent voice controls", () => {
     render(<AgentVoiceControls {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
     expect(screen.getByTestId("agent-voice-status")).toHaveTextContent(
-      "Waiting for microphone permission",
+      "Starting browser speech recognition",
     );
     act(() => {
       input.onState("listening");
@@ -143,6 +143,139 @@ describe("Agent voice controls", () => {
     expect(
       screen.getByRole("button", { name: "Send transcript" }),
     ).toBeDisabled();
+  });
+
+  it("shows the original safe service error and permits a recording retry", () => {
+    render(<AgentVoiceControls {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    act(() =>
+      input.onError({
+        code: "service",
+        sourceCode: "service-not-allowed",
+        message: "Speech service rejected access.",
+      }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Speech service rejected access. (Browser code: service-not-allowed)",
+    );
+    record("Recovered recording");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByTestId("agent-voice-transcript")).toHaveTextContent(
+      "Recovered recording",
+    );
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("runs only an explicit microphone check and suppresses late diagnostic results", () => {
+    let diagnostic!: {
+      onComplete(): void;
+      onError(error: import("@/lib/voice/types").VoiceError): void;
+    };
+    const cancel = vi.fn();
+    const diagnoseMicrophone = vi.fn((events) => {
+      diagnostic = events;
+      return { cancel, stop: cancel };
+    });
+    const factory = () => ({ ...provider, diagnoseMicrophone });
+    render(<AgentVoiceControls {...props} createProvider={factory} />);
+    expect(diagnoseMicrophone).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    act(() =>
+      input.onError({
+        code: "service",
+        message: "Speech service rejected access.",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check microphone capture" }),
+    );
+    expect(diagnoseMicrophone).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Start recording" }),
+    ).toBeDisabled();
+    act(() => diagnostic.onComplete());
+    expect(
+      screen.getByText(/Microphone capture works; all tracks stopped/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Speech service rejected access.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clear voice" }));
+    act(() => diagnostic.onComplete());
+    expect(cancel).toHaveBeenCalled();
+    expect(screen.queryByText(/Microphone capture works/)).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each(["hidden", "conversation", "disabled", "unmount"])(
+    "cancels microphone diagnostics on %s and ignores late results",
+    (event) => {
+      let complete!: () => void;
+      const cancel = vi.fn();
+      const factory = () => ({
+        ...provider,
+        diagnoseMicrophone: (callbacks: { onComplete(): void }) => {
+          complete = callbacks.onComplete;
+          return { cancel, stop: cancel };
+        },
+      });
+      const view = render(
+        <AgentVoiceControls {...props} createProvider={factory} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+      act(() =>
+        input.onError({
+          code: "service",
+          message: "Speech service rejected access.",
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Check microphone capture" }),
+      );
+      if (event === "hidden") {
+        vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+        fireEvent(document, new Event("visibilitychange"));
+      }
+      if (event === "conversation")
+        view.rerender(
+          <AgentVoiceControls
+            {...props}
+            createProvider={factory}
+            conversationKey="c2"
+          />,
+        );
+      if (event === "disabled")
+        view.rerender(
+          <AgentVoiceControls {...props} createProvider={factory} disabled />,
+        );
+      if (event === "unmount") view.unmount();
+      act(() => complete());
+      expect(cancel).toHaveBeenCalled();
+      expect(screen.queryByText(/Microphone capture works/)).toBeNull();
+      expect(onSend).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    },
+  );
+
+  it("prevents duplicate sends while the first request is unresolved", async () => {
+    let finish!: (value: boolean) => void;
+    onSend.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<AgentVoiceControls {...props} />);
+    record();
+    const button = screen.getByRole("button", { name: "Send transcript" });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    await act(async () => finish(true));
+    fireEvent.click(button);
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it("plays only on request, stops, and interrupts playback to record", () => {

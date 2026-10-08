@@ -14,6 +14,7 @@ from app.db.models import AccountRiskAccountingState, ExecutionCommand
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.governed_blofin import GovernedBloFinDemoProvider
 from app.schemas.execution_protocol import ExecutionCommandOutcome
+from app.schemas.trade_plan import EntrySide
 from app.services.audit_service import AuditService
 from app.services.demo_account_history import has_demo_entry_history
 from app.services.execution_service import ExecutionService
@@ -75,7 +76,7 @@ def test_exact_market_mapping_and_venue_units(symbol):
     def handler(request):
         assert request.method == "GET"
         response = venue.handle(request)
-        if request.url.path.endswith(("instruments", "tickers", "leverage-info")):
+        if request.url.path.endswith(("instruments", "books", "leverage-info")):
             assert request.url.params["instId"] == instrument
             payload = response.json()
             data = payload["data"]
@@ -86,7 +87,7 @@ def test_exact_market_mapping_and_venue_units(symbol):
             response = httpx.Response(200, json=payload)
         return response
 
-    snapshot = provider_for(handler).snapshot(symbol=symbol, now=EVALUATED_AT)
+    snapshot = provider_for(handler).snapshot(symbol=symbol, now=EVALUATED_AT, side=EntrySide.BUY)
     assert snapshot.instrument == instrument
     assert (snapshot.multiplier, snapshot.minimum, snapshot.lot, snapshot.tick) == (
         Decimal("0.01"),
@@ -120,7 +121,7 @@ def test_unavailable_contract_never_substitutes(mutation):
         return response
 
     with pytest.raises(ValueError):
-        provider_for(handler).snapshot(symbol="BTCUSDT", now=EVALUATED_AT)
+        provider_for(handler).snapshot(symbol="BTCUSDT", now=EVALUATED_AT, side=EntrySide.BUY)
     assert venue.post_count == 0
 
 
@@ -139,7 +140,7 @@ def test_account_wide_unreadable_exposure_and_pending_orders_refuse(endpoint, da
         return venue.handle(request)
 
     with pytest.raises((ValueError, ArithmeticError)):
-        provider_for(handler).snapshot(symbol="BTCUSDT", now=EVALUATED_AT)
+        provider_for(handler).snapshot(symbol="BTCUSDT", now=EVALUATED_AT, side=EntrySide.BUY)
     assert venue.post_count == 0
 
 

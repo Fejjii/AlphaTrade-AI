@@ -30,14 +30,15 @@ from app.db.models import (
 )
 from app.evidence_pipeline.types import AssembledCanonicalEvidence
 from app.market_contracts.enums import VenueId
+from app.providers.exchange.demo_preflight import failure_diagnostics
 from app.providers.exchange.factory import build_blofin_client
 from app.providers.exchange.governed_blofin import DemoVenueSnapshot, GovernedBloFinDemoProvider
 from app.runtime.canonical import ProductionCanonicalRuntime
 from app.schemas.approval import ApprovalDecisionRequest
-from app.schemas.common import ApprovalAction
+from app.schemas.common import ApprovalAction, TradeDirection
 from app.schemas.execution_protocol import ExecutionCommandOutcome, VenueSubmitEffectState
 from app.schemas.risk import KillSwitchMutationRequest
-from app.schemas.trade_plan import AuthorizationChannel, TradePlanRevisionCreate
+from app.schemas.trade_plan import AuthorizationChannel, EntrySide, TradePlanRevisionCreate
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
 from app.services.automated_paper_loop import (
@@ -54,6 +55,7 @@ from app.services.canonical_serialization import canonical_sha256
 from app.services.demo_account_history import has_demo_entry_history
 from app.services.demo_lifecycle_resolution import resolve_verified_demo_exit
 from app.services.execution_service import ExecutionService
+from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk
 from app.services.risk.kill_switch import KillSwitchService
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.safety_epoch import SafetyEpochService
@@ -190,10 +192,15 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
         session.commit()  # Persist Candidate; no DB transaction held over venue reads.
         try:
             self._snapshot = self._get_provider().snapshot(
-                symbol=target.symbol, now=self._clock.now()
+                symbol=target.symbol,
+                now=self._clock.now(),
+                side=EntrySide.BUY
+                if candidate.direction is TradeDirection.LONG
+                else EntrySide.SELL,
             )
-        except Exception:
-            return _proof(candidate, "blocked", "demo_preflight_unavailable")
+        except Exception as exc:
+            diagnostic = failure_diagnostics(exc, stage="snapshot")
+            return _proof(candidate, "blocked", f"demo_{diagnostic['reason_code']}")
         return super()._bound(
             session,
             target=target,
@@ -284,6 +291,8 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
         )
         if isinstance(terms, str):
             return terms
+        if snapshot.book.side is not terms.side:
+            return "demo_quote_side_mismatch"
         if not 0 <= (now - snapshot.observed_at).total_seconds() < 10:
             return "demo_quote_stale"
         is_long = terms.side.value == "BUY"
@@ -309,7 +318,21 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
         quantity = (raw / snapshot.lot).to_integral_value(rounding=ROUND_FLOOR) * snapshot.lot
         if quantity < snapshot.minimum or quantity * snapshot.multiplier * entry < Decimal("5"):
             return "demo_size_below_minimum"
+        try:
+            worst_entry = snapshot.book.worst_price(
+                quantity, lot=snapshot.lot, minimum=snapshot.minimum, maximum=snapshot.maximum
+            )
+        except ValueError:
+            return "demo_quote_depth_insufficient"
         base = quantity * snapshot.multiplier
+        lower, upper = min(entry, worst_entry), max(entry, worst_entry)
+        adverse_entry = upper if is_long else lower
+        cost_per_base = upper * Decimal("0.002")
+        maximum_loss = base * (abs(adverse_entry - stop) + cost_per_base)
+        if base * upper > equity * Decimal("0.10"):
+            return "demo_depth_exceeds_size_limit"
+        if maximum_loss > equity * Decimal("0.01"):
+            return "demo_depth_exceeds_risk_limit"
         values = terms.model_dump(mode="python")
         values.update(
             {
@@ -324,7 +347,7 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
                 "instrument_mapping_version": "blofin-linear-usdt/v1",
                 "quantity": {"value": quantity, "unit": "CONTRACTS"},
                 "quantity_unit": "CONTRACTS",
-                "entry_zone": {"lower": entry, "upper": entry, "price_unit": "USDT"},
+                "entry_zone": {"lower": lower, "upper": upper, "price_unit": "USDT"},
                 "slippage_policy": {
                     "policy_id": "blofin-demo-conservative",
                     "policy_version": "1",
@@ -370,20 +393,26 @@ class GovernedBloFinDemoLoop(AutomatedPaperLoop):
         )
         values["risk_and_exits"].update(
             {
-                "risk_budget": {"value": base * abs(entry - stop), "unit": "USDT"},
+                "risk_budget": {"value": base * abs(adverse_entry - stop), "unit": "USDT"},
                 "maximum_loss": {
-                    "value": base * (abs(entry - stop) + cost_per_base),
+                    "value": maximum_loss,
                     "unit": "USDT",
                 },
-                "fee_allowance": {"value": base * entry * Decimal("0.001"), "unit": "USDT"},
-                "slippage_allowance": {"value": base * entry * Decimal("0.001"), "unit": "USDT"},
+                "fee_allowance": {"value": base * upper * Decimal("0.001"), "unit": "USDT"},
+                "slippage_allowance": {"value": base * upper * Decimal("0.001"), "unit": "USDT"},
                 "stop": {"value": stop, "unit": "USDT"},
                 "margin_assumption_id": "verified-demo-existing-1x",
                 "margin_assumption_version": "1",
             }
         )
         values["risk_and_exits"]["targets"][0]["price"]["value"] = target
-        return TradePlanRevisionCreate.model_validate(values)
+        revised = TradePlanRevisionCreate.model_validate(values)
+        try:
+            planned_reward_risk(revised)
+        except PlannedRewardRiskError as exc:
+            # Executable bid/ask can invalidate an otherwise exactly 1R setup.
+            return exc.reason
+        return revised
 
     def _require_snapshot(self) -> DemoVenueSnapshot:
         if self._snapshot is None:

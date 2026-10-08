@@ -18,6 +18,7 @@ from app.providers.exchange.demo_preflight import DemoPreflightError
 from app.providers.exchange.governed_blofin import GovernedBloFinDemoProvider
 from app.schemas.common import MembershipRole
 from app.schemas.manual_demo import ManualDemoPreviewRequest
+from app.schemas.trade_plan import EntrySide
 from app.security.tenant import TenantContext
 from app.services.manual_demo_service import ManualDemoService
 from tests.support.phase5_market import EVALUATED_AT
@@ -32,7 +33,7 @@ STAGES = (
     ("pending_orders", "/api/v1/trade/orders-pending"),
     ("pending_protection", "/api/v1/trade/orders-tpsl-pending"),
     ("balance", "/api/v1/account/balance"),
-    ("quote", "/api/v1/market/tickers"),
+    ("quote", "/api/v1/market/books"),
 )
 PRIVATE_TEXT = (
     "private-account-response opaque-signature diagnostic-key diagnostic-secret diagnostic-pass"
@@ -137,7 +138,7 @@ def test_validation_refusals_identify_stage_and_fixed_reason(stage, path, data, 
         return venue.handle(request)
 
     with pytest.raises(DemoPreflightError) as caught:
-        provider(handle).snapshot(symbol="BTCUSDT", now=EVALUATED_AT)
+        provider(handle).snapshot(symbol="BTCUSDT", now=EVALUATED_AT, side=EntrySide.BUY)
     assert caught.value.diagnostics["stage"] == stage
     assert caught.value.diagnostics["reason_code"] == reason
     assert PRIVATE_TEXT not in str(caught.value) + str(caught.value.diagnostics)

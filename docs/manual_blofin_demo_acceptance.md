@@ -48,8 +48,10 @@ planned loss, gross R and expiry. Venue increments are validated; stop/target pr
 are never moved to satisfy policy. Preview saves an immutable plan but issues no
 authorization and submits no order.
 
-The deterministic floor is allocation-weighted **gross 1R** using the worst price
-within the ±10bps preview entry range. Fee/slippage allowances are reserved in the
+Manual connectivity tests have an explicit hash-bound exception from strategy
+qualification and minimum 1R; strategy execution retains **gross 1R**. Preview
+shows allocation-weighted gross R using the worst price within the ±10bps entry
+range. Manual tests are excluded from strategy performance statistics. Fee/slippage allowances are reserved in the
 maximum planned loss (each 0.1% of conservative notional); this is not a net 1R or
 maximum realized loss guarantee. Funding allowance is zero for this bounded entry
 preview; actual funding is **unknown**, not recorded as zero. Per-trade planned
@@ -119,27 +121,17 @@ If preview refuses at `quote`, inspect `error.details.preflight` or the existing
 `raw_timestamp_ms`, `timestamp_unit`, `parsed_timestamp_utc`,
 `receipt_timestamp_utc`, `quote_age_seconds` and `freshness_status`.
 Non-numeric/oversized input is omitted; malformed values cannot become fresh.
-The UTC receipt clock is sampled after the ticker GET. The requirement remains
-`0 <= age < 10` seconds; a response acknowledgment or HTTP Date never refreshes
-the venue occurrence timestamp. Never confirm an order to diagnose a preview.
+The UTC receipt clock is sampled after the demo order-book GET. The requirement
+remains `0 <= age < 10` seconds; HTTP Date or receipt time never refreshes venue
+evidence. Preview and confirmation use side-specific bid/ask depth in contracts.
+Never confirm an order to diagnose preview.
 
-For the October 8 rejection, the original raw timestamp was not recorded. The
-coding workspace cannot reach BloFin under its HTTP allowlist; the live cause
-(stale provider data, proxy caching or clock skew) is therefore **unproven**.
-After reviewed deployment, retry preview and compare three bounded public ticker
-reads for `BTC-USDT`, recording only timestamp/receipt/age. Check the worker's UTC
-clock against trusted time and inspect proxy cache headers separately; a repeated
-timestamp alone does not prove caching. No private payloads or credentials.
-
-[BloFin's official API guide](https://docs.blofin.com/index.html#get-tickers)
-specifies millisecond ticker generation timestamps. Its
-[order-book endpoint](https://docs.blofin.com/index.html#get-order-book),
-`GET /api/v1/market/books?instId=BTC-USDT&size=1`, is a documented candidate for
-execution-relevant bid/ask evidence. If ticker staleness is confirmed, compare
-that endpoint on the **same allowlisted demo host**, by read-only requests,
-checking generation time, complete non-crossed bid/ask and contract depth.
-Freshness and demo compatibility require live proof. This repair does not switch
-quote sources, substitute Binance, relax age limits or fabricate freshness.
+The verified October 8 ticker age was 17.170055 seconds. Cloud access to the current
+documentation site and live demo book was rejected with proxy CONNECT 403; live
+latency, demo book availability and generation cadence remain unverified. See the
+[current repair and exact read-only acceptance procedure](blofin_demo_quote_repair.md)
+for official SDK references, timestamp semantics limitations and bounded demo-only
+reads. No Binance or production evidence substitution or freshness relaxation.
 
 ## Explicit limits
 

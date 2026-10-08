@@ -31,38 +31,114 @@ export const VOICE_TIMEOUTS = {
   speech: 120_000,
 };
 
-function recognitionError(code: string): VoiceError {
-  switch (code) {
+const RECOGNITION_CODES = new Set([
+  "not-allowed",
+  "service-not-allowed",
+  "audio-capture",
+  "network",
+  "no-speech",
+  "aborted",
+  "language-not-supported",
+  "bad-grammar",
+  "phrases-not-supported",
+]);
+
+function recognitionError(rawCode: string): VoiceError {
+  const sourceCode = RECOGNITION_CODES.has(rawCode) ? rawCode : undefined;
+  const detail = (code: VoiceError["code"], message: string): VoiceError => ({
+    code,
+    message,
+    ...(sourceCode ? { sourceCode } : {}),
+  });
+  switch (sourceCode) {
     case "not-allowed":
+      return detail(
+        "permission",
+        "The browser rejected speech recognition access. This can involve microphone access or the speech service. Check microphone capture separately, then review browser and system permissions.",
+      );
     case "service-not-allowed":
-      return {
-        code: "permission",
-        message:
-          "Microphone permission was denied. Allow microphone access in browser settings and try again.",
-      };
+      return detail(
+        "service",
+        "The browser rejected its speech recognition service. Microphone permission may still be allowed. Check microphone capture separately; review browser policy or use a working browser or typed input.",
+      );
     case "audio-capture":
-      return {
-        code: "unavailable",
-        message:
-          "Microphone unavailable. Check that a microphone is connected and accessible.",
-      };
+      return detail(
+        "unavailable",
+        "Speech recognition could not capture audio. Check the selected microphone, connection and whether another app is using it.",
+      );
     case "network":
-      return {
-        code: "network",
-        message:
-          "Speech recognition could not connect. Check your connection and try again.",
-      };
+      return detail(
+        "network",
+        "Speech recognition could not connect to its service. Check your connection, VPN and browser policy, then try again.",
+      );
+    case "language-not-supported":
+      return detail(
+        "language",
+        "The browser speech service does not support the browser's selected language. Check browser language settings or type your message.",
+      );
     case "no-speech":
-      return {
-        code: "no-speech",
-        message: "No speech was detected. Try recording again.",
-      };
+      return detail(
+        "no-speech",
+        "No speech was detected. Try recording again.",
+      );
     default:
-      return {
-        code: "failed",
-        message: "Speech recognition failed. Try again or type your message.",
-      };
+      return detail(
+        "failed",
+        "Speech recognition failed. Try again or type your message.",
+      );
   }
+}
+
+function recognitionException(error: unknown): VoiceError {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return { ...recognitionError("not-allowed"), sourceCode: name };
+  }
+  if (name === "NotSupportedError") {
+    return {
+      code: "unsupported",
+      sourceCode: name,
+      message:
+        "The browser could not start speech recognition. Use a supported browser over HTTPS or type your message.",
+    };
+  }
+  if (name === "InvalidStateError" || name === "AbortError") {
+    return { ...recognitionError("failed"), sourceCode: name };
+  }
+  return recognitionError("failed");
+}
+
+function captureError(error: unknown): VoiceError {
+  // Only the DOM error name is inspected; raw messages/device details are discarded.
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return {
+      code: "permission",
+      sourceCode: name,
+      message:
+        "Microphone capture was denied or blocked. Review browser and system microphone permissions and site policy, then retry the check.",
+    };
+  }
+  if (
+    [
+      "NotFoundError",
+      "NotReadableError",
+      "OverconstrainedError",
+      "AbortError",
+    ].includes(name)
+  ) {
+    return {
+      code: "unavailable",
+      sourceCode: name,
+      message:
+        "Microphone capture is unavailable. Check your selected audio input, connection and other apps using the device, then retry.",
+    };
+  }
+  return {
+    code: "failed",
+    message:
+      "Microphone capture could not be checked. Try again or type your message.",
+  };
 }
 
 /** Browser-managed speech; no provider credentials, audio storage, or Agent calls. */
@@ -78,10 +154,62 @@ export function createBrowserVoiceProvider(): VoiceProvider {
   const output = Boolean(synthesis && typeof Utterance === "function");
   let cancelInput: (() => void) | undefined;
   let cancelOutput: (() => void) | undefined;
+  let cancelCapture: (() => void) | undefined;
 
   return {
     capabilities: { input, output },
+    diagnoseMicrophone(callbacks) {
+      cancelCapture?.();
+      cancelInput?.();
+      cancelOutput?.();
+      const capture = browser?.navigator.mediaDevices;
+      if (!capture?.getUserMedia || browser?.isSecureContext === false) {
+        callbacks.onError({
+          code: "unsupported",
+          message:
+            "Microphone capture checks require a supported browser over HTTPS.",
+        });
+        return { stop() {}, cancel() {} };
+      }
+      let active = true;
+      const cancel = () => {
+        active = false;
+        clearTimeout(timer);
+      };
+      const timer = setTimeout(() => {
+        if (!active) return;
+        cancel();
+        callbacks.onError({
+          code: "timeout",
+          message:
+            "Microphone check timed out. Dismiss any pending permission prompt. Any capture that opens later will be stopped immediately.",
+        });
+      }, VOICE_TIMEOUTS.permission);
+      cancelCapture = cancel;
+      const success = (stream: MediaStream) => {
+        // Always stop every track, including after cancellation, timeout or disposal.
+        stream.getTracks().forEach((track) => track.stop());
+        if (!active) return;
+        cancel();
+        callbacks.onComplete();
+      };
+      const failure = (error: unknown) => {
+        if (!active) return;
+        cancel();
+        callbacks.onError(captureError(error));
+      };
+      try {
+        // Called directly by the button gesture; no recording, upload or recognition.
+        void capture
+          .getUserMedia({ audio: true, video: false })
+          .then(success, failure);
+      } catch (error) {
+        failure(error);
+      }
+      return { stop: cancel, cancel };
+    },
     listen(callbacks) {
+      cancelCapture?.();
       cancelInput?.();
       cancelOutput?.();
       const noop: VoiceSession = { stop() {}, cancel() {} };
@@ -96,8 +224,8 @@ export function createBrowserVoiceProvider(): VoiceProvider {
       let recognition: BrowserRecognition;
       try {
         recognition = new Recognition();
-      } catch {
-        callbacks.onError(recognitionError("failed"));
+      } catch (error) {
+        callbacks.onError(recognitionException(error));
         return noop;
       }
       let active = true;
@@ -114,6 +242,7 @@ export function createBrowserVoiceProvider(): VoiceProvider {
             null;
       };
       const abort = () => {
+        if (!active) return;
         cleanup();
         try {
           recognition.abort();
@@ -180,12 +309,12 @@ export function createBrowserVoiceProvider(): VoiceProvider {
       callbacks.onState("requesting");
       deadline(
         VOICE_TIMEOUTS.permission,
-        "Microphone access timed out. Nothing was sent. Check browser permissions and try again.",
+        "Speech recognition did not start in time. Nothing was sent. Check microphone capture separately and review browser speech service availability.",
       );
       try {
         recognition.start();
-      } catch {
-        fail(recognitionError("failed"));
+      } catch (error) {
+        fail(recognitionException(error));
       }
       return { stop, cancel: abort };
     },
@@ -254,6 +383,7 @@ export function createBrowserVoiceProvider(): VoiceProvider {
       return { stop: cancel, cancel };
     },
     dispose() {
+      cancelCapture?.();
       cancelInput?.();
       cancelOutput?.();
     },

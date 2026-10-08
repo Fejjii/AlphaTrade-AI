@@ -49,6 +49,13 @@ class ManualVenue(Venue):
             self.cancelled = True
             return httpx.Response(200, json={"code": "0", "data": [{"orderId": "demo-1"}]})
         result = super().handle(request)
+        if request.url.path.endswith("/books"):
+            content = result.json()
+            content["data"][0].update(
+                asks=[[str(self.price), "1000000"]],
+                bids=[[str(self.price - Decimal("0.1")), "1000000"]],
+            )
+            return httpx.Response(200, json=content)
         if self.cancelled and request.url.path.endswith("order-detail"):
             content = result.json()
             for row in content["data"]:
@@ -305,19 +312,56 @@ def test_tenant_user_isolation_and_owner_scope(world):
     assert world[3].post_count == 0
 
 
-def test_insufficient_rr_invalid_tick_and_stale_preview(world):
+def test_invalid_tick_and_stale_preview(world):
     for request in (
-        ManualDemoPreviewRequest(side="BUY", quantity="2", stop="99000", target="100500"),
         ManualDemoPreviewRequest(side="BUY", quantity="2.5", stop="99000", target="102000"),
     ):
         with world[0]() as session, pytest.raises((ValueError, TradingPolicyError)):
             service(world, session).preview(world[1], request)
     world[3].behavior = "stale"
-    with world[0]() as session, pytest.raises(TradingPolicyError, match="preflight unavailable"):
+    with world[0]() as session, pytest.raises(TradingPolicyError, match="at least 10 seconds old"):
         service(world, session).preview(
             world[1],
             ManualDemoPreviewRequest(side="BUY", quantity="2", stop="99000", target="102000"),
         )
+    assert world[3].post_count == 0
+
+
+def test_below_one_r_manual_connectivity_has_exact_confirmation_and_protection(world):
+    with world[0]() as session:
+        plan = service(world, session).preview(
+            world[1],
+            ManualDemoPreviewRequest(side="BUY", quantity="2", stop="99000", target="100500"),
+        )
+    assert 0 < plan.gross_reward_risk < 1
+    assert any("minimum 1R do not apply" in warning for warning in plan.warnings)
+    assert world[3].post_count == 0
+    result = confirm(world, plan)
+    assert result.status == "filled_protected"
+    assert result.protection == "verified"
+    assert confirm(world, plan).command_id == result.command_id
+    assert world[3].post_count == 1
+    with world[0]() as session:
+        trade = session.get(JournalTrade, result.journal_trade_id)
+        assert trade.source is JournalTradeSource.MANUAL_DEMO_TEST
+        assert trade.strategy_version_id is trade.candidate_id is trade.assessment_id is None
+
+
+@pytest.mark.parametrize(
+    "quantity,stop,reason",
+    [
+        ("2", "50000", "manual_demo_per_trade_risk_limit"),
+        ("6", "99800", "manual_demo_notional_limit"),
+    ],
+)
+def test_risk_refusal_includes_calculated_r_and_precise_reason(world, quantity, stop, reason):
+    with world[0]() as session, pytest.raises(TradingPolicyError) as caught:
+        service(world, session).preview(
+            world[1],
+            ManualDemoPreviewRequest(side="BUY", quantity=quantity, stop=stop, target="100500"),
+        )
+    assert caught.value.details["reason"] == reason
+    assert Decimal(caught.value.details["gross_reward_risk"]) > 0
     assert world[3].post_count == 0
 
 

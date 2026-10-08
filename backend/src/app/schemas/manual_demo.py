@@ -64,6 +64,8 @@ class ManualDemoPreview(CanonicalModel):
     gross_reward_risk: Decimal
     valid_until: datetime
     warnings: tuple[str, ...] = (
+        "Manual demo connectivity test: strategy qualification and minimum 1R do not apply. "
+        "Excluded from strategy performance statistics.",
         "Demo market entry; final fill price is unknown until venue reconciliation.",
         "Planned loss includes fee/slippage allowances; gaps may exceed it.",
         "Excluded from strategy validation. No strategy or execution flags are changed.",

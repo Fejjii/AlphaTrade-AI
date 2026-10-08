@@ -3,7 +3,58 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ApiError } from "@/lib/api/client";
 import { manualDemo, type ManualDemoPreview, type ManualDemoStatus } from "@/lib/api/manual-demo";
+
+type DemoFailure = {
+  message: string;
+  code?: string;
+  stage?: string;
+  reason?: string;
+  rewardRisk?: number;
+};
+
+function object(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function diagnosticCode(value: unknown): string | undefined {
+  return typeof value === "string" && /^[a-z][a-z0-9_]{0,79}$/.test(value)
+    ? value
+    : undefined;
+}
+
+function demoFailure(failure: unknown): DemoFailure {
+  if (!(failure instanceof ApiError)) {
+    return {
+      message:
+        "Demo request failed. Check connectivity before retrying preview. Do not repeat an uncertain confirmation; recover the same plan instead.",
+    };
+  }
+  const envelope = object(object(failure.body)?.error);
+  const details = object(envelope?.details);
+  const preflight = object(details?.preflight);
+  const rawRatio = details?.gross_reward_risk;
+  const ratio =
+    typeof rawRatio === "string" && /^\d+(?:\.\d+)?$/.test(rawRatio)
+      ? Number(rawRatio)
+      : typeof rawRatio === "number"
+        ? rawRatio
+        : undefined;
+  return {
+    message: failure.message,
+    code: diagnosticCode(envelope?.code),
+    stage: diagnosticCode(preflight?.stage),
+    reason:
+      diagnosticCode(preflight?.reason_code) ?? diagnosticCode(details?.reason),
+    rewardRisk:
+      ratio !== undefined && Number.isFinite(ratio) && ratio >= 0
+        ? ratio
+        : undefined,
+  };
+}
 
 export function ManualDemoTest() {
   const [open, setOpen] = useState(false);
@@ -15,7 +66,7 @@ export function ManualDemoTest() {
   const [result, setResult] = useState<ManualDemoStatus | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DemoFailure | null>(null);
   const pending = useRef(false);
   const [sent, setSent] = useState(false);
 
@@ -25,7 +76,7 @@ export function ManualDemoTest() {
     setBusy(true);
     setError(null);
     try { await operation(); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "Demo evidence is unavailable. Do not repeat an uncertain confirmation."); }
+    catch (failure) { setError(demoFailure(failure)); }
     finally { pending.current = false; setBusy(false); }
   }
   function changed(update: () => void) {
@@ -38,6 +89,7 @@ export function ManualDemoTest() {
     <CardHeader><p className="text-sm">Supervised manual BloFin demo test</p></CardHeader>
     <CardContent className="space-y-3">
       <p className="text-sm text-text-muted">Owner only · BTC market entry · demo funds. Preview and exact confirmation are required. This does not approve a strategy. The server capability must be separately armed after review.</p>
+      <p className="text-sm text-text-muted">Manual connectivity exception: minimum 1R does not apply; excluded from strategy performance. Strategy plans still require minimum 1R.</p>
       {!open ? <Button onClick={() => setOpen(true)}>Prepare manual demo test</Button> : <>
         {!sent && <div className="space-y-2">
           <label className="block">Side <select aria-label="Demo side" value={side} onChange={(e) => changed(() => setSide(e.target.value as "BUY" | "SELL"))}><option value="BUY">Long</option><option value="SELL">Short</option></select></label>
@@ -74,7 +126,13 @@ export function ManualDemoTest() {
           <details><summary>Stored evidence</summary><p>Command: {result.command_id}</p><p>Client order: {result.client_order_id}</p><p>Venue order: {result.venue_order_id ?? "Not verified"}</p><p>Protection orders: {result.protection_order_ids?.join(", ") || "Not verified"}</p><p>Plan: {result.revision_id}</p><p>Hash: {preview?.content_hash}</p><p>Journal: {result.journal_trade_id ?? "No actual fill recorded"}</p></details>
         </div>}
       </>}
-      {error && <p role="alert">{error}</p>}
+      {error && <div role="alert" className="space-y-1">
+        <p>{error.message}</p>
+        {error.code && <p>Error code: {error.code}</p>}
+        {error.stage && <p>Blocked stage: {error.stage}</p>}
+        {error.reason && <p>Blocking reason: {error.reason}</p>}
+        {error.rewardRisk !== undefined && <p>Calculated gross reward/risk: {error.rewardRisk.toFixed(2)}R</p>}
+      </div>}
     </CardContent>
   </Card>;
 }

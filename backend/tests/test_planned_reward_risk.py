@@ -5,11 +5,13 @@ from decimal import Decimal, localcontext
 
 import pytest
 
-from app.schemas.trade_plan import TradePlanRevisionCreate
+from app.schemas.trade_plan import CalculationInput, TradePlanRevisionCreate
 from app.services.canonical_serialization import canonical_sha256
 from app.services.canonical_trade_plan_errors import CanonicalTradePlanNotEligibleError
 from app.services.planned_reward_risk import (
+    MANUAL_CONNECTIVITY_RR_POLICY,
     PlannedRewardRiskError,
+    execution_reward_risk,
     measure_planned_reward_risk,
     planned_reward_risk,
 )
@@ -72,6 +74,25 @@ def test_multiple_target_allocations_and_runner_are_not_normalized_or_assumed_pr
     with pytest.raises(PlannedRewardRiskError, match="at least 1:1"):
         planned_reward_risk(terms(targets=("90",), fractions=("0.5",), runner="0.5"))
     assert planned_reward_risk(terms(targets=("80",), fractions=("0.5",), runner="0.5")).ratio == 1
+
+
+def test_connectivity_marker_cannot_exempt_a_valid_canonical_strategy_plan():
+    plan = terms(targets=("95",))
+    marker = CalculationInput(
+        name="manual_connectivity_rr",
+        input_value="1",
+        result_value="1",
+        unit="POLICY",
+        formula_id=MANUAL_CONNECTIVITY_RR_POLICY,
+        formula_version="1",
+        precision=0,
+        rounding_mode="EXACT",
+        conservative_remainder="0",
+    )
+    plan = plan.model_copy(update={"calculation_inputs": (*plan.calculation_inputs, marker)})
+    with pytest.raises(PlannedRewardRiskError) as caught:
+        execution_reward_risk(plan)
+    assert caught.value.reason == "planned_reward_risk_below_minimum"
 
 
 def test_entire_entry_zone_uses_the_adverse_boundary_and_costs_are_separate():
