@@ -87,6 +87,47 @@ class ManualDemoPreview(CanonicalModel):
     )
 
 
+class DemoReconciliationDiagnostic(CanonicalModel):
+    stage: Literal[
+        "order_lookup",
+        "order_parse",
+        "fill_lookup",
+        "fill_parse",
+        "protection_lookup",
+        "protection_parse",
+    ]
+    reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,79}$")
+    error_type: Literal[
+        "InvalidVenueData",
+        "UnexpectedError",
+        "ExchangeAuthError",
+        "ExchangeRateLimitError",
+        "ExchangeUnavailableError",
+        "ExchangeRequestError",
+    ]
+    endpoint_name: Literal[
+        "GET /api/v1/trade/order-detail",
+        "GET /api/v1/trade/fills-history",
+        "GET /api/v1/trade/orders-tpsl-pending",
+    ]
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    venue_error_code: str | None = Field(default=None, pattern=r"^[0-9]{1,16}$")
+    field_name: (
+        Literal[
+            "size",
+            "filledSize",
+            "fee",
+            "fillSize",
+            "fillPrice",
+            "slOrderPrice",
+            "tpOrderPrice",
+            "slTriggerPrice",
+            "tpTriggerPrice",
+        ]
+        | None
+    ) = None
+
+
 class ManualDemoStatus(CanonicalModel):
     origin: Literal["manual demo test"] = "manual demo test"
     revision_id: UUID
@@ -102,6 +143,7 @@ class ManualDemoStatus(CanonicalModel):
     protection: str
     journal_trade_id: UUID | None
     missing_evidence: tuple[str, ...]
+    reconciliation_diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
 
 
 class ManualDemoCancelRequest(CanonicalModel):

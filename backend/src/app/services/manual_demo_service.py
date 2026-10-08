@@ -22,6 +22,7 @@ from app.db.models import (
     AuditLog,
     ExecutionAccount,
     ExecutionCommand,
+    ExecutionFillFact,
     ExecutionProjection,
     JournalTrade,
     RiskReservation,
@@ -34,6 +35,7 @@ from app.providers.exchange.demo_preflight import (
     preflight_category,
     preflight_message,
 )
+from app.providers.exchange.demo_reconciliation import ORDER, diagnostic_for
 from app.providers.exchange.factory import build_blofin_client
 from app.providers.exchange.governed_blofin import (
     DemoFill,
@@ -58,6 +60,7 @@ from app.schemas.execution_protocol import (
     VenueSubmitEffectState,
 )
 from app.schemas.manual_demo import (
+    DemoReconciliationDiagnostic,
     ManualDemoConfirmation,
     ManualDemoInstrument,
     ManualDemoPreview,
@@ -75,9 +78,11 @@ from app.schemas.trade_plan import (
 from app.security.tenant import TenantContext
 from app.services.approval_service import ApprovalService
 from app.services.audit_service import AuditService
+from app.services.canonical_execution_journal import journal_planned_targets
 from app.services.canonical_serialization import canonical_sha256
 from app.services.execution_account_service import ExecutionAccountService
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
+from app.services.execution_fills import fill_content_hash
 from app.services.manual_demo_plan import MANUAL_DEMO_ORIGIN, build_manual_plan
 from app.services.manual_demo_policy import validate_manual_demo
 from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
@@ -528,6 +533,7 @@ class ManualDemoService:
         status = command.blocked_reason_code or "not_sent"
         protection = "unverified"
         evidence = None
+        diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
         if effect is not None and effect.state not in {
             VenueSubmitEffectState.CREATED,
             VenueSubmitEffectState.LEASED,
@@ -537,14 +543,65 @@ class ManualDemoService:
             self.session.commit()
             try:
                 evidence = self._provider().reconcile(plan=plan, client_order_id=client_id)
-            except Exception:
+            except Exception as exc:
                 status = "reconciliation_unavailable_operator_hold"
+                diagnostic = diagnostic_for(exc, stage="order_lookup", endpoint=ORDER)
+                diagnostics = (diagnostic,)
+                logger.warning(
+                    "manual_demo_reconciliation_failed",
+                    organization_id=str(tenant.organization_id),
+                    account_id=str(plan.account_id),
+                    command_id=str(command_id),
+                    **diagnostic.model_dump(exclude_none=True),
+                )
+                self._audit(
+                    tenant,
+                    AuditEventType.TOOL_FAILED,
+                    command_id,
+                    "manual_demo_reconciliation_failed",
+                    {
+                        "origin": MANUAL_DEMO_ORIGIN,
+                        "diagnostic": diagnostic.model_dump(exclude_none=True),
+                    },
+                )
+                self.session.commit()
             else:
                 status = "ambiguous_operator_hold" if evidence is None else evidence.status
         if evidence is not None:
+            diagnostics = evidence.diagnostics
             self.epochs.lock_epoch(
                 organization_id=tenant.organization_id, account_id=plan.account_id
             )
+            prior_order_ids = set(
+                self.session.scalars(
+                    select(AuditLog.redacted_metadata["venue_order_id"].as_string()).where(
+                        AuditLog.organization_id == tenant.organization_id,
+                        AuditLog.user_id == tenant.user_id,
+                        AuditLog.resource_type == "manual_demo_test",
+                        AuditLog.resource_id == str(command_id),
+                        AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
+                    )
+                )
+            ) - {None}
+            prior_fill_ids = set(
+                self.session.scalars(
+                    select(ExecutionFillFact.source_fill_identity).where(
+                        ExecutionFillFact.organization_id == tenant.organization_id,
+                        ExecutionFillFact.command_id == command_id,
+                    )
+                )
+            )
+            if (
+                prior_order_ids and prior_order_ids != {evidence.order_id}
+            ) or not prior_fill_ids.issubset({f.identity for f in evidence.fills}):
+                raise TradingPolicyError(
+                    "Native reconciliation conflicts with this command's stored order/fills; "
+                    "operator review required. No identities are merged.",
+                    details={
+                        "reason": "native_order_or_fill_history_conflict",
+                        "submission": "already_started",
+                    },
+                )
             self._dispatcher().record_demo_order(
                 command_id=command_id, rejected=evidence.status == "rejected" and not evidence.fills
             )
@@ -561,6 +618,7 @@ class ManualDemoService:
                 "planned_target": str(plan.risk_and_exits.targets[0].price.value),
                 "filled_quantity": str(sum((f.quantity for f in evidence.fills), Decimal("0"))),
                 "plan_content_hash": plan.content_hash,
+                "diagnostics": [d.model_dump(exclude_none=True) for d in diagnostics],
             }
             receipt_hash = canonical_sha256(receipt)
             prior_receipt = self.session.scalar(
@@ -582,17 +640,20 @@ class ManualDemoService:
                 )
             fees = sum((f.fee for f in evidence.fills), Decimal("0"))
             for fact in evidence.fills:
+                quantity, price = self._replay_representation(tenant, command_id, fact)
                 fill = self._dispatcher().apply_unique_fill(
                     command_id=command_id,
-                    fill_quantity=fact.quantity,
-                    fill_price=fact.price,
+                    fill_quantity=quantity,
+                    fill_price=price,
                     source_identity=fact.identity,
                     occurred_at=fact.occurred_at,
                     venue_source="blofin_demo",
                 )
+                prior_fee = None
                 if fill.replayed:
                     prior_fee = self.session.scalar(
-                        select(AuditLog).where(
+                        select(AuditLog)
+                        .where(
                             AuditLog.organization_id == tenant.organization_id,
                             AuditLog.user_id == tenant.user_id,
                             AuditLog.resource_type == "manual_demo_test",
@@ -601,21 +662,29 @@ class ManualDemoService:
                             AuditLog.redacted_metadata["fill_identity"].as_string()
                             == fact.identity,
                         )
+                        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+                        .limit(1)
                     )
                     if prior_fee is None or Decimal(prior_fee.redacted_metadata["fee"]) != fact.fee:
                         raise TradingPolicyError(
                             "Verified manual demo fill fee conflicts with its stored receipt; "
                             "operator review required."
                         )
-                if not fill.replayed:
+                if not fill.replayed or (
+                    prior_fee is not None and "quantity" not in prior_fee.redacted_metadata
+                ):
                     self._audit(
                         tenant,
                         AuditEventType.POSITION_UPDATED,
                         command_id,
-                        "manual_demo_actual_fill",
+                        "manual_demo_fill_representation_verified"
+                        if fill.replayed
+                        else "manual_demo_actual_fill",
                         {
                             "fill_identity": fact.identity,
                             "fee": str(fact.fee),
+                            "quantity": str(fact.quantity),
+                            "price": str(fact.price),
                             "fee_currency": "USDT",
                             "protection": evidence.protection_status,
                         },
@@ -686,10 +755,21 @@ class ManualDemoService:
             missing.append(
                 "Cancellation requested; terminal cancellation is not verified. Do not retry."
             )
-        if evidence is None or not evidence.fills:
+        if evidence is None and projection is not None and projection.filled_quantity:
+            missing.append(
+                "Previously verified fills are retained; the current native order and protection "
+                "read is unavailable. Reconcile the same command."
+            )
+        elif evidence is None or not evidence.fills:
             missing.append("No actual venue fill has been verified.")
         if protection != "verified":
             missing.append("Stop and target protection are not verified.")
+        if diagnostics:
+            missing.append(
+                "Native demo evidence read failed. Check the reported stage, endpoint and reason "
+                "against this order in BloFin demo, then refresh this SAME command. "
+                "Do not resubmit or clear the operator hold."
+            )
         return ManualDemoStatus(
             revision_id=plan.revision_id,
             command_id=command_id,
@@ -704,7 +784,63 @@ class ManualDemoService:
             protection=protection,
             journal_trade_id=trade.id if trade else None,
             missing_evidence=tuple(missing),
+            reconciliation_diagnostics=diagnostics,
         )
+
+    def _replay_representation(
+        self, tenant: TenantContext, command_id: UUID, fact: DemoFill
+    ) -> tuple[Decimal, Decimal]:
+        """Reuse a proven lexical representation only for exactly equal native facts.
+
+        Shared immutable fill hashes include decimal strings. Do not rewrite those
+        hashes or compare rounded database amounts to establish equality. The
+        original full-precision audit amounts must recreate the immutable hash.
+        """
+        prior = self.session.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.organization_id == tenant.organization_id,
+                AuditLog.user_id == tenant.user_id,
+                AuditLog.resource_type == "manual_demo_test",
+                AuditLog.resource_id == str(command_id),
+                AuditLog.action == AuditEventType.POSITION_UPDATED,
+                AuditLog.redacted_metadata["fill_identity"].as_string() == fact.identity,
+            )
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .limit(1)
+        )
+        if prior is None or "quantity" not in prior.redacted_metadata:
+            return fact.quantity, fact.price
+        quantity = Decimal(prior.redacted_metadata["quantity"])
+        price = Decimal(prior.redacted_metadata["price"])
+        if quantity != fact.quantity or price != fact.price:
+            return (
+                fact.quantity,
+                fact.price,
+            )  # Shared identity conflict check remains final authority.
+        immutable = self.session.scalar(
+            select(ExecutionFillFact).where(
+                ExecutionFillFact.organization_id == tenant.organization_id,
+                ExecutionFillFact.command_id == command_id,
+                ExecutionFillFact.source_fill_identity == fact.identity,
+            )
+        )
+        if (
+            immutable is not None
+            and fill_content_hash(
+                receipt_id=str(immutable.receipt_id),
+                command_id=str(command_id),
+                venue_source=immutable.venue_source,
+                source_fill_identity=fact.identity,
+                quantity=quantity,
+                price=price,
+                unit=immutable.unit,
+                occurred_at=immutable.occurred_at,
+            )
+            == immutable.content_hash
+        ):
+            return quantity, price
+        return fact.quantity, fact.price
 
     def _journal(
         self,
@@ -737,21 +873,33 @@ class ManualDemoService:
                 thesis="Supervised manual demo test; no detected or approved strategy claimed",
                 planned_entry_price=plan.basis_policy.execution_price.value,
                 planned_stop_price=plan.risk_and_exits.stop.value,
-                planned_targets=[
-                    {
-                        "price": str(plan.risk_and_exits.targets[0].price.value),
-                        "quantity_fraction": "1",
-                        "label": "TP1",
-                    }
-                ],
+                planned_targets=journal_planned_targets(plan),
                 planned_risk_amount=plan.risk_and_exits.maximum_loss.value,
                 linked_proposal_id=plan.plan_id,
                 execution_lifecycle_id=command.id,
                 account_id=plan.account_id,
+                trade_plan_revision_id=plan.revision_id,
                 leverage=Decimal("1"),
                 tags=["manual demo test", "excluded from strategy validation"],
             )
             self.session.add(trade)
+        elif (
+            trade.user_id != tenant.user_id
+            or trade.account_id != plan.account_id
+            or trade.source != JournalTradeSource.MANUAL_DEMO_TEST
+            or trade.exchange != "BLOFIN_DEMO"
+            or trade.trade_plan_revision_id not in {None, plan.revision_id}
+            or trade.linked_proposal_id != plan.plan_id
+            or trade.symbol != "BTCUSDT"
+            or trade.direction
+            != (TradeDirection.LONG if plan.side.value == "BUY" else TradeDirection.SHORT)
+        ):
+            raise TradingPolicyError(
+                "Manual demo Journal identity conflicts; operator review required."
+            )
+        # Repair only this proven lifecycle's missing pointer/target representation.
+        trade.trade_plan_revision_id = plan.revision_id
+        trade.planned_targets = journal_planned_targets(plan)
         total = sum((f.quantity for f in fills), Decimal("0"))
         trade.entry_price = sum((f.quantity * f.price for f in fills), Decimal("0")) / total
         trade.size = total * plan.instrument_rules.contract_multiplier

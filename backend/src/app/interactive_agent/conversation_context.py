@@ -18,7 +18,7 @@ from app.interactive_agent.contracts import (
     ConnectionRef,
 )
 from app.interactive_agent.parsing import extract_direction, extract_symbol
-from app.interactive_agent.recorded_trade import is_current_setup_request
+from app.interactive_agent.recorded_trade import is_current_setup_request, trade_scope
 from app.providers.llm import LLMMessage
 from app.schemas.common import ConversationMessageRole, StrictModel
 from app.services.conversation_service import ConversationService
@@ -141,9 +141,11 @@ def resolve_trade_followup(
         return FollowupResolution(routed)
     if routed is not None and routed.name != "paper_trade.read_recorded":
         return FollowupResolution(routed)
+    explicit_scope = {k: v for k, v in trade_scope(request.message).items() if v is not None}
     selectors = (
         RecordedTradeInput.model_validate(routed.arguments) if routed else RecordedTradeInput()
     )
+    selectors = selectors.model_copy(update=explicit_scope)
     explicit_symbol = extract_symbol(request.message)
     if (
         selectors.journal_trade_id is not None
@@ -152,12 +154,14 @@ def resolve_trade_followup(
         or selectors.latest
         or selectors.market_name is not None
         or explicit_symbol is not None
+        or selectors.execution_venue is not None
+        or selectors.trade_origin is not None
     ):
         return FollowupResolution(
-            routed
-            or ActionRequest(
+            ActionRequest(
                 name="paper_trade.read_recorded",
                 arguments={
+                    **selectors.model_dump(mode="json"),
                     "symbol": explicit_symbol,
                     "direction": extract_direction(request.message),
                 },

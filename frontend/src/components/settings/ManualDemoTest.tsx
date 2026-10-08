@@ -156,6 +156,15 @@ export function ManualDemoTest() {
           <p>Actual filled contracts: {result.filled_quantity} · remaining: {result.remaining_quantity}</p>
           <p>Actual fill price: {result.average_fill_price ?? "Not verified"} · fees: {result.fees ?? "Not verified"} USDT</p>
           <p>Stop/target protection: {result.protection}</p>
+          {result.reconciliation_diagnostics?.map((diagnostic, index) => (
+            <p role="alert" key={`${diagnostic.stage}:${diagnostic.reason_code}:${index}`}>
+              Reconciliation: {diagnostic.stage} — {diagnostic.reason_code}. {diagnostic.endpoint_name}
+              {diagnostic.field_name ? `; field ${diagnostic.field_name}` : ""}
+              {diagnostic.http_status ? `; HTTP ${diagnostic.http_status}` : ""}
+              {diagnostic.venue_error_code ? `; venue code ${diagnostic.venue_error_code}` : ""}.
+              Refresh this same command after checking its venue evidence. Do not resubmit.
+            </p>
+          ))}
           {result.missing_evidence.map((warning) => <p key={warning}>{warning}</p>)}
           <Button disabled={busy} onClick={() => void act(async () => { setResult(await manualDemo.reconcile(result.command_id)); })}>Refresh venue evidence</Button>
           {Number(result.remaining_quantity) > 0 && <Button disabled={busy} onClick={() => void act(async () => { setResult(await manualDemo.cancel(result.command_id)); })}>Cancel unfilled entry remainder</Button>}
