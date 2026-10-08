@@ -112,6 +112,35 @@ records the actual fills and activates the existing kill switch/operator hold.
 Conflicting repeated fill fees cannot overwrite stored receipt fees. Inspect the
 venue and persisted evidence; do not clear the hold merely to obtain a green status.
 
+## Quote freshness diagnosis (preview only)
+
+If preview refuses at `quote`, inspect `error.details.preflight` or the existing
+`manual_demo_preflight_failed` log. Public timing evidence contains
+`raw_timestamp_ms`, `timestamp_unit`, `parsed_timestamp_utc`,
+`receipt_timestamp_utc`, `quote_age_seconds` and `freshness_status`.
+Non-numeric/oversized input is omitted; malformed values cannot become fresh.
+The UTC receipt clock is sampled after the ticker GET. The requirement remains
+`0 <= age < 10` seconds; a response acknowledgment or HTTP Date never refreshes
+the venue occurrence timestamp. Never confirm an order to diagnose a preview.
+
+For the October 8 rejection, the original raw timestamp was not recorded. The
+coding workspace cannot reach BloFin under its HTTP allowlist; the live cause
+(stale provider data, proxy caching or clock skew) is therefore **unproven**.
+After reviewed deployment, retry preview and compare three bounded public ticker
+reads for `BTC-USDT`, recording only timestamp/receipt/age. Check the worker's UTC
+clock against trusted time and inspect proxy cache headers separately; a repeated
+timestamp alone does not prove caching. No private payloads or credentials.
+
+[BloFin's official API guide](https://docs.blofin.com/index.html#get-tickers)
+specifies millisecond ticker generation timestamps. Its
+[order-book endpoint](https://docs.blofin.com/index.html#get-order-book),
+`GET /api/v1/market/books?instId=BTC-USDT&size=1`, is a documented candidate for
+execution-relevant bid/ask evidence. If ticker staleness is confirmed, compare
+that endpoint on the **same allowlisted demo host**, by read-only requests,
+checking generation time, complete non-crossed bid/ask and contract depth.
+Freshness and demo compatibility require live proof. This repair does not switch
+quote sources, substitute Binance, relax age limits or fabricate freshness.
+
 ## Explicit limits
 
 - BTCUSDT market entry only; all other instruments and LIMIT requests are refused.

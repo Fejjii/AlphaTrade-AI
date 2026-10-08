@@ -5,6 +5,18 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-116 — BloFin demo quote timing diagnosis
+
+- Status: Implementation complete; live root cause and preview recovery pending.
+- Base: main `2ff829a` including PR225. Existing receipt-time clock and documented
+  Unix-millisecond parsing agree; supplied live error lacks raw timing evidence.
+- Scope: Bounded public raw/parsed/receipt/age diagnostics, exact millisecond
+  parsing, UTC handling and strict fresh/stale/future/malformed regressions.
+- Limit: Executor HTTP policy excludes BloFin; no live stale/caching/skew claim.
+  Same-demo-host order book is a documented candidate, not an enabled fallback.
+- Gates: Review/deploy, preview-only timing capture, evidence-driven correction
+  if needed, then consolidated release CI. No orders or execution activation.
+
 ## AT-115 — Presentation preflight and Dashboard consistency
 
 - Priority: P0 · Status: DONE (implementation; review/deployment/live acceptance pending).

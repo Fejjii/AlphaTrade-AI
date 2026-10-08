@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
 from app.providers.exchange.demo_preflight import preflight_stage
+from app.providers.exchange.demo_quote import quote_time_at_receipt
 from app.providers.exchange.errors import ExchangeRequestError
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.schemas.trade_plan import EntrySide, TradePlanRevision
@@ -144,9 +145,7 @@ class GovernedBloFinDemoProvider:
             quote = next((r for r in ticker if r.get("instId") == instrument), None)
             if quote is None:
                 raise ValueError("Demo quote unavailable.")
-            observed = _time(quote.get("ts"))
-            if not 0 <= (now - observed).total_seconds() < 10:
-                raise ValueError("Demo quote stale or future dated.")
+            observed = quote_time_at_receipt(quote.get("ts"), now)
             price = _positive(quote.get("last"))
         return DemoVenueSnapshot(
             instrument=instrument,
