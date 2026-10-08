@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from decimal import InvalidOperation
 from typing import Any
 
+from app.providers.exchange.demo_quote import DemoQuoteTimingError
 from app.providers.exchange.errors import (
     ExchangeAuthError,
     ExchangeError,
@@ -27,6 +28,8 @@ _VALIDATION_REASONS = {
     "Demo USDT equity unavailable.": "usdt_balance_unavailable",
     "Demo quote unavailable.": "quote_unavailable",
     "Demo quote stale or future dated.": "quote_stale_or_future",
+    "Demo quote timestamp invalid.": "malformed_or_unsupported_response",
+    "Demo quote receipt clock must be timezone aware.": "invalid_receipt_clock",
 }
 
 
@@ -58,6 +61,8 @@ def failure_diagnostics(
     }
     if endpoint is not None:
         diagnostics["endpoint_name"] = endpoint
+    if isinstance(exc, DemoQuoteTimingError):
+        diagnostics.update(exc.timing)
     if isinstance(exc, ExchangeError) and exc.details is not None:
         status = exc.details.http_status
         if type(status) is int and 100 <= status <= 599:
