@@ -300,6 +300,35 @@ describe("browser voice transport", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it.each([
+    ["NotAllowedError", "permission"],
+    ["SecurityError", "permission"],
+    ["NotSupportedError", "unsupported"],
+    ["InvalidStateError", "failed"],
+    ["AbortError", "failed"],
+  ])(
+    "retains a safe synchronous recognition %s without exposing raw messages",
+    (name, code) => {
+      // Instance field mock is overridden for this browser construction only.
+      class FailingRecognition extends Recognition {
+        start = vi.fn(() => {
+          throw new DOMException("private browser details", name);
+        });
+      }
+      vi.stubGlobal("SpeechRecognition", FailingRecognition);
+      const events = callbacks();
+      createBrowserVoiceProvider().listen(events);
+      expect(events.onError).toHaveBeenCalledWith(
+        expect.objectContaining({ code, sourceCode: name }),
+      );
+      expect(events.onError.mock.lastCall?.[0].message).not.toContain(
+        "private browser details",
+      );
+      expect(Recognition.instances[0].abort).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
   it("stops speech on interruption and ignores late speech events", () => {
     let spoken: SpeechSynthesisUtterance | undefined;
     class Utterance {

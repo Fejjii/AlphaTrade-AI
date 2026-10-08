@@ -9,7 +9,8 @@ recognition error code and root cause remain UNKNOWN.
 
 The previous provider conflated `not-allowed` and `service-not-allowed` and claimed
 microphone denial. Recognition rejection alone does not establish capture denial.
-The repair retains allowlisted browser error codes, separates service rejection,
+The repair retains allowlisted browser error codes and safe synchronous DOMException
+names, separates service rejection,
 network, unavailable audio capture and unsupported language, and offers an explicit
 local microphone capture check after failure. Recognition `not-allowed` remains an
 ambiguous access failure; only a separate capture result establishes whether capture
@@ -47,7 +48,7 @@ npx eslint src/lib/voice/types.ts src/lib/voice/browser-voice-provider.ts src/li
 npm run typecheck
 ```
 
-Cloud result: both focused files passed, **44 tests passed**; scoped ESLint and
+Cloud result: both focused files passed, **49 tests passed**; scoped ESLint and
 frontend TypeScript checks passed. No full backend CI was run.
 
 Tests mock recognition, synthesis, capture and React interactions. They cover safe

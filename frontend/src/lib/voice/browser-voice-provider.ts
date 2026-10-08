@@ -89,6 +89,25 @@ function recognitionError(rawCode: string): VoiceError {
   }
 }
 
+function recognitionException(error: unknown): VoiceError {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return { ...recognitionError("not-allowed"), sourceCode: name };
+  }
+  if (name === "NotSupportedError") {
+    return {
+      code: "unsupported",
+      sourceCode: name,
+      message:
+        "The browser could not start speech recognition. Use a supported browser over HTTPS or type your message.",
+    };
+  }
+  if (name === "InvalidStateError" || name === "AbortError") {
+    return { ...recognitionError("failed"), sourceCode: name };
+  }
+  return recognitionError("failed");
+}
+
 function captureError(error: unknown): VoiceError {
   // Only the DOM error name is inspected; raw messages/device details are discarded.
   const name = error instanceof DOMException ? error.name : "";
@@ -205,8 +224,8 @@ export function createBrowserVoiceProvider(): VoiceProvider {
       let recognition: BrowserRecognition;
       try {
         recognition = new Recognition();
-      } catch {
-        callbacks.onError(recognitionError("failed"));
+      } catch (error) {
+        callbacks.onError(recognitionException(error));
         return noop;
       }
       let active = true;
@@ -294,8 +313,8 @@ export function createBrowserVoiceProvider(): VoiceProvider {
       );
       try {
         recognition.start();
-      } catch {
-        fail(recognitionError("failed"));
+      } catch (error) {
+        fail(recognitionException(error));
       }
       return { stop, cancel: abort };
     },
