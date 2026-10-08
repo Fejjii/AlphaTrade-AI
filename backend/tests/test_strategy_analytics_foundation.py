@@ -157,6 +157,26 @@ def report(db: Session, **values: object) -> StrategyAnalyticsReport:
     return StrategyAnalyticsService(db).compute(organization_id=ORG, user_id=USER, **values)
 
 
+def test_closed_manual_demo_connectivity_never_counts_as_strategy_performance(db):
+    trade(db)
+    trade(db, source=JournalTradeSource.MANUAL_DEMO_TEST, net_pnl=Decimal("99999"))
+    result = report(db)
+    assert result.overall.trade_count == 1
+    assert result.overall.net_pnl_total == 100
+    assert (
+        report(
+            db, filters=StrategyAnalyticsFilters(source=JournalTradeSource.MANUAL_DEMO_TEST)
+        ).overall.trade_count
+        == 0
+    )
+    assert (
+        report(
+            db, filters=StrategyAnalyticsFilters(source=JournalTradeSource.PAPER_EXECUTION)
+        ).overall.trade_count
+        == 1
+    )
+
+
 def test_golden_metrics_reuse_journal_semantics_and_include_pnl_missing_duration(
     db: Session,
 ) -> None:

@@ -10,6 +10,7 @@ from app.schemas.trade_plan import ContractType, EntrySide, TradePlanExecutionTe
 
 POLICY_VERSION = "planned-gross-weighted-rr/v1"
 MINIMUM_REWARD_RISK = Fraction(1)
+MANUAL_CONNECTIVITY_RR_POLICY = "manual-demo-connectivity-no-minimum-rr"
 
 
 class PlannedRewardRiskError(ValueError):
@@ -126,3 +127,24 @@ def planned_reward_risk(terms: TradePlanExecutionTerms) -> PlannedRewardRisk:
             reason="planned_reward_risk_below_minimum",
         )
     return result
+
+
+def execution_reward_risk(terms: TradePlanExecutionTerms) -> PlannedRewardRisk:
+    """Only a hash-bound manual demo connectivity policy may omit the strategy 1R floor.
+
+    Full semantic validation still enforces demo venue, no strategy/Candidate lineage,
+    market-only entry and one full-position target. Geometry/allocation remain mandatory.
+    Legacy manual plans without this explicit calculation policy retain the 1R floor.
+    """
+    markers = [item for item in terms.calculation_inputs if item.name == "manual_connectivity_rr"]
+    if (
+        terms.schema_version == "ManualDemoTradePlanV1"
+        and terms.execution_policy_version == "manual-blofin-demo/v1"
+        and len(markers) == 1
+        and markers[0].formula_id == MANUAL_CONNECTIVITY_RR_POLICY
+        and markers[0].formula_version == "1"
+        and markers[0].unit == "POLICY"
+        and markers[0].input_value == markers[0].result_value == 1
+    ):
+        return measure_planned_reward_risk(terms)
+    return planned_reward_risk(terms)

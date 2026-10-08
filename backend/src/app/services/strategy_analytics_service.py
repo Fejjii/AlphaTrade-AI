@@ -22,7 +22,7 @@ from app.core.errors import ValidationAppError
 from app.db.models import JournalTrade, UserStrategy, UserStrategyVersion
 from app.db.strategy_brain import BrainSetupEventRow, BrainSetupRow
 from app.repositories.journal_trades import JournalTradeRepository, JournalTradeStatsRow
-from app.schemas.common import MarketRegime
+from app.schemas.common import JournalTradeSource, MarketRegime
 from app.schemas.journal_statistics import JournalStatsWarning, JournalStatsWarningCode
 from app.schemas.strategy_analytics import (
     NestedMaturityStage,
@@ -140,7 +140,14 @@ class StrategyAnalyticsService:
             rows, truncated = self._trades.fetch_stats_rows(
                 organization_id=organization_id,
                 user_id=user_id,
-                source=filters.source,
+                # Connectivity tests never enter strategy performance, even if
+                # later closed or explicitly requested through a source filter.
+                sources=tuple(
+                    source
+                    for source in JournalTradeSource
+                    if source is not JournalTradeSource.MANUAL_DEMO_TEST
+                    and (filters.source is None or source is filters.source)
+                ),
                 symbol=filters.symbol,
                 timeframe=filters.timeframe,
                 market_regime=filters.market_regime,

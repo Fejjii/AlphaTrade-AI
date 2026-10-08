@@ -78,7 +78,7 @@ from app.services.execution_integrity import (
 )
 from app.services.execution_transitions import append_transition
 from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
-from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk
+from app.services.planned_reward_risk import PlannedRewardRiskError, execution_reward_risk
 from app.services.safety_epoch import SafetyEpochService
 
 
@@ -426,7 +426,7 @@ class PaperPlanClaimService:
         if plan.content_hash != authorization.plan_content_hash:
             return "plan_hash_mismatch"
         try:
-            planned_reward_risk(plan)
+            execution_reward_risk(plan)
         except PlannedRewardRiskError as exc:
             return exc.reason
         if self._hooks.revalidate is not None:

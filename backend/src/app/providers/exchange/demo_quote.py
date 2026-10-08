@@ -16,7 +16,9 @@ class DemoQuoteTimingError(ValueError):
         super().__init__(message)
 
 
-def quote_time_at_receipt(value: Any, received_at: datetime) -> datetime:
+def quote_time_at_receipt(
+    value: Any, received_at: datetime, *, request_duration_ms: float | None = None
+) -> datetime:
     """Never guess seconds/microseconds or replace venue time with receipt time."""
     raw: int | None = None
     if type(value) is int or isinstance(value, str):
@@ -31,6 +33,11 @@ def quote_time_at_receipt(value: Any, received_at: datetime) -> datetime:
         "quote_age_seconds": None,
         "freshness_status": "malformed_timestamp",
     }
+    if request_duration_ms is not None:
+        timing.update(
+            quote_source="blofin_demo_rest_order_book",
+            request_duration_ms=request_duration_ms,
+        )
     if received_at.tzinfo is None or received_at.utcoffset() is None:
         timing["freshness_status"] = "invalid_receipt_clock"
         raise DemoQuoteTimingError("Demo quote receipt clock must be timezone aware.", timing)

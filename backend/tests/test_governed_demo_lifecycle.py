@@ -117,7 +117,7 @@ class ClosingVenue(Venue):
             response = super().handle(request)
             payload = response.json()
             rows = payload.get("data", [])
-            if endpoint == "tickers":
+            if endpoint == "books":
                 rows[0]["ts"] = self.quote_ts
                 return httpx.Response(response.status_code, json=payload)
             if self.post_count > 1:

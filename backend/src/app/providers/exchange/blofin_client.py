@@ -168,6 +168,7 @@ class BloFinClient:
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         signed: bool = False,
+        before_send: Callable[[], None] | None = None,
     ) -> Any:
         """Execute a request and return the venue's ``data`` payload.
 
@@ -195,6 +196,8 @@ class BloFinClient:
                     else {}
                 )
                 with self._client() as client:
+                    if before_send is not None:
+                        before_send()
                     response = client.request(
                         method.upper(),
                         request_path,

@@ -30,7 +30,67 @@ _VALIDATION_REASONS = {
     "Demo quote stale or future dated.": "quote_stale_or_future",
     "Demo quote timestamp invalid.": "malformed_or_unsupported_response",
     "Demo quote receipt clock must be timezone aware.": "invalid_receipt_clock",
+    "Demo quote value malformed.": "invalid_instrument_or_quote_value",
+    "Demo quote side must be BUY or SELL.": "quote_side_invalid",
+    "Demo order book unavailable or ambiguous.": "quote_unavailable",
+    "Demo order book instrument mismatch.": "quote_instrument_mismatch",
+    "Demo order book depth unavailable.": "quote_depth_unavailable",
+    "Demo order book level malformed.": "quote_depth_malformed",
+    "Demo order book level violates venue increments.": "quote_depth_invalid_increments",
+    "Demo order book levels unordered or duplicated.": "quote_depth_unordered",
+    "Demo order book spread crossed or locked.": "quote_spread_invalid",
+    "Demo order book spread exceeds the slippage limit.": "quote_spread_excessive",
+    "Demo quote quantity violates contract increments or limits.": "quote_quantity_invalid",
+    "Demo order book has insufficient depth within the slippage limit.": "quote_depth_insufficient",
 }
+
+
+def preflight_message(diagnostics: dict[str, Any]) -> str:
+    """Actionable fixed copy; never reflect arbitrary provider text into the UI."""
+    reason = diagnostics.get("reason_code")
+    if reason == "quote_stale_or_future":
+        if diagnostics.get("freshness_status") == "future":
+            return (
+                "BloFin demo order book is future dated. "
+                "Check the server clock and venue timestamp; preview refused."
+            )
+        return (
+            "BloFin demo order book is at least 10 seconds old. "
+            "Retry preview when fresh demo depth is available."
+        )
+    if reason in {"quote_depth_insufficient", "quote_depth_unavailable", "quote_unavailable"}:
+        return (
+            "BloFin demo order book has no executable depth for this size within 10 bps. "
+            "Check demo liquidity or reduce the contract quantity and preview again."
+        )
+    if reason == "quote_quantity_invalid":
+        return (
+            "Demo quantity must use the instrument's contract lot, minimum and maximum. "
+            "Correct the contract quantity and preview again."
+        )
+    if reason in {"venue_unavailable", "venue_rate_limited"}:
+        return (
+            "BloFin demo data read failed or was rate limited. Wait briefly and retry preview; "
+            "check demo provider access if it persists."
+        )
+    if reason == "venue_auth_or_permission_rejected":
+        return (
+            "BloFin demo rejected a preflight read. Verify demo API access and the required "
+            "read/trade-only permissions; preview refused."
+        )
+    if reason == "venue_request_rejected":
+        return (
+            "BloFin demo rejected a preflight request. Check the reported endpoint "
+            "and venue error code before retrying preview."
+        )
+    if diagnostics.get("stage") == "quote":
+        return (
+            "BloFin demo quote evidence is invalid. Check the reported reason, book timestamp, "
+            "spread and contract depth; preview refused."
+        )
+    return (
+        "BloFin demo preflight failed. Check the reported stage and reason before retrying preview."
+    )
 
 
 def failure_diagnostics(

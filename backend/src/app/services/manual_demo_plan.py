@@ -8,7 +8,7 @@ from app.core.errors import TradingPolicyError
 from app.providers.exchange.governed_blofin import DemoVenueSnapshot
 from app.schemas.manual_demo import ManualDemoPreviewRequest
 from app.schemas.trade_plan import TradePlanRevisionSemantic
-from app.services.planned_reward_risk import planned_reward_risk
+from app.services.planned_reward_risk import MANUAL_CONNECTIVITY_RR_POLICY, execution_reward_risk
 
 MANUAL_DEMO_POLICY = "manual-blofin-demo/v1"
 MANUAL_DEMO_ORIGIN = "manual_demo_test"
@@ -27,6 +27,11 @@ def build_manual_plan(
     if not 0 <= (now - snapshot.observed_at).total_seconds() < 10:
         raise TradingPolicyError("Demo preview quote is stale or future dated.")
     quantity = request.quantity
+    if snapshot.book.side is not request.side:
+        raise TradingPolicyError("Demo quote side does not match the requested entry.")
+    snapshot.book.worst_price(
+        quantity, lot=snapshot.lot, minimum=snapshot.minimum, maximum=snapshot.maximum
+    )
     if (
         len(quantity.as_tuple().digits) > 28
         or abs(int(quantity.as_tuple().exponent)) > 28
@@ -147,6 +152,19 @@ def build_manual_plan(
             "valid_until": now + timedelta(seconds=60),
             "calculation_inputs": [
                 {
+                    "name": "manual_connectivity_rr",
+                    "input_value": "1",
+                    "result_value": "1",
+                    "unit": "POLICY",
+                    "formula_id": MANUAL_CONNECTIVITY_RR_POLICY,
+                    "formula_version": "1",
+                    "precision": 0,
+                    "rounding_mode": "EXACT",
+                    "conservative_remainder": "0",
+                }
+            ]
+            + [
+                {
                     "name": name,
                     "input_value": value,
                     "result_value": value,
@@ -165,5 +183,5 @@ def build_manual_plan(
             "execution_policy_version": MANUAL_DEMO_POLICY,
         }
     )
-    planned_reward_risk(plan)
+    execution_reward_risk(plan)
     return plan

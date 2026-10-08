@@ -11,12 +11,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
+from app.providers.exchange.demo_order_book import DemoOrderBook, parse_demo_book, venue_decimal
 from app.providers.exchange.demo_preflight import preflight_stage
-from app.providers.exchange.demo_quote import quote_time_at_receipt
 from app.providers.exchange.errors import ExchangeRequestError
 from app.providers.exchange.mapping import to_blofin_inst_id
 from app.schemas.trade_plan import EntrySide, TradePlanRevision
@@ -37,6 +38,7 @@ class DemoVenueSnapshot:
     equity: Decimal
     available: Decimal
     maximum: Decimal
+    book: DemoOrderBook
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,9 @@ class GovernedBloFinDemoProvider:
         self._account = BloFinAccountProvider(client)
         self._clock = clock
 
-    def snapshot(self, *, symbol: str, now: datetime) -> DemoVenueSnapshot:
+    def snapshot(
+        self, *, symbol: str, now: datetime, side: EntrySide, quantity: Decimal | None = None
+    ) -> DemoVenueSnapshot:
         self.verify_permissions()
         with preflight_stage("position_mode", "GET /api/v1/account/position-mode"):
             if self._account.get_position_mode().position_mode != "net_mode":
@@ -110,9 +114,10 @@ class GovernedBloFinDemoProvider:
                     "GET", "/api/v1/market/instruments", params={"instId": instrument}
                 )
             )
-            row = next((r for r in rows if r.get("instId") == instrument), None)
-            if row is None or row.get("state") != "live":
+            matches = [r for r in rows if r.get("instId") == instrument]
+            if len(matches) != 1 or matches[0].get("state") != "live":
                 raise ValueError("Demo instrument unavailable.")
+            row = matches[0]
             if (
                 row.get("quoteCurrency") != "USDT"
                 or row.get("baseCurrency") != symbol.removesuffix("USDT")
@@ -121,11 +126,11 @@ class GovernedBloFinDemoProvider:
                 raise ValueError("Only base-valued linear USDT contracts are supported.")
             if row.get("instType") not in {"SWAP", "PERPETUAL"}:
                 raise ValueError("Demo perpetual instrument required.")
-            tick = _positive(row.get("tickSize"))
-            lot = _positive(row.get("lotSize"))
-            minimum = _positive(row.get("minSize"))
-            multiplier = _positive(row.get("contractValue"))
-            maximum = _positive(row.get("maxMarketSize"))
+            tick = venue_decimal(row.get("tickSize"))
+            lot = venue_decimal(row.get("lotSize"))
+            minimum = venue_decimal(row.get("minSize"))
+            multiplier = venue_decimal(row.get("contractValue"))
+            maximum = venue_decimal(row.get("maxMarketSize"))
         with preflight_stage("leverage", "GET /api/v1/account/leverage-info"):
             leverage = self._account.get_leverage_info(inst_id=instrument, margin_mode="cross")
             if leverage.leverage != Decimal("1"):
@@ -136,21 +141,29 @@ class GovernedBloFinDemoProvider:
             balance = next((b for b in balances if b.asset == "USDT"), None)
             if balance is None or balance.available <= 0 or balance.total <= 0:
                 raise ValueError("Demo USDT equity unavailable.")
-        with preflight_stage("quote", "GET /api/v1/market/tickers"):
-            ticker = _rows(
-                self._client.request("GET", "/api/v1/market/tickers", params={"instId": instrument})
+        with preflight_stage("quote", "GET /api/v1/market/books"):
+            started = monotonic()
+            data = self._client.request(
+                "GET", "/api/v1/market/books", params={"instId": instrument, "size": "100"}
             )
             # Preflight IO can outlast the caller's timestamp. Check freshness at receipt.
             now = self._clock()
-            quote = next((r for r in ticker if r.get("instId") == instrument), None)
-            if quote is None:
-                raise ValueError("Demo quote unavailable.")
-            observed = quote_time_at_receipt(quote.get("ts"), now)
-            price = _positive(quote.get("last"))
+            book = parse_demo_book(
+                data,
+                instrument=instrument,
+                side=side,
+                tick=tick,
+                lot=lot,
+                received_at=now,
+                request_duration_ms=round((monotonic() - started) * 1000, 3),
+            )
+            book.worst_price(
+                minimum if quantity is None else quantity, lot=lot, minimum=minimum, maximum=maximum
+            )
         return DemoVenueSnapshot(
             instrument=instrument,
-            price=price,
-            observed_at=observed,
+            price=book.price,
+            observed_at=book.observed_at,
             tick=tick,
             lot=lot,
             minimum=minimum,
@@ -158,6 +171,7 @@ class GovernedBloFinDemoProvider:
             equity=balance.total,
             available=balance.available,
             maximum=maximum,
+            book=book,
         )
 
     def verify_flat_account(self) -> None:
@@ -206,7 +220,10 @@ class GovernedBloFinDemoProvider:
     ) -> str:
         """One POST, with stop and target attached to the entry order."""
         snapshot = self.snapshot(
-            symbol=plan.execution_instrument.replace("-", ""), now=self._clock()
+            symbol=plan.execution_instrument.replace("-", ""),
+            now=self._clock(),
+            side=plan.side,
+            quantity=plan.quantity.value,
         )
         rules = plan.instrument_rules
         if (snapshot.tick, snapshot.lot, snapshot.minimum, snapshot.multiplier) != (
@@ -216,8 +233,22 @@ class GovernedBloFinDemoProvider:
             rules.contract_multiplier,
         ) or plan.quantity.value > snapshot.maximum:
             raise ValueError("Demo instrument constraints changed before dispatch.")
+        worst_price = snapshot.book.worst_price(
+            plan.quantity.value,
+            lot=snapshot.lot,
+            minimum=snapshot.minimum,
+            maximum=snapshot.maximum,
+        )
+        if any(
+            not plan.entry_zone.lower <= price <= plan.entry_zone.upper
+            for price in (snapshot.price, worst_price)
+        ):
+            raise ValueError("Executable demo depth is outside the authorized entry range.")
         if (
-            abs(snapshot.price - plan.basis_policy.execution_price.value)
+            max(
+                abs(price - plan.basis_policy.execution_price.value)
+                for price in (snapshot.price, worst_price)
+            )
             / plan.basis_policy.execution_price.value
             * Decimal("10000")
             > plan.slippage_policy.maximum_bps
@@ -232,7 +263,7 @@ class GovernedBloFinDemoProvider:
             raise ValueError("Demo cross-venue basis moved beyond the authorized bound.")
         if plan.schema_version == "ManualDemoTradePlanV1":
             equity = min(snapshot.equity, snapshot.available)
-            notional = plan.quantity.value * snapshot.multiplier * snapshot.price
+            notional = plan.quantity.value * snapshot.multiplier * plan.entry_zone.upper
             if plan.risk_and_exits.maximum_loss.value > equity * Decimal(
                 "0.01"
             ) or notional > equity * Decimal("0.05"):
@@ -250,10 +281,22 @@ class GovernedBloFinDemoProvider:
             "tpTriggerPrice": str(plan.risk_and_exits.targets[0].price.value),
             "tpOrderPrice": "-1",
         }
-        if self._clock() >= plan.valid_until:
-            raise ValueError("Demo plan expired during dispatch preflight.")
+
+        def verify_deadline() -> None:
+            now = self._clock()
+            if now >= plan.valid_until:
+                raise ValueError("Demo plan expired during dispatch preflight.")
+            if not 0 <= (now - snapshot.observed_at).total_seconds() < 10:
+                raise ValueError("Demo quote stale or future dated.")
+
+        verify_deadline()
         before_post()
-        rows = _rows(self._client.request("POST", "/api/v1/trade/order", body=body, signed=True))
+        # Check after the safety callback and transport throttle, immediately before native send.
+        rows = _rows(
+            self._client.request(
+                "POST", "/api/v1/trade/order", body=body, signed=True, before_send=verify_deadline
+            )
+        )
         if len(rows) != 1:
             raise ValueError("Ambiguous demo submit response.")
         row = rows[0]

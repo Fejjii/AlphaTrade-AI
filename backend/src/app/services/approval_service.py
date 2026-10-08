@@ -392,10 +392,10 @@ class ApprovalService:
         computed_plan_hash = canonical_sha256(semantic)
         if computed_plan_hash != revision.content_hash:
             raise ValidationAppError("Plan content hash verification failed.")
-        from app.services.planned_reward_risk import PlannedRewardRiskError, planned_reward_risk
+        from app.services.planned_reward_risk import PlannedRewardRiskError, execution_reward_risk
 
         try:
-            planned_reward_risk(semantic)
+            execution_reward_risk(semantic)
         except PlannedRewardRiskError as exc:
             raise TradingPolicyError(str(exc), details={"reason": exc.reason}) from exc
         if revision.plan_authority == PLAN_AUTHORITY_CANONICAL:

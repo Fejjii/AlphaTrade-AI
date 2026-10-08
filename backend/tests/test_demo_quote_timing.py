@@ -50,7 +50,7 @@ def test_preview_refusal_exposes_timing_in_http_details_and_existing_failure_log
     def handle(request):
         assert request.method == "GET"
         response = venue.handle(request)
-        if request.url.path.endswith("/tickers"):
+        if request.url.path.endswith("/books"):
             payload = response.json()
             payload["data"][0].update(ts=str(raw), private_payload=PRIVATE_TEXT)
             return httpx.Response(200, json=payload)
@@ -64,7 +64,7 @@ def test_preview_refusal_exposes_timing_in_http_details_and_existing_failure_log
         )
     evidence = caught.value.details["preflight"]
     assert evidence["stage"] == "quote"
-    assert evidence["endpoint_name"] == "GET /api/v1/market/tickers"
+    assert evidence["endpoint_name"] == "GET /api/v1/market/books"
     assert evidence["reason_code"] == "quote_stale_or_future"
     assert evidence["raw_timestamp_ms"] == raw
     assert (
