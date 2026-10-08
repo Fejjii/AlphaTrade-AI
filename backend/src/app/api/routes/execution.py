@@ -32,6 +32,7 @@ from app.schemas.execution_protocol import (
 from app.schemas.manual_demo import (
     ManualDemoCancelRequest,
     ManualDemoConfirmation,
+    ManualDemoInstrument,
     ManualDemoPreview,
     ManualDemoPreviewRequest,
     ManualDemoStatus,
@@ -238,6 +239,15 @@ async def get_order(
     order = execution_service.get_order(order_id)
     ensure_same_organization(order.organization_id, tenant)
     return order
+
+
+@router.get("/manual-demo/instrument", dependencies=[_PAPER_PLAN_RATE_LIMIT])
+def manual_demo_instrument(
+    tenant: OwnerDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ManualDemoInstrument:
+    return ManualDemoService(session, settings).instrument(tenant)
 
 
 @router.post("/manual-demo/preview", dependencies=[_PAPER_PLAN_RATE_LIMIT])

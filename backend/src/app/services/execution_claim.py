@@ -112,6 +112,7 @@ class ExecutionClaimHooks:
     after_epoch_lock: Callable[[], None] | None = None
     before_return: Callable[[], None] | None = None
     revalidate: ClaimRevalidator | None = None
+    manual_demo_capacity: ClaimRevalidator | None = None
 
 
 def _now() -> datetime:
@@ -251,12 +252,25 @@ class PaperPlanClaimService:
             exposure_unit=intent.exposure_unit,
         )
         if blocked_reason is None:
-            blocked_reason = evaluate_claim_predicate(
-                blocking_epoch=bool(epoch.blocking),
-                kill_active=self._epochs.organization_kill_active(request.organization_id),
-                accounting=accounting,
-                intent=intent,
-            )
+            if plan.schema_version == "ManualDemoTradePlanV1":
+                # The ledger keeps reservations/fill facts for every origin. Its
+                # simulator limits/PnL/trade slots do not govern connectivity tests.
+                # A fresh venue policy hook is mandatory and runs under the epoch.
+                if epoch.blocking or self._epochs.organization_kill_active(request.organization_id):
+                    blocked_reason = "safety_epoch_blocking"
+                elif self._hooks.manual_demo_capacity is None:
+                    blocked_reason = "manual_demo_account_evidence_required"
+                else:
+                    blocked_reason = self._hooks.manual_demo_capacity(
+                        plan=plan, authorization=authorization, request=request, at=now
+                    )
+            else:
+                blocked_reason = evaluate_claim_predicate(
+                    blocking_epoch=bool(epoch.blocking),
+                    kill_active=self._epochs.organization_kill_active(request.organization_id),
+                    accounting=accounting,
+                    intent=intent,
+                )
         if blocked_reason is not None:
             result = self._persist_blocked(
                 request=request,

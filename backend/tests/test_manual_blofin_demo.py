@@ -416,6 +416,13 @@ def test_authenticated_api_preview_confirm_is_scoped_and_rejects_client_identity
     headers = {"Authorization": f"Bearer {token}"}
     payload = {"side": "BUY", "quantity": "2", "stop": "99000", "target": "102000"}
     with TestClient(app) as client:
+        assert client.get("/execution/manual-demo/instrument").status_code == 401
+        metadata = client.get("/execution/manual-demo/instrument", headers=headers)
+        assert metadata.status_code == 200, metadata.text
+        assert metadata.json()["quantity_unit"] == "CONTRACTS"
+        assert metadata.json()["lot_increment"] == "1"
+        assert metadata.json()["contract_multiplier"] == "0.001"
+        assert world[3].post_count == 0
         assert client.post("/execution/manual-demo/preview", json=payload).status_code == 401
         assert (
             client.post(
@@ -506,7 +513,7 @@ def test_generic_proposal_approval_and_execution_cannot_bypass_manual_confirmati
     assert world[3].post_count == 0
 
 
-def test_kill_switch_during_final_preflight_never_posts(world):
+def test_kill_switch_during_final_preflight_never_posts(world, monkeypatch):
     plan = preview(world)
 
     def activate():
@@ -522,7 +529,15 @@ def test_kill_switch_during_final_preflight_never_posts(world):
             )
             session.commit()
 
-    world[3].after_preflight = activate
+    original = world[3].handle
+
+    def final_preflight(request):
+        result = original(request)
+        if request.url.path.endswith("books") and world[3].ticker_reads == 3:
+            activate()
+        return result
+
+    monkeypatch.setattr(world[4]._client._transport, "handler", final_preflight)
     result = confirm(world, plan)
     assert result.filled_quantity == 0
     assert world[3].post_count == 0
@@ -664,9 +679,14 @@ def test_fresh_dispatch_balance_decline_prevents_entry_post(world, monkeypatch):
     plan = preview(world)
     original = world[3].handle
 
+    balances = 0
+
     def response(request):
+        nonlocal balances
         result = original(request)
         if request.url.path.endswith("balance"):
+            balances += 1
+        if request.url.path.endswith("balance") and balances == 2:
             return httpx.Response(
                 200,
                 json={
@@ -680,4 +700,369 @@ def test_fresh_dispatch_balance_decline_prevents_entry_post(world, monkeypatch):
     result = confirm(world, plan)
     assert result.filled_quantity == 0
     assert result.protection == "unverified"
+    assert world[3].post_count == 0
+
+
+def response_override(world, monkeypatch, replacements):
+    """Native provider fixtures; service and policy decisions remain real."""
+    original = world[3].handle
+
+    def handle(request):
+        endpoint = request.url.path.rsplit("/", 1)[-1]
+        if endpoint in replacements and request.method == "GET":
+            return httpx.Response(200, json={"code": "0", "data": replacements[endpoint]})
+        return original(request)
+
+    monkeypatch.setattr(world[4]._client._transport, "handler", handle)
+
+
+def test_internal_paper_exposure_equity_and_discipline_do_not_block_demo(world):
+    from app.db.models import AccountRiskAccountingState, DailyRiskState, Position, UserRiskSettings
+    from app.schemas.common import PositionStatus, TradeDirection
+
+    with world[0]() as session:
+        paper = Position(
+            organization_id=world[1].organization_id,
+            user_id=world[1].user_id,
+            symbol="BTCUSDT",
+            direction=TradeDirection.LONG,
+            size=Decimal("0.01"),
+            entry_price=Decimal("86419"),
+            leverage=Decimal("1"),
+            unrealized_pnl=Decimal("-20"),
+            opened_at=EVALUATED_AT,
+            status=PositionStatus.OPEN,
+        )
+        daily = DailyRiskState(
+            organization_id=world[1].organization_id,
+            user_id=world[1].user_id,
+            day=EVALUATED_AT.date(),
+            realized_pnl=Decimal("500"),
+            trade_count=100,
+            locked=True,
+        )
+        session.add_all(
+            [
+                paper,
+                daily,
+                UserRiskSettings(
+                    organization_id=world[1].organization_id,
+                    user_id=world[1].user_id,
+                    default_account_balance=Decimal("1"),
+                    max_trades_per_day=1,
+                    max_risk_per_trade_percent=Decimal("0.01"),
+                    daily_loss_limit=Decimal("1"),
+                    green_day_protection_enabled=True,
+                ),
+            ]
+        )
+        account = service(world, session)._scope(world[1])
+        accounting = service(world, session).epochs.lock_risk_accounting(
+            organization_id=world[1].organization_id,
+            account_id=account.id,
+            user_id=world[1].user_id,
+            exposure_unit="USDT",
+        )
+        accounting.actual_notional = Decimal("864.19")
+        accounting.actual_daily_loss = Decimal("20")
+        accounting.actual_trade_count = 100
+        accounting.daily_locked = True
+        session.commit()
+        paper_id, daily_id, accounting_id = paper.id, daily.id, accounting.id
+    result = confirm(world, preview(world))
+    assert result.status == "filled_protected"
+    assert world[3].post_count == 1
+    with world[0]() as session:
+        assert session.get(Position, paper_id).size == Decimal("0.01")
+        unchanged = session.get(DailyRiskState, daily_id)
+        assert unchanged.realized_pnl == 500 and unchanged.trade_count == 100 and unchanged.locked
+        ledger = session.get(AccountRiskAccountingState, accounting_id)
+        assert ledger.actual_notional == Decimal("1064.19")
+        assert ledger.actual_trade_count == 101 and ledger.daily_locked
+        assert ledger.max_notional == Decimal("1")
+
+
+@pytest.mark.parametrize("at_confirmation", [False, True])
+@pytest.mark.parametrize(
+    "endpoint,data,reason",
+    [
+        ("positions", [{"instId": "ETH-USDT", "positions": "0.5"}], "account_not_flat"),
+        (
+            "orders-pending",
+            [{"instId": "ETH-USDT", "orderId": "pending-venue"}],
+            "pending_orders_present",
+        ),
+        (
+            "orders-tpsl-pending",
+            [{"instId": "BTC-USDT", "tpslId": "pending-stop"}],
+            "pending_orders_present",
+        ),
+        ("positions", {"incomplete": []}, "account_state_incomplete"),
+        ("balance", [], "usdt_balance_unavailable"),
+    ],
+)
+def test_venue_account_capacity_and_unknown_state_fail_closed(
+    world, monkeypatch, at_confirmation, endpoint, data, reason
+):
+    plan = preview(world) if at_confirmation else None
+    response_override(world, monkeypatch, {endpoint: data})
+    with world[0]() as session, pytest.raises(TradingPolicyError) as caught:
+        if plan:
+            service(world, session).confirm(world[1], confirmation(plan))
+        else:
+            service(world, session).preview(
+                world[1],
+                ManualDemoPreviewRequest(side="BUY", quantity="2", stop="99000", target="102000"),
+            )
+    assert caught.value.details["preflight"]["reason_code"] == reason
+    assert caught.value.details["category"] == "manual_demo_limits"
+    assert "demo account" in caught.value.message.lower()
+    if plan:
+        assert caught.value.details["submission"] == "not_started"
+    assert world[3].post_count == 0
+    with world[0]() as session:
+        assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 0
+
+
+@pytest.mark.parametrize("at_confirmation", [False, True])
+@pytest.mark.parametrize(
+    "balance,available,reason",
+    [
+        ("10000", "10", "manual_demo_available_funds"),
+        ("10000", "1000", "manual_demo_notional_limit"),
+    ],
+)
+def test_preview_and_confirmation_use_same_fresh_venue_limits(
+    world, monkeypatch, at_confirmation, balance, available, reason
+):
+    plan = preview(world) if at_confirmation else None
+    response_override(
+        world,
+        monkeypatch,
+        {"balance": [{"currency": "USDT", "balance": balance, "available": available}]},
+    )
+    with world[0]() as session, pytest.raises(TradingPolicyError) as caught:
+        if plan:
+            service(world, session).confirm(world[1], confirmation(plan))
+        else:
+            service(world, session).preview(
+                world[1],
+                ManualDemoPreviewRequest(side="BUY", quantity="2", stop="99000", target="102000"),
+            )
+    assert caught.value.details["reason"] == reason
+    assert caught.value.details["category"] == "manual_demo_limits"
+    assert world[3].post_count == 0
+
+
+@pytest.mark.parametrize(
+    "side,stop,target",
+    [
+        ("BUY", "100010", "102000"),
+        ("BUY", "99000", "100000"),
+        ("SELL", "99900", "98000"),
+        ("SELL", "101000", "100000"),
+    ],
+)
+def test_invalid_manual_geometry_is_clear_and_never_saved(world, side, stop, target):
+    with world[0]() as session, pytest.raises(TradingPolicyError) as caught:
+        service(world, session).preview(
+            world[1], ManualDemoPreviewRequest(side=side, quantity="2", stop=stop, target=target)
+        )
+    assert "stop" in caught.value.message.lower() or "target" in caught.value.message.lower()
+    assert "1:1" not in caught.value.message
+    assert world[3].post_count == 0
+    with world[0]() as session:
+        assert session.scalar(select(func.count()).select_from(TradePlanRevision)) == 0
+
+
+def test_fractional_contract_metadata_and_invalid_btc_quantity(world, monkeypatch):
+    original = world[3].handle
+
+    def handle(request):
+        result = original(request)
+        if request.url.path.endswith("instruments"):
+            rows = result.json()["data"]
+            rows[0].update(lotSize="0.1", minSize="0.1")
+            return httpx.Response(200, json={"code": "0", "data": rows})
+        return result
+
+    monkeypatch.setattr(world[4]._client._transport, "handler", handle)
+    with world[0]() as session:
+        metadata = service(world, session).instrument(world[1])
+        assert metadata.minimum_quantity == metadata.lot_increment == Decimal("0.1")
+        assert metadata.contract_multiplier == Decimal("0.001")
+        assert metadata.reference_price == Decimal("100000")
+        with pytest.raises(TradingPolicyError) as caught:
+            service(world, session).preview(
+                world[1],
+                ManualDemoPreviewRequest(
+                    side="BUY", quantity="0.001", stop="99000", target="100500"
+                ),
+            )
+        assert caught.value.details["preflight"]["reason_code"] == "quote_quantity_invalid"
+        plan = service(world, session).preview(
+            world[1],
+            ManualDemoPreviewRequest(side="BUY", quantity="0.1", stop="99000", target="100500"),
+        )
+    assert plan.base_quantity == Decimal("0.0001")
+    assert plan.gross_reward_risk < 1
+    assert confirm(world, plan).status == "filled_protected"
+    assert world[3].post_count == 1
+
+
+def test_protection_recovery_updates_same_journal_and_never_resubmits(world):
+    from app.db.models import AuditLog
+    from app.schemas.common import AuditEventType
+
+    plan = preview(world)
+    world[3].behavior = "unfilled"
+    submitted = confirm(world, plan)
+    assert submitted.venue_order_id == "demo-1"
+    assert submitted.filled_quantity == 0 and submitted.journal_trade_id is None
+    with world[0]() as session:
+        assert session.scalar(select(func.count()).select_from(JournalTrade)) == 0
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(
+                    AuditLog.resource_id == str(submitted.command_id),
+                    AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
+                )
+            )
+            == 1
+        )
+    world[3].behavior = "protection_failure"
+    failed = confirm(world, plan)
+    assert failed.status == "protection_failed_operator_hold"
+    with world[0]() as session:
+        assert "protection missing" in session.get(JournalTrade, failed.journal_trade_id).entry_plan
+    world[3].behavior = "success"
+    recovered = confirm(world, plan)
+    assert recovered.status == "filled_protected"
+    assert recovered.journal_trade_id == failed.journal_trade_id
+    with world[0]() as session:
+        assert (
+            "protection verified"
+            in session.get(JournalTrade, recovered.journal_trade_id).entry_plan
+        )
+        assert session.scalar(select(KillSwitchState.active))
+        assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 1
+    assert world[3].post_count == 1
+
+
+def test_confirmation_stale_quote_cannot_claim_or_submit(world):
+    plan = preview(world)
+    world[3].behavior = "stale"
+    with pytest.raises(TradingPolicyError) as caught:
+        confirm(world, plan)
+    assert caught.value.details["preflight"]["reason_code"] == "quote_stale_or_future"
+    assert caught.value.details["submission"] == "not_started"
+    assert world[3].post_count == 0
+
+
+def test_unknown_post_response_keeps_reservation_and_repeated_confirmation_only_reads(
+    world, monkeypatch
+):
+    original = world[3].handle
+
+    def handle(request):
+        if request.method == "POST" and request.url.path.endswith("order"):
+            world[3].post_count += 1
+            return httpx.Response(200, json={"code": "0", "data": []})
+        return original(request)
+
+    monkeypatch.setattr(world[4]._client._transport, "handler", handle)
+    plan = preview(world)
+    first, second = confirm(world, plan), confirm(world, plan)
+    assert first.command_id == second.command_id
+    assert second.status == "ambiguous_operator_hold"
+    assert second.journal_trade_id is None
+    with world[0]() as session:
+        assert session.scalar(select(RiskReservation.remaining_reserved_notional)) > 0
+        assert session.scalar(select(func.count()).select_from(ExecutionCommand)) == 1
+    assert world[3].post_count == 1
+
+
+def test_local_uncertain_demo_reservation_consumes_preview_capacity(world, monkeypatch):
+    first = preview(world)
+
+    def uncertain(**kwargs):
+        raise TimeoutError("No reliable submission receipt")
+
+    monkeypatch.setattr(world[4], "submit", uncertain)
+    status = confirm(world, first)
+    assert status.status == "ambiguous_operator_hold"
+    with world[0]() as session, pytest.raises(TradingPolicyError) as caught:
+        service(world, session).preview(
+            world[1],
+            ManualDemoPreviewRequest(side="BUY", quantity="4", stop="99000", target="102000"),
+        )
+    assert caught.value.details["reason"] == "manual_demo_notional_limit"
+    with world[0]() as session:
+        reservation = session.scalar(select(RiskReservation))
+        assert reservation.remaining_reserved_notional == Decimal("200.4004")
+    assert world[3].post_count == 0
+
+
+def test_manual_claim_without_fresh_account_policy_cannot_reserve(world):
+    from app.schemas.execution_protocol import ExecutePaperPlanRequest
+    from app.schemas.trade_plan import AuthorizationChannel, AuthorizationDecision
+    from app.services.approval_service import ApprovalService
+    from app.services.execution_claim import PaperPlanClaimService
+
+    plan = preview(world)
+    with world[0]() as session:
+        manual = service(world, session)
+        canonical = manual._plan(world[1], plan.revision_id)
+        approval = ApprovalService(session, manual.audit, clock=manual.clock)
+        pending = approval.create_for_plan_revision(
+            revision_id=plan.revision_id,
+            organization_id=world[1].organization_id,
+            user_id=world[1].user_id,
+        )
+        authorization = approval.issue_authorization(
+            approval_id=pending.id,
+            decision=AuthorizationDecision.APPROVE,
+            organization_id=world[1].organization_id,
+            user_id=world[1].user_id,
+            channel=AuthorizationChannel.WEB,
+            manual_demo_confirmation_hash=plan.content_hash,
+        )
+        result = PaperPlanClaimService(session, world[2], manual.epochs, clock=manual.clock).claim(
+            ExecutePaperPlanRequest(
+                organization_id=world[1].organization_id,
+                user_id=world[1].user_id,
+                account_id=canonical.account_id,
+                revision_id=plan.revision_id,
+                authorization_id=authorization.authorization_id,
+                idempotency_key="missing-evidence",
+            )
+        )
+        assert result.blocked_reason_code == "manual_demo_account_evidence_required"
+        assert session.scalar(select(func.count()).select_from(RiskReservation)) == 0
+    assert world[3].post_count == 0
+
+
+def test_fresh_quote_cannot_mask_stale_account_reads(world, monkeypatch):
+    original = world[3].handle
+
+    def handle(request):
+        result = original(request)
+        if request.url.path.endswith("books"):
+            world[3].clock_delta = 11
+            content = result.json()
+            content["data"][0]["ts"] = str(
+                int((EVALUATED_AT + timedelta(seconds=11)).timestamp() * 1000)
+            )
+            return httpx.Response(200, json=content)
+        return result
+
+    monkeypatch.setattr(world[4]._client._transport, "handler", handle)
+    with world[0]() as session, pytest.raises(TradingPolicyError) as caught:
+        service(world, session).preview(
+            world[1],
+            ManualDemoPreviewRequest(side="BUY", quantity="2", stop="99000", target="102000"),
+        )
+    assert caught.value.details["reason"] == "manual_demo_account_state_stale"
     assert world[3].post_count == 0

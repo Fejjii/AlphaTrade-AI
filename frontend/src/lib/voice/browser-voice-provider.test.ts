@@ -45,9 +45,36 @@ describe("browser voice transport", () => {
     vi.stubGlobal("isSecureContext", true);
   });
   afterEach(() => {
+    Reflect.deleteProperty(document, "permissionsPolicy");
+    Reflect.deleteProperty(document, "featurePolicy");
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
+
+  it.each(["permissionsPolicy", "featurePolicy"])(
+    "explains a %s microphone block before requesting capture or recognition",
+    (name) => {
+      const allowsFeature = vi.fn().mockReturnValue(false);
+      Object.defineProperty(document, name, {
+        value: { allowsFeature }, configurable: true,
+      });
+      const getUserMedia = vi.fn();
+      vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+      const provider = createBrowserVoiceProvider();
+      const events = callbacks();
+      provider.listen(events);
+      provider.diagnoseMicrophone?.(events);
+      expect(events.onError).toHaveBeenCalledTimes(2);
+      expect(events.onError).toHaveBeenLastCalledWith(expect.objectContaining({
+        sourceCode: "permissions-policy",
+        message: expect.stringContaining("deployed Permissions-Policy header"),
+      }));
+      expect(allowsFeature).toHaveBeenCalledWith("microphone");
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(Recognition.instances).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it("reports permission, recording and transcription; completes only final speech at end", () => {
     const events = callbacks();

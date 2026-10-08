@@ -141,6 +141,24 @@ function captureError(error: unknown): VoiceError {
   };
 }
 
+function microphonePolicyError(): VoiceError | null {
+  if (typeof document === "undefined") return null;
+  const context = document as Document & {
+    permissionsPolicy?: { allowsFeature(feature: string): boolean };
+    featurePolicy?: { allowsFeature(feature: string): boolean };
+  };
+  const policy = context.permissionsPolicy ?? context.featurePolicy;
+  if (policy && !policy.allowsFeature("microphone")) {
+    return {
+      code: "permission",
+      sourceCode: "permissions-policy",
+      message:
+        "This page's Permissions Policy blocks microphone capture. Open the app directly in its own HTTPS tab; if it still fails, check the deployed Permissions-Policy header. Browser and system permission toggles cannot override this policy.",
+    };
+  }
+  return null;
+}
+
 /** Browser-managed speech; no provider credentials, audio storage, or Agent calls. */
 export function createBrowserVoiceProvider(): VoiceProvider {
   const browser =
@@ -169,6 +187,11 @@ export function createBrowserVoiceProvider(): VoiceProvider {
           message:
             "Microphone capture checks require a supported browser over HTTPS.",
         });
+        return { stop() {}, cancel() {} };
+      }
+      const policyError = microphonePolicyError();
+      if (policyError) {
+        callbacks.onError(policyError);
         return { stop() {}, cancel() {} };
       }
       let active = true;
@@ -219,6 +242,11 @@ export function createBrowserVoiceProvider(): VoiceProvider {
           message:
             "Voice input is unavailable in this browser. Use a supported browser over HTTPS or type your message.",
         });
+        return noop;
+      }
+      const policyError = microphonePolicyError();
+      if (policyError) {
+        callbacks.onError(policyError);
         return noop;
       }
       let recognition: BrowserRecognition;

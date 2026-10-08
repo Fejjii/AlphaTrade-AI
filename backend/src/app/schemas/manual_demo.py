@@ -43,6 +43,21 @@ class ManualDemoConfirmation(CanonicalModel):
     label: Literal["manual demo test"]
 
 
+class ManualDemoInstrument(CanonicalModel):
+    account_id: UUID
+    instrument: str
+    quantity_unit: Literal["CONTRACTS"] = "CONTRACTS"
+    base_currency: Literal["BTC"] = "BTC"
+    minimum_quantity: Decimal
+    maximum_quantity: Decimal
+    lot_increment: Decimal
+    tick_size: Decimal
+    contract_multiplier: Decimal
+    minimum_notional: Decimal = Decimal("5")
+    reference_price: Decimal
+    observed_at: datetime
+
+
 class ManualDemoPreview(CanonicalModel):
     origin: Literal["manual demo test"] = "manual demo test"
     account_id: UUID

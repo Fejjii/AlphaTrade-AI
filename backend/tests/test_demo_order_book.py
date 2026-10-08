@@ -338,8 +338,9 @@ def test_manual_confirmation_conservative_size_bound_survives_balance_drop():
         return venue.handle(request)
 
     before_post = Mock()
-    with pytest.raises(ValueError, match="balance no longer supports"):
+    with pytest.raises(TradingPolicyError, match="Manual demo limit") as caught:
         provider(handle).submit(plan=plan, client_order_id="blocked-size", before_post=before_post)
+    assert caught.value.details["reason"] == "manual_demo_notional_limit"
     before_post.assert_not_called()
     assert venue.post_count == 0
 
