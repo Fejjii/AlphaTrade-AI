@@ -88,6 +88,19 @@ async function installNotificationFixture(page: Page, supported = true) {
       json: { detail: "Unavailable in notification fixture" },
     });
   });
+  // ManualDemoActivity now loads authenticated history on Settings mount.
+  // Keep its synthetic token inside this fixture: a real backend 401 correctly
+  // expires the session, whereas an unrelated read outage must keep it usable.
+  await page.route((url) => url.pathname === "/execution/manual-demo/commands", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    expect(route.request().headers().authorization).toBe(
+      `Bearer ${FIXTURE_ACCESS_TOKEN}`,
+    );
+    await route.fulfill({
+      status: 503,
+      json: { detail: "Manual demo history unavailable in notification fixture" },
+    });
+  });
   // Unrelated Settings reads are deliberately unavailable, never fabricated.
   // Watchlist reads must not reach the backend with the synthetic fixture token:
   // a real 401 would correctly clear the session and redirect to /login.
@@ -144,6 +157,9 @@ for (const viewport of [
     );
     await expectNotificationSession(page);
     await expect(
+      page.getByRole("region", { name: "Recent manual demo activity" }),
+    ).toContainText("Manual demo history unavailable in notification fixture");
+    await expect(
       page.getByText("Watchlist configuration unavailable. Reload to try again."),
     ).toBeVisible();
     await expect(
@@ -190,6 +206,9 @@ for (const viewport of [
     ).toHaveValue("none");
     await expect(form.getByLabel("Cooldown (seconds)")).toHaveValue("300");
     await expectNotificationSession(page);
+    await expect(
+      page.getByRole("region", { name: "Recent manual demo activity" }),
+    ).toContainText("Manual demo history unavailable in notification fixture");
     expect(
       await page.evaluate(
         () =>

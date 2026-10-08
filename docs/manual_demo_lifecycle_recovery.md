@@ -56,6 +56,26 @@ Repeated refresh/recovery cannot create duplicate entry/exit fills, Journal trad
 
 Apply Alembic `a7manualrecovery001` after `a6manualdemo001` before deploying code that queries recovery records (`alembic upgrade head`). It adds one immutable, command-unique resolution table and PostgreSQL mutation protection. Existing commands, plans, hashes and attempts are preserved. Downgrade refuses to erase nonempty recovery history; use forward recovery after resolutions exist.
 
+The API deployment sequence in `render.yaml` runs `alembic upgrade head` as its pre-deploy command. The Docker image includes the complete migration tree and uses `backend/docker/entrypoint.sh`; with no API command override, that script repeats the upgrade before starting Uvicorn. Its `set -eu` prevents API startup if the upgrade fails. The disarmed paper worker's custom command remains separate. Read-only Render inspection on 8 October 2026 confirmed that `alphatrade-api-staging` (`srv-d8fvbcd7vvec739mc060`) in the approved workspace has `alembic upgrade head`, an empty Docker command override and the expected backend Dockerfile/context. Before deployment, recheck those settings and verify migrations target the same database as the API.
+
+Before starting recovery acceptance, inspect that database read-only: `alembic_version` must contain exactly one row, `a7manualrecovery001`; `manual_demo_lifecycle_resolutions` must exist with `trg_manual_demo_lifecycle_resolutions_immutable` enabled. Confirm successful migration precedes Uvicorn startup in the deployment logs. Local migration evidence does not establish the deployed database revision.
+
+### Release-check repair evidence
+
+Deployment safety job `113409124728` failed because two watcher contract tests still expected a6, although runtime discovery correctly returned a7. Those expectations now require a7. Missing/empty and ambiguous database revisions, missing/ambiguous migration heads and outdated revisions still fail closed; a6 is explicitly rejected as outdated.
+
+Browser smoke job `113412211823` failed because the notification fixture supplied a synthetic bearer token but did not intercept the new `ManualDemoActivity` history GET. That request reached the real test backend, received 401, then failed refresh and correctly redirected to login. This was reproduced at width 390 with backend request logs. The fixture now intercepts that exact authenticated GET with an explicit 503 outage; both 390 and 320 tests require the activity error, retained cookie/token/session, working notification controls and persistence after reload. Production authentication and refresh handling are unchanged.
+
+Followup focused results: **113 backend tests passed with no skips**, **7 Chromium cases passed**, targeted Ruff/format, notification-spec ESLint and frontend TypeScript passed. The browser cases comprise three notification fixtures, two manual history/detail persistence cases and two existing unauthenticated/stale-cookie rejection cases. The migration test runs the actual Alembic chain on an isolated PostgreSQL schema, seeds a canonical a6 plan, upgrades to a7 twice, verifies its payload/hash and immutability trigger, and exercises a recovery-table-dependent account-history read. A separate test executes the real container entrypoint and proves both successful migration-before-API ordering and failure-before-API rejection. These checks use local test infrastructure and perform no exchange operations.
+
+Reproduce the focused backend release check from `backend` with PostgreSQL available:
+
+```sh
+.venv/bin/pytest tests/test_deployment_safety.py tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py tests/test_manual_demo_migration.py tests/test_disarmed_render_worker_boot.py::test_blueprint_is_api_plus_one_disarmed_paper_worker -q -o addopts='' --durations=5
+```
+
+Run the affected browser files from `frontend`: `npx playwright test e2e/notification-settings-v2.spec.ts e2e/manual-demo-recovery.spec.ts --project=chromium --retries=0`; run the rejection cases with `npx playwright test e2e/auth-boundary.spec.ts --project=chromium --grep 'unauthenticated navigation|stale marker cookie' --workers=1 --retries=0`. Local execution used a matching Next/API origin and system Chromium. No full CI was manually dispatched and required checks were preserved.
+
 The focused release gate includes PostgreSQL manual preview/claim/reconciliation/history/recovery and API tests, mixed-venue Agent/context tests, automated governed demo lifecycle/exit and risk regressions, migration roundtrip/immutability, targeted mypy/Ruff, frontend TypeScript/ESLint/component tests and Chromium fixture persistence checks. No full backend CI was manually dispatched and branch protections were not altered. Test counts/results are recorded in the PR.
 
 Final local results on latest main `d9ebf87` (PR229): **307 backend tests passed**, **45 frontend component tests passed**, **2 Chromium browser fixture tests passed**. Targeted Ruff/format checks, mypy (10 changed-source entry points), TypeScript and ESLint passed. The backend emitted one existing Starlette/TestClient deprecation warning; no tests skipped in the final gate.
